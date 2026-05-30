@@ -142,28 +142,35 @@ impl<'a> Parser<'a> {
         loop {
             self.skip_whitespace();
 
-            let compound = self.consume_compound_selector()?;
-            let had_whitespace_before = self.pos > 0
-                && matches!(
-                    self.tokens.get(self.pos - 1),
-                    Some(Token::Whitespace)
-                );
+            // 检查是否到达选择器列表的结束位置
+            if matches!(
+                self.peek(),
+                Token::LBrace | Token::Comma | Token::RBrace | Token::Eof
+            ) {
+                break;
+            }
 
+            let compound = self.consume_compound_selector()?;
+
+            // 保存当前位置，检查 skip_whitespace 是否跳过了空白
+            let pos_before_ws = self.pos;
             self.skip_whitespace();
+            let had_whitespace = self.pos > pos_before_ws;
 
             // 检查组合器
             let combinator = match self.peek() {
-                Token::Ident(s) if s == ">" => {
+                // 使用 Delim 处理组合器
+                Token::Delim('>') => {
                     self.advance();
                     self.skip_whitespace();
                     Some(Combinator::Child)
                 }
-                Token::Ident(s) if s == "+" => {
+                Token::Delim('+') => {
                     self.advance();
                     self.skip_whitespace();
                     Some(Combinator::NextSibling)
                 }
-                Token::Ident(s) if s == "~" => {
+                Token::Delim('~') => {
                     self.advance();
                     self.skip_whitespace();
                     Some(Combinator::SubsequentSibling)
@@ -171,7 +178,7 @@ impl<'a> Parser<'a> {
                 Token::LBrace | Token::Comma | Token::RBrace | Token::Eof => None,
                 _ => {
                     // 后代组合器（空白分隔）
-                    if had_whitespace_before {
+                    if had_whitespace {
                         Some(Combinator::Descendant)
                     } else {
                         None
@@ -211,28 +218,76 @@ impl<'a> Parser<'a> {
 
         // 类型选择器
         match self.peek().clone() {
-            Token::Ident(tag) if tag != ">" && tag != "+" && tag != "~" && tag != "|" => {
+            Token::Ident(tag) => {
                 type_selector = Some(TypeSelector::Tag(tag));
                 self.advance();
             }
-            Token::Ident(s) if s == "*" => {
+            Token::Delim('*') => {
                 type_selector = Some(TypeSelector::Universal);
                 self.advance();
             }
             _ => {}
         }
 
-        // 子类选择器
+        // 子类选择器循环
         loop {
             match self.peek().clone() {
+                // ID 选择器
                 Token::Hash(id) => {
                     subclass_selectors.push(SubclassSelector::Id(id));
                     self.advance();
                 }
-                Token::Ident(cls) if cls.starts_with('.') => {
-                    // 不应该发生 — class 选择器以 . 开头
-                    // . 由 tokenizer 处理为单独的字符
-                    break;
+                // 类选择器
+                Token::Delim('.') => {
+                    self.advance();
+                    if let Token::Ident(cls) = self.peek().clone() {
+                        subclass_selectors.push(SubclassSelector::Class(cls));
+                        self.advance();
+                    }
+                }
+                // 属性选择器
+                Token::LBracket => {
+                    self.advance();
+                    if let Some(attr_sel) = self.consume_attribute_selector() {
+                        subclass_selectors.push(SubclassSelector::Attribute(attr_sel));
+                    }
+                }
+                // 伪类 / 伪元素选择器
+                Token::Colon => {
+                    self.advance();
+                    if matches!(self.peek(), Token::Colon) {
+                        // 伪元素（::before, ::after）
+                        self.advance();
+                        if let Token::Ident(name) = self.peek().clone() {
+                            subclass_selectors.push(SubclassSelector::PseudoElement(
+                                PseudoElementSelector::Standard(name),
+                            ));
+                            self.advance();
+                        }
+                    } else if let Token::Ident(name) = self.peek().clone() {
+                        // 简单伪类或函数伪类
+                        self.advance();
+                        if matches!(self.peek(), Token::LParen) {
+                            self.advance(); // (
+                            // 解析函数伪类参数
+                            let pseudo = match name.as_str() {
+                                "not" => self.parse_pseudo_class_function_list("not"),
+                                "is" => self.parse_pseudo_class_function_list("is"),
+                                "where" => self.parse_pseudo_class_function_list("where"),
+                                "nth-child" => self.parse_nth_pattern("nth-child"),
+                                "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
+                                "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
+                                "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
+                                "lang" => self.parse_lang(),
+                                _ => PseudoClassSelector::Simple(name),
+                            };
+                            subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
+                        } else {
+                            subclass_selectors.push(SubclassSelector::PseudoClass(
+                                PseudoClassSelector::Simple(name),
+                            ));
+                        }
+                    }
                 }
                 _ => break,
             }
@@ -246,6 +301,320 @@ impl<'a> Parser<'a> {
                 type_selector,
                 subclass_selectors,
             })
+        }
+    }
+
+    /// 解析函数伪类选择器列表（:not()、:is()、:where()）。
+    ///
+    /// 调用前已消耗 `(`。
+    fn parse_pseudo_class_function_list(&mut self, _name: &str) -> PseudoClassSelector {
+        let selectors = self.consume_selector_list_for_function();
+
+        // 消耗右括号
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+
+        match _name {
+            "not" => PseudoClassSelector::Not(selectors),
+            "is" => PseudoClassSelector::Is(selectors),
+            "where" => PseudoClassSelector::Where(selectors),
+            _ => PseudoClassSelector::Simple(_name.to_string()),
+        }
+    }
+
+    /// 为函数伪类内部消耗选择器列表。
+    fn consume_selector_list_for_function(&mut self) -> Vec<Selector> {
+        let mut selectors = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+
+            if matches!(self.peek(), Token::RParen | Token::Eof) {
+                break;
+            }
+
+            if let Some(sel) = self.consume_selector() {
+                selectors.push(sel);
+            } else {
+                break;
+            }
+
+            self.skip_whitespace();
+
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+                continue;
+            }
+
+            break;
+        }
+
+        selectors
+    }
+
+    /// 解析 nth 函数模式（:nth-child、:nth-last-child、:nth-of-type）。
+    ///
+    /// 调用前已消耗 `(`。
+    fn parse_nth_pattern(&mut self, name: &str) -> PseudoClassSelector {
+        let pattern = self.parse_nth_expression();
+
+        // 消耗右括号
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+
+        match name {
+            "nth-child" => PseudoClassSelector::NthChild(pattern),
+            "nth-last-child" => PseudoClassSelector::NthLastChild(pattern),
+            "nth-of-type" => PseudoClassSelector::NthOfType(pattern),
+            _ => PseudoClassSelector::Simple(name.to_string()),
+        }
+    }
+
+    /// 解析 nth-last-of-type 函数模式。
+    ///
+    /// 调用前已消耗 `(`。
+    fn parse_nth_last_of_type_pattern(&mut self) -> PseudoClassSelector {
+        let pattern = self.parse_nth_expression();
+
+        // 消耗右括号
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+
+        PseudoClassSelector::NthLastOfType(pattern)
+    }
+
+    /// 解析 nth 表达式（如 `2n+1`、`odd`、`even`、`3`）。
+    fn parse_nth_expression(&mut self) -> NthPattern {
+        self.skip_whitespace();
+
+        // 收集 nth 表达式的文本
+        let mut expr = String::new();
+        while !matches!(
+            self.peek(),
+            Token::RParen | Token::Eof
+        ) {
+            match self.peek() {
+                Token::Whitespace => {
+                    if !expr.is_empty() && !expr.ends_with(' ') {
+                        expr.push(' ');
+                    }
+                    self.advance();
+                }
+                _ => {
+                    expr.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+
+        let expr = expr.trim();
+
+        // 解析特殊关键字
+        match expr {
+            "odd" => return NthPattern { a: 2, b: 1 },
+            "even" => return NthPattern { a: 2, b: 0 },
+            _ => {}
+        }
+
+        // 解析 an+b 模式
+        Self::parse_nth_expression_str(expr)
+    }
+
+    /// 从字符串解析 nth 表达式。
+    fn parse_nth_expression_str(expr: &str) -> NthPattern {
+        let expr = expr.replace(' ', "");
+        let expr_lower = expr.to_lowercase();
+
+        // 尝试匹配 an+b 或 an-b 模式
+        if let Some(n_pos) = expr_lower.find('n') {
+            let a_part = &expr_lower[..n_pos];
+            let b_part = &expr_lower[n_pos + 1..];
+
+            let a: i32 = if a_part.is_empty() || a_part == "+" {
+                1
+            } else if a_part == "-" {
+                -1
+            } else {
+                a_part.parse().unwrap_or(0)
+            };
+
+            let b: i32 = if b_part.is_empty() {
+                0
+            } else {
+                b_part.parse().unwrap_or(0)
+            };
+
+            return NthPattern { a, b };
+        }
+
+        // 纯数字
+        let b: i32 = expr_lower.parse().unwrap_or(0);
+        NthPattern { a: 0, b }
+    }
+
+    /// 解析 :lang() 函数。
+    ///
+    /// 调用前已消耗 `(`。
+    fn parse_lang(&mut self) -> PseudoClassSelector {
+        self.skip_whitespace();
+
+        let lang = match self.peek().clone() {
+            Token::Ident(s) => {
+                self.advance();
+                s
+            }
+            Token::String(s) => {
+                self.advance();
+                s
+            }
+            _ => String::new(),
+        };
+
+        self.skip_whitespace();
+
+        // 消耗右括号
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+
+        PseudoClassSelector::Lang(lang)
+    }
+
+    /// 消耗属性选择器。
+    ///
+    /// 调用前已消耗 `[`。
+    fn consume_attribute_selector(&mut self) -> Option<AttributeSelector> {
+        self.skip_whitespace();
+
+        // 属性名
+        let name = match self.peek().clone() {
+            Token::Ident(n) => {
+                self.advance();
+                n
+            }
+            _ => {
+                // 跳到 ] 并返回 None
+                self.skip_to_rbracket();
+                return None;
+            }
+        };
+
+        self.skip_whitespace();
+
+        // 检查匹配器
+        let matcher = match self.peek() {
+            Token::RBracket => {
+                // [attr] — 属性存在
+                self.advance();
+                return Some(AttributeSelector {
+                    name,
+                    matcher: AttributeMatcher::Exists,
+                });
+            }
+            Token::Delim('=') => {
+                // [attr=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::Exact(val)
+            }
+            Token::IncludeMatch => {
+                // [attr~=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::Includes(val)
+            }
+            Token::DashMatch => {
+                // [attr|=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::DashMatch(val)
+            }
+            Token::PrefixMatch => {
+                // [attr^=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::Prefix(val)
+            }
+            Token::SuffixMatch => {
+                // [attr$=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::Suffix(val)
+            }
+            Token::SubstringMatch => {
+                // [attr*=val]
+                self.advance();
+                self.skip_whitespace();
+                let val = self.consume_attribute_value();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBracket) {
+                    self.advance();
+                }
+                AttributeMatcher::Substring(val)
+            }
+            _ => {
+                // 未知匹配器，跳到 ]
+                self.skip_to_rbracket();
+                return Some(AttributeSelector {
+                    name,
+                    matcher: AttributeMatcher::Exists,
+                });
+            }
+        };
+
+        Some(AttributeSelector { name, matcher })
+    }
+
+    /// 消耗属性选择器的值。
+    fn consume_attribute_value(&mut self) -> String {
+        match self.peek().clone() {
+            Token::Ident(s) => {
+                self.advance();
+                s
+            }
+            Token::String(s) => {
+                self.advance();
+                s
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// 跳到右方括号。
+    fn skip_to_rbracket(&mut self) {
+        while !matches!(self.peek(), Token::RBracket | Token::Eof) {
+            self.advance();
+        }
+        if matches!(self.peek(), Token::RBracket) {
+            self.advance();
         }
     }
 
@@ -302,15 +671,17 @@ impl<'a> Parser<'a> {
                     value_parts.push(' ');
                     self.advance();
                 }
-                Token::Ident(s) if s == "important" => {
-                    // 简化处理：检查 !important
-                    if value_parts.ends_with('!') {
-                        value_parts.pop(); // 移除 '!'
-                        important = true;
-                    } else {
-                        value_parts.push_str(s);
-                    }
+                Token::Delim('!') => {
                     self.advance();
+                    self.skip_whitespace();
+                    if let Token::Ident(s) = self.peek().clone()
+                        && s == "important"
+                    {
+                        important = true;
+                        self.advance();
+                        break;
+                    }
+                    value_parts.push('!');
                 }
                 _ => {
                     let display = format!("{}", self.peek());

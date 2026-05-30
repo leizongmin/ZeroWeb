@@ -64,6 +64,8 @@ pub enum Token {
     RBrace,
     /// 注释内容。
     Comment(String),
+    /// 分隔符（如 `.`、`!`、`>`、`+`、`~`、`*` 等单字符）。
+    Delim(char),
     /// EOF。
     Eof,
     /// 解析错误。
@@ -100,6 +102,7 @@ impl fmt::Display for Token {
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
             Token::Comment(s) => write!(f, "/* {} */", s),
+            Token::Delim(c) => write!(f, "{}", c),
             Token::Eof => write!(f, "<EOF>"),
             Token::Error(s) => write!(f, "<ERROR: {}>", s),
         }
@@ -634,11 +637,11 @@ impl Iterator for Tokenizer {
                     if let Some(next) = self.peek_at(1) {
                         if !Self::is_digit(next) {
                             self.consume();
-                            return Some(Token::Error("Unexpected '.'".to_string()));
+                            return Some(Token::Delim('.'));
                         }
                     } else {
                         self.consume();
-                        return Some(Token::Error("Unexpected '.' at EOF".to_string()));
+                        return Some(Token::Delim('.'));
                     }
                 }
 
@@ -713,7 +716,15 @@ impl Iterator for Tokenizer {
                     return Some(Token::Column);
                 }
 
-                Some(Token::Ident(sign.to_string()))
+                // 当不是数字开头且不是标识符时，+/- 作为分隔符
+                if sign == '+' {
+                    Some(Token::Delim('+'))
+                } else if sign == '-' {
+                    // 单独的 - 作为标识符
+                    Some(Token::Ident("-".to_string()))
+                } else {
+                    Some(Token::Ident(sign.to_string()))
+                }
             }
 
             // 点号（如果不是数字开头）
@@ -723,7 +734,7 @@ impl Iterator for Tokenizer {
                 if self.consume_if('=') {
                     Some(Token::IncludeMatch)
                 } else {
-                    Some(Token::Ident("~".to_string()))
+                    Some(Token::Delim('~'))
                 }
             }
 
@@ -765,8 +776,26 @@ impl Iterator for Tokenizer {
                 if self.consume_if('=') {
                     Some(Token::SubstringMatch)
                 } else {
-                    Some(Token::Ident("*".to_string()))
+                    Some(Token::Delim('*'))
                 }
+            }
+
+            // ! 作为分隔符
+            '!' => {
+                self.consume();
+                Some(Token::Delim('!'))
+            }
+
+            // > 作为分隔符
+            '>' => {
+                self.consume();
+                Some(Token::Delim('>'))
+            }
+
+            // = 作为分隔符（用于属性选择器中的精确匹配 [attr=val]）
+            '=' => {
+                self.consume();
+                Some(Token::Delim('='))
             }
 
             // 标识符

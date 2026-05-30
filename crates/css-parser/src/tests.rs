@@ -398,3 +398,443 @@ fn test_tokenize_unterminated_string() {
     // Should still return a string (partial)
     assert!(matches!(&tokens[0], Token::String(_)));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5. Tokenizer Delim 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_tokenize_dot_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new(".").collect();
+    assert_eq!(tokens, vec![Token::Delim('.')]);
+}
+
+#[test]
+fn test_tokenize_bang_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new("!").collect();
+    assert_eq!(tokens, vec![Token::Delim('!')]);
+}
+
+#[test]
+fn test_tokenize_greater_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new(">").collect();
+    assert_eq!(tokens, vec![Token::Delim('>')]);
+}
+
+#[test]
+fn test_tokenize_plus_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new("+").collect();
+    assert_eq!(tokens, vec![Token::Delim('+')]);
+}
+
+#[test]
+fn test_tokenize_star_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new("*").collect();
+    assert_eq!(tokens, vec![Token::Delim('*')]);
+}
+
+#[test]
+fn test_tokenize_tilde_as_delim() {
+    let tokens: Vec<_> = Tokenizer::new("~").collect();
+    assert_eq!(tokens, vec![Token::Delim('~')]);
+}
+
+#[test]
+fn test_tokenize_complex_selector() {
+    // div.class#id:hover → Ident Delim('.') Ident Hash Colon Ident
+    let tokens: Vec<_> = Tokenizer::new("div.class#id:hover").collect();
+    assert!(tokens.len() >= 6);
+    assert_eq!(tokens[0], Token::Ident("div".to_string()));
+    assert_eq!(tokens[1], Token::Delim('.'));
+    assert_eq!(tokens[2], Token::Ident("class".to_string()));
+    assert_eq!(tokens[3], Token::Hash("id".to_string()));
+    assert_eq!(tokens[4], Token::Colon);
+    assert_eq!(tokens[5], Token::Ident("hover".to_string()));
+}
+
+#[test]
+fn test_tokenize_dot_before_digit_still_number() {
+    // ".5" → Number(0.5)
+    let tokens: Vec<_> = Tokenizer::new(".5").collect();
+    assert!(matches!(tokens[0], Token::Number(n) if (n - 0.5).abs() < 0.001));
+}
+
+#[test]
+fn test_tokenize_child_combinator_in_context() {
+    // div > p → Ident Whitespace Delim('>') Whitespace Ident
+    let tokens: Vec<_> = Tokenizer::new("div > p").collect();
+    assert!(tokens.len() >= 5);
+    assert_eq!(tokens[0], Token::Ident("div".to_string()));
+    assert_eq!(tokens[1], Token::Whitespace);
+    assert_eq!(tokens[2], Token::Delim('>'));
+    assert_eq!(tokens[3], Token::Whitespace);
+    assert_eq!(tokens[4], Token::Ident("p".to_string()));
+}
+
+#[test]
+fn test_tokenize_important() {
+    // !important → Delim('!') Ident("important")
+    let tokens: Vec<_> = Tokenizer::new("!important").collect();
+    assert!(tokens.len() >= 2);
+    assert_eq!(tokens[0], Token::Delim('!'));
+    assert_eq!(tokens[1], Token::Ident("important".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 6. Parser 选择器测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_class_selector() {
+    let stylesheet = Parser::parse_stylesheet(".class { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.type_selector.is_none());
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Class(c) if c == "class"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_id_selector() {
+    let stylesheet = Parser::parse_stylesheet("#main { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Id(id) if id == "main"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_tag_class() {
+    let stylesheet = Parser::parse_stylesheet("div.active { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(matches!(
+            &compound.type_selector,
+            Some(TypeSelector::Tag(t)) if t == "div"
+        ));
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Class(c) if c == "active"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_universal() {
+    let stylesheet = Parser::parse_stylesheet("* { margin: 0; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(matches!(compound.type_selector, Some(TypeSelector::Universal)));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_descendant() {
+    let stylesheet = Parser::parse_stylesheet("div p { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let parts = &sr.selectors[0].complex.parts;
+        assert_eq!(parts.len(), 2);
+        // 第一个组合器应为 Descendant
+        assert_eq!(parts[0].1, Some(Combinator::Descendant));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_child() {
+    let stylesheet = Parser::parse_stylesheet("div > p { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let parts = &sr.selectors[0].complex.parts;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].1, Some(Combinator::Child));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_next_sibling() {
+    let stylesheet = Parser::parse_stylesheet("h1 + p { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let parts = &sr.selectors[0].complex.parts;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].1, Some(Combinator::NextSibling));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_subsequent_sibling() {
+    let stylesheet = Parser::parse_stylesheet("h1 ~ p { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let parts = &sr.selectors[0].complex.parts;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].1, Some(Combinator::SubsequentSibling));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_attribute_exists() {
+    let stylesheet = Parser::parse_stylesheet("[type] { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Exists,
+            }) if name == "type"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_attribute_exact() {
+    let stylesheet = Parser::parse_stylesheet("[type=text] { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Exact(val),
+            }) if name == "type" && val == "text"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_attribute_includes() {
+    let stylesheet = Parser::parse_stylesheet("[class~=active] { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Includes(val),
+            }) if name == "class" && val == "active"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_pseudo_class() {
+    let stylesheet = Parser::parse_stylesheet("a:hover { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name))
+                if name == "hover"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_pseudo_element() {
+    let stylesheet = Parser::parse_stylesheet("p::before { content: \"\"; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name))
+                if name == "before"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_selector_list() {
+    let stylesheet = Parser::parse_stylesheet("div, span { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        // 应该有 2 个选择器
+        assert_eq!(sr.selectors.len(), 2);
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+fn test_parse_important() {
+    let stylesheet = Parser::parse_stylesheet("div { color: red !important; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let has_important = sr.declarations.iter().any(|d| d.important);
+        assert!(has_important, "Expected !important declaration");
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7. 值解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+use crate::values::*;
+
+#[test]
+fn test_parse_color_named() {
+    let result = parse_color("red");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+}
+
+#[test]
+fn test_parse_color_hex3() {
+    let result = parse_color("#f00");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+}
+
+#[test]
+fn test_parse_color_hex6() {
+    let result = parse_color("#ff0000");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+}
+
+#[test]
+fn test_parse_color_hex8() {
+    let result = parse_color("#ff000080");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 128)));
+}
+
+#[test]
+fn test_parse_color_rgb() {
+    let result = parse_color("rgb(255, 0, 0)");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+}
+
+#[test]
+fn test_parse_color_transparent() {
+    let result = parse_color("transparent");
+    assert_eq!(result, Some(ColorValue::Transparent));
+}
+
+#[test]
+fn test_parse_color_current_color() {
+    let result = parse_color("currentColor");
+    assert_eq!(result, Some(ColorValue::CurrentColor));
+}
+
+#[test]
+fn test_parse_length_px() {
+    let result = parse_length("10px");
+    assert_eq!(result, Some(LengthValue::Px(10.0)));
+}
+
+#[test]
+fn test_parse_length_em() {
+    let result = parse_length("1.5em");
+    assert_eq!(result, Some(LengthValue::Em(1.5)));
+}
+
+#[test]
+fn test_parse_length_rem() {
+    let result = parse_length("2rem");
+    assert_eq!(result, Some(LengthValue::Rem(2.0)));
+}
+
+#[test]
+fn test_parse_display_values() {
+    assert_eq!(parse_display("block"), Some(DisplayValue::Block));
+    assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+    assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
+    assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
+    assert_eq!(parse_display("inline-grid"), Some(DisplayValue::InlineGrid));
+    assert_eq!(parse_display("none"), Some(DisplayValue::None));
+    assert_eq!(parse_display("contents"), Some(DisplayValue::Contents));
+    assert_eq!(parse_display("flow"), Some(DisplayValue::Flow));
+    assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
+    assert_eq!(parse_display("list-item"), Some(DisplayValue::ListItem));
+    assert_eq!(parse_display("unknown"), None);
+}
+
+#[test]
+fn test_parse_position_values() {
+    assert_eq!(parse_position("static"), Some(PositionValue::Static));
+    assert_eq!(parse_position("relative"), Some(PositionValue::Relative));
+    assert_eq!(parse_position("absolute"), Some(PositionValue::Absolute));
+    assert_eq!(parse_position("fixed"), Some(PositionValue::Fixed));
+    assert_eq!(parse_position("sticky"), Some(PositionValue::Sticky));
+    assert_eq!(parse_position("unknown"), None);
+}
+
+#[test]
+fn test_parse_var_simple() {
+    let result = parse_var("var(--color)");
+    assert!(result.is_some());
+    let var = result.unwrap();
+    assert_eq!(var.name, "--color");
+    assert!(var.fallback.is_none());
+}
+
+#[test]
+fn test_parse_var_fallback() {
+    let result = parse_var("var(--color, red)");
+    assert!(result.is_some());
+    let var = result.unwrap();
+    assert_eq!(var.name, "--color");
+    assert_eq!(var.fallback, Some("red".to_string()));
+}
+
+#[test]
+fn test_parse_var_invalid() {
+    let result = parse_var("not-a-var");
+    assert_eq!(result, None);
+}
