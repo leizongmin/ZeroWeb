@@ -50,7 +50,7 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
 | 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | 核心抽象已建立，待完整 GPU 渲染器迁移 |
 | 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
-| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | 🔲 待开始 | "Hello ZeroBrowser" demo |
+| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | "Hello ZeroBrowser" CPU 渲染 demo + PPM 输出 |
 | 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
 | 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 24 个测试用例（geometry:10, color:5, primitive:4, font:6, surface:7） |
 | 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
@@ -113,9 +113,10 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 2. ~~创建 render-foundation 核心抽象~~ ✅
 3. ~~实现 host-runtime（winit 窗口 + 事件循环）~~ ✅
 4. ~~建立 CI 管线~~ ✅
-5. **创建 "Hello ZeroBrowser" wgpu 渲染 demo** ← 当前
-6. 迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、shader）
-7. 提交并推送代码
+5. ~~创建 "Hello ZeroBrowser" 渲染 demo~~ ✅
+6. **将 CPU 渲染 demo 升级为 wgpu GPU 渲染** ← 当前
+7. 迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）
+8. 提交并推送代码
 
 ---
 
