@@ -4401,9 +4401,13 @@ name = "zero-dom"
 version = "0.1.0"
 dependencies = [
  "compact_str",
+ "criterion",
  "hashbrown 0.15.5",
  "html5ever",
+ "markup5ever",
  "serde",
+ "slotmap",
+ "tendril",
  "thiserror 2.0.18",
 ]
 
