@@ -322,4 +322,96 @@ mod tests {
         assert!(header.contains("a=1"));
         assert!(header.contains("b=2"));
     }
+
+    #[test]
+    fn test_parse_cookie_empty_string() {
+        assert!(CookieStore::parse_set_cookie("").is_err());
+    }
+
+    #[test]
+    fn test_parse_cookie_no_equals() {
+        assert!(CookieStore::parse_set_cookie("justacookie").is_err());
+    }
+
+    #[test]
+    fn test_parse_cookie_empty_name() {
+        assert!(CookieStore::parse_set_cookie("=value").is_err());
+    }
+
+    #[test]
+    fn test_parse_cookie_value_with_equals() {
+        let cookie = CookieStore::parse_set_cookie("a=b=c").unwrap();
+        assert_eq!(cookie.value, "b=c");
+    }
+
+    #[test]
+    fn test_parse_cookie_max_age() {
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=3600").unwrap();
+        assert_eq!(cookie.expires.as_deref(), Some("3600"));
+    }
+
+    #[test]
+    fn test_parse_cookie_expires() {
+        let cookie =
+            CookieStore::parse_set_cookie("a=1; Expires=Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
+        assert!(cookie.expires.is_some());
+    }
+
+    #[test]
+    fn test_cookie_store_replace_same_name() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("a=1; Domain=x.com").unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("a=2; Domain=x.com").unwrap(),
+        );
+        assert_eq!(store.len(), 1);
+        let url = parse_url("http://x.com/").unwrap();
+        let cookies = store.get_for_url(&url);
+        assert_eq!(cookies[0].value, "2");
+    }
+
+    #[test]
+    fn test_cookie_store_clear() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("a=1").unwrap());
+        store.clear();
+        assert!(store.is_empty());
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn test_cookie_store_default() {
+        let store = CookieStore::default();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn test_cookie_secure_over_http_blocked() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("secret=abc; Secure; Domain=example.com").unwrap());
+        let http_url = parse_url("http://example.com/").unwrap();
+        assert!(store.get_for_url(&http_url).is_empty());
+    }
+
+    #[test]
+    fn test_cookie_header_no_match() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=x.com").unwrap());
+        let other_url = parse_url("http://other.com/").unwrap();
+        let header = store.cookie_header(&other_url);
+        assert!(header.is_empty());
+    }
+
+    #[test]
+    fn test_cookie_domain_subdomain_match() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("a=1; Domain=.example.com").unwrap(),
+        );
+        let sub_url = parse_url("http://sub.example.com/").unwrap();
+        let cookies = store.get_for_url(&sub_url);
+        assert_eq!(cookies.len(), 1);
+    }
 }

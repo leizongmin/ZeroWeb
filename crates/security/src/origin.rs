@@ -113,4 +113,64 @@ mod tests {
     fn test_origin_parse_invalid() {
         assert!(Origin::parse("not-a-url").is_err());
     }
+
+    #[test]
+    fn test_origin_parse_custom_port() {
+        let origin = Origin::parse("https://example.com:8443").unwrap();
+        assert_eq!(origin.port, 8443);
+    }
+
+    #[test]
+    fn test_origin_parse_default_port_normalization() {
+        let explicit = Origin::parse("http://example.com:80").unwrap();
+        let implicit = Origin::parse("http://example.com").unwrap();
+        assert_eq!(explicit, implicit);
+        assert_eq!(implicit.port, 80);
+    }
+
+    #[test]
+    fn test_origin_parse_empty_string() {
+        assert!(Origin::parse("").is_err());
+    }
+
+    #[test]
+    fn test_origin_from_url_no_host() {
+        let url = Url::parse("file:///etc/passwd").unwrap();
+        let result = Origin::from_url(&url);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("no host"), "message: {msg}");
+    }
+
+    #[test]
+    fn test_origin_from_url_unknown_scheme() {
+        let url = Url::parse("myproto://example.com").unwrap();
+        let result = Origin::from_url(&url);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("unknown scheme"), "message: {msg}");
+    }
+
+    #[test]
+    fn test_origin_parse_data_url() {
+        let result = Origin::parse("data:text/plain,hello");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_same_origin_returns_false() {
+        let a = Origin::parse("https://a.com").unwrap();
+        let b = Origin::parse("https://b.com").unwrap();
+        assert!(!check_same_origin(&a, &b));
+    }
+
+    #[test]
+    fn test_origin_hash_and_eq() {
+        use std::collections::HashSet;
+        let a = Origin::parse("https://example.com/page1").unwrap();
+        let b = Origin::parse("https://example.com/page2").unwrap();
+        let mut set = HashSet::new();
+        set.insert(a.clone());
+        assert!(set.contains(&b));
+    }
 }

@@ -819,4 +819,326 @@ mod tests {
         assert!((x - 110.0).abs() < f32::EPSILON);
         assert!((y - 220.0).abs() < f32::EPSILON);
     }
+
+    // ── FontDescriptor / FontWeight / FontStyle ──
+
+    #[test]
+    fn test_font_descriptor_default() {
+        let f = FontDescriptor::default();
+        assert_eq!(f.family, "sans-serif");
+        assert!((f.size - 10.0).abs() < f32::EPSILON);
+        assert!(matches!(f.weight, FontWeight::Normal));
+        assert!(matches!(f.style, FontStyle::Normal));
+    }
+
+    #[test]
+    fn test_font_descriptor_custom() {
+        let f = FontDescriptor {
+            family: "monospace".to_string(),
+            size: 14.0,
+            weight: FontWeight::Bold,
+            style: FontStyle::Italic,
+        };
+        assert_eq!(f.family, "monospace");
+        assert!(matches!(f.weight, FontWeight::Bold));
+        assert!(matches!(f.style, FontStyle::Italic));
+    }
+
+    #[test]
+    fn test_canvas_set_font() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let font = FontDescriptor {
+            family: "serif".to_string(),
+            size: 20.0,
+            weight: FontWeight::Bold,
+            style: FontStyle::Italic,
+        };
+        ctx.set_font(font);
+        let metrics = ctx.measure_text("test");
+        // 字体大小 20.0，4 字符 × 20.0 × 0.6 = 48.0
+        assert!((metrics.width - 48.0).abs() < f32::EPSILON);
+    }
+
+    // ── stroke_color / stroke_text ──
+
+    #[test]
+    fn test_canvas_set_stroke_color() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::BLUE);
+        assert_eq!(*ctx.stroke_color(), Color::BLUE);
+    }
+
+    #[test]
+    fn test_canvas_stroke_text() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.stroke_text("hello", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs.len(), 1);
+    }
+
+    // ── 路径操作 ──
+
+    #[test]
+    fn test_canvas_begin_path_clears() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(50.0, 50.0);
+        ctx.begin_path();
+        ctx.fill();
+        // begin_path 清除路径，fill 空路径不生成图元
+        assert_eq!(ctx.primitives().fills.len(), 0);
+    }
+
+    #[test]
+    fn test_canvas_move_to_line_to_fill() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_stroke_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.stroke();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_fill_empty_path() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.fill();
+        assert_eq!(ctx.primitives().fills.len(), 0);
+    }
+
+    #[test]
+    fn test_canvas_stroke_empty_path() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.stroke();
+        assert_eq!(ctx.primitives().fills.len(), 0);
+    }
+
+    #[test]
+    fn test_canvas_quadratic_curve_to() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.move_to(10.0, 10.0);
+        ctx.quadratic_curve_to(50.0, 0.0, 100.0, 50.0);
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_bezier_curve_to() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.move_to(10.0, 10.0);
+        ctx.bezier_curve_to(30.0, 0.0, 70.0, 100.0, 100.0, 50.0);
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_close_path_on_context() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.close_path();
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_arc_on_context() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+        ctx.line_to(100.0, 100.0); // 确保包围盒有面积（arc 仅记录中心点）
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    // ── 边界条件 ──
+
+    #[test]
+    fn test_canvas_new_zero_size() {
+        let ctx = CanvasContext::new(0, 0);
+        assert_eq!(ctx.width(), 0);
+        assert_eq!(ctx.height(), 0);
+    }
+
+    #[test]
+    fn test_canvas_global_alpha_clamp_high() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(2.0);
+        assert!((ctx.global_alpha() - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_global_alpha_clamp_negative() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(-1.0);
+        assert!((ctx.global_alpha()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_global_alpha_clamp_zero() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(0.0);
+        assert!((ctx.global_alpha()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_restore_empty_stack() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.restore(); // 不应 panic
+        assert_eq!(*ctx.fill_color(), Color::BLACK);
+    }
+
+    #[test]
+    fn test_canvas_measure_text_empty_string() {
+        let ctx = CanvasContext::new(200, 200);
+        let metrics = ctx.measure_text("");
+        assert!((metrics.width).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_measure_text_unicode() {
+        let ctx = CanvasContext::new(200, 200);
+        let metrics = ctx.measure_text("日本語");
+        // 3 个 char × 10.0 × 0.6 = 18.0（按 char 计数，非字节）
+        assert!((metrics.width - 18.0).abs() < f32::EPSILON);
+    }
+
+    // ── save/restore 完整性 ──
+
+    #[test]
+    fn test_canvas_save_restore_stroke_color() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::RED);
+        ctx.save();
+        ctx.set_stroke_color(Color::BLUE);
+        assert_eq!(*ctx.stroke_color(), Color::BLUE);
+        ctx.restore();
+        assert_eq!(*ctx.stroke_color(), Color::RED);
+    }
+
+    #[test]
+    fn test_canvas_save_restore_line_width() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_width(5.0);
+        ctx.save();
+        ctx.set_line_width(10.0);
+        ctx.restore();
+        assert!((ctx.line_width() - 5.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_save_restore_global_alpha() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(0.5);
+        ctx.save();
+        ctx.set_global_alpha(0.8);
+        ctx.restore();
+        assert!((ctx.global_alpha() - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_save_restore_transform() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.translate(10.0, 20.0);
+        ctx.save();
+        ctx.translate(100.0, 200.0);
+        ctx.restore();
+        let (x, y) = ctx.transform.transform_point(0.0, 0.0);
+        assert!((x - 10.0).abs() < 1.0);
+        assert!((y - 20.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_canvas_save_restore_font() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_font(FontDescriptor {
+            family: "serif".to_string(),
+            size: 16.0,
+            weight: FontWeight::Bold,
+            style: FontStyle::Normal,
+        });
+        ctx.save();
+        ctx.set_font(FontDescriptor {
+            family: "monospace".to_string(),
+            size: 20.0,
+            weight: FontWeight::Normal,
+            style: FontStyle::Italic,
+        });
+        ctx.restore();
+        let m = ctx.measure_text("x");
+        // 应恢复到 serif 16pt: 1 × 16.0 × 0.6 = 9.6
+        assert!((m.width - 9.6).abs() < f32::EPSILON);
+    }
+
+    // ── Transform 边界条件 ──
+
+    #[test]
+    fn test_transform_multiply_identity() {
+        let t = Transform2D::translate(10.0, 20.0);
+        let result = t.multiply(&Transform2D::identity());
+        let (x, y) = result.transform_point(0.0, 0.0);
+        assert!((x - 10.0).abs() < f32::EPSILON);
+        assert!((y - 20.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_transform_scale_negative() {
+        let t = Transform2D::scale(-1.0, 1.0);
+        let (x, y) = t.transform_point(5.0, 10.0);
+        assert!((x - (-5.0)).abs() < f32::EPSILON);
+        assert!((y - 10.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_transform_scale_zero() {
+        let t = Transform2D::scale(0.0, 0.0);
+        let (x, y) = t.transform_point(5.0, 10.0);
+        assert!((x).abs() < f32::EPSILON);
+        assert!((y).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_chained_transforms() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.translate(10.0, 0.0);
+        ctx.scale(2.0, 1.0);
+        let (x, y) = ctx.transform.transform_point(5.0, 5.0);
+        // translate(10,0) 然后 scale(2,1): 先 scale 得 (10,5)，再 translate 得 (20,5)
+        // 实际矩阵乘法顺序：scale 先应用
+        assert!((x - 20.0).abs() < 0.01);
+        assert!((y - 5.0).abs() < 0.01);
+    }
+
+    // ── alpha 应用 ──
+
+    #[test]
+    fn test_canvas_fill_rect_alpha_zero() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(0.0);
+        ctx.fill_rect(10.0, 10.0, 50.0, 50.0);
+        let fill = &ctx.primitives().fills[0];
+        assert_eq!(fill.color.a, 0);
+    }
+
+    // ── put_image_data stub ──
+
+    #[test]
+    fn test_canvas_put_image_data_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255; 16],
+        };
+        ctx.put_image_data(&img, 0, 0); // 不应 panic
+    }
 }
