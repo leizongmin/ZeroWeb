@@ -27,6 +27,7 @@ mod mutation;
 mod node;
 mod parser;
 mod query;
+mod range;
 mod serializer;
 
 pub use document::*;
@@ -34,6 +35,7 @@ pub use mutation::*;
 pub use node::*;
 pub use parser::*;
 pub use query::*;
+pub use range::*;
 
 #[cfg(test)]
 mod tests;

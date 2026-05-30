@@ -80,6 +80,18 @@ impl<'a> Parser<'a> {
                 if name.eq_ignore_ascii_case("keyframes") {
                     return self.consume_keyframes_rule().map(Rule::Keyframes);
                 }
+                // 对 @layer 使用专用解析器
+                if name.eq_ignore_ascii_case("layer") {
+                    return self.consume_layer_rule().map(Rule::Layer);
+                }
+                // 对 @import 使用专用解析器
+                if name.eq_ignore_ascii_case("import") {
+                    return self.consume_import_rule().map(Rule::Import);
+                }
+                // 对 @supports 使用专用解析器
+                if name.eq_ignore_ascii_case("supports") {
+                    return self.consume_supports_rule().map(Rule::Supports);
+                }
                 Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
@@ -944,5 +956,200 @@ impl<'a> Parser<'a> {
         }
 
         Some(KeyframesRule { name, keyframes })
+    }
+
+    /// 消耗 @layer 规则。
+    ///
+    /// 格式：`@layer <name> { <rules> }` 或 `@layer <name>;`
+    fn consume_layer_rule(&mut self) -> Option<LayerRule> {
+        use crate::ast::*;
+
+        self.skip_whitespace();
+
+        // 读取层名称（可选）
+        let name = match self.peek().clone() {
+            Token::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            Token::String(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            // 匿名层：@layer { ... }
+            Token::LBrace => String::new(),
+            // @layer; — 声明-only（无名称无规则体）
+            Token::Semicolon => {
+                self.advance();
+                return Some(LayerRule {
+                    name: String::new(),
+                    rules: vec![],
+                });
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+
+        // 期望 { 或 ;
+        match self.peek() {
+            Token::Semicolon => {
+                // @layer <name>; — 仅声明层名
+                self.advance();
+                Some(LayerRule {
+                    name,
+                    rules: vec![],
+                })
+            }
+            Token::LBrace => {
+                self.advance();
+
+                // 解析层内规则列表
+                let mut rules = Vec::new();
+                loop {
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                        if matches!(self.peek(), Token::RBrace) {
+                            self.advance();
+                        }
+                        break;
+                    }
+                    if let Some(rule) = self.consume_rule() {
+                        rules.push(rule);
+                    } else {
+                        self.advance();
+                    }
+                }
+
+                Some(LayerRule { name, rules })
+            }
+            _ => None,
+        }
+    }
+
+    /// 消耗 @import 规则。
+    ///
+    /// 格式：`@import url("path");` 或 `@import "path";`
+    /// 可选媒体查询：`@import "style.css" screen and (max-width: 600px);`
+    fn consume_import_rule(&mut self) -> Option<ImportRule> {
+        self.skip_whitespace();
+
+        // 读取 URL：可以是 url(...) 或字符串字面量
+        let url = match self.peek().clone() {
+            Token::Url(u) => {
+                let result = u;
+                self.advance();
+                result
+            }
+            Token::String(s) => {
+                let result = s;
+                self.advance();
+                result
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+
+        // 可选的媒体查询部分：收集直到分号
+        let mut media_queries = Vec::new();
+        let mut current_query = String::new();
+
+        loop {
+            match self.peek() {
+                Token::Semicolon => {
+                    self.advance();
+                    break;
+                }
+                Token::Eof => {
+                    break;
+                }
+                Token::Comma => {
+                    // 逗号分隔多个媒体查询
+                    let trimmed = current_query.trim().to_string();
+                    if !trimmed.is_empty() {
+                        media_queries.push(trimmed);
+                    }
+                    current_query.clear();
+                    self.advance();
+                    self.skip_whitespace();
+                }
+                Token::Whitespace => {
+                    if !current_query.is_empty() && !current_query.ends_with(' ') {
+                        current_query.push(' ');
+                    }
+                    self.advance();
+                }
+                _ => {
+                    current_query.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+
+        let trimmed = current_query.trim().to_string();
+        if !trimmed.is_empty() {
+            media_queries.push(trimmed);
+        }
+
+        Some(ImportRule {
+            url,
+            media_queries,
+        })
+    }
+
+    /// 消耗 @supports 规则。
+    ///
+    /// 格式：`@supports (<条件>) { <规则> }`
+    fn consume_supports_rule(&mut self) -> Option<SupportsRule> {
+        self.skip_whitespace();
+
+        // 收集 prelude 文本（直到 {）
+        let mut prelude = String::new();
+        loop {
+            match self.peek() {
+                Token::LBrace => break,
+                Token::Eof => return None,
+                Token::Whitespace => {
+                    prelude.push(' ');
+                    self.advance();
+                }
+                _ => {
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+
+        let condition = crate::supports_condition::parse_supports_condition(prelude.trim())?;
+
+        self.skip_whitespace();
+
+        // 期望 {
+        if !matches!(self.peek(), Token::LBrace) {
+            return None;
+        }
+        self.advance();
+
+        // 解析规则列表
+        let mut rules = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                if matches!(self.peek(), Token::RBrace) {
+                    self.advance();
+                }
+                break;
+            }
+            if let Some(rule) = self.consume_rule() {
+                rules.push(rule);
+            } else {
+                self.advance();
+            }
+        }
+
+        Some(SupportsRule { condition, rules })
     }
 }

@@ -168,16 +168,24 @@ impl StyleSystem {
             media_ctx.as_ref(),
         );
 
-        // 1.5. 展开简写属性
-        let expanded = shorthand::expand_shorthands(&matching);
+        // 1.5. 展开简写属性（保留层索引）
+        #[allow(clippy::type_complexity)]
+        let mut expanded_with_layer: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
+        for (property, value, important, specificity, layer_index) in &matching {
+            let input = (property.clone(), value.clone(), *important, *specificity);
+            let expanded = shorthand::expand_shorthands(&[input]);
+            for (prop, val, imp, spec) in expanded {
+                expanded_with_layer.push((prop, val, imp, spec, *layer_index));
+            }
+        }
 
         // 2. 构建 CascadedDeclaration 列表
         let mut declarations = Vec::new();
-        for (position, (property, value, important, specificity)) in expanded.iter().enumerate() {
+        for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate() {
             declarations.push(CascadedDeclaration {
                 property: property.clone(),
                 value: value.clone(),
-                order: CascadeOrder::new(Origin::Author, None, *specificity, position, *important),
+                order: CascadeOrder::new(Origin::Author, *layer_index, *specificity, position, *important),
             });
         }
 
@@ -717,6 +725,195 @@ mod tests {
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
 
+    // ── @supports 端到端测试 ──
+
+    #[test]
+    fn test_supports_applies_when_condition_met() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Property(
+                    "display".to_string(),
+                    "grid".to_string(),
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.display, DisplayValue::Grid);
+    }
+
+    #[test]
+    fn test_supports_skips_when_condition_not_met() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Property(
+                    "display".to_string(),
+                    "unknown-value".to_string(),
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_supports_not_condition() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Not(Box::new(
+                    zero_css_parser::ast::SupportsCondition::Property(
+                        "display".to_string(),
+                        "grid".to_string(),
+                    ),
+                )),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_supports_and_condition() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::And(vec![
+                    zero_css_parser::ast::SupportsCondition::Property(
+                        "display".to_string(),
+                        "flex".to_string(),
+                    ),
+                    zero_css_parser::ast::SupportsCondition::Property(
+                        "color".to_string(),
+                        "blue".to_string(),
+                    ),
+                ]),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255));
+    }
+
+    #[test]
+    fn test_supports_or_condition() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Or(vec![
+                    zero_css_parser::ast::SupportsCondition::Property(
+                        "display".to_string(),
+                        "unknown".to_string(),
+                    ),
+                    zero_css_parser::ast::SupportsCondition::Property(
+                        "display".to_string(),
+                        "flex".to_string(),
+                    ),
+                ]),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_supports_with_regular_rules() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Supports(zero_css_parser::ast::SupportsRule {
+                    condition: zero_css_parser::ast::SupportsCondition::Property(
+                        "display".to_string(),
+                        "grid".to_string(),
+                    ),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "margin-top".to_string(),
+                            value: "20px".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+        assert_eq!(div_style.margin_top, LengthValue::Px(20.0));
+    }
+
     // ── Grid 属性端到端测试 ──
 
     #[test]
@@ -896,5 +1093,169 @@ mod tests {
         assert_eq!(div_style.grid_row_end, property::GridLineValue::Auto);
         assert_eq!(div_style.grid_auto_rows, None);
         assert_eq!(div_style.grid_auto_columns, None);
+    }
+
+    // ── @layer 端到端测试 ──
+
+    #[test]
+    fn test_layer_unlayered_beats_layered() {
+        // 未分层的 div { color: red; } 应该胜过 @layer base { div { color: blue; } }
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "blue".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 未分层胜过分层
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
+
+    #[test]
+    fn test_layer_later_beats_earlier() {
+        // @layer base { div { color: red; } } @layer theme { div { color: green; } }
+        // 后面的层胜过前面的
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "red".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "theme".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "green".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 后面的层（theme=green）胜过前面的层（base=red）
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255)); // green
+    }
+
+    #[test]
+    fn test_layer_specificity_within_same_layer() {
+        // 同层内，高特异性仍然胜出
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Layer(zero_css_parser::ast::LayerRule {
+                name: "base".to_string(),
+                rules: vec![
+                    // div { color: red; } — 低特异性
+                    Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "red".to_string(),
+                            important: false,
+                        }],
+                    }),
+                    // #main { color: blue; } — 高特异性
+                    Rule::Style(StyleRule {
+                        selectors: vec![Selector {
+                            complex: ComplexSelector {
+                                parts: vec![(
+                                    CompoundSelector {
+                                        type_selector: None,
+                                        subclass_selectors: vec![SubclassSelector::Id(
+                                            "main".to_string(),
+                                        )],
+                                    },
+                                    None,
+                                )],
+                            },
+                        }],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "blue".to_string(),
+                            important: false,
+                        }],
+                    }),
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 同层内高特异性胜出
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
+    }
+
+    #[test]
+    fn test_layer_important_beats_normal() {
+        // 分层内的 !important 仍然胜出（按 normal < important 规则）
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "blue".to_string(),
+                            important: true,
+                        }],
+                    })],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // !important 总是胜过 normal（即使分层 vs 未分层）
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
     }
 }

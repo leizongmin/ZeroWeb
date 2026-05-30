@@ -414,16 +414,22 @@ impl Tokenizer {
 
     /// 消耗字符串字面量。
     fn consume_string(&mut self, ending: char) -> Token {
+        let s = self.consume_string_content(ending);
+        Token::String(s)
+    }
+
+    /// 消耗字符串内容（不包括引号），返回字符串值。
+    fn consume_string_content(&mut self, ending: char) -> String {
         let mut s = String::new();
         loop {
             match self.peek() {
                 Some(c) if c == ending => {
                     self.consume();
-                    return Token::String(s);
+                    return s;
                 }
                 Some('\n') | Some('\r') | Some('\x0C') => {
                     // 未终止字符串
-                    return Token::String(s);
+                    return s;
                 }
                 Some('\\') => {
                     self.consume();
@@ -451,7 +457,7 @@ impl Tokenizer {
                     s.push(c);
                 }
                 None => {
-                    return Token::String(s);
+                    return s;
                 }
             }
         }
@@ -461,6 +467,25 @@ impl Tokenizer {
     fn consume_url(&mut self) -> Token {
         // 跳过前导空白
         self.consume_whitespace();
+
+        // 检查是否为引号包裹的 URL 参数
+        match self.peek() {
+            Some('"') | Some('\'') => {
+                let quote = self.peek().unwrap();
+                self.consume(); // 消耗起始引号
+                let url = match self.consume_string(quote) {
+                    Token::String(s) => s,
+                    _ => String::new(),
+                };
+                // 消耗可能的尾部空白和 )
+                self.consume_whitespace();
+                if self.peek() == Some(')') {
+                    self.consume();
+                }
+                return Token::Url(url);
+            }
+            _ => {}
+        }
 
         let mut url = String::new();
         loop {
@@ -478,7 +503,7 @@ impl Tokenizer {
                     }
                     return Token::Url(url);
                 }
-                Some('"') | Some('\'') | Some('(') | Some('\\') => {
+                Some('(') | Some('\\') => {
                     // 非法字符在无引号 URL 中
                     return Token::Error("Invalid character in URL".to_string());
                 }
