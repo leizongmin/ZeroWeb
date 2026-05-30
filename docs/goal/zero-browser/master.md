@@ -1,8 +1,8 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**当前活跃里程碑**: M2 — HTML 解析 + DOM 树
-**执行状态**: M2 进行中，核心实现完成，待覆盖率验证
+**当前活跃里程碑**: M2 ✅ 已完成 | 下一活跃：M3 — CSS 解析器 + 样式系统
+**执行状态**: M2 全部验收标准已满足，准备进入 M3
 
 ---
 
@@ -13,7 +13,7 @@
 | 仓库代码 | ✅ Cargo workspace + 16 个 crate（dom 已实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
 | 测试状态 | ✅ `cargo test --workspace` 149 个测试全绿（82 dom + 53 render-foundation + 14 placeholder） |
-| 覆盖率 | ⏳ 待测量（dom crate 新增） |
+| 覆盖率 | ✅ dom 85.45% / render-foundation 53.30% |
 | WPT 通过率 | N/A |
 | 性能基线 | ✅ `cargo bench` render-foundation 5 个 + dom 8 个基准可运行 |
 | CI | ✅ GitHub Actions 配置就位 |
@@ -41,7 +41,7 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 ---
 
-## 里程碑状态：M1 ✅ 已归档 | M2 🔄 进行中
+## 里程碑状态：M1 ✅ | M2 ✅ | 下一活跃：M3 — CSS 解析器 + 样式系统
 
 ### M2 交付物进度
 
@@ -149,7 +149,7 @@ M1 已完成并归档 → [archive/m1-skeleton-render-foundation.md](archive/m1-
 14. ~~实现 MutationObserver 框架~~ ✅
 15. ~~编写 ≥50 单元测试~~ ✅（82 个）
 16. ~~编写 ≥3 基准测试~~ ✅（8 个）
-17. 测量 dom crate 覆盖率
+17. ~~测量 dom crate 覆盖率~~ ✅ 85.45%
 18. 归档 M2 里程碑
 19. 开始 M3 — CSS 解析器 + 样式系统
 
