@@ -442,4 +442,138 @@ mod tests {
         let result = db.delete_object_store("noexist");
         assert!(result.is_err());
     }
+
+    // ── 边界条件补充测试 ──
+
+    /// 测试空数据库名称。
+    #[test]
+    fn test_idb_empty_database_name() {
+        let db = IdbDatabase::new("", 1);
+        assert_eq!(db.name, "");
+    }
+
+    /// 测试版本号为 0。
+    #[test]
+    fn test_idb_version_zero() {
+        let db = IdbDatabase::new("test", 0);
+        assert_eq!(db.version, 0);
+    }
+
+    /// 测试多个 object store 操作。
+    #[test]
+    fn test_idb_multiple_stores() {
+        let mut db = IdbDatabase::new("multi", 1);
+        db.create_object_store("users", None, false).unwrap();
+        db.create_object_store("products", None, false).unwrap();
+        db.create_object_store("orders", None, false).unwrap();
+
+        assert_eq!(db.store_names().len(), 3);
+        assert!(db.store_names().contains(&"users"));
+        assert!(db.store_names().contains(&"products"));
+        assert!(db.store_names().contains(&"orders"));
+
+        // 删除中间的
+        db.delete_object_store("products").unwrap();
+        assert_eq!(db.store_names().len(), 2);
+        assert!(!db.store_names().contains(&"products"));
+    }
+
+    /// 测试 get_all 在空 store 上。
+    #[test]
+    fn test_idb_get_all_empty() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("empty", None, false).unwrap();
+        let records = db.get_all("empty").unwrap();
+        assert!(records.is_empty());
+    }
+
+    /// 测试 count 在空 store 上。
+    #[test]
+    fn test_idb_count_empty() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("empty", None, false).unwrap();
+        assert_eq!(db.count("empty").unwrap(), 0);
+    }
+
+    /// 测试 clear_store 后 count 为 0。
+    #[test]
+    fn test_idb_clear_then_count() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, true).unwrap();
+        db.add("items", serde_json::json!("val1"), None).unwrap();
+        db.add("items", serde_json::json!("val2"), None).unwrap();
+        assert_eq!(db.count("items").unwrap(), 2);
+        db.clear_store("items").unwrap();
+        assert_eq!(db.count("items").unwrap(), 0);
+    }
+
+    /// 测试 get 在不存在的 store 上。
+    #[test]
+    fn test_idb_get_from_nonexistent_store() {
+        let db = IdbDatabase::new("test", 1);
+        let result = db.get("noexist", &IdbKey::String("key".into()));
+        assert!(result.is_none());
+    }
+
+    /// 测试 IdbKey 排序：Number < String < Binary < Array。
+    #[test]
+    fn test_idb_key_type_ordering() {
+        let num = IdbKey::Number(1.0);
+        let str_key = IdbKey::String("a".into());
+        let bin = IdbKey::Binary(vec![1]);
+        let arr = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+
+        assert!(num < str_key);
+        assert!(str_key < bin);
+        assert!(bin < arr);
+    }
+
+    /// 测试 has_store。
+    #[test]
+    fn test_idb_has_store() {
+        let mut db = IdbDatabase::new("test", 1);
+        assert!(!db.has_store("users"));
+        db.create_object_store("users", None, false).unwrap();
+        assert!(db.has_store("users"));
+        assert!(!db.has_store("products"));
+    }
+
+    /// 测试重复创建 object store 报错。
+    #[test]
+    fn test_idb_create_duplicate_store() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        let result = db.create_object_store("items", None, false);
+        assert!(result.is_err());
+    }
+
+    /// 测试 delete 记录返回是否找到。
+    #[test]
+    fn test_idb_delete_returns_found() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add("items", serde_json::json!("v1"), Some(key.clone())).unwrap();
+
+        let found = db.delete("items", &key).unwrap();
+        assert!(found);
+
+        let not_found = db.delete("items", &key).unwrap();
+        assert!(!not_found);
+    }
+
+    /// 测试 put 覆盖已有记录。
+    #[test]
+    fn test_idb_put_overwrites_value() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        let key = IdbKey::String("k".into());
+        db.add("items", serde_json::json!("v1"), Some(key.clone())).unwrap();
+        db.put("items", serde_json::json!("v2"), Some(key.clone())).unwrap();
+
+        let record = db.get("items", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("v2"));
+        // 只有一条记录（put 覆盖而不是新增）
+        assert_eq!(db.count("items").unwrap(), 1);
+    }
 }
