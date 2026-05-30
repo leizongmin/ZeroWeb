@@ -1,34 +1,34 @@
 # ZeroBrowser
 
-ZeroBrowser 是一个基于 Rust 构建的开源跨平台浏览器项目。它同时追求两个交付物：
+ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库同时在做两件事：
 
 - 一个可嵌入、可复用的 `webview` 库
 - 一个完整的跨平台浏览器应用
 
-项目从一开始就围绕三个约束展开：核心代码保持可控、依赖许可边界保持清晰、开发过程保持可审查。技术路线是基于宽松许可证的 Rust 组件自建页面内核，并在开源协作下持续迭代 DOM、CSS、布局、渲染、导航和安全边界。
+项目主线会尽量把核心代码和依赖边界握在自己手里，所以页面内核主要基于宽松许可证的 Rust 组件慢慢搭起来。DOM、CSS、布局、渲染、导航和安全边界，都在这个仓库里一层层补。
 
-ZeroBrowser 也是一次 AI-first 工程实验。目标不是“让 AI 一次性生成大量代码”，而是在明确的架构、测试和验收约束下，让 AI 主导大部分实现工作，而人类主要负责方向、审查和最终验收。
+这也是个 AI-first 的工程实验。我们想看看，在架构边界、测试和验收都写清楚的前提下，AI 到底能把这种复杂系统推进到什么程度。
 
-> **状态**  
-> 项目仍处于实验性阶段，仅供学习、研究和工程探索使用。核心引擎 crate 和测试体系已经成形，但浏览器 shell、完整的页面 JavaScript 运行时和真实网页兼容性仍在建设中。它还不是一个可日常使用的浏览器。无论是商用还是其他生产用途，都需要你自行评估功能完整性、安全性、兼容性、性能和许可证边界等风险。
+> **当前状态**  
+> 这个仓库还在实验阶段，主要用来学习、研究和做工程探索。核心 crate 和测试已经有不少东西，但浏览器 shell、完整的页面 JavaScript 运行时、真实站点兼容性都还在路上。它现在不是一个日常可用的浏览器。商用或其他生产用途，请自己评估功能、安全、兼容性、性能和许可证边界风险。
 
 ## 项目定位
 
 - **以嵌入为先**: 除浏览器应用外，项目还要交付稳定的 Rust `webview` API，方便其他应用直接集成。
 - **许可证边界优先**: 主线依赖优先选择 MIT、Apache-2.0、BSD 等宽松许可证，避免核心能力受不合适的 copyleft 依赖约束。
 - **Rust 全栈路线**: 页面内核、宿主层和渲染基础设施都尽量在 Rust 生态内完成。
-- **AI 辅助、审查驱动**: 欢迎 AI 辅助贡献，但每一笔改动都必须可解释、可验证、可审查。
+- **AI 可以写，但要能审**: 欢迎 AI 辅助贡献，但提交上来的改动必须能讲清楚、测清楚、看清楚。
 
 ## 当前范围
 
-当前工作区已经包含一批实质实现：
+现在已经有一批能跑起来的模块：
 
 - 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine-core`、`canvas`
 - 基础设施：`render-foundation`、`host-runtime`、`net`、`security`、`storage`、`protocol`
 - 对外与产品层：`webview-api`、`browser-shell`
 - 应用与测试：`apps/browser`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
 
-当前仍明确处于进行中的部分：
+没做完的地方也很直白：
 
 - `browser-shell` 还没有进入完整产品形态
 - `script-sandbox` 仍是占位 crate
@@ -75,7 +75,7 @@ cargo run --bin webview-demo
 cargo run --bin zero-browser
 ```
 
-`webview-demo` 是当前更适合体验的入口；`zero-browser` 仍是浏览器应用的占位入口。
+现在更值得先跑的是 `webview-demo`；`zero-browser` 还只是浏览器应用的占位入口。
 
 ## 仓库结构
 
@@ -101,11 +101,14 @@ cargo run --bin zero-browser
 | `docs` | 规格、研究、路线图和架构文档 |
 | `tests` | 集成测试、WPT runner、benchmark 结果 |
 
-更多架构背景见 [docs/architecture.md](/home/lei/work/ZeroBrowser/docs/architecture.md)。
+想先了解整体分层，可以看 [docs/architecture.md](/home/lei/work/ZeroBrowser/docs/architecture.md)。
 
 ## 文档导航
 
+- [CHANGELOG.md](/home/lei/work/ZeroBrowser/CHANGELOG.md): 对外发布层面的变更记录
 - [docs/architecture.md](/home/lei/work/ZeroBrowser/docs/architecture.md): 面向贡献者的整体架构与阅读路径
+- [docs/releases/github-metadata.md](/home/lei/work/ZeroBrowser/docs/releases/github-metadata.md): GitHub 仓库介绍、Topics、tag 和 release 标题建议
+- [docs/releases/v0.1.0-alpha.0.md](/home/lei/work/ZeroBrowser/docs/releases/v0.1.0-alpha.0.md): 首个预发布版本的 release 文案草稿
 - [docs/specs/zero-browser-spec-rfc.md](/home/lei/work/ZeroBrowser/docs/specs/zero-browser-spec-rfc.md): 主规格与技术 RFC
 - [docs/goal/zero-browser/master.md](/home/lei/work/ZeroBrowser/docs/goal/zero-browser/master.md): 当前实现状态与里程碑控制面
 - [docs/research/rust-cross-platform-browser-research.md](/home/lei/work/ZeroBrowser/docs/research/rust-cross-platform-browser-research.md): 早期技术路线与许可证调研
@@ -113,13 +116,13 @@ cargo run --bin zero-browser
 
 ## 参与贡献
 
-欢迎人工编写和 AI 辅助编写的贡献。请先阅读：
+想提改动的话，先看这几份文档：
 
 - [CONTRIBUTING.md](/home/lei/work/ZeroBrowser/CONTRIBUTING.md)
 - [CODE_OF_CONDUCT.md](/home/lei/work/ZeroBrowser/CODE_OF_CONDUCT.md)
 - [SECURITY.md](/home/lei/work/ZeroBrowser/SECURITY.md)
 
-提交贡献前，至少保证：
+提 PR 前，至少把这几件事做了：
 
 - 变更目标和边界清晰
 - 改动范围尽量小且聚焦
@@ -130,4 +133,4 @@ cargo run --bin zero-browser
 
 本项目采用 [MIT License](/home/lei/work/ZeroBrowser/LICENSE)。
 
-许可证允许商用和二次集成，但当前项目仍处于实验阶段，默认仅供学习、研究和工程探索使用。任何商用或其他生产用途，都需要你自行评估功能完整性、安全性、兼容性、性能和许可证边界等风险。对于新增第三方依赖，请在提交前确认其许可证与项目策略兼容。
+MIT 许可证允许商用和二次集成，但这不等于这个仓库已经适合直接上线。它目前仍是实验项目，默认还是面向学习、研究和工程探索。真要拿去商用或放进生产环境，风险得你自己评估。新增第三方依赖前，也请先确认许可证是否和项目策略兼容。

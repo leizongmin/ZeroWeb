@@ -153,8 +153,19 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
-        // 1. 收集匹配的声明
-        let matching = matcher::collect_matching_declarations(doc, element, stylesheets);
+        // 0. 构建媒体查询上下文
+        let media_ctx = match (self.viewport_width, self.viewport_height) {
+            (Some(w), Some(h)) => Some(zero_css_parser::media_query::MediaContext::new(w, h)),
+            _ => None,
+        };
+
+        // 1. 收集匹配的声明（带媒体查询评估）
+        let matching = matcher::collect_matching_declarations_with_media(
+            doc,
+            element,
+            stylesheets,
+            media_ctx.as_ref(),
+        );
 
         // 1.5. 展开简写属性
         let expanded = shorthand::expand_shorthands(&matching);
@@ -580,5 +591,131 @@ mod tests {
         assert_eq!(div_style.margin_top, LengthValue::Px(20.0));
         // 其他边保持 10px
         assert_eq!(div_style.margin_right, LengthValue::Px(10.0));
+    }
+
+    // ── 媒体查询端到端测试 ──
+
+    #[test]
+    fn test_media_query_applies_when_condition_matches() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(1024.0, 768.0); // 宽屏
+
+        // @media (min-width: 600px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "(min-width: 600px)".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })]),
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_media_query_skips_when_condition_fails() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(400.0, 300.0); // 窄屏
+
+        // @media (min-width: 600px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "(min-width: 600px)".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })]),
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 条件不满足，color 保持默认黑色
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_media_query_with_regular_rules() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+
+        // 正常规则 + @media 规则
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // 基础样式
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+                // 响应式样式
+                Rule::At(zero_css_parser::ast::AtRule {
+                    name: "media".to_string(),
+                    prelude: "(min-width: 600px)".to_string(),
+                    body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "margin-top".to_string(),
+                            value: "20px".to_string(),
+                            important: false,
+                        }],
+                    })]),
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 基础样式应用
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+        // @media 条件满足，响应式样式也应用
+        assert_eq!(div_style.margin_top, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    fn test_media_query_no_viewport_skips() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        // 不设置视口
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "(min-width: 600px)".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })]),
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 没有视口信息，@media 不应用
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
 }

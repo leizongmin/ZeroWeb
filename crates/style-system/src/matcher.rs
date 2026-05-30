@@ -343,15 +343,30 @@ fn is_element(doc: &Document, node: NodeId) -> bool {
 ///
 /// 遍历样式表中所有规则，检查每个选择器是否匹配元素，
 /// 返回所有匹配的声明及其特异性。
+///
+/// 不评估媒体查询条件——使用 [`collect_matching_declarations_with_media`] 替代。
 pub fn collect_matching_declarations(
     doc: &Document,
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
 ) -> Vec<MatchingDecl> {
+    collect_matching_declarations_with_media(doc, element, stylesheets, None)
+}
+
+/// 从样式表中收集匹配指定元素的声明（带媒体查询评估）。
+///
+/// 遍历样式表中所有规则，检查每个选择器是否匹配元素，
+/// 并在遇到 `@media` 规则时根据媒体上下文决定是否进入。
+pub fn collect_matching_declarations_with_media(
+    doc: &Document,
+    element: NodeId,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
 
     for stylesheet in stylesheets {
-        collect_from_rules(doc, element, &stylesheet.rules, &mut results);
+        collect_from_rules(doc, element, &stylesheet.rules, &mut results, media_ctx);
     }
 
     results
@@ -363,6 +378,7 @@ fn collect_from_rules(
     element: NodeId,
     rules: &[zero_css_parser::ast::Rule],
     results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
 ) {
     for rule in rules {
         match rule {
@@ -385,7 +401,26 @@ fn collect_from_rules(
             }
             zero_css_parser::ast::Rule::At(at_rule) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
-                    collect_from_rules(doc, element, inner_rules, results);
+                    if at_rule.name.eq_ignore_ascii_case("media") {
+                        // @media 规则：需要评估媒体条件
+                        if let Some(ctx) = media_ctx
+                            && let Some(query) =
+                                zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            && zero_css_parser::media_query::evaluate_media_query(&query, ctx)
+                        {
+                            collect_from_rules(
+                                doc,
+                                element,
+                                inner_rules,
+                                results,
+                                media_ctx,
+                            );
+                        }
+                        // 没有 media_ctx 时，@media 规则不应用（安全默认值）
+                    } else {
+                        // 非 @media 的 AtRule（如 @layer, @supports）无条件递归
+                        collect_from_rules(doc, element, inner_rules, results, media_ctx);
+                    }
                 }
             }
         }
