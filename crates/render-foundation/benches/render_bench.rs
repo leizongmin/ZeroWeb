@@ -4,7 +4,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use zero_render_foundation::geometry::{DamageTracker, Rect, Size};
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, RenderPrimitives};
+use zero_render_foundation::primitive::RenderPrimitives;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::font::cache::{GlyphCache, GlyphKey};
 use zero_render_foundation::font::GlyphBitmap;
