@@ -4,15 +4,8 @@
 
 #![warn(missing_docs)]
 
-/// Canvas 2D 渲染上下文
-pub struct CanvasContext2D {
-    // TODO: 在 M9 里程碑中实现
-}
+pub mod context;
+pub mod path;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        // M9 里程碑将在此处实现 Canvas 2D 测试
-    }
-}
+pub use context::*;
+pub use path::*;

@@ -1,0 +1,150 @@
+//! 路径表示 — Canvas 2D 路径命令与 Path2D。
+
+/// 路径命令。
+#[derive(Debug, Clone)]
+pub enum PathCommand {
+    /// 移动到指定点。
+    MoveTo(f32, f32),
+    /// 画线到指定点。
+    LineTo(f32, f32),
+    /// 二次贝塞尔曲线。
+    QuadraticCurveTo(f32, f32, f32, f32),
+    /// 三次贝塞尔曲线。
+    BezierCurveTo(f32, f32, f32, f32, f32, f32),
+    /// 圆弧。
+    Arc(f32, f32, f32, f32, f32),
+    /// 闭合路径。
+    ClosePath,
+}
+
+/// 2D 路径 — 存储 Canvas 路径命令序列。
+#[derive(Debug, Clone, Default)]
+pub struct Path2D {
+    commands: Vec<PathCommand>,
+}
+
+impl Path2D {
+    /// 创建空路径。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 移动到指定点。
+    pub fn move_to(&mut self, x: f32, y: f32) {
+        self.commands.push(PathCommand::MoveTo(x, y));
+    }
+
+    /// 画线到指定点。
+    pub fn line_to(&mut self, x: f32, y: f32) {
+        self.commands.push(PathCommand::LineTo(x, y));
+    }
+
+    /// 闭合路径。
+    pub fn close_path(&mut self) {
+        self.commands.push(PathCommand::ClosePath);
+    }
+
+    /// 添加圆弧。
+    pub fn arc(&mut self, x: f32, y: f32, radius: f32, start: f32, end: f32) {
+        self.commands
+            .push(PathCommand::Arc(x, y, radius, start, end));
+    }
+
+    /// 添加矩形子路径（四个 line_to + close）。
+    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        self.commands.push(PathCommand::MoveTo(x, y));
+        self.commands.push(PathCommand::LineTo(x + w, y));
+        self.commands.push(PathCommand::LineTo(x + w, y + h));
+        self.commands.push(PathCommand::LineTo(x, y + h));
+        self.commands.push(PathCommand::ClosePath);
+    }
+
+    /// 返回路径命令列表。
+    pub fn commands(&self) -> &[PathCommand] {
+        &self.commands
+    }
+
+    /// 返回路径命令列表的可变引用。
+    pub fn commands_mut(&mut self) -> &mut Vec<PathCommand> {
+        &mut self.commands
+    }
+
+    /// 路径是否为空。
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+
+    /// 清空路径。
+    pub fn clear(&mut self) {
+        self.commands.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_new() {
+        let p = Path2D::new();
+        assert!(p.is_empty());
+        assert!(p.commands().is_empty());
+    }
+
+    #[test]
+    fn test_path_move_to() {
+        let mut p = Path2D::new();
+        p.move_to(10.0, 20.0);
+        assert_eq!(p.commands().len(), 1);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)));
+    }
+
+    #[test]
+    fn test_path_line_to() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 50.0);
+        assert_eq!(p.commands().len(), 2);
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(100.0, 50.0)));
+    }
+
+    #[test]
+    fn test_path_close() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(10.0, 0.0);
+        p.close_path();
+        assert!(matches!(p.commands().last(), Some(PathCommand::ClosePath)));
+    }
+
+    #[test]
+    fn test_path_arc() {
+        let mut p = Path2D::new();
+        p.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+        assert_eq!(p.commands().len(), 1);
+        assert!(matches!(
+            p.commands()[0],
+            PathCommand::Arc(50.0, 50.0, 25.0, 0.0, _)
+        ));
+    }
+
+    #[test]
+    fn test_path_rect() {
+        let mut p = Path2D::new();
+        p.rect(10.0, 20.0, 100.0, 50.0);
+        // rect = MoveTo + 3x LineTo + ClosePath
+        assert_eq!(p.commands().len(), 5);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)));
+        assert!(matches!(p.commands()[4], PathCommand::ClosePath));
+    }
+
+    #[test]
+    fn test_path_clear() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(10.0, 10.0);
+        assert!(!p.is_empty());
+        p.clear();
+        assert!(p.is_empty());
+    }
+}
