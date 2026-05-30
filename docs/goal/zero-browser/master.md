@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**执行状态**: 14/16 crate 已实现，939 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，999 个测试全绿，14 个 crate 有基准测试
 
 ---
 
@@ -11,7 +11,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 939 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 999 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -22,17 +22,17 @@
 |-------|------|------|------|
 | dom | 93 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver |
 | css-parser | 137 | ✅ | Tokenizer、Parser、选择器、值解析 |
-| style-system | 101 | ✅ | 级联、继承、计算值、DOM 集成 |
+| style-system | 161 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、**简写属性展开** |
 | layout-engine | 69 | ✅ | taffy 集成（Block/Flex/Grid/Position）、几何验证 |
 | engine-core | 52 | ✅ | 渲染管线、paint、dirty tracking、compositing |
 | render-foundation | 53 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
-| net | 56 | ✅ | HTTP client、URL、导航历史、Cookie |
-| security | 55 | ✅ | 同源策略、CORS、CSP |
-| protocol | 55 | ✅ | IPC 消息、bincode 序列化 |
+| net | 74 | ✅ | HTTP client、URL、导航历史、Cookie |
+| security | 56 | ✅ | 同源策略、CORS、CSP |
+| protocol | 57 | ✅ | IPC 消息、bincode 序列化 |
 | storage | 47 | ✅ | localStorage、sessionStorage、IndexedDB |
 | canvas | 81 | ✅ | Canvas 2D API、路径、变换 |
-| webview-api | 42 | ✅ | WebView 嵌入 API、Builder |
+| webview-api | 43 | ✅ | WebView 嵌入 API、Builder |
 | wasm-sandbox | 22 | ✅ | WASM 运行时（wasmi 纯 Rust 解释器） |
 
 ### 跨 crate 集成测试
@@ -58,6 +58,30 @@
 
 ---
 
+## 最近完成的改进
+
+### CSS 简写属性展开（style-system）
+
+实现了完整的 CSS 简写属性展开模块（`shorthand.rs`），在级联之前将简写属性自动展开为长属性：
+
+| 简写属性 | 展开为 |
+|----------|--------|
+| `margin` | `margin-top/right/bottom/left` |
+| `padding` | `padding-top/right/bottom/left` |
+| `border-width` | 4 边 `border-*-width` |
+| `border-style` | 4 边 `border-*-style` |
+| `border-color` | 4 边 `border-*-color` |
+| `border` | 12 个长属性（4 边 × width/style/color） |
+| `border-top/right/bottom/left` | 3 个长属性（该边的 width/style/color） |
+| `overflow` | `overflow-x` + `overflow-y` |
+| `border-radius` | 4 个角半径 |
+| `flex` | `flex-grow` + `flex-shrink` + `flex-basis` |
+| `inset` | `top` + `right` + `bottom` + `left` |
+
+关键设计：展开发生在 `collect_matching_declarations` 之后、级联之前，保留 important 和 specificity。
+
+---
+
 ## 里程碑完成情况
 
 | 里程碑 | 状态 |
@@ -72,6 +96,15 @@
 | M8 多进程架构 (IPC) | ✅ (protocol crate) |
 | M9 Canvas + Storage | ✅ |
 | M10 WebView API | ✅ (webview-api + integration tests) |
+
+---
+
+## 下一步优先级
+
+1. **CSS 百分比值 + auto 关键字**（高优先级）— LengthValue 缺少百分比和 auto 表示
+2. **CSS Grid 属性传递**（高优先级）— grid-template-columns/rows 未传递给 taffy
+3. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
+4. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
 
 ---
 
