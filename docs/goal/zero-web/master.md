@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2120 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2310 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2120 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2310 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,18 +24,18 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 180 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot** |
-| css-parser | 277 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、:has()、**@container**、**scroll-snap**、gradient 解析、calc 改进 |
+| css-parser | 322 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、**选择器边角场景**、**错误恢复** |
 | style-system | 313 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**scroll-snap**、**container query**、所有属性初始值 |
 | layout-engine | 131 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、**边角场景覆盖** |
 | engine | 137 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**paint 边角场景** |
-| render-foundation | 80+ | ✅ | GPU/CPU 渲染、字体栈、**image cache + GC**、**GPU pixel verification**、**clipping/scissor** |
-| host-runtime | 30+ | ✅ | winit 窗口、事件循环、**mouse/cursor/IME 事件**、**综合事件处理测试** |
+| render-foundation | 181 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色操作**、**图元覆盖** |
+| host-runtime | 126 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**事件类型覆盖**、**窗口配置** |
 | net | 171 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL 边角场景**、**重定向链**、**header 处理** |
 | security | 153 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、**COOP/COEP** |
 | protocol | 80 | ✅ | IPC 消息、bincode 序列化、**大负载**、**错误恢复** |
 | storage | 141 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务/游标**、**存储配额** |
 | canvas | 167 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、HSL/HSLA 颜色、gradient 解析 |
-| webview | 45+ | ✅ | WebView 嵌入 API、Builder、**event callbacks**、**load_url fetch**、**execute_script** |
+| webview | 103 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**状态机**、**配置** |
 | wasm-sandbox | 69 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**模块验证**、**内存操作** |
 
 ### 跨 crate 集成测试

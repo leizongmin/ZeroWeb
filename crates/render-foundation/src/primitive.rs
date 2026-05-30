@@ -664,4 +664,157 @@ mod tests {
             panic!("Expected Radial");
         }
     }
+
+    #[test]
+    fn test_glyph_primitive_creation() {
+        let g = GlyphPrimitive {
+            x: 10.0,
+            y: 20.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 42,
+            font_id: FontId(1),
+            bitmap_width: Some(12),
+            bitmap_height: Some(16),
+        };
+        assert_eq!(g.x, 10.0);
+        assert_eq!(g.font_id, FontId(1));
+        assert_eq!(g.bitmap_width, Some(12));
+    }
+
+    #[test]
+    fn test_glyph_in_render_primitives() {
+        let mut p = RenderPrimitives::new();
+        p.add_glyph(GlyphPrimitive {
+            x: 0.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        assert_eq!(p.glyphs.len(), 1);
+        assert!(!p.is_empty());
+    }
+
+    #[test]
+    fn test_font_id_equality() {
+        assert_eq!(FontId(1), FontId(1));
+        assert_ne!(FontId(1), FontId(2));
+    }
+
+    #[test]
+    fn test_bounding_box_with_glyphs() {
+        let mut p = RenderPrimitives::new();
+        p.add_glyph(GlyphPrimitive {
+            x: 5.0,
+            y: 10.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 0,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), 5.0);
+        assert_eq!(bb.top(), 10.0);
+        assert_eq!(bb.right(), 21.0); // x + font_size
+        assert_eq!(bb.bottom(), 26.0); // y + font_size
+    }
+
+    #[test]
+    fn test_bounding_box_with_images() {
+        let mut p = RenderPrimitives::new();
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(50.0, 60.0, 100.0, 80.0),
+            image_key: ImageKey::new(1),
+        });
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), 50.0);
+        assert_eq!(bb.top(), 60.0);
+        assert_eq!(bb.right(), 150.0);
+        assert_eq!(bb.bottom(), 140.0);
+    }
+
+    #[test]
+    fn test_bounding_box_with_gradient() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 200.0, 100.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 200.0,
+                y1: 0.0,
+            },
+            stops: vec![],
+        });
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.right(), 200.0);
+        assert_eq!(bb.bottom(), 100.0);
+    }
+
+    #[test]
+    fn test_bounding_box_with_path_fill() {
+        let mut p = RenderPrimitives::new();
+        p.add_path_fill(
+            vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            Color::RED,
+        );
+        let bb = p.bounding_box().unwrap();
+        // Points: (10,20), (30,40), (50,60)
+        assert_eq!(bb.left(), 10.0);
+        assert_eq!(bb.top(), 20.0);
+        assert_eq!(bb.right(), 50.0);
+        assert_eq!(bb.bottom(), 60.0);
+    }
+
+    #[test]
+    fn test_render_primitives_mixed_types_count() {
+        let mut p = RenderPrimitives::new();
+        p.add_clip(Rect::new(0.0, 0.0, 100.0, 100.0));
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::BLUE);
+        p.add_stroke(StrokePrimitive {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 10.0,
+            y2: 10.0,
+            width: 1.0,
+            color: Color::BLACK,
+            style: LineStyle::Solid,
+            cap: LineCap::Round,
+        });
+        p.add_glyph(GlyphPrimitive {
+            x: 0.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 0,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        assert_eq!(p.len(), 5);
+        assert!(!p.is_empty());
+    }
+
+    #[test]
+    fn test_rounded_rect_individual_radii() {
+        let rr = RoundedRectPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: Color::GREEN,
+            top_left_radius: 5.0,
+            top_right_radius: 10.0,
+            bottom_right_radius: 15.0,
+            bottom_left_radius: 20.0,
+        };
+        assert_eq!(rr.top_left_radius, 5.0);
+        assert_eq!(rr.top_right_radius, 10.0);
+        assert_eq!(rr.bottom_right_radius, 15.0);
+        assert_eq!(rr.bottom_left_radius, 20.0);
+    }
 }

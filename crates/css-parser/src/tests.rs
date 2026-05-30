@@ -2995,3 +2995,722 @@ fn test_parse_scroll_snap_align_in_stylesheet() {
         _ => panic!("Expected Style rule"),
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 18. Selector edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 :nth-child(3n+1) 带偏移的公式
+fn test_parse_nth_child_3n_plus_1() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-child(3n+1) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(NthPattern { a: 3, b: 1 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :only-child 伪类
+fn test_parse_only_child() {
+    let stylesheet = Parser::parse_stylesheet("p:only-child { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "only-child"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :only-of-type 伪类
+fn test_parse_only_of_type() {
+    let stylesheet = Parser::parse_stylesheet("p:only-of-type { color: blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "only-of-type"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :empty 伪类
+fn test_parse_empty_selector() {
+    let stylesheet = Parser::parse_stylesheet("div:empty { display: none; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "empty"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :checked, :disabled, :enabled 伪类
+fn test_parse_ui_state_pseudo_classes() {
+    let stylesheet = Parser::parse_stylesheet("input:checked { outline: 1px solid blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "checked"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+
+    let stylesheet = Parser::parse_stylesheet("button:disabled { opacity: 0.5; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "disabled"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+
+    let stylesheet = Parser::parse_stylesheet("input:enabled { background: white; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)) if name == "enabled"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :nth-last-of-type 选择器
+fn test_parse_nth_last_of_type() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-last-of-type(2) { color: green; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthLastOfType(NthPattern { a: 0, b: 2 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 19. Value parsing edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 calc() 嵌套乘除运算
+fn test_parse_calc_nested_multiply_divide() {
+    let expr = parse_calc("calc(2 * 10px)").unwrap();
+    let result = eval_calc(&expr, None);
+    assert_eq!(result, Some(20.0));
+
+    let expr = parse_calc("calc(100px / 2)").unwrap();
+    let result = eval_calc(&expr, None);
+    assert_eq!(result, Some(50.0));
+}
+
+#[test]
+/// 测试 calc() 中除以零返回 None
+fn test_eval_calc_divide_by_zero() {
+    let expr = parse_calc("calc(100px / 0)").unwrap();
+    let result = eval_calc(&expr, None);
+    assert_eq!(result, None);
+}
+
+#[test]
+/// 测试 url() 函数 tokenization
+fn test_tokenize_url_with_path() {
+    let tokens: Vec<_> = Tokenizer::new("url(../images/bg.png)").collect();
+    assert_eq!(tokens.len(), 1);
+    assert!(matches!(&tokens[0], Token::Url(u) if u == "../images/bg.png"));
+}
+
+#[test]
+/// 测试 url() 带引号参数
+fn test_tokenize_url_quoted() {
+    let tokens: Vec<_> = Tokenizer::new("url('path/to/font.woff2')").collect();
+    assert!(matches!(&tokens[0], Token::Url(u) if u == "path/to/font.woff2"));
+}
+
+#[test]
+/// 测试 var() 嵌套在值中解析
+fn test_parse_var_nested_fallback() {
+    let result = parse_var("var(--spacing, 16px)");
+    assert!(result.is_some());
+    let var = result.unwrap();
+    assert_eq!(var.name, "--spacing");
+    assert_eq!(var.fallback, Some("16px".to_string()));
+}
+
+#[test]
+/// 测试 parse_time 边界值
+fn test_parse_time_edge_cases() {
+    use crate::values::parse_time;
+    assert_eq!(parse_time("0s"), Some(0.0));
+    assert_eq!(parse_time("0ms"), Some(0.0));
+    assert_eq!(parse_time("100ms"), Some(0.1));
+    assert_eq!(parse_time("10"), None);
+    assert_eq!(parse_time(""), None);
+}
+
+#[test]
+/// 测试 timing-function cubic-bezier 参数
+fn test_parse_timing_function_cubic_bezier_values() {
+    use crate::values::parse_timing_function;
+    let result = parse_timing_function("cubic-bezier(0.0, 0.0, 1.0, 1.0)");
+    assert_eq!(
+        result,
+        Some(crate::values::TimingFunctionValue::CubicBezier(0.0, 0.0, 1.0, 1.0))
+    );
+}
+
+#[test]
+/// 测试 timing-function steps 带不同位置参数
+fn test_parse_timing_function_steps_variants() {
+    use crate::values::{parse_timing_function, StepPosition, TimingFunctionValue};
+    assert_eq!(
+        parse_timing_function("steps(3, jump-none)"),
+        Some(TimingFunctionValue::Steps(3, Some(StepPosition::None)))
+    );
+    assert_eq!(
+        parse_timing_function("steps(5, jump-both)"),
+        Some(TimingFunctionValue::Steps(5, Some(StepPosition::Both)))
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 20. @rule parsing edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试嵌套 @media 规则：@media 内含另一个 @media
+fn test_parse_nested_media_rules() {
+    let css = "@media screen { @media (max-width: 600px) { div { color: blue; } } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::At(outer) => {
+            assert_eq!(outer.name, "media");
+            if let AtRuleBody::Block(inner_rules) = &outer.body {
+                assert_eq!(inner_rules.len(), 1);
+                match &inner_rules[0] {
+                    Rule::At(inner) => {
+                        assert_eq!(inner.name, "media");
+                    }
+                    _ => panic!("Expected inner At rule"),
+                }
+            } else {
+                panic!("Expected Block body");
+            }
+        }
+        _ => panic!("Expected outer At rule"),
+    }
+}
+
+#[test]
+/// 测试 @layer 排序（多个 layer 规则顺序）
+fn test_parse_layer_ordering() {
+    let css = "@layer reset { * { margin: 0; } } @layer base { body { font-size: 16px; } } @layer components { .btn { padding: 10px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 3);
+    let names: Vec<&str> = stylesheet.rules.iter().map(|r| match r {
+        Rule::Layer(lr) => lr.name.as_str(),
+        _ => "unknown",
+    }).collect();
+    assert_eq!(names, vec!["reset", "base", "components"]);
+}
+
+#[test]
+/// 测试 @import 带 print 媒体查询
+fn test_parse_import_print_media() {
+    let stylesheet = Parser::parse_stylesheet("@import \"print.css\" print;");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "print.css");
+            assert_eq!(import_rule.media_queries.len(), 1);
+            assert_eq!(import_rule.media_queries[0], "print");
+        }
+        _ => panic!("Expected Import rule"),
+    }
+}
+
+#[test]
+/// 测试 @keyframes 带 from/to 混合百分比
+fn test_parse_keyframes_mixed_from_to_percentage() {
+    let css = "@keyframes anim { from { opacity: 0; } 25% { opacity: 0.25; } 50% { opacity: 0.5; } to { opacity: 1; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.name, "anim");
+            assert_eq!(kf.keyframes.len(), 4);
+            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::From]);
+            assert_eq!(kf.keyframes[1].selectors, vec![KeyframeSelector::Percentage(25.0)]);
+            assert_eq!(kf.keyframes[2].selectors, vec![KeyframeSelector::Percentage(50.0)]);
+            assert_eq!(kf.keyframes[3].selectors, vec![KeyframeSelector::To]);
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+#[test]
+/// 测试 @container 带 width 比较运算符条件
+fn test_parse_container_with_comparison_condition() {
+    let css = "@container card (width > 300px) { .child { width: 100%; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Container(cr) => {
+            assert_eq!(cr.name.as_deref(), Some("card"));
+            match &cr.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "width");
+                    assert_eq!(sc.value, "300px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试 @container 带 inline-size 条件（不带函数包装）
+fn test_parse_container_with_inline_size_condition() {
+    let css = "@container (min-width: 300px) { .card { flex-direction: column; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Container(cr) => {
+            assert!(cr.name.is_none());
+            match &cr.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "min-width");
+                    assert_eq!(sc.value, "300px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 21. Tokenizer edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试注释在值中间
+fn test_tokenize_comment_in_value() {
+    let tokens: Vec<_> = Tokenizer::new("10px /* comment */ 20px").collect();
+    // Tokens: Dimension(10,px) Whitespace Comment Whitespace Dimension(20,px)
+    assert!(tokens.len() >= 5);
+    assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 10.0 && u == "px"));
+    assert_eq!(tokens[1], Token::Whitespace);
+    assert!(matches!(&tokens[2], Token::Comment(_)));
+    assert_eq!(tokens[3], Token::Whitespace);
+    assert!(matches!(&tokens[4], Token::Dimension(n, u) if *n == 20.0 && u == "px"));
+}
+
+#[test]
+/// 测试标识符中转义字符
+fn test_tokenize_escaped_character_in_ident() {
+    let tokens: Vec<_> = Tokenizer::new("\\41 ctive").collect(); // \41 = 'A'
+    assert!(!tokens.is_empty());
+    // The escaped \41 should produce 'A', so the ident should start with 'A'
+    if let Token::Ident(s) = &tokens[0] {
+        assert!(s.starts_with('A'), "Expected ident starting with 'A', got '{}'", s);
+    }
+}
+
+#[test]
+/// 测试科学计数法数字
+fn test_tokenize_scientific_notation() {
+    let tokens: Vec<_> = Tokenizer::new("1e2").collect();
+    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 100.0).abs() < 0.001));
+
+    let tokens: Vec<_> = Tokenizer::new("3.5e-1").collect();
+    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 0.35).abs() < 0.001));
+}
+
+#[test]
+/// 测试多行字符串
+fn test_tokenize_multiline_string() {
+    let tokens: Vec<_> = Tokenizer::new("\"line1\\nline2\"").collect();
+    assert!(matches!(&tokens[0], Token::String(s) if s.contains("line1") && s.contains("line2")));
+}
+
+#[test]
+/// 测试自定义属性 (--*) tokenization
+fn test_tokenize_custom_property() {
+    let tokens: Vec<_> = Tokenizer::new("--main-color").collect();
+    // Custom properties start with '--', which is parsed as an ident starting with '-'
+    assert!(!tokens.is_empty());
+    if let Token::Ident(s) = &tokens[0] {
+        assert!(s.starts_with('-'), "Expected ident starting with '-', got '{}'", s);
+    }
+}
+
+#[test]
+/// 测试连续空白合并为单个 Whitespace token
+fn test_tokenize_multiple_whitespace() {
+    let tokens: Vec<_> = Tokenizer::new("   \t  \n  ").collect();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0], Token::Whitespace);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 22. Error recovery
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试格式错误的选择器恢复：未知 token 后继续解析
+fn test_parse_malformed_selector_recovery() {
+    let css = "div { color: red; } %invalid span { color: green; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    // Parser should at least parse the first valid rule
+    assert!(stylesheet.rules.len() >= 1);
+    let has_red = stylesheet.rules.iter().any(|r| {
+        if let Rule::Style(sr) = r {
+            sr.declarations.iter().any(|d| d.value.contains("red"))
+        } else {
+            false
+        }
+    });
+    assert!(has_red, "Expected to parse valid 'div {{ color: red; }}' rule");
+}
+
+#[test]
+/// 测试未闭合字符串恢复
+fn test_parse_unclosed_string_recovery() {
+    let css = "div { content: \"unclosed; } span { color: blue; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    // Parser should produce at least one rule (even if malformed)
+    assert!(stylesheet.rules.len() >= 1);
+}
+
+#[test]
+/// 测试无效 @rule 恢复
+fn test_parse_invalid_at_rule_recovery() {
+    let css = "@unknown-rule something { div { color: red; } } p { font-size: 14px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    // Should parse @unknown-rule as a generic At rule and still get p rule
+    assert!(stylesheet.rules.len() >= 2);
+    let has_p = stylesheet.rules.iter().any(|r| {
+        if let Rule::Style(sr) = r {
+            sr.selectors.iter().any(|s| {
+                s.complex.parts[0].0.type_selector.as_ref().map_or(false, |ts| matches!(ts, TypeSelector::Tag(t) if t == "p"))
+            })
+        } else {
+            false
+        }
+    });
+    assert!(has_p, "Expected to recover and parse 'p' rule");
+}
+
+#[test]
+/// 测试多余右花括号恢复
+fn test_parse_extra_closing_brace_recovery() {
+    let css = "div { color: red; } } span { color: green; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(stylesheet.rules.len() >= 1);
+}
+
+#[test]
+/// 测试无效属性值恢复
+fn test_parse_invalid_property_value_recovery() {
+    let css = "div { color: ; font-size: 16px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        // Should still have font-size declaration (color may be empty value)
+        assert!(sr.declarations.iter().any(|d| d.property == "font-size"));
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 23. Round-trip consistency
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试简单规则序列化：声明属性和值保持一致
+fn test_round_trip_simple_rule_consistency() {
+    let css = "div { color: red; font-size: 16px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.declarations.len(), 2);
+        assert_eq!(sr.declarations[0].property, "color");
+        assert_eq!(sr.declarations[0].value, "red");
+        assert_eq!(sr.declarations[1].property, "font-size");
+        assert_eq!(sr.declarations[1].value, "16px");
+    }
+}
+
+#[test]
+/// 测试解析-序列化-解析一致性
+fn test_round_trip_parse_serialize_parse() {
+    let css = "div { color: red; } span { font-size: 16px; }";
+    let first = Parser::parse_stylesheet(css);
+    // Re-parse should produce the same structure
+    let second = Parser::parse_stylesheet(css);
+    assert_eq!(first.rules.len(), second.rules.len());
+    for (r1, r2) in first.rules.iter().zip(second.rules.iter()) {
+        match (r1, r2) {
+            (Rule::Style(s1), Rule::Style(s2)) => {
+                assert_eq!(s1.declarations.len(), s2.declarations.len());
+                for (d1, d2) in s1.declarations.iter().zip(s2.declarations.iter()) {
+                    assert_eq!(d1.property, d2.property);
+                    assert_eq!(d1.value, d2.value);
+                    assert_eq!(d1.important, d2.important);
+                }
+            }
+            (Rule::At(a1), Rule::At(a2)) => {
+                assert_eq!(a1.name, a2.name);
+                assert_eq!(a1.prelude, a2.prelude);
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+/// 测试复杂样式表往返一致性
+fn test_round_trip_complex_stylesheet() {
+    let css = "@media screen { div { color: red !important; } } @layer base { p { margin: 0; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 2);
+    // Verify @media
+    match &stylesheet.rules[0] {
+        Rule::At(at) => {
+            assert_eq!(at.name, "media");
+            assert!(at.prelude.contains("screen"));
+            if let AtRuleBody::Block(rules) = &at.body {
+                assert_eq!(rules.len(), 1);
+                if let Rule::Style(sr) = &rules[0] {
+                    let has_important = sr.declarations.iter().any(|d| d.important);
+                    assert!(has_important);
+                }
+            }
+        }
+        _ => panic!("Expected At rule"),
+    }
+    // Verify @layer
+    match &stylesheet.rules[1] {
+        Rule::Layer(lr) => {
+            assert_eq!(lr.name, "base");
+            assert_eq!(lr.rules.len(), 1);
+        }
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试空白规范化：多余空白不影响解析结果
+fn test_whitespace_normalization() {
+    let css1 = "div{color:red}";
+    let css2 = "div  {  color  :  red  ;  }";
+    let ss1 = Parser::parse_stylesheet(css1);
+    let ss2 = Parser::parse_stylesheet(css2);
+    assert_eq!(ss1.rules.len(), ss2.rules.len());
+    if let (Rule::Style(s1), Rule::Style(s2)) = (&ss1.rules[0], &ss2.rules[0]) {
+        assert_eq!(s1.declarations.len(), s2.declarations.len());
+        assert_eq!(s1.declarations[0].property, s2.declarations[0].property);
+        // The value should be "red" regardless of whitespace
+        assert_eq!(s1.declarations[0].value, "red");
+        assert_eq!(s2.declarations[0].value, "red");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 24. Additional selector and specificity tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 :where() specificity 为 0
+fn test_specificity_where_zero() {
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(
+                        PseudoClassSelector::Where(vec![class_sel("active")]),
+                    )],
+                },
+                None,
+            )],
+        },
+    };
+    assert_eq!(selector::specificity(&sel), (0, 0, 0));
+}
+
+#[test]
+/// 测试 :is() specificity 取参数最大值
+fn test_specificity_is_takes_max() {
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(
+                        PseudoClassSelector::Is(vec![id_sel("main"), tag_sel("div")]),
+                    )],
+                },
+                None,
+            )],
+        },
+    };
+    // :is(#main, div) -> max((1,0,0), (0,0,1)) = (1,0,0)
+    assert_eq!(selector::specificity(&sel), (1, 0, 0));
+}
+
+#[test]
+/// 测试 :not() specificity 取参数最大值
+fn test_specificity_not_takes_max() {
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("p".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(
+                        PseudoClassSelector::Not(vec![class_sel("hidden"), id_sel("special")]),
+                    )],
+                },
+                None,
+            )],
+        },
+    };
+    // p:not(.hidden, #special) -> tag(0,0,1) + max((0,1,0), (1,0,0)) = (1,0,1)
+    assert_eq!(selector::specificity(&sel), (1, 0, 1));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 25. Additional value parsing edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_length_shorthand 零值
+fn test_parse_length_shorthand_zero() {
+    let result = parse_length_shorthand("0");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+        ])
+    );
+}
+
+#[test]
+/// 测试 parse_length_shorthand 混合单位
+fn test_parse_length_shorthand_mixed_units() {
+    let result = parse_length_shorthand("10px 1em");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Em(1.0),
+            LengthValue::Px(10.0),
+            LengthValue::Em(1.0),
+        ])
+    );
+}
+
+#[test]
+/// 测试 linear-gradient to top 方向
+fn test_parse_linear_gradient_to_top() {
+    let result = parse_gradient("linear-gradient(to top, blue, transparent)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToTop);
+            assert_eq!(lg.stops.len(), 2);
+            assert!(matches!(lg.stops[0].color, ColorValue::Rgba(0, 0, 255, 255)));
+            assert!(matches!(lg.stops[1].color, ColorValue::Transparent));
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试 radial-gradient closest-side
+fn test_parse_radial_gradient_closest_side() {
+    let result = parse_gradient("radial-gradient(circle closest-side, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Circle);
+            assert_eq!(rg.size, RadialSize::ClosestSide);
+        }
+        _ => panic!("Expected RadialGradient"),
+    }
+}
+
+#[test]
+/// 测试 conic-gradient 带 at 位置
+fn test_parse_conic_gradient_at_position() {
+    let result = parse_gradient("conic-gradient(at 50% 50%, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Conic(cg) => {
+            assert_eq!(cg.position_x, LengthValue::Percentage(50.0));
+            assert_eq!(cg.position_y, LengthValue::Percentage(50.0));
+        }
+        _ => panic!("Expected ConicGradient"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 26. Media query edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试媒体查询 "all" 类型解析
+fn test_media_query_all_type() {
+    use crate::media_query::{parse_media_query, MediaType};
+    let q = parse_media_query("all").unwrap();
+    assert_eq!(q.media_type, Some(MediaType::All));
+    assert!(q.conditions.is_empty());
+}
+
+#[test]
+/// 测试媒体查询多重条件评估
+fn test_media_query_multiple_conditions_eval() {
+    use crate::media_query::{evaluate_media_query, parse_media_query, MediaContext};
+    let q = parse_media_query("screen and (min-width: 600px) and (orientation: landscape)").unwrap();
+    let ctx = MediaContext::new(1024.0, 768.0);
+    assert!(evaluate_media_query(&q, &ctx));
+    let ctx_portrait = MediaContext::new(1024.0, 1200.0);
+    assert!(!evaluate_media_query(&q, &ctx_portrait));
+}

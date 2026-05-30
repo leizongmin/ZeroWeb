@@ -400,4 +400,94 @@ mod tests {
         let key = ImageKey::new(42);
         assert_eq!(key.0, 42);
     }
+
+    #[test]
+    fn test_image_data_get_pixel_various_positions() {
+        // 2x2 image with distinct pixel values
+        let pixels: Vec<u8> = vec![
+            255, 0, 0, 255, // (0,0) red
+            0, 255, 0, 255, // (1,0) green
+            0, 0, 255, 255, // (0,1) blue
+            255, 255, 0, 255, // (1,1) yellow
+        ];
+        let img = ImageData::from_rgba(pixels, 2, 2).unwrap();
+        assert_eq!(img.get_pixel(0, 0), [255, 0, 0, 255]);
+        assert_eq!(img.get_pixel(1, 0), [0, 255, 0, 255]);
+        assert_eq!(img.get_pixel(0, 1), [0, 0, 255, 255]);
+        assert_eq!(img.get_pixel(1, 1), [255, 255, 0, 255]);
+    }
+
+    #[test]
+    fn test_image_key_equality_and_hash() {
+        let k1 = ImageKey::new(10);
+        let k2 = ImageKey::new(10);
+        let k3 = ImageKey::new(20);
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(k1.clone());
+        set.insert(k2.clone());
+        assert_eq!(set.len(), 1);
+        set.insert(k3.clone());
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_cache_multiple_get_increments_ref_count() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(make_image(2, 2, 100));
+        assert_eq!(cache.ref_count(&key), Some(1));
+
+        let _ = cache.get(&key);
+        assert_eq!(cache.ref_count(&key), Some(2));
+
+        let _ = cache.get(&key);
+        assert_eq!(cache.ref_count(&key), Some(3));
+    }
+
+    #[test]
+    fn test_cache_release_saturating_sub() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(make_image(1, 1, 0));
+        // ref_count starts at 1
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(0));
+        // Releasing below 0 should saturate at 0
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(0));
+    }
+
+    #[test]
+    fn test_cache_clear_increases_generation() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        assert_eq!(cache.generation(), 0);
+        cache.insert(make_image(1, 1, 0));
+        cache.clear();
+        assert_eq!(cache.generation(), 1);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_cache_sequential_insert_unique_keys() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let k1 = cache.insert(make_image(1, 1, 10));
+        let k2 = cache.insert(make_image(1, 1, 20));
+        let k3 = cache.insert(make_image(1, 1, 30));
+        assert_ne!(k1, k2);
+        assert_ne!(k2, k3);
+        assert_eq!(cache.len(), 3);
+        // Each has ref_count 1
+        assert_eq!(cache.ref_count(&k1), Some(1));
+        assert_eq!(cache.ref_count(&k2), Some(1));
+        assert_eq!(cache.ref_count(&k3), Some(1));
+    }
+
+    #[test]
+    fn test_image_data_from_rgba_large() {
+        let pixels = vec![128u8; 100 * 100 * 4];
+        let img = ImageData::from_rgba(pixels, 100, 100).unwrap();
+        assert_eq!(img.byte_size(), 100 * 100 * 4);
+        assert_eq!(img.get_pixel(50, 50), [128, 128, 128, 128]);
+    }
 }

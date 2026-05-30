@@ -366,4 +366,58 @@ mod tests {
         assert_eq!(tracker.dirty_rects()[0].size.width, 800.0);
         assert_eq!(tracker.dirty_rects()[0].size.height, 600.0);
     }
+
+    #[test]
+    fn test_rect_bounds() {
+        let r = Rect::new(10.0, 20.0, 30.0, 40.0);
+        assert_eq!(r.left(), 10.0);
+        assert_eq!(r.top(), 20.0);
+        assert_eq!(r.right(), 40.0);
+        assert_eq!(r.bottom(), 60.0);
+    }
+
+    #[test]
+    fn test_rect_zero_is_empty() {
+        assert!(Rect::ZERO.is_empty());
+        assert_eq!(Rect::ZERO.origin, Point::ZERO);
+        assert_eq!(Rect::ZERO.size, Size::ZERO);
+    }
+
+    #[test]
+    fn test_point_new() {
+        let p = Point::new(3.5, -7.2);
+        assert_eq!(p.x, 3.5);
+        assert_eq!(p.y, -7.2);
+    }
+
+    #[test]
+    fn test_size_zero_is_empty() {
+        assert!(Size::ZERO.is_empty());
+        assert_eq!(Size::ZERO.area(), 0.0);
+    }
+
+    #[test]
+    fn test_size_area_calculation() {
+        let s = Size::new(3.0, 4.0);
+        assert_eq!(s.area(), 12.0);
+    }
+
+    #[test]
+    fn test_rect_intersection_edge_touching() {
+        // Two rects that just touch at an edge — no overlap
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(10.0, 0.0, 10.0, 10.0);
+        assert!(a.intersection(&b).is_none());
+    }
+
+    #[test]
+    fn test_damage_tracker_multiple_merges() {
+        let mut tracker = DamageTracker::new();
+        // Add overlapping rects that should chain-merge
+        tracker.add_damage(Rect::new(0.0, 0.0, 20.0, 20.0));
+        tracker.add_damage(Rect::new(15.0, 0.0, 20.0, 20.0));
+        tracker.add_damage(Rect::new(30.0, 0.0, 20.0, 20.0));
+        // First two merge; third may merge with merged rect
+        assert!(tracker.dirty_rects().len() <= 3);
+    }
 }

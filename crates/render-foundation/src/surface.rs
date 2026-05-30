@@ -177,4 +177,56 @@ mod tests {
         let fb = FrameBuffer::new(10, 10);
         assert_eq!(fb.pixel_count(), 100);
     }
+
+    #[test]
+    fn test_surface_descriptor_to_size() {
+        let desc = SurfaceDescriptor::new(1024, 768);
+        let size = desc.to_size();
+        assert_eq!(size.width, 1024.0);
+        assert_eq!(size.height, 768.0);
+    }
+
+    #[test]
+    fn test_frame_buffer_size() {
+        let fb = FrameBuffer::new(20, 30);
+        let size = fb.size();
+        assert_eq!(size.width, 20.0);
+        assert_eq!(size.height, 30.0);
+    }
+
+    #[test]
+    fn test_frame_buffer_clear_partial() {
+        let mut fb = FrameBuffer::new(5, 5);
+        fb.set_pixel(0, 0, [100, 100, 100, 100]);
+        fb.set_pixel(4, 4, [200, 200, 200, 200]);
+        // Clear to white
+        fb.clear(255, 255, 255, 255);
+        // All pixels should be white now
+        assert_eq!(fb.get_pixel(0, 0), [255, 255, 255, 255]);
+        assert_eq!(fb.get_pixel(4, 4), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn test_surface_descriptor_builder_pattern() {
+        let desc = SurfaceDescriptor::new(800, 600).with_transparency();
+        assert_eq!(desc.width, 800);
+        assert_eq!(desc.height, 600);
+        assert!(desc.transparent);
+        // Non-transparent default
+        let desc2 = SurfaceDescriptor::new(640, 480);
+        assert!(!desc2.transparent);
+    }
+
+    #[test]
+    fn test_frame_buffer_multiple_pixel_ops() {
+        let mut fb = FrameBuffer::new(3, 3);
+        fb.set_pixel(0, 0, [10, 20, 30, 40]);
+        fb.set_pixel(1, 1, [50, 60, 70, 80]);
+        fb.set_pixel(2, 2, [90, 100, 110, 120]);
+        assert_eq!(fb.get_pixel(0, 0), [10, 20, 30, 40]);
+        assert_eq!(fb.get_pixel(1, 1), [50, 60, 70, 80]);
+        assert_eq!(fb.get_pixel(2, 2), [90, 100, 110, 120]);
+        // Unset pixel should still be black (0,0,0,0)
+        assert_eq!(fb.get_pixel(0, 1), [0, 0, 0, 0]);
+    }
 }

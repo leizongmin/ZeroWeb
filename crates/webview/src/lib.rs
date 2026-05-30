@@ -811,4 +811,496 @@ mod tests {
         assert_eq!(recorded[1], "UrlChanged(https://unreachable.invalid)");
         assert!(recorded[2].starts_with("LoadFailed(https://unreachable.invalid,DNS"));
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  新增测试：Builder / Navigation / Script / Callback / State / Config
+    // ════════════════════════════════════════════════════════════════
+
+    // ── Builder: HTML content via builder + build-then-load ──
+
+    #[test]
+    fn test_webview_builder_then_load_html() {
+        let mut wv = WebViewBuilder::new()
+            .width(1024)
+            .height(768)
+            .build();
+        let result = wv.load_html("<html><body><p>Builder HTML</p></body></html>", None);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(wv.last_render().is_some());
+        assert_eq!(wv.config().width, 1024);
+        assert_eq!(wv.config().height, 768);
+    }
+
+    #[test]
+    fn test_webview_builder_with_url_then_complete() {
+        let mut wv = WebViewBuilder::new()
+            .url("https://builder-test.com")
+            .build();
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://builder-test.com"));
+        wv.complete_load("<html><body>Loaded</body></html>", None);
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+    }
+
+    #[test]
+    fn test_webview_builder_transparent_with_url() {
+        let mut wv = WebViewBuilder::new()
+            .transparent(true)
+            .url("https://transparent.com")
+            .build();
+        assert!(wv.config().transparent);
+        assert_eq!(wv.url(), Some("https://transparent.com"));
+        wv.complete_load("<html><body>Transparent</body></html>", None);
+        assert!(!wv.is_loading());
+    }
+
+    #[test]
+    fn test_webview_builder_devtools_enabled() {
+        let wv = WebViewBuilder::new()
+            .devtools(true)
+            .build();
+        assert!(wv.config().devtools);
+    }
+
+    #[test]
+    fn test_webview_builder_user_agent_with_unicode() {
+        let wv = WebViewBuilder::new()
+            .user_agent("ZeroBrowser/1.0 (日本語)")
+            .build();
+        assert_eq!(wv.config().user_agent.as_deref(), Some("ZeroBrowser/1.0 (日本語)"));
+    }
+
+    // ── Navigation: reload semantics, navigation cycles ──
+
+    #[test]
+    fn test_webview_reload_via_load_url_same() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // First load + complete
+        wv.load_url("https://page.com");
+        wv.complete_load("<html><body>V1</body></html>", None);
+        assert!(!wv.is_loading());
+
+        // "Reload" — same URL
+        wv.load_url("https://page.com");
+        // Should be loading again; same URL => no UrlChanged
+        assert!(wv.is_loading());
+        wv.complete_load("<html><body>V2</body></html>", None);
+        assert!(!wv.is_loading());
+
+        let recorded = events.borrow();
+        // Cycle 1: LoadStart, UrlChanged, LoadEnd
+        // Cycle 2: LoadStart (no UrlChanged because same URL), LoadEnd
+        assert_eq!(recorded.len(), 5);
+        assert_eq!(recorded[0], "LoadStart(https://page.com)");
+        assert_eq!(recorded[1], "UrlChanged(https://page.com)");
+        assert_eq!(recorded[2], "LoadEnd(https://page.com)");
+        assert_eq!(recorded[3], "LoadStart(https://page.com)");
+        assert_eq!(recorded[4], "LoadEnd(https://page.com)");
+    }
+
+    #[test]
+    fn test_webview_navigate_forward_back_sequence() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let urls: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let uc = urls.clone();
+        wv.on_event(move |e| {
+            if let WebViewEvent::UrlChanged(u) = e {
+                uc.borrow_mut().push(u.clone());
+            }
+        });
+
+        wv.load_url("https://a.com");
+        wv.complete_load("<html><body>A</body></html>", None);
+        wv.load_url("https://b.com");
+        wv.complete_load("<html><body>B</body></html>", None);
+        // "Navigate back" — same as loading the old URL
+        wv.load_url("https://a.com");
+        wv.complete_load("<html><body>A</body></html>", None);
+
+        assert_eq!(wv.url(), Some("https://a.com"));
+        let recorded = urls.borrow();
+        // UrlChanged fires when URL changes: a.com, b.com, a.com
+        assert_eq!(recorded.len(), 3);
+        assert_eq!(recorded[0], "https://a.com");
+        assert_eq!(recorded[1], "https://b.com");
+        assert_eq!(recorded[2], "https://a.com");
+    }
+
+    #[test]
+    fn test_webview_current_url_updated_after_load_url() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://first.com");
+        assert_eq!(wv.url(), Some("https://first.com"));
+        wv.complete_load("<html><body>A</body></html>", None);
+        assert_eq!(wv.url(), Some("https://first.com"));
+
+        wv.load_url("https://second.com");
+        assert_eq!(wv.url(), Some("https://second.com"));
+    }
+
+    #[test]
+    fn test_webview_multiple_load_url_without_complete() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://a.com");
+        assert!(wv.is_loading());
+        // Overwrite with a new URL before completing
+        wv.load_url("https://b.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://b.com"));
+        // Last URL wins
+        wv.complete_load("<html><body>B</body></html>", None);
+        assert_eq!(wv.url(), Some("https://b.com"));
+    }
+
+    // ── Script bridge ──
+
+    #[test]
+    fn test_webview_execute_script_empty() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_webview_execute_script_long_script() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let long_script = "var x = 0; ".repeat(1000);
+        let result = wv.execute_script(&long_script);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            WebViewError::NotImplemented(_) => {}
+            other => panic!("Expected NotImplemented, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_webview_execute_script_multiple_calls() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        for i in 0..5 {
+            let result = wv.execute_script(&format!("console.log({i})"));
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_webview_execute_script_with_special_chars() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let script = "let s = 'hello \"world\" 🌍';";
+        let result = wv.execute_script(script);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_webview_execute_script_returns_string_err() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script("1 + 1");
+        assert!(matches!(result, Err(WebViewError::NotImplemented(_))));
+    }
+
+    // ── Event callbacks: edge cases ──
+
+    #[test]
+    fn test_webview_load_html_does_not_fire_load_events() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<WebViewEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            ec.borrow_mut().push(e.clone());
+        });
+        wv.load_html("<html><body>No events</body></html>", None);
+        // load_html does not fire LoadStart/LoadEnd/LoadFailed
+        assert!(events.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_webview_inject_css_does_not_fire_events() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<html><body><div>Test</div></body></html>", None);
+        let events: Rc<RefCell<Vec<WebViewEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            ec.borrow_mut().push(e.clone());
+        });
+        wv.inject_css("div { color: red; }");
+        assert!(events.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_webview_set_title_fires_title_changed_event() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<WebViewEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            ec.borrow_mut().push(e.clone());
+        });
+        wv.set_title("Title 1");
+        wv.set_title("Title 2");
+        let recorded = events.borrow();
+        assert_eq!(recorded.len(), 2);
+        assert!(matches!(&recorded[0], WebViewEvent::TitleChanged(t) if t == "Title 1"));
+        assert!(matches!(&recorded[1], WebViewEvent::TitleChanged(t) if t == "Title 2"));
+    }
+
+    #[test]
+    fn test_webview_callback_sees_all_event_types() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let name = match e {
+                WebViewEvent::LoadStart(_) => "LoadStart",
+                WebViewEvent::LoadEnd(_) => "LoadEnd",
+                WebViewEvent::LoadFailed(_, _) => "LoadFailed",
+                WebViewEvent::TitleChanged(_) => "TitleChanged",
+                WebViewEvent::UrlChanged(_) => "UrlChanged",
+            };
+            ec.borrow_mut().push(name.to_string());
+        });
+
+        wv.set_title("MyTitle");
+        wv.load_url("https://example.com");
+        wv.complete_load("<html><body>Hi</body></html>", None);
+
+        let recorded = events.borrow();
+        assert!(recorded.contains(&"TitleChanged".to_string()));
+        assert!(recorded.contains(&"LoadStart".to_string()));
+        assert!(recorded.contains(&"UrlChanged".to_string()));
+        assert!(recorded.contains(&"LoadEnd".to_string()));
+        assert!(!recorded.contains(&"LoadFailed".to_string()));
+    }
+
+    #[test]
+    fn test_webview_remove_first_callback_keeps_second() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events_a: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+        let events_b: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+        let ea = events_a.clone();
+        let eb = events_b.clone();
+        let idx_a = wv.on_event(move |_| { *ea.borrow_mut() += 1; });
+        wv.on_event(move |_| { *eb.borrow_mut() += 1; });
+
+        wv.set_title("T");
+        assert_eq!(*events_a.borrow(), 1);
+        assert_eq!(*events_b.borrow(), 1);
+
+        wv.remove_event_callback(idx_a);
+        wv.set_title("T2");
+        assert_eq!(*events_a.borrow(), 1); // not incremented
+        assert_eq!(*events_b.borrow(), 2); // incremented
+    }
+
+    // ── WebView state transitions ──
+
+    #[test]
+    fn test_webview_state_idle_to_loading_to_loaded() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // Idle
+        assert!(!wv.is_loading());
+        assert!(wv.url().is_none());
+        assert!(wv.last_render().is_none());
+
+        // Loading
+        wv.load_url("https://state-test.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://state-test.com"));
+        assert!(wv.last_render().is_none());
+
+        // Loaded
+        wv.complete_load("<html><body>Loaded</body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://state-test.com"));
+        assert!(wv.last_render().is_some());
+    }
+
+    #[test]
+    fn test_webview_state_idle_to_loading_to_failed() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://fail.com");
+        assert!(wv.is_loading());
+        wv.fail_load("timeout");
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_none());
+        assert_eq!(wv.url(), Some("https://fail.com"));
+    }
+
+    #[test]
+    fn test_webview_state_loaded_then_reload() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://page.com");
+        wv.complete_load("<html><body>V1</body></html>", None);
+        assert!(!wv.is_loading());
+
+        // Reload same URL
+        wv.load_url("https://page.com");
+        assert!(wv.is_loading());
+        wv.complete_load("<html><body>V2</body></html>", None);
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+    }
+
+    #[test]
+    fn test_webview_state_loaded_then_navigate_new() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://a.com");
+        wv.complete_load("<html><body>A</body></html>", None);
+        assert!(!wv.is_loading());
+
+        wv.load_url("https://b.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://b.com"));
+        wv.complete_load("<html><body>B</body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://b.com"));
+    }
+
+    #[test]
+    fn test_webview_state_fail_then_retry() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://retry.com");
+        wv.fail_load("connection reset");
+        assert!(!wv.is_loading());
+
+        // Retry
+        wv.load_url("https://retry.com");
+        assert!(wv.is_loading());
+        wv.complete_load("<html><body>Success</body></html>", None);
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+    }
+
+    // ── Configuration ──
+
+    #[test]
+    fn test_webview_config_user_agent_none_by_default() {
+        let config = WebViewConfig::default();
+        assert!(config.user_agent.is_none());
+    }
+
+    #[test]
+    fn test_webview_config_devtools_false_by_default() {
+        let config = WebViewConfig::default();
+        assert!(!config.devtools);
+    }
+
+    #[test]
+    fn test_webview_config_transparent_false_by_default() {
+        let config = WebViewConfig::default();
+        assert!(!config.transparent);
+    }
+
+    #[test]
+    fn test_webview_config_url_none_by_default() {
+        let config = WebViewConfig::default();
+        assert!(config.url.is_none());
+    }
+
+    #[test]
+    fn test_webview_config_all_fields_custom() {
+        let config = WebViewConfig {
+            width: 1920,
+            height: 1080,
+            transparent: true,
+            user_agent: Some("Custom/2.0".to_string()),
+            url: Some("https://start.com".to_string()),
+            devtools: true,
+        };
+        let wv = WebView::new(config);
+        assert_eq!(wv.config().width, 1920);
+        assert_eq!(wv.config().height, 1080);
+        assert!(wv.config().transparent);
+        assert_eq!(wv.config().user_agent.as_deref(), Some("Custom/2.0"));
+        assert_eq!(wv.config().url.as_deref(), Some("https://start.com"));
+        assert!(wv.config().devtools);
+    }
+
+    // ── WebViewRenderResult clone/debug ──
+
+    #[test]
+    fn test_webview_render_result_clone() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.load_html("<html><body><div>X</div></body></html>", None);
+        let cloned = result.clone();
+        assert!(cloned.timings.total_ms >= 0.0);
+    }
+
+    #[test]
+    fn test_webview_render_result_debug() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.load_html("<html><body><div>X</div></body></html>", None);
+        let debug = format!("{result:?}");
+        assert!(debug.contains("WebViewRenderResult"));
+    }
+
+    // ── Resize edge cases ──
+
+    #[test]
+    fn test_webview_resize_very_large() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.resize(10000, 10000);
+        assert_eq!(wv.config().width, 10000);
+        assert_eq!(wv.config().height, 10000);
+    }
+
+    #[test]
+    fn test_webview_resize_preserves_title() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.set_title("Preserved");
+        wv.resize(500, 400);
+        assert_eq!(wv.title(), Some("Preserved"));
+    }
+
+    // ── load_html with various content ──
+
+    #[test]
+    fn test_webview_load_html_with_inline_styles() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div style=\"color: red; width: 100px;\">Styled</div></body></html>";
+        let result = wv.load_html(html, None);
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    #[test]
+    fn test_webview_load_html_preserves_cached_html() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<html><body><div>Cached</div></body></html>", None);
+        // inject_css uses cached HTML internally — verify it works
+        let result = wv.inject_css("div { background: green; }");
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(wv.last_render().is_some());
+    }
+
+    // ── Builder: all-setters chain ──
+
+    #[test]
+    fn test_webview_builder_all_options() {
+        let wv = WebViewBuilder::new()
+            .width(1280)
+            .height(720)
+            .transparent(true)
+            .user_agent("FullAgent/3.0")
+            .url("https://full.com")
+            .devtools(true)
+            .build();
+        assert_eq!(wv.config().width, 1280);
+        assert_eq!(wv.config().height, 720);
+        assert!(wv.config().transparent);
+        assert_eq!(wv.config().user_agent.as_deref(), Some("FullAgent/3.0"));
+        assert!(wv.config().devtools);
+        assert_eq!(wv.url(), Some("https://full.com"));
+        assert!(wv.is_loading());
+    }
 }

@@ -594,4 +594,279 @@ mod tests {
         );
         assert!(!format!("{:?}", AppEvent::Ime(ImeEvent::Enabled)).is_empty());
     }
+
+    // --- Additional coverage tests ---
+
+    #[test]
+    fn test_mouse_button_copy() {
+        let btn = MouseButton::Left;
+        let btn2 = btn;
+        assert_eq!(btn, btn2);
+    }
+
+    #[test]
+    fn test_mouse_button_other_copy() {
+        let btn = MouseButton::Other(16);
+        let btn2 = btn;
+        assert_eq!(btn, btn2);
+    }
+
+    #[test]
+    fn test_mouse_scroll_delta_copy() {
+        let delta = MouseScrollDelta::PixelDelta(100.0, 200.0);
+        let delta2 = delta;
+        assert_eq!(delta, delta2);
+    }
+
+    #[test]
+    fn test_mouse_scroll_delta_line_copy() {
+        let delta = MouseScrollDelta::LineDelta(-5.0, 3.0);
+        let delta2 = delta;
+        assert_eq!(delta, delta2);
+    }
+
+    #[test]
+    fn test_touch_phase_copy() {
+        let phase = TouchPhase::Moved;
+        let phase2 = phase;
+        assert_eq!(phase, phase2);
+    }
+
+    #[test]
+    fn test_touch_phase_all_variants_distinct() {
+        let phases = [TouchPhase::Started, TouchPhase::Moved, TouchPhase::Ended, TouchPhase::Cancelled];
+        for i in 0..phases.len() {
+            for j in 0..phases.len() {
+                if i == j {
+                    assert_eq!(phases[i], phases[j]);
+                } else {
+                    assert_ne!(phases[i], phases[j]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_touch_event_clone() {
+        let te = TouchEvent {
+            id: 99,
+            phase: TouchPhase::Ended,
+            x: 500.0,
+            y: -10.0,
+        };
+        let te2 = te.clone();
+        assert_eq!(te.id, te2.id);
+        assert_eq!(te.phase, te2.phase);
+        assert!((te.x - te2.x).abs() < f64::EPSILON);
+        assert!((te.y - te2.y).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_ime_event_preedit_equality() {
+        let a = ImeEvent::Preedit {
+            text: "x".to_string(),
+            cursor: Some((0, 1)),
+        };
+        let b = ImeEvent::Preedit {
+            text: "x".to_string(),
+            cursor: Some((0, 1)),
+        };
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_ime_event_preedit_inequality() {
+        let a = ImeEvent::Preedit {
+            text: "a".to_string(),
+            cursor: None,
+        };
+        let b = ImeEvent::Preedit {
+            text: "b".to_string(),
+            cursor: None,
+        };
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_ime_event_commit_empty_string() {
+        let e = ImeEvent::Commit(String::new());
+        if let ImeEvent::Commit(s) = e {
+            assert!(s.is_empty());
+        } else {
+            panic!("Expected Commit");
+        }
+    }
+
+    #[test]
+    fn test_ime_event_preedit_empty_text_with_cursor() {
+        let e = ImeEvent::Preedit {
+            text: String::new(),
+            cursor: Some((0, 0)),
+        };
+        if let ImeEvent::Preedit { text, cursor } = e {
+            assert!(text.is_empty());
+            assert_eq!(cursor, Some((0, 0)));
+        } else {
+            panic!("Expected Preedit");
+        }
+    }
+
+    #[test]
+    fn test_app_event_resized_large_values() {
+        let event = AppEvent::Resized {
+            width: u32::MAX,
+            height: u32::MAX,
+        };
+        if let AppEvent::Resized { width, height } = event {
+            assert_eq!(width, u32::MAX);
+            assert_eq!(height, u32::MAX);
+        } else {
+            panic!("Expected Resized");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_moved_zero() {
+        let e = AppEvent::MouseMoved { x: 0.0, y: 0.0 };
+        if let AppEvent::MouseMoved { x, y } = e {
+            assert!((x - 0.0).abs() < f64::EPSILON);
+            assert!((y - 0.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected MouseMoved");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_moved_negative_coords() {
+        let e = AppEvent::MouseMoved { x: -999.5, y: -0.1 };
+        if let AppEvent::MouseMoved { x, y } = e {
+            assert!((x - (-999.5)).abs() < 1e-10);
+            assert!((y - (-0.1)).abs() < 1e-10);
+        } else {
+            panic!("Expected MouseMoved");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_input_right_released() {
+        let e = AppEvent::MouseInput {
+            button: MouseButton::Right,
+            pressed: false,
+        };
+        if let AppEvent::MouseInput { button, pressed } = e {
+            assert_eq!(button, MouseButton::Right);
+            assert!(!pressed);
+        } else {
+            panic!("Expected MouseInput");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_input_middle_pressed() {
+        let e = AppEvent::MouseInput {
+            button: MouseButton::Middle,
+            pressed: true,
+        };
+        if let AppEvent::MouseInput { button, pressed } = e {
+            assert_eq!(button, MouseButton::Middle);
+            assert!(pressed);
+        } else {
+            panic!("Expected MouseInput");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_input_back_forward() {
+        let back = AppEvent::MouseInput {
+            button: MouseButton::Back,
+            pressed: true,
+        };
+        let fwd = AppEvent::MouseInput {
+            button: MouseButton::Forward,
+            pressed: true,
+        };
+        if let AppEvent::MouseInput { button, .. } = &back {
+            assert_eq!(*button, MouseButton::Back);
+        } else {
+            panic!("Expected MouseInput");
+        }
+        if let AppEvent::MouseInput { button, .. } = &fwd {
+            assert_eq!(*button, MouseButton::Forward);
+        } else {
+            panic!("Expected MouseInput");
+        }
+    }
+
+    #[test]
+    fn test_app_event_mouse_wheel_pixel_delta_large() {
+        let e = AppEvent::MouseWheel {
+            delta: MouseScrollDelta::PixelDelta(100000.0, -99999.0),
+        };
+        if let AppEvent::MouseWheel { delta } = &e {
+            assert_eq!(*delta, MouseScrollDelta::PixelDelta(100000.0, -99999.0));
+        } else {
+            panic!("Expected MouseWheel");
+        }
+    }
+
+    #[test]
+    fn test_app_event_touch_started_at_origin() {
+        let e = AppEvent::Touch(TouchEvent {
+            id: 0,
+            phase: TouchPhase::Started,
+            x: 0.0,
+            y: 0.0,
+        });
+        if let AppEvent::Touch(te) = &e {
+            assert_eq!(te.id, 0);
+            assert_eq!(te.phase, TouchPhase::Started);
+        } else {
+            panic!("Expected Touch");
+        }
+    }
+
+    #[test]
+    fn test_app_event_ime_preedit_dispatch() {
+        let e = AppEvent::Ime(ImeEvent::Preedit {
+            text: "abc".to_string(),
+            cursor: Some((0, 3)),
+        });
+        if let AppEvent::Ime(ImeEvent::Preedit { text, cursor }) = &e {
+            assert_eq!(text, "abc");
+            assert_eq!(*cursor, Some((0, 3)));
+        } else {
+            panic!("Expected Ime(Preedit)");
+        }
+    }
+
+    #[test]
+    fn test_mouse_button_all_debug_roundtrip() {
+        let variants: Vec<MouseButton> = vec![
+            MouseButton::Left,
+            MouseButton::Right,
+            MouseButton::Middle,
+            MouseButton::Back,
+            MouseButton::Forward,
+            MouseButton::Other(0),
+            MouseButton::Other(u16::MAX),
+        ];
+        for v in &variants {
+            let debug = format!("{:?}", v);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_mouse_scroll_delta_pixel_inequality() {
+        let a = MouseScrollDelta::PixelDelta(1.0, 2.0);
+        let b = MouseScrollDelta::PixelDelta(1.0, 3.0);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_mouse_scroll_delta_cross_variant_inequality() {
+        let pixel = MouseScrollDelta::PixelDelta(1.0, 2.0);
+        let line = MouseScrollDelta::LineDelta(1.0, 2.0);
+        assert_ne!(pixel, line);
+    }
 }
