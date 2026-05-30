@@ -1,0 +1,13 @@
+[package]
+name = "zero-canvas"
+description = "Canvas 2D 实现 — 渲染目标、路径、图像数据"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-render-foundation = { workspace = true }
+thiserror = { workspace = true }
+bytemuck = { workspace = true }
+
+[dev-dependencies]

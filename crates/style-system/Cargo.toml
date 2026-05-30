@@ -1,0 +1,14 @@
+[package]
+name = "zero-style-system"
+description = "自建样式系统 — 级联、继承、初始值、计算值"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-css-parser = { workspace = true }
+zero-dom = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

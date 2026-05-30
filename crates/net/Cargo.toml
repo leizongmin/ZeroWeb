@@ -1,0 +1,16 @@
+[package]
+name = "zero-net"
+description = "网络栈 — 基于 hyper/reqwest 的 HTTP/HTTPS 请求封装"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hyper = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

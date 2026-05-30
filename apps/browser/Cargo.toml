@@ -1,0 +1,17 @@
+[package]
+name = "zero-browser-app"
+description = "ZeroBrowser 浏览器应用入口"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zero-browser"
+path = "src/main.rs"
+
+[dependencies]
+zero-browser-shell = { workspace = true }
+zero-webview-api = { workspace = true }
+zero-host-runtime = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

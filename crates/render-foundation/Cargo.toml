@@ -1,0 +1,24 @@
+[package]
+name = "zero-render-foundation"
+description = "渲染基础设施 — GPU/CPU 渲染、字体栈、图片缓存（源自 OmniTerm）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wgpu = { workspace = true }
+fontdue = { workspace = true }
+swash = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+hashbrown = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "render_bench"
+harness = false

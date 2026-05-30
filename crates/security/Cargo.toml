@@ -1,0 +1,13 @@
+[package]
+name = "zero-security"
+description = "安全模型 — CORS、CSP、同源策略、沙箱"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+url = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

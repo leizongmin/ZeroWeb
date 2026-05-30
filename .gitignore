@@ -20,5 +20,24 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Benchmark results (generated)
+tests/benchmarks/results/*.txt
+
+# Coverage
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
 # Rally event logs
 .rally/

@@ -1,0 +1,17 @@
+[package]
+name = "zero-webview-api"
+description = "面向外部应用的稳定嵌入接口"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-engine-core = { workspace = true }
+zero-host-runtime = { workspace = true }
+zero-render-foundation = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

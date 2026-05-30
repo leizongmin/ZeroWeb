@@ -1,0 +1,103 @@
+[workspace]
+resolver = "2"
+members = [
+    # 核心引擎层
+    "crates/dom",
+    "crates/css-parser",
+    "crates/style-system",
+    "crates/layout-engine",
+    "crates/engine-core",
+    "crates/canvas",
+
+    # 基础设施层
+    "crates/render-foundation",
+    "crates/host-runtime",
+    "crates/net",
+    "crates/security",
+    "crates/storage",
+    "crates/protocol",
+
+    # 脚本与沙箱
+    "crates/script-sandbox",
+    "crates/wasm-sandbox",
+
+    # API 层
+    "crates/webview-api",
+    "crates/browser-shell",
+
+    # 应用入口
+    "apps/browser",
+    "apps/webview-demo",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 错误处理
+thiserror = "2"
+anyhow = "1"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# 图形与渲染
+wgpu = "24"
+fontdue = "0.9"
+swash = "0.2"
+
+# 窗口与平台
+winit = "0.30"
+
+# 网络
+hyper = "1"
+reqwest = "0.12"
+
+# HTML 解析
+html5ever = "0.29"
+
+# 布局
+taffy = "0.7"
+
+# JavaScript 引擎
+rusty_v8 = { version = "0.32", default-features = false }
+
+# WASM 运行时
+wasmtime = { version = "29", default-features = false }
+wasmi = "0.40"
+
+# 基准测试
+criterion = "0.5"
+
+# 工具
+bytemuck = "1"
+hashbrown = "0.15"
+compact_str = "0.8"
+url = "2"
+parking_lot = "0.12"
+
+# 内部 crate 依赖
+zero-dom = { path = "crates/dom" }
+zero-css-parser = { path = "crates/css-parser" }
+zero-style-system = { path = "crates/style-system" }
+zero-layout-engine = { path = "crates/layout-engine" }
+zero-engine-core = { path = "crates/engine-core" }
+zero-canvas = { path = "crates/canvas" }
+zero-render-foundation = { path = "crates/render-foundation" }
+zero-host-runtime = { path = "crates/host-runtime" }
+zero-net = { path = "crates/net" }
+zero-security = { path = "crates/security" }
+zero-storage = { path = "crates/storage" }
+zero-protocol = { path = "crates/protocol" }
+zero-script-sandbox = { path = "crates/script-sandbox" }
+zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
+zero-webview-api = { path = "crates/webview-api" }
+zero-browser-shell = { path = "crates/browser-shell" }

@@ -1,0 +1,15 @@
+[package]
+name = "zero-layout-engine"
+description = "布局引擎 — 基于 taffy 扩展，支持 Block/Inline/Flexbox/Grid"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+taffy = { workspace = true }
+zero-dom = { workspace = true }
+zero-style-system = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
