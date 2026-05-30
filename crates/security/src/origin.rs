@@ -1,0 +1,116 @@
+//! 源（Origin）和同源策略模块。
+//!
+//! 提供源解析和同源判断功能。
+
+use url::Url;
+
+use crate::SecurityError;
+
+/// 源（Origin）— 协议 + 主机 + 端口。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Origin {
+    /// 协议（scheme），如 http、https。
+    pub scheme: String,
+    /// 主机名。
+    pub host: String,
+    /// 端口号。
+    pub port: u16,
+}
+
+impl Origin {
+    /// 从 `Url` 解析 Origin。
+    pub fn from_url(url: &Url) -> Result<Self, SecurityError> {
+        let host = url
+            .host_str()
+            .ok_or_else(|| SecurityError::OriginParse("no host in URL".to_string()))?;
+
+        let scheme = url.scheme().to_string();
+        let port = url.port_or_known_default().ok_or_else(|| {
+            SecurityError::OriginParse(format!("unknown scheme: {scheme}"))
+        })?;
+
+        Ok(Self {
+            scheme,
+            host: host.to_string(),
+            port,
+        })
+    }
+
+    /// 从字符串解析 Origin。
+    pub fn parse(url_str: &str) -> Result<Self, SecurityError> {
+        let url = Url::parse(url_str)
+            .map_err(|e| SecurityError::OriginParse(e.to_string()))?;
+        Self::from_url(&url)
+    }
+
+    /// 是否为相同源。
+    pub fn is_same_origin(&self, other: &Origin) -> bool {
+        self.scheme == other.scheme && self.host == other.host && self.port == other.port
+    }
+
+    /// 是否为安全上下文（HTTPS）。
+    pub fn is_secure(&self) -> bool {
+        self.scheme == "https"
+    }
+}
+
+/// 同源策略检查。
+pub fn check_same_origin(origin_a: &Origin, origin_b: &Origin) -> bool {
+    origin_a.is_same_origin(origin_b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_origin_from_url() {
+        let url = Url::parse("https://example.com/path").unwrap();
+        let origin = Origin::from_url(&url).unwrap();
+        assert_eq!(origin.scheme, "https");
+        assert_eq!(origin.host, "example.com");
+        assert_eq!(origin.port, 443);
+    }
+
+    #[test]
+    fn test_origin_same_origin() {
+        let a = Origin::parse("https://example.com/page1").unwrap();
+        let b = Origin::parse("https://example.com/page2").unwrap();
+        assert!(a.is_same_origin(&b));
+        assert!(check_same_origin(&a, &b));
+    }
+
+    #[test]
+    fn test_origin_different_scheme() {
+        let a = Origin::parse("https://example.com").unwrap();
+        let b = Origin::parse("http://example.com").unwrap();
+        assert!(!a.is_same_origin(&b));
+    }
+
+    #[test]
+    fn test_origin_different_host() {
+        let a = Origin::parse("https://a.com").unwrap();
+        let b = Origin::parse("https://b.com").unwrap();
+        assert!(!a.is_same_origin(&b));
+    }
+
+    #[test]
+    fn test_origin_different_port() {
+        let a = Origin::parse("http://example.com").unwrap();
+        let b = Origin::parse("http://example.com:8080").unwrap();
+        assert!(!a.is_same_origin(&b));
+    }
+
+    #[test]
+    fn test_origin_is_secure() {
+        let https = Origin::parse("https://example.com").unwrap();
+        let http = Origin::parse("http://example.com").unwrap();
+        assert!(https.is_secure());
+        assert!(!http.is_secure());
+    }
+
+    #[test]
+    fn test_origin_parse_invalid() {
+        assert!(Origin::parse("not-a-url").is_err());
+    }
+}
