@@ -31,6 +31,7 @@ members = [
 
     # 测试基础设施
     "tests/wpt-runner",
+    "tests/integration",
 ]
 
 [workspace.package]

@@ -1,0 +1,17 @@
+[package]
+name = "zero-integration-tests"
+description = "跨 crate 集成测试"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-dom = { workspace = true }
+zero-css-parser = { workspace = true }
+zero-style-system = { workspace = true }
+zero-layout-engine = { workspace = true }
+zero-engine-core = { workspace = true }
+zero-net = { workspace = true }
+zero-security = { workspace = true }
+zero-storage = { workspace = true }
+zero-protocol = { workspace = true }
