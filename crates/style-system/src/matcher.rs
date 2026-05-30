@@ -203,6 +203,10 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "last-child" => is_last_child(doc, element),
             "root" => is_root_element(doc, element),
             "empty" => is_empty_element(doc, element),
+            "only-child" => is_first_child(doc, element) && is_last_child(doc, element),
+            "first-of-type" => is_first_of_type(doc, element),
+            "last-of-type" => is_last_of_type(doc, element),
+            "only-of-type" => is_first_of_type(doc, element) && is_last_of_type(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -222,7 +226,10 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             selectors.iter().any(|s| matches_has_inner(doc, element, s))
         }
         PseudoClassSelector::NthChild(pattern) => matches_nth_child(doc, element, pattern),
-        _ => false, // 其他伪类暂不支持
+        PseudoClassSelector::NthLastChild(pattern) => matches_nth_last_child(doc, element, pattern),
+        PseudoClassSelector::NthOfType(pattern) => matches_nth_of_type(doc, element, pattern),
+        PseudoClassSelector::NthLastOfType(pattern) => matches_nth_last_of_type(doc, element, pattern),
+        PseudoClassSelector::Lang(_) => false, // :lang() 需要语言上下文，暂不支持
     }
 }
 
@@ -313,6 +320,154 @@ fn matches_nth_child(
             if child == element {
                 return matches_nth_pattern(index, pattern);
             }
+        }
+    }
+    false
+}
+
+/// 检查元素是否匹配 nth-last-child 模式（从末尾计数）。
+fn matches_nth_last_child(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+) -> bool {
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let children = doc.child_nodes(parent);
+
+    // 收集所有元素子节点
+    let element_children: Vec<NodeId> =
+        children.iter().copied().filter(|&c| is_element(doc, c)).collect();
+
+    // 从末尾计数（1-indexed）
+    for (i, &child) in element_children.iter().rev().enumerate() {
+        if child == element {
+            return matches_nth_pattern((i + 1) as i32, pattern);
+        }
+    }
+    false
+}
+
+/// 获取元素的标签名（小写）。
+fn element_tag_name(doc: &Document, element: NodeId) -> Option<String> {
+    let node = doc.get(element)?;
+    match &node.kind {
+        zero_dom::NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
+/// 检查元素是否是同类型中的第一个。
+fn is_first_of_type(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let children = doc.child_nodes(parent);
+
+    // 找到第一个同类型的兄弟
+    for &child in &children {
+        if is_element(doc, child)
+            && let Some(child_tag) = element_tag_name(doc, child)
+            && child_tag == tag
+        {
+            return child == element;
+        }
+    }
+    false
+}
+
+/// 检查元素是否是同类型中的最后一个。
+fn is_last_of_type(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let children = doc.child_nodes(parent);
+
+    // 找到最后一个同类型的兄弟
+    for &child in children.iter().rev() {
+        if is_element(doc, child)
+            && let Some(child_tag) = element_tag_name(doc, child)
+            && child_tag == tag
+        {
+            return child == element;
+        }
+    }
+    false
+}
+
+/// 检查元素是否匹配 nth-of-type 模式。
+fn matches_nth_of_type(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let children = doc.child_nodes(parent);
+
+    // 计算同类型兄弟中的位置（1-indexed）
+    let mut index = 0;
+    for &child in &children {
+        if is_element(doc, child)
+            && let Some(child_tag) = element_tag_name(doc, child)
+            && child_tag == tag
+        {
+            index += 1;
+            if child == element {
+                return matches_nth_pattern(index, pattern);
+            }
+        }
+    }
+    false
+}
+
+/// 检查元素是否匹配 nth-last-of-type 模式（从末尾计数）。
+fn matches_nth_last_of_type(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let children = doc.child_nodes(parent);
+
+    // 收集同类型的元素子节点
+    let same_type: Vec<NodeId> = children
+        .iter()
+        .copied()
+        .filter(|&c| {
+            is_element(doc, c) && element_tag_name(doc, c).as_deref() == Some(tag.as_str())
+        })
+        .collect();
+
+    // 从末尾计数（1-indexed）
+    for (i, &child) in same_type.iter().rev().enumerate() {
+        if child == element {
+            return matches_nth_pattern((i + 1) as i32, pattern);
         }
     }
     false
@@ -1443,5 +1598,299 @@ mod tests {
             !matches_selector(&doc, parent, &sel),
             "div without .absent descendant should not match :has(.absent)"
         );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 扩展测试 — 新增伪类选择器匹配
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 :only-child 匹配。
+    #[test]
+    fn test_only_child() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let only = doc.create_element("span");
+        doc.append_child(parent, only);
+
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Simple("only-child".to_string()),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, only, &sel));
+
+        // 添加第二个子元素后不再匹配
+        let sibling = doc.create_element("p");
+        doc.append_child(parent, sibling);
+        assert!(!matches_selector(&doc, only, &sel));
+    }
+
+    /// 测试 :first-of-type 匹配。
+    #[test]
+    fn test_first_of_type() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let first = doc.create_element("span");
+        let second = doc.create_element("span");
+        let p = doc.create_element("p");
+        doc.append_child(parent, first);
+        doc.append_child(parent, p);
+        doc.append_child(parent, second);
+
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Simple("first-of-type".to_string()),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, first, &sel));
+        assert!(!matches_selector(&doc, second, &sel));
+    }
+
+    /// 测试 :last-of-type 匹配。
+    #[test]
+    fn test_last_of_type() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let first = doc.create_element("span");
+        let second = doc.create_element("span");
+        let p = doc.create_element("p");
+        doc.append_child(parent, first);
+        doc.append_child(parent, second);
+        doc.append_child(parent, p);
+
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Simple("last-of-type".to_string()),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, first, &sel));
+        assert!(matches_selector(&doc, second, &sel));
+    }
+
+    /// 测试 :only-of-type 匹配。
+    #[test]
+    fn test_only_of_type() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let only_p = doc.create_element("p");
+        let span = doc.create_element("span");
+        doc.append_child(parent, only_p);
+        doc.append_child(parent, span);
+
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("p".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Simple("only-of-type".to_string()),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, only_p, &sel));
+
+        // 添加第二个 p 后不再匹配
+        let second_p = doc.create_element("p");
+        doc.append_child(parent, second_p);
+        assert!(!matches_selector(&doc, only_p, &sel));
+    }
+
+    /// 测试 :nth-last-child() 匹配（从末尾计数）。
+    #[test]
+    fn test_nth_last_child() {
+        use zero_css_parser::ast::NthPattern;
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let c1 = doc.create_element("span");
+        let c2 = doc.create_element("span");
+        let c3 = doc.create_element("span");
+        doc.append_child(parent, c1);
+        doc.append_child(parent, c2);
+        doc.append_child(parent, c3);
+
+        // :nth-last-child(1) 应匹配最后一个
+        let sel_last = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthLastChild(NthPattern {
+                                a: 0,
+                                b: 1,
+                            }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, c1, &sel_last));
+        assert!(!matches_selector(&doc, c2, &sel_last));
+        assert!(matches_selector(&doc, c3, &sel_last));
+
+        // :nth-last-child(2) 应匹配倒数第二个
+        let sel_second_last = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthLastChild(NthPattern {
+                                a: 0,
+                                b: 2,
+                            }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, c1, &sel_second_last));
+        assert!(matches_selector(&doc, c2, &sel_second_last));
+        assert!(!matches_selector(&doc, c3, &sel_second_last));
+    }
+
+    /// 测试 :nth-of-type() 匹配（按类型计数）。
+    #[test]
+    fn test_nth_of_type() {
+        use zero_css_parser::ast::NthPattern;
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let s1 = doc.create_element("span");
+        let p1 = doc.create_element("p");
+        let s2 = doc.create_element("span");
+        let p2 = doc.create_element("p");
+        doc.append_child(parent, s1);
+        doc.append_child(parent, p1);
+        doc.append_child(parent, s2);
+        doc.append_child(parent, p2);
+
+        // :nth-of-type(2) 在 span 中应匹配 s2（第二个 span）
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 2 }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, s1, &sel));
+        assert!(matches_selector(&doc, s2, &sel));
+
+        // :nth-of-type(1) 在 p 中应匹配 p1
+        let sel_p = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("p".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 1 }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, p1, &sel_p));
+        assert!(!matches_selector(&doc, p2, &sel_p));
+    }
+
+    /// 测试 :nth-last-of-type() 匹配（从末尾按类型计数）。
+    #[test]
+    fn test_nth_last_of_type() {
+        use zero_css_parser::ast::NthPattern;
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let s1 = doc.create_element("span");
+        let p1 = doc.create_element("p");
+        let s2 = doc.create_element("span");
+        doc.append_child(parent, s1);
+        doc.append_child(parent, p1);
+        doc.append_child(parent, s2);
+
+        // :nth-last-of-type(1) 在 span 中应匹配 s2（最后一个 span）
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthLastOfType(NthPattern { a: 0, b: 1 }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, s1, &sel));
+        assert!(matches_selector(&doc, s2, &sel));
+    }
+
+    /// 测试 :nth-of-type(odd) 匹配奇数位置的同类型元素。
+    #[test]
+    fn test_nth_of_type_odd() {
+        use zero_css_parser::ast::NthPattern;
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let s1 = doc.create_element("span");
+        let s2 = doc.create_element("span");
+        let s3 = doc.create_element("span");
+        let s4 = doc.create_element("span");
+        doc.append_child(parent, s1);
+        doc.append_child(parent, s2);
+        doc.append_child(parent, s3);
+        doc.append_child(parent, s4);
+
+        // odd = 2n+1
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::NthOfType(NthPattern { a: 2, b: 1 }),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, s1, &sel));  // 1st
+        assert!(!matches_selector(&doc, s2, &sel)); // 2nd
+        assert!(matches_selector(&doc, s3, &sel));  // 3rd
+        assert!(!matches_selector(&doc, s4, &sel)); // 4th
     }
 }
