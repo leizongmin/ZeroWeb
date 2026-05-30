@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**执行状态**: 14/16 crate 已实现，884 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，910 个测试全绿，14 个 crate 有基准测试
 
 ---
 
@@ -11,7 +11,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 884 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 910 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -30,8 +30,8 @@
 | net | 47 | ✅ | HTTP client、URL、导航历史、Cookie |
 | security | 55 | ✅ | 同源策略、CORS、CSP |
 | protocol | 55 | ✅ | IPC 消息、bincode 序列化 |
-| storage | 35 | ✅ | localStorage、sessionStorage、IndexedDB |
-| canvas | 72 | ✅ | Canvas 2D API、路径、变换 |
+| storage | 47 | ✅ | localStorage、sessionStorage、IndexedDB |
+| canvas | 81 | ✅ | Canvas 2D API、路径、变换 |
 | webview-api | 42 | ✅ | WebView 嵌入 API、Builder |
 | wasm-sandbox | 22 | ✅ | WASM 运行时（wasmi 纯 Rust 解释器） |
 
