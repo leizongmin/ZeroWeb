@@ -47,6 +47,8 @@ pub enum NodeKind {
     DocumentFragment,
     /// 处理指令（Node.PROCESSING_INSTRUCTION_NODE = 7）
     ProcessingInstruction(ProcessingInstructionData),
+    /// Shadow DOM 根节点（行为类似 DocumentFragment，封装在宿主元素内部）。
+    ShadowRoot(ShadowRootData),
 }
 
 // ── DocumentData ────────────────────────────────────────────────────
@@ -241,6 +243,52 @@ pub struct ProcessingInstructionData {
     pub target: String,
     /// 处理指令数据。
     pub data: String,
+}
+
+// ── ShadowRootMode ──────────────────────────────────────────────────
+
+/// Shadow DOM 的封装模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowRootMode {
+    /// 开放模式：外部 JavaScript 可通过 `element.shadowRoot` 访问。
+    Open,
+    /// 关闭模式：`element.shadowRoot` 返回 `null`。
+    Closed,
+}
+
+// ── SlotAssignment ─────────────────────────────────────────────────
+
+/// Shadow DOM slot 的分配策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotAssignment {
+    /// 命名分配：根据 slot 属性自动分配。
+    Named,
+    /// 手动分配：通过 `assign()` 方法手动分配。
+    Manual,
+}
+
+// ── ShadowRootData ─────────────────────────────────────────────────
+
+/// ShadowRoot 节点数据。
+#[derive(Debug, Clone)]
+pub struct ShadowRootData {
+    /// 宿主元素（ShadowRoot 附加到的元素）。
+    pub host: Option<NodeId>,
+    /// Shadow DOM 的封装模式。
+    pub mode: ShadowRootMode,
+    /// Slot 分配策略。
+    pub slot_assignment: SlotAssignment,
+}
+
+impl ShadowRootData {
+    /// 创建新的 ShadowRoot 数据。
+    pub fn new(mode: ShadowRootMode) -> Self {
+        Self {
+            host: None,
+            mode,
+            slot_assignment: SlotAssignment::Named,
+        }
+    }
 }
 
 // ── NodeData ────────────────────────────────────────────────────────

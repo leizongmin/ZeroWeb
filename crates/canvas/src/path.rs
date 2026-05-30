@@ -13,6 +13,10 @@ pub enum PathCommand {
     BezierCurveTo(f32, f32, f32, f32, f32, f32),
     /// 圆弧。
     Arc(f32, f32, f32, f32, f32),
+    /// 椭圆弧（圆心 x, 圆心 y, 半径 x, 半径 y, 旋转, 起始角, 结束角）。
+    Ellipse(f32, f32, f32, f32, f32, f32, f32),
+    /// 圆角矩形子路径（x, y, 宽, 高, 圆角半径列表）。
+    RoundRect(f32, f32, f32, f32, Vec<f32>),
     /// 闭合路径。
     ClosePath,
 }
@@ -50,6 +54,34 @@ impl Path2D {
             .push(PathCommand::Arc(x, y, radius, start, end));
     }
 
+    /// 添加二次贝塞尔曲线。
+    pub fn quadratic_curve_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
+        self.commands
+            .push(PathCommand::QuadraticCurveTo(cpx, cpy, x, y));
+    }
+
+    /// 添加三次贝塞尔曲线。
+    pub fn bezier_curve_to(&mut self, cp1x: f32, cp1y: f32, cp2x: f32, cp2y: f32, x: f32, y: f32) {
+        self.commands
+            .push(PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y));
+    }
+
+    /// 添加椭圆弧。
+    #[allow(clippy::too_many_arguments)]
+    pub fn ellipse(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        radius_x: f32,
+        radius_y: f32,
+        rotation: f32,
+        start_angle: f32,
+        end_angle: f32,
+    ) {
+        self.commands
+            .push(PathCommand::Ellipse(cx, cy, radius_x, radius_y, rotation, start_angle, end_angle));
+    }
+
     /// 添加矩形子路径（四个 line_to + close）。
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
         self.commands.push(PathCommand::MoveTo(x, y));
@@ -57,6 +89,17 @@ impl Path2D {
         self.commands.push(PathCommand::LineTo(x + w, y + h));
         self.commands.push(PathCommand::LineTo(x, y + h));
         self.commands.push(PathCommand::ClosePath);
+    }
+
+    /// 添加圆角矩形子路径。
+    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<f32>) {
+        self.commands
+            .push(PathCommand::RoundRect(x, y, w, h, radii));
+    }
+
+    /// 返回路径命令数量。
+    pub fn len(&self) -> usize {
+        self.commands.len()
     }
 
     /// 返回路径命令列表。

@@ -86,7 +86,7 @@ fn serialize_node_inner(doc: &Document, id: NodeId, output: &mut String) {
             output.push_str(&pi.data);
             output.push_str("?>");
         }
-        NodeKind::DocumentFragment => {
+        NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
             for &child in &node_data.children {
                 serialize_node_inner(doc, child, output);
             }

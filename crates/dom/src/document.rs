@@ -65,6 +65,10 @@ pub struct Document {
     pending_mutations: Vec<MutationRecord>,
     /// 事件监听器存储：键为 (NodeId, event_type)，值为监听器列表。
     event_listeners: HashMap<(NodeId, String), Vec<ListenerEntry>>,
+    /// 宿主元素 → ShadowRoot 节点映射。
+    shadow_roots: HashMap<NodeId, NodeId>,
+    /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
+    slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
 }
 
 impl Document {
@@ -82,6 +86,8 @@ impl Document {
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
+            shadow_roots: HashMap::new(),
+            slot_assignments: HashMap::new(),
         }
     }
 
@@ -590,6 +596,7 @@ impl Document {
             NodeKind::Document(_) => 9,
             NodeKind::DocumentType(_) => 10,
             NodeKind::DocumentFragment => 11,
+            NodeKind::ShadowRoot(_) => 11,
         })
     }
 
@@ -617,7 +624,7 @@ impl Document {
             NodeKind::Text(data) => Some(data.content.clone()),
             NodeKind::Comment(data) => Some(data.content.clone()),
             NodeKind::ProcessingInstruction(data) => Some(data.data.clone()),
-            NodeKind::Element(_) | NodeKind::Document(_) | NodeKind::DocumentFragment => {
+            NodeKind::Element(_) | NodeKind::Document(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
                 let mut result = String::new();
                 self.collect_text(id, &mut result);
                 Some(result)
@@ -646,7 +653,7 @@ impl Document {
                         data.content = text.to_string();
                     }
                 }
-                NodeKind::Element(_) | NodeKind::DocumentFragment => {
+                NodeKind::Element(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
                     // 清除所有子节点
                     let children: Vec<NodeId> = self
                         .nodes
@@ -809,6 +816,128 @@ impl Document {
         };
         let mut result = Vec::new();
         self.collect_matching(root, &parsed, &mut result);
+        result
+    }
+
+    // ── Shadow DOM ──────────────────────────────────────────────
+
+    /// 为宿主元素附加 ShadowRoot。
+    ///
+    /// 创建一个新的 ShadowRoot 节点并附加到指定的宿主元素上。
+    /// 返回错误如果：宿主不是元素节点，或宿主已有 ShadowRoot。
+    pub fn attach_shadow(
+        &mut self,
+        host: NodeId,
+        mode: ShadowRootMode,
+    ) -> Result<NodeId, DomError> {
+        // 验证宿主是元素节点
+        let is_element = self
+            .nodes
+            .get(host)
+            .map(|n| matches!(n.kind, NodeKind::Element(_)))
+            .unwrap_or(false);
+        if !is_element {
+            return Err(DomError::NotAnElement);
+        }
+
+        // 验证宿主没有已有 ShadowRoot
+        if self.shadow_roots.contains_key(&host) {
+            return Err(DomError::AlreadyHasShadowRoot);
+        }
+
+        // 创建 ShadowRoot 节点
+        let shadow_data = ShadowRootData::new(mode);
+        let shadow_id = self
+            .nodes
+            .insert(NodeData::new(NodeKind::ShadowRoot(shadow_data)));
+
+        // 设置宿主引用
+        if let Some(NodeKind::ShadowRoot(data)) =
+            self.nodes.get_mut(shadow_id).map(|n| &mut n.kind)
+        {
+            data.host = Some(host);
+        }
+
+        // 将 ShadowRoot 作为宿主的子节点追加
+        // （ShadowRoot 存在于宿主的子列表中，但封装边界阻止外部查询穿透）
+        if let Some(host_data) = self.nodes.get_mut(host) {
+            host_data.children.push(shadow_id);
+        }
+        if let Some(shadow_data) = self.nodes.get_mut(shadow_id) {
+            shadow_data.parent = Some(host);
+        }
+
+        // 注册映射
+        self.shadow_roots.insert(host, shadow_id);
+
+        Ok(shadow_id)
+    }
+
+    /// 获取宿主元素附加的 ShadowRoot，如果没有则返回 `None`。
+    pub fn shadow_root(&self, host: NodeId) -> Option<NodeId> {
+        self.shadow_roots.get(&host).copied()
+    }
+
+    /// 获取 ShadowRoot 的封装模式。
+    ///
+    /// 如果节点不是 ShadowRoot，返回 `None`。
+    pub fn get_shadow_root_mode(&self, shadow_root: NodeId) -> Option<ShadowRootMode> {
+        self.nodes.get(shadow_root).and_then(|n| match &n.kind {
+            NodeKind::ShadowRoot(data) => Some(data.mode),
+            _ => None,
+        })
+    }
+
+    /// 获取 slot 元素已分配的节点列表。
+    ///
+    /// 查找分配给指定 slot 的 light DOM 节点。
+    /// `slot_name` 对应 slot 元素的 `name` 属性值。
+    pub fn assigned_nodes(&self, slot_element: NodeId, slot_name: &str) -> Vec<NodeId> {
+        self.slot_assignments
+            .get(&(slot_element, slot_name.to_string()))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// 将 light DOM 节点分配给指定的 slot。
+    ///
+    /// `slot_element` 是 `<slot>` 元素的 NodeId，
+    /// `slot_name` 是 slot 的 `name` 属性值。
+    pub fn assign_slot(&mut self, slot_element: NodeId, slot_name: &str, node: NodeId) {
+        self.slot_assignments
+            .entry((slot_element, slot_name.to_string()))
+            .or_default()
+            .push(node);
+    }
+
+    /// 在 ShadowRoot 子树中查找第一个匹配选择器的元素。
+    ///
+    /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
+    /// 不会穿透到 light DOM。
+    pub fn query_selector_shadow(
+        &self,
+        shadow_root: NodeId,
+        selector: &str,
+    ) -> Option<NodeId> {
+        let parsed = crate::query::parse_simple_selector(selector)?;
+        self.find_first_matching(shadow_root, &parsed)
+    }
+
+    /// 在 ShadowRoot 子树中查找所有匹配选择器的元素。
+    ///
+    /// 类似 `query_selector_all`，但范围限定在 shadow DOM 树内，
+    /// 不会穿透到 light DOM。
+    pub fn query_selector_all_shadow(
+        &self,
+        shadow_root: NodeId,
+        selector: &str,
+    ) -> Vec<NodeId> {
+        let parsed = match crate::query::parse_simple_selector(selector) {
+            Some(s) => s,
+            None => return vec![],
+        };
+        let mut result = Vec::new();
+        self.collect_matching(shadow_root, &parsed, &mut result);
         result
     }
 
@@ -1033,7 +1162,7 @@ impl Document {
             NodeKind::Text(data) => {
                 result.push_str(&data.content);
             }
-            NodeKind::Element(_) | NodeKind::Document(_) | NodeKind::DocumentFragment => {
+            NodeKind::Element(_) | NodeKind::Document(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
                 for &child in &node_data.children {
                     self.collect_text(child, result);
                 }
@@ -1231,4 +1360,10 @@ pub enum DomError {
     /// 试图将文档根节点作为子节点插入。
     #[error("不能将文档根节点作为子节点插入")]
     CannotInsertDocumentRoot,
+    /// 试图对非元素节点附加 ShadowRoot。
+    #[error("只能对元素节点附加 ShadowRoot")]
+    NotAnElement,
+    /// 试图对已有 ShadowRoot 的元素重复附加。
+    #[error("该元素已有 ShadowRoot")]
+    AlreadyHasShadowRoot,
 }
