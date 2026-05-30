@@ -158,6 +158,57 @@ pub enum ZIndexValue {
     Integer(i32),
 }
 
+/// CSS cursor 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CursorValue {
+    /// auto。
+    Auto,
+    /// default。
+    Default,
+    /// pointer。
+    Pointer,
+    /// move。
+    Move,
+    /// text。
+    Text,
+    /// wait。
+    Wait,
+    /// crosshair。
+    Crosshair,
+    /// help。
+    Help,
+    /// not-allowed。
+    NotAllowed,
+    /// grab。
+    Grab,
+    /// grabbing。
+    Grabbing,
+    /// col-resize。
+    ColResize,
+    /// row-resize。
+    RowResize,
+    /// ns-resize。
+    NsResize,
+    /// ew-resize。
+    EwResize,
+    /// none。
+    None,
+    /// progress。
+    Progress,
+    /// cell。
+    Cell,
+    /// copy。
+    Copy,
+    /// alias。
+    Alias,
+    /// all-scroll。
+    AllScroll,
+    /// zoom-in。
+    ZoomIn,
+    /// zoom-out。
+    ZoomOut,
+}
+
 /// CSS grid-auto-flow 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum GridAutoFlowValue {
@@ -229,6 +280,8 @@ pub enum PropertyValue {
     FlexBasis(FlexBasisValue),
     /// z-index 值。
     ZIndex(ZIndexValue),
+    /// cursor 值。
+    Cursor(CursorValue),
     /// 数值（opacity, flex-grow, flex-shrink）。
     Number(f64),
     /// 整数（order）。
@@ -425,6 +478,10 @@ pub struct ComputedStyle {
     /// overflow-y 属性。
     pub overflow_y: OverflowValue,
 
+    // ── Cursor ──
+    /// cursor 属性。
+    pub cursor: CursorValue,
+
     // ── Transforms ──
     /// transform 属性。
     pub transform: zero_css_parser::values::TransformValue,
@@ -567,6 +624,9 @@ impl Default for ComputedStyle {
             overflow_x: OverflowValue::Visible,
             overflow_y: OverflowValue::Visible,
 
+            // Cursor
+            cursor: CursorValue::Auto,
+
             // Transforms
             transform: zero_css_parser::values::TransformValue::None,
 
@@ -679,6 +739,9 @@ impl PropertyRegistry {
             // Overflow
             "overflow-x" | "overflow-y" => Some(Overflow(OverflowValue::Visible)),
 
+            // Cursor
+            "cursor" => Some(Cursor(CursorValue::Auto)),
+
             // Transitions
             "transition-property" => Some(StringList(vec![])),
             "transition-duration" | "transition-delay" => Some(Number(0.0)),
@@ -780,6 +843,7 @@ impl PropertyRegistry {
             "z-index",
             "overflow-x",
             "overflow-y",
+            "cursor",
             "transition-property",
             "transition-duration",
             "transition-timing-function",
@@ -1013,6 +1077,36 @@ pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
     }
     let int: i32 = value.parse().ok()?;
     Some(ZIndexValue::Integer(int))
+}
+
+/// 解析 CSS cursor 值。
+pub fn parse_cursor(value: &str) -> Option<CursorValue> {
+    match value.trim() {
+        "auto" => Some(CursorValue::Auto),
+        "default" => Some(CursorValue::Default),
+        "pointer" => Some(CursorValue::Pointer),
+        "move" => Some(CursorValue::Move),
+        "text" => Some(CursorValue::Text),
+        "wait" => Some(CursorValue::Wait),
+        "crosshair" => Some(CursorValue::Crosshair),
+        "help" => Some(CursorValue::Help),
+        "not-allowed" => Some(CursorValue::NotAllowed),
+        "grab" => Some(CursorValue::Grab),
+        "grabbing" => Some(CursorValue::Grabbing),
+        "col-resize" => Some(CursorValue::ColResize),
+        "row-resize" => Some(CursorValue::RowResize),
+        "ns-resize" => Some(CursorValue::NsResize),
+        "ew-resize" => Some(CursorValue::EwResize),
+        "none" => Some(CursorValue::None),
+        "progress" => Some(CursorValue::Progress),
+        "cell" => Some(CursorValue::Cell),
+        "copy" => Some(CursorValue::Copy),
+        "alias" => Some(CursorValue::Alias),
+        "all-scroll" => Some(CursorValue::AllScroll),
+        "zoom-in" => Some(CursorValue::ZoomIn),
+        "zoom-out" => Some(CursorValue::ZoomOut),
+        _ => None,
+    }
 }
 
 /// 解析 font-family 值。
@@ -1461,6 +1555,13 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "overflow-y" => {
             if let Some(v) = values::parse_overflow(value) {
                 style.overflow_y = v;
+                return true;
+            }
+        }
+        // ── Cursor 属性 ──
+        "cursor" => {
+            if let Some(v) = parse_cursor(value) {
+                style.cursor = v;
                 return true;
             }
         }
@@ -2935,5 +3036,70 @@ mod tests {
         assert_eq!(parse_outline_style("inset"), Some(OutlineStyleValue::Inset));
         assert_eq!(parse_outline_style("outset"), Some(OutlineStyleValue::Outset));
         assert_eq!(parse_outline_style("invalid"), None);
+    }
+
+    // ── Cursor 属性测试 ──
+
+    #[test]
+    fn test_parse_cursor_values() {
+        assert_eq!(parse_cursor("auto"), Some(CursorValue::Auto));
+        assert_eq!(parse_cursor("pointer"), Some(CursorValue::Pointer));
+        assert_eq!(parse_cursor("move"), Some(CursorValue::Move));
+        assert_eq!(parse_cursor("text"), Some(CursorValue::Text));
+        assert_eq!(parse_cursor("wait"), Some(CursorValue::Wait));
+        assert_eq!(parse_cursor("crosshair"), Some(CursorValue::Crosshair));
+        assert_eq!(parse_cursor("help"), Some(CursorValue::Help));
+        assert_eq!(parse_cursor("not-allowed"), Some(CursorValue::NotAllowed));
+        assert_eq!(parse_cursor("grab"), Some(CursorValue::Grab));
+        assert_eq!(parse_cursor("grabbing"), Some(CursorValue::Grabbing));
+        assert_eq!(parse_cursor("col-resize"), Some(CursorValue::ColResize));
+        assert_eq!(parse_cursor("row-resize"), Some(CursorValue::RowResize));
+        assert_eq!(parse_cursor("ns-resize"), Some(CursorValue::NsResize));
+        assert_eq!(parse_cursor("ew-resize"), Some(CursorValue::EwResize));
+        assert_eq!(parse_cursor("none"), Some(CursorValue::None));
+        assert_eq!(parse_cursor("progress"), Some(CursorValue::Progress));
+        assert_eq!(parse_cursor("cell"), Some(CursorValue::Cell));
+        assert_eq!(parse_cursor("copy"), Some(CursorValue::Copy));
+        assert_eq!(parse_cursor("alias"), Some(CursorValue::Alias));
+        assert_eq!(parse_cursor("all-scroll"), Some(CursorValue::AllScroll));
+        assert_eq!(parse_cursor("zoom-in"), Some(CursorValue::ZoomIn));
+        assert_eq!(parse_cursor("zoom-out"), Some(CursorValue::ZoomOut));
+        assert_eq!(parse_cursor("default"), Some(CursorValue::Default));
+        assert_eq!(parse_cursor("invalid"), None);
+    }
+
+    #[test]
+    fn test_apply_property_cursor() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.cursor, CursorValue::Auto);
+
+        assert!(apply_property_value(&mut style, "cursor", "pointer"));
+        assert_eq!(style.cursor, CursorValue::Pointer);
+
+        assert!(apply_property_value(&mut style, "cursor", "not-allowed"));
+        assert_eq!(style.cursor, CursorValue::NotAllowed);
+
+        assert!(apply_property_value(&mut style, "cursor", "grab"));
+        assert_eq!(style.cursor, CursorValue::Grab);
+
+        assert!(!apply_property_value(&mut style, "cursor", "invalid"));
+    }
+
+    #[test]
+    fn test_cursor_default_value() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.cursor, CursorValue::Auto);
+    }
+
+    #[test]
+    fn test_cursor_property_registry() {
+        assert!(PropertyRegistry::initial_value("cursor").is_some());
+        assert!(!PropertyRegistry::is_inherited("cursor"));
+    }
+
+    #[test]
+    fn test_cursor_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"cursor"));
     }
 }

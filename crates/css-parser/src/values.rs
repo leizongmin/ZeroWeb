@@ -205,6 +205,138 @@ pub struct VarReference {
     pub fallback: Option<String>,
 }
 
+/// CSS calc() 表达式。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CalcExpr {
+    /// 数值常量。
+    Number(f64),
+    /// 长度值（带单位）。
+    Length(LengthValue),
+    /// 二元运算：left op right。
+    BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
+}
+
+/// CSS calc() 运算符。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CalcOp {
+    /// 加法。
+    Add,
+    /// 减法。
+    Subtract,
+    /// 乘法。
+    Multiply,
+    /// 除法。
+    Divide,
+}
+
+/// 解析 CSS calc() 表达式。
+///
+/// 支持格式如 `"calc(100% - 20px)"`、`"calc(50% + 10px)"`、`"calc(2 * 10px)"`。
+/// 目前仅处理单次二元运算（左 操作数 右）。
+pub fn parse_calc(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+
+    // 检查 calc(...) 包装
+    if !value.starts_with("calc(") || !value.ends_with(')') {
+        return None;
+    }
+
+    let inner = value.get(5..value.len() - 1)?.trim();
+
+    // 尝试查找运算符：+、-、*、/
+    // 按优先级搜索 *、/ 优先于 +、-
+    // 简单实现：搜索第一个运算符
+    if let Some((op_pos, op)) = find_calc_operator(inner) {
+        let left_str = inner[..op_pos].trim();
+        let right_str = inner[op_pos + 1..].trim();
+
+        let left = parse_calc_operand(left_str)?;
+        let right = parse_calc_operand(right_str)?;
+
+        Some(CalcExpr::BinaryOp(Box::new(left), op, Box::new(right)))
+    } else {
+        // 单个操作数
+        parse_calc_operand(inner)
+    }
+}
+
+/// 在 calc 表达式内部查找运算符位置。
+///
+/// 返回第一个匹配的运算符及其位置。
+fn find_calc_operator(s: &str) -> Option<(usize, CalcOp)> {
+    let bytes = s.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'+' => return Some((i, CalcOp::Add)),
+            b'-' => {
+                // 跳过负号（前面紧跟着运算符或位于开头）
+                if i == 0 {
+                    continue;
+                }
+                // 前一个非空白字符必须是数字、%或字母(单位)
+                let prev_non_ws = s[..i].chars().rev().find(|c| !c.is_ascii_whitespace());
+                if let Some(prev) = prev_non_ws
+                    && (prev.is_ascii_digit() || prev == '%' || prev.is_ascii_alphabetic())
+                {
+                    return Some((i, CalcOp::Subtract));
+                }
+            }
+            b'*' => return Some((i, CalcOp::Multiply)),
+            b'/' => return Some((i, CalcOp::Divide)),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 解析 calc 操作数（数值或长度值）。
+fn parse_calc_operand(s: &str) -> Option<CalcExpr> {
+    let s = s.trim();
+
+    // 尝试解析为纯数字（无单位）
+    if let Ok(num) = s.parse::<f64>() {
+        return Some(CalcExpr::Number(num));
+    }
+
+    // 尝试解析为长度值
+    if let Some(length) = parse_length(s) {
+        return Some(CalcExpr::Length(length));
+    }
+
+    None
+}
+
+/// 计算 CSS calc() 表达式的像素值。
+///
+/// `parent_length` 用于解析百分比值（如 `100%` = `parent_length`）。
+/// 返回计算结果（像素）。
+pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
+    match expr {
+        CalcExpr::Number(n) => Some(*n),
+        CalcExpr::Length(lv) => match lv {
+            LengthValue::Px(v) => Some(*v),
+            LengthValue::Percentage(pct) => parent_length.map(|pl| pct / 100.0 * pl),
+            _ => None, // 其他单位需要额外上下文，暂不支持
+        },
+        CalcExpr::BinaryOp(left, op, right) => {
+            let lv = eval_calc(left, parent_length)?;
+            let rv = eval_calc(right, parent_length)?;
+            match op {
+                CalcOp::Add => Some(lv + rv),
+                CalcOp::Subtract => Some(lv - rv),
+                CalcOp::Multiply => Some(lv * rv),
+                CalcOp::Divide => {
+                    if rv == 0.0 {
+                        None
+                    } else {
+                        Some(lv / rv)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── 解析函数 ────────────────────────────────────────────────────────
 
 /// 解析 CSS 颜色值。
@@ -1051,5 +1183,106 @@ mod tests {
     fn test_parse_time_zero() {
         assert_eq!(parse_time("0s"), Some(0.0));
         assert_eq!(parse_time("0ms"), Some(0.0));
+    }
+
+    // ── parse_calc ──
+
+    #[test]
+    fn test_parse_calc_percentage_minus_px() {
+        let expr = parse_calc("calc(100% - 20px)");
+        let expr = expr.expect("should parse calc(100% - 20px)");
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(**left, CalcExpr::Length(LengthValue::Percentage(100.0)));
+                assert_eq!(*op, CalcOp::Subtract);
+                assert_eq!(**right, CalcExpr::Length(LengthValue::Px(20.0)));
+            }
+            _ => panic!("expected BinaryOp, got {expr:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_calc_percentage_plus_px() {
+        let expr = parse_calc("calc(50% + 10px)");
+        let expr = expr.expect("should parse calc(50% + 10px)");
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(**left, CalcExpr::Length(LengthValue::Percentage(50.0)));
+                assert_eq!(*op, CalcOp::Add);
+                assert_eq!(**right, CalcExpr::Length(LengthValue::Px(10.0)));
+            }
+            _ => panic!("expected BinaryOp, got {expr:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_calc_multiply() {
+        let expr = parse_calc("calc(2 * 10px)");
+        let expr = expr.expect("should parse calc(2 * 10px)");
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(**left, CalcExpr::Number(2.0));
+                assert_eq!(*op, CalcOp::Multiply);
+                assert_eq!(**right, CalcExpr::Length(LengthValue::Px(10.0)));
+            }
+            _ => panic!("expected BinaryOp, got {expr:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_calc_divide() {
+        let expr = parse_calc("calc(100px / 2)");
+        let expr = expr.expect("should parse calc(100px / 2)");
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(**left, CalcExpr::Length(LengthValue::Px(100.0)));
+                assert_eq!(*op, CalcOp::Divide);
+                assert_eq!(**right, CalcExpr::Number(2.0));
+            }
+            _ => panic!("expected BinaryOp, got {expr:?}"),
+        }
+    }
+
+    #[test]
+    fn test_eval_calc_percentage_minus_px() {
+        let expr = parse_calc("calc(100% - 20px)").unwrap();
+        let result = eval_calc(&expr, Some(200.0));
+        assert_eq!(result, Some(180.0));
+    }
+
+    #[test]
+    fn test_eval_calc_percentage_plus_px() {
+        let expr = parse_calc("calc(50% + 10px)").unwrap();
+        let result = eval_calc(&expr, Some(200.0));
+        assert_eq!(result, Some(110.0));
+    }
+
+    #[test]
+    fn test_eval_calc_multiply() {
+        let expr = parse_calc("calc(2 * 10px)").unwrap();
+        let result = eval_calc(&expr, None);
+        assert_eq!(result, Some(20.0));
+    }
+
+    #[test]
+    fn test_eval_calc_divide() {
+        let expr = parse_calc("calc(100px / 2)").unwrap();
+        let result = eval_calc(&expr, None);
+        assert_eq!(result, Some(50.0));
+    }
+
+    #[test]
+    fn test_parse_calc_invalid() {
+        assert_eq!(parse_calc("calc()"), None);
+        assert_eq!(parse_calc("calc("), None);
+        assert_eq!(parse_calc("not-a-calc"), None);
+        assert_eq!(parse_calc(""), None);
+    }
+
+    #[test]
+    fn test_eval_calc_percentage_without_parent() {
+        let expr = parse_calc("calc(50% + 10px)").unwrap();
+        // 百分比没有 parent_length，应返回 None
+        assert_eq!(eval_calc(&expr, None), None);
     }
 }
