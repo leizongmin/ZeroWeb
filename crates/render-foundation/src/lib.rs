@@ -16,6 +16,7 @@ pub mod color;
 pub mod font;
 pub mod geometry;
 pub mod gpu;
+pub mod image_cache;
 pub mod primitive;
 pub mod surface;
 
@@ -42,6 +43,9 @@ pub enum RenderError {
         /// 实际大小
         actual: usize,
     },
+    /// 图片数据无效
+    #[error("图片数据无效: {0}")]
+    ImageInvalid(String),
 }
 
 /// 渲染结果

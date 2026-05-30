@@ -377,7 +377,7 @@ mod canvas_render {
         ctx.fill();
 
         let primitives = ctx.primitives();
-        assert!(!primitives.fills.is_empty(), "路径填充应生成图元");
+        assert!(!primitives.path_fills.is_empty(), "路径填充应生成图元");
     }
 
     /// Canvas 变换操作集成
@@ -623,7 +623,7 @@ mod webview_full_pipeline {
     /// WebView execute_script 返回 NotImplemented
     #[test]
     fn test_webview_script_not_implemented() {
-        let wv = WebView::new(WebViewConfig::default());
+        let mut wv = WebView::new(WebViewConfig::default());
         let result = wv.execute_script("1+1");
         assert!(result.is_err());
     }

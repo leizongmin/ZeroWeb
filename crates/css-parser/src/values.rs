@@ -229,6 +229,25 @@ pub enum CalcOp {
     Divide,
 }
 
+/// CSS calc() 表达式求值上下文。
+///
+/// 提供相对单位转换为像素值所需的参考尺寸。
+#[derive(Debug, Clone, Default)]
+pub struct CalcContext {
+    /// 父元素长度，用于百分比计算。
+    pub parent_length: Option<f64>,
+    /// 当前字体大小（px），用于 em 单位转换。
+    pub font_size: Option<f64>,
+    /// 根元素字体大小（px），用于 rem 单位转换。
+    pub root_font_size: Option<f64>,
+    /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
+    pub viewport_height: Option<f64>,
+    /// 视口宽度（px），用于 vw/vmin/vmax 单位转换。
+    pub viewport_width: Option<f64>,
+    /// "0" 字形宽度（px），用于 ch 单位转换。
+    pub ch_width: Option<f64>,
+}
+
 /// 解析 CSS calc() 表达式。
 ///
 /// 支持格式如 `"calc(100% - 20px)"`、`"calc(50% + 10px)"`、`"calc(2 * 10px)"`。
@@ -311,16 +330,24 @@ fn parse_calc_operand(s: &str) -> Option<CalcExpr> {
 /// `parent_length` 用于解析百分比值（如 `100%` = `parent_length`）。
 /// 返回计算结果（像素）。
 pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
+    let ctx = CalcContext {
+        parent_length,
+        ..Default::default()
+    };
+    eval_calc_with_context(expr, &ctx)
+}
+
+/// 使用完整上下文计算 CSS calc() 表达式的像素值。
+///
+/// 支持所有单位：px、百分比、em、rem、vh、vw、vmin、vmax、ch。
+/// 相对单位需要对应的上下文字段已设置，否则返回 `None`。
+pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
     match expr {
         CalcExpr::Number(n) => Some(*n),
-        CalcExpr::Length(lv) => match lv {
-            LengthValue::Px(v) => Some(*v),
-            LengthValue::Percentage(pct) => parent_length.map(|pl| pct / 100.0 * pl),
-            _ => None, // 其他单位需要额外上下文，暂不支持
-        },
+        CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
         CalcExpr::BinaryOp(left, op, right) => {
-            let lv = eval_calc(left, parent_length)?;
-            let rv = eval_calc(right, parent_length)?;
+            let lv = eval_calc_with_context(left, ctx)?;
+            let rv = eval_calc_with_context(right, ctx)?;
             match op {
                 CalcOp::Add => Some(lv + rv),
                 CalcOp::Subtract => Some(lv - rv),
@@ -334,6 +361,30 @@ pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
                 }
             }
         }
+    }
+}
+
+/// 将长度值解析为像素值。
+///
+/// 使用 [`CalcContext`] 中提供的参考尺寸转换相对单位。
+fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
+    match lv {
+        LengthValue::Px(v) => Some(*v),
+        LengthValue::Percentage(pct) => ctx.parent_length.map(|pl| pct / 100.0 * pl),
+        LengthValue::Em(v) => ctx.font_size.map(|fs| v * fs),
+        LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
+        LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
+        LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
+        LengthValue::Vmin(v) => match (ctx.viewport_width, ctx.viewport_height) {
+            (Some(vw), Some(vh)) => Some(v * vw.min(vh) / 100.0),
+            _ => None,
+        },
+        LengthValue::Vmax(v) => match (ctx.viewport_width, ctx.viewport_height) {
+            (Some(vw), Some(vh)) => Some(v * vw.max(vh) / 100.0),
+            _ => None,
+        },
+        LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
+        LengthValue::Auto => None,
     }
 }
 
@@ -532,13 +583,13 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         return Some(LengthValue::Auto);
     }
 
-    // 找到数字部分的结束位置
-    let num_end = value
-        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
-        .unwrap_or(value.len());
+    // 从字符串末尾扫描，找到单位部分的起始位置。
+    // 单位部分由字母组成（可能以 '%' 结尾）；数字部分在单位之前。
+    // 这样可以正确处理科学计数法（如 "1e2px"），因为 'e' 在数字部分内。
+    let unit_start = find_unit_start(value);
 
-    let num_str = &value[..num_end];
-    let unit = &value[num_end..];
+    let num_str = &value[..unit_start];
+    let unit = &value[unit_start..];
 
     let num: f64 = num_str.parse().ok()?;
 
@@ -552,8 +603,32 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vmax" => Some(LengthValue::Vmax(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "%" => Some(LengthValue::Percentage(num)),
+        // Per CSS spec, a bare zero without units is a valid length (0px).
+        "" if num == 0.0 => Some(LengthValue::Px(0.0)),
         _ => None,
     }
+}
+
+/// 从字符串末尾找到单位部分的起始索引。
+///
+/// 从右向左扫描：跳过 '%'（如果有），然后跳过连续的字母字符，
+/// 剩下的就是数字部分的结束位置。
+fn find_unit_start(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut i = bytes.len();
+
+    // 跳过末尾的 '%'
+    if i > 0 && bytes[i - 1] == b'%' {
+        i -= 1;
+        return i;
+    }
+
+    // 从末尾向前跳过连续的 ASCII 字母（单位名）
+    while i > 0 && bytes[i - 1].is_ascii_alphabetic() {
+        i -= 1;
+    }
+
+    i
 }
 
 /// 解析 CSS display 属性值。
@@ -1104,6 +1179,467 @@ fn parse_css_number(s: &str) -> Option<f64> {
 /// 解析角度值（返回度数）。
 fn parse_angle(s: &str) -> Option<f64> {
     parse_css_number(s)
+}
+
+// ── CSS Gradient 值类型 ──────────────────────────────────────────────
+
+/// CSS 渐变方向。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GradientDirection {
+    /// 角度（度数）。
+    Angle(f64),
+    /// to top。
+    ToTop,
+    /// to bottom。
+    ToBottom,
+    /// to left。
+    ToLeft,
+    /// to right。
+    ToRight,
+    /// to top left / to left top。
+    ToTopLeft,
+    /// to top right / to right top。
+    ToTopRight,
+    /// to bottom left / to left bottom。
+    ToBottomLeft,
+    /// to bottom right / to right bottom。
+    ToBottomRight,
+}
+
+/// CSS 渐变色标。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradientColorStop {
+    /// 颜色值。
+    pub color: ColorValue,
+    /// 位置提示（百分比或长度），如 `50%`、`10px`。
+    pub position: Option<LengthValue>,
+}
+
+/// CSS linear-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinearGradient {
+    /// 渐变方向，默认为 to bottom。
+    pub direction: GradientDirection,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-linear-gradient。
+    pub repeating: bool,
+}
+
+/// CSS radial-gradient 形状。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RadialShape {
+    /// circle。
+    Circle,
+    /// ellipse。
+    Ellipse,
+}
+
+/// CSS radial-gradient 尺寸。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RadialSize {
+    /// closest-side。
+    ClosestSide,
+    /// farthest-side。
+    FarthestSide,
+    /// closest-corner。
+    ClosestCorner,
+    /// farthest-corner（默认）。
+    FarthestCorner,
+    /// 明确的半径值。
+    Length(LengthValue),
+}
+
+/// CSS radial-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RadialGradient {
+    /// 形状，默认为 ellipse。
+    pub shape: RadialShape,
+    /// 尺寸，默认为 farthest-corner。
+    pub size: RadialSize,
+    /// 中心位置 X，默认为 center (50%)。
+    pub position_x: LengthValue,
+    /// 中心位置 Y，默认为 center (50%)。
+    pub position_y: LengthValue,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-radial-gradient。
+    pub repeating: bool,
+}
+
+/// CSS conic-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConicGradient {
+    /// 起始角度（度数），默认为 0。
+    pub from_angle: f64,
+    /// 中心位置 X，默认为 center (50%)。
+    pub position_x: LengthValue,
+    /// 中心位置 Y，默认为 center (50%)。
+    pub position_y: LengthValue,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-conic-gradient。
+    pub repeating: bool,
+}
+
+/// CSS 渐变值（所有渐变类型的统一表示）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GradientValue {
+    /// linear-gradient() / repeating-linear-gradient()。
+    Linear(LinearGradient),
+    /// radial-gradient() / repeating-radial-gradient()。
+    Radial(RadialGradient),
+    /// conic-gradient() / repeating-conic-gradient()。
+    Conic(ConicGradient),
+}
+
+/// 解析 CSS 渐变值。
+///
+/// 支持格式：
+/// - `linear-gradient(direction, color-stop1, color-stop2, ...)`
+/// - `radial-gradient(shape size at position, color-stop1, ...)`
+/// - `conic-gradient(from angle at position, color-stop1, ...)`
+/// - 以及对应的 repeating- 变体。
+pub fn parse_gradient(value: &str) -> Option<GradientValue> {
+    let value = value.trim();
+
+    let (func_name, inner) = split_function_call(value)?;
+
+    match func_name.to_ascii_lowercase().as_str() {
+        "linear-gradient" => parse_linear_gradient_inner(inner, false),
+        "repeating-linear-gradient" => parse_linear_gradient_inner(inner, true),
+        "radial-gradient" => parse_radial_gradient_inner(inner, false),
+        "repeating-radial-gradient" => parse_radial_gradient_inner(inner, true),
+        "conic-gradient" => parse_conic_gradient_inner(inner, false),
+        "repeating-conic-gradient" => parse_conic_gradient_inner(inner, true),
+        _ => None,
+    }
+}
+
+/// 将函数调用拆分为 (函数名, 括号内内容)。
+fn split_function_call(value: &str) -> Option<(String, &str)> {
+    let paren_pos = value.find('(')?;
+    let name = &value[..paren_pos];
+    if !value.ends_with(')') {
+        return None;
+    }
+    let inner = &value[paren_pos + 1..value.len() - 1];
+    Some((name.to_string(), inner))
+}
+
+/// 解析 linear-gradient 内部参数。
+fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut direction = GradientDirection::ToBottom;
+    let mut stop_start = 0;
+
+    // 检查第一个参数是否为方向
+    let first = args[0].trim();
+    if let Some(dir) = parse_linear_direction(first) {
+        direction = dir;
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Linear(LinearGradient {
+        direction,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 linear-gradient 方向参数。
+fn parse_linear_direction(s: &str) -> Option<GradientDirection> {
+    let s = s.trim();
+    // 角度
+    if let Some(angle) = parse_angle(s) {
+        return Some(GradientDirection::Angle(angle));
+    }
+    // to 关键字方向
+    match s.to_ascii_lowercase().as_str() {
+        "to top" => Some(GradientDirection::ToTop),
+        "to bottom" => Some(GradientDirection::ToBottom),
+        "to left" => Some(GradientDirection::ToLeft),
+        "to right" => Some(GradientDirection::ToRight),
+        "to top left" | "to left top" => Some(GradientDirection::ToTopLeft),
+        "to top right" | "to right top" => Some(GradientDirection::ToTopRight),
+        "to bottom left" | "to left bottom" => Some(GradientDirection::ToBottomLeft),
+        "to bottom right" | "to right bottom" => Some(GradientDirection::ToBottomRight),
+        _ => None,
+    }
+}
+
+/// 解析 radial-gradient 内部参数。
+fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut shape = RadialShape::Ellipse;
+    let mut size = RadialSize::FarthestCorner;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+    let mut stop_start = 0;
+
+    // 第一个参数可能包含 shape/size/position
+    let first = args[0].trim();
+    let first_lower = first.to_ascii_lowercase();
+
+    if first_lower.starts_with("circle")
+        || first_lower.starts_with("ellipse")
+        || first_lower.starts_with("closest")
+        || first_lower.starts_with("farthest")
+        || first_lower.contains(" at ")
+    {
+        // 解析 shape + size + at position
+        if let Some((s, sz, px, py)) = parse_radial_shape_and_position(first) {
+            shape = s;
+            size = sz;
+            pos_x = px;
+            pos_y = py;
+        }
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Radial(RadialGradient {
+        shape,
+        size,
+        position_x: pos_x,
+        position_y: pos_y,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 radial-gradient 的 shape、size 和 at position。
+fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, LengthValue, LengthValue)> {
+    let mut shape = RadialShape::Ellipse;
+    let mut size = RadialSize::FarthestCorner;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+
+    let lower = s.to_ascii_lowercase();
+
+    // 解析 "at x y" 位置
+    if let Some(at_pos) = lower.find(" at ") {
+        let pos_str = &s[at_pos + 4..];
+        if let Some((px, py)) = parse_position_pair(pos_str) {
+            pos_x = px;
+            pos_y = py;
+        }
+        // 解析 at 之前的部分为 shape/size
+        let shape_str = s[..at_pos].trim();
+        parse_radial_shape_size(shape_str, &mut shape, &mut size);
+    } else {
+        parse_radial_shape_size(s, &mut shape, &mut size);
+    }
+
+    Some((shape, size, pos_x, pos_y))
+}
+
+/// 解析 radial shape 和 size 关键字。
+fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) {
+    let lower = s.trim().to_ascii_lowercase();
+
+    // 检查长度值（如 "50px 100px" 或 "circle 50px"）
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    for part in parts {
+        match part {
+            "circle" => *shape = RadialShape::Circle,
+            "ellipse" => *shape = RadialShape::Ellipse,
+            "closest-side" => *size = RadialSize::ClosestSide,
+            "farthest-side" => *size = RadialSize::FarthestSide,
+            "closest-corner" => *size = RadialSize::ClosestCorner,
+            "farthest-corner" => *size = RadialSize::FarthestCorner,
+            _ => {
+                // 尝试解析为长度值
+                if let Some(lv) = parse_length(part) {
+                    *size = RadialSize::Length(lv);
+                }
+            }
+        }
+    }
+}
+
+/// 解析位置对（如 "center center"、"50% 50%"、"left top"）。
+fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
+    let s = s.trim();
+    let parts: Vec<&str> = s.split_whitespace().collect();
+
+    match parts.len() {
+        1 => {
+            let p = parse_position_keyword(parts[0]);
+            Some((p.clone(), p))
+        }
+        2 => {
+            let px = parse_position_keyword(parts[0]);
+            let py = parse_position_keyword(parts[1]);
+            Some((px, py))
+        }
+        _ => None,
+    }
+}
+
+/// 解析位置关键字为 LengthValue。
+fn parse_position_keyword(s: &str) -> LengthValue {
+    match s.to_ascii_lowercase().as_str() {
+        "center" => LengthValue::Percentage(50.0),
+        "left" => LengthValue::Percentage(0.0),
+        "right" => LengthValue::Percentage(100.0),
+        "top" => LengthValue::Percentage(0.0),
+        "bottom" => LengthValue::Percentage(100.0),
+        other => parse_length(other).unwrap_or(LengthValue::Percentage(50.0)),
+    }
+}
+
+/// 解析 conic-gradient 内部参数。
+fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut from_angle = 0.0;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+    let mut stop_start = 0;
+
+    let first = args[0].trim();
+    let first_lower = first.to_ascii_lowercase();
+
+    if first_lower.starts_with("from ") || first_lower.contains(" at ") {
+        if let Some((angle, px, py)) = parse_conic_config(first) {
+            from_angle = angle;
+            pos_x = px;
+            pos_y = py;
+        }
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Conic(ConicGradient {
+        from_angle,
+        position_x: pos_x,
+        position_y: pos_y,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 conic-gradient 的 from angle 和 at position 配置。
+fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
+    let mut angle = 0.0;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+
+    let lower = s.to_ascii_lowercase();
+
+    // 解析 "from <angle>"
+    if let Some(from_pos) = lower.find("from ") {
+        let after_from = &s[from_pos + 5..];
+        // 找到 from 和 at 之间的部分作为角度
+        let at_pos = after_from.to_ascii_lowercase().find(" at ").unwrap_or(after_from.len());
+        let angle_str = after_from[..at_pos].trim();
+        if !angle_str.is_empty() {
+            angle = parse_angle(angle_str).unwrap_or(0.0);
+        }
+    }
+
+    // 解析 "at <position>"
+    if let Some(at_pos) = lower.find(" at ") {
+        let pos_str = &s[at_pos + 4..];
+        if let Some((px, py)) = parse_position_pair(pos_str) {
+            pos_x = px;
+            pos_y = py;
+        }
+    }
+
+    Some((angle, pos_x, pos_y))
+}
+
+/// 将渐变参数按顶层逗号分割（不分割括号内的逗号）。
+fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
+    let mut args = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    let bytes = inner.as_bytes();
+
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                args.push(&inner[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < inner.len() {
+        args.push(&inner[start..]);
+    }
+
+    Some(args)
+}
+
+/// 解析色标列表。
+fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
+    let mut stops = Vec::new();
+    for arg in args {
+        let arg = arg.trim();
+        if arg.is_empty() {
+            continue;
+        }
+        stops.push(parse_color_stop(arg)?);
+    }
+    Some(stops)
+}
+
+/// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`）。
+fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
+    let s = s.trim();
+
+    // 尝试 "color position" 格式
+    // 从右往左找位置部分
+    let last_space = s.rfind(' ');
+    if let Some(space_pos) = last_space {
+        let color_str = &s[..space_pos];
+        let pos_str = &s[space_pos + 1..];
+
+        if let Some(color) = parse_color(color_str)
+            && let Some(position) = parse_length(pos_str)
+        {
+            return Some(GradientColorStop {
+                color,
+                position: Some(position),
+            });
+        }
+    }
+
+    // 仅颜色
+    let color = parse_color(s)?;
+    Some(GradientColorStop {
+        color,
+        position: None,
+    })
 }
 
 #[cfg(test)]

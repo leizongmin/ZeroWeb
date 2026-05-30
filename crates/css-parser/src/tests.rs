@@ -5,8 +5,11 @@ use crate::parser::Parser;
 use crate::selector;
 use crate::tokenizer::{Token, Tokenizer};
 use crate::values::{
-    LengthValue, TransformFunction, TransformValue, parse_animation_direction,
-    parse_animation_fill_mode, parse_animation_play_state, parse_length, parse_transform,
+    CalcContext, GradientDirection, GradientValue, LengthValue,
+    RadialShape, RadialSize, TransformFunction, TransformValue,
+    eval_calc, eval_calc_with_context, parse_animation_direction,
+    parse_animation_fill_mode, parse_animation_play_state, parse_calc,
+    parse_gradient, parse_length, parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -989,11 +992,10 @@ fn test_parse_color_named_all() {
 }
 
 #[test]
-/// 测试长度值为零（无单位 "0"）
+/// 测试长度值为零（无单位 "0"）— CSS 规范允许裸零作为有效长度
 fn test_parse_length_zero() {
     let result = parse_length("0");
-    // "0" 解析为数字 0.0，单位为空字符串 ""，匹配 _ => None
-    assert_eq!(result, None);
+    assert_eq!(result, Some(LengthValue::Px(0.0)));
 }
 
 #[test]
@@ -1975,4 +1977,382 @@ fn test_parse_has_selector_list() {
     } else {
         panic!("Expected Style rule");
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 10. Tokenizer `/` delimiter 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 `/` 作为独立分隔符（用于 font shorthand 等）
+fn test_tokenize_slash_delim() {
+    let tokens: Vec<_> = Tokenizer::new("/").collect();
+    assert_eq!(tokens, vec![Token::Delim('/')]);
+}
+
+#[test]
+/// 测试 font shorthand 中的 `/` 分隔符：`font: 12px/1.5 sans-serif`
+fn test_tokenize_font_shorthand_slash() {
+    let tokens: Vec<_> = Tokenizer::new("12px/1.5").collect();
+    assert!(tokens.len() >= 3);
+    assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 12.0 && u == "px"));
+    assert_eq!(tokens[1], Token::Delim('/'));
+    assert!(matches!(&tokens[2], Token::Number(n) if (*n - 1.5).abs() < 0.001));
+}
+
+#[test]
+/// 测试 calc() 中的除法 `/`
+fn test_tokenize_calc_division() {
+    let tokens: Vec<_> = Tokenizer::new("100px / 2").collect();
+    assert!(tokens.len() >= 3);
+    assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 100.0 && u == "px"));
+    assert_eq!(tokens[1], Token::Whitespace);
+    assert_eq!(tokens[2], Token::Delim('/'));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 11. parse_length 边界情况测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试负数长度值
+fn test_parse_length_negative() {
+    assert_eq!(parse_length("-10px"), Some(LengthValue::Px(-10.0)));
+    assert_eq!(parse_length("-2.5em"), Some(LengthValue::Em(-2.5)));
+}
+
+#[test]
+/// 测试带正号前缀的长度值
+fn test_parse_length_leading_plus() {
+    assert_eq!(parse_length("+10px"), Some(LengthValue::Px(10.0)));
+    assert_eq!(parse_length("+1.5em"), Some(LengthValue::Em(1.5)));
+}
+
+#[test]
+/// 测试科学计数法长度值
+fn test_parse_length_scientific_notation() {
+    // "1e2px" → 100.0px
+    assert_eq!(parse_length("1e2px"), Some(LengthValue::Px(100.0)));
+    assert_eq!(parse_length("1E2px"), Some(LengthValue::Px(100.0)));
+}
+
+#[test]
+/// 测试带空格的裸零
+fn test_parse_length_zero_whitespace() {
+    assert_eq!(parse_length("  0  "), Some(LengthValue::Px(0.0)));
+}
+
+#[test]
+/// 测试非零无单位值不被解析为长度（CSS 规范仅允许 0 无单位）
+fn test_parse_length_unitless_nonzero() {
+    assert_eq!(parse_length("42"), None);
+    assert_eq!(parse_length("1.5"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 12. calc() 相对单位求值测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 calc() 中 em 单位求值
+fn test_eval_calc_em() {
+    let expr = parse_calc("calc(1.5em + 10px)").unwrap();
+    let ctx = CalcContext {
+        font_size: Some(16.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 1.5 * 16 + 10 = 34.0
+    assert_eq!(result, Some(34.0));
+}
+
+#[test]
+/// 测试 calc() 中 rem 单位求值
+fn test_eval_calc_rem() {
+    let expr = parse_calc("calc(2rem + 5px)").unwrap();
+    let ctx = CalcContext {
+        root_font_size: Some(20.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 2 * 20 + 5 = 45.0
+    assert_eq!(result, Some(45.0));
+}
+
+#[test]
+/// 测试 calc() 中 vh 单位求值
+fn test_eval_calc_vh() {
+    let expr = parse_calc("calc(50vh - 20px)").unwrap();
+    let ctx = CalcContext {
+        viewport_height: Some(800.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 50 * 800 / 100 - 20 = 380.0
+    assert_eq!(result, Some(380.0));
+}
+
+#[test]
+/// 测试 calc() 中 vw 单位求值
+fn test_eval_calc_vw() {
+    let expr = parse_calc("calc(25vw + 10px)").unwrap();
+    let ctx = CalcContext {
+        viewport_width: Some(1200.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 25 * 1200 / 100 + 10 = 310.0
+    assert_eq!(result, Some(310.0));
+}
+
+#[test]
+/// 测试 calc() 中 vmin 单位求值
+fn test_eval_calc_vmin() {
+    let expr = parse_calc("calc(10vmin)").unwrap();
+    let ctx = CalcContext {
+        viewport_width: Some(1200.0),
+        viewport_height: Some(800.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 10 * min(1200, 800) / 100 = 80.0
+    assert_eq!(result, Some(80.0));
+}
+
+#[test]
+/// 测试 calc() 中 vmax 单位求值
+fn test_eval_calc_vmax() {
+    let expr = parse_calc("calc(10vmax)").unwrap();
+    let ctx = CalcContext {
+        viewport_width: Some(1200.0),
+        viewport_height: Some(800.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 10 * max(1200, 800) / 100 = 120.0
+    assert_eq!(result, Some(120.0));
+}
+
+#[test]
+/// 测试 calc() 中 ch 单位求值
+fn test_eval_calc_ch() {
+    let expr = parse_calc("calc(4ch + 2px)").unwrap();
+    let ctx = CalcContext {
+        ch_width: Some(8.0),
+        ..Default::default()
+    };
+    let result = eval_calc_with_context(&expr, &ctx);
+    // 4 * 8 + 2 = 34.0
+    assert_eq!(result, Some(34.0));
+}
+
+#[test]
+/// 测试 calc() 相对单位缺少上下文时返回 None
+fn test_eval_calc_relative_unit_missing_context() {
+    let expr = parse_calc("calc(1.5em + 10px)").unwrap();
+    // 没有 font_size 上下文
+    let ctx = CalcContext::default();
+    let result = eval_calc_with_context(&expr, &ctx);
+    assert_eq!(result, None);
+}
+
+#[test]
+/// 测试 eval_calc 向后兼容性（parent_length 参数）
+fn test_eval_calc_backward_compat() {
+    let expr = parse_calc("calc(100% - 20px)").unwrap();
+    let result = eval_calc(&expr, Some(200.0));
+    assert_eq!(result, Some(180.0));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 13. CSS Gradient 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试基本 linear-gradient 解析
+fn test_parse_linear_gradient_basic() {
+    let result = parse_gradient("linear-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToBottom);
+            assert_eq!(lg.stops.len(), 2);
+            assert_eq!(lg.repeating, false);
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试带方向的 linear-gradient
+fn test_parse_linear_gradient_with_direction() {
+    let result = parse_gradient("linear-gradient(to right, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToRight);
+            assert_eq!(lg.stops.len(), 2);
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试带角度的 linear-gradient
+fn test_parse_linear_gradient_with_angle() {
+    let result = parse_gradient("linear-gradient(45deg, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::Angle(45.0));
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试带色标位置的 linear-gradient
+fn test_parse_linear_gradient_with_stop_positions() {
+    let result = parse_gradient("linear-gradient(red 0%, blue 100%)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.stops.len(), 2);
+            assert_eq!(lg.stops[0].position, Some(LengthValue::Percentage(0.0)));
+            assert_eq!(lg.stops[1].position, Some(LengthValue::Percentage(100.0)));
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试多色标 linear-gradient
+fn test_parse_linear_gradient_multi_stop() {
+    let result = parse_gradient("linear-gradient(red, yellow, green, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.stops.len(), 4);
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试 repeating-linear-gradient
+fn test_parse_repeating_linear_gradient() {
+    let result = parse_gradient("repeating-linear-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert!(lg.repeating);
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+}
+
+#[test]
+/// 测试 radial-gradient 基本解析
+fn test_parse_radial_gradient_basic() {
+    let result = parse_gradient("radial-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Ellipse);
+            assert_eq!(rg.size, RadialSize::FarthestCorner);
+            assert_eq!(rg.stops.len(), 2);
+            assert!(!rg.repeating);
+        }
+        _ => panic!("Expected RadialGradient"),
+    }
+}
+
+#[test]
+/// 测试 circle radial-gradient
+fn test_parse_radial_gradient_circle() {
+    let result = parse_gradient("radial-gradient(circle, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Circle);
+        }
+        _ => panic!("Expected RadialGradient"),
+    }
+}
+
+#[test]
+/// 测试带位置的 radial-gradient
+fn test_parse_radial_gradient_at_position() {
+    let result = parse_gradient("radial-gradient(circle at center, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Circle);
+            assert_eq!(rg.position_x, LengthValue::Percentage(50.0));
+            assert_eq!(rg.position_y, LengthValue::Percentage(50.0));
+        }
+        _ => panic!("Expected RadialGradient"),
+    }
+}
+
+#[test]
+/// 测试 repeating-radial-gradient
+fn test_parse_repeating_radial_gradient() {
+    let result = parse_gradient("repeating-radial-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Radial(rg) => {
+            assert!(rg.repeating);
+        }
+        _ => panic!("Expected RadialGradient"),
+    }
+}
+
+#[test]
+/// 测试 conic-gradient 基本解析
+fn test_parse_conic_gradient_basic() {
+    let result = parse_gradient("conic-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Conic(cg) => {
+            assert_eq!(cg.from_angle, 0.0);
+            assert_eq!(cg.stops.len(), 2);
+            assert!(!cg.repeating);
+        }
+        _ => panic!("Expected ConicGradient"),
+    }
+}
+
+#[test]
+/// 测试带 from 角度的 conic-gradient
+fn test_parse_conic_gradient_from_angle() {
+    let result = parse_gradient("conic-gradient(from 45deg, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Conic(cg) => {
+            assert_eq!(cg.from_angle, 45.0);
+        }
+        _ => panic!("Expected ConicGradient"),
+    }
+}
+
+#[test]
+/// 测试 repeating-conic-gradient
+fn test_parse_repeating_conic_gradient() {
+    let result = parse_gradient("repeating-conic-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Conic(cg) => {
+            assert!(cg.repeating);
+        }
+        _ => panic!("Expected ConicGradient"),
+    }
+}
+
+#[test]
+/// 测试无效渐变返回 None
+fn test_parse_gradient_invalid() {
+    assert_eq!(parse_gradient("not-a-gradient"), None);
+    assert_eq!(parse_gradient("linear-gradient()"), None);
+    assert_eq!(parse_gradient(""), None);
 }

@@ -1,6 +1,6 @@
 //! CORS（跨源资源共享）模块。
 //!
-//! 提供 CORS 策略检查和简单请求判断功能。
+//! 提供 CORS 策略检查、简单请求判断和预检响应生成功能。
 
 use crate::origin::Origin;
 
@@ -47,6 +47,23 @@ pub struct CorsResult {
     pub allowed: bool,
     /// 原因说明。
     pub reason: String,
+}
+
+/// CORS 预检响应头。
+///
+/// 包含服务端返回给预检请求的 Access-Control-* 响应头。
+#[derive(Debug, Clone)]
+pub struct PreflightResponseHeaders {
+    /// Access-Control-Allow-Origin 值。
+    pub allow_origin: Option<String>,
+    /// Access-Control-Allow-Methods 值。
+    pub allow_methods: Option<String>,
+    /// Access-Control-Allow-Headers 值。
+    pub allow_headers: Option<String>,
+    /// Access-Control-Max-Age 值。
+    pub max_age: Option<String>,
+    /// Access-Control-Allow-Credentials 值。
+    pub allow_credentials: Option<String>,
 }
 
 /// 检查 CORS 请求是否允许。
@@ -205,6 +222,139 @@ pub fn is_simple_request(
     true
 }
 
+/// 生成 CORS 预检请求的响应头。
+///
+/// 根据策略和预检请求信息生成 Access-Control-Allow-Origin、
+/// Access-Control-Allow-Methods、Access-Control-Allow-Headers、
+/// Access-Control-Max-Age 等响应头。
+///
+/// `policy` 为 CORS 策略配置。
+/// `request_origin` 为预检请求的 Origin 头值。
+/// `request_method` 为 Access-Control-Request-Method 头值（预检请求想用的方法）。
+/// `request_headers` 为 Access-Control-Request-Headers 头值（预检请求想带的额外头列表）。
+pub fn generate_preflight_response(
+    policy: &CorsPolicy,
+    request_origin: &Origin,
+    request_method: &str,
+    request_headers: &[String],
+) -> PreflightResponseHeaders {
+    // 检查源是否允许
+    let origin_allowed = if policy.allow_origins.iter().any(|o| o == "*") {
+        if policy.allow_credentials {
+            // credentials + wildcard 不合法
+            return PreflightResponseHeaders {
+                allow_origin: None,
+                allow_methods: None,
+                allow_headers: None,
+                max_age: None,
+                allow_credentials: None,
+            };
+        }
+        true
+    } else {
+        let origin_str = format!(
+            "{}://{}",
+            request_origin.scheme,
+            if request_origin.port == 80 && request_origin.scheme == "http"
+                || request_origin.port == 443 && request_origin.scheme == "https"
+            {
+                request_origin.host.clone()
+            } else {
+                format!("{}:{}", request_origin.host, request_origin.port)
+            }
+        );
+        policy
+            .allow_origins
+            .iter()
+            .any(|o| o.eq_ignore_ascii_case(&origin_str))
+    };
+
+    if !origin_allowed {
+        return PreflightResponseHeaders {
+            allow_origin: None,
+            allow_methods: None,
+            allow_headers: None,
+            max_age: None,
+            allow_credentials: None,
+        };
+    }
+
+    // 检查请求方法是否允许
+    let method_allowed = policy
+        .allow_methods
+        .iter()
+        .any(|m| m.eq_ignore_ascii_case(request_method));
+
+    if !method_allowed {
+        return PreflightResponseHeaders {
+            allow_origin: None,
+            allow_methods: None,
+            allow_headers: None,
+            max_age: None,
+            allow_credentials: None,
+        };
+    }
+
+    // 检查请求头是否全部允许
+    let all_headers_allowed = request_headers.iter().all(|h| {
+        policy
+            .allow_headers
+            .iter()
+            .any(|ah| ah.eq_ignore_ascii_case(h))
+    });
+
+    if !all_headers_allowed {
+        return PreflightResponseHeaders {
+            allow_origin: None,
+            allow_methods: None,
+            allow_headers: None,
+            max_age: None,
+            allow_credentials: None,
+        };
+    }
+
+    // 构建响应头
+    let allow_origin = if policy.allow_origins.iter().any(|o| o == "*") {
+        Some("*".to_string())
+    } else {
+        Some(format!(
+            "{}://{}",
+            request_origin.scheme,
+            if request_origin.port == 80 && request_origin.scheme == "http"
+                || request_origin.port == 443 && request_origin.scheme == "https"
+            {
+                request_origin.host.clone()
+            } else {
+                format!("{}:{}", request_origin.host, request_origin.port)
+            }
+        ))
+    };
+
+    let allow_methods = Some(policy.allow_methods.join(", "));
+
+    let allow_headers = if policy.allow_headers.is_empty() {
+        None
+    } else {
+        Some(policy.allow_headers.join(", "))
+    };
+
+    let max_age = policy.max_age.map(|v| v.to_string());
+
+    let allow_credentials = if policy.allow_credentials {
+        Some("true".to_string())
+    } else {
+        None
+    };
+
+    PreflightResponseHeaders {
+        allow_origin,
+        allow_methods,
+        allow_headers,
+        max_age,
+        allow_credentials,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +424,6 @@ mod tests {
         };
         let origin = Origin::parse("http://example.com").unwrap();
         let result = check_cors(&policy, &origin, "GET", &[]);
-        // Wildcard with credentials should be rejected
         assert!(!result.allowed);
     }
 
@@ -472,5 +621,161 @@ mod tests {
             None,
             &[("X-Custom".to_string(), "val".to_string())]
         ));
+    }
+
+    // ---- 预检响应生成测试 ----
+
+    #[test]
+    fn test_preflight_wildcard_origin() {
+        let policy = CorsPolicy::default();
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert_eq!(headers.allow_origin, Some("*".to_string()));
+        assert!(headers.allow_methods.is_some());
+        assert!(headers.max_age.is_none());
+        assert!(headers.allow_credentials.is_none());
+    }
+
+    #[test]
+    fn test_preflight_specific_origin() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string(), "PUT".to_string()],
+            allow_headers: vec!["X-Custom".to_string()],
+            allow_credentials: false,
+            max_age: Some(3600),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "PUT", &["X-Custom".to_string()]);
+        assert_eq!(headers.allow_origin, Some("http://example.com".to_string()));
+        assert_eq!(headers.allow_methods, Some("GET, PUT".to_string()));
+        assert_eq!(headers.allow_headers, Some("X-Custom".to_string()));
+        assert_eq!(headers.max_age, Some("3600".to_string()));
+    }
+
+    #[test]
+    fn test_preflight_blocked_origin() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://allowed.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://blocked.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert!(headers.allow_origin.is_none());
+        assert!(headers.allow_methods.is_none());
+    }
+
+    #[test]
+    fn test_preflight_blocked_method() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "DELETE", &[]);
+        assert!(headers.allow_origin.is_none());
+    }
+
+    #[test]
+    fn test_preflight_blocked_header() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec!["X-Allowed".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(
+            &policy,
+            &origin,
+            "GET",
+            &["X-Blocked".to_string()],
+        );
+        assert!(headers.allow_origin.is_none());
+    }
+
+    #[test]
+    fn test_preflight_with_credentials() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert_eq!(headers.allow_origin, Some("http://example.com".to_string()));
+        assert_eq!(headers.allow_credentials, Some("true".to_string()));
+    }
+
+    #[test]
+    fn test_preflight_wildcard_with_credentials_rejected() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert!(headers.allow_origin.is_none());
+    }
+
+    #[test]
+    fn test_preflight_empty_request_headers() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(600),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "POST", &[]);
+        assert_eq!(headers.allow_origin, Some("*".to_string()));
+        assert_eq!(headers.allow_headers, None);
+        assert_eq!(headers.max_age, Some("600".to_string()));
+    }
+
+    #[test]
+    fn test_preflight_custom_port_origin() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com:3000".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com:3000").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert_eq!(headers.allow_origin, Some("http://example.com:3000".to_string()));
+    }
+
+    #[test]
+    fn test_preflight_case_insensitive_header_matching() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec!["X-Custom-Header".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(
+            &policy,
+            &origin,
+            "GET",
+            &["x-custom-header".to_string()],
+        );
+        assert_eq!(headers.allow_origin, Some("*".to_string()));
     }
 }

@@ -2,6 +2,9 @@
 //!
 //! 提供 HTTP Cookie 解析、存储和匹配功能。
 
+use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use crate::NetError;
 use crate::url_parser::ParsedUrl;
 
@@ -16,6 +19,17 @@ pub enum SameSite {
     Strict,
 }
 
+/// 请求上下文，用于 SameSite 策略判断。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestContext {
+    /// 同站请求（包括用户从同一站点发起的导航和子资源请求）。
+    SameSite,
+    /// 跨站顶层导航（用户从外部站点点击链接进入）。
+    CrossSiteTopLevel,
+    /// 跨站非导航请求（iframe 嵌入、fetch 等）。
+    CrossSiteSubresource,
+}
+
 /// HTTP Cookie。
 #[derive(Debug, Clone)]
 pub struct Cookie {
@@ -27,14 +41,178 @@ pub struct Cookie {
     pub domain: Option<String>,
     /// 路径。
     pub path: Option<String>,
-    /// 过期时间。
-    pub expires: Option<String>,
+    /// 过期时间戳（从 UNIX epoch 起算的秒数）。
+    pub expires: Option<u64>,
     /// 是否仅 HTTPS。
     pub secure: bool,
     /// 是否仅 HTTP（禁止 JS 访问）。
     pub http_only: bool,
     /// SameSite 策略。
     pub same_site: SameSite,
+}
+
+impl Cookie {
+    /// 判断 Cookie 是否已过期。
+    ///
+    /// 如果 `expires` 为 `None`，视为会话 Cookie，不会过期。
+    /// 如果 `expires` 对应的时间早于当前系统时间，视为已过期。
+    pub fn is_expired(&self) -> bool {
+        match self.expires {
+            None => false,
+            Some(secs) => {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::ZERO)
+                    .as_secs();
+                now > secs
+            }
+        }
+    }
+
+    /// 判断 Cookie 在给定时间点是否已过期。
+    ///
+    /// 主要用于测试：传入一个固定的 `now_secs`（从 UNIX epoch 起算的秒数）。
+    pub fn is_expired_at(&self, now_secs: u64) -> bool {
+        match self.expires {
+            None => false,
+            Some(secs) => now_secs > secs,
+        }
+    }
+}
+
+/// 尝试将 Expires 日期字符串解析为 UNIX 时间戳（秒）。
+///
+/// 支持的日期格式：
+/// - RFC 1123: `Wed, 09 Jun 2021 10:18:14 GMT`
+/// - RFC 850: `Wednesday, 09-Jun-21 10:18:14 GMT`
+/// - ANSI C asctime: `Wed Jun 09 10:18:14 2021`
+///
+/// 解析失败时返回 `None`。
+pub fn parse_expires_date(raw: &str) -> Option<u64> {
+    // Month name to number (1-12)
+    fn month_to_num(month: &str) -> Option<u32> {
+        match month.to_ascii_lowercase().as_str() {
+            "jan" => Some(1),
+            "feb" => Some(2),
+            "mar" => Some(3),
+            "apr" => Some(4),
+            "may" => Some(5),
+            "jun" => Some(6),
+            "jul" => Some(7),
+            "aug" => Some(8),
+            "sep" => Some(9),
+            "oct" => Some(10),
+            "nov" => Some(11),
+            "dec" => Some(12),
+            _ => None,
+        }
+    }
+
+    // 将两位年份转换为四位数（0-68 → 20xx，69-99 → 19xx）
+    fn fix_two_digit_year(y: u32) -> u32 {
+        if y <= 68 {
+            2000 + y
+        } else {
+            1900 + y
+        }
+    }
+
+    // 简易的 days_in_year 函数
+    fn is_leap_year(y: u32) -> bool {
+        (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
+    }
+
+    fn days_in_month(y: u32, m: u32) -> u32 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if is_leap_year(y) => 29,
+            2 => 28,
+            _ => 0,
+        }
+    }
+
+    // 将日期时间转换为 UNIX 时间戳
+    fn to_unix_secs(y: u32, m: u32, d: u32, h: u32, min: u32, s: u32) -> u64 {
+        let mut days: u64 = 0;
+        // 累加完整年份
+        for yr in 1970..y {
+            days += if is_leap_year(yr) { 366 } else { 365 };
+        }
+        // 累加完整月份
+        for mo in 1..m {
+            days += days_in_month(y, mo) as u64;
+        }
+        days += (d - 1) as u64;
+        (days * 86400) + (h as u64 * 3600) + (min as u64 * 60) + s as u64
+    }
+
+    let raw = raw.trim();
+
+    // ANSI C asctime 格式: "Wed Jun 09 10:18:14 2021"
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.len() == 4 {
+        // "Jun 09 10:18:14 2021" → 但 asctime 是 5 部分（含星期名）
+        // 这里先跳过，因为上面已排除含逗号的格式
+    }
+
+    // 尝试 RFC 1123: "Wed, 09 Jun 2021 10:18:14 GMT"
+    if parts.len() == 6 && parts[0].ends_with(',') {
+        let day: u32 = u32::from_str(parts[1]).ok()?;
+        let month = month_to_num(parts[2])?;
+        let year_raw: u32 = u32::from_str(parts[3]).ok()?;
+        let year = if year_raw < 100 {
+            fix_two_digit_year(year_raw)
+        } else {
+            year_raw
+        };
+        let time_parts: Vec<&str> = parts[4].split(':').collect();
+        if time_parts.len() != 3 {
+            return None;
+        }
+        let hour: u32 = u32::from_str(time_parts[0]).ok()?;
+        let minute: u32 = u32::from_str(time_parts[1]).ok()?;
+        let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        return Some(to_unix_secs(year, month, day, hour, minute, second));
+    }
+
+    // 尝试 RFC 850: "Wednesday, 09-Jun-21 10:18:14 GMT"
+    if parts.len() == 4 && parts[0].ends_with(',') {
+        let day_year: Vec<&str> = parts[1].split('-').collect();
+        if day_year.len() != 3 {
+            return None;
+        }
+        let day: u32 = u32::from_str(day_year[0]).ok()?;
+        let month = month_to_num(day_year[1])?;
+        let year_short: u32 = u32::from_str(day_year[2]).ok()?;
+        let year = fix_two_digit_year(year_short);
+        let time_parts: Vec<&str> = parts[2].split(':').collect();
+        if time_parts.len() != 3 {
+            return None;
+        }
+        let hour: u32 = u32::from_str(time_parts[0]).ok()?;
+        let minute: u32 = u32::from_str(time_parts[1]).ok()?;
+        let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        return Some(to_unix_secs(year, month, day, hour, minute, second));
+    }
+
+    // 尝试 ANSI C asctime: "Wed Jun  9 10:18:14 2021" (5 部分)
+    if parts.len() == 5 {
+        // parts: ["Wed", "Jun", "9", "10:18:14", "2021"]
+        let month = month_to_num(parts[1])?;
+        let day: u32 = u32::from_str(parts[2]).ok()?;
+        let year: u32 = u32::from_str(parts[4]).ok()?;
+        let time_parts: Vec<&str> = parts[3].split(':').collect();
+        if time_parts.len() != 3 {
+            return None;
+        }
+        let hour: u32 = u32::from_str(time_parts[0]).ok()?;
+        let minute: u32 = u32::from_str(time_parts[1]).ok()?;
+        let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        return Some(to_unix_secs(year, month, day, hour, minute, second));
+    }
+
+    None
 }
 
 /// Cookie 存储。
@@ -82,6 +260,9 @@ impl CookieStore {
             same_site: SameSite::None,
         };
 
+        let mut max_age_seen: Option<i64> = None;
+        let mut expires_raw: Option<String> = None;
+
         // 解析属性
         for part in parts.iter().skip(1) {
             let part = part.trim();
@@ -97,14 +278,14 @@ impl CookieStore {
                 cookie.domain = Some(val.trim().to_string());
             } else if let Some(val) = part.strip_prefix("domain=") {
                 cookie.domain = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("Expires=") {
-                cookie.expires = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("expires=") {
-                cookie.expires = Some(val.trim().to_string());
             } else if let Some(val) = part.strip_prefix("Max-Age=") {
-                cookie.expires = Some(val.trim().to_string());
+                max_age_seen = i64::from_str(val.trim()).ok();
             } else if let Some(val) = part.strip_prefix("max-age=") {
-                cookie.expires = Some(val.trim().to_string());
+                max_age_seen = i64::from_str(val.trim()).ok();
+            } else if let Some(val) = part.strip_prefix("Expires=") {
+                expires_raw = Some(val.trim().to_string());
+            } else if let Some(val) = part.strip_prefix("expires=") {
+                expires_raw = Some(val.trim().to_string());
             } else if let Some(val) = part.strip_prefix("SameSite=") {
                 cookie.same_site = match val.trim() {
                     "Strict" => SameSite::Strict,
@@ -120,11 +301,34 @@ impl CookieStore {
             }
         }
 
+        // Max-Age 优先于 Expires
+        if let Some(max_age) = max_age_seen {
+            let now_secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_secs();
+            if max_age <= 0 {
+                // 立即过期（设置到 epoch 起点）
+                cookie.expires = Some(0);
+            } else {
+                cookie.expires = Some(now_secs + max_age as u64);
+            }
+        } else if let Some(ref raw) = expires_raw {
+            cookie.expires = parse_expires_date(raw);
+        }
+
         Ok(cookie)
     }
 
     /// 添加 cookie。
+    ///
+    /// 如果同名同 domain 同 path 的 cookie 已存在，替换旧值。
+    /// 如果 cookie 已过期，不会添加。
     pub fn add(&mut self, cookie: Cookie) {
+        // 不存储已过期的 cookie
+        if cookie.is_expired() {
+            return;
+        }
         // 如果同名同 domain 同 path，替换旧值
         self.cookies.retain(|c| {
             !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path)
@@ -132,21 +336,47 @@ impl CookieStore {
         self.cookies.push(cookie);
     }
 
-    /// 获取匹配 URL 的所有 cookies。
+    /// 获取匹配 URL 且未过期的所有 cookies。
     pub fn get_for_url(&self, url: &ParsedUrl) -> Vec<&Cookie> {
         self.cookies
             .iter()
-            .filter(|c| cookie_matches_url(c, url))
+            .filter(|c| !c.is_expired() && cookie_matches_url(c, url))
             .collect()
     }
 
-    /// 生成 Cookie header 值。
+    /// 生成 Cookie header 值，考虑 SameSite 策略。
+    ///
+    /// `context` 用于判断 SameSite 限制：
+    /// - `SameSite::Strict` 仅在 `RequestContext::SameSite` 时发送。
+    /// - `SameSite::Lax` 在 `SameSite` 和 `CrossSiteTopLevel`（安全方法）时发送。
+    /// - `SameSite::None` 始终发送。
+    pub fn cookie_header_with_context(
+        &self,
+        url: &ParsedUrl,
+        context: RequestContext,
+        is_safe_method: bool,
+    ) -> String {
+        self.cookies
+            .iter()
+            .filter(|c| !c.is_expired() && cookie_matches_url(c, url))
+            .filter(|c| same_site_allows(c.same_site, context, is_safe_method))
+            .map(|c| format!("{}={}", c.name, c.value))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
+    /// 生成 Cookie header 值（不检查 SameSite，兼容旧调用方）。
     pub fn cookie_header(&self, url: &ParsedUrl) -> String {
         self.get_for_url(url)
             .iter()
             .map(|c| format!("{}={}", c.name, c.value))
             .collect::<Vec<_>>()
             .join("; ")
+    }
+
+    /// 清除所有已过期的 cookies。
+    pub fn evict_expired(&mut self) {
+        self.cookies.retain(|c| !c.is_expired());
     }
 
     /// 清除所有 cookies。
@@ -168,6 +398,22 @@ impl CookieStore {
 impl Default for CookieStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 判断 SameSite 策略是否允许在给定请求上下文中发送 cookie。
+///
+/// - `Strict`：仅同站请求允许。
+/// - `Lax`：同站请求允许，跨站顶层导航 + 安全方法（GET/HEAD）也允许。
+/// - `None`：始终允许。
+pub fn same_site_allows(same_site: SameSite, context: RequestContext, is_safe_method: bool) -> bool {
+    match same_site {
+        SameSite::Strict => context == RequestContext::SameSite,
+        SameSite::Lax => {
+            context == RequestContext::SameSite
+                || (context == RequestContext::CrossSiteTopLevel && is_safe_method)
+        }
+        SameSite::None => true,
     }
 }
 
@@ -335,14 +581,39 @@ mod tests {
     #[test]
     fn test_parse_cookie_max_age() {
         let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=3600").unwrap();
-        assert_eq!(cookie.expires.as_deref(), Some("3600"));
+        // expires should be a computed future timestamp, not the raw string
+        assert!(cookie.expires.is_some());
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Should be approximately now + 3600
+        assert!(cookie.expires.unwrap() > now_secs);
+        assert!(cookie.expires.unwrap() <= now_secs + 3600 + 1);
+    }
+
+    #[test]
+    fn test_parse_cookie_max_age_zero_expires_immediately() {
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=0").unwrap();
+        // Max-Age=0 means immediately expired → expires = 0
+        assert_eq!(cookie.expires, Some(0));
+    }
+
+    #[test]
+    fn test_parse_cookie_max_age_negative_expires_immediately() {
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=-1").unwrap();
+        // Negative Max-Age means immediately expired
+        assert_eq!(cookie.expires, Some(0));
     }
 
     #[test]
     fn test_parse_cookie_expires() {
         let cookie =
             CookieStore::parse_set_cookie("a=1; Expires=Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
+        // The parsed expiry should be a concrete UNIX timestamp
         assert!(cookie.expires.is_some());
+        // Wed, 09 Jun 2021 10:18:14 GMT = 1623233894
+        assert_eq!(cookie.expires.unwrap(), 1623233894);
     }
 
     #[test]
@@ -395,5 +666,311 @@ mod tests {
         let sub_url = parse_url("http://sub.example.com/").unwrap();
         let cookies = store.get_for_url(&sub_url);
         assert_eq!(cookies.len(), 1);
+    }
+
+    // ── Cookie expiry tests ──
+
+    #[test]
+    fn test_cookie_is_expired_session_cookie() {
+        // Session cookie (no expires) is never expired
+        let cookie = CookieStore::parse_set_cookie("a=1").unwrap();
+        assert!(!cookie.is_expired());
+    }
+
+    #[test]
+    fn test_cookie_is_expired_future() {
+        // Cookie with Max-Age far in the future should not be expired
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=86400").unwrap();
+        assert!(!cookie.is_expired());
+    }
+
+    #[test]
+    fn test_cookie_is_expired_at() {
+        // Use is_expired_at to test with a fixed timestamp
+        let mut cookie = CookieStore::parse_set_cookie("a=1").unwrap();
+        // Manually set expires to timestamp 1000
+        cookie.expires = Some(1000);
+
+        // At time 500, not expired
+        assert!(!cookie.is_expired_at(500));
+        // At time 999, not expired
+        assert!(!cookie.is_expired_at(999));
+        // At time 1000, not expired (expires AT this time is still valid)
+        assert!(!cookie.is_expired_at(1000));
+        // At time 1001, expired
+        assert!(cookie.is_expired_at(1001));
+    }
+
+    #[test]
+    fn test_cookie_store_add_expired_cookie_rejected() {
+        let mut store = CookieStore::new();
+        // Max-Age=0 means immediately expired
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=0").unwrap();
+        assert!(cookie.is_expired());
+        store.add(cookie);
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn test_cookie_store_evict_expired() {
+        let mut store = CookieStore::new();
+        // Add a valid cookie
+        store.add(CookieStore::parse_set_cookie("valid=1; Domain=example.com").unwrap());
+        // Add a cookie and manually expire it
+        store.add(CookieStore::parse_set_cookie("expired=2; Domain=example.com").unwrap());
+        // Manually set the second cookie to expired
+        store.cookies[1].expires = Some(1);
+        assert_eq!(store.len(), 2);
+        store.evict_expired();
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.cookies[0].name, "valid");
+    }
+
+    #[test]
+    fn test_cookie_store_get_for_url_filters_expired() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("good=1; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("bad=2; Domain=example.com").unwrap());
+        // Manually expire the second cookie
+        store.cookies[1].expires = Some(1);
+
+        let url = parse_url("http://example.com/").unwrap();
+        let cookies = store.get_for_url(&url);
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].name, "good");
+    }
+
+    #[test]
+    fn test_parse_cookie_max_age_priority_over_expires() {
+        // When both Max-Age and Expires are present, Max-Age takes priority
+        let cookie = CookieStore::parse_set_cookie(
+            "a=1; Max-Age=3600; Expires=Wed, 09 Jun 2021 10:18:14 GMT",
+        )
+        .unwrap();
+        // Should use Max-Age (now + 3600), not the past Expires
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(cookie.expires.unwrap() > now_secs);
+    }
+
+    // ── Expires date parsing tests ──
+
+    #[test]
+    fn test_parse_expires_date_rfc1123() {
+        // Wed, 09 Jun 2021 10:18:14 GMT
+        let ts = parse_expires_date("Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
+        assert_eq!(ts, 1623233894);
+    }
+
+    #[test]
+    fn test_parse_expires_date_rfc850() {
+        // Wednesday, 09-Jun-21 10:18:14 GMT (two-digit year: 21 → 2021)
+        let ts = parse_expires_date("Wednesday, 09-Jun-21 10:18:14 GMT").unwrap();
+        assert_eq!(ts, 1623233894);
+    }
+
+    #[test]
+    fn test_parse_expires_date_asctime() {
+        // Wed Jun 09 10:18:14 2021
+        let ts = parse_expires_date("Wed Jun 09 10:18:14 2021").unwrap();
+        assert_eq!(ts, 1623233894);
+    }
+
+    #[test]
+    fn test_parse_expires_date_invalid() {
+        assert!(parse_expires_date("not a date").is_none());
+        assert!(parse_expires_date("").is_none());
+    }
+
+    #[test]
+    fn test_parse_expires_date_two_digit_year_68_is_2068() {
+        // 68 → 2068
+        let ts = parse_expires_date("Wed, 01 Jan 68 00:00:00 GMT").unwrap();
+        let jan_2068 = parse_expires_date("Mon, 01 Jan 2068 00:00:00 GMT").unwrap();
+        assert_eq!(ts, jan_2068);
+    }
+
+    #[test]
+    fn test_parse_expires_date_two_digit_year_69_is_1969() {
+        // 69 → 1969 (before epoch, should still produce a small number)
+        let ts = parse_expires_date("Tue, 01 Jan 69 00:00:00 GMT").unwrap();
+        // 1969 is before epoch, so the timestamp wraps or is small
+        // This just verifies it parses without panic
+        assert!(ts <= 365 * 86400); // Should be a small number
+    }
+
+    // ── SameSite enforcement tests ──
+
+    #[test]
+    fn test_same_site_strict_allowed_same_site() {
+        assert!(same_site_allows(
+            SameSite::Strict,
+            RequestContext::SameSite,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_strict_blocked_cross_site_top_level() {
+        assert!(!same_site_allows(
+            SameSite::Strict,
+            RequestContext::CrossSiteTopLevel,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_strict_blocked_cross_site_subresource() {
+        assert!(!same_site_allows(
+            SameSite::Strict,
+            RequestContext::CrossSiteSubresource,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_lax_allowed_same_site() {
+        assert!(same_site_allows(
+            SameSite::Lax,
+            RequestContext::SameSite,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_lax_allowed_cross_site_top_level_safe_method() {
+        assert!(same_site_allows(
+            SameSite::Lax,
+            RequestContext::CrossSiteTopLevel,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_lax_blocked_cross_site_top_level_unsafe_method() {
+        assert!(!same_site_allows(
+            SameSite::Lax,
+            RequestContext::CrossSiteTopLevel,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_same_site_lax_blocked_cross_site_subresource() {
+        assert!(!same_site_allows(
+            SameSite::Lax,
+            RequestContext::CrossSiteSubresource,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_same_site_none_always_allowed() {
+        assert!(same_site_allows(
+            SameSite::None,
+            RequestContext::SameSite,
+            true
+        ));
+        assert!(same_site_allows(
+            SameSite::None,
+            RequestContext::CrossSiteTopLevel,
+            false
+        ));
+        assert!(same_site_allows(
+            SameSite::None,
+            RequestContext::CrossSiteSubresource,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_cookie_header_with_context_strict_same_site() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict")
+                .unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // Same-site: both sent
+        let header = store.cookie_header_with_context(
+            &url,
+            RequestContext::SameSite,
+            true,
+        );
+        assert!(header.contains("strict_cookie=v1"));
+        assert!(header.contains("none_cookie=v2"));
+
+        // Cross-site top-level: only None
+        let header = store.cookie_header_with_context(
+            &url,
+            RequestContext::CrossSiteTopLevel,
+            true,
+        );
+        assert!(!header.contains("strict_cookie"));
+        assert!(header.contains("none_cookie=v2"));
+    }
+
+    #[test]
+    fn test_cookie_header_with_context_lax_top_level_get() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // Cross-site top-level GET: Lax is allowed
+        let header = store.cookie_header_with_context(
+            &url,
+            RequestContext::CrossSiteTopLevel,
+            true,
+        );
+        assert!(header.contains("lax_cookie=v1"));
+
+        // Cross-site top-level POST: Lax is blocked
+        let header = store.cookie_header_with_context(
+            &url,
+            RequestContext::CrossSiteTopLevel,
+            false,
+        );
+        assert!(header.is_empty());
+    }
+
+    #[test]
+    fn test_cookie_header_with_context_cross_site_subresource() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax")
+                .unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict")
+                .unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // Cross-site subresource: only None allowed
+        let header = store.cookie_header_with_context(
+            &url,
+            RequestContext::CrossSiteSubresource,
+            true,
+        );
+        assert!(!header.contains("lax_cookie"));
+        assert!(!header.contains("strict_cookie"));
+        assert!(header.contains("none_cookie=v3"));
     }
 }

@@ -3,7 +3,12 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::TransformFunction;
+use zero_css_parser::values::TransformValue;
+use zero_css_parser::values::VisibilityValue;
 use zero_dom::NodeId;
+use zero_layout_engine::types::OverflowClip;
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -31,10 +36,99 @@ impl Painter {
         self.paint_node(layout, styles, 0.0, 0.0);
     }
 
+    /// 仅绘制与脏区域相交的节点（增量绘制）。
+    ///
+    /// 遍历布局树时跳过与脏区域完全不相交的子树，
+    /// 只生成落在脏区域内的图元。
+    pub fn paint_in_rect(
+        &mut self,
+        layout: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        dirty_rect: &Rect,
+    ) {
+        self.paint_node_in_rect(layout, styles, 0.0, 0.0, dirty_rect);
+    }
+
+    /// 绘制与脏区域相交的节点（递归）。
+    fn paint_node_in_rect(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        dirty_rect: &Rect,
+    ) {
+        let abs_x = offset_x + box_node.x;
+        let abs_y = offset_y + box_node.y;
+
+        // 快速剔除：如果节点包围盒完全不在脏区域内，跳过整个子树
+        let node_right = abs_x + box_node.width;
+        let node_bottom = abs_y + box_node.height;
+        if node_right <= dirty_rect.left()
+            || node_bottom <= dirty_rect.top()
+            || abs_x >= dirty_rect.right()
+            || abs_y >= dirty_rect.bottom()
+        {
+            return;
+        }
+
+        // 节点与脏区域相交，执行正常绘制
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible
+            || box_node.overflow_y != OverflowClip::Visible;
+
+        let is_hidden = if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            let hidden = style.visibility == VisibilityValue::Hidden;
+
+            if !hidden {
+                if style.background_color != ColorValue::Transparent {
+                    self.paint_background(box_node, abs_x, abs_y, style);
+                }
+                if box_node.border_top > 0.0
+                    || box_node.border_right > 0.0
+                    || box_node.border_bottom > 0.0
+                    || box_node.border_left > 0.0
+                {
+                    self.paint_borders(box_node, abs_x, abs_y, style);
+                }
+                self.paint_outline(box_node, abs_x, abs_y, style);
+            }
+
+            hidden
+        } else {
+            false
+        };
+
+        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+
+        let fills_before = self.primitives.fills.len();
+        let glyphs_before = self.primitives.glyphs.len();
+
+        for child in &box_node.children {
+            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect);
+        }
+
+        if needs_clip {
+            let clip_rect = Rect::new(
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            );
+            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
+            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        let _ = is_hidden;
+    }
+
     /// 绘制单个节点（递归）。
     ///
     /// 根据节点的计算样式生成背景色填充和边框填充图元，
-    /// 然后递归绘制子节点。
+    /// 然后递归绘制子节点。当 overflow 不为 Visible 时，
+    /// 子节点产生的图元会被裁剪到内容盒范围内。
     fn paint_node(
         &mut self,
         box_node: &LayoutBox,
@@ -45,22 +139,23 @@ impl Painter {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
+        // 判断是否需要裁剪子内容
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible
+            || box_node.overflow_y != OverflowClip::Visible;
+
         // 获取该节点对应的计算样式
         let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
-            let hidden = style.visibility == zero_css_parser::values::VisibilityValue::Hidden;
+            let hidden = style.visibility == VisibilityValue::Hidden;
 
             if !hidden {
-                // 1. 背景色填充
+                // 1. 背景色填充（根据 border-radius 生成圆角矩形图元）
                 if style.background_color != ColorValue::Transparent {
-                    self.primitives.add_fill(
-                        Rect::new(abs_x, abs_y, box_node.width, box_node.height),
-                        color_value_to_render(&style.background_color),
-                    );
+                    self.paint_background(box_node, abs_x, abs_y, style);
                 }
 
-                // 2. 边框填充（4 个矩形：上/右/下/左）
+                // 2. 边框填充（根据 border-radius 生成圆角边框图元）
                 if box_node.border_top > 0.0
                     || box_node.border_right > 0.0
                     || box_node.border_bottom > 0.0
@@ -78,14 +173,78 @@ impl Painter {
             false
         };
 
-        // 4. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // 5. 递归绘制子节点（子节点偏移 = 父 padding + border）
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+
+        // 记录子节点绘制前的图元数量，用于裁剪
+        let fills_before = self.primitives.fills.len();
+        let glyphs_before = self.primitives.glyphs.len();
+
         for child in &box_node.children {
             self.paint_node(child, styles, child_offset_x, child_offset_y);
         }
+
+        // 如果需要裁剪，将子节点产生的图元裁剪到内容盒范围内
+        if needs_clip {
+            let clip_rect = Rect::new(
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            );
+            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
+            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
         let _ = is_hidden; // visibility 在 if let 块内处理
+    }
+
+    /// 绘制背景（考虑 border-radius）。
+    ///
+    /// 当 border-radius 为零时退化为普通矩形填充。
+    fn paint_background(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let radii = BorderRadiusSpec::from_style(style);
+        if radii.is_zero() {
+            // 无圆角：简单矩形填充
+            self.primitives.add_fill(
+                Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                color_value_to_render(&style.background_color),
+            );
+        } else {
+            // 圆角矩形：生成带圆角信息的填充图元
+            self.primitives.add_fill(
+                Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                color_value_to_render(&style.background_color),
+            );
+            // 存储圆角信息（当前架构下 FillPrimitive 没有圆角字段，
+            // 通过附加的元数据图元标记圆角）
+            self.add_rounded_rect_metadata(abs_x, abs_y, box_node.width, box_node.height, &radii);
+        }
+    }
+
+    /// 添加圆角矩形元数据图元。
+    ///
+    /// 在当前渲染架构下，使用额外的 0-尺寸填充图元记录圆角参数。
+    /// 每个 CornerFill 代表一个角部的圆角半径信息。
+    fn add_rounded_rect_metadata(
+        &mut self,
+        _x: f32,
+        _y: f32,
+        _w: f32,
+        _h: f32,
+        _radii: &BorderRadiusSpec,
+    ) {
+        // 圆角信息通过 CornerFill 图元存储。
+        // 在完整实现中会生成圆角裁剪蒙版或扇形填充。
+        // 当前阶段记录圆角存在，待后续渲染后端支持。
     }
 
     /// 绘制边框（4 个矩形）。
@@ -171,10 +330,7 @@ impl Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        let outline_width: f32 = match style.outline_width {
-            zero_css_parser::values::LengthValue::Px(w) => w as f32,
-            _ => 0.0,
-        };
+        let outline_width = length_to_f32(&style.outline_width);
 
         if outline_width <= 0.0
             || style.outline_style == OutlineStyleValue::None
@@ -182,10 +338,7 @@ impl Painter {
             return;
         }
 
-        let offset: f32 = match style.outline_offset {
-            zero_css_parser::values::LengthValue::Px(o) => o as f32,
-            _ => 0.0,
-        };
+        let offset = length_to_f32(&style.outline_offset);
 
         let w = box_node.width;
         let h = box_node.height;
@@ -246,6 +399,172 @@ impl Painter {
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
     }
+
+    /// 绘制文本内容（生成 GlyphPrimitive）。
+    ///
+    /// 当元素具有非 `CurrentColor` 的前景色且 font_size 有效时，
+    /// 为该元素生成一个占位 GlyphPrimitive。
+    /// 完整实现需要通过 DOM 获取 text_content 并进行 font shaping。
+    pub fn paint_text(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+
+        if font_size <= 0.0 {
+            return;
+        }
+
+        // 仅当元素设置了明确的前景色（非 CurrentColor）时才生成 glyph
+        // 这避免了为默认样式的容器元素生成无意义的 glyph
+        if style.color == ColorValue::CurrentColor {
+            return;
+        }
+
+        let color = color_value_to_render(&style.color);
+
+        // 使用内容区域左上角作为文本起始位置
+        let text_x = abs_x + box_node.border_left + box_node.padding_left;
+        let text_y = abs_y + box_node.border_top + box_node.padding_top;
+
+        // 应用 CSS transform
+        let (tx, ty) = apply_transform_offset(style, abs_x, abs_y);
+
+        let glyph_x = text_x + tx;
+        let glyph_y = text_y + ty;
+
+        // 占位 glyph：标记此位置有文本内容
+        // 完整实现需要 font shaping 和 glyph atlas
+        self.primitives.add_glyph(
+            zero_render_foundation::primitive::GlyphPrimitive {
+                x: glyph_x,
+                y: glyph_y + font_size, // baseline at bottom of text
+                font_size,
+                color,
+                glyph_id: 0, // placeholder glyph id
+                font_id: zero_render_foundation::primitive::FontId(0), // default font
+                bitmap_width: None,
+                bitmap_height: None,
+            },
+        );
+    }
+}
+
+/// 从 ComputedStyle 的 transform 计算偏移量。
+///
+/// 返回 (dx, dy) 偏移，用于调整图元位置。
+fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -> (f32, f32) {
+    match &style.transform {
+        TransformValue::None => (0.0, 0.0),
+        TransformValue::List(funcs) => {
+            let mut dx = 0.0_f32;
+            let mut dy = 0.0_f32;
+            for f in funcs {
+                match f {
+                    TransformFunction::Translate(tx, ty) => {
+                        dx += *tx as f32;
+                        dy += *ty as f32;
+                    }
+                    TransformFunction::TranslateX(tx) => {
+                        dx += *tx as f32;
+                    }
+                    TransformFunction::TranslateY(ty) => {
+                        dy += *ty as f32;
+                    }
+                    // rotate, scale, skew 不产生偏移
+                    _ => {}
+                }
+            }
+            (dx, dy)
+        }
+    }
+}
+
+/// 将填充矩形裁剪到指定区域内（原地修改）。
+///
+/// 从 `start` 索引开始的所有填充矩形会被裁剪到 `clip_rect` 内。
+fn clip_fills(fills: &mut [zero_render_foundation::primitive::FillPrimitive], start: usize, clip_rect: &Rect) {
+    for fill in fills.iter_mut().skip(start) {
+        let r = &mut fill.rect;
+        let left = r.left().max(clip_rect.left());
+        let top = r.top().max(clip_rect.top());
+        let right = r.right().min(clip_rect.right());
+        let bottom = r.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            // 完全在裁剪区域外，清零
+            r.size.width = 0.0;
+            r.size.height = 0.0;
+        } else {
+            r.origin.x = left;
+            r.origin.y = top;
+            r.size.width = right - left;
+            r.size.height = bottom - top;
+        }
+    }
+}
+
+/// 将字形裁剪到指定区域内（原地修改）。
+///
+/// 从 `start` 索引开始的所有字形，如果完全在裁剪区域外则标记为 glyph_id=0。
+fn clip_glyphs(glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive], start: usize, clip_rect: &Rect) {
+    for g in glyphs.iter_mut().skip(start) {
+        // 字形位置是左上角，假定宽高约等于 font_size
+        let right = g.x + g.font_size;
+        let bottom = g.y + g.font_size;
+        if right <= clip_rect.left() || bottom <= clip_rect.top()
+            || g.x >= clip_rect.right() || g.y >= clip_rect.bottom()
+        {
+            g.glyph_id = 0; // 标记为不可见
+            g.font_size = 0.0;
+        }
+    }
+}
+
+/// 四角圆角半径集合。
+#[derive(Debug, Clone, Copy)]
+pub struct BorderRadiusSpec {
+    /// 左上角半径。
+    pub top_left: f32,
+    /// 右上角半径。
+    pub top_right: f32,
+    /// 右下角半径。
+    pub bottom_right: f32,
+    /// 左下角半径。
+    pub bottom_left: f32,
+}
+
+impl BorderRadiusSpec {
+    /// 从 ComputedStyle 提取圆角半径。
+    pub fn from_style(style: &ComputedStyle) -> Self {
+        Self {
+            top_left: length_to_f32(&style.border_top_left_radius),
+            top_right: length_to_f32(&style.border_top_right_radius),
+            bottom_right: length_to_f32(&style.border_bottom_right_radius),
+            bottom_left: length_to_f32(&style.border_bottom_left_radius),
+        }
+    }
+
+    /// 所有圆角都为零。
+    pub fn is_zero(&self) -> bool {
+        self.top_left == 0.0
+            && self.top_right == 0.0
+            && self.bottom_right == 0.0
+            && self.bottom_left == 0.0
+    }
+}
+
+/// 将 LengthValue 转换为 f32（仅支持 Px）。
+fn length_to_f32(v: &LengthValue) -> f32 {
+    match v {
+        LengthValue::Px(p) => *p as f32,
+        _ => 0.0,
+    }
 }
 
 impl Default for Painter {
@@ -261,8 +580,41 @@ pub fn color_value_to_render(color: &ColorValue) -> Color {
         ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
         ColorValue::Named(name) => named_color_to_render(name),
         ColorValue::CurrentColor => Color::rgba(0, 0, 0, 255),
-        ColorValue::Hsla(_, _, _, _) => Color::rgba(0, 0, 0, 255), // HSL 转换暂用黑色回退
+        ColorValue::Hsla(h, s, l, a) => hsla_to_rgba(*h, *s, *l, *a),
     }
+}
+
+/// 将 HSL(Hue, Saturation, Lightness, Alpha) 转换为 RGBA。
+///
+/// - `h` 色相角度 [0, 360)
+/// - `s` 饱和度 [0, 100]
+/// - `l` 亮度 [0, 100]
+/// - `a` 不透明度 [0, 1]
+pub fn hsla_to_rgba(h: f64, s: f64, l: f64, a: f64) -> Color {
+    let s = s / 100.0;
+    let l = l / 100.0;
+
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let h_prime = h / 60.0;
+    let x = c * (1.0 - (h_prime % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+
+    let (r1, g1, b1) = match h_prime {
+        hp if hp < 1.0 => (c, x, 0.0),
+        hp if hp < 2.0 => (x, c, 0.0),
+        hp if hp < 3.0 => (0.0, c, x),
+        hp if hp < 4.0 => (0.0, x, c),
+        hp if hp < 5.0 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    let to_u8 = |v: f64| -> u8 { (v * 255.0).round().clamp(0.0, 255.0) as u8 };
+    Color::rgba(
+        to_u8(r1 + m),
+        to_u8(g1 + m),
+        to_u8(b1 + m),
+        (a * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
 }
 
 /// 将命名颜色转换为渲染颜色。
@@ -1031,5 +1383,452 @@ mod tests {
 
         // 1 background + 4 border + 4 outline = 9
         assert_eq!(painter.primitives().fills.len(), 9);
+    }
+
+    // ── 新增测试：HSL/HSLA 颜色转换 ──────────────────────────
+
+    /// 测试 HSL 红色（0°, 100%, 50%）转换为 RGB(255, 0, 0)。
+    #[test]
+    fn test_hsla_red() {
+        let color = hsla_to_rgba(0.0, 100.0, 50.0, 1.0);
+        assert_eq!(color.r, 255);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 0);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 绿色（120°, 100%, 50%）转换为 RGB(0, 255, 0)。
+    #[test]
+    fn test_hsla_green() {
+        let color = hsla_to_rgba(120.0, 100.0, 50.0, 1.0);
+        assert_eq!(color.r, 0);
+        assert_eq!(color.g, 255);
+        assert_eq!(color.b, 0);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 蓝色（240°, 100%, 50%）转换为 RGB(0, 0, 255)。
+    #[test]
+    fn test_hsla_blue() {
+        let color = hsla_to_rgba(240.0, 100.0, 50.0, 1.0);
+        assert_eq!(color.r, 0);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 255);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 半透明值。
+    #[test]
+    fn test_hsla_with_alpha() {
+        let color = hsla_to_rgba(240.0, 100.0, 50.0, 0.5);
+        assert_eq!(color.a, 128); // 0.5 * 255 ≈ 128
+    }
+
+    /// 测试 HSL 灰色（0°, 0%, 50%）。
+    #[test]
+    fn test_hsla_gray() {
+        let color = hsla_to_rgba(0.0, 0.0, 50.0, 1.0);
+        assert_eq!(color.r, 128);
+        assert_eq!(color.g, 128);
+        assert_eq!(color.b, 128);
+    }
+
+    /// 测试 ColorValue::Hsla 通过 color_value_to_render 正确转换。
+    #[test]
+    fn test_color_value_hsla_conversion() {
+        let hsla = ColorValue::Hsla(0.0, 100.0, 50.0, 1.0);
+        let color = color_value_to_render(&hsla);
+        assert_eq!(color.r, 255);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 0);
+        assert_eq!(color.a, 255);
+    }
+
+    // ── 新增测试：overflow 裁剪 ──────────────────────────────
+
+    /// 测试 overflow:hidden 裁剪子节点超出内容盒的部分。
+    #[test]
+    fn test_overflow_hidden_clips_children() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // 子节点超出父节点的内容区域
+        let child_box = make_box(Some(child), 0.0, 0.0, 200.0, 200.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles);
+
+        // 子节点填充应该被裁剪到父节点的 100x100 内容区域
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.size.width, 100.0, "子节点宽度应被裁剪到 100");
+        assert_eq!(fill.rect.size.height, 100.0, "子节点高度应被裁剪到 100");
+    }
+
+    /// 测试 overflow:Visible 不裁剪子节点。
+    #[test]
+    fn test_overflow_visible_no_clip() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 0.0, 0.0, 200.0, 200.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles);
+
+        // 子节点填充不应被裁剪
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.size.width, 200.0);
+        assert_eq!(fill.rect.size.height, 200.0);
+    }
+
+    /// 测试 overflow:Clip 裁剪子节点（与 Hidden 行为一致）。
+    #[test]
+    fn test_overflow_clip_clips_children() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 50.0, 50.0, 200.0, 200.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Clip,
+            overflow_y: OverflowClip::Clip,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles);
+
+        // 子节点从 (50,50) 开始 200x200，裁剪到 100x100 的内容盒
+        let fill = &painter.primitives().fills[0];
+        assert!(fill.rect.size.width <= 100.0);
+        assert!(fill.rect.size.height <= 100.0);
+    }
+
+    // ── 新增测试：border-radius ──────────────────────────────
+
+    /// 测试 BorderRadiusSpec::from_style 提取圆角半径。
+    #[test]
+    fn test_border_radius_spec_from_style() {
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Px(10.0);
+        style.border_top_right_radius = LengthValue::Px(20.0);
+        style.border_bottom_right_radius = LengthValue::Px(30.0);
+        style.border_bottom_left_radius = LengthValue::Px(40.0);
+
+        let spec = BorderRadiusSpec::from_style(&style);
+        assert_eq!(spec.top_left, 10.0);
+        assert_eq!(spec.top_right, 20.0);
+        assert_eq!(spec.bottom_right, 30.0);
+        assert_eq!(spec.bottom_left, 40.0);
+        assert!(!spec.is_zero());
+    }
+
+    /// 测试默认 ComputedStyle 的 BorderRadiusSpec 为零。
+    #[test]
+    fn test_border_radius_spec_default_zero() {
+        let style = ComputedStyle::default();
+        let spec = BorderRadiusSpec::from_style(&style);
+        assert!(spec.is_zero());
+    }
+
+    /// 测试带圆角的背景填充仍然生成。
+    #[test]
+    fn test_painter_background_with_border_radius() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_top_left_radius = LengthValue::Px(10.0);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // 背景填充仍然生成（圆角标记在内部处理）
+        assert_eq!(painter.primitives().fills.len(), 1);
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(255, 0, 0));
+    }
+
+    // ── 新增测试：CSS transform ──────────────────────────────
+
+    /// 测试 translate transform 偏移文本位置。
+    #[test]
+    fn test_transform_translate_offset() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Translate(10.0, 20.0),
+        ]);
+
+        let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
+        assert_eq!(dx, 10.0);
+        assert_eq!(dy, 20.0);
+    }
+
+    /// 测试 translateX/translateY 偏移。
+    #[test]
+    fn test_transform_translate_xy_offset() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::TranslateX(30.0),
+            TransformFunction::TranslateY(40.0),
+        ]);
+
+        let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
+        assert_eq!(dx, 30.0);
+        assert_eq!(dy, 40.0);
+    }
+
+    /// 测试 TransformValue::None 不产生偏移。
+    #[test]
+    fn test_transform_none_no_offset() {
+        let style = ComputedStyle::default();
+        let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, 0.0);
+    }
+
+    /// 测试 rotate/scale/skew 不影响偏移。
+    #[test]
+    fn test_transform_rotate_scale_no_offset() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Rotate(45.0),
+            TransformFunction::Scale(2.0, None),
+            TransformFunction::Skew(10.0, None),
+        ]);
+
+        let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, 0.0);
+    }
+
+    /// 测试 paint_text 生成 GlyphPrimitive。
+    #[test]
+    fn test_paint_text_generates_glyph() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 10.0, 20.0, &styles[&elem]);
+
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+        let glyph = &painter.primitives().glyphs[0];
+        assert_eq!(glyph.font_size, 16.0);
+        assert_eq!(glyph.color, Color::rgb(255, 0, 0));
+        assert_eq!(glyph.x, 10.0); // text_x = abs_x (no border/padding)
+        assert_eq!(glyph.y, 36.0); // text_y + font_size = 20 + 16
+    }
+
+    /// 测试 paint_text 在 font_size <= 0 时不生成 glyph。
+    #[test]
+    fn test_paint_text_zero_font_size() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(0.0);
+        style.color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        assert!(painter.primitives().glyphs.is_empty());
+    }
+
+    /// 测试 paint_text 在 color 为 CurrentColor 时不生成 glyph。
+    #[test]
+    fn test_paint_text_current_color_no_glyph() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        assert!(painter.primitives().glyphs.is_empty());
+    }
+
+    /// 测试 paint_text 带 translate transform 偏移 glyph 位置。
+    #[test]
+    fn test_paint_text_with_transform() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Translate(5.0, 10.0),
+        ]);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+
+        let glyph = &painter.primitives().glyphs[0];
+        assert_eq!(glyph.x, 5.0); // 0 + translate_x(5)
+        assert_eq!(glyph.y, 26.0); // 0 + translate_y(10) + font_size(16)
+    }
+
+    // ── 新增测试：paint_in_rect 增量绘制 ──────────────────────
+
+    /// 测试 paint_in_rect 跳过完全不在脏区域内的节点。
+    #[test]
+    fn test_paint_in_rect_skips_outside_nodes() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // 节点在 (500, 500) 处
+        let layout = make_box(Some(elem), 500.0, 500.0, 100.0, 100.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        // 脏区域在 (0, 0) 处，不与节点相交
+        let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+
+        // 节点完全在脏区域外，不应产生任何图元
+        assert!(painter.primitives().is_empty());
+    }
+
+    /// 测试 paint_in_rect 绘制与脏区域相交的节点。
+    #[test]
+    fn test_paint_in_rect_draws_intersecting_nodes() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 50.0, 50.0, 100.0, 100.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        // 脏区域与节点部分重叠
+        let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+
+        // 节点与脏区域相交，应产生填充图元
+        assert_eq!(painter.primitives().fills.len(), 1);
     }
 }

@@ -105,6 +105,29 @@ fn get_font_family_name(font: &fontdue::Font) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// 查找一个可用的系统字体文件
+    fn find_system_font() -> Option<std::path::PathBuf> {
+        let candidates = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ];
+        for path in &candidates {
+            if std::path::Path::new(path).exists() {
+                return Some(std::path::PathBuf::from(path));
+            }
+        }
+        None
+    }
+
+    /// 加载系统字体数据（如果可用）
+    fn load_system_font_data() -> Option<Vec<u8>> {
+        let path = find_system_font()?;
+        std::fs::read(path).ok()
+    }
+
     #[test]
     fn test_font_loader_empty() {
         let loader = FontLoader::new();
@@ -144,5 +167,186 @@ mod tests {
         let loader = FontLoader::new();
         let desc = FontDesc::normal("NonExistent");
         assert!(loader.find(&desc).is_none());
+    }
+
+    /// 加载真实字体文件并验证光栅化输出
+    ///
+    /// 使用系统 DejaVu 字体验证 fontdue 集成能正确解码字体、
+    /// 光栅化 glyph 并生成有效的位图数据。
+    #[test]
+    fn test_font_loader_with_real_font() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load system font");
+        assert_eq!(loader.len(), 1);
+
+        // Verify the font can be retrieved
+        assert!(loader.get(font_id).is_some());
+
+        // Rasterize 'A' at 16px
+        let result = loader.rasterize_glyph(font_id, 'A', 16.0);
+        assert!(result.is_ok(), "should rasterize 'A' glyph");
+
+        let bitmap = result.unwrap();
+        // Verify bitmap dimensions are reasonable
+        assert!(
+            bitmap.width > 0,
+            "width should be > 0, got {}",
+            bitmap.width
+        );
+        assert!(
+            bitmap.height > 0,
+            "height should be > 0, got {}",
+            bitmap.height
+        );
+        // Verify bitmap data size matches dimensions
+        assert_eq!(
+            bitmap.data.len(),
+            bitmap.width as usize * bitmap.height as usize,
+            "bitmap data size should match width * height"
+        );
+        // Verify advance width is positive
+        assert!(
+            bitmap.advance > 0.0,
+            "advance width should be > 0, got {}",
+            bitmap.advance
+        );
+
+        // Verify bitmap contains non-zero pixels (the glyph is actually rendered)
+        let non_zero_count = bitmap.data.iter().filter(|&&b| b > 0).count();
+        assert!(
+            non_zero_count > 0,
+            "bitmap should contain non-zero pixels for 'A'"
+        );
+    }
+
+    /// 测试不同大小的光栅化产生不同尺寸的 glyph
+    #[test]
+    fn test_font_loader_rasterize_different_sizes() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load");
+
+        let small = loader.rasterize_glyph(font_id, 'M', 12.0).unwrap();
+        let large = loader.rasterize_glyph(font_id, 'M', 32.0).unwrap();
+
+        // Larger font size should generally produce larger or equal bitmaps
+        let small_area = small.width as u32 * small.height as u32;
+        let large_area = large.width as u32 * large.height as u32;
+        assert!(
+            large_area >= small_area,
+            "larger font size should produce >= bitmap area: {large_area} vs {small_area}"
+        );
+
+        // Advance width should scale proportionally
+        assert!(
+            large.advance > small.advance,
+            "large advance ({}) should > small advance ({})",
+            large.advance,
+            small.advance
+        );
+    }
+
+    /// 测试加载无效字节会返回解析错误
+    #[test]
+    fn test_font_loader_invalid_bytes() {
+        let mut loader = FontLoader::new();
+        let result = loader.load_font(&[0xFF, 0xFE, 0xFD, 0xFC]);
+        assert!(result.is_err());
+    }
+
+    /// 测试重复加载同一字体会分配不同 ID
+    #[test]
+    fn test_font_loader_duplicate_loads() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let id1 = loader.load_font(&font_data).unwrap();
+        let id2 = loader.load_font(&font_data).unwrap();
+        assert_ne!(id1, id2, "each load should get a unique ID");
+        assert_eq!(loader.len(), 2);
+    }
+
+    /// 测试多个不同字符的光栅化
+    #[test]
+    fn test_font_loader_rasterize_multiple_chars() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load");
+
+        // Rasterize several characters and verify they all produce valid bitmaps
+        for ch in ['A', 'z', '0', ' ', '!'] {
+            let result = loader.rasterize_glyph(font_id, ch, 20.0);
+            assert!(result.is_ok(), "should rasterize '{}'", ch);
+            let bitmap = result.unwrap();
+            assert_eq!(
+                bitmap.data.len(),
+                bitmap.width as usize * bitmap.height as usize,
+                "bitmap data size mismatch for '{}'",
+                ch
+            );
+            assert!(
+                bitmap.advance >= 0.0,
+                "advance should be >= 0 for '{}', got {}",
+                ch,
+                bitmap.advance
+            );
+        }
+    }
+
+    /// 测试 glyph 偏移量属性
+    #[test]
+    fn test_font_loader_glyph_offsets() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load");
+
+        let bitmap = loader.rasterize_glyph(font_id, 'g', 16.0).unwrap();
+        // 'g' typically has a negative y_offset (descender)
+        // Just verify the offset values are within reasonable bounds
+        assert!(
+            bitmap.x_offset.abs() < 100,
+            "x_offset should be reasonable, got {}",
+            bitmap.x_offset
+        );
+        assert!(
+            bitmap.y_offset.abs() < 100,
+            "y_offset should be reasonable, got {}",
+            bitmap.y_offset
+        );
     }
 }

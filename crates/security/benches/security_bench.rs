@@ -71,9 +71,9 @@ fn bench_csp_resource_check(c: &mut Criterion) {
     c.bench_function("csp_resource_check_1000", |b| {
         b.iter(|| {
             for _ in 0..1000 {
-                black_box(csp.is_resource_allowed("script", "app.js"));
-                black_box(csp.is_resource_allowed("script", "https://cdn.example.com/app.js"));
-                black_box(csp.is_resource_allowed("script", "https://evil.com/bad.js"));
+                black_box(csp.is_resource_allowed("script", "app.js", None));
+                black_box(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
+                black_box(csp.is_resource_allowed("script", "https://evil.com/bad.js", None));
             }
         })
     });

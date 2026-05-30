@@ -288,6 +288,24 @@ pub enum PropertyValue {
     Integer(i32),
     /// 字符串列表（font-family）。
     StringList(Vec<String>),
+    /// 时间函数列表（transition-timing-function、animation-timing-function）。
+    TimingFunctionList(Vec<zero_css_parser::values::TimingFunctionValue>),
+    /// 动画方向列表（animation-direction）。
+    AnimationDirectionList(Vec<zero_css_parser::values::AnimationDirectionValue>),
+    /// 动画填充模式列表（animation-fill-mode）。
+    AnimationFillModeList(Vec<zero_css_parser::values::AnimationFillModeValue>),
+    /// 动画播放状态列表（animation-play-state）。
+    AnimationPlayStateList(Vec<zero_css_parser::values::AnimationPlayStateValue>),
+    /// 可选浮点数列表（animation-iteration-count，None 表示 infinite）。
+    OptionalNumberList(Vec<Option<f64>>),
+    /// grid-auto-flow 值。
+    GridAutoFlow(GridAutoFlowValue),
+    /// grid line 值（grid-column-start/end、grid-row-start/end）。
+    GridLine(GridLineValue),
+    /// transform 值。
+    Transform(zero_css_parser::values::TransformValue),
+    /// 可选字符串（grid-template-columns/rows、grid-auto-rows/columns）。
+    OptionalString(Option<String>),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -745,6 +763,27 @@ impl PropertyRegistry {
             // Transitions
             "transition-property" => Some(StringList(vec![])),
             "transition-duration" | "transition-delay" => Some(Number(0.0)),
+            "transition-timing-function" => Some(TimingFunctionList(vec![])),
+
+            // Animations
+            "animation-name" => Some(StringList(vec![])),
+            "animation-duration" | "animation-delay" => Some(Number(0.0)),
+            "animation-timing-function" => Some(TimingFunctionList(vec![])),
+            "animation-iteration-count" => Some(OptionalNumberList(vec![])),
+            "animation-direction" => Some(AnimationDirectionList(vec![])),
+            "animation-fill-mode" => Some(AnimationFillModeList(vec![])),
+            "animation-play-state" => Some(AnimationPlayStateList(vec![])),
+
+            // Grid
+            "grid-template-columns" | "grid-template-rows" => Some(OptionalString(None)),
+            "grid-auto-flow" => Some(GridAutoFlow(GridAutoFlowValue::Row)),
+            "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {
+                Some(GridLine(GridLineValue::Auto))
+            }
+            "grid-auto-rows" | "grid-auto-columns" => Some(OptionalString(None)),
+
+            // Transform
+            "transform" => Some(Transform(zero_css_parser::values::TransformValue::None)),
 
             _ => None,
         }
@@ -3493,5 +3532,70 @@ mod tests {
     fn test_cursor_known_properties() {
         let props = PropertyRegistry::known_properties();
         assert!(props.contains(&"cursor"));
+    }
+
+    // ── initial_value 完整性测试 ──
+
+    #[test]
+    /// 交叉验证：known_properties() 中的每个属性在 initial_value() 中都应返回 Some。
+    fn test_initial_value_completeness() {
+        let mut missing = Vec::new();
+        for prop in PropertyRegistry::known_properties() {
+            if PropertyRegistry::initial_value(prop).is_none() {
+                missing.push(*prop);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "initial_value() returns None for known properties: {missing:?}"
+        );
+    }
+
+    #[test]
+    /// 验证 initial_value 的返回值与 ComputedStyle::default() 一致（抽查）。
+    fn test_initial_value_matches_default() {
+        use PropertyValue::*;
+
+        // transition-timing-function 的初始值为空列表
+        assert_eq!(
+            PropertyRegistry::initial_value("transition-timing-function"),
+            Some(TimingFunctionList(vec![]))
+        );
+
+        // animation-name 的初始值为空列表
+        assert_eq!(
+            PropertyRegistry::initial_value("animation-name"),
+            Some(StringList(vec![]))
+        );
+
+        // grid-auto-flow 的初始值为 Row
+        assert_eq!(
+            PropertyRegistry::initial_value("grid-auto-flow"),
+            Some(GridAutoFlow(GridAutoFlowValue::Row))
+        );
+
+        // grid-column-start 的初始值为 Auto
+        assert_eq!(
+            PropertyRegistry::initial_value("grid-column-start"),
+            Some(GridLine(GridLineValue::Auto))
+        );
+
+        // transform 的初始值为 None
+        assert_eq!(
+            PropertyRegistry::initial_value("transform"),
+            Some(Transform(zero_css_parser::values::TransformValue::None))
+        );
+
+        // grid-template-columns 的初始值为 None
+        assert_eq!(
+            PropertyRegistry::initial_value("grid-template-columns"),
+            Some(OptionalString(None))
+        );
+
+        // grid-auto-rows 的初始值为 None
+        assert_eq!(
+            PropertyRegistry::initial_value("grid-auto-rows"),
+            Some(OptionalString(None))
+        );
     }
 }
