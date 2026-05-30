@@ -8,7 +8,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
-use zero_style_system::ComputedStyle;
+use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -46,33 +46,46 @@ impl Painter {
         let abs_y = offset_y + box_node.y;
 
         // 获取该节点对应的计算样式
-        if let Some(node_id) = box_node.node_id
+        let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
-            // 1. 背景色填充
-            if style.background_color != ColorValue::Transparent {
-                self.primitives.add_fill(
-                    Rect::new(abs_x, abs_y, box_node.width, box_node.height),
-                    color_value_to_render(&style.background_color),
-                );
+            let hidden = style.visibility == zero_css_parser::values::VisibilityValue::Hidden;
+
+            if !hidden {
+                // 1. 背景色填充
+                if style.background_color != ColorValue::Transparent {
+                    self.primitives.add_fill(
+                        Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                        color_value_to_render(&style.background_color),
+                    );
+                }
+
+                // 2. 边框填充（4 个矩形：上/右/下/左）
+                if box_node.border_top > 0.0
+                    || box_node.border_right > 0.0
+                    || box_node.border_bottom > 0.0
+                    || box_node.border_left > 0.0
+                {
+                    self.paint_borders(box_node, abs_x, abs_y, style);
+                }
+
+                // 3. Outline 绘制（位于 border 外侧）
+                self.paint_outline(box_node, abs_x, abs_y, style);
             }
 
-            // 2. 边框填充（4 个矩形：上/右/下/左）
-            if box_node.border_top > 0.0
-                || box_node.border_right > 0.0
-                || box_node.border_bottom > 0.0
-                || box_node.border_left > 0.0
-            {
-                self.paint_borders(box_node, abs_x, abs_y, style);
-            }
-        }
+            hidden
+        } else {
+            false
+        };
 
-        // 3. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // 4. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
         for child in &box_node.children {
             self.paint_node(child, styles, child_offset_x, child_offset_y);
         }
+        let _ = is_hidden; // visibility 在 if let 块内处理
     }
 
     /// 绘制边框（4 个矩形）。
@@ -89,7 +102,10 @@ impl Painter {
         let h = box_node.height;
 
         // 上边框
-        if box_node.border_top > 0.0 {
+        if box_node.border_top > 0.0
+            && style.border_top_style != BorderStyleValue::None
+            && style.border_top_style != BorderStyleValue::Hidden
+        {
             self.primitives.add_fill(
                 Rect::new(abs_x, abs_y, w, box_node.border_top),
                 color_value_to_render(&style.border_top_color),
@@ -97,7 +113,10 @@ impl Painter {
         }
 
         // 右边框
-        if box_node.border_right > 0.0 {
+        if box_node.border_right > 0.0
+            && style.border_right_style != BorderStyleValue::None
+            && style.border_right_style != BorderStyleValue::Hidden
+        {
             self.primitives.add_fill(
                 Rect::new(
                     abs_x + w - box_node.border_right,
@@ -110,7 +129,10 @@ impl Painter {
         }
 
         // 下边框
-        if box_node.border_bottom > 0.0 {
+        if box_node.border_bottom > 0.0
+            && style.border_bottom_style != BorderStyleValue::None
+            && style.border_bottom_style != BorderStyleValue::Hidden
+        {
             self.primitives.add_fill(
                 Rect::new(
                     abs_x,
@@ -123,7 +145,10 @@ impl Painter {
         }
 
         // 左边框
-        if box_node.border_left > 0.0 {
+        if box_node.border_left > 0.0
+            && style.border_left_style != BorderStyleValue::None
+            && style.border_left_style != BorderStyleValue::Hidden
+        {
             self.primitives.add_fill(
                 Rect::new(
                     abs_x,
@@ -134,6 +159,82 @@ impl Painter {
                 color_value_to_render(&style.border_left_color),
             );
         }
+    }
+
+    /// 绘制 outline（位于 border 外侧）。
+    ///
+    /// outline 绘制为 4 个矩形，offset 默认为 0（紧贴 border 外侧）。
+    fn paint_outline(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let outline_width: f32 = match style.outline_width {
+            zero_css_parser::values::LengthValue::Px(w) => w as f32,
+            _ => 0.0,
+        };
+
+        if outline_width <= 0.0
+            || style.outline_style == OutlineStyleValue::None
+        {
+            return;
+        }
+
+        let offset: f32 = match style.outline_offset {
+            zero_css_parser::values::LengthValue::Px(o) => o as f32,
+            _ => 0.0,
+        };
+
+        let w = box_node.width;
+        let h = box_node.height;
+        let total_offset = outline_width + offset;
+        let color = color_value_to_render(&style.outline_color);
+
+        // 上 outline
+        self.primitives.add_fill(
+            Rect::new(
+                abs_x - total_offset,
+                abs_y - total_offset,
+                w + 2.0 * total_offset,
+                outline_width,
+            ),
+            color,
+        );
+
+        // 下 outline
+        self.primitives.add_fill(
+            Rect::new(
+                abs_x - total_offset,
+                abs_y + h + offset,
+                w + 2.0 * total_offset,
+                outline_width,
+            ),
+            color,
+        );
+
+        // 左 outline
+        self.primitives.add_fill(
+            Rect::new(
+                abs_x - total_offset,
+                abs_y - total_offset + outline_width,
+                outline_width,
+                h + 2.0 * offset,
+            ),
+            color,
+        );
+
+        // 右 outline
+        self.primitives.add_fill(
+            Rect::new(
+                abs_x + w + offset,
+                abs_y - total_offset + outline_width,
+                outline_width,
+                h + 2.0 * offset,
+            ),
+            color,
+        );
     }
 
     /// 获取生成的渲染图元（消费 painter）。
@@ -360,6 +461,7 @@ mod tests {
         let mut styles = HashMap::new();
         let mut style = ComputedStyle::default();
         style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -386,6 +488,10 @@ mod tests {
         style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
         style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
         style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -613,6 +719,10 @@ mod tests {
         style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
         style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
         style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -669,6 +779,10 @@ mod tests {
         style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
         style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
         style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -727,5 +841,195 @@ mod tests {
         let fill = &painter.primitives().fills[0];
         assert_eq!(fill.rect.origin.x, 10.0);
         assert_eq!(fill.rect.origin.y, 10.0);
+    }
+
+    /// 测试 visibility: hidden 的元素不生成填充图元。
+    #[test]
+    fn test_painter_visibility_hidden() {
+        use zero_css_parser::values::VisibilityValue;
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 0.0, 0.0, 50.0, 20.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        parent_style.visibility = VisibilityValue::Hidden;
+        styles.insert(parent, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(100, 100, 255, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles);
+
+        // parent 的 visibility:hidden 阻止了父节点绘制，但子节点不受影响
+        assert_eq!(painter.primitives().fills.len(), 1);
+        assert_eq!(
+            painter.primitives().fills[0].color,
+            Color::rgb(100, 100, 255)
+        );
+    }
+
+    /// 测试 border-style: none 的边框不生成填充图元。
+    #[test]
+    fn test_painter_border_style_none() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        // 所有边框 style 都是 none（默认值）
+        style.border_top_style = BorderStyleValue::None;
+        style.border_right_style = BorderStyleValue::None;
+        style.border_bottom_style = BorderStyleValue::None;
+        style.border_left_style = BorderStyleValue::None;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // border-style: none 不绘制边框
+        assert_eq!(painter.primitives().fills.len(), 0);
+    }
+
+    /// 测试 border-style: solid 的边框正常绘制。
+    #[test]
+    fn test_painter_border_style_solid() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // border-style: solid 正常绘制 4 条边框
+        assert_eq!(painter.primitives().fills.len(), 4);
+    }
+
+    /// 测试 outline 绘制。
+    #[test]
+    fn test_painter_outline() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_width = zero_css_parser::values::LengthValue::Px(3.0);
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // outline 生成 4 个填充图元
+        assert_eq!(painter.primitives().fills.len(), 4);
+        // 上 outline：从 (7, 17) 开始，宽 106，高 3
+        let top = &painter.primitives().fills[0];
+        assert_eq!(top.rect.origin.x, 7.0);
+        assert_eq!(top.rect.origin.y, 17.0);
+        assert_eq!(top.rect.size.width, 106.0);
+        assert_eq!(top.rect.size.height, 3.0);
+        assert_eq!(top.color, Color::rgb(255, 0, 0));
+    }
+
+    /// 测试 outline-style: none 不绘制。
+    #[test]
+    fn test_painter_outline_style_none() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_width = zero_css_parser::values::LengthValue::Px(3.0);
+        style.outline_style = OutlineStyleValue::None;
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        assert!(painter.primitives().is_empty());
+    }
+
+    /// 测试 outline + background + border 同时绘制。
+    #[test]
+    fn test_painter_background_border_outline() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
+        style.outline_width = zero_css_parser::values::LengthValue::Px(2.0);
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // 1 background + 4 border + 4 outline = 9
+        assert_eq!(painter.primitives().fills.len(), 9);
     }
 }

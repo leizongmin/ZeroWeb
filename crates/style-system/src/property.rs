@@ -763,14 +763,12 @@ impl PropertyRegistry {
                 | "font-style"
                 | "line-height"
                 | "text-align"
-                | "text-decoration"
                 | "text-transform"
                 | "letter-spacing"
                 | "word-spacing"
                 | "white-space"
-                | "text-overflow"
                 | "visibility"
-                | "opacity"
+                | "cursor"
         )
     }
 
@@ -1834,10 +1832,6 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_align = parent.text_align.clone();
             true
         }
-        "text-decoration" => {
-            child.text_decoration = parent.text_decoration.clone();
-            true
-        }
         "text-transform" => {
             child.text_transform = parent.text_transform.clone();
             true
@@ -1854,16 +1848,12 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.white_space = parent.white_space.clone();
             true
         }
-        "text-overflow" => {
-            child.text_overflow = parent.text_overflow.clone();
-            true
-        }
         "visibility" => {
             child.visibility = parent.visibility.clone();
             true
         }
-        "opacity" => {
-            child.opacity = parent.opacity;
+        "cursor" => {
+            child.cursor = parent.cursor.clone();
             true
         }
         _ => false,
@@ -1874,75 +1864,117 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
 ///
 /// 返回 true 表示成功设置。
 pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
-    // 先构建默认样式，然后继承对应字段
     let default_style = ComputedStyle::default();
     match property {
-        "display" => {
-            style.display = default_style.display;
-            true
-        }
-        "position" => {
-            style.position = default_style.position;
-            true
-        }
-        "width" => {
-            style.width = default_style.width;
-            true
-        }
-        "height" => {
-            style.height = default_style.height;
-            true
-        }
-        "color" => {
-            style.color = default_style.color;
-            true
-        }
-        "background-color" => {
-            style.background_color = default_style.background_color;
-            true
-        }
-        "opacity" => {
-            style.opacity = default_style.opacity;
-            true
-        }
-        "font-family" => {
-            style.font_family = default_style.font_family;
-            true
-        }
-        "font-size" => {
-            style.font_size = default_style.font_size;
-            true
-        }
-        "font-weight" => {
-            style.font_weight = default_style.font_weight;
-            true
-        }
-        "font-style" => {
-            style.font_style = default_style.font_style;
-            true
-        }
-        "visibility" => {
-            style.visibility = default_style.visibility;
-            true
-        }
-        "overflow-x" => {
-            style.overflow_x = default_style.overflow_x;
-            true
-        }
-        "overflow-y" => {
-            style.overflow_y = default_style.overflow_y;
-            true
-        }
-        // 对于其他所有已知属性也提供初始值回退
-        _ => {
-            if PropertyRegistry::initial_value(property).is_some() {
-                // 未知但已注册的属性：重新构建 default 并设值
-                // 简化处理：直接用 apply_property_value 应用初始值字符串
-                false
-            } else {
-                false
-            }
-        }
+        // 盒模型
+        "display" => { style.display = default_style.display; true }
+        "position" => { style.position = default_style.position; true }
+        "width" => { style.width = default_style.width; true }
+        "height" => { style.height = default_style.height; true }
+        "min-width" => { style.min_width = default_style.min_width; true }
+        "min-height" => { style.min_height = default_style.min_height; true }
+        "max-width" => { style.max_width = default_style.max_width; true }
+        "max-height" => { style.max_height = default_style.max_height; true }
+        "margin-top" => { style.margin_top = default_style.margin_top; true }
+        "margin-right" => { style.margin_right = default_style.margin_right; true }
+        "margin-bottom" => { style.margin_bottom = default_style.margin_bottom; true }
+        "margin-left" => { style.margin_left = default_style.margin_left; true }
+        "padding-top" => { style.padding_top = default_style.padding_top; true }
+        "padding-right" => { style.padding_right = default_style.padding_right; true }
+        "padding-bottom" => { style.padding_bottom = default_style.padding_bottom; true }
+        "padding-left" => { style.padding_left = default_style.padding_left; true }
+        "box-sizing" => { style.box_sizing = default_style.box_sizing; true }
+        // 边框
+        "border-top-width" => { style.border_top_width = default_style.border_top_width; true }
+        "border-right-width" => { style.border_right_width = default_style.border_right_width; true }
+        "border-bottom-width" => { style.border_bottom_width = default_style.border_bottom_width; true }
+        "border-left-width" => { style.border_left_width = default_style.border_left_width; true }
+        "border-top-color" => { style.border_top_color = default_style.border_top_color; true }
+        "border-right-color" => { style.border_right_color = default_style.border_right_color; true }
+        "border-bottom-color" => { style.border_bottom_color = default_style.border_bottom_color; true }
+        "border-left-color" => { style.border_left_color = default_style.border_left_color; true }
+        "border-top-style" => { style.border_top_style = default_style.border_top_style; true }
+        "border-right-style" => { style.border_right_style = default_style.border_right_style; true }
+        "border-bottom-style" => { style.border_bottom_style = default_style.border_bottom_style; true }
+        "border-left-style" => { style.border_left_style = default_style.border_left_style; true }
+        "border-top-left-radius" => { style.border_top_left_radius = default_style.border_top_left_radius; true }
+        "border-top-right-radius" => { style.border_top_right_radius = default_style.border_top_right_radius; true }
+        "border-bottom-right-radius" => { style.border_bottom_right_radius = default_style.border_bottom_right_radius; true }
+        "border-bottom-left-radius" => { style.border_bottom_left_radius = default_style.border_bottom_left_radius; true }
+        // Outline
+        "outline-width" => { style.outline_width = default_style.outline_width; true }
+        "outline-style" => { style.outline_style = default_style.outline_style; true }
+        "outline-color" => { style.outline_color = default_style.outline_color; true }
+        "outline-offset" => { style.outline_offset = default_style.outline_offset; true }
+        // 颜色和背景
+        "color" => { style.color = default_style.color; true }
+        "background-color" => { style.background_color = default_style.background_color; true }
+        "opacity" => { style.opacity = default_style.opacity; true }
+        "visibility" => { style.visibility = default_style.visibility; true }
+        // 字体
+        "font-family" => { style.font_family = default_style.font_family; true }
+        "font-size" => { style.font_size = default_style.font_size; true }
+        "font-weight" => { style.font_weight = default_style.font_weight; true }
+        "font-style" => { style.font_style = default_style.font_style; true }
+        "line-height" => { style.line_height = default_style.line_height; true }
+        // 文本
+        "text-align" => { style.text_align = default_style.text_align; true }
+        "text-decoration" => { style.text_decoration = default_style.text_decoration; true }
+        "text-transform" => { style.text_transform = default_style.text_transform; true }
+        "letter-spacing" => { style.letter_spacing = default_style.letter_spacing; true }
+        "word-spacing" => { style.word_spacing = default_style.word_spacing; true }
+        "white-space" => { style.white_space = default_style.white_space; true }
+        "text-overflow" => { style.text_overflow = default_style.text_overflow; true }
+        // Flexbox
+        "flex-direction" => { style.flex_direction = default_style.flex_direction; true }
+        "flex-wrap" => { style.flex_wrap = default_style.flex_wrap; true }
+        "justify-content" => { style.justify_content = default_style.justify_content; true }
+        "align-items" => { style.align_items = default_style.align_items; true }
+        "align-self" => { style.align_self = default_style.align_self; true }
+        "flex-grow" => { style.flex_grow = default_style.flex_grow; true }
+        "flex-shrink" => { style.flex_shrink = default_style.flex_shrink; true }
+        "flex-basis" => { style.flex_basis = default_style.flex_basis; true }
+        "gap" => { style.gap = default_style.gap; true }
+        "row-gap" => { style.row_gap = default_style.row_gap; true }
+        "order" => { style.order = default_style.order; true }
+        // Grid
+        "grid-template-columns" => { style.grid_template_columns = default_style.grid_template_columns; true }
+        "grid-template-rows" => { style.grid_template_rows = default_style.grid_template_rows; true }
+        "grid-auto-flow" => { style.grid_auto_flow = default_style.grid_auto_flow; true }
+        "grid-column-start" => { style.grid_column_start = default_style.grid_column_start; true }
+        "grid-column-end" => { style.grid_column_end = default_style.grid_column_end; true }
+        "grid-row-start" => { style.grid_row_start = default_style.grid_row_start; true }
+        "grid-row-end" => { style.grid_row_end = default_style.grid_row_end; true }
+        "grid-auto-rows" => { style.grid_auto_rows = default_style.grid_auto_rows; true }
+        "grid-auto-columns" => { style.grid_auto_columns = default_style.grid_auto_columns; true }
+        // 定位
+        "top" => { style.top = default_style.top; true }
+        "right" => { style.right = default_style.right; true }
+        "bottom" => { style.bottom = default_style.bottom; true }
+        "left" => { style.left = default_style.left; true }
+        "z-index" => { style.z_index = default_style.z_index; true }
+        // Overflow
+        "overflow-x" => { style.overflow_x = default_style.overflow_x; true }
+        "overflow-y" => { style.overflow_y = default_style.overflow_y; true }
+        // Cursor
+        "cursor" => { style.cursor = default_style.cursor; true }
+        // Transform
+        "transform" => { style.transform = default_style.transform; true }
+        // Transitions
+        "transition-property" => { style.transition_property = default_style.transition_property; true }
+        "transition-duration" => { style.transition_duration = default_style.transition_duration; true }
+        "transition-timing-function" => { style.transition_timing_function = default_style.transition_timing_function; true }
+        "transition-delay" => { style.transition_delay = default_style.transition_delay; true }
+        // Animations
+        "animation-name" => { style.animation_name = default_style.animation_name; true }
+        "animation-duration" => { style.animation_duration = default_style.animation_duration; true }
+        "animation-timing-function" => { style.animation_timing_function = default_style.animation_timing_function; true }
+        "animation-delay" => { style.animation_delay = default_style.animation_delay; true }
+        "animation-iteration-count" => { style.animation_iteration_count = default_style.animation_iteration_count; true }
+        "animation-direction" => { style.animation_direction = default_style.animation_direction; true }
+        "animation-fill-mode" => { style.animation_fill_mode = default_style.animation_fill_mode; true }
+        "animation-play-state" => { style.animation_play_state = default_style.animation_play_state; true }
+        _ => false,
     }
 }
 
@@ -1972,12 +2004,21 @@ mod tests {
 
     #[test]
     fn test_property_registry_inheritance() {
+        // 正确的继承属性
         assert!(PropertyRegistry::is_inherited("color"));
         assert!(PropertyRegistry::is_inherited("font-size"));
         assert!(PropertyRegistry::is_inherited("visibility"));
+        assert!(PropertyRegistry::is_inherited("cursor"));
+        assert!(PropertyRegistry::is_inherited("line-height"));
+        assert!(PropertyRegistry::is_inherited("white-space"));
+        assert!(PropertyRegistry::is_inherited("text-align"));
+        // 不应继承的属性
         assert!(!PropertyRegistry::is_inherited("display"));
         assert!(!PropertyRegistry::is_inherited("margin-top"));
         assert!(!PropertyRegistry::is_inherited("width"));
+        assert!(!PropertyRegistry::is_inherited("opacity"));
+        assert!(!PropertyRegistry::is_inherited("text-decoration"));
+        assert!(!PropertyRegistry::is_inherited("text-overflow"));
     }
 
     #[test]
@@ -2127,6 +2168,23 @@ mod tests {
 
         assert!(apply_initial_value(&mut style, "opacity"));
         assert_eq!(style.opacity, 1.0);
+    }
+
+    #[test]
+    /// 测试 apply_initial_value 覆盖所有已知属性
+    fn test_apply_initial_value_all_properties() {
+        for prop in PropertyRegistry::known_properties() {
+            let mut style = ComputedStyle::default();
+            // 先修改一个属性值
+            apply_property_value(&mut style, prop, "999px");
+            // 重置为初始值应成功
+            assert!(
+                apply_initial_value(&mut style, prop),
+                "apply_initial_value should handle: {prop}"
+            );
+        }
+        // 未知属性应返回 false
+        assert!(!apply_initial_value(&mut ComputedStyle::default(), "unknown-prop"));
     }
 
     #[test]
@@ -2517,7 +2575,7 @@ mod tests {
     #[test]
     /// 测试 is_inherited 的全面列表
     fn test_property_is_inherited_various() {
-        // 继承属性
+        // 继承属性（按 CSS 规范）
         assert!(PropertyRegistry::is_inherited("color"));
         assert!(PropertyRegistry::is_inherited("font-family"));
         assert!(PropertyRegistry::is_inherited("font-size"));
@@ -2525,14 +2583,16 @@ mod tests {
         assert!(PropertyRegistry::is_inherited("font-style"));
         assert!(PropertyRegistry::is_inherited("line-height"));
         assert!(PropertyRegistry::is_inherited("text-align"));
-        assert!(PropertyRegistry::is_inherited("text-decoration"));
         assert!(PropertyRegistry::is_inherited("text-transform"));
         assert!(PropertyRegistry::is_inherited("letter-spacing"));
         assert!(PropertyRegistry::is_inherited("word-spacing"));
         assert!(PropertyRegistry::is_inherited("white-space"));
-        assert!(PropertyRegistry::is_inherited("text-overflow"));
         assert!(PropertyRegistry::is_inherited("visibility"));
-        assert!(PropertyRegistry::is_inherited("opacity"));
+        assert!(PropertyRegistry::is_inherited("cursor"));
+        // 不继承的属性（按 CSS 规范）
+        assert!(!PropertyRegistry::is_inherited("text-decoration"));
+        assert!(!PropertyRegistry::is_inherited("text-overflow"));
+        assert!(!PropertyRegistry::is_inherited("opacity"));
 
         // 非继承属性
         assert!(!PropertyRegistry::is_inherited("display"));
@@ -3425,7 +3485,8 @@ mod tests {
     #[test]
     fn test_cursor_property_registry() {
         assert!(PropertyRegistry::initial_value("cursor").is_some());
-        assert!(!PropertyRegistry::is_inherited("cursor"));
+        // cursor 按 CSS 规范是继承属性
+        assert!(PropertyRegistry::is_inherited("cursor"));
     }
 
     #[test]
