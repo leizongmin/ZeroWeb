@@ -72,6 +72,8 @@ pub fn computed_style_to_taffy(style: &ComputedStyle) -> taffy::Style {
         grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
         grid_template_columns: parse_grid_tracks(&style.grid_template_columns),
         grid_auto_flow: convert_grid_auto_flow(&style.grid_auto_flow),
+        grid_auto_rows: parse_grid_auto_tracks(&style.grid_auto_rows),
+        grid_auto_columns: parse_grid_auto_tracks(&style.grid_auto_columns),
         grid_row: taffy::geometry::Line {
             start: convert_grid_line(&style.grid_row_start),
             end: convert_grid_line(&style.grid_row_end),
@@ -319,7 +321,121 @@ fn convert_alignment_to_align_content(value: &AlignmentValue) -> Option<taffy::s
 /// - `auto` — 自动轨道
 /// - `50%` — 百分比
 /// - `minmax(100px, 1fr)` — 最小最大
+/// - `repeat(3, 100px)` — 重复
+/// - `repeat(auto-fill, 200px)` — 自动填充（展开为单个值）
 fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
+    let Some(value) = value else {
+        return vec![];
+    };
+
+    let tokens = tokenize_track_list(value);
+    let mut result = Vec::new();
+
+    for token in tokens {
+        if let Some(inner) = token.strip_prefix("repeat(").and_then(|s| s.strip_suffix(')')) {
+            result.extend(expand_repeat(inner));
+        } else {
+            result.push(parse_single_track(&token));
+        }
+    }
+
+    result
+}
+
+/// 将 grid track 列表字符串拆分为独立的 token。
+///
+/// 与 `split_whitespace` 不同，此函数会识别括号边界，
+/// 将 `repeat(...)` 和 `minmax(...)` 保持为单个 token。
+fn tokenize_track_list(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0;
+
+    for ch in value.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ' ' | '\t' if depth == 0 => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+/// 展开 repeat() 函数内部内容为多个 track sizing function。
+///
+/// 格式：`3, 100px` 或 `auto-fill, 200px` 或 `2, 1fr auto`。
+fn expand_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
+    // 找到第一个不在括号内的逗号
+    let comma_pos = find_top_level_comma(inner);
+    let Some(comma_pos) = comma_pos else {
+        return vec![taffy::style::TrackSizingFunction::AUTO];
+    };
+
+    let count_str = inner[..comma_pos].trim();
+    let track_list_str = inner[comma_pos + 1..].trim();
+
+    // 解析重复次数：auto-fill/auto-fit → 1（taffy 不原生支持）
+    let count: usize = if count_str.eq_ignore_ascii_case("auto-fill")
+        || count_str.eq_ignore_ascii_case("auto-fit")
+    {
+        1
+    } else if let Ok(n) = count_str.parse::<usize>() {
+        n
+    } else {
+        return vec![taffy::style::TrackSizingFunction::AUTO];
+    };
+
+    // 解析内部 track 列表
+    let inner_tokens = tokenize_track_list(track_list_str);
+    let inner_tracks: Vec<taffy::style::TrackSizingFunction> =
+        inner_tokens.iter().map(|t| parse_single_track(t)).collect();
+
+    // 重复 count 次
+    let mut result = Vec::with_capacity(count * inner_tracks.len());
+    for _ in 0..count {
+        result.extend(inner_tracks.iter().cloned());
+    }
+
+    result
+}
+
+/// 找到字符串中第一个不在括号内的逗号位置。
+fn find_top_level_comma(s: &str) -> Option<usize> {
+    let mut depth = 0;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 解析 grid-auto-rows/columns 的 track 定义为 NonRepeatedTrackSizingFunction 列表。
+///
+/// 与 parse_grid_tracks 类似，但返回 NonRepeatedTrackSizingFunction
+/// （不包含 repeat 变体），用于 taffy 的 grid_auto_rows/grid_auto_columns 字段。
+fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::NonRepeatedTrackSizingFunction> {
     let Some(value) = value else {
         return vec![];
     };
@@ -327,8 +443,49 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFun
     value
         .split_whitespace()
         .filter(|s| !s.is_empty())
-        .map(parse_single_track)
+        .map(parse_single_auto_track)
         .collect()
+}
+
+/// 解析单个 NonRepeatedTrackSizingFunction 值。
+fn parse_single_auto_track(s: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
+    use taffy::style::NonRepeatedTrackSizingFunction;
+
+    let s = s.trim();
+
+    if s.eq_ignore_ascii_case("auto") {
+        return NonRepeatedTrackSizingFunction::AUTO;
+    }
+    if s.ends_with("fr") && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>() {
+        return NonRepeatedTrackSizingFunction::from_flex(flex);
+    }
+    if s.ends_with('%') && let Ok(pct) = s.trim_end_matches('%').parse::<f32>() {
+        return NonRepeatedTrackSizingFunction::from_percent(pct / 100.0);
+    }
+    if s.starts_with("minmax(") && s.ends_with(')') {
+        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
+    }
+    if s.ends_with("px") && let Ok(px) = s.trim_end_matches("px").parse::<f32>() {
+        return NonRepeatedTrackSizingFunction::from_length(px);
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return NonRepeatedTrackSizingFunction::from_length(px);
+    }
+
+    NonRepeatedTrackSizingFunction::AUTO
+}
+
+/// 解析 minmax() 函数内部，返回 NonRepeatedTrackSizingFunction。
+fn parse_minmax_as_non_repeated(inner: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() != 2 {
+        return taffy::style::NonRepeatedTrackSizingFunction::AUTO;
+    }
+
+    let min = parse_min_track(parts[0].trim());
+    let max = parse_max_track(parts[1].trim());
+
+    taffy::geometry::MinMax { min, max }
 }
 
 /// 解析单个 grid track 值。
@@ -712,5 +869,59 @@ mod tests {
         let taffy_style = computed_style_to_taffy(&style);
         assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_span(2));
         assert_eq!(taffy_style.grid_row.start, taffy::style::GridPlacement::from_line_index(-1));
+    }
+
+    /// 测试 repeat() 固定次数展开。
+    #[test]
+    fn test_parse_grid_tracks_repeat_fixed() {
+        let tracks = parse_grid_tracks(&Some("repeat(3, 100px)".to_string()));
+        assert_eq!(tracks.len(), 3);
+
+        let tracks = parse_grid_tracks(&Some("repeat(2, 1fr auto)".to_string()));
+        assert_eq!(tracks.len(), 4);
+    }
+
+    /// 测试 repeat() auto-fill/auto-fit 降级为单次展开。
+    #[test]
+    fn test_parse_grid_tracks_repeat_auto_fill() {
+        let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
+        assert_eq!(tracks.len(), 1);
+
+        let tracks = parse_grid_tracks(&Some("repeat(auto-fit, minmax(100px, 1fr))".to_string()));
+        assert_eq!(tracks.len(), 1);
+    }
+
+    /// 测试 repeat() 与普通 track 值混用。
+    #[test]
+    fn test_parse_grid_tracks_repeat_mixed() {
+        let tracks = parse_grid_tracks(&Some("50px repeat(2, 1fr) 100px".to_string()));
+        assert_eq!(tracks.len(), 4); // 50px + 1fr + 1fr + 100px
+    }
+
+    /// 测试 grid-auto-rows 转换。
+    #[test]
+    fn test_convert_grid_auto_rows() {
+        let mut style = ComputedStyle::default();
+        style.grid_auto_rows = Some("100px 200px".to_string());
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_auto_rows.len(), 2);
+    }
+
+    /// 测试 grid-auto-columns 转换。
+    #[test]
+    fn test_convert_grid_auto_columns() {
+        let mut style = ComputedStyle::default();
+        style.grid_auto_columns = Some("1fr auto".to_string());
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_auto_columns.len(), 2);
+    }
+
+    /// 测试 grid-auto-rows/columns 默认值为空。
+    #[test]
+    fn test_convert_grid_auto_default() {
+        let style = ComputedStyle::default();
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_auto_rows.len(), 0);
+        assert_eq!(taffy_style.grid_auto_columns.len(), 0);
     }
 }

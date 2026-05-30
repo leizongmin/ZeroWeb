@@ -1123,3 +1123,222 @@ fn test_mutation_character_data_record() {
     observer.notify(&[record]);
     assert_eq!(*received_type.lock().unwrap(), Some(MutationType::CharacterData));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 15. DocumentFragment、克隆、树操作补充测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_document_fragment_append_children() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+
+    doc.append_child(frag, c1).unwrap();
+    doc.append_child(frag, c2).unwrap();
+    doc.append_child(frag, c3).unwrap();
+
+    assert_eq!(doc.child_nodes(frag), vec![c1, c2, c3]);
+    assert_eq!(doc.parent_node(c1), Some(frag));
+    assert_eq!(doc.parent_node(c2), Some(frag));
+    assert_eq!(doc.parent_node(c3), Some(frag));
+}
+
+#[test]
+fn test_document_fragment_insert_into_document() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let container = doc.create_element("div");
+    doc.append_child(root, container).unwrap();
+
+    let frag = doc.create_document_fragment();
+    let c1 = doc.create_text_node("a");
+    let c2 = doc.create_text_node("b");
+    doc.append_child(frag, c1).unwrap();
+    doc.append_child(frag, c2).unwrap();
+
+    // 当前实现直接将 fragment 节点作为子节点追加
+    doc.append_child(container, frag).unwrap();
+
+    assert_eq!(doc.child_nodes(container), vec![frag]);
+    // fragment 仍然是 c1、c2 的父节点
+    assert_eq!(doc.parent_node(c1), Some(frag));
+    assert_eq!(doc.parent_node(c2), Some(frag));
+    // 通过 fragment 可以访问到其子节点
+    assert_eq!(doc.child_nodes(frag), vec![c1, c2]);
+}
+
+#[test]
+fn test_clone_text_node() {
+    let mut doc = Document::new();
+    let text = doc.create_text_node("Hello");
+    let cloned = doc.clone_node(text, true);
+
+    assert_ne!(cloned, text);
+    assert_eq!(doc.text_content(cloned), Some("Hello".to_string()));
+}
+
+#[test]
+fn test_clone_comment_node() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("a comment");
+    let cloned = doc.clone_node(comment, true);
+
+    assert_ne!(cloned, comment);
+    if let Some(NodeKind::Comment(data)) = doc.get(cloned).map(|n| n.kind.clone()) {
+        assert_eq!(data.content, "a comment");
+    }
+}
+
+#[test]
+fn test_clone_deep_nested() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 创建 3 层嵌套：div > span > p
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    let text = doc.create_text_node("deep");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, p).unwrap();
+    doc.append_child(p, text).unwrap();
+
+    let cloned_div = doc.clone_node(div, true);
+
+    assert_ne!(cloned_div, div);
+    assert!(doc.has_child_nodes(cloned_div));
+    let cloned_span = doc.first_child(cloned_div).unwrap();
+    assert_ne!(cloned_span, span);
+    let cloned_p = doc.first_child(cloned_span).unwrap();
+    assert_ne!(cloned_p, p);
+    assert_eq!(doc.text_content(cloned_div), Some("deep".to_string()));
+}
+
+#[test]
+fn test_replace_child_middle() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+    let new_node = doc.create_element("a");
+
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    let replaced = doc.replace_child(root, new_node, c2).unwrap();
+    assert_eq!(replaced, c2);
+    assert_eq!(doc.child_nodes(root), vec![c1, new_node, c3]);
+    assert_eq!(doc.parent_node(c2), None);
+    assert_eq!(doc.parent_node(new_node), Some(root));
+}
+
+#[test]
+fn test_replace_child_reparenting() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent1 = doc.create_element("div");
+    let parent2 = doc.create_element("span");
+    let c1 = doc.create_element("p");
+    let c2 = doc.create_element("a");
+    let child = doc.create_element("em");
+
+    doc.append_child(root, parent1).unwrap();
+    doc.append_child(root, parent2).unwrap();
+    doc.append_child(parent1, c1).unwrap();
+    doc.append_child(parent1, child).unwrap();
+    doc.append_child(parent2, c2).unwrap();
+
+    // 将 parent2 的 c2 替换为 parent1 的 child（跨父节点移动）
+    let replaced = doc.replace_child(parent2, child, c2).unwrap();
+    assert_eq!(replaced, c2);
+
+    // child 现在属于 parent2
+    assert_eq!(doc.parent_node(child), Some(parent2));
+    assert_eq!(doc.child_nodes(parent2), vec![child]);
+    // parent1 不再包含 child
+    assert_eq!(doc.child_nodes(parent1), vec![c1]);
+    assert_eq!(doc.parent_node(c2), None);
+}
+
+#[test]
+fn test_remove_child_nonexistent() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    let orphan = doc.create_element("span");
+    // orphan 从未被 append 到 elem
+
+    let result = doc.remove_child(elem, orphan);
+    assert!(matches!(result, Err(DomError::NotAChild { .. })));
+}
+
+#[test]
+fn test_insert_before_middle() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+    let new_node = doc.create_element("a");
+
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    // 在 c2（第2个子节点）之前插入 new_node
+    doc.insert_before(root, new_node, c2).unwrap();
+
+    assert_eq!(doc.child_nodes(root), vec![c1, new_node, c2, c3]);
+}
+
+#[test]
+fn test_element_has_attribute() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    assert!(!doc.has_attribute(elem, "class"));
+
+    doc.set_attribute(elem, "class", "active");
+    assert!(doc.has_attribute(elem, "class"));
+
+    // 不存在的属性
+    assert!(!doc.has_attribute(elem, "data-missing"));
+}
+
+#[test]
+fn test_query_selector_nested() {
+    // 创建嵌套结构 div > span > p
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, p).unwrap();
+
+    // query_selector 用简单选择器从根搜索应能找到嵌套的 p
+    let found = doc.query_selector(root, "p");
+    assert_eq!(found, Some(p));
+
+    // 从 div 搜索也能找到 span 和 p
+    assert_eq!(doc.query_selector(div, "span"), Some(span));
+    assert_eq!(doc.query_selector(div, "p"), Some(p));
+
+    // 从 span 搜索不应该找到 div
+    assert!(doc.query_selector(span, "div").is_none());
+}
+
+#[test]
+fn test_query_selector_all_multiple() {
+    let doc = parse_html("<html><body><div>a</div><div>b</div><div>c</div></body></html>");
+    let root = doc.root();
+    let results = doc.query_selector_all(root, "div");
+    assert_eq!(results.len(), 3);
+}

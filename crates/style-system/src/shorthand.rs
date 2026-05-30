@@ -143,6 +143,9 @@ fn expand_one(
         "grid-row" => expand_grid_axis(value, "grid-row-start", "grid-row-end", important, specificity),
         "grid-area" => expand_grid_area(value, important, specificity),
 
+        // ── outline 简写 ──
+        "outline" => expand_outline(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -637,6 +640,49 @@ fn expand_grid_area(
         ],
         _ => vec![],
     }
+}
+
+/// 展开 outline 简写。
+///
+/// CSS `outline` 简写格式为：
+/// `outline: [width] [style] [color]`
+///
+/// 各部分顺序无关，未指定的部分使用初始值。
+fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+
+    // "none" 或 "0" → 全部重置
+    if value == "none" {
+        return vec![
+            mk("outline-width", "0px"),
+            mk("outline-style", "none"),
+            mk("outline-color", "currentcolor"),
+        ];
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut width = "0px";
+    let mut style = "none";
+    let mut color = "currentcolor";
+
+    for part in parts {
+        if is_border_style_keyword(part) {
+            style = part;
+        } else if looks_like_length(part) {
+            width = part;
+        } else if looks_like_color(part) {
+            color = part;
+        }
+    }
+
+    vec![
+        mk("outline-width", width),
+        mk("outline-style", style),
+        mk("outline-color", color),
+    ]
 }
 
 #[cfg(test)]
@@ -1330,5 +1376,71 @@ mod tests {
         assert_eq!(result[1].1, "4");
         assert_eq!(result[2].1, "span 2");
         assert_eq!(result[3].1, "span 3");
+    }
+
+    // ── outline 简写测试 ──
+
+    #[test]
+    fn test_outline_shorthand_full() {
+        let result = expand_one("outline", "2px solid red", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "outline-width");
+        assert_eq!(result[0].1, "2px");
+        assert_eq!(result[1].0, "outline-style");
+        assert_eq!(result[1].1, "solid");
+        assert_eq!(result[2].0, "outline-color");
+        assert_eq!(result[2].1, "red");
+    }
+
+    #[test]
+    fn test_outline_shorthand_none() {
+        let result = expand_one("outline", "none", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "outline-width");
+        assert_eq!(result[0].1, "0px");
+        assert_eq!(result[1].0, "outline-style");
+        assert_eq!(result[1].1, "none");
+        assert_eq!(result[2].0, "outline-color");
+        assert_eq!(result[2].1, "currentcolor");
+    }
+
+    #[test]
+    fn test_outline_shorthand_only_style() {
+        let result = expand_one("outline", "dashed", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1, "0px");    // default width
+        assert_eq!(result[1].1, "dashed"); // style
+        assert_eq!(result[2].1, "currentcolor"); // default color
+    }
+
+    #[test]
+    fn test_outline_shorthand_width_and_style() {
+        let result = expand_one("outline", "3px dotted", false, (0, 0, 1));
+        assert_eq!(result[0].1, "3px");
+        assert_eq!(result[1].1, "dotted");
+    }
+
+    #[test]
+    fn test_outline_shorthand_color_and_width() {
+        let result = expand_one("outline", "#ff0000 1px", false, (0, 0, 1));
+        assert_eq!(result[0].1, "1px");
+        assert_eq!(result[1].1, "none");      // default style
+        assert_eq!(result[2].1, "#ff0000");
+    }
+
+    #[test]
+    fn test_outline_shorthand_order_independent() {
+        let result = expand_one("outline", "blue solid 2px", false, (0, 0, 1));
+        assert_eq!(result[0].1, "2px");
+        assert_eq!(result[1].1, "solid");
+        assert_eq!(result[2].1, "blue");
+    }
+
+    #[test]
+    fn test_outline_shorthand_preserves_important() {
+        let result = expand_one("outline", "1px solid red", true, (0, 1, 0));
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().all(|(_, _, imp, _)| *imp));
+        assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
     }
 }
