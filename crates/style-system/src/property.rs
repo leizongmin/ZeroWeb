@@ -36,6 +36,30 @@ pub enum BorderStyleValue {
     Outset,
 }
 
+/// CSS outline-style 值。
+/// 与 BorderStyleValue 相同但不含 Hidden。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutlineStyleValue {
+    /// none。
+    None,
+    /// dotted。
+    Dotted,
+    /// dashed。
+    Dashed,
+    /// solid。
+    Solid,
+    /// double。
+    Double,
+    /// groove。
+    Groove,
+    /// ridge。
+    Ridge,
+    /// inset。
+    Inset,
+    /// outset。
+    Outset,
+}
+
 /// CSS line-height 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum LineHeightValue {
@@ -187,6 +211,8 @@ pub enum PropertyValue {
     FontStyle(FontStyleValue),
     /// border-style 值。
     BorderStyle(BorderStyleValue),
+    /// outline-style 值。
+    OutlineStyle(OutlineStyleValue),
     /// line-height 值。
     LineHeight(LineHeightValue),
     /// text-align 值。
@@ -286,6 +312,16 @@ pub struct ComputedStyle {
     /// border-bottom-left-radius 属性。
     pub border_bottom_left_radius: LengthValue,
 
+    // ── Outline ──
+    /// outline-width 属性。
+    pub outline_width: LengthValue,
+    /// outline-style 属性。
+    pub outline_style: OutlineStyleValue,
+    /// outline-color 属性。
+    pub outline_color: ColorValue,
+    /// outline-offset 属性。
+    pub outline_offset: LengthValue,
+
     // ── 颜色和背景 ──
     /// color 属性（前景色）。
     pub color: ColorValue,
@@ -364,6 +400,12 @@ pub struct ComputedStyle {
     pub grid_row_start: GridLineValue,
     /// grid-row-end 属性。
     pub grid_row_end: GridLineValue,
+    /// grid-auto-rows 属性。
+    /// 存储 CSS 原始值字符串，在布局转换时解析。
+    pub grid_auto_rows: Option<String>,
+    /// grid-auto-columns 属性。
+    /// 存储 CSS 原始值字符串，在布局转换时解析。
+    pub grid_auto_columns: Option<String>,
 
     // ── 定位 ──
     /// top 属性。
@@ -462,6 +504,12 @@ impl Default for ComputedStyle {
             border_bottom_right_radius: LengthValue::Px(0.0),
             border_bottom_left_radius: LengthValue::Px(0.0),
 
+            // Outline
+            outline_width: LengthValue::Px(0.0),
+            outline_style: OutlineStyleValue::None,
+            outline_color: initial_color.clone(),
+            outline_offset: LengthValue::Px(0.0),
+
             // 颜色和背景
             color: initial_color.clone(),
             background_color: transparent,
@@ -505,6 +553,8 @@ impl Default for ComputedStyle {
             grid_column_end: GridLineValue::Auto,
             grid_row_start: GridLineValue::Auto,
             grid_row_end: GridLineValue::Auto,
+            grid_auto_rows: None,
+            grid_auto_columns: None,
 
             // 定位
             top: zero.clone(),
@@ -584,6 +634,11 @@ impl PropertyRegistry {
             | "border-top-right-radius"
             | "border-bottom-right-radius"
             | "border-bottom-left-radius" => Some(Length(LengthValue::Px(0.0))),
+
+            // Outline
+            "outline-width" | "outline-offset" => Some(Length(LengthValue::Px(0.0))),
+            "outline-style" => Some(OutlineStyle(OutlineStyleValue::None)),
+            "outline-color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
 
             // 颜色和背景
             "color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
@@ -741,6 +796,12 @@ impl PropertyRegistry {
             "grid-column-end",
             "grid-row-start",
             "grid-row-end",
+            "grid-auto-rows",
+            "grid-auto-columns",
+            "outline-width",
+            "outline-style",
+            "outline-color",
+            "outline-offset",
         ]
     }
 }
@@ -758,6 +819,22 @@ pub fn parse_border_style(value: &str) -> Option<BorderStyleValue> {
         "ridge" => Some(BorderStyleValue::Ridge),
         "inset" => Some(BorderStyleValue::Inset),
         "outset" => Some(BorderStyleValue::Outset),
+        _ => None,
+    }
+}
+
+/// 解析 CSS outline-style 值。
+pub fn parse_outline_style(value: &str) -> Option<OutlineStyleValue> {
+    match value.trim() {
+        "none" => Some(OutlineStyleValue::None),
+        "dotted" => Some(OutlineStyleValue::Dotted),
+        "dashed" => Some(OutlineStyleValue::Dashed),
+        "solid" => Some(OutlineStyleValue::Solid),
+        "double" => Some(OutlineStyleValue::Double),
+        "groove" => Some(OutlineStyleValue::Groove),
+        "ridge" => Some(OutlineStyleValue::Ridge),
+        "inset" => Some(OutlineStyleValue::Inset),
+        "outset" => Some(OutlineStyleValue::Outset),
         _ => None,
     }
 }
@@ -1166,6 +1243,31 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Outline 属性 ──
+        "outline-width" => {
+            if let Some(v) = values::parse_length(value) {
+                style.outline_width = v;
+                return true;
+            }
+        }
+        "outline-style" => {
+            if let Some(v) = parse_outline_style(value) {
+                style.outline_style = v;
+                return true;
+            }
+        }
+        "outline-color" => {
+            if let Some(v) = values::parse_color(value) {
+                style.outline_color = v;
+                return true;
+            }
+        }
+        "outline-offset" => {
+            if let Some(v) = values::parse_length(value) {
+                style.outline_offset = v;
+                return true;
+            }
+        }
         "color" => {
             if let Some(v) = values::parse_color(value) {
                 style.color = v;
@@ -1400,6 +1502,14 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 style.grid_row_end = v;
                 return true;
             }
+        }
+        "grid-auto-rows" => {
+            style.grid_auto_rows = Some(value.to_string());
+            return true;
+        }
+        "grid-auto-columns" => {
+            style.grid_auto_columns = Some(value.to_string());
+            return true;
         }
         "row-gap" => {
             if let Some(v) = values::parse_length(value) {
@@ -2689,5 +2799,141 @@ mod tests {
         assert!(props.contains(&"animation-direction"));
         assert!(props.contains(&"animation-fill-mode"));
         assert!(props.contains(&"animation-play-state"));
+    }
+
+    // ── grid-auto-rows/columns 属性测试 ──
+
+    #[test]
+    fn test_apply_property_grid_auto_rows() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-auto-rows", "100px"));
+        assert_eq!(style.grid_auto_rows, Some("100px".to_string()));
+
+        assert!(apply_property_value(&mut style, "grid-auto-rows", "minmax(100px, 1fr)"));
+        assert_eq!(style.grid_auto_rows, Some("minmax(100px, 1fr)".to_string()));
+
+        // default is None
+        let style = ComputedStyle::default();
+        assert_eq!(style.grid_auto_rows, None);
+    }
+
+    #[test]
+    fn test_apply_property_grid_auto_columns() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-auto-columns", "1fr auto"));
+        assert_eq!(style.grid_auto_columns, Some("1fr auto".to_string()));
+
+        // default is None
+        let style = ComputedStyle::default();
+        assert_eq!(style.grid_auto_columns, None);
+    }
+
+    #[test]
+    fn test_grid_auto_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"grid-auto-rows"));
+        assert!(props.contains(&"grid-auto-columns"));
+    }
+
+    // ── Outline 属性测试 ──
+
+    #[test]
+    fn test_computed_style_default_outline() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.outline_width, LengthValue::Px(0.0));
+        assert_eq!(style.outline_style, OutlineStyleValue::None);
+        assert_eq!(style.outline_color, ColorValue::Rgba(0, 0, 0, 255));
+        assert_eq!(style.outline_offset, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    fn test_apply_outline_width() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "outline-width", "2px"));
+        assert_eq!(style.outline_width, LengthValue::Px(2.0));
+
+        assert!(apply_property_value(&mut style, "outline-width", "0.5em"));
+        assert_eq!(style.outline_width, LengthValue::Em(0.5));
+
+        assert!(!apply_property_value(&mut style, "outline-width", "invalid"));
+    }
+
+    #[test]
+    fn test_apply_outline_style() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "outline-style", "solid"));
+        assert_eq!(style.outline_style, OutlineStyleValue::Solid);
+
+        assert!(apply_property_value(&mut style, "outline-style", "dashed"));
+        assert_eq!(style.outline_style, OutlineStyleValue::Dashed);
+
+        assert!(apply_property_value(&mut style, "outline-style", "dotted"));
+        assert_eq!(style.outline_style, OutlineStyleValue::Dotted);
+
+        assert!(apply_property_value(&mut style, "outline-style", "double"));
+        assert_eq!(style.outline_style, OutlineStyleValue::Double);
+
+        assert!(apply_property_value(&mut style, "outline-style", "none"));
+        assert_eq!(style.outline_style, OutlineStyleValue::None);
+
+        assert!(!apply_property_value(&mut style, "outline-style", "invalid"));
+    }
+
+    #[test]
+    fn test_apply_outline_color() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "outline-color", "red"));
+        assert_eq!(style.outline_color, ColorValue::Rgba(255, 0, 0, 255));
+
+        assert!(apply_property_value(&mut style, "outline-color", "#00ff00"));
+        assert_eq!(style.outline_color, ColorValue::Rgba(0, 255, 0, 255));
+
+        assert!(apply_property_value(&mut style, "outline-color", "transparent"));
+        assert_eq!(style.outline_color, ColorValue::Transparent);
+    }
+
+    #[test]
+    fn test_apply_outline_offset() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "outline-offset", "4px"));
+        assert_eq!(style.outline_offset, LengthValue::Px(4.0));
+
+        assert!(apply_property_value(&mut style, "outline-offset", "-2px"));
+        assert_eq!(style.outline_offset, LengthValue::Px(-2.0));
+
+        assert!(!apply_property_value(&mut style, "outline-offset", "invalid"));
+    }
+
+    #[test]
+    fn test_outline_property_registry() {
+        assert!(PropertyRegistry::initial_value("outline-width").is_some());
+        assert!(PropertyRegistry::initial_value("outline-style").is_some());
+        assert!(PropertyRegistry::initial_value("outline-color").is_some());
+        assert!(PropertyRegistry::initial_value("outline-offset").is_some());
+        assert!(!PropertyRegistry::is_inherited("outline-width"));
+        assert!(!PropertyRegistry::is_inherited("outline-style"));
+    }
+
+    #[test]
+    fn test_outline_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"outline-width"));
+        assert!(props.contains(&"outline-style"));
+        assert!(props.contains(&"outline-color"));
+        assert!(props.contains(&"outline-offset"));
+    }
+
+    #[test]
+    fn test_parse_outline_style() {
+        assert_eq!(parse_outline_style("solid"), Some(OutlineStyleValue::Solid));
+        assert_eq!(parse_outline_style("none"), Some(OutlineStyleValue::None));
+        assert_eq!(parse_outline_style("dashed"), Some(OutlineStyleValue::Dashed));
+        assert_eq!(parse_outline_style("dotted"), Some(OutlineStyleValue::Dotted));
+        assert_eq!(parse_outline_style("double"), Some(OutlineStyleValue::Double));
+        assert_eq!(parse_outline_style("groove"), Some(OutlineStyleValue::Groove));
+        assert_eq!(parse_outline_style("ridge"), Some(OutlineStyleValue::Ridge));
+        assert_eq!(parse_outline_style("inset"), Some(OutlineStyleValue::Inset));
+        assert_eq!(parse_outline_style("outset"), Some(OutlineStyleValue::Outset));
+        assert_eq!(parse_outline_style("invalid"), None);
     }
 }
