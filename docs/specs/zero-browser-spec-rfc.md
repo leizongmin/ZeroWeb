@@ -1,9 +1,9 @@
 # Spec: ZeroBrowser — 基于 Rust 的跨平台浏览器
 
-**版本**: v1.0
+**版本**: v1.1
 **日期**: 2026-05-30
 **作者**: AI Assistant
-**状态**: Draft
+**状态**: Confirmed
 
 ---
 
@@ -517,7 +517,7 @@
 - **C-005**: 窗口管理**必须**基于 winit，确保跨平台一致性
 - **C-006**: 布局算法**必须**基于 taffy 进行扩展，而非从零实现 Flexbox/Grid 基础算法
 - **C-007**: 项目**必须**采用 Cargo workspace 组织多 crate 结构
-- **C-008**: 目标 Rust 版本为最新稳定版（MSRV 策略 TBD）
+- **C-008**: MSRV（最低支持 Rust 版本）为 Rust 1.85（edition 2024）
 
 ### 6.2 平台约束
 
@@ -995,7 +995,7 @@ enum IpcMessage {
 
 | ID | 项目 | 优先级 | 缺失信息 | 后续步骤 |
 |----|------|--------|----------|----------|
-| TBD-1 | MSRV（最低支持 Rust 版本）策略 | 重要 | 未确定具体的 Rust 版本要求 | 调研各依赖的 MSRV，确定项目 MSRV |
+| TBD-1 | MSRV（最低支持 Rust 版本）策略 | ~~已解决~~ | 已确定 MSRV 为 Rust 1.85 | ✅ 已在 Cargo.toml 中配置 `rust-version = "1.85"` |
 | TBD-2 | OmniTerm 代码复用许可证 | 重要 | 需确认 OmniTerm 的许可证与本项目兼容；假设同一团队/组织可复用 | 启动 M1 前确认许可证或获取授权 |
 | TBD-3 | V8 二进制分发策略 | 重要 | V8 二进制体积大（30-50MB），分发方式未定 | 评估 rusty_v8 的分发机制，确定是否需要自建分发 |
 | TBD-4 | CSS 解析器性能目标 | 重要 | 自建 CSS 解析器的性能基线未知 | M3 开始时建立解析性能基线，与现有方案对比 |
@@ -1012,4 +1012,5 @@ enum IpcMessage {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v1.1 | 2026-05-30 | 状态更新为 Confirmed；解决 TBD-1（MSRV = Rust 1.85）；更新 C-008 约束 |
 | v1.0 | 2026-05-30 | 初始版本 — 基于目标文档 `docs/goal/zero-browser.md` v1.0 和技术调研文档 `docs/research/rust-cross-platform-browser-research.md` 创建完整的 Spec + RFC |
