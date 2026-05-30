@@ -252,12 +252,39 @@ mod tests {
     }
 
     #[test]
-    fn test_opacity_inherited() {
+    /// opacity 按 CSS 规范不是继承属性，子元素默认为 1.0
+    fn test_opacity_not_inherited() {
         let mut parent = ComputedStyle::default();
         parent.opacity = 0.5;
         let cascaded = HashMap::new();
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
-        assert_eq!(style.opacity, 0.5);
+        // opacity 不继承，子元素默认 1.0
+        assert_eq!(style.opacity, 1.0);
+    }
+
+    #[test]
+    /// cursor 按 CSS 规范是继承属性
+    fn test_cursor_inherited() {
+        use crate::CursorValue;
+        let mut parent = ComputedStyle::default();
+        parent.cursor = CursorValue::Pointer;
+        let cascaded = HashMap::new();
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.cursor, CursorValue::Pointer);
+    }
+
+    #[test]
+    /// text-decoration 按 CSS 规范不是继承属性
+    fn test_text_decoration_not_inherited() {
+        use super::super::property::TextDecorationValue;
+        let mut parent = ComputedStyle::default();
+        parent.text_decoration = TextDecorationValue::Underline;
+        let cascaded = HashMap::new();
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // text-decoration 不继承，子元素默认 None
+        assert_eq!(style.text_decoration, TextDecorationValue::None);
     }
 }
