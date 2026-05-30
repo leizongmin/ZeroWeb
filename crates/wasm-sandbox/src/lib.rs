@@ -8,6 +8,7 @@
 #![warn(missing_docs)]
 
 use std::fmt;
+use std::sync::Arc;
 
 /// WASM 运行时错误
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +34,9 @@ pub enum WasmError {
     /// 链接错误
     #[error("link error: {0}")]
     LinkError(String),
+    /// 燃料耗尽
+    #[error("all fuel consumed")]
+    FuelExhausted,
 }
 
 /// WASM 值类型
@@ -59,21 +63,171 @@ impl fmt::Display for WasmValue {
     }
 }
 
+/// 主机函数签名
+///
+/// WASM 调用主机函数时传入的参数和返回值的缓冲区。
+/// 主机函数从 `params` 读取参数，将结果写入 `results`。
+pub type HostFn = dyn Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError>
+    + Send
+    + Sync;
+
+/// 主机函数定义
+///
+/// 用于在 WASM 实例化时注册可供 WASM 模块导入的主机函数。
+#[derive(Clone)]
+pub struct HostFunction {
+    module: String,
+    name: String,
+    params: Vec<WasmValueType>,
+    results: Vec<WasmValueType>,
+    func: Arc<HostFn>,
+}
+
+impl HostFunction {
+    /// 创建新的主机函数定义
+    ///
+    /// # 参数
+    /// - `module`: WASM 导入模块名（如 `"env"`）
+    /// - `name`: WASM 导入函数名（如 `"log"`）
+    /// - `params`: 参数类型列表
+    /// - `results`: 返回值类型列表
+    /// - `func`: 主机函数实现
+    pub fn new(
+        module: impl Into<String>,
+        name: impl Into<String>,
+        params: Vec<WasmValueType>,
+        results: Vec<WasmValueType>,
+        func: impl Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        Self {
+            module: module.into(),
+            name: name.into(),
+            params,
+            results,
+            func: Arc::new(func),
+        }
+    }
+}
+
+impl fmt::Debug for HostFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HostFunction")
+            .field("module", &self.module)
+            .field("name", &self.name)
+            .field("params", &self.params)
+            .field("results", &self.results)
+            .finish()
+    }
+}
+
+/// WASM 值类型枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmValueType {
+    /// 32 位整数
+    I32,
+    /// 64 位整数
+    I64,
+    /// 32 位浮点数
+    F32,
+    /// 64 位浮点数
+    F64,
+}
+
+/// 沙箱配置
+///
+/// 用于创建 `WasmSandbox` 时指定可选功能。
+#[derive(Debug, Default, Clone)]
+pub struct SandboxConfig {
+    /// 是否启用燃料计量（限制 WASM 执行指令数）
+    consume_fuel: bool,
+}
+
+impl SandboxConfig {
+    /// 创建默认配置
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 设置是否启用燃料计量
+    ///
+    /// 启用后可通过 [`WasmInstance::set_fuel`] 限制 WASM 执行指令数量。
+    pub fn consume_fuel(mut self, enable: bool) -> Self {
+        self.consume_fuel = enable;
+        self
+    }
+
+    /// 返回是否启用了燃料计量
+    pub fn is_consume_fuel(&self) -> bool {
+        self.consume_fuel
+    }
+}
+
+/// 主机函数链接器
+///
+/// 收集所有主机函数定义，供模块实例化时使用。
+#[derive(Debug, Default, Clone)]
+pub struct LinkerConfig {
+    functions: Vec<HostFunction>,
+}
+
+impl LinkerConfig {
+    /// 创建空的链接器配置
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 注册主机函数
+    pub fn define(&mut self, func: HostFunction) {
+        self.functions.push(func);
+    }
+
+    /// 返回已注册的主机函数列表
+    pub fn functions(&self) -> &[HostFunction] {
+        &self.functions
+    }
+}
+
 #[cfg(feature = "wasmi")]
 mod wasmi_backend {
-    use super::{WasmError, WasmValue};
+    use super::{LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
+    use std::fmt;
+    use std::sync::Arc;
+
+    /// Wrapper for host function error messages that implements wasmi's HostError.
+    #[derive(Debug)]
+    struct HostStringError(String);
+
+    impl fmt::Display for HostStringError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl std::error::Error for HostStringError {}
+
+    impl wasmi::core::HostError for HostStringError {}
 
     /// WASM 沙箱运行时
     pub struct WasmSandbox {
         engine: wasmi::Engine,
+        config: SandboxConfig,
     }
 
     impl WasmSandbox {
-        /// 创建新的 WASM 沙箱
+        /// 创建新的 WASM 沙箱（默认配置）
         pub fn new() -> Self {
-            Self {
-                engine: wasmi::Engine::default(),
-            }
+            Self::with_config(SandboxConfig::default())
+        }
+
+        /// 使用指定配置创建 WASM 沙箱
+        pub fn with_config(config: SandboxConfig) -> Self {
+            let mut wasmi_config = wasmi::Config::default();
+            wasmi_config.consume_fuel(config.is_consume_fuel());
+            let engine = wasmi::Engine::new(&wasmi_config);
+            Self { engine, config }
         }
 
         /// 编译 WASM 模块
@@ -86,6 +240,11 @@ mod wasmi_backend {
         /// 获取引擎引用
         pub fn engine(&self) -> &wasmi::Engine {
             &self.engine
+        }
+
+        /// 返回沙箱配置的引用
+        pub fn config(&self) -> &SandboxConfig {
+            &self.config
         }
     }
 
@@ -100,11 +259,81 @@ mod wasmi_backend {
         module: wasmi::Module,
     }
 
+    fn wasm_value_type_to_wasmi(ty: WasmValueType) -> wasmi::core::ValType {
+        match ty {
+            WasmValueType::I32 => wasmi::core::ValType::I32,
+            WasmValueType::I64 => wasmi::core::ValType::I64,
+            WasmValueType::F32 => wasmi::core::ValType::F32,
+            WasmValueType::F64 => wasmi::core::ValType::F64,
+        }
+    }
+
+    fn wasm_value_to_wasmi(v: &WasmValue) -> wasmi::Val {
+        match v {
+            WasmValue::I32(n) => wasmi::Val::I32(*n),
+            WasmValue::I64(n) => wasmi::Val::I64(*n),
+            WasmValue::F32(n) => wasmi::Val::F32((*n).into()),
+            WasmValue::F64(n) => wasmi::Val::F64((*n).into()),
+        }
+    }
+
+    fn wasmi_val_to_wasm(v: &wasmi::Val) -> WasmValue {
+        match v {
+            wasmi::Val::I32(n) => WasmValue::I32(*n),
+            wasmi::Val::I64(n) => WasmValue::I64(*n),
+            wasmi::Val::F32(n) => WasmValue::F32(f32::from(*n)),
+            wasmi::Val::F64(n) => WasmValue::F64(f64::from(*n)),
+            _ => WasmValue::I32(0),
+        }
+    }
+
     impl WasmModule {
-        /// 实例化模块
+        /// 实例化模块（无主机函数）
         pub fn instantiate(&self, sandbox: &WasmSandbox) -> Result<WasmInstance, WasmError> {
+            self.instantiate_with_linker(sandbox, &LinkerConfig::new())
+        }
+
+        /// 使用主机函数链接器实例化模块
+        pub fn instantiate_with_linker(
+            &self,
+            sandbox: &WasmSandbox,
+            linker_config: &LinkerConfig,
+        ) -> Result<WasmInstance, WasmError> {
             let mut store = wasmi::Store::new(sandbox.engine(), ());
-            let linker = wasmi::Linker::new(sandbox.engine());
+            let mut linker = wasmi::Linker::new(sandbox.engine());
+
+            for host_func in linker_config.functions() {
+                let params: Vec<wasmi::core::ValType> =
+                    host_func.params.iter().map(|&p| wasm_value_type_to_wasmi(p)).collect();
+                let results: Vec<wasmi::core::ValType> =
+                    host_func.results.iter().map(|&r| wasm_value_type_to_wasmi(r)).collect();
+                let func_type = wasmi::FuncType::new(params, results);
+
+                let arc_func: Arc<super::HostFn> = host_func.func.clone();
+                linker
+                    .func_new(
+                        &host_func.module,
+                        &host_func.name,
+                        func_type,
+                        move |_caller, params, results| {
+                            let wasm_params: Vec<WasmValue> =
+                                params.iter().map(wasmi_val_to_wasm).collect();
+                            let mut wasm_results = Vec::new();
+                            match arc_func(&wasm_params, &mut wasm_results) {
+                                Ok(()) => {
+                                    for (i, val) in wasm_results.iter().enumerate() {
+                                        if i < results.len() {
+                                            results[i] = wasm_value_to_wasmi(val);
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                                Err(e) => Err(wasmi::Error::host(HostStringError(e.to_string()))),
+                            }
+                        },
+                    )
+                    .map_err(|e| WasmError::LinkError(e.to_string()))?;
+            }
 
             let instance = linker
                 .instantiate(&mut store, &self.module)
@@ -143,15 +372,7 @@ mod wasmi_backend {
                 }
             })?;
 
-            let params: Vec<wasmi::Val> = args
-                .iter()
-                .map(|v| match v {
-                    WasmValue::I32(n) => wasmi::Val::I32(*n),
-                    WasmValue::I64(n) => wasmi::Val::I64(*n),
-                    WasmValue::F32(n) => wasmi::Val::F32((*n).into()),
-                    WasmValue::F64(n) => wasmi::Val::F64((*n).into()),
-                })
-                .collect();
+            let params: Vec<wasmi::Val> = args.iter().map(wasm_value_to_wasmi).collect();
 
             // 获取返回值类型以分配输出缓冲区
             let func_type = func.ty(&self.store);
@@ -162,18 +383,16 @@ mod wasmi_backend {
                 .collect();
 
             func.call(&mut self.store, &params, &mut outputs)
-                .map_err(|e| WasmError::CallError(e.to_string()))?;
+                .map_err(|e| {
+                    // 检查是否是燃料耗尽的 trap
+                    if e.as_trap_code() == Some(wasmi::core::TrapCode::OutOfFuel) {
+                        WasmError::FuelExhausted
+                    } else {
+                        WasmError::CallError(e.to_string())
+                    }
+                })?;
 
-            Ok(outputs
-                .iter()
-                .map(|v| match v {
-                    wasmi::Val::I32(n) => WasmValue::I32(*n),
-                    wasmi::Val::I64(n) => WasmValue::I64(*n),
-                    wasmi::Val::F32(n) => WasmValue::F32(f32::from(*n)),
-                    wasmi::Val::F64(n) => WasmValue::F64(f64::from(*n)),
-                    _ => WasmValue::I32(0),
-                })
-                .collect())
+            Ok(outputs.iter().map(wasmi_val_to_wasm).collect())
         }
 
         /// 读取线性内存
@@ -224,6 +443,28 @@ mod wasmi_backend {
             let memory = self.instance.get_memory(&self.store, name)?;
             Some(memory.data(&self.store).len())
         }
+
+        /// 设置剩余燃料（需要启用燃料计量）
+        ///
+        /// # 错误
+        ///
+        /// 如果燃料计量未启用，返回错误。
+        pub fn set_fuel(&mut self, fuel: u64) -> Result<(), WasmError> {
+            self.store
+                .set_fuel(fuel)
+                .map_err(|e| WasmError::CallError(e.to_string()))
+        }
+
+        /// 获取剩余燃料（需要启用燃料计量）
+        ///
+        /// # 错误
+        ///
+        /// 如果燃料计量未启用，返回错误。
+        pub fn get_fuel(&self) -> Result<u64, WasmError> {
+            self.store
+                .get_fuel()
+                .map_err(|e| WasmError::CallError(e.to_string()))
+        }
     }
 }
 
@@ -232,15 +473,22 @@ pub use wasmi_backend::*;
 
 #[cfg(not(feature = "wasmi"))]
 mod stub_backend {
-    use super::{WasmError, WasmValue};
+    use super::{LinkerConfig, SandboxConfig, WasmError, WasmValue};
 
     /// WASM 沙箱运行时（占位实现）
-    pub struct WasmSandbox;
+    pub struct WasmSandbox {
+        config: SandboxConfig,
+    }
 
     impl WasmSandbox {
         /// 创建新的 WASM 沙箱
         pub fn new() -> Self {
-            Self
+            Self::with_config(SandboxConfig::default())
+        }
+
+        /// 使用指定配置创建 WASM 沙箱
+        pub fn with_config(config: SandboxConfig) -> Self {
+            Self { config }
         }
 
         /// 编译 WASM 模块
@@ -248,6 +496,11 @@ mod stub_backend {
             Err(WasmError::InvalidBinary(
                 "no WASM backend enabled (enable 'wasmi' feature)".into(),
             ))
+        }
+
+        /// 返回沙箱配置的引用
+        pub fn config(&self) -> &SandboxConfig {
+            &self.config
         }
     }
 
@@ -263,6 +516,15 @@ mod stub_backend {
     impl WasmModule {
         /// 实例化模块
         pub fn instantiate(&self, _sandbox: &WasmSandbox) -> Result<WasmInstance, WasmError> {
+            Err(WasmError::InstantiationError("no backend".into()))
+        }
+
+        /// 使用主机函数链接器实例化模块
+        pub fn instantiate_with_linker(
+            &self,
+            _sandbox: &WasmSandbox,
+            _linker_config: &LinkerConfig,
+        ) -> Result<WasmInstance, WasmError> {
             Err(WasmError::InstantiationError("no backend".into()))
         }
 
@@ -314,6 +576,16 @@ mod stub_backend {
         pub fn memory_size(&self, _name: &str) -> Option<usize> {
             None
         }
+
+        /// 设置剩余燃料
+        pub fn set_fuel(&mut self, _fuel: u64) -> Result<(), WasmError> {
+            Err(WasmError::CallError("no backend".into()))
+        }
+
+        /// 获取剩余燃料
+        pub fn get_fuel(&self) -> Result<u64, WasmError> {
+            Err(WasmError::CallError("no backend".into()))
+        }
     }
 }
 
@@ -337,6 +609,13 @@ mod tests {
     #[test]
     fn test_sandbox_default() {
         let _sandbox = WasmSandbox::default();
+    }
+
+    #[test]
+    fn test_sandbox_with_config() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        assert!(sandbox.config().is_consume_fuel());
     }
 
     #[test]
@@ -681,5 +960,422 @@ mod tests {
         assert_eq!(r1[0], WasmValue::I32(1));
         let r2 = instance.call("increment", &[]).expect("call2");
         assert_eq!(r2[0], WasmValue::I32(2));
+    }
+
+    // ---- 主机函数导入测试 ----
+
+    #[test]
+    fn test_host_function_import_basic() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "add_one" (func $add_one (param i32) (result i32)))
+                (func (export "call_host") (param i32) (result i32)
+                    local.get 0
+                    call $add_one)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "add_one",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |_params, results| {
+                results.push(WasmValue::I32(99));
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let r = instance
+            .call("call_host", &[WasmValue::I32(5)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(99));
+    }
+
+    #[test]
+    fn test_host_function_uses_params() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "double" (func $double (param i32) (result i32)))
+                (func (export "test") (param i32) (result i32)
+                    local.get 0
+                    call $double)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "double",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let WasmValue::I32(n) = params[0] {
+                    results.push(WasmValue::I32(n * 2));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let r = instance
+            .call("test", &[WasmValue::I32(21)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
+    }
+
+    #[test]
+    fn test_host_function_multiple_imports() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "add" (func $add (param i32 i32) (result i32)))
+                (import "env" "mul" (func $mul (param i32 i32) (result i32)))
+                (func (export "test") (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    call $add
+                    local.get 0
+                    local.get 1
+                    call $mul
+                    i32.add)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "add",
+            vec![WasmValueType::I32, WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let (WasmValue::I32(a), WasmValue::I32(b)) = (&params[0], &params[1]) {
+                    results.push(WasmValue::I32(a + b));
+                }
+                Ok(())
+            },
+        ));
+        linker.define(HostFunction::new(
+            "env",
+            "mul",
+            vec![WasmValueType::I32, WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let (WasmValue::I32(a), WasmValue::I32(b)) = (&params[0], &params[1]) {
+                    results.push(WasmValue::I32(a * b));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        // add(3, 4) + mul(3, 4) = 7 + 12 = 19
+        let r = instance
+            .call("test", &[WasmValue::I32(3), WasmValue::I32(4)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(19));
+    }
+
+    #[test]
+    fn test_host_function_missing_import() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "missing" (func (param i32) (result i32)))
+                (func (export "test") (result i32)
+                    i32.const 1
+                    call 0)
+            )"#,
+        );
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let result = module.instantiate(&sandbox);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_host_function_i64_params() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "add64" (func $add64 (param i64 i64) (result i64)))
+                (func (export "test") (param i64 i64) (result i64)
+                    local.get 0
+                    local.get 1
+                    call $add64)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "add64",
+            vec![WasmValueType::I64, WasmValueType::I64],
+            vec![WasmValueType::I64],
+            |params, results| {
+                if let (WasmValue::I64(a), WasmValue::I64(b)) = (&params[0], &params[1]) {
+                    results.push(WasmValue::I64(a + b));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let r = instance
+            .call("test", &[WasmValue::I64(100), WasmValue::I64(200)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I64(300));
+    }
+
+    // ---- Trap 处理测试 ----
+
+    #[test]
+    fn test_trap_division_by_zero() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "div_zero") (param i32) (result i32)
+                    local.get 0
+                    i32.const 0
+                    i32.div_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let result = instance.call("div_zero", &[WasmValue::I32(10)]);
+        assert!(result.is_err());
+        if let Err(WasmError::CallError(msg)) = result {
+            assert!(msg.contains("divide") || msg.contains("zero") || msg.contains("trap"));
+        } else {
+            panic!("expected CallError for division by zero");
+        }
+    }
+
+    #[test]
+    fn test_trap_unreachable() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "do_unreachable") (result i32)
+                    unreachable)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let result = instance.call("do_unreachable", &[]);
+        assert!(result.is_err());
+        if let Err(WasmError::CallError(msg)) = result {
+            assert!(msg.contains("unreachable") || msg.contains("trap"));
+        } else {
+            panic!("expected CallError for unreachable");
+        }
+    }
+
+    #[test]
+    fn test_trap_integer_overflow() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "overflow") (result i32)
+                    i32.const -2147483648
+                    i32.const -1
+                    i32.div_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        // INT32_MIN / -1 overflows
+        let result = instance.call("overflow", &[]);
+        assert!(result.is_err());
+        if let Err(WasmError::CallError(msg)) = result {
+            assert!(msg.contains("overflow") || msg.contains("trap") || msg.contains("divide"));
+        } else {
+            panic!("expected CallError for integer overflow");
+        }
+    }
+
+    #[test]
+    fn test_trap_out_of_bounds_memory() {
+        let sandbox = WasmSandbox::new();
+        // WASM module with memory load that accesses out-of-bounds
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "read_oob") (result i32)
+                    i32.const 100000
+                    i32.load)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let result = instance.call("read_oob", &[]);
+        assert!(result.is_err());
+        if let Err(WasmError::CallError(msg)) = result {
+            assert!(msg.contains("out of bounds") || msg.contains("trap"));
+        } else {
+            panic!("expected CallError for out-of-bounds memory access");
+        }
+    }
+
+    // ---- 燃料计量测试 ----
+
+    #[test]
+    fn test_fuel_basic() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 无燃料时调用失败
+        let result = instance.call("answer", &[]);
+        assert!(matches!(result, Err(WasmError::FuelExhausted)));
+
+        // 设置足够燃料
+        instance.set_fuel(100).expect("set_fuel");
+        let r = instance.call("answer", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
+
+        // 燃料应该有剩余
+        let remaining = instance.get_fuel().expect("get_fuel");
+        assert!(remaining < 100);
+        assert!(remaining > 0);
+    }
+
+    #[test]
+    fn test_fuel_exhausted_infinite_loop() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        // 无限循环模块
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "loop_forever")
+                    (local $i i32)
+                    (loop $inf
+                        local.get $i
+                        i32.const 1
+                        i32.add
+                        local.set $i
+                        br $inf))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        instance.set_fuel(1000).expect("set_fuel");
+        let result = instance.call("loop_forever", &[]);
+        assert!(matches!(result, Err(WasmError::FuelExhausted)));
+    }
+
+    #[test]
+    fn test_fuel_set_get() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        instance.set_fuel(500).expect("set_fuel");
+        assert_eq!(instance.get_fuel().expect("get_fuel"), 500);
+    }
+
+    #[test]
+    fn test_fuel_disabled_by_default() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 不启用燃料计量时 set_fuel 应该报错
+        let result = instance.set_fuel(100);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fuel_consumed_across_calls() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        instance.set_fuel(100).expect("set_fuel");
+        instance.call("answer", &[]).expect("call1");
+        let fuel_after_1 = instance.get_fuel().expect("get_fuel");
+        instance.call("answer", &[]).expect("call2");
+        let fuel_after_2 = instance.get_fuel().expect("get_fuel");
+        // 每次调用消耗相同的燃料
+        assert!(fuel_after_1 > fuel_after_2);
+    }
+
+    #[test]
+    fn test_host_function_with_fuel() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "double" (func $double (param i32) (result i32)))
+                (func (export "test") (param i32) (result i32)
+                    local.get 0
+                    call $double)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "double",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let WasmValue::I32(n) = params[0] {
+                    results.push(WasmValue::I32(n * 2));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+
+        instance.set_fuel(100).expect("set_fuel");
+        let r = instance
+            .call("test", &[WasmValue::I32(21)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
     }
 }

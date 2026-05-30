@@ -1,0 +1,197 @@
+//! 混合内容检测模块。
+//!
+//! 当 HTTPS 页面加载 HTTP 子资源时，检测并阻止混合内容。
+
+use crate::origin::Origin;
+
+/// 混合内容类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixedContentType {
+    /// 升级混合内容（image、audio、video 等可自动升级）。
+    OptionallyBlockable,
+    /// 阻塞型混合内容（script、iframe、XHR 等必须阻止）。
+    Blockable,
+}
+
+/// 混合内容检查结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MixedContentStatus {
+    /// 非混合内容（同协议或非安全上下文）。
+    NotMixedContent,
+    /// 可升级的混合内容（应警告但可尝试升级为 HTTPS）。
+    OptionallyBlockable,
+    /// 必须阻止的混合内容。
+    Blockable,
+}
+
+/// 判断是否为混合内容场景。
+///
+/// 当页面源为 HTTPS 而资源为 HTTP 时，属于混合内容。
+///
+/// `page_origin` 为页面源。
+/// `resource_url` 为资源 URL。
+pub fn is_mixed_content(page_origin: &Origin, resource_url: &str) -> bool {
+    if !page_origin.is_secure() {
+        return false;
+    }
+    resource_url.starts_with("http://")
+}
+
+/// 检查混合内容状态。
+///
+/// `page_origin` 为页面源。
+/// `resource_url` 为资源 URL。
+/// `resource_type` 为资源类型（如 "script", "img", "style", "connect", "font", "media", "object"）。
+pub fn check_mixed_content(
+    page_origin: &Origin,
+    resource_url: &str,
+    resource_type: &str,
+) -> MixedContentStatus {
+    if !is_mixed_content(page_origin, resource_url) {
+        return MixedContentStatus::NotMixedContent;
+    }
+
+    match classify_resource_type(resource_type) {
+        MixedContentType::OptionallyBlockable => MixedContentStatus::OptionallyBlockable,
+        MixedContentType::Blockable => MixedContentStatus::Blockable,
+    }
+}
+
+/// 将 HTTP URL 升级为 HTTPS（用于可升级混合内容）。
+///
+/// `url` 必须以 `http://` 开头。
+pub fn upgrade_to_https(url: &str) -> Option<String> {
+    url.strip_prefix("http://").map(|rest| format!("https://{rest}"))
+}
+
+/// 根据资源类型分类混合内容。
+fn classify_resource_type(resource_type: &str) -> MixedContentType {
+    // 可选阻塞的混合内容类型
+    let optionally_blockable = ["img", "audio", "video", "media"];
+    if optionally_blockable.contains(&resource_type) {
+        return MixedContentType::OptionallyBlockable;
+    }
+
+    // 所有其他（script, style, connect, font, object, iframe, frame, xhr, fetch 等）为阻塞型
+    MixedContentType::Blockable
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_not_mixed_content_https_page_https_resource() {
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "https://cdn.example.com/script.js"));
+    }
+
+    #[test]
+    fn test_mixed_content_https_page_http_resource() {
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(is_mixed_content(&page, "http://cdn.example.com/script.js"));
+    }
+
+    #[test]
+    fn test_not_mixed_content_http_page() {
+        let page = Origin::parse("http://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "http://cdn.example.com/script.js"));
+    }
+
+    #[test]
+    fn test_not_mixed_content_relative_url() {
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "script.js"));
+    }
+
+    #[test]
+    fn test_mixed_content_check_blockable_script() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://evil.com/script.js", "script");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_blockable_style() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://evil.com/style.css", "style");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_blockable_connect() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://api.example.com/data", "connect");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_optionally_blockable_img() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/photo.jpg", "img");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_optionally_blockable_audio() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/audio.mp3", "audio");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_optionally_blockable_video() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/video.mp4", "video");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+    }
+
+    #[test]
+    fn test_mixed_content_not_mixed_content_https_resource() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "https://cdn.example.com/script.js", "script");
+        assert_eq!(status, MixedContentStatus::NotMixedContent);
+    }
+
+    #[test]
+    fn test_mixed_content_not_mixed_http_page() {
+        let page = Origin::parse("http://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/script.js", "script");
+        assert_eq!(status, MixedContentStatus::NotMixedContent);
+    }
+
+    #[test]
+    fn test_upgrade_to_https() {
+        assert_eq!(
+            upgrade_to_https("http://example.com/script.js"),
+            Some("https://example.com/script.js".to_string())
+        );
+    }
+
+    #[test]
+    fn test_upgrade_to_https_non_http() {
+        assert_eq!(upgrade_to_https("https://example.com/script.js"), None);
+        assert_eq!(upgrade_to_https("script.js"), None);
+    }
+
+    #[test]
+    fn test_mixed_content_check_media_type() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/media.mp4", "media");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_font_blockable() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/font.woff2", "font");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+
+    #[test]
+    fn test_mixed_content_check_object_blockable() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/flash.swf", "object");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+}

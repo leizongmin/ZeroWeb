@@ -716,4 +716,185 @@ mod tests {
         // 没有视口信息，@media 不应用
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
+
+    // ── Grid 属性端到端测试 ──
+
+    #[test]
+    fn test_grid_template_columns_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "display".to_string(),
+                    value: "grid".to_string(),
+                    important: false,
+                }, Declaration {
+                    property: "grid-template-columns".to_string(),
+                    value: "100px 1fr auto".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.display, DisplayValue::Grid);
+        assert_eq!(
+            div_style.grid_template_columns,
+            Some("100px 1fr auto".to_string())
+        );
+    }
+
+    #[test]
+    fn test_grid_template_rows_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "display".to_string(),
+                    value: "grid".to_string(),
+                    important: false,
+                }, Declaration {
+                    property: "grid-template-rows".to_string(),
+                    value: "50px 1fr".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.display, DisplayValue::Grid);
+        assert_eq!(
+            div_style.grid_template_rows,
+            Some("50px 1fr".to_string())
+        );
+    }
+
+    #[test]
+    fn test_grid_auto_flow_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "display".to_string(),
+                    value: "grid".to_string(),
+                    important: false,
+                }, Declaration {
+                    property: "grid-auto-flow".to_string(),
+                    value: "column dense".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.display, DisplayValue::Grid);
+        assert_eq!(div_style.grid_auto_flow, property::GridAutoFlowValue::ColumnDense);
+    }
+
+    #[test]
+    fn test_grid_combined_properties_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-template-columns".to_string(),
+                        value: "1fr 1fr".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-template-rows".to_string(),
+                        value: "auto".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-auto-flow".to_string(),
+                        value: "row".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "gap".to_string(),
+                        value: "10px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.display, DisplayValue::Grid);
+        assert_eq!(div_style.grid_template_columns, Some("1fr 1fr".to_string()));
+        assert_eq!(div_style.grid_template_rows, Some("auto".to_string()));
+        assert_eq!(div_style.grid_auto_flow, property::GridAutoFlowValue::Row);
+        assert_eq!(div_style.gap, LengthValue::Px(10.0));
+    }
+
+    #[test]
+    fn test_grid_unset_uses_initial() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-auto-flow".to_string(),
+                        value: "unset".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // grid-auto-flow is not inherited, unset = initial = Row
+        assert_eq!(div_style.grid_auto_flow, property::GridAutoFlowValue::Row);
+    }
+
+    #[test]
+    fn test_grid_default_values_no_css() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![];
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_template_columns, None);
+        assert_eq!(div_style.grid_template_rows, None);
+        assert_eq!(div_style.grid_auto_flow, property::GridAutoFlowValue::Row);
+        assert_eq!(div_style.grid_column_start, property::GridLineValue::Auto);
+        assert_eq!(div_style.grid_column_end, property::GridLineValue::Auto);
+        assert_eq!(div_style.grid_row_start, property::GridLineValue::Auto);
+        assert_eq!(div_style.grid_row_end, property::GridLineValue::Auto);
+        assert_eq!(div_style.grid_auto_rows, None);
+        assert_eq!(div_style.grid_auto_columns, None);
+    }
 }

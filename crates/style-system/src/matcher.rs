@@ -1610,7 +1610,7 @@ mod tests {
         let mut doc = Document::new();
         let parent = doc.create_element("div");
         let only = doc.create_element("span");
-        doc.append_child(parent, only);
+        let _ = doc.append_child(parent, only);
 
         let sel = Selector {
             complex: ComplexSelector {
@@ -1629,7 +1629,7 @@ mod tests {
 
         // 添加第二个子元素后不再匹配
         let sibling = doc.create_element("p");
-        doc.append_child(parent, sibling);
+        let _ = doc.append_child(parent, sibling);
         assert!(!matches_selector(&doc, only, &sel));
     }
 
@@ -1641,9 +1641,9 @@ mod tests {
         let first = doc.create_element("span");
         let second = doc.create_element("span");
         let p = doc.create_element("p");
-        doc.append_child(parent, first);
-        doc.append_child(parent, p);
-        doc.append_child(parent, second);
+        let _ = doc.append_child(parent, first);
+        let _ = doc.append_child(parent, p);
+        let _ = doc.append_child(parent, second);
 
         let sel = Selector {
             complex: ComplexSelector {
@@ -1670,9 +1670,9 @@ mod tests {
         let first = doc.create_element("span");
         let second = doc.create_element("span");
         let p = doc.create_element("p");
-        doc.append_child(parent, first);
-        doc.append_child(parent, second);
-        doc.append_child(parent, p);
+        let _ = doc.append_child(parent, first);
+        let _ = doc.append_child(parent, second);
+        let _ = doc.append_child(parent, p);
 
         let sel = Selector {
             complex: ComplexSelector {
@@ -1698,8 +1698,8 @@ mod tests {
         let parent = doc.create_element("div");
         let only_p = doc.create_element("p");
         let span = doc.create_element("span");
-        doc.append_child(parent, only_p);
-        doc.append_child(parent, span);
+        let _ = doc.append_child(parent, only_p);
+        let _ = doc.append_child(parent, span);
 
         let sel = Selector {
             complex: ComplexSelector {
@@ -1718,7 +1718,7 @@ mod tests {
 
         // 添加第二个 p 后不再匹配
         let second_p = doc.create_element("p");
-        doc.append_child(parent, second_p);
+        let _ = doc.append_child(parent, second_p);
         assert!(!matches_selector(&doc, only_p, &sel));
     }
 
@@ -1731,9 +1731,9 @@ mod tests {
         let c1 = doc.create_element("span");
         let c2 = doc.create_element("span");
         let c3 = doc.create_element("span");
-        doc.append_child(parent, c1);
-        doc.append_child(parent, c2);
-        doc.append_child(parent, c3);
+        let _ = doc.append_child(parent, c1);
+        let _ = doc.append_child(parent, c2);
+        let _ = doc.append_child(parent, c3);
 
         // :nth-last-child(1) 应匹配最后一个
         let sel_last = Selector {
@@ -1788,10 +1788,10 @@ mod tests {
         let p1 = doc.create_element("p");
         let s2 = doc.create_element("span");
         let p2 = doc.create_element("p");
-        doc.append_child(parent, s1);
-        doc.append_child(parent, p1);
-        doc.append_child(parent, s2);
-        doc.append_child(parent, p2);
+        let _ = doc.append_child(parent, s1);
+        let _ = doc.append_child(parent, p1);
+        let _ = doc.append_child(parent, s2);
+        let _ = doc.append_child(parent, p2);
 
         // :nth-of-type(2) 在 span 中应匹配 s2（第二个 span）
         let sel = Selector {
@@ -1837,9 +1837,9 @@ mod tests {
         let s1 = doc.create_element("span");
         let p1 = doc.create_element("p");
         let s2 = doc.create_element("span");
-        doc.append_child(parent, s1);
-        doc.append_child(parent, p1);
-        doc.append_child(parent, s2);
+        let _ = doc.append_child(parent, s1);
+        let _ = doc.append_child(parent, p1);
+        let _ = doc.append_child(parent, s2);
 
         // :nth-last-of-type(1) 在 span 中应匹配 s2（最后一个 span）
         let sel = Selector {
@@ -1869,10 +1869,10 @@ mod tests {
         let s2 = doc.create_element("span");
         let s3 = doc.create_element("span");
         let s4 = doc.create_element("span");
-        doc.append_child(parent, s1);
-        doc.append_child(parent, s2);
-        doc.append_child(parent, s3);
-        doc.append_child(parent, s4);
+        let _ = doc.append_child(parent, s1);
+        let _ = doc.append_child(parent, s2);
+        let _ = doc.append_child(parent, s3);
+        let _ = doc.append_child(parent, s4);
 
         // odd = 2n+1
         let sel = Selector {

@@ -15,8 +15,8 @@ pub struct SimpleSelector {
     pub tag: Option<String>,
     /// ID 匹配。
     pub id: Option<String>,
-    /// 类名匹配。
-    pub class: Option<String>,
+    /// 类名匹配列表（支持多个类选择器，如 `.a.b`）。
+    pub classes: Vec<String>,
     /// 属性匹配。
     pub attribute: Option<AttributeSelector>,
 }
@@ -58,11 +58,11 @@ impl SimpleSelector {
             return false;
         }
 
-        // 类名匹配
-        if let Some(class) = &self.class
-            && !elem.class_list.iter().any(|c| c == class)
-        {
-            return false;
+        // 类名匹配（所有指定的类名都必须存在）
+        for class in &self.classes {
+            if !elem.class_list.iter().any(|c| c == class) {
+                return false;
+            }
         }
 
         // 属性匹配
@@ -113,7 +113,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
     let mut result = SimpleSelector {
         tag: None,
         id: None,
-        class: None,
+        classes: Vec::new(),
         attribute: None,
     };
 
@@ -146,7 +146,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             if end == 0 {
                 return None; // 空的类选择器
             }
-            result.class = Some(r[..end].to_string());
+            result.classes.push(r[..end].to_string());
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix('[') {
             // 属性选择器
@@ -192,7 +192,7 @@ mod tests {
         let sel = parse_simple_selector("div").unwrap();
         assert_eq!(sel.tag.as_deref(), Some("div"));
         assert!(sel.id.is_none());
-        assert!(sel.class.is_none());
+        assert!(sel.classes.is_empty());
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod tests {
     fn test_parse_class_selector() {
         let sel = parse_simple_selector(".myclass").unwrap();
         assert!(sel.tag.is_none());
-        assert_eq!(sel.class.as_deref(), Some("myclass"));
+        assert_eq!(sel.classes, vec!["myclass"]);
     }
 
     #[test]
@@ -231,7 +231,21 @@ mod tests {
         let sel = parse_simple_selector("div#myid.myclass").unwrap();
         assert_eq!(sel.tag.as_deref(), Some("div"));
         assert_eq!(sel.id.as_deref(), Some("myid"));
-        assert_eq!(sel.class.as_deref(), Some("myclass"));
+        assert_eq!(sel.classes, vec!["myclass"]);
+    }
+
+    #[test]
+    fn test_parse_multiple_class_selector() {
+        let sel = parse_simple_selector(".foo.bar").unwrap();
+        assert!(sel.tag.is_none());
+        assert_eq!(sel.classes, vec!["foo", "bar"]);
+    }
+
+    #[test]
+    fn test_parse_tag_with_multiple_classes() {
+        let sel = parse_simple_selector("div.a.b").unwrap();
+        assert_eq!(sel.tag.as_deref(), Some("div"));
+        assert_eq!(sel.classes, vec!["a", "b"]);
     }
 
     #[test]

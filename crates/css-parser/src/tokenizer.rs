@@ -540,7 +540,7 @@ impl Iterator for Tokenizer {
                     self.consume_comment()
                 } else {
                     self.consume();
-                    Some(Token::Error("Unexpected '/'".to_string()))
+                    Some(Token::Delim('/'))
                 }
             }
 

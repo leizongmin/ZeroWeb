@@ -4,10 +4,12 @@
 
 #![warn(missing_docs)]
 
+pub mod cache_api;
 pub mod indexed_db;
 pub mod local_storage;
 pub mod storage_manager;
 
+pub use cache_api::*;
 pub use indexed_db::*;
 pub use local_storage::*;
 pub use storage_manager::*;

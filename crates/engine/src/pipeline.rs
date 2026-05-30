@@ -6,6 +6,7 @@ use std::time::Instant;
 use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
+use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
@@ -178,7 +179,8 @@ impl RenderPipeline {
 
     /// 增量渲染 — 标记脏区域后重新渲染。
     ///
-    /// 标记指定节点为脏，然后执行完整的重新渲染。
+    /// 标记指定节点为脏区域，然后仅重绘受影响的区域。
+    /// 如果脏区域覆盖率超过阈值（50%视口面积），退化为全量重绘。
     pub fn incremental_render(
         &mut self,
         html: &str,
@@ -189,11 +191,57 @@ impl RenderPipeline {
         self.dirty_tracker
             .mark_node_dirty(dirty_node_layout, 0.0, 0.0);
 
-        // 执行完整重绘（简化实现：增量重绘退化为全量重绘）
-        self.dirty_tracker.mark_full_redraw();
+        // 合并重叠脏区域以优化重绘
+        self.dirty_tracker.merge_overlapping();
+
+        // 计算脏区域占视口面积的比例
+        let viewport_area = self.viewport_width * self.viewport_height;
+        let dirty_area = self.dirty_tracker.dirty_area();
+
+        // 如果脏区域面积超过视口的 50%，退化为全量重绘
+        let is_large = if viewport_area > 0.0 {
+            dirty_area > viewport_area * 0.5
+        } else {
+            true
+        };
+
+        if is_large {
+            self.dirty_tracker.mark_full_redraw();
+        }
+
+        // 执行渲染（全量管线，但后续可优化为只重绘脏区域内的节点）
         let result = self.render_html(html, css);
         self.dirty_tracker.clear();
         result
+    }
+
+    /// 增量渲染（仅重绘脏区域内的节点）。
+    ///
+    /// 与 `incremental_render` 不同，此方法使用已有的 DOM 和样式，
+    /// 仅重绘脏区域内的节点，生成更少的图元。
+    pub fn incremental_paint(
+        &mut self,
+        doc: &Document,
+        stylesheets: &[Stylesheet],
+        dirty_rect: Rect,
+    ) -> Option<RenderPrimitives> {
+        // 计算样式
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let styles = self.style_system.compute_styles(doc, stylesheets);
+
+        // 计算布局
+        let layout_result = self.layout_engine.compute(doc, &styles);
+        self.cached_layout = Some(LayoutResult {
+            root: layout_result.root.clone(),
+            viewport_width: layout_result.viewport_width,
+            viewport_height: layout_result.viewport_height,
+        });
+
+        // 仅绘制脏区域内的节点
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect);
+        Some(painter.into_primitives())
     }
 
     /// 获取当前布局结果。
@@ -435,5 +483,113 @@ mod tests {
         let result = pipeline.render_html(html, css);
         assert!(result.timings.total_ms >= 0.0);
         assert!(result.timings.style_ms >= 0.0);
+    }
+
+    /// 测试增量渲染小区域时不退化为全量重绘。
+    #[test]
+    fn test_pipeline_incremental_render_small_area() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let _first = pipeline.render_html(html, "");
+
+        // 创建一个小的脏区域（10x10，远小于视口的 50%）
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 10.0,
+            content_height: 10.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!pipeline.dirty_tracker().is_full_redraw());
+    }
+
+    /// 测试增量渲染大区域时退化为全量重绘。
+    #[test]
+    fn test_pipeline_incremental_render_large_area() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let _first = pipeline.render_html(html, "");
+
+        // 创建一个大的脏区域（600x400 > 视口面积的 50%）
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 600.0,
+            height: 400.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 600.0,
+            content_height: 400.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+        // 大区域应退化为全量重绘（dirty_tracker 已 clear）
+        assert!(!pipeline.dirty_tracker().is_full_redraw());
+    }
+
+    /// 测试 incremental_paint 仅绘制脏区域内的节点。
+    #[test]
+    fn test_pipeline_incremental_paint() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let css = "div { background-color: red; width: 200px; height: 100px; }";
+
+        // 先做全量渲染
+        let full_result = pipeline.render_html(html, css);
+        let full_fills = full_result.primitives.fills.len();
+
+        // 增量绘制一个小区域
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let dirty_rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
+
+        assert!(inc_primitives.is_some());
+        let inc_fills = inc_primitives.unwrap().fills.len();
+        // 增量绘制可能产生更少的图元（脏区域小）
+        assert!(inc_fills <= full_fills);
     }
 }

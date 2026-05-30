@@ -52,8 +52,16 @@ impl WebViewBuilder {
     }
 
     /// 构建 WebView 实例。
+    ///
+    /// 如果 `config.url` 已设置，会自动调用 `load_url` 将 WebView
+    /// 置为加载状态（但不会同步发起网络请求）。
     pub fn build(self) -> WebView {
-        WebView::new(self.config)
+        let mut wv = WebView::new(self.config);
+        if let Some(ref url) = wv.config().url {
+            let url = url.clone();
+            wv.load_url(&url);
+        }
+        wv
     }
 }
 

@@ -13,7 +13,7 @@ pub mod request;
 pub mod url_parser;
 
 pub use client::*;
-pub use cookie::*;
+pub use cookie::{Cookie, CookieStore, SameSite, RequestContext, parse_expires_date, same_site_allows};
 pub use navigation::*;
 pub use request::*;
 pub use url_parser::*;

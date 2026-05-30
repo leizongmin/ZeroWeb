@@ -200,6 +200,8 @@ pub struct CanvasContext {
     state_stack: Vec<CanvasState>,
     /// 当前路径。
     current_path: Path2D,
+    /// 像素缓冲区（RGBA，宽度 × 高度 × 4 字节）。
+    pixel_buffer: Vec<u8>,
 }
 
 /// 文本度量。
@@ -227,6 +229,7 @@ pub struct ImageData {
 impl CanvasContext {
     /// 创建指定尺寸的 Canvas 上下文。
     pub fn new(width: u32, height: u32) -> Self {
+        let buffer_size = (width as usize) * (height as usize) * 4;
         Self {
             width,
             height,
@@ -239,6 +242,7 @@ impl CanvasContext {
             primitives: RenderPrimitives::new(),
             state_stack: Vec::new(),
             current_path: Path2D::new(),
+            pixel_buffer: vec![0u8; buffer_size],
         }
     }
 
@@ -249,6 +253,7 @@ impl CanvasContext {
         // 添加一个透明色填充来表示清除操作
         let rect = self.transform_rect(x, y, width, height);
         self.primitives.add_fill(rect, Color::TRANSPARENT);
+        self.blit_rect_to_pixels(&rect, Color::TRANSPARENT);
     }
 
     /// 填充矩形。
@@ -256,6 +261,7 @@ impl CanvasContext {
         let rect = self.transform_rect(x, y, width, height);
         let color = self.apply_alpha(self.fill_color);
         self.primitives.add_fill(rect, color);
+        self.blit_rect_to_pixels(&rect, color);
     }
 
     /// 描边矩形。
@@ -265,58 +271,71 @@ impl CanvasContext {
         let color = self.apply_alpha(self.stroke_color);
 
         // 上边
-        self.primitives
-            .add_fill(self.transform_rect(x, y, width, lw), color);
+        let top = self.transform_rect(x, y, width, lw);
+        self.primitives.add_fill(top, color);
+        self.blit_rect_to_pixels(&top, color);
         // 下边
-        self.primitives
-            .add_fill(self.transform_rect(x, y + height - lw, width, lw), color);
+        let bottom = self.transform_rect(x, y + height - lw, width, lw);
+        self.primitives.add_fill(bottom, color);
+        self.blit_rect_to_pixels(&bottom, color);
         // 左边
-        self.primitives
-            .add_fill(self.transform_rect(x, y, lw, height), color);
+        let left = self.transform_rect(x, y, lw, height);
+        self.primitives.add_fill(left, color);
+        self.blit_rect_to_pixels(&left, color);
         // 右边
-        self.primitives
-            .add_fill(self.transform_rect(x + width - lw, y, lw, height), color);
+        let right = self.transform_rect(x + width - lw, y, lw, height);
+        self.primitives.add_fill(right, color);
+        self.blit_rect_to_pixels(&right, color);
     }
 
     // ── Text ──
 
-    /// 填充文本。
+    /// 填充文本。为每个字符生成独立的 GlyphPrimitive，glyph_id 取字符的 Unicode 码点。
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32) {
         let color = self.apply_alpha(self.fill_color);
         let font_size = self.font.size;
         let (tx, ty) = self.transform.transform_point(x, y);
-        self.primitives
-            .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                x: tx,
-                y: ty,
-                font_size,
-                color,
-                glyph_id: 0,
-                font_id: zero_render_foundation::primitive::FontId(0),
-                bitmap_width: None,
-                bitmap_height: None,
-            });
-        // 存储文本长度作为额外 glyph（简化：一个 glyph 代表整段文本）
-        let _ = text;
+        let em_width = font_size * 0.6;
+        let mut offset_x = 0.0f32;
+        for ch in text.chars() {
+            let glyph_id = ch as u32;
+            self.primitives
+                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
+                    x: tx + offset_x,
+                    y: ty,
+                    font_size,
+                    color,
+                    glyph_id,
+                    font_id: zero_render_foundation::primitive::FontId(0),
+                    bitmap_width: None,
+                    bitmap_height: None,
+                });
+            offset_x += em_width;
+        }
     }
 
-    /// 描边文本（简化：与 fill_text 相同，用描边颜色）。
+    /// 描边文本。与 fill_text 相同逻辑，使用描边颜色。
     pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) {
         let color = self.apply_alpha(self.stroke_color);
         let font_size = self.font.size;
         let (tx, ty) = self.transform.transform_point(x, y);
-        self.primitives
-            .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                x: tx,
-                y: ty,
-                font_size,
-                color,
-                glyph_id: 0,
-                font_id: zero_render_foundation::primitive::FontId(0),
-                bitmap_width: None,
-                bitmap_height: None,
-            });
-        let _ = text;
+        let em_width = font_size * 0.6;
+        let mut offset_x = 0.0f32;
+        for ch in text.chars() {
+            let glyph_id = ch as u32;
+            self.primitives
+                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
+                    x: tx + offset_x,
+                    y: ty,
+                    font_size,
+                    color,
+                    glyph_id,
+                    font_id: zero_render_foundation::primitive::FontId(0),
+                    bitmap_width: None,
+                    bitmap_height: None,
+                });
+            offset_x += em_width;
+        }
     }
 
     /// 测量文本宽度（简化版：按字符数 × 字体大小估算）。
@@ -382,23 +401,27 @@ impl CanvasContext {
             ));
     }
 
-    /// 填充路径（简化：遍历路径命令，提取矩形近似）。
+    /// 填充路径。将路径命令扁平化为顶点列表，生成路径填充图元。
     pub fn fill(&mut self) {
-        let color = self.apply_alpha(self.fill_color);
-        let bbox = self.path_bounding_box();
-        if let Some(rect) = bbox {
-            self.primitives.add_fill(rect, color);
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return;
         }
+        let color = self.apply_alpha(self.fill_color);
+        self.primitives.add_path_fill(vertices.clone(), color);
+        self.blit_path_to_pixels(&vertices, color);
     }
 
-    /// 描边路径（简化）。
+    /// 描边路径。将路径命令扁平化为顶点列表，生成路径描边图元。
     pub fn stroke(&mut self) {
-        let color = self.apply_alpha(self.stroke_color);
-        let bbox = self.path_bounding_box();
-        if let Some(rect) = bbox {
-            // 简化：用描边颜色填充包围盒
-            self.primitives.add_fill(rect, color);
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return;
         }
+        let color = self.apply_alpha(self.stroke_color);
+        let closed = self.current_path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
+        self.primitives.add_path_stroke(vertices.clone(), color, self.line_width, closed);
+        self.blit_stroke_to_pixels(&vertices, color, self.line_width);
     }
 
     // ── State ──
@@ -516,19 +539,52 @@ impl CanvasContext {
 
     // ── Pixel data ──
 
-    /// 获取像素数据（简化版：返回全零数据）。
-    pub fn get_image_data(&self, _x: u32, _y: u32, width: u32, height: u32) -> ImageData {
+    /// 获取像素数据。从画布像素缓冲区中读取指定区域的 RGBA 数据。
+    pub fn get_image_data(&self, x: u32, y: u32, width: u32, height: u32) -> ImageData {
         let size = (width * height * 4) as usize;
+        let mut data = vec![0u8; size];
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        for row in 0..(height as usize) {
+            let src_row = y as usize + row;
+            if src_row >= canvas_h {
+                break;
+            }
+            let src_start = src_row * canvas_w * 4 + x as usize * 4;
+            let src_end = (src_start + width as usize * 4).min(self.pixel_buffer.len());
+            let dst_start = row * width as usize * 4;
+            let copy_len = src_end.saturating_sub(src_start);
+            if copy_len > 0 {
+                data[dst_start..dst_start + copy_len]
+                    .copy_from_slice(&self.pixel_buffer[src_start..src_end]);
+            }
+        }
         ImageData {
             width,
             height,
-            data: vec![0u8; size],
+            data,
         }
     }
 
-    /// 放置像素数据（简化版：记录为填充图元）。
-    pub fn put_image_data(&mut self, _image_data: &ImageData, _x: u32, _y: u32) {
-        // 简化：暂不实现像素级操作
+    /// 放置像素数据。将 ImageData 写入画布像素缓冲区的指定偏移位置。
+    pub fn put_image_data(&mut self, image_data: &ImageData, x: u32, y: u32) {
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        for row in 0..(image_data.height as usize) {
+            let dst_row = y as usize + row;
+            if dst_row >= canvas_h {
+                break;
+            }
+            let src_start = row * image_data.width as usize * 4;
+            let src_end = src_start + image_data.width as usize * 4;
+            let dst_start = dst_row * canvas_w * 4 + x as usize * 4;
+            let dst_end = (dst_start + image_data.width as usize * 4).min(self.pixel_buffer.len());
+            let copy_len = dst_end.saturating_sub(dst_start);
+            if copy_len > 0 && src_end <= image_data.data.len() {
+                self.pixel_buffer[dst_start..dst_start + copy_len]
+                    .copy_from_slice(&image_data.data[src_start..src_start + copy_len]);
+            }
+        }
     }
 
     // ── Output ──
@@ -562,48 +618,200 @@ impl CanvasContext {
         Color::rgba(color.r, color.g, color.b, a)
     }
 
-    /// 计算当前路径的包围盒。
-    fn path_bounding_box(&self) -> Option<Rect> {
+    /// 将当前路径命令扁平化为顶点列表（x, y 交替）。
+    /// 对于圆弧，使用线性近似（固定 16 段细分）。
+    fn flatten_path(&self) -> Vec<f32> {
+        let mut vertices = Vec::new();
+        let mut current_x = 0.0f32;
+        let mut current_y = 0.0f32;
+        const ARC_SEGMENTS: usize = 16;
+
+        for cmd in self.current_path.commands() {
+            match *cmd {
+                PathCommand::MoveTo(x, y) => {
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::LineTo(x, y) => {
+                    vertices.push(current_x);
+                    vertices.push(current_y);
+                    vertices.push(x);
+                    vertices.push(y);
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
+                    // 使用 8 段细分二次贝塞尔曲线
+                    const SEGMENTS: usize = 8;
+                    let mut px = current_x;
+                    let mut py = current_y;
+                    for i in 1..=SEGMENTS {
+                        let t = i as f32 / SEGMENTS as f32;
+                        let mt = 1.0 - t;
+                        let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * x;
+                        let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * y;
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
+                    // 使用 8 段细分三次贝塞尔曲线
+                    const SEGMENTS: usize = 8;
+                    let mut px = current_x;
+                    let mut py = current_y;
+                    for i in 1..=SEGMENTS {
+                        let t = i as f32 / SEGMENTS as f32;
+                        let mt = 1.0 - t;
+                        let nx = mt * mt * mt * current_x
+                            + 3.0 * mt * mt * t * cp1x
+                            + 3.0 * mt * t * t * cp2x
+                            + t * t * t * x;
+                        let ny = mt * mt * mt * current_y
+                            + 3.0 * mt * mt * t * cp1y
+                            + 3.0 * mt * t * t * cp2y
+                            + t * t * t * y;
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::Arc(cx, cy, radius, start_angle, end_angle) => {
+                    let angle_span = end_angle - start_angle;
+                    let step = angle_span / ARC_SEGMENTS as f32;
+                    let mut angle = start_angle;
+                    let mut px = cx + radius * angle.cos();
+                    let mut py = cy + radius * angle.sin();
+                    // 如果之前有 MoveTo，弧线的第一个点应该从当前点连线
+                    for i in 0..ARC_SEGMENTS {
+                        angle = start_angle + step * (i + 1) as f32;
+                        let nx = cx + radius * angle.cos();
+                        let ny = cy + radius * angle.sin();
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = px;
+                    current_y = py;
+                }
+                PathCommand::ClosePath => {
+                    // ClosePath 不产生额外线段（路径自动闭合由渲染器处理）
+                }
+            }
+        }
+        vertices
+    }
+
+    /// 将矩形区域的颜色写入像素缓冲区（光栅化填充）。
+    fn blit_rect_to_pixels(&mut self, rect: &Rect, color: Color) {
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        let x_start = rect.left().max(0.0) as usize;
+        let y_start = rect.top().max(0.0) as usize;
+        let x_end = (rect.right().min(self.width as f32) as usize).min(canvas_w);
+        let y_end = (rect.bottom().min(self.height as f32) as usize).min(canvas_h);
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                let idx = (y * canvas_w + x) * 4;
+                self.pixel_buffer[idx] = color.r;
+                self.pixel_buffer[idx + 1] = color.g;
+                self.pixel_buffer[idx + 2] = color.b;
+                self.pixel_buffer[idx + 3] = color.a;
+            }
+        }
+    }
+
+    /// 将路径填充写入像素缓冲区（扫描线光栅化）。
+    fn blit_path_to_pixels(&mut self, vertices: &[f32], color: Color) {
+        if vertices.len() < 4 {
+            return;
+        }
+        // 找出包围盒
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
-        let mut has_points = false;
+        for chunk in vertices.chunks_exact(2) {
+            min_x = min_x.min(chunk[0]);
+            min_y = min_y.min(chunk[1]);
+            max_x = max_x.max(chunk[0]);
+            max_y = max_y.max(chunk[1]);
+        }
+        // 收集所有唯一顶点用于扫描线
+        let mut points: Vec<(f32, f32)> = Vec::new();
+        for chunk in vertices.chunks_exact(2) {
+            points.push((chunk[0], chunk[1]));
+        }
+        let canvas_w = self.width;
+        let canvas_h = self.height;
+        let y_start = min_y.max(0.0).ceil() as u32;
+        let y_end = max_y.min(canvas_h as f32).ceil() as u32;
 
-        for cmd in self.current_path.commands() {
-            match *cmd {
-                PathCommand::MoveTo(x, y)
-                | PathCommand::LineTo(x, y)
-                | PathCommand::Arc(x, y, ..) => {
-                    min_x = min_x.min(x);
-                    min_y = min_y.min(y);
-                    max_x = max_x.max(x);
-                    max_y = max_y.max(y);
-                    has_points = true;
+        for scan_y in y_start..y_end {
+            let mut intersections: Vec<f32> = Vec::new();
+            let sy = scan_y as f32 + 0.5;
+            for i in 0..points.len() {
+                let (x1, y1) = points[i];
+                let (x2, y2) = points[(i + 1) % points.len()];
+                if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
+                    let t = (sy - y1) / (y2 - y1);
+                    intersections.push(x1 + t * (x2 - x1));
                 }
-                PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
-                    min_x = min_x.min(cpx).min(x);
-                    min_y = min_y.min(cpy).min(y);
-                    max_x = max_x.max(cpx).max(x);
-                    max_y = max_y.max(cpy).max(y);
-                    has_points = true;
+            }
+            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            for pair in intersections.chunks_exact(2) {
+                let ix_start = pair[0].max(0.0) as u32;
+                let ix_end = pair[1].min(canvas_w as f32) as u32;
+                for scan_x in ix_start..ix_end {
+                    let idx = ((scan_y * canvas_w + scan_x) * 4) as usize;
+                    if idx + 3 < self.pixel_buffer.len() {
+                        self.pixel_buffer[idx] = color.r;
+                        self.pixel_buffer[idx + 1] = color.g;
+                        self.pixel_buffer[idx + 2] = color.b;
+                        self.pixel_buffer[idx + 3] = color.a;
+                    }
                 }
-                PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
-                    min_x = min_x.min(cp1x).min(cp2x).min(x);
-                    min_y = min_y.min(cp1y).min(cp2y).min(y);
-                    max_x = max_x.max(cp1x).max(cp2x).max(x);
-                    max_y = max_y.max(cp1y).max(cp2y).max(y);
-                    has_points = true;
-                }
-                PathCommand::ClosePath => {}
             }
         }
+    }
 
-        if has_points && min_x < max_x && min_y < max_y {
-            Some(Rect::new(min_x, min_y, max_x - min_x, max_y - min_y))
-        } else {
-            None
+    /// 将路径描边写入像素缓冲区（简化：使用 Bresenham 线段光栅化）。
+    fn blit_stroke_to_pixels(&mut self, vertices: &[f32], color: Color, line_width: f32) {
+        if vertices.len() < 4 {
+            return;
         }
+        // 为每条线段画一个宽度为 line_width 的矩形
+        for chunk in vertices.chunks_exact(4) {
+            let x1 = chunk[0];
+            let y1 = chunk[1];
+            let x2 = chunk[2];
+            let y2 = chunk[3];
+            let rect = self.line_segment_rect(x1, y1, x2, y2, line_width);
+            self.blit_rect_to_pixels(&rect, color);
+        }
+    }
+
+    /// 计算线段的描边矩形（沿线段方向扩展 line_width / 2）。
+    fn line_segment_rect(&self, x1: f32, y1: f32, x2: f32, y2: f32, line_width: f32) -> Rect {
+        let half_lw = line_width / 2.0;
+        let min_x = x1.min(x2) - half_lw;
+        let min_y = y1.min(y2) - half_lw;
+        let max_x = x1.max(x2) + half_lw;
+        let max_y = y1.max(y2) + half_lw;
+        Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
 }
 
@@ -653,7 +861,8 @@ mod tests {
     fn test_canvas_fill_text() {
         let mut ctx = CanvasContext::new(200, 200);
         ctx.fill_text("hello", 10.0, 20.0);
-        assert_eq!(ctx.primitives().glyphs.len(), 1);
+        // 每个字符生成一个 glyph
+        assert_eq!(ctx.primitives().glyphs.len(), 5);
     }
 
     #[test]
@@ -753,9 +962,9 @@ mod tests {
         ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
         ctx.stroke_rect(60.0, 60.0, 30.0, 30.0);
         ctx.fill_text("test", 0.0, 0.0);
-        // fill_rect = 1, stroke_rect = 4, fill_text = 1 glyph
+        // fill_rect = 1, stroke_rect = 4, fill_text = 4 glyphs
         assert_eq!(ctx.primitives().fills.len(), 5);
-        assert_eq!(ctx.primitives().glyphs.len(), 1);
+        assert_eq!(ctx.primitives().glyphs.len(), 4);
     }
 
     #[test]
@@ -872,7 +1081,8 @@ mod tests {
     fn test_canvas_stroke_text() {
         let mut ctx = CanvasContext::new(200, 200);
         ctx.stroke_text("hello", 10.0, 20.0);
-        assert_eq!(ctx.primitives().glyphs.len(), 1);
+        // 每个字符生成一个 glyph
+        assert_eq!(ctx.primitives().glyphs.len(), 5);
     }
 
     // ── 路径操作 ──
@@ -885,7 +1095,7 @@ mod tests {
         ctx.begin_path();
         ctx.fill();
         // begin_path 清除路径，fill 空路径不生成图元
-        assert_eq!(ctx.primitives().fills.len(), 0);
+        assert_eq!(ctx.primitives().path_fills.len(), 0);
     }
 
     #[test]
@@ -895,7 +1105,7 @@ mod tests {
         ctx.line_to(100.0, 10.0);
         ctx.line_to(100.0, 100.0);
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     #[test]
@@ -905,21 +1115,21 @@ mod tests {
         ctx.line_to(100.0, 10.0);
         ctx.line_to(100.0, 100.0);
         ctx.stroke();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_strokes.is_empty());
     }
 
     #[test]
     fn test_canvas_fill_empty_path() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.fill();
-        assert_eq!(ctx.primitives().fills.len(), 0);
+        assert_eq!(ctx.primitives().path_fills.len(), 0);
     }
 
     #[test]
     fn test_canvas_stroke_empty_path() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.stroke();
-        assert_eq!(ctx.primitives().fills.len(), 0);
+        assert_eq!(ctx.primitives().path_strokes.len(), 0);
     }
 
     #[test]
@@ -928,7 +1138,7 @@ mod tests {
         ctx.move_to(10.0, 10.0);
         ctx.quadratic_curve_to(50.0, 0.0, 100.0, 50.0);
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     #[test]
@@ -937,7 +1147,7 @@ mod tests {
         ctx.move_to(10.0, 10.0);
         ctx.bezier_curve_to(30.0, 0.0, 70.0, 100.0, 100.0, 50.0);
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     #[test]
@@ -948,16 +1158,16 @@ mod tests {
         ctx.line_to(100.0, 100.0);
         ctx.close_path();
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     #[test]
     fn test_canvas_arc_on_context() {
         let mut ctx = CanvasContext::new(200, 200);
         ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
-        ctx.line_to(100.0, 100.0); // 确保包围盒有面积（arc 仅记录中心点）
+        ctx.line_to(100.0, 100.0); // 确保有非弧线的路径点
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     // ── 边界条件 ──
@@ -1244,9 +1454,9 @@ mod tests {
     fn test_canvas_text_produces_glyphs() {
         let mut ctx = CanvasContext::new(400, 300);
         ctx.fill_text("Hello", 10.0, 20.0);
-        assert_eq!(ctx.primitives().glyphs.len(), 1);
+        assert_eq!(ctx.primitives().glyphs.len(), 5); // 5 chars
         ctx.stroke_text("World", 10.0, 50.0);
-        assert_eq!(ctx.primitives().glyphs.len(), 2);
+        assert_eq!(ctx.primitives().glyphs.len(), 10); // 5 + 5 chars
     }
 
     /// 测试 set_font 影响文本度量。
@@ -1275,7 +1485,7 @@ mod tests {
         ctx.bezier_curve_to(80.0, 120.0, 20.0, 120.0, 10.0, 100.0);
         ctx.close_path();
         ctx.fill();
-        assert!(!ctx.primitives().fills.is_empty());
+        assert!(!ctx.primitives().path_fills.is_empty());
     }
 
     /// 测试 clear_rect 产生透明填充。
@@ -1294,5 +1504,326 @@ mod tests {
         ctx.set_global_alpha(0.5);
         ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
         assert_eq!(ctx.primitives().fills[0].color.a, 127); // 255 * 0.5 ≈ 127
+    }
+
+    // ── put_image_data + get_image_data round-trip ──
+
+    /// 测试 put_image_data 写入像素后 get_image_data 能读回相同数据。
+    #[test]
+    fn test_put_get_image_data_round_trip() {
+        let mut ctx = CanvasContext::new(10, 10);
+        let pixels = vec![
+            255, 0, 0, 255, // 红色
+            0, 255, 0, 255, // 绿色
+            0, 0, 255, 255, // 蓝色
+            255, 255, 0, 255, // 黄色
+        ];
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: pixels.clone(),
+        };
+        ctx.put_image_data(&img, 0, 0);
+        let result = ctx.get_image_data(0, 0, 2, 2);
+        assert_eq!(result.data, pixels);
+    }
+
+    /// 测试 put_image_data 在偏移位置写入。
+    #[test]
+    fn test_put_image_data_with_offset() {
+        let mut ctx = CanvasContext::new(10, 10);
+        // 在 (5, 5) 位置写入 2x2 的红色像素
+        let red = vec![255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255];
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: red.clone(),
+        };
+        ctx.put_image_data(&img, 5, 5);
+        // 读取偏移位置
+        let result = ctx.get_image_data(5, 5, 2, 2);
+        assert_eq!(result.data, red);
+    }
+
+    /// 测试 put_image_data 后 get_image_data 只读取写入的区域。
+    #[test]
+    fn test_get_image_data_reflects_put() {
+        let mut ctx = CanvasContext::new(10, 10);
+        // 先写入红色到 (0,0) - 2x2
+        let red = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255],
+        };
+        ctx.put_image_data(&red, 0, 0);
+        // 再写入绿色到 (2,0) - 2x2
+        let green = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255],
+        };
+        ctx.put_image_data(&green, 2, 0);
+        // 读取整个第一行 4 像素
+        let result = ctx.get_image_data(0, 0, 4, 1);
+        // 前 2 个红色，后 2 个绿色
+        assert_eq!(result.data[0..4], [255, 0, 0, 255]); // 红
+        assert_eq!(result.data[4..8], [255, 0, 0, 255]); // 红
+        assert_eq!(result.data[8..12], [0, 255, 0, 255]); // 绿
+        assert_eq!(result.data[12..16], [0, 255, 0, 255]); // 绿
+    }
+
+    /// 测试 get_image_data 在未写入区域返回零。
+    #[test]
+    fn test_get_image_data_unwritten_is_zeros() {
+        let ctx = CanvasContext::new(10, 10);
+        let result = ctx.get_image_data(5, 5, 2, 2);
+        assert_eq!(result.data, vec![0u8; 16]);
+    }
+
+    /// 测试 fill_rect 后 get_image_data 反映绘制内容。
+    #[test]
+    fn test_get_image_data_after_fill_rect() {
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 3.0, 2.0);
+        // 读取整个区域
+        let result = ctx.get_image_data(0, 0, 10, 10);
+        // (0,0) 应为红色
+        assert_eq!(result.data[0..4], [255, 0, 0, 255]);
+        // (3,0) 不应被填充
+        assert_eq!(result.data[12..16], [0, 0, 0, 0]);
+    }
+
+    /// 测试 clear_rect 后 get_image_data 反映透明。
+    #[test]
+    fn test_get_image_data_after_clear_rect() {
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        ctx.clear_rect(2.0, 2.0, 3.0, 3.0);
+        let result = ctx.get_image_data(2, 2, 1, 1);
+        // 被清除的区域应透明
+        assert_eq!(result.data[0..4], [0, 0, 0, 0]);
+    }
+
+    // ── Path fill/stroke shape correctness ──
+
+    /// 测试 fill() 生成 path_fills 而非 fills，且包含正确的顶点。
+    #[test]
+    fn test_fill_emits_path_fill_primitive() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.fill();
+        // 应生成 path_fill 而非 fill
+        assert_eq!(ctx.primitives().fills.len(), 0);
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        let pf = &ctx.primitives().path_fills[0];
+        // 三角形路径：2 条线段 = 4 个顶点对 (x1,y1,x2,y2)
+        // line_to(10,10)->(100,10) 和 (100,10)->(100,100)
+        assert!(pf.vertices.len() >= 8); // 至少 2 段 × 4 floats
+        assert_eq!(pf.color, Color::BLACK);
+    }
+
+    /// 测试 stroke() 生成 path_stroke 图元，且包含正确的颜色和线宽。
+    #[test]
+    fn test_stroke_emits_path_stroke_primitive() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(3.0);
+        ctx.set_stroke_color(Color::RED);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.stroke();
+        assert_eq!(ctx.primitives().fills.len(), 0);
+        assert_eq!(ctx.primitives().path_strokes.len(), 1);
+        let ps = &ctx.primitives().path_strokes[0];
+        assert_eq!(ps.color, Color::RED);
+        assert!((ps.line_width - 3.0).abs() < f32::EPSILON);
+        assert!(!ps.vertices.is_empty());
+    }
+
+    /// 测试 fill() 三角形路径的顶点数量正确。
+    #[test]
+    fn test_fill_triangle_vertices() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.line_to(25.0, 50.0);
+        ctx.fill();
+        let pf = &ctx.primitives().path_fills[0];
+        // 2 条 LineTo 命令，每条生成 4 floats (x1,y1,x2,y2)
+        assert_eq!(pf.vertices.len(), 8);
+    }
+
+    /// 测试 stroke() 的闭合标记。
+    #[test]
+    fn test_stroke_closed_flag() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.line_to(50.0, 50.0);
+        ctx.close_path();
+        ctx.stroke();
+        assert!(ctx.primitives().path_strokes[0].closed);
+    }
+
+    /// 测试 stroke() 无 close_path 时 closed=false。
+    #[test]
+    fn test_stroke_not_closed_flag() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.stroke();
+        assert!(!ctx.primitives().path_strokes[0].closed);
+    }
+
+    /// 测试 fill() 像素缓冲区写入（三角形应只覆盖部分像素）。
+    #[test]
+    fn test_fill_writes_pixels() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.line_to(25.0, 50.0);
+        ctx.fill();
+        // 检查三角形内部某点应为红色
+        let result = ctx.get_image_data(10, 10, 1, 1);
+        assert_eq!(result.data[0..4], [255, 0, 0, 255], "triangle interior should be red");
+        // 检查三角形外部某点应为零
+        let outside = ctx.get_image_data(40, 40, 1, 1);
+        assert_eq!(outside.data[0..4], [0, 0, 0, 0], "outside triangle should be empty");
+    }
+
+    /// 测试 stroke() 像素缓冲区写入（描边线段应沿线覆盖像素）。
+    #[test]
+    fn test_stroke_writes_pixels() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::BLUE);
+        ctx.set_line_width(3.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.stroke();
+        // 沿描边路径上的像素应为蓝色
+        let result = ctx.get_image_data(25, 0, 1, 1);
+        assert_eq!(result.data[0..4], [0, 0, 255, 255], "stroke should be blue");
+    }
+
+    // ── fill_text / stroke_text per-character glyph ──
+
+    /// 测试 fill_text 每个字符的 glyph_id 等于 Unicode 码点。
+    #[test]
+    fn test_fill_text_glyph_ids_are_codepoints() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_text("AB", 10.0, 20.0);
+        let glyphs = &ctx.primitives().glyphs;
+        assert_eq!(glyphs.len(), 2);
+        assert_eq!(glyphs[0].glyph_id, 'A' as u32);
+        assert_eq!(glyphs[1].glyph_id, 'B' as u32);
+    }
+
+    /// 测试 fill_text 每个字符水平偏移递增。
+    #[test]
+    fn test_fill_text_glyph_positions_offset() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_text("abc", 10.0, 20.0);
+        let glyphs = &ctx.primitives().glyphs;
+        assert_eq!(glyphs.len(), 3);
+        let em_width = 10.0 * 0.6; // font_size * 0.6
+        assert!((glyphs[0].x - 10.0).abs() < f32::EPSILON);
+        assert!((glyphs[1].x - (10.0 + em_width)).abs() < f32::EPSILON);
+        assert!((glyphs[2].x - (10.0 + 2.0 * em_width)).abs() < f32::EPSILON);
+    }
+
+    /// 测试 stroke_text 使用描边颜色。
+    #[test]
+    fn test_stroke_text_uses_stroke_color() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_stroke_color(Color::RED);
+        ctx.stroke_text("X", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs[0].color, Color::RED);
+    }
+
+    /// 测试 fill_text 使用填充颜色。
+    #[test]
+    fn test_fill_text_uses_fill_color() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_fill_color(Color::GREEN);
+        ctx.fill_text("X", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs[0].color, Color::GREEN);
+    }
+
+    /// 测试空字符串不生成 glyph。
+    #[test]
+    fn test_fill_text_empty_string() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_text("", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs.len(), 0);
+    }
+
+    /// 测试 stroke_text 空字符串不生成 glyph。
+    #[test]
+    fn test_stroke_text_empty_string() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.stroke_text("", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs.len(), 0);
+    }
+
+    /// 测试 Unicode 文本的 glyph_id 正确。
+    #[test]
+    fn test_fill_text_unicode_glyph_ids() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_text("日本", 10.0, 20.0);
+        let glyphs = &ctx.primitives().glyphs;
+        assert_eq!(glyphs.len(), 2);
+        assert_eq!(glyphs[0].glyph_id, '日' as u32);
+        assert_eq!(glyphs[1].glyph_id, '本' as u32);
+    }
+
+    // ── Quadratic/Bezier curve flattening ──
+
+    /// 测试二次贝塞尔曲线填充生成正确的段数。
+    #[test]
+    fn test_quadratic_curve_flattening() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.quadratic_curve_to(50.0, 100.0, 100.0, 0.0);
+        ctx.fill();
+        let pf = &ctx.primitives().path_fills[0];
+        // 8 段细分 × 4 floats = 32
+        assert_eq!(pf.vertices.len(), 32);
+    }
+
+    /// 测试三次贝塞尔曲线填充生成正确的段数。
+    #[test]
+    fn test_bezier_curve_flattening() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.bezier_curve_to(25.0, 100.0, 75.0, 100.0, 100.0, 0.0);
+        ctx.fill();
+        let pf = &ctx.primitives().path_fills[0];
+        // 8 段细分 × 4 floats = 32
+        assert_eq!(pf.vertices.len(), 32);
+    }
+
+    /// 测试圆弧填充生成正确的段数。
+    #[test]
+    fn test_arc_flattening() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+        ctx.fill();
+        let pf = &ctx.primitives().path_fills[0];
+        // 16 段细分 × 4 floats = 64
+        assert_eq!(pf.vertices.len(), 64);
     }
 }
