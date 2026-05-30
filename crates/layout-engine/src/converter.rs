@@ -7,7 +7,7 @@ use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue,
     OverflowValue, PositionValue,
 };
-use zero_style_system::{ComputedStyle, FlexBasisValue};
+use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue};
 
 use taffy::prelude::*;
 
@@ -67,8 +67,11 @@ pub fn computed_style_to_taffy(style: &ComputedStyle) -> taffy::Style {
         justify_content: convert_alignment_to_justify_content(&style.justify_content),
         gap: taffy::geometry::Size {
             width: convert_length_to_lp(&style.gap),
-            height: convert_length_to_lp(&style.gap),
+            height: convert_length_to_lp(&style.row_gap),
         },
+        grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
+        grid_template_columns: parse_grid_tracks(&style.grid_template_columns),
+        grid_auto_flow: convert_grid_auto_flow(&style.grid_auto_flow),
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
         flex_basis: convert_flex_basis(&style.flex_basis),
@@ -300,6 +303,116 @@ fn convert_alignment_to_align_content(value: &AlignmentValue) -> Option<taffy::s
     }
 }
 
+/// 解析 CSS grid track 定义字符串为 taffy TrackSizingFunction 列表。
+///
+/// 支持的值格式：
+/// - `100px` — 固定长度
+/// - `1fr` — 弹性轨道
+/// - `auto` — 自动轨道
+/// - `50%` — 百分比
+/// - `minmax(100px, 1fr)` — 最小最大
+fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
+    let Some(value) = value else {
+        return vec![];
+    };
+
+    value
+        .split_whitespace()
+        .filter(|s| !s.is_empty())
+        .map(parse_single_track)
+        .collect()
+}
+
+/// 解析单个 grid track 值。
+fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
+    use taffy::style::TrackSizingFunction;
+
+    let s = s.trim();
+
+    if s.eq_ignore_ascii_case("auto") {
+        return TrackSizingFunction::AUTO;
+    }
+    if s.ends_with("fr") && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>() {
+        return TrackSizingFunction::from_flex(flex);
+    }
+    if s.ends_with('%') && let Ok(pct) = s.trim_end_matches('%').parse::<f32>() {
+        return TrackSizingFunction::from_percent(pct / 100.0);
+    }
+    if s.starts_with("minmax(") && s.ends_with(')') {
+        return parse_minmax(&s[7..s.len() - 1]);
+    }
+    // 默认尝试解析为长度
+    if s.ends_with("px") && let Ok(px) = s.trim_end_matches("px").parse::<f32>() {
+        return TrackSizingFunction::from_length(px);
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return TrackSizingFunction::from_length(px);
+    }
+
+    // 无法解析，默认 auto
+    TrackSizingFunction::AUTO
+}
+
+/// 解析 minmax() 函数内部。
+fn parse_minmax(inner: &str) -> taffy::style::TrackSizingFunction {
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() != 2 {
+        return taffy::style::TrackSizingFunction::AUTO;
+    }
+
+    let min = parse_min_track(parts[0].trim());
+    let max = parse_max_track(parts[1].trim());
+
+    taffy::style::TrackSizingFunction::Single(taffy::geometry::MinMax { min, max })
+}
+
+/// 解析 minmax 的最小值。
+fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
+    use taffy::style::MinTrackSizingFunction;
+
+    if s.eq_ignore_ascii_case("auto") {
+        return MinTrackSizingFunction::Auto;
+    }
+    if s.ends_with("px") && let Ok(px) = s.trim_end_matches("px").parse::<f32>() {
+        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+    }
+
+    MinTrackSizingFunction::Auto
+}
+
+/// 解析 minmax 的最大值。
+fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
+    use taffy::style::MaxTrackSizingFunction;
+
+    if s.eq_ignore_ascii_case("auto") {
+        return MaxTrackSizingFunction::Auto;
+    }
+    if s.ends_with("fr") && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>() {
+        return MaxTrackSizingFunction::Fraction(flex);
+    }
+    if s.ends_with("px") && let Ok(px) = s.trim_end_matches("px").parse::<f32>() {
+        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+    }
+
+    MaxTrackSizingFunction::Auto
+}
+
+/// 转换 grid-auto-flow 值。
+fn convert_grid_auto_flow(value: &GridAutoFlowValue) -> taffy::style::GridAutoFlow {
+    match value {
+        GridAutoFlowValue::Row => taffy::style::GridAutoFlow::Row,
+        GridAutoFlowValue::Column => taffy::style::GridAutoFlow::Column,
+        GridAutoFlowValue::RowDense => taffy::style::GridAutoFlow::RowDense,
+        GridAutoFlowValue::ColumnDense => taffy::style::GridAutoFlow::ColumnDense,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,14 +573,21 @@ mod tests {
         );
     }
 
-    /// 测试 gap 转换。
+    /// 测试 gap 转换（column-gap 和 row-gap 独立）。
     #[test]
     fn test_convert_gap() {
         let mut style = ComputedStyle::default();
         style.gap = LengthValue::Px(10.0);
         let taffy_style = computed_style_to_taffy(&style);
         assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
-        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(10.0));
+        // row_gap 默认 Px(0.0)
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(0.0));
+
+        // 设置不同的 row-gap
+        style.row_gap = LengthValue::Px(20.0);
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
     }
 
     /// 测试 overflow 转换。
@@ -508,5 +628,43 @@ mod tests {
         style.box_sizing = BoxSizingValue::ContentBox;
         let taffy_style = computed_style_to_taffy(&style);
         assert_eq!(taffy_style.box_sizing, taffy::style::BoxSizing::ContentBox);
+    }
+
+    /// 测试 grid-template-columns/rows 转换。
+    #[test]
+    fn test_convert_grid_template() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_template_columns = Some("100px 200px 1fr".to_string());
+        style.grid_template_rows = Some("auto 50px".to_string());
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.display, taffy::style::Display::Grid);
+        assert_eq!(taffy_style.grid_template_columns.len(), 3);
+        assert_eq!(taffy_style.grid_template_rows.len(), 2);
+    }
+
+    /// 测试 grid-auto-flow 转换。
+    #[test]
+    fn test_convert_grid_auto_flow() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_auto_flow = GridAutoFlowValue::Column;
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::Column);
+
+        style.grid_auto_flow = GridAutoFlowValue::RowDense;
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::RowDense);
+    }
+
+    /// 测试 row-gap 转换。
+    #[test]
+    fn test_convert_row_gap() {
+        let mut style = ComputedStyle::default();
+        style.gap = LengthValue::Px(10.0);
+        style.row_gap = LengthValue::Px(20.0);
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
     }
 }

@@ -134,6 +134,19 @@ pub enum ZIndexValue {
     Integer(i32),
 }
 
+/// CSS grid-auto-flow 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GridAutoFlowValue {
+    /// row（默认）。
+    Row,
+    /// column。
+    Column,
+    /// dense。
+    RowDense,
+    /// column dense。
+    ColumnDense,
+}
+
 /// 属性值枚举，用于 PropertyRegistry 返回的初始值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
@@ -319,8 +332,19 @@ pub struct ComputedStyle {
     pub flex_basis: FlexBasisValue,
     /// gap 属性。
     pub gap: LengthValue,
+    /// row-gap 属性。
+    pub row_gap: LengthValue,
     /// order 属性。
     pub order: i32,
+
+    // ── Grid ──
+    /// grid-template-columns 属性。
+    /// 存储 CSS 原始值字符串，在布局转换时解析。
+    pub grid_template_columns: Option<String>,
+    /// grid-template-rows 属性。
+    pub grid_template_rows: Option<String>,
+    /// grid-auto-flow 属性。
+    pub grid_auto_flow: GridAutoFlowValue,
 
     // ── 定位 ──
     /// top 属性。
@@ -418,7 +442,13 @@ impl Default for ComputedStyle {
             flex_shrink: 1.0,
             flex_basis: FlexBasisValue::Auto,
             gap: LengthValue::Px(0.0),
+            row_gap: LengthValue::Px(0.0),
             order: 0,
+
+            // Grid
+            grid_template_columns: None,
+            grid_template_rows: None,
+            grid_auto_flow: GridAutoFlowValue::Row,
 
             // 定位
             top: zero.clone(),
@@ -633,6 +663,18 @@ pub fn parse_border_style(value: &str) -> Option<BorderStyleValue> {
         "ridge" => Some(BorderStyleValue::Ridge),
         "inset" => Some(BorderStyleValue::Inset),
         "outset" => Some(BorderStyleValue::Outset),
+        _ => None,
+    }
+}
+
+/// 解析 CSS grid-auto-flow 值。
+pub fn parse_grid_auto_flow(value: &str) -> Option<GridAutoFlowValue> {
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "row" => Some(GridAutoFlowValue::Row),
+        "column" => Some(GridAutoFlowValue::Column),
+        "dense" | "row dense" => Some(GridAutoFlowValue::RowDense),
+        "column dense" => Some(GridAutoFlowValue::ColumnDense),
         _ => None,
     }
 }
@@ -1165,6 +1207,27 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "overflow-y" => {
             if let Some(v) = values::parse_overflow(value) {
                 style.overflow_y = v;
+                return true;
+            }
+        }
+        // ── Grid 属性 ──
+        "grid-template-columns" => {
+            style.grid_template_columns = Some(value.to_string());
+            return true;
+        }
+        "grid-template-rows" => {
+            style.grid_template_rows = Some(value.to_string());
+            return true;
+        }
+        "grid-auto-flow" => {
+            if let Some(v) = parse_grid_auto_flow(value) {
+                style.grid_auto_flow = v;
+                return true;
+            }
+        }
+        "row-gap" => {
+            if let Some(v) = values::parse_length(value) {
+                style.row_gap = v;
                 return true;
             }
         }
@@ -1840,5 +1903,63 @@ mod tests {
         assert_eq!(parse_line_height("normal"), Some(LineHeightValue::Normal));
         assert_eq!(parse_line_height("1.5"), Some(LineHeightValue::Number(1.5)));
         assert_eq!(parse_line_height("invalid"), None);
+    }
+
+    // ── Grid 属性测试 ──
+
+    #[test]
+    fn test_apply_property_grid_template_columns() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-template-columns", "100px 1fr auto"));
+        assert_eq!(style.grid_template_columns, Some("100px 1fr auto".to_string()));
+    }
+
+    #[test]
+    fn test_apply_property_grid_template_rows() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-template-rows", "50px 1fr"));
+        assert_eq!(style.grid_template_rows, Some("50px 1fr".to_string()));
+    }
+
+    #[test]
+    fn test_apply_property_grid_auto_flow() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "column"));
+        assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Column);
+
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "row dense"));
+        assert_eq!(style.grid_auto_flow, GridAutoFlowValue::RowDense);
+
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "column dense"));
+        assert_eq!(style.grid_auto_flow, GridAutoFlowValue::ColumnDense);
+
+        // 无效值应返回 false
+        assert!(!apply_property_value(&mut style, "grid-auto-flow", "invalid"));
+    }
+
+    #[test]
+    fn test_apply_property_row_gap() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "row-gap", "20px"));
+        assert_eq!(style.row_gap, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    fn test_parse_grid_auto_flow() {
+        assert_eq!(parse_grid_auto_flow("row"), Some(GridAutoFlowValue::Row));
+        assert_eq!(parse_grid_auto_flow("column"), Some(GridAutoFlowValue::Column));
+        assert_eq!(parse_grid_auto_flow("dense"), Some(GridAutoFlowValue::RowDense));
+        assert_eq!(parse_grid_auto_flow("row dense"), Some(GridAutoFlowValue::RowDense));
+        assert_eq!(parse_grid_auto_flow("column dense"), Some(GridAutoFlowValue::ColumnDense));
+        assert_eq!(parse_grid_auto_flow("invalid"), None);
+    }
+
+    #[test]
+    fn test_computed_style_default_grid() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.grid_template_columns, None);
+        assert_eq!(style.grid_template_rows, None);
+        assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Row);
+        assert_eq!(style.row_gap, LengthValue::Px(0.0));
     }
 }

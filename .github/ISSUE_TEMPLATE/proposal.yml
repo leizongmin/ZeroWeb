@@ -1,0 +1,68 @@
+name: Proposal
+description: Propose a cross-crate, architectural, compatibility, or process change before implementation.
+title: "[proposal] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when the change is broad enough that implementation should not start without shared alignment.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I reviewed the README, architecture overview, and relevant spec or crate docs.
+          required: true
+        - label: I understand this proposal may need discussion before code changes are accepted.
+          required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What problem, limitation, or opportunity is driving this proposal?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current State
+      description: Describe the current behavior or architecture as it exists today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: Proposed Change
+      description: Describe the design at a level that others can evaluate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Tradeoffs and Risks
+      description: Explain complexity, compatibility, maintenance, performance, and licensing implications.
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected Areas
+      description: List crates, commands, docs, benchmarks, or workflows that would change.
+      placeholder: e.g. dom + css-parser + style-system + docs/specs
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation Plan
+      description: What tests, benchmarks, compatibility checks, or acceptance gates should prove this proposal works?
+    validations:
+      required: true
+

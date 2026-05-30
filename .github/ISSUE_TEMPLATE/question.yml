@@ -1,0 +1,51 @@
+name: Question
+description: Ask a scoped usage, contribution, or project-structure question.
+title: "[question] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for questions that are not bugs and not feature requests.
+
+        If you are reporting a vulnerability, follow `SECURITY.md` instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I checked the README, CONTRIBUTING guide, and relevant crate docs first.
+          required: true
+        - label: I searched existing issues for the same question.
+          required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: Ask one concrete question and include the context needed to answer it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What You Already Checked
+      description: Mention the docs, code paths, or commands you already looked at.
+      placeholder: README, docs/architecture.md, crates/webview-api/README.md, cargo test -p ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: area
+    attributes:
+      label: Relevant Area
+      description: Which crate, command, or workflow is your question about?
+      placeholder: e.g. browser-shell, webview-api, CI, benchmarks
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional Context
+      description: Paste logs, code snippets, or screenshots if they clarify the question.
+

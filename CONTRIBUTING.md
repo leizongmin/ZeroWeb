@@ -4,6 +4,8 @@
 
 项目欢迎人工编写和 AI 辅助编写的贡献，但标准一致：改动必须可解释、可验证、可审查。
 
+当前仓库仍以学习、研究和工程探索为主，不应被视为可直接用于生产环境的浏览器实现。如果你的改动面向商用或其他生产场景，请在 issue、proposal 或 PR 中明确说明风险、验证边界和未覆盖事项。
+
 ## Before You Start
 
 建议先阅读这些文档：
@@ -14,6 +16,12 @@
 - 你计划修改的 crate 下对应 `README.md`
 
 如果是跨 crate 的大改动，先开 issue 或 draft PR 说明范围、目标和取舍，再开始写代码。
+
+仓库已经提供标准入口：
+
+- bug、feature、proposal、question 请优先使用 `.github/ISSUE_TEMPLATE/`
+- 提交 PR 时请按 `.github/pull_request_template.md` 填写验证、文档和许可证影响
+- 安全问题不要开公开 issue，按 [SECURITY.md]($HOME/work/ZeroBrowser/SECURITY.md) 处理
 
 ## Development Setup
 

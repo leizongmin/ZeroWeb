@@ -8,6 +8,9 @@
 
 更正式的需求与约束见 [docs/specs/zero-browser-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-browser-spec-rfc.md)，当前执行状态见 [docs/goal/zero-browser/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-browser/master.md)。
 
+> **注意**
+> 本文描述的是实验性代码库的当前结构和目标方向，不代表项目已经达到可日常使用、可商用或其他生产可用状态。任何这类用途都需要自行评估风险。
+
 ## Design Goals
 
 - 构建一个可嵌入的 Rust `webview` 库
