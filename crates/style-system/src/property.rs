@@ -1489,4 +1489,356 @@ mod tests {
         assert_eq!(parse_text_overflow("ellipsis"), Some(TextOverflowValue::Ellipsis));
         assert_eq!(parse_text_overflow("clip"), Some(TextOverflowValue::Clip));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 扩展测试 — 提升 property.rs 覆盖率
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 apply_property_value 对 display: flex
+    fn test_apply_property_display_flex() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "display", "flex"));
+        assert_eq!(style.display, DisplayValue::Flex);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 display: grid
+    fn test_apply_property_display_grid() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "display", "grid"));
+        assert_eq!(style.display, DisplayValue::Grid);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 position: absolute
+    fn test_apply_property_position_absolute() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "position", "absolute"));
+        assert_eq!(style.position, PositionValue::Absolute);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 font-size: em 单位
+    fn test_apply_property_font_size_em() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-size", "1.5em"));
+        assert_eq!(style.font_size, LengthValue::Em(1.5));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 color: 十六进制
+    fn test_apply_property_color_hex() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "color", "#ff0000"));
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 opacity
+    fn test_apply_property_opacity() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "opacity", "0.3"));
+        assert!((style.opacity - 0.3).abs() < f64::EPSILON);
+
+        // 超出范围应被 clamp
+        assert!(apply_property_value(&mut style, "opacity", "2.0"));
+        assert_eq!(style.opacity, 1.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "-0.5"));
+        assert_eq!(style.opacity, 0.0);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 flex-direction: column
+    fn test_apply_property_flex_direction_column() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "flex-direction", "column"));
+        assert_eq!(style.flex_direction, FlexDirectionValue::Column);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 z-index 整数
+    fn test_apply_property_z_index_integer() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "z-index", "100"));
+        assert_eq!(style.z_index, ZIndexValue::Integer(100));
+
+        assert!(apply_property_value(&mut style, "z-index", "auto"));
+        assert_eq!(style.z_index, ZIndexValue::Auto);
+
+        assert!(apply_property_value(&mut style, "z-index", "-5"));
+        assert_eq!(style.z_index, ZIndexValue::Integer(-5));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 text-align: center
+    fn test_apply_property_text_align_center() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-align", "center"));
+        assert_eq!(style.text_align, TextAlignValue::Center);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 line-height: 无单位数值
+    fn test_apply_property_line_height_number() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "line-height", "1.6"));
+        assert_eq!(style.line_height, LineHeightValue::Number(1.6));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 border-style 各边
+    fn test_apply_property_border_style() {
+        let mut style = ComputedStyle::default();
+
+        assert!(apply_property_value(&mut style, "border-top-style", "dashed"));
+        assert_eq!(style.border_top_style, BorderStyleValue::Dashed);
+
+        assert!(apply_property_value(&mut style, "border-right-style", "dotted"));
+        assert_eq!(style.border_right_style, BorderStyleValue::Dotted);
+
+        assert!(apply_property_value(&mut style, "border-bottom-style", "solid"));
+        assert_eq!(style.border_bottom_style, BorderStyleValue::Solid);
+
+        assert!(apply_property_value(&mut style, "border-left-style", "double"));
+        assert_eq!(style.border_left_style, BorderStyleValue::Double);
+
+        // 无效值应返回 false
+        assert!(!apply_property_value(&mut style, "border-top-style", "invalid"));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 gap
+    fn test_apply_property_gap() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "gap", "10px"));
+        assert_eq!(style.gap, LengthValue::Px(10.0));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 应用多种不同属性
+    fn test_apply_property_multiple_different_properties() {
+        let mut style = ComputedStyle::default();
+
+        // 盒模型
+        assert!(apply_property_value(&mut style, "width", "200px"));
+        assert_eq!(style.width, LengthValue::Px(200.0));
+
+        assert!(apply_property_value(&mut style, "height", "100px"));
+        assert_eq!(style.height, LengthValue::Px(100.0));
+
+        assert!(apply_property_value(&mut style, "min-width", "50px"));
+        assert_eq!(style.min_width, LengthValue::Px(50.0));
+
+        assert!(apply_property_value(&mut style, "max-width", "none"));
+        assert_eq!(style.max_width, LengthValue::Px(f64::INFINITY));
+
+        assert!(apply_property_value(&mut style, "max-height", "500px"));
+        assert_eq!(style.max_height, LengthValue::Px(500.0));
+
+        // margin 各边
+        assert!(apply_property_value(&mut style, "margin-top", "10px"));
+        assert!(apply_property_value(&mut style, "margin-right", "20px"));
+        assert!(apply_property_value(&mut style, "margin-bottom", "10px"));
+        assert!(apply_property_value(&mut style, "margin-left", "20px"));
+        assert_eq!(style.margin_top, LengthValue::Px(10.0));
+        assert_eq!(style.margin_right, LengthValue::Px(20.0));
+
+        // padding 各边
+        assert!(apply_property_value(&mut style, "padding-top", "5px"));
+        assert!(apply_property_value(&mut style, "padding-right", "10px"));
+        assert!(apply_property_value(&mut style, "padding-bottom", "5px"));
+        assert!(apply_property_value(&mut style, "padding-left", "10px"));
+        assert_eq!(style.padding_top, LengthValue::Px(5.0));
+        assert_eq!(style.padding_left, LengthValue::Px(10.0));
+
+        // box-sizing
+        assert!(apply_property_value(&mut style, "box-sizing", "border-box"));
+        assert_eq!(style.box_sizing, BoxSizingValue::BorderBox);
+
+        // 边框颜色各边
+        assert!(apply_property_value(&mut style, "border-top-color", "red"));
+        assert!(apply_property_value(&mut style, "border-right-color", "#00ff00"));
+        assert!(apply_property_value(&mut style, "border-bottom-color", "blue"));
+        assert!(apply_property_value(&mut style, "border-left-color", "transparent"));
+        assert_eq!(style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(style.border_left_color, ColorValue::Transparent);
+
+        // 边框宽度各边
+        assert!(apply_property_value(&mut style, "border-top-width", "1px"));
+        assert!(apply_property_value(&mut style, "border-right-width", "2px"));
+        assert!(apply_property_value(&mut style, "border-bottom-width", "3px"));
+        assert!(apply_property_value(&mut style, "border-left-width", "4px"));
+        assert_eq!(style.border_top_width, LengthValue::Px(1.0));
+        assert_eq!(style.border_left_width, LengthValue::Px(4.0));
+
+        // 圆角各角
+        assert!(apply_property_value(&mut style, "border-top-left-radius", "8px"));
+        assert!(apply_property_value(&mut style, "border-top-right-radius", "4px"));
+        assert!(apply_property_value(&mut style, "border-bottom-right-radius", "8px"));
+        assert!(apply_property_value(&mut style, "border-bottom-left-radius", "4px"));
+        assert_eq!(style.border_top_left_radius, LengthValue::Px(8.0));
+        assert_eq!(style.border_bottom_left_radius, LengthValue::Px(4.0));
+
+        // background-color
+        assert!(apply_property_value(&mut style, "background-color", "#0000ff"));
+        assert_eq!(style.background_color, ColorValue::Rgba(0, 0, 255, 255));
+
+        // visibility
+        assert!(apply_property_value(&mut style, "visibility", "hidden"));
+        assert_eq!(style.visibility, VisibilityValue::Hidden);
+
+        // font-weight
+        assert!(apply_property_value(&mut style, "font-weight", "bold"));
+        assert_eq!(style.font_weight, FontWeightValue::Bold);
+
+        // font-style
+        assert!(apply_property_value(&mut style, "font-style", "italic"));
+        assert_eq!(style.font_style, FontStyleValue::Italic);
+
+        // line-height
+        assert!(apply_property_value(&mut style, "line-height", "24px"));
+        assert_eq!(style.line_height, LineHeightValue::Length(LengthValue::Px(24.0)));
+
+        // text-decoration
+        assert!(apply_property_value(&mut style, "text-decoration", "underline"));
+        assert_eq!(style.text_decoration, TextDecorationValue::Underline);
+
+        // text-transform
+        assert!(apply_property_value(&mut style, "text-transform", "uppercase"));
+        assert_eq!(style.text_transform, TextTransformValue::Uppercase);
+
+        // letter-spacing, word-spacing
+        assert!(apply_property_value(&mut style, "letter-spacing", "2px"));
+        assert_eq!(style.letter_spacing, LengthValue::Px(2.0));
+        assert!(apply_property_value(&mut style, "word-spacing", "4px"));
+        assert_eq!(style.word_spacing, LengthValue::Px(4.0));
+
+        // white-space
+        assert!(apply_property_value(&mut style, "white-space", "nowrap"));
+        assert_eq!(style.white_space, WhiteSpaceValue::Nowrap);
+
+        // text-overflow
+        assert!(apply_property_value(&mut style, "text-overflow", "ellipsis"));
+        assert_eq!(style.text_overflow, TextOverflowValue::Ellipsis);
+
+        // flex-wrap
+        assert!(apply_property_value(&mut style, "flex-wrap", "wrap"));
+        assert_eq!(style.flex_wrap, FlexWrapValue::Wrap);
+
+        // justify-content
+        assert!(apply_property_value(&mut style, "justify-content", "center"));
+        assert_eq!(style.justify_content, AlignmentValue::Center);
+
+        // align-items
+        assert!(apply_property_value(&mut style, "align-items", "flex-end"));
+        assert_eq!(style.align_items, AlignmentValue::FlexEnd);
+
+        // align-self
+        assert!(apply_property_value(&mut style, "align-self", "baseline"));
+        assert_eq!(style.align_self, AlignmentValue::Baseline);
+
+        // flex-grow, flex-shrink
+        assert!(apply_property_value(&mut style, "flex-grow", "2.0"));
+        assert_eq!(style.flex_grow, 2.0);
+        assert!(apply_property_value(&mut style, "flex-shrink", "0.5"));
+        assert_eq!(style.flex_shrink, 0.5);
+
+        // flex-basis
+        assert!(apply_property_value(&mut style, "flex-basis", "auto"));
+        assert_eq!(style.flex_basis, FlexBasisValue::Auto);
+
+        // order
+        assert!(apply_property_value(&mut style, "order", "3"));
+        assert_eq!(style.order, 3);
+
+        // 定位 top/right/bottom/left
+        assert!(apply_property_value(&mut style, "top", "10px"));
+        assert!(apply_property_value(&mut style, "right", "20px"));
+        assert!(apply_property_value(&mut style, "bottom", "30px"));
+        assert!(apply_property_value(&mut style, "left", "40px"));
+        assert_eq!(style.top, LengthValue::Px(10.0));
+        assert_eq!(style.left, LengthValue::Px(40.0));
+
+        // overflow
+        assert!(apply_property_value(&mut style, "overflow-x", "hidden"));
+        assert!(apply_property_value(&mut style, "overflow-y", "scroll"));
+        assert_eq!(style.overflow_x, OverflowValue::Hidden);
+        assert_eq!(style.overflow_y, OverflowValue::Scroll);
+
+        // 未知属性应返回 false
+        assert!(!apply_property_value(&mut style, "unknown-prop", "value"));
+
+        // 无效值应返回 false
+        assert!(!apply_property_value(&mut style, "display", "invalid-display"));
+    }
+
+    #[test]
+    /// 测试 is_inherited 的全面列表
+    fn test_property_is_inherited_various() {
+        // 继承属性
+        assert!(PropertyRegistry::is_inherited("color"));
+        assert!(PropertyRegistry::is_inherited("font-family"));
+        assert!(PropertyRegistry::is_inherited("font-size"));
+        assert!(PropertyRegistry::is_inherited("font-weight"));
+        assert!(PropertyRegistry::is_inherited("font-style"));
+        assert!(PropertyRegistry::is_inherited("line-height"));
+        assert!(PropertyRegistry::is_inherited("text-align"));
+        assert!(PropertyRegistry::is_inherited("text-decoration"));
+        assert!(PropertyRegistry::is_inherited("text-transform"));
+        assert!(PropertyRegistry::is_inherited("letter-spacing"));
+        assert!(PropertyRegistry::is_inherited("word-spacing"));
+        assert!(PropertyRegistry::is_inherited("white-space"));
+        assert!(PropertyRegistry::is_inherited("text-overflow"));
+        assert!(PropertyRegistry::is_inherited("visibility"));
+        assert!(PropertyRegistry::is_inherited("opacity"));
+
+        // 非继承属性
+        assert!(!PropertyRegistry::is_inherited("display"));
+        assert!(!PropertyRegistry::is_inherited("position"));
+        assert!(!PropertyRegistry::is_inherited("width"));
+        assert!(!PropertyRegistry::is_inherited("height"));
+        assert!(!PropertyRegistry::is_inherited("margin-top"));
+        assert!(!PropertyRegistry::is_inherited("padding-top"));
+        assert!(!PropertyRegistry::is_inherited("box-sizing"));
+        assert!(!PropertyRegistry::is_inherited("border-top-width"));
+        assert!(!PropertyRegistry::is_inherited("background-color"));
+        assert!(!PropertyRegistry::is_inherited("flex-direction"));
+        assert!(!PropertyRegistry::is_inherited("flex-wrap"));
+        assert!(!PropertyRegistry::is_inherited("justify-content"));
+        assert!(!PropertyRegistry::is_inherited("align-items"));
+        assert!(!PropertyRegistry::is_inherited("gap"));
+        assert!(!PropertyRegistry::is_inherited("z-index"));
+        assert!(!PropertyRegistry::is_inherited("overflow-x"));
+        assert!(!PropertyRegistry::is_inherited("order"));
+        assert!(!PropertyRegistry::is_inherited("top"));
+        assert!(!PropertyRegistry::is_inherited("unknown-prop"));
+    }
+
+    #[test]
+    /// 测试 parse_font_family 带引号
+    fn test_parse_font_family_with_quotes() {
+        let families = parse_font_family("'Helvetica Neue', Arial, sans-serif");
+        assert_eq!(families, vec!["Helvetica Neue", "Arial", "sans-serif"]);
+
+        // 双引号
+        let families = parse_font_family("\"Times New Roman\", serif");
+        assert_eq!(families, vec!["Times New Roman", "serif"]);
+
+        // 空字符串和空白处理
+        let families = parse_font_family("  Arial  ,  sans-serif  ");
+        assert_eq!(families, vec!["Arial", "sans-serif"]);
+    }
+
+    #[test]
+    /// 测试 parse_line_height 长度值
+    fn test_parse_line_height_length() {
+        assert_eq!(parse_line_height("24px"), Some(LineHeightValue::Length(LengthValue::Px(24.0))));
+        assert_eq!(parse_line_height("2em"), Some(LineHeightValue::Length(LengthValue::Em(2.0))));
+        assert_eq!(parse_line_height("1.5rem"), Some(LineHeightValue::Length(LengthValue::Rem(1.5))));
+        assert_eq!(parse_line_height("normal"), Some(LineHeightValue::Normal));
+        assert_eq!(parse_line_height("1.5"), Some(LineHeightValue::Number(1.5)));
+        assert_eq!(parse_line_height("invalid"), None);
+    }
 }

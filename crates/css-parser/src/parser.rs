@@ -265,7 +265,7 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                     } else if let Token::Ident(name) = self.peek().clone() {
-                        // 简单伪类或函数伪类
+                        // 简单伪类或函数伪类（Ident + LParen 形式）
                         self.advance();
                         if matches!(self.peek(), Token::LParen) {
                             self.advance(); // (
@@ -287,6 +287,21 @@ impl<'a> Parser<'a> {
                                 PseudoClassSelector::Simple(name),
                             ));
                         }
+                    } else if let Token::Function(name) = self.peek().clone() {
+                        // 函数伪类（Function token 形式，tokenizer 直接产生 Function）
+                        self.advance(); // 消耗 Function token（已包含 '('）
+                        let pseudo = match name.as_str() {
+                            "not" => self.parse_pseudo_class_function_list("not"),
+                            "is" => self.parse_pseudo_class_function_list("is"),
+                            "where" => self.parse_pseudo_class_function_list("where"),
+                            "nth-child" => self.parse_nth_pattern("nth-child"),
+                            "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
+                            "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
+                            "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
+                            "lang" => self.parse_lang(),
+                            _ => PseudoClassSelector::Simple(name),
+                        };
+                        subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                     }
                 }
                 _ => break,
@@ -603,6 +618,40 @@ impl<'a> Parser<'a> {
             Token::String(s) => {
                 self.advance();
                 s
+            }
+            Token::Delim(c) => {
+                // 处理以非标识符字符开头的值（如 .pdf）
+                let mut val = c.to_string();
+                self.advance();
+                // 继续收集后续的标识符部分
+                loop {
+                    match self.peek() {
+                        Token::Ident(s) => {
+                            val.push_str(s);
+                            self.advance();
+                        }
+                        Token::Delim('.') => {
+                            val.push('.');
+                            self.advance();
+                        }
+                        Token::Number(n) => {
+                            val.push_str(&n.to_string());
+                            self.advance();
+                        }
+                        _ => break,
+                    }
+                }
+                val
+            }
+            Token::Number(n) => {
+                self.advance();
+                // 可能后面跟着标识符（如数字+单位）
+                let mut val = n.to_string();
+                if let Token::Ident(unit) = self.peek().clone() {
+                    val.push_str(&unit);
+                    self.advance();
+                }
+                val
             }
             _ => String::new(),
         }

@@ -544,6 +544,12 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
         if angle_str.is_empty() {
             Some(FontStyleValue::Oblique(None))
         } else {
+            // 处理 "(angle)" 或 "(angledeg)" 形式
+            let angle_str = angle_str
+                .strip_prefix('(')
+                .unwrap_or(angle_str)
+                .strip_suffix(')')
+                .unwrap_or(angle_str);
             let angle: f64 = angle_str.trim_end_matches("deg").trim().parse().ok()?;
             Some(FontStyleValue::Oblique(Some(angle)))
         }
