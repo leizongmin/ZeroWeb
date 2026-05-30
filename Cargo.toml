@@ -83,6 +83,7 @@ hashbrown = "0.15"
 compact_str = "0.8"
 url = "2"
 parking_lot = "0.12"
+pollster = "0.4"
 
 # 内部 crate 依赖
 zero-dom = { path = "crates/dom" }
