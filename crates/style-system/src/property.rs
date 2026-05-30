@@ -147,6 +147,17 @@ pub enum GridAutoFlowValue {
     ColumnDense,
 }
 
+/// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GridLineValue {
+    /// auto。
+    Auto,
+    /// 行号（1-based，负数为从末尾计数）。
+    Line(i16),
+    /// span N（跨越 N 条轨道）。
+    Span(u16),
+}
+
 /// 属性值枚举，用于 PropertyRegistry 返回的初始值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
@@ -345,6 +356,14 @@ pub struct ComputedStyle {
     pub grid_template_rows: Option<String>,
     /// grid-auto-flow 属性。
     pub grid_auto_flow: GridAutoFlowValue,
+    /// grid-column-start 属性。
+    pub grid_column_start: GridLineValue,
+    /// grid-column-end 属性。
+    pub grid_column_end: GridLineValue,
+    /// grid-row-start 属性。
+    pub grid_row_start: GridLineValue,
+    /// grid-row-end 属性。
+    pub grid_row_end: GridLineValue,
 
     // ── 定位 ──
     /// top 属性。
@@ -482,6 +501,10 @@ impl Default for ComputedStyle {
             grid_template_columns: None,
             grid_template_rows: None,
             grid_auto_flow: GridAutoFlowValue::Row,
+            grid_column_start: GridLineValue::Auto,
+            grid_column_end: GridLineValue::Auto,
+            grid_row_start: GridLineValue::Auto,
+            grid_row_end: GridLineValue::Auto,
 
             // 定位
             top: zero.clone(),
@@ -714,6 +737,10 @@ impl PropertyRegistry {
             "animation-direction",
             "animation-fill-mode",
             "animation-play-state",
+            "grid-column-start",
+            "grid-column-end",
+            "grid-row-start",
+            "grid-row-end",
         ]
     }
 }
@@ -745,6 +772,29 @@ pub fn parse_grid_auto_flow(value: &str) -> Option<GridAutoFlowValue> {
         "column dense" => Some(GridAutoFlowValue::ColumnDense),
         _ => None,
     }
+}
+
+/// 解析 CSS grid line 值（用于 grid-column/row-start/end）。
+///
+/// 支持格式：`auto`、`1`（行号）、`-1`（从末尾）、`span 2`。
+pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(GridLineValue::Auto);
+    }
+    if let Some(span_str) = value.strip_prefix("span ") {
+        let span: u16 = span_str.trim().parse().ok()?;
+        return Some(GridLineValue::Span(span));
+    }
+    if let Some(span_str) = value.strip_prefix("span") {
+        let span: u16 = span_str.trim().parse().ok()?;
+        return Some(GridLineValue::Span(span));
+    }
+    let line: i16 = value.parse().ok()?;
+    if line == 0 {
+        return None; // 0 是非法的 grid line 值
+    }
+    Some(GridLineValue::Line(line))
 }
 
 /// 解析逗号分隔的 transition-timing-function 列表。
@@ -1324,6 +1374,30 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "grid-auto-flow" => {
             if let Some(v) = parse_grid_auto_flow(value) {
                 style.grid_auto_flow = v;
+                return true;
+            }
+        }
+        "grid-column-start" => {
+            if let Some(v) = parse_grid_line(value) {
+                style.grid_column_start = v;
+                return true;
+            }
+        }
+        "grid-column-end" => {
+            if let Some(v) = parse_grid_line(value) {
+                style.grid_column_end = v;
+                return true;
+            }
+        }
+        "grid-row-start" => {
+            if let Some(v) = parse_grid_line(value) {
+                style.grid_row_start = v;
+                return true;
+            }
+        }
+        "grid-row-end" => {
+            if let Some(v) = parse_grid_line(value) {
+                style.grid_row_end = v;
                 return true;
             }
         }
@@ -2247,6 +2321,50 @@ mod tests {
         assert_eq!(style.grid_template_rows, None);
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Row);
         assert_eq!(style.row_gap, LengthValue::Px(0.0));
+        assert_eq!(style.grid_column_start, GridLineValue::Auto);
+        assert_eq!(style.grid_column_end, GridLineValue::Auto);
+        assert_eq!(style.grid_row_start, GridLineValue::Auto);
+        assert_eq!(style.grid_row_end, GridLineValue::Auto);
+    }
+
+    // ── Grid line 值测试 ──
+
+    #[test]
+    fn test_parse_grid_line() {
+        assert_eq!(parse_grid_line("auto"), Some(GridLineValue::Auto));
+        assert_eq!(parse_grid_line("1"), Some(GridLineValue::Line(1)));
+        assert_eq!(parse_grid_line("-1"), Some(GridLineValue::Line(-1)));
+        assert_eq!(parse_grid_line("5"), Some(GridLineValue::Line(5)));
+        assert_eq!(parse_grid_line("span 2"), Some(GridLineValue::Span(2)));
+        assert_eq!(parse_grid_line("span 3"), Some(GridLineValue::Span(3)));
+        assert_eq!(parse_grid_line("0"), None); // 0 is invalid
+        assert_eq!(parse_grid_line("invalid"), None);
+    }
+
+    #[test]
+    fn test_apply_grid_column_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-column-start", "1"));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(1));
+
+        assert!(apply_property_value(&mut style, "grid-column-start", "-1"));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(-1));
+
+        assert!(apply_property_value(&mut style, "grid-column-start", "span 2"));
+        assert_eq!(style.grid_column_start, GridLineValue::Span(2));
+
+        assert!(apply_property_value(&mut style, "grid-column-start", "auto"));
+        assert_eq!(style.grid_column_start, GridLineValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_grid_row_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-row-start", "2"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(2));
+
+        assert!(apply_property_value(&mut style, "grid-row-end", "3"));
+        assert_eq!(style.grid_row_end, GridLineValue::Line(3));
     }
 
     // ── Transition 属性测试 ──

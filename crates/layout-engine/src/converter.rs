@@ -7,7 +7,7 @@ use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue,
     OverflowValue, PositionValue,
 };
-use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue};
+use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
 
 use taffy::prelude::*;
 
@@ -72,6 +72,14 @@ pub fn computed_style_to_taffy(style: &ComputedStyle) -> taffy::Style {
         grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
         grid_template_columns: parse_grid_tracks(&style.grid_template_columns),
         grid_auto_flow: convert_grid_auto_flow(&style.grid_auto_flow),
+        grid_row: taffy::geometry::Line {
+            start: convert_grid_line(&style.grid_row_start),
+            end: convert_grid_line(&style.grid_row_end),
+        },
+        grid_column: taffy::geometry::Line {
+            start: convert_grid_line(&style.grid_column_start),
+            end: convert_grid_line(&style.grid_column_end),
+        },
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
         flex_basis: convert_flex_basis(&style.flex_basis),
@@ -413,6 +421,15 @@ fn convert_grid_auto_flow(value: &GridAutoFlowValue) -> taffy::style::GridAutoFl
     }
 }
 
+/// 转换 GridLineValue 到 taffy GridPlacement。
+fn convert_grid_line(value: &GridLineValue) -> taffy::style::GridPlacement {
+    match value {
+        GridLineValue::Auto => taffy::style::GridPlacement::Auto,
+        GridLineValue::Line(n) => taffy::style::GridPlacement::from_line_index(*n),
+        GridLineValue::Span(s) => taffy::style::GridPlacement::from_span(*s),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,5 +683,34 @@ mod tests {
         let taffy_style = computed_style_to_taffy(&style);
         assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
         assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
+    }
+
+    /// 测试 grid-column/row 转换。
+    #[test]
+    fn test_convert_grid_placement() {
+        use zero_style_system::GridLineValue;
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_column_start = GridLineValue::Line(1);
+        style.grid_column_end = GridLineValue::Line(3);
+        style.grid_row_start = GridLineValue::Line(2);
+        style.grid_row_end = GridLineValue::Auto;
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_line_index(1));
+        assert_eq!(taffy_style.grid_column.end, taffy::style::GridPlacement::from_line_index(3));
+        assert_eq!(taffy_style.grid_row.start, taffy::style::GridPlacement::from_line_index(2));
+        assert_eq!(taffy_style.grid_row.end, taffy::style::GridPlacement::Auto);
+    }
+
+    /// 测试 grid span 转换。
+    #[test]
+    fn test_convert_grid_span() {
+        use zero_style_system::GridLineValue;
+        let mut style = ComputedStyle::default();
+        style.grid_column_start = GridLineValue::Span(2);
+        style.grid_row_start = GridLineValue::Line(-1);
+        let taffy_style = computed_style_to_taffy(&style);
+        assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_span(2));
+        assert_eq!(taffy_style.grid_row.start, taffy::style::GridPlacement::from_line_index(-1));
     }
 }

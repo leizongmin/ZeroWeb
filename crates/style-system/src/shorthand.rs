@@ -138,6 +138,11 @@ fn expand_one(
         // animation: name duration timing-function delay iteration-count direction fill-mode play-state
         "animation" => expand_animation(value, important, specificity),
 
+        // ── Grid placement 简写 ──
+        "grid-column" => expand_grid_axis(value, "grid-column-start", "grid-column-end", important, specificity),
+        "grid-row" => expand_grid_axis(value, "grid-row-start", "grid-row-end", important, specificity),
+        "grid-area" => expand_grid_area(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -561,6 +566,75 @@ fn expand_axis_logical(
     match parts.len() {
         1 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
         2 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
+        _ => vec![],
+    }
+}
+
+/// 展开 grid-column / grid-row 简写。
+///
+/// `grid-column: 1` → `grid-column-start: 1; grid-column-end: auto`
+/// `grid-column: 1 / 3` → `grid-column-start: 1; grid-column-end: 3`
+/// `grid-column: span 2` → `grid-column-start: span 2; grid-column-end: auto`
+fn expand_grid_axis(
+    value: &str,
+    start_prop: &str,
+    end_prop: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+    if let Some(slash_pos) = value.find('/') {
+        let start = value[..slash_pos].trim();
+        let end = value[slash_pos + 1..].trim();
+        vec![mk(start_prop, start), mk(end_prop, end)]
+    } else {
+        vec![mk(start_prop, value.trim()), mk(end_prop, "auto")]
+    }
+}
+
+/// 展开 grid-area 简写。
+///
+/// `grid-area: 1` → row-start: 1
+/// `grid-area: 1 / 2` → row-start: 1, col-start: 2
+/// `grid-area: 1 / 2 / 3` → row-start: 1, col-start: 2, row-end: 3
+/// `grid-area: 1 / 2 / 3 / 4` → row-start: 1, col-start: 2, row-end: 3, col-end: 4
+fn expand_grid_area(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+    // 用 `/` 分割，但 span 内部可能有空格
+    let parts: Vec<&str> = value.split('/').map(|s| s.trim()).collect();
+    match parts.len() {
+        1 => vec![
+            mk("grid-row-start", parts[0]),
+            mk("grid-row-end", "auto"),
+            mk("grid-column-start", "auto"),
+            mk("grid-column-end", "auto"),
+        ],
+        2 => vec![
+            mk("grid-row-start", parts[0]),
+            mk("grid-row-end", "auto"),
+            mk("grid-column-start", parts[1]),
+            mk("grid-column-end", "auto"),
+        ],
+        3 => vec![
+            mk("grid-row-start", parts[0]),
+            mk("grid-row-end", parts[2]),
+            mk("grid-column-start", parts[1]),
+            mk("grid-column-end", "auto"),
+        ],
+        4 => vec![
+            mk("grid-row-start", parts[0]),
+            mk("grid-row-end", parts[2]),
+            mk("grid-column-start", parts[1]),
+            mk("grid-column-end", parts[3]),
+        ],
         _ => vec![],
     }
 }
@@ -1173,5 +1247,88 @@ mod tests {
         assert_eq!(result.len(), 8);
         assert_eq!(result[0].1, "spin");
         assert_eq!(result[7].1, "paused");
+    }
+
+    // ── grid placement 简写测试 ──
+
+    #[test]
+    fn test_grid_column_shorthand_single() {
+        let result = expand_one("grid-column", "1", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "grid-column-start");
+        assert_eq!(result[0].1, "1");
+        assert_eq!(result[1].0, "grid-column-end");
+        assert_eq!(result[1].1, "auto");
+    }
+
+    #[test]
+    fn test_grid_column_shorthand_slash() {
+        let result = expand_one("grid-column", "1 / 3", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "grid-column-start");
+        assert_eq!(result[0].1, "1");
+        assert_eq!(result[1].0, "grid-column-end");
+        assert_eq!(result[1].1, "3");
+    }
+
+    #[test]
+    fn test_grid_column_shorthand_span() {
+        let result = expand_one("grid-column", "span 2 / 5", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, "span 2");
+        assert_eq!(result[1].1, "5");
+    }
+
+    #[test]
+    fn test_grid_row_shorthand() {
+        let result = expand_one("grid-row", "2 / 4", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "grid-row-start");
+        assert_eq!(result[0].1, "2");
+        assert_eq!(result[1].0, "grid-row-end");
+        assert_eq!(result[1].1, "4");
+    }
+
+    #[test]
+    fn test_grid_area_shorthand_1_value() {
+        let result = expand_one("grid-area", "1", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].0, "grid-row-start");
+        assert_eq!(result[0].1, "1");
+        assert_eq!(result[1].0, "grid-row-end");
+        assert_eq!(result[1].1, "auto");
+        assert_eq!(result[2].0, "grid-column-start");
+        assert_eq!(result[2].1, "auto");
+    }
+
+    #[test]
+    fn test_grid_area_shorthand_2_values() {
+        let result = expand_one("grid-area", "1 / 3", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "1");      // row-start
+        assert_eq!(result[2].1, "3");      // col-start
+    }
+
+    #[test]
+    fn test_grid_area_shorthand_4_values() {
+        let result = expand_one("grid-area", "1 / 2 / 3 / 4", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].0, "grid-row-start");
+        assert_eq!(result[0].1, "1");
+        assert_eq!(result[1].0, "grid-row-end");
+        assert_eq!(result[1].1, "3");
+        assert_eq!(result[2].0, "grid-column-start");
+        assert_eq!(result[2].1, "2");
+        assert_eq!(result[3].0, "grid-column-end");
+        assert_eq!(result[3].1, "4");
+    }
+
+    #[test]
+    fn test_grid_area_shorthand_span() {
+        let result = expand_one("grid-area", "1 / span 2 / 4 / span 3", false, (0, 0, 1));
+        assert_eq!(result[0].1, "1");
+        assert_eq!(result[1].1, "4");
+        assert_eq!(result[2].1, "span 2");
+        assert_eq!(result[3].1, "span 3");
     }
 }
