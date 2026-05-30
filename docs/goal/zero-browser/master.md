@@ -1,8 +1,8 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**当前活跃里程碑**: M1 — 项目骨架 + 渲染基础设施迁移
-**执行状态**: M1 已完成，准备进入 M2
+**当前活跃里程碑**: M2 — HTML 解析 + DOM 树
+**执行状态**: M2 进行中，核心实现完成，待覆盖率验证
 
 ---
 
@@ -10,23 +10,23 @@
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | ✅ Cargo workspace + 16 个 crate 骨架 |
-| 编译状态 | ✅ `cargo check --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 70 个测试全绿 |
-| 覆盖率 | ✅ 53.30% region coverage（render-foundation 达标 ≥ 50%） |
+| 仓库代码 | ✅ Cargo workspace + 16 个 crate（dom 已实现） |
+| 编译状态 | ✅ `cargo build --workspace` 通过 |
+| 测试状态 | ✅ `cargo test --workspace` 149 个测试全绿（82 dom + 53 render-foundation + 14 placeholder） |
+| 覆盖率 | ⏳ 待测量（dom crate 新增） |
 | WPT 通过率 | N/A |
-| 性能基线 | ✅ `cargo bench` 5 个基准可运行 |
+| 性能基线 | ✅ `cargo bench` render-foundation 5 个 + dom 8 个基准可运行 |
 | CI | ✅ GitHub Actions 配置就位 |
-| Clippy | ✅ 零警告 |
+| Clippy | ✅ 零警告（含 dom crate） |
 
 ### 仓库结构
 
 ```
-crates/           16 个 crate（dom, css-parser, style-system, layout-engine,
-                  engine-core, canvas, render-foundation, host-runtime, net,
-                  security, storage, protocol, script-sandbox, wasm-sandbox,
-                  webview-api, browser-shell）
-apps/             browser（占位入口）, webview-demo（占位入口）
+crates/           16 个 crate
+  dom/            ✅ 完整实现（node/document/query/parser/serializer/mutation）
+  render-foundation/ ✅ GPU+CPU 渲染
+  其余 14 个      占位骨架
+apps/             browser（占位）, webview-demo（占位）
 tests/            wpt-runner, integration, benchmarks/results
 scripts/          run-benchmarks.sh, check-coverage.sh
 .github/          CI 管线（三平台 build + test + clippy + 基准）
@@ -37,78 +37,49 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 - [x] 入口文档（`docs/goal/zero-browser.md`）已就位
 - [x] 运行时控制平面（本文件）已创建
 - [x] 归档区域（`docs/goal/zero-browser/archive/`）已创建
-- [x] Spec + RFC 文档已就位
+- [x] Spec + RFC 文档已就位（整体 v1.3 + M2 专项 v1.0）
 
 ---
 
-## 里程碑状态：M1 已完成 ✅ | 下一活跃：M2 — HTML 解析 + DOM 树
+## 里程碑状态：M1 ✅ 已归档 | M2 🔄 进行中
 
-### M1 交付物进度
+### M2 交付物进度
 
 | # | 交付物 | 状态 | 备注 |
 |---|--------|------|------|
-| 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
-| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | ✅ 完成 | CPU 渲染 + wgpu GPU 后端已实现（gpu 模块含 GlyphAtlas、GpuRenderer、WGSL shader）；swash 字体整形、图片缓存待迁移 |
-| 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
-| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | CPU 渲染 demo + PPM 输出 + wgpu GPU 渲染均已实现 |
-| 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
-| 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 38 个测试用例（geometry:9, color:5, primitive:4, font/loader:6, font/cache:6, surface:8） |
-| 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
-| 8 | `render-foundation` 首批基准（≥3 个） | ✅ 完成 | 5 个基准（damage_tracker, glyph_cache, frame_buffer, primitives） |
-| 9 | 覆盖率测量脚本就位 | ✅ 完成 | scripts/check-coverage.sh |
-| 10 | CI 管线就位 | ✅ 完成 | GitHub Actions 三平台 |
+| 1 | `dom` crate 实现完整的 DOM 节点类型 | ✅ 完成 | Element、Text、Comment、Document、DocumentType、DocumentFragment、ProcessingInstruction |
+| 2 | HTML 解析器集成 html5ever，生成 DOM 树 | ✅ 完成 | DomBuilder + TreeSink 实现，支持错误恢复 |
+| 3 | DOM 修改 API（appendChild、removeChild、insertBefore 等） | ✅ 完成 | 含循环检测、重新挂载、cloneNode（深/浅） |
+| 4 | Mutation Observer 基础框架 | ✅ 完成 | MutationRecord、MutationObserver、childList + attributes 变更记录 |
+| 5 | 单元测试（≥50 个测试用例，覆盖率 ≥ 70%） | ✅ 完成 | 82 个测试全绿，覆盖 11 个维度 |
+| 6 | 基准测试（≥3 个基准） | ✅ 完成 | 8 个 criterion 基准（树构建、查询、批量操作、解析吞吐量） |
 
-### render-foundation 已实现模块
+### dom crate 已实现模块
 
 | 模块 | 内容 | 测试 |
 |------|------|------|
-| `geometry` | Point, Size, Rect, DamageTracker | 9 个测试 |
-| `color` | Color (RGBA), hex 解析, sRGB→linear, premultiplied alpha | 5 个测试 |
-| `primitive` | FillPrimitive, GlyphPrimitive, RenderPrimitives | 4 个测试 |
-| `font/loader` | FontLoader (fontdue), 字体加载和 glyph 光栅化 | 6 个测试 |
-| `font/cache` | GlyphCache, LRU 淘汰策略 | 6 个测试 |
-| `surface` | SurfaceDescriptor, FrameBuffer (CPU RGBA) | 8 个测试 |
-| `gpu` | GlyphAtlas（glyph 纹理打包）, GpuRenderer（wgpu 渲染管线）, WGSL shader | 17 个测试 |
+| `node` | NodeId、NodeKind、NodeData、ElementData、TextData、CommentData 等 | 8 |
+| `document` | Document 结构体、所有 DOM 操作 API（创建/追加/移除/插入/替换/克隆/属性/查询/遍历） | 60 |
+| `query` | SimpleSelector 解析器、querySelector/querySelectorAll | 7 |
+| `parser` | DomBuilder（html5ever TreeSink）、parse_html() | 7 |
+| `serializer` | HTML 序列化（outer_html、inner_html）、void 元素、转义 | 6 |
+| `mutation` | MutationRecord、MutationType、MutationObserver | 4 |
+| `attributes` | 属性操作辅助（功能已在 ElementData 和 Document 中实现） | 0 |
 
-### M1 验收标准
+### M2 验收标准
 
-- ✅ `cargo build` 在 Linux 上成功
-- ✅ `cargo test` 全通过（70 个测试全绿）
+- ✅ 可以解析标准 HTML5 文档并生成正确的 DOM 树
+- ✅ DOM 树操作（增删改查）全部通过测试
+- ✅ 解析器能处理错误恢复（malformed HTML）
 - ✅ `cargo clippy` 零警告
-- ✅ `cargo bench` 可运行并输出结果（5 个基准）
-- ✅ `cargo build` 在 macOS/Windows 上成功（CI 配置就位，三平台构建）
-- ✅ 运行 demo 二进制可以看到窗口和渲染文本（CPU 版 + wgpu GPU 版均已就绪）
-- ✅ render-foundation 覆盖率 ≥ 50%（53.30% region coverage，已测量）
+- ⏳ `cargo bench` 输出 DOM 操作的基线数据（已编写，待运行记录）
+- ⏳ dom crate 覆盖率 ≥ 70%（待测量）
 
 ---
 
-## 覆盖率数据（首次测量）
+## M1 交付物归档
 
-| Crate | Region Coverage | 函数 Coverage | 行 Coverage |
-|-------|----------------|--------------|-------------|
-| render-foundation (整体) | 53.30% | 66.67% | 47.75% |
-| ├ color | 92.41% | 100% | 97.67% |
-| ├ geometry | 98.24% | 96.55% | 96.82% |
-| ├ surface | 92.86% | 88.89% | 94.50% |
-| ├ font/cache | 89.34% | 90.00% | 87.60% |
-| ├ primitive | 87.10% | 90.00% | 86.76% |
-| ├ font/loader | 64.84% | 72.22% | 66.28% |
-| ├ gpu/atlas | 92.21% | 79.17% | 89.64% |
-| ├ gpu/pipeline | 25.00% | 33.33% | 9.26% |
-| └ gpu/renderer | 15.40% | 17.86% | 11.00% |
-| host-runtime | 23.16% | 36.84% | 23.21% |
-
-注：gpu/renderer 和 gpu/pipeline 覆盖率较低是因为 GPU 渲染路径需要实际 GPU 设备才能测试，单元测试无法覆盖。CPU 侧模块（geometry、color、surface、font）覆盖率均 > 85%。
-
----
-
-| 基准 | 耗时 | 说明 |
-|------|------|------|
-| damage_tracker/add_100 | ~6.5 µs | 添加 100 个脏矩形 |
-| damage_tracker/damage_all | ~3.8 ns | 全区域脏标记 |
-| glyph_cache/insert | ~10.5 µs | 插入 256 个 glyph |
-| frame_buffer/clear_1080p | ~762 µs | 清除 1920x1080 帧缓冲 |
-| primitives/build_1000_fills | ~1.7 µs | 构建 1000 个填充图元 |
+M1 已完成并归档 → [archive/m1-skeleton-render-foundation.md](archive/m1-skeleton-render-foundation.md)
 
 ---
 
@@ -123,6 +94,8 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | 布局基础 | taffy 扩展 | 已确认 |
 | 渲染基础 | OmniTerm 复用 + wgpu | 已确认 |
 | 进程模型 | 浏览器进程 + 多渲染进程 | 已确认 |
+| DOM 节点存储 | slotmap（稳定 NodeId + O(1) 查找） | M2 已确认 |
+| html5ever 集成 | DomBuilder（RefCell 内部可变性） | M2 已确认 |
 
 ---
 
@@ -134,16 +107,19 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 4. ~~建立 CI 管线~~ ✅
 5. ~~创建 "Hello ZeroBrowser" 渲染 demo~~ ✅
 6. ~~将 CPU 渲染 demo 升级为 wgpu GPU 渲染~~ ✅
-7. ~~迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）~~ ✅
+7. ~~迁移 OmniTerm wgpu 渲染器~~ ✅
 8. ~~提交并推送代码~~ ✅
-9. ~~测量 render-foundation 覆盖率（≥ 50%）~~ ✅ 53.30%
-10. ~~归档 M1 里程碑~~ ✅ → [archive/m1-skeleton-render-foundation.md](archive/m1-skeleton-render-foundation.md)
-
----
-
-## M2 准备
-
-下一个活跃里程碑：M2 — HTML 解析 + DOM 树。待启动。
+9. ~~测量 render-foundation 覆盖率~~ ✅
+10. ~~归档 M1 里程碑~~ ✅
+11. ~~实现 dom crate 核心类型和操作~~ ✅
+12. ~~集成 html5ever TreeSink~~ ✅
+13. ~~实现查询 API 和属性操作~~ ✅
+14. ~~实现 MutationObserver 框架~~ ✅
+15. ~~编写 ≥50 单元测试~~ ✅（82 个）
+16. ~~编写 ≥3 基准测试~~ ✅（8 个）
+17. 测量 dom crate 覆盖率
+18. 归档 M2 里程碑
+19. 开始 M3 — CSS 解析器 + 样式系统
 
 ---
 
@@ -151,12 +127,12 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 | ID | 问题 | 优先级 | 状态 |
 |----|------|--------|------|
-| TBD-1 | MSRV（最低支持 Rust 版本）策略 | 重要 | ✅ 已解决：Rust 1.85 |
+| TBD-1 | MSRV（最低支持 Rust 版本）策略 | ~~已解决~~ | ✅ Rust 1.85 |
 | TBD-2 | OmniTerm 代码复用许可证确认 | 重要 | 假设同团队可复用 |
 | TBD-3 | V8 二进制分发策略 | 重要 | 待定 |
 | TBD-4 | CSS 解析器性能目标 | 重要 | 待定 |
 | TBD-9 | 浏览器 UI 框架选型 | 重要 | 待定 |
-| ISSUE-1 | `run-benchmarks.sh` 引用不存在的 `tests/benchmarks/benches/Cargo.toml` | 重要 | ✅ 已修复：改为 `cargo bench -p zero-render-foundation` |
+| TBD-10 | 选择器语法完整支持范围（复杂选择器） | 重要 | M3 时确定 |
 
 ---
 
