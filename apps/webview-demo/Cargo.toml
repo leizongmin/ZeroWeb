@@ -13,5 +13,6 @@ path = "src/main.rs"
 zero-webview-api = { workspace = true }
 zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
+winit = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

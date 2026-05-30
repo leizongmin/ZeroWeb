@@ -1,7 +1,12 @@
 //! 窗口管理 — 创建和管理跨平台窗口
+//!
+//! 提供两种事件循环运行模式：
+//! - `run()`: 基本模式，回调只接收 `AppEvent`
+//! - `run_with_window()`: GPU 模式，回调额外接收 `Arc<Window>` 引用
 
 use crate::event::AppEvent;
 use crate::{HostError, HostResult};
+use std::sync::Arc;
 
 /// 窗口配置
 pub struct WindowConfig {
@@ -53,9 +58,7 @@ impl HostRuntime {
         Self { config }
     }
 
-    /// 运行事件循环
-    ///
-    /// 创建窗口并进入事件循环。回调函数在每次事件时被调用。
+    /// 运行事件循环（基本模式，无窗口引用）
     pub fn run<F>(self, mut on_event: F) -> HostResult<()>
     where
         F: FnMut(AppEvent) + 'static,
@@ -71,34 +74,66 @@ impl HostRuntime {
             ))
             .with_resizable(self.config.resizable);
 
-        // 事件循环 — 窗口在 resumed 回调中创建
         event_loop
-            .run_app(&mut App {
-                window_attrs: Some(window_attrs),
-                window: None,
-                on_event: &mut on_event,
-            })
+            .run_app(&mut BasicApp::new_basic(window_attrs, &mut on_event))
+            .map_err(|e| HostError::EventLoopError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// 运行事件循环（GPU 模式，提供窗口引用）
+    ///
+    /// 回调函数接收 `(AppEvent, Option<Arc<Window>>)` — 窗口在 `resumed` 后可用。
+    /// 用于需要访问 winit 窗口以创建 wgpu Surface 的场景。
+    pub fn run_with_window<F>(self, mut on_event: F) -> HostResult<()>
+    where
+        F: FnMut(AppEvent, Option<Arc<winit::window::Window>>) + 'static,
+    {
+        let event_loop = winit::event_loop::EventLoop::new()
+            .map_err(|e| HostError::EventLoopError(e.to_string()))?;
+
+        let window_attrs = winit::window::WindowAttributes::default()
+            .with_title(&self.config.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                self.config.width,
+                self.config.height,
+            ))
+            .with_resizable(self.config.resizable);
+
+        event_loop
+            .run_app(&mut GpuApp::new_with_window(window_attrs, &mut on_event))
             .map_err(|e| HostError::EventLoopError(e.to_string()))?;
 
         Ok(())
     }
 }
 
-/// winit ApplicationHandler trait 实现
-struct App<'a, F> {
+/// 基本模式事件处理器
+struct BasicApp<'a, F> {
     window_attrs: Option<winit::window::WindowAttributes>,
-    window: Option<winit::window::Window>,
+    window: Option<Arc<winit::window::Window>>,
     on_event: &'a mut F,
 }
 
-impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for App<'_, F> {
+impl<'a, F: FnMut(AppEvent)> BasicApp<'a, F> {
+    fn new_basic(window_attrs: winit::window::WindowAttributes, on_event: &'a mut F) -> Self {
+        Self {
+            window_attrs: Some(window_attrs),
+            window: None,
+            on_event,
+        }
+    }
+}
+
+impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for BasicApp<'_, F> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.window.is_none() && let Some(attrs) = self.window_attrs.take() {
-            self.window = Some(
-                event_loop
-                    .create_window(attrs)
-                    .expect("Failed to create window"),
-            );
+        if self.window.is_none()
+            && let Some(attrs) = self.window_attrs.take()
+        {
+            let win = event_loop
+                .create_window(attrs)
+                .expect("Failed to create window");
+            self.window = Some(Arc::new(win));
         }
     }
 
@@ -120,17 +155,93 @@ impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for App<'_, 
             }
             winit::event::WindowEvent::RedrawRequested => {
                 (self.on_event)(AppEvent::RedrawRequested);
+                if let Some(ref win) = self.window {
+                    win.request_redraw();
+                }
             }
-            winit::event::WindowEvent::Focused(true) => {
-                (self.on_event)(AppEvent::Focused);
-            }
-            winit::event::WindowEvent::Focused(false) => {
-                (self.on_event)(AppEvent::Unfocused);
+            winit::event::WindowEvent::Focused(focused) => {
+                let event = if focused { AppEvent::Focused } else { AppEvent::Unfocused };
+                (self.on_event)(event);
             }
             _ => {}
         }
     }
 }
+
+/// GPU 模式事件处理器（提供窗口引用）
+struct GpuApp<'a, F> {
+    window_attrs: Option<winit::window::WindowAttributes>,
+    window: Option<Arc<winit::window::Window>>,
+    on_event: &'a mut F,
+}
+
+impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
+    fn new_with_window(
+        window_attrs: winit::window::WindowAttributes,
+        on_event: &'a mut F,
+    ) -> Self {
+        Self {
+            window_attrs: Some(window_attrs),
+            window: None,
+            on_event,
+        }
+    }
+}
+
+impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application::ApplicationHandler<()>
+    for GpuApp<'_, F>
+{
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.window.is_none()
+            && let Some(attrs) = self.window_attrs.take()
+        {
+            let win = event_loop
+                .create_window(attrs)
+                .expect("Failed to create window");
+            self.window = Some(Arc::new(win));
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        let win_ref = self.window.clone();
+        match event {
+            winit::event::WindowEvent::CloseRequested => {
+                (self.on_event)(AppEvent::CloseRequested, win_ref);
+                event_loop.exit();
+            }
+            winit::event::WindowEvent::Resized(size) => {
+                (self.on_event)(
+                    AppEvent::Resized {
+                        width: size.width,
+                        height: size.height,
+                    },
+                    win_ref,
+                );
+            }
+            winit::event::WindowEvent::RedrawRequested => {
+                (self.on_event)(AppEvent::RedrawRequested, win_ref);
+                if let Some(ref win) = self.window {
+                    win.request_redraw();
+                }
+            }
+            winit::event::WindowEvent::Focused(focused) => {
+                (self.on_event)(
+                    if focused { AppEvent::Focused } else { AppEvent::Unfocused },
+                    win_ref,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+// Re-export winit window type for convenience
+pub use winit::window::Window;
 
 #[cfg(test)]
 mod tests {

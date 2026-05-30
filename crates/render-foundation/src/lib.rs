@@ -4,7 +4,7 @@
 //!
 //! 基于 OmniTerm 终端项目的渲染基础设施迁移而来，提供：
 //! - 场景/Primitive/Backend 分层架构
-//! - GPU 渲染器（wgpu）
+//! - GPU 渲染器（wgpu）— glyph atlas、WGSL 着色器、统一渲染管线
 //! - CPU 软件渲染器后备
 //! - 字体渲染栈（fontdue + swash）
 //! - 图片对象缓存与 GC
@@ -15,6 +15,7 @@
 pub mod color;
 pub mod font;
 pub mod geometry;
+pub mod gpu;
 pub mod primitive;
 pub mod surface;
 
