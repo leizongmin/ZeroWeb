@@ -257,4 +257,63 @@ mod tests {
         let c2 = c1;
         assert_eq!(c1, c2);
     }
+
+    #[test]
+    fn test_color_rgb_is_opaque() {
+        let c = Color::rgb(100, 150, 200);
+        assert_eq!(c.r, 100);
+        assert_eq!(c.g, 150);
+        assert_eq!(c.b, 200);
+        assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    fn test_color_rgba_custom_alpha() {
+        let c = Color::rgba(255, 128, 64, 32);
+        assert_eq!(c.a, 32);
+    }
+
+    #[test]
+    fn test_color_transparent_is_fully_transparent() {
+        let c = Color::TRANSPARENT;
+        assert_eq!(c.a, 0);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+    }
+
+    #[test]
+    fn test_color_to_f32_array_channels() {
+        let c = Color::rgb(0, 128, 255);
+        let f = c.to_f32_array();
+        assert!(f[0].abs() < f32::EPSILON);
+        assert!((f[1] - 128.0 / 255.0).abs() < f32::EPSILON);
+        assert!((f[2] - 1.0).abs() < f32::EPSILON);
+        assert!((f[3] - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_to_linear_f32_dark_values() {
+        // Values below threshold (<= 0.04045) use linear division
+        let c = Color::rgb(10, 10, 10);
+        let l = c.to_linear_f32();
+        let expected = 10.0 / 255.0 / 12.92;
+        assert!((l[0] - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_color_from_hex_long_with_full_alpha() {
+        let c = Color::from_hex("#ffffffff").unwrap();
+        assert_eq!(c, Color::WHITE);
+    }
+
+    #[test]
+    fn test_color_hash_consistency() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(Color::RED);
+        set.insert(Color::RED);
+        set.insert(Color::BLUE);
+        assert_eq!(set.len(), 2);
+    }
 }

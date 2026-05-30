@@ -1114,4 +1114,478 @@ mod tests {
         assert!(matches!(received[1], AppEvent::MouseMoved { .. }));
         assert!(matches!(received[2], AppEvent::MouseInput { .. }));
     }
+
+    // === Additional coverage tests ===
+
+    // -- WindowConfig --
+
+    #[test]
+    fn test_window_config_clone() {
+        let config = WindowConfig::new("CloneTest")
+            .with_size(640, 480)
+            .with_resizable(false);
+        let cloned = config.clone();
+        assert_eq!(cloned.title, "CloneTest");
+        assert_eq!(cloned.width, 640);
+        assert_eq!(cloned.height, 480);
+        assert!(!cloned.resizable);
+    }
+
+    #[test]
+    fn test_window_config_builder_chaining_preserves_all() {
+        let config = WindowConfig::new("Chain")
+            .with_size(1280, 720)
+            .with_resizable(true);
+        assert_eq!(config.title, "Chain");
+        assert_eq!(config.width, 1280);
+        assert_eq!(config.height, 720);
+        assert!(config.resizable);
+    }
+
+    #[test]
+    fn test_window_config_with_resizable_does_not_change_size() {
+        let config = WindowConfig::new("R").with_resizable(false);
+        assert_eq!(config.width, 800);
+        assert_eq!(config.height, 600);
+        assert!(!config.resizable);
+    }
+
+    #[test]
+    fn test_window_config_with_size_does_not_change_resizable() {
+        let config = WindowConfig::new("S").with_size(100, 100);
+        assert_eq!(config.width, 100);
+        assert_eq!(config.height, 100);
+        assert!(config.resizable);
+    }
+
+    #[test]
+    fn test_window_config_title_unicode() {
+        let config = WindowConfig::new("こんにちは世界");
+        assert_eq!(config.title, "こんにちは世界");
+    }
+
+    #[test]
+    fn test_window_config_title_from_string() {
+        let title = String::from("OwnedTitle");
+        let config = WindowConfig::new(title);
+        assert_eq!(config.title, "OwnedTitle");
+    }
+
+    // -- BasicApp initial state --
+
+    #[test]
+    fn test_basic_app_window_initially_none() {
+        let mut callback = |_: AppEvent| {};
+        let mut app = make_basic_app(&mut callback);
+        assert!(app.window.is_none());
+    }
+
+    #[test]
+    fn test_basic_app_window_attrs_initially_some() {
+        let mut callback = |_: AppEvent| {};
+        let mut app = make_basic_app(&mut callback);
+        assert!(app.window_attrs.is_some());
+    }
+
+    // -- BasicApp event dispatch edge cases --
+
+    #[test]
+    fn test_basic_app_resized_large() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::Resized(
+            winit::dpi::PhysicalSize::new(7680, 4320),
+        ));
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 7680);
+                assert_eq!(*height, 4320);
+            }
+            _ => panic!("Expected Resized"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_multiple_resizes() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::Resized(
+            winit::dpi::PhysicalSize::new(100, 100),
+        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(
+            winit::dpi::PhysicalSize::new(200, 200),
+        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(
+            winit::dpi::PhysicalSize::new(300, 300),
+        ));
+        assert_eq!(received.len(), 3);
+        match &received[0] {
+            AppEvent::Resized { width, .. } => assert_eq!(*width, 100),
+            _ => panic!("Expected Resized"),
+        }
+        match &received[2] {
+            AppEvent::Resized { width, .. } => assert_eq!(*width, 300),
+            _ => panic!("Expected Resized"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_consecutive_focus_events() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::Focused(true));
+        app.handle_window_event(winit::event::WindowEvent::Focused(false));
+        app.handle_window_event(winit::event::WindowEvent::Focused(true));
+        assert_eq!(received.len(), 3);
+        assert!(matches!(received[0], AppEvent::Focused));
+        assert!(matches!(received[1], AppEvent::Unfocused));
+        assert!(matches!(received[2], AppEvent::Focused));
+    }
+
+    #[test]
+    fn test_basic_app_mouse_input_back_forward_buttons() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: winit::event::ElementState::Pressed,
+            button: winit::event::MouseButton::Back,
+        });
+        app.handle_window_event(winit::event::WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: winit::event::ElementState::Released,
+            button: winit::event::MouseButton::Forward,
+        });
+        assert_eq!(received.len(), 2);
+        match &received[0] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Back);
+                assert!(*pressed);
+            }
+            _ => panic!("Expected MouseInput"),
+        }
+        match &received[1] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Forward);
+                assert!(!pressed);
+            }
+            _ => panic!("Expected MouseInput"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_mouse_input_other_button() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: winit::event::ElementState::Pressed,
+            button: winit::event::MouseButton::Other(9),
+        });
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Other(9));
+                assert!(*pressed);
+            }
+            _ => panic!("Expected MouseInput"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_mouse_wheel_negative_pixel() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::MouseWheel {
+            device_id: winit::event::DeviceId::dummy(),
+            delta: winit::event::MouseScrollDelta::PixelDelta(
+                winit::dpi::PhysicalPosition::new(-100.0, -200.0),
+            ),
+            phase: winit::event::TouchPhase::Started,
+        });
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::MouseWheel { delta } => {
+                assert_eq!(*delta, MouseScrollDelta::PixelDelta(-100.0, -200.0));
+            }
+            _ => panic!("Expected MouseWheel"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_touch_multiple_ids() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        for id in [0u64, 1, 2] {
+            app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+                device_id: winit::event::DeviceId::dummy(),
+                phase: winit::event::TouchPhase::Started,
+                location: winit::dpi::PhysicalPosition::new(0.0, 0.0),
+                id,
+                force: None,
+            }));
+        }
+        assert_eq!(received.len(), 3);
+        match &received[0] {
+            AppEvent::Touch(te) => assert_eq!(te.id, 0),
+            _ => panic!("Expected Touch"),
+        }
+        match &received[2] {
+            AppEvent::Touch(te) => assert_eq!(te.id, 2),
+            _ => panic!("Expected Touch"),
+        }
+    }
+
+    #[test]
+    fn test_basic_app_mixed_event_sequence() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::Focused(true));
+        app.handle_window_event(winit::event::WindowEvent::Resized(
+            winit::dpi::PhysicalSize::new(500, 400),
+        ));
+        app.handle_window_event(winit::event::WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(10.0, 20.0),
+        });
+        app.handle_window_event(winit::event::WindowEvent::RedrawRequested);
+        app.handle_window_event(winit::event::WindowEvent::CloseRequested);
+        assert_eq!(received.len(), 5);
+        assert!(matches!(received[0], AppEvent::Focused));
+        assert!(matches!(received[1], AppEvent::Resized { .. }));
+        assert!(matches!(received[2], AppEvent::MouseMoved { .. }));
+        assert!(matches!(received[3], AppEvent::RedrawRequested));
+        assert!(matches!(received[4], AppEvent::CloseRequested));
+    }
+
+    // -- GpuApp initial state --
+
+    #[test]
+    fn test_gpu_app_window_initially_none() {
+        let mut callback = |_: AppEvent, _: Option<Arc<winit::window::Window>>| {};
+        let mut app = make_gpu_app(&mut callback);
+        assert!(app.window.is_none());
+    }
+
+    #[test]
+    fn test_gpu_app_window_attrs_initially_some() {
+        let mut callback = |_: AppEvent, _: Option<Arc<winit::window::Window>>| {};
+        let mut app = make_gpu_app(&mut callback);
+        assert!(app.window_attrs.is_some());
+    }
+
+    // -- GpuApp additional dispatch --
+
+    #[test]
+    fn test_gpu_app_resized_large() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(
+            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(3840, 2160)),
+            None,
+        );
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 3840);
+                assert_eq!(*height, 2160);
+            }
+            _ => panic!("Expected Resized"),
+        }
+    }
+
+    #[test]
+    fn test_gpu_app_consecutive_focus_toggle() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::Focused(false), None);
+        app.handle_window_event(winit::event::WindowEvent::Focused(true), None);
+        assert_eq!(received.len(), 2);
+        assert!(matches!(received[0], AppEvent::Unfocused));
+        assert!(matches!(received[1], AppEvent::Focused));
+    }
+
+    #[test]
+    fn test_gpu_app_mouse_input_all_buttons() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        let buttons = [
+            winit::event::MouseButton::Left,
+            winit::event::MouseButton::Right,
+            winit::event::MouseButton::Middle,
+            winit::event::MouseButton::Back,
+            winit::event::MouseButton::Forward,
+            winit::event::MouseButton::Other(7),
+        ];
+        for btn in buttons {
+            app.handle_window_event(
+                winit::event::WindowEvent::MouseInput {
+                    device_id: winit::event::DeviceId::dummy(),
+                    state: winit::event::ElementState::Pressed,
+                    button: btn,
+                },
+                None,
+            );
+        }
+        assert_eq!(received.len(), 6);
+        match &received[0] {
+            AppEvent::MouseInput { button, .. } => assert_eq!(*button, MouseButton::Left),
+            _ => panic!("Expected MouseInput"),
+        }
+        match &received[5] {
+            AppEvent::MouseInput { button, .. } => assert_eq!(*button, MouseButton::Other(7)),
+            _ => panic!("Expected MouseInput"),
+        }
+    }
+
+    #[test]
+    fn test_gpu_app_touch_all_phases() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        let phases = [
+            winit::event::TouchPhase::Started,
+            winit::event::TouchPhase::Moved,
+            winit::event::TouchPhase::Ended,
+            winit::event::TouchPhase::Cancelled,
+        ];
+        for phase in phases {
+            app.handle_window_event(
+                winit::event::WindowEvent::Touch(winit::event::Touch {
+                    device_id: winit::event::DeviceId::dummy(),
+                    phase,
+                    location: winit::dpi::PhysicalPosition::new(10.0, 20.0),
+                    id: 1,
+                    force: None,
+                }),
+                None,
+            );
+        }
+        assert_eq!(received.len(), 4);
+        assert!(matches!(&received[0], AppEvent::Touch(te) if te.phase == TouchPhase::Started));
+        assert!(matches!(&received[3], AppEvent::Touch(te) if te.phase == TouchPhase::Cancelled));
+    }
+
+    #[test]
+    fn test_gpu_app_ime_preedit_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(
+            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
+                "abc".to_string(),
+                Some((0, 3)),
+            )),
+            None,
+        );
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::Ime(ImeEvent::Preedit { text, cursor }) => {
+                assert_eq!(text, "abc");
+                assert_eq!(*cursor, Some((0, 3)));
+            }
+            _ => panic!("Expected Ime Preedit"),
+        }
+    }
+
+    #[test]
+    fn test_gpu_app_mouse_wheel_line_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(
+            winit::event::WindowEvent::MouseWheel {
+                device_id: winit::event::DeviceId::dummy(),
+                delta: winit::event::MouseScrollDelta::LineDelta(-2.0, 5.0),
+                phase: winit::event::TouchPhase::Moved,
+            },
+            None,
+        );
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::MouseWheel { delta } => {
+                assert_eq!(*delta, MouseScrollDelta::LineDelta(-2.0, 5.0));
+            }
+            _ => panic!("Expected MouseWheel"),
+        }
+    }
+
+    #[test]
+    fn test_gpu_app_multiple_resizes() {
+        let mut received: Vec<(u32, u32)> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            if let AppEvent::Resized { width, height } = e {
+                received.push((width, height));
+            }
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(
+            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(100, 100)),
+            None,
+        );
+        app.handle_window_event(
+            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(200, 200)),
+            None,
+        );
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0], (100, 100));
+        assert_eq!(received[1], (200, 200));
+    }
+
+    #[test]
+    fn test_gpu_app_cursor_moved_large_coords() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(
+            winit::event::WindowEvent::CursorMoved {
+                device_id: winit::event::DeviceId::dummy(),
+                position: winit::dpi::PhysicalPosition::new(99999.0, -99999.0),
+            },
+            None,
+        );
+        assert_eq!(received.len(), 1);
+        match &received[0] {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((*x - 99999.0).abs() < f64::EPSILON);
+                assert!((*y - (-99999.0)).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected MouseMoved"),
+        }
+    }
+
+    #[test]
+    fn test_host_runtime_stores_config() {
+        let config = WindowConfig::new("Stored").with_size(400, 300);
+        let runtime = HostRuntime::new(config);
+        assert_eq!(runtime.config.title, "Stored");
+        assert_eq!(runtime.config.width, 400);
+        assert_eq!(runtime.config.height, 300);
+    }
 }

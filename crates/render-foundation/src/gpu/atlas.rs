@@ -371,4 +371,85 @@ mod tests {
         let bytes_per_row = 10u32.next_multiple_of(256).max(256) as usize;
         assert_eq!(buf.len(), bytes_per_row * 10);
     }
+
+    #[test]
+    fn test_atlas_default() {
+        let atlas = GlyphAtlas::default();
+        assert_eq!(atlas.glyph_count(), 0);
+        assert_eq!(atlas.generation(), 0);
+    }
+
+    #[test]
+    fn test_atlas_key_creation() {
+        let key = GlyphAtlasKey::new(1, 65, 32.0);
+        assert_eq!(key.font_id, 1);
+        assert_eq!(key.codepoint, 65);
+        assert_eq!(key.size_px, 32);
+    }
+
+    #[test]
+    fn test_atlas_key_size_rounding() {
+        let key = GlyphAtlasKey::new(0, 65, 16.7);
+        assert_eq!(key.size_px, 17); // round(16.7) = 17
+    }
+
+    #[test]
+    fn test_atlas_place_then_clear_then_place() {
+        let mut atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(0, 'A' as u32, 32.0);
+        atlas.place(key.clone(), 20, 30, 0, 0, 20.0);
+        assert_eq!(atlas.glyph_count(), 1);
+
+        let old_gen = atlas.clear();
+        assert_eq!(old_gen, 0);
+        assert_eq!(atlas.glyph_count(), 0);
+
+        // Same key can be placed again after clear
+        let result = atlas.place(key, 20, 30, 0, 0, 20.0);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_new);
+        assert_eq!(atlas.glyph_count(), 1);
+    }
+
+    #[test]
+    fn test_atlas_get_existing() {
+        let mut atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(0, 'Z' as u32, 16.0);
+        atlas.place(key.clone(), 10, 12, 0, 0, 10.0);
+
+        let placement = atlas.get(&key);
+        assert!(placement.is_some());
+        assert_eq!(placement.unwrap().width, 10);
+        assert_eq!(placement.unwrap().height, 12);
+    }
+
+    #[test]
+    fn test_atlas_get_nonexistent() {
+        let atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(0, 'X' as u32, 16.0);
+        assert!(atlas.get(&key).is_none());
+    }
+
+    #[test]
+    fn test_atlas_row_stride_alignment() {
+        let layout = GlyphAtlas::row_stride(10);
+        assert_eq!(layout.offset, 0);
+        assert!(layout.bytes_per_row.unwrap() >= 256);
+        assert!(layout.bytes_per_row.unwrap() % 256 == 0);
+    }
+
+    #[test]
+    fn test_atlas_view_descriptor() {
+        let desc = GlyphAtlas::view_descriptor();
+        assert!(desc.label.is_none());
+    }
+
+    #[test]
+    fn test_placement_advance_preserved() {
+        let mut atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(0, 'A' as u32, 16.0);
+        let result = atlas.place(key, 10, 10, 0, 0, 15.5);
+        let p = result.unwrap();
+        assert!((p.placement.advance - 15.5).abs() < f32::EPSILON);
+    }
 }

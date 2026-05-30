@@ -929,4 +929,83 @@ mod tests {
         assert_eq!(renderer.atlas_generation(), 0);
         assert_eq!(renderer.atlas_glyph_count(), 0);
     }
+
+    /// 测试蓝色填充回读
+    #[test]
+    fn test_gpu_renderer_blue_fill_readback() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+            color: Color::BLUE,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels[0], 0);
+        assert_eq!(pixels[1], 0);
+        assert_eq!(pixels[2], 255);
+        assert_eq!(pixels[3], 255);
+    }
+
+    /// 测试黑色填充回读
+    #[test]
+    fn test_gpu_renderer_black_fill_readback() {
+        let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            color: Color::BLACK,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels[0], 0);
+        assert_eq!(pixels[1], 0);
+        assert_eq!(pixels[2], 0);
+        assert_eq!(pixels[3], 255);
+    }
+
+    /// 测试 glyph_draw 结构体
+    #[test]
+    fn test_glyph_draw_fields() {
+        let gd = GlyphDraw {
+            ch: 'A',
+            x: 10.0,
+            baseline_y: 20.0,
+            color: Color::RED,
+            font_id: 1,
+            font_size: 16.0,
+        };
+        assert_eq!(gd.ch, 'A');
+        assert_eq!(gd.x, 10.0);
+        assert_eq!(gd.font_id, 1);
+    }
+
+    /// 测试 configure_surface 最小尺寸
+    #[test]
+    fn test_gpu_renderer_configure_surface_min_size() {
+        let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+        renderer.configure_surface(0, 0);
+        // Should clamp to (1, 1)
+        assert_eq!(renderer.surface_size(), (1, 1));
+    }
+
+    /// 测试多次渲染不会 panic
+    #[test]
+    fn test_gpu_renderer_multiple_renders() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        for _ in 0..3 {
+            let fills = vec![FillPrimitive {
+                rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+                color: Color::RED,
+            }];
+            renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        }
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 16 * 16 * 4);
+    }
 }

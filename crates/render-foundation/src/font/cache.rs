@@ -253,4 +253,72 @@ mod tests {
         // Failed insert should not add to cache
         assert!(cache.get(&key).is_none());
     }
+
+    #[test]
+    fn test_glyph_key_equality() {
+        let k1 = GlyphKey::new(1, 65, 16.0);
+        let k2 = GlyphKey::new(1, 65, 16.0);
+        let k3 = GlyphKey::new(2, 65, 16.0);
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+    }
+
+    #[test]
+    fn test_glyph_key_different_sizes() {
+        let k1 = GlyphKey::new(0, 65, 12.0);
+        let k2 = GlyphKey::new(0, 65, 24.0);
+        assert_ne!(k1, k2);
+        assert_eq!(k1.size_px, 12);
+        assert_eq!(k2.size_px, 24);
+    }
+
+    #[test]
+    fn test_cache_insert_overwrite() {
+        let mut cache = GlyphCache::new(100);
+        let key = GlyphKey::new(0, 65, 16.0);
+        cache.insert(key.clone(), make_bitmap(&[1, 2, 3], 3, 1));
+        // Insert again with same key — should overwrite
+        cache.insert(key.clone(), make_bitmap(&[4, 5, 6], 3, 1));
+        let got = cache.get(&key).unwrap();
+        assert_eq!(got.data, vec![4, 5, 6]);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn test_cache_multiple_fonts() {
+        let mut cache = GlyphCache::new(100);
+        let key1 = GlyphKey::new(0, 65, 16.0);
+        let key2 = GlyphKey::new(1, 65, 16.0);
+        cache.insert(key1.clone(), make_bitmap(&[10], 1, 1));
+        cache.insert(key2.clone(), make_bitmap(&[20], 1, 1));
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.get(&key1).unwrap().data[0], 10);
+        assert_eq!(cache.get(&key2).unwrap().data[0], 20);
+    }
+
+    #[test]
+    fn test_cache_zero_capacity() {
+        let mut cache = GlyphCache::new(0);
+        // Inserting should still work (direct insert bypasses eviction logic)
+        let key = GlyphKey::new(0, 65, 16.0);
+        cache.insert(key.clone(), make_bitmap(&[1], 1, 1));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn test_glyph_bitmap_fields() {
+        let bm = GlyphBitmap {
+            data: vec![128; 100],
+            width: 10,
+            height: 10,
+            x_offset: -2,
+            y_offset: 5,
+            advance: 12.5,
+        };
+        assert_eq!(bm.width, 10);
+        assert_eq!(bm.height, 10);
+        assert_eq!(bm.x_offset, -2);
+        assert_eq!(bm.y_offset, 5);
+        assert!((bm.advance - 12.5).abs() < f32::EPSILON);
+    }
 }

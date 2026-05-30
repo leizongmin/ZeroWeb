@@ -349,4 +349,36 @@ mod tests {
             bitmap.y_offset
         );
     }
+
+    #[test]
+    fn test_font_loader_default() {
+        let loader = FontLoader::default();
+        assert!(loader.is_empty());
+    }
+
+    #[test]
+    fn test_font_desc_normal_default_weight() {
+        let desc = FontDesc::normal("TestFont");
+        assert_eq!(desc.weight, 400);
+        assert!(!desc.italic);
+        assert_eq!(desc.family, "TestFont");
+    }
+
+    #[test]
+    fn test_font_desc_bold_weight() {
+        let desc = FontDesc::bold("TestFont");
+        assert_eq!(desc.weight, 700);
+        assert!(!desc.italic);
+    }
+
+    #[test]
+    fn test_font_desc_custom() {
+        let desc = FontDesc {
+            family: "Serif".to_string(),
+            weight: 300,
+            italic: true,
+        };
+        assert_eq!(desc.weight, 300);
+        assert!(desc.italic);
+    }
 }
