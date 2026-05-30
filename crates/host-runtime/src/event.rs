@@ -75,13 +75,26 @@ mod tests {
         assert!(!format!("{:?}", AppEvent::CloseRequested).is_empty());
         assert!(!format!("{:?}", AppEvent::Focused).is_empty());
         assert!(!format!("{:?}", AppEvent::Unfocused).is_empty());
-        assert!(format!("{:?}", AppEvent::Resized { width: 100, height: 200 })
-            .contains("100"));
-        assert!(format!("{:?}", AppEvent::KeyboardInput {
-            key: "X".into(),
-            pressed: true
-        })
-        .contains("X"));
+        assert!(
+            format!(
+                "{:?}",
+                AppEvent::Resized {
+                    width: 100,
+                    height: 200
+                }
+            )
+            .contains("100")
+        );
+        assert!(
+            format!(
+                "{:?}",
+                AppEvent::KeyboardInput {
+                    key: "X".into(),
+                    pressed: true
+                }
+            )
+            .contains("X")
+        );
     }
 
     #[test]

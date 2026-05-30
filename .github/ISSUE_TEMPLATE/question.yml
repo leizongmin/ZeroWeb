@@ -32,7 +32,7 @@ body:
     attributes:
       label: What You Already Checked
       description: Mention the docs, code paths, or commands you already looked at.
-      placeholder: README, docs/architecture.md, crates/webview-api/README.md, cargo test -p ...
+      placeholder: README, docs/architecture.md, crates/webview/README.md, cargo test -p ...
     validations:
       required: true
 
@@ -41,11 +41,10 @@ body:
     attributes:
       label: Relevant Area
       description: Which crate, command, or workflow is your question about?
-      placeholder: e.g. browser-shell, webview-api, CI, benchmarks
+      placeholder: e.g. browser-shell, webview, CI, benchmarks
 
   - type: textarea
     id: extra
     attributes:
       label: Additional Context
       description: Paste logs, code snippets, or screenshots if they clarify the question.
-

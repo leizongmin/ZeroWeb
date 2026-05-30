@@ -1,5 +1,5 @@
 [package]
-name = "zero-engine-core"
+name = "zero-engine"
 description = "页面内核 — HTML/DOM/CSSOM/样式/布局/绘制/脚本协调"
 version.workspace = true
 edition.workspace = true

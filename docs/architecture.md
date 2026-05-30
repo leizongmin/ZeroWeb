@@ -1,4 +1,4 @@
-# ZeroBrowser 架构总览
+# ZeroWeb 架构总览
 
 第一次进这个仓库，通常会先问三件事：
 
@@ -6,14 +6,14 @@
 2. 各个 crate 分别负责什么
 3. 应该从哪里开始阅读和修改
 
-更正式的需求和约束在 [docs/specs/zero-browser-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-browser-spec-rfc.md)，当前实现进度看 [docs/goal/zero-browser/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-browser/master.md)。
+更正式的需求和约束在 [docs/specs/zero-web-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)，当前实现进度看 [docs/goal/zero-web/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-web/master.md)。
 
 > **注意**
 > 这份文档说的是当前结构和目标方向，不代表项目已经到了可日常使用、可商用或其他生产可用的程度。真要这么用，风险得自己评估。
 
 ## 这个仓库现在想收敛到哪里
 
-- 构建一个可嵌入的 Rust `webview` 库
+- 构建一个可嵌入的 Rust `ZeroWebView` 库
 - 构建一个完整浏览器应用
 - 在开源协作下保持核心代码与演进节奏可控
 - 让主线依赖尽量保持宽松许可证边界
@@ -32,7 +32,7 @@
 
 | Crate | 作用 |
 |-------|------|
-| `crates/webview-api` | 对外暴露稳定嵌入 API，屏蔽底层渲染细节 |
+| `crates/webview` | 对外暴露稳定嵌入 API，屏蔽底层渲染细节 |
 | `crates/browser-shell` | 浏览器产品层 UI，包括标签页、地址栏、历史等 |
 
 ### 引擎层
@@ -43,7 +43,7 @@
 | `crates/css-parser` | CSS tokenizer、parser、选择器和值解析 |
 | `crates/style-system` | 级联、继承、计算值、DOM 样式匹配 |
 | `crates/layout-engine` | 布局整合层，把样式转换成布局树和几何输出 |
-| `crates/engine-core` | 渲染主管线，负责串起解析、样式、布局、paint 和 composite |
+| `crates/engine` | 渲染主管线，负责串起解析、样式、布局、paint 和 composite |
 | `crates/canvas` | Canvas 2D 绘制能力 |
 
 ### 基础设施层
@@ -76,10 +76,10 @@
 3. `css-parser` 解析样式规则。
 4. `style-system` 把选择器和规则匹配到 DOM 节点，生成计算样式。
 5. `layout-engine` 把计算样式转换为布局树和几何信息。
-6. `engine-core` 把布局结果转换为绘制命令和合成层。
+6. `engine` 把布局结果转换为绘制命令和合成层。
 7. `render-foundation` 把图元输出到 GPU/CPU 渲染后端。
 8. `host-runtime` 管理窗口和 surface，把帧显示到平台宿主。
-9. `webview-api` 把这条链路包装成嵌入式 API，供浏览器 shell 或第三方应用调用。
+9. `webview` 把这条链路包装成嵌入式 API，供浏览器 shell 或第三方应用调用。
 
 这条链路已经能在一部分测试和 demo 里跑起来，但离“真实网页 + 完整 JavaScript + 完整浏览器 UI”还差得远。
 
@@ -87,11 +87,11 @@
 
 粗略说，仓库现在分成三档：
 
-- **已有实质实现**: DOM、CSS parser、style system、layout engine、engine core、render foundation、host runtime、net、security、storage、protocol、canvas、wasm-sandbox、webview-api
+- **已有实质实现**: DOM、CSS parser、style system、layout engine、engine、render foundation、host runtime、net、security、storage、protocol、canvas、wasm-sandbox、webview
 - **框架已在，但产品未成形**: `apps/browser`、`browser-shell`
 - **仍是占位方向**: `script-sandbox`
 
-所以今天的 ZeroBrowser 更像一个正在成形的浏览器内核工作区，还不是一个做完的浏览器产品。
+所以今天的 ZeroWeb 更像一个正在成形的浏览器内核工作区，还不是一个做完的浏览器产品。
 
 ## 写代码时最该记住的约束
 
@@ -109,8 +109,8 @@
 
 1. [README.md]($HOME/work/ZeroBrowser/README.md)
 2. 本文档
-3. [docs/specs/zero-browser-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-browser-spec-rfc.md)
-4. [docs/goal/zero-browser/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-browser/master.md)
+3. [docs/specs/zero-web-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)
+4. [docs/goal/zero-web/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-web/master.md)
 5. 目标 crate 的 `README.md`
 6. 对应 crate 的 `src/lib.rs` 和测试文件
 
@@ -121,5 +121,5 @@
 - 扩展现有单元测试和集成测试
 - 补充 WPT runner 的覆盖面
 - 完成 `browser-shell` 的产品层骨架
-- 推进 `webview-api` 与真实导航链路的衔接
+- 推进 `webview` 与真实导航链路的衔接
 - 修补样式、布局和渲染的兼容性缺口

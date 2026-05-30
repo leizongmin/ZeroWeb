@@ -16,7 +16,7 @@ body:
       options:
         - label: I searched existing issues and did not find the same request.
           required: true
-        - label: I can explain why this belongs in ZeroBrowser rather than in downstream application code.
+        - label: I can explain why this belongs in ZeroWeb rather than in downstream application code.
           required: true
 
   - type: textarea
@@ -50,7 +50,7 @@ body:
     attributes:
       label: Likely Affected Areas
       description: Which crates, docs, tests, or tools would probably be touched?
-      placeholder: e.g. crates/webview-api + tests/integration + docs/specs
+      placeholder: e.g. crates/webview + tests/integration + docs/specs
 
   - type: textarea
     id: acceptance
@@ -70,4 +70,3 @@ body:
       label: Dependency or License Impact
       description: Mention if this likely needs a new third-party dependency or changes project license assumptions.
       placeholder: None / likely needs discussion / likely needs new dependency because ...
-

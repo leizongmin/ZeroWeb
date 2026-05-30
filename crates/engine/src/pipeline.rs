@@ -148,7 +148,11 @@ impl RenderPipeline {
         &mut self,
         doc: &Document,
         stylesheets: &[Stylesheet],
-    ) -> (RenderPrimitives, HashMap<NodeId, ComputedStyle>, LayoutResult) {
+    ) -> (
+        RenderPrimitives,
+        HashMap<NodeId, ComputedStyle>,
+        LayoutResult,
+    ) {
         // 计算样式
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);

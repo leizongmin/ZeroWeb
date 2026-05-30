@@ -297,10 +297,7 @@ mod tests {
         ];
 
         for (i, kind) in msgs.into_iter().enumerate() {
-            let msg = IpcMessage {
-                id: i as u64,
-                kind,
-            };
+            let msg = IpcMessage { id: i as u64, kind };
             let bytes = serialize(&msg).expect("serialize should succeed");
             let out: IpcMessage = deserialize(&bytes).expect("deserialize should succeed");
             assert_eq!(i as u64, out.id);
@@ -765,7 +762,7 @@ mod tests {
     #[test]
     fn test_process_role_copy_clone() {
         let role = ProcessRole::Browser;
-        let cloned = role.clone();
+        let cloned = role;
         assert_eq!(role, cloned);
         // Copy semantics — role is still usable
         let copied = role;

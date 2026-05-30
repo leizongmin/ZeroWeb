@@ -1,6 +1,6 @@
 //! WASM 沙箱性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use zero_wasm_sandbox::{WasmSandbox, WasmValue};
 
 /// 辅助函数：编译 WAT 文本为 WASM 字节
@@ -20,7 +20,7 @@ fn bench_module_compile(c: &mut Criterion) {
 
     c.bench_function("wasm_module_compile", |b| {
         b.iter(|| {
-            black_box(sandbox.compile(&wasm));
+            let _ = black_box(sandbox.compile(&wasm));
         })
     });
 }
@@ -38,7 +38,7 @@ fn bench_module_instantiate(c: &mut Criterion) {
 
     c.bench_function("wasm_module_instantiate", |b| {
         b.iter(|| {
-            black_box(module.instantiate(&sandbox));
+            let _ = black_box(module.instantiate(&sandbox));
         })
     });
 }
@@ -58,7 +58,8 @@ fn bench_function_call_i32(c: &mut Criterion) {
     c.bench_function("wasm_call_add_i32_1000", |b| {
         b.iter(|| {
             for i in 0..1000u32 {
-                black_box(instance.call("add", &[WasmValue::I32(i as i32), WasmValue::I32(1)]));
+                let _ =
+                    black_box(instance.call("add", &[WasmValue::I32(i as i32), WasmValue::I32(1)]));
             }
         })
     });
@@ -87,7 +88,7 @@ fn bench_recursive_factorial(c: &mut Criterion) {
     c.bench_function("wasm_factorial_100_calls", |b| {
         b.iter(|| {
             for _ in 0..100 {
-                black_box(instance.call("factorial", &[WasmValue::I32(10)]));
+                let _ = black_box(instance.call("factorial", &[WasmValue::I32(10)]));
             }
         })
     });

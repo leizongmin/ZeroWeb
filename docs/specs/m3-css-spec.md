@@ -11,7 +11,7 @@
 
 ### 1.1 背景
 
-M2 完成了 DOM 树实现，HTML 文档可以解析为 DOM 节点。M3 是 ZeroBrowser 项目中最大的技术创新点：完全自建 CSS 解析器和样式系统。由于所有成熟的 Rust CSS 解析库（rust-cssparser、lightningcss）均采用 MPL 许可证，与项目闭源商业目标冲突，必须从零构建。
+M2 完成了 DOM 树实现，HTML 文档可以解析为 DOM 节点。M3 是 ZeroWeb 项目中最大的技术创新点：完全自建 CSS 解析器和样式系统。由于所有成熟的 Rust CSS 解析库（rust-cssparser、lightningcss）均采用 MPL 许可证，与项目闭源商业目标冲突，必须从零构建。
 
 CSS 解析器需要处理 CSS 语法的全部复杂性：tokenizer、选择器解析、属性值解析、@规则、嵌套规则等。样式系统需要实现级联算法（specificity、!important、继承、@layer）和计算值生成。
 

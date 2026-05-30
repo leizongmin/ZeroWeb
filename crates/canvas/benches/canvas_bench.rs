@@ -1,6 +1,6 @@
 //! Canvas 2D 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use zero_canvas::{CanvasContext, Path2D};
 
 /// 基准：绘制 1000 个矩形

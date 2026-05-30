@@ -1,11 +1,11 @@
 # Roadmap
 
-这是一份对外路线图，用来说明 ZeroBrowser 大体已经做到哪里、现在在推什么、后面准备补什么。
+这是一份对外路线图，用来说明 ZeroWeb 大体已经做到哪里、现在在推什么、后面准备补什么。
 
 它不是内部执行手册，也不是交付承诺。项目还在实验阶段，计划会随着实现难度、验证结果和依赖现实情况调整。
 
 > [!IMPORTANT]
-> ZeroBrowser 目前主要面向学习、研究和工程探索。即使某个阶段显示为“已完成”，也不代表项目已经适合商用或其他生产用途。相关风险仍然需要自行评估。
+> ZeroWeb 目前主要面向学习、研究和工程探索。即使某个阶段显示为“已完成”，也不代表项目已经适合商用或其他生产用途。相关风险仍然需要自行评估。
 
 ## 怎么看这份路线图
 
@@ -68,6 +68,6 @@
 ## 关联文档
 
 - [README.md](README.md)
-- [docs/goal/zero-browser/master.md](docs/goal/zero-browser/master.md)
-- [docs/specs/zero-browser-spec-rfc.md](docs/specs/zero-browser-spec-rfc.md)
+- [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md)
+- [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md)
 - [docs/architecture.md](docs/architecture.md)

@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== ZeroBrowser 覆盖率检查 ==="
+echo "=== ZeroWeb 覆盖率检查 ==="
 echo "日期: $(date)"
 echo ""
 

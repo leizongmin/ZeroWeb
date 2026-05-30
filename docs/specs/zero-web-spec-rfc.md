@@ -1,4 +1,4 @@
-# Spec: ZeroBrowser — 基于 Rust 的跨平台浏览器
+# Spec: ZeroWeb — 基于 Rust 的跨平台浏览器
 
 **版本**: v1.3
 **日期**: 2026-05-30
@@ -6,7 +6,7 @@
 **状态**: Confirmed
 
 > **说明**
-> 本文描述的是 ZeroBrowser 的目标状态、约束和设计方向，不构成当前仓库已经适合商用或其他生产用途的声明。当前项目仍是实验性项目，默认仅供学习、研究和工程探索使用；任何生产用途都需要自行评估功能完整性、安全性、兼容性、性能和许可证边界等风险。
+> 本文描述的是 ZeroWeb 的目标状态、约束和设计方向，不构成当前仓库已经适合商用或其他生产用途的声明。当前项目仍是实验性项目，默认仅供学习、研究和工程探索使用；任何生产用途都需要自行评估功能完整性、安全性、兼容性、性能和许可证边界等风险。
 
 ---
 
@@ -448,7 +448,7 @@
 
 ### IF-001: WebView 嵌入 API
 - **类型**: Rust API（lib crate）
-- **规范**: `webview-api` crate 提供稳定的 Rust 公共接口
+- **规范**: `webview` crate 提供稳定的 Rust 公共接口
   - `WebViewBuilder` — 构建器模式创建 WebView 实例
   - `WebView::navigate(url)` — 导航到指定 URL
   - `WebView::evaluate_script(js)` — 注入并执行 JavaScript
@@ -547,13 +547,13 @@
 - `tests/**` — 测试、基准、WPT runner
 - `scripts/**` — 工程化脚本
 - `docs/specs/**` — Spec/RFC 文档
-- `docs/goal/zero-browser/master.md` — 运行时控制平面
-- `docs/goal/zero-browser/archive/**` — 归档区域
+- `docs/goal/zero-web/master.md` — 运行时控制平面
+- `docs/goal/zero-web/archive/**` — 归档区域
 - `Cargo.toml`、`Cargo.lock` — 依赖管理
 - `.github/workflows/**` — CI 配置
 
 **禁止修改的路径**（除非目标本身变化）：
-- `docs/goal/zero-browser.md` — 目标执行契约（仅在 Mission 变化时修改）
+- `docs/goal/zero-web.md` — 目标执行契约（仅在 Mission 变化时修改）
 - `docs/research/` — 技术调研文档（历史记录，只追加不修改）
 - `LICENSE` — 项目许可证
 
@@ -702,13 +702,13 @@
 │   │ Tab Mgr  │ Nav Bar  │ Bookmark │ History  │ Settings/Menu    │  │
 │   └──────────┴──────────┴──────────┴──────────┴──────────────────┘  │
 ├─────────────────────────────────────────────────────────────────────┤
-│                      WebView API (webview-api crate)                │
+│                      WebView API (webview crate)                │
 │   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐               │
 │   │  Navigate    │ │ Script Bridge│ │  Surface     │               │
 │   │  Control     │ │  (Rust↔JS)   │ │  Output      │               │
 │   └──────────────┘ └──────────────┘ └──────────────┘               │
 ├─────────────────────────────────────────────────────────────────────┤
-│                      Engine Core (engine-core crate)                │
+│                      Engine Core (engine crate)                │
 │   ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐  │
 │   │   DOM   │ │ CSS Parse│ │  Style   │ │  Layout  │ │  Paint  │  │
 │   │ (html5- │ │ (自建)   │ │ System   │ │ (taffy+  │ │ + Compo-│  │
@@ -793,7 +793,7 @@
 **Crate 依赖关系**（自底向上）:
 
 ```
-webview-api ──→ engine-core ──→ dom
+webview ──→ engine ──→ dom
               │              ├──→ css-parser
               │              ├──→ style-system ──→ css-parser
               │              ├──→ layout-engine ──→ taffy
@@ -807,9 +807,9 @@ webview-api ──→ engine-core ──→ dom
               ├──→ script-sandbox ──→ rusty_v8 / rquickjs (feature gate)
               └──→ wasm-sandbox ──→ wasmtime / wasmi
 
-browser-shell ──→ webview-api
+browser-shell ──→ webview
 apps/browser ──→ browser-shell
-apps/webview-demo ──→ webview-api
+apps/webview-demo ──→ webview
 ```
 
 #### 8.4.2 数据模型
@@ -1048,4 +1048,4 @@ enum IpcMessage {
 | v1.3 | 2026-05-30 | 更新 §8.1 As-Is 分析：wgpu GPU 渲染后端已在 render-foundation gpu 模块实现（atlas.rs、pipeline.rs、renderer.rs）；host-runtime 新增 run_with_window() 用于 GPU surface 创建；Demo 切换到 wgpu GPU 渲染路径；代码规模增至 3,616 行 / 32 文件 / 69 测试 / 零 clippy 警告；从「尚未实现」列表移除 wgpu GPU 后端和 GPU surface 创建 |
 | v1.2 | 2026-05-30 | 更新 §8.1 As-Is 分析以反映 M1 代码进展（2,112 行源码、55 测试、5 基准）；补充 render-foundation 和 host-runtime 实现细节；标注 run-benchmarks.sh 路径问题 |
 | v1.1 | 2026-05-30 | 状态更新为 Confirmed；解决 TBD-1（MSRV = Rust 1.85）；更新 C-008 约束 |
-| v1.0 | 2026-05-30 | 初始版本 — 基于目标文档 `docs/goal/zero-browser.md` v1.0 和技术调研文档 `docs/research/rust-cross-platform-browser-research.md` 创建完整的 Spec + RFC |
+| v1.0 | 2026-05-30 | 初始版本 — 基于目标文档 `docs/goal/zero-web.md` v1.0 和技术调研文档 `docs/research/rust-cross-platform-browser-research.md` 创建完整的 Spec + RFC |

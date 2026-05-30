@@ -25,9 +25,9 @@ impl Origin {
             .ok_or_else(|| SecurityError::OriginParse("no host in URL".to_string()))?;
 
         let scheme = url.scheme().to_string();
-        let port = url.port_or_known_default().ok_or_else(|| {
-            SecurityError::OriginParse(format!("unknown scheme: {scheme}"))
-        })?;
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| SecurityError::OriginParse(format!("unknown scheme: {scheme}")))?;
 
         Ok(Self {
             scheme,
@@ -38,8 +38,7 @@ impl Origin {
 
     /// 从字符串解析 Origin。
     pub fn parse(url_str: &str) -> Result<Self, SecurityError> {
-        let url = Url::parse(url_str)
-            .map_err(|e| SecurityError::OriginParse(e.to_string()))?;
+        let url = Url::parse(url_str).map_err(|e| SecurityError::OriginParse(e.to_string()))?;
         Self::from_url(&url)
     }
 

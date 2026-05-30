@@ -1114,22 +1114,43 @@ mod tests {
 
     #[test]
     fn test_parse_timing_function_keywords() {
-        assert_eq!(parse_timing_function("ease"), Some(TimingFunctionValue::Ease));
-        assert_eq!(parse_timing_function("linear"), Some(TimingFunctionValue::Linear));
-        assert_eq!(parse_timing_function("ease-in"), Some(TimingFunctionValue::EaseIn));
-        assert_eq!(parse_timing_function("ease-out"), Some(TimingFunctionValue::EaseOut));
+        assert_eq!(
+            parse_timing_function("ease"),
+            Some(TimingFunctionValue::Ease)
+        );
+        assert_eq!(
+            parse_timing_function("linear"),
+            Some(TimingFunctionValue::Linear)
+        );
+        assert_eq!(
+            parse_timing_function("ease-in"),
+            Some(TimingFunctionValue::EaseIn)
+        );
+        assert_eq!(
+            parse_timing_function("ease-out"),
+            Some(TimingFunctionValue::EaseOut)
+        );
         assert_eq!(
             parse_timing_function("ease-in-out"),
             Some(TimingFunctionValue::EaseInOut)
         );
-        assert_eq!(parse_timing_function("step-start"), Some(TimingFunctionValue::StepStart));
-        assert_eq!(parse_timing_function("step-end"), Some(TimingFunctionValue::StepEnd));
+        assert_eq!(
+            parse_timing_function("step-start"),
+            Some(TimingFunctionValue::StepStart)
+        );
+        assert_eq!(
+            parse_timing_function("step-end"),
+            Some(TimingFunctionValue::StepEnd)
+        );
     }
 
     #[test]
     fn test_parse_timing_function_cubic_bezier() {
         let result = parse_timing_function("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
-        assert_eq!(result, Some(TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0)));
+        assert_eq!(
+            result,
+            Some(TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0))
+        );
     }
 
     #[test]

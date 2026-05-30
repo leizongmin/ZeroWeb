@@ -80,7 +80,8 @@ fn matches_selector_recursive(
         Some(Combinator::NextSibling) => {
             // 相邻兄弟组合器：只检查前一个兄弟
             if let Some(prev) = doc.previous_sibling(current)
-                && is_element(doc, prev) && matches_compound(doc, prev, prev_compound)
+                && is_element(doc, prev)
+                && matches_compound(doc, prev, prev_compound)
             {
                 return matches_selector_recursive(doc, prev, parts, part_idx - 1);
             }
@@ -184,12 +185,8 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
     match &attr.matcher {
         AttributeMatcher::Exists => true,
         AttributeMatcher::Exact(v) => &value == v,
-        AttributeMatcher::Includes(v) => value
-            .split_whitespace()
-            .any(|part| part == v),
-        AttributeMatcher::DashMatch(v) => {
-            value == *v || value.starts_with(&format!("{v}-"))
-        }
+        AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part == v),
+        AttributeMatcher::DashMatch(v) => value == *v || value.starts_with(&format!("{v}-")),
         AttributeMatcher::Prefix(v) => value.starts_with(v),
         AttributeMatcher::Suffix(v) => value.ends_with(v),
         AttributeMatcher::Substring(v) => value.contains(v),
@@ -297,7 +294,11 @@ fn is_empty_element(doc: &Document, element: NodeId) -> bool {
 }
 
 /// 检查元素是否匹配 nth-child 模式。
-fn matches_nth_child(doc: &Document, element: NodeId, pattern: &zero_css_parser::ast::NthPattern) -> bool {
+fn matches_nth_child(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+) -> bool {
     let parent = match doc.parent_node(element) {
         Some(p) => p,
         None => return false,
@@ -435,9 +436,7 @@ fn matches_has_selector_chain(
             }
             false
         }
-        None => {
-            matches_has_selector_chain(doc, candidate, parts, part_idx - 1)
-        }
+        None => matches_has_selector_chain(doc, candidate, parts, part_idx - 1),
     }
 }
 
@@ -536,13 +535,7 @@ fn collect_from_rules(
                                 zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
                             && zero_css_parser::media_query::evaluate_media_query(&query, ctx)
                         {
-                            collect_from_rules(
-                                doc,
-                                element,
-                                inner_rules,
-                                results,
-                                media_ctx,
-                            );
+                            collect_from_rules(doc, element, inner_rules, results, media_ctx);
                         }
                         // 没有 media_ctx 时，@media 规则不应用（安全默认值）
                     } else {
@@ -562,8 +555,8 @@ fn collect_from_rules(
 mod tests {
     use super::*;
     use zero_css_parser::ast::{
-        AttributeMatcher, AttributeSelector, ComplexSelector, CompoundSelector,
-        Combinator, PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
+        AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+        PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
     };
     use zero_dom::Document;
 
@@ -1003,10 +996,19 @@ mod tests {
                 ],
             },
         };
-        assert!(matches_selector(&doc, span1, &sel), "span1 should match div ~ span");
-        assert!(matches_selector(&doc, span2, &sel), "span2 should match div ~ span");
+        assert!(
+            matches_selector(&doc, span1, &sel),
+            "span1 should match div ~ span"
+        );
+        assert!(
+            matches_selector(&doc, span2, &sel),
+            "span2 should match div ~ span"
+        );
         // div 本身不应匹配
-        assert!(!matches_selector(&doc, div, &sel), "div should not match div ~ span");
+        assert!(
+            !matches_selector(&doc, div, &sel),
+            "div should not match div ~ span"
+        );
     }
 
     /// 测试 :last-child 伪类。
@@ -1030,8 +1032,14 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, span, &sel), "span (last child) should match :last-child");
-        assert!(!matches_selector(&doc, div, &sel), "div (not last child) should not match :last-child");
+        assert!(
+            matches_selector(&doc, span, &sel),
+            "span (last child) should match :last-child"
+        );
+        assert!(
+            !matches_selector(&doc, div, &sel),
+            "div (not last child) should not match :last-child"
+        );
     }
 
     /// 测试 :nth-child(2n) 匹配偶数位置。
@@ -1042,11 +1050,13 @@ mod tests {
         let body = doc.create_element("body");
         doc.append_child(root, body).unwrap();
 
-        let items: Vec<NodeId> = (0..5).map(|_| {
-            let li = doc.create_element("li");
-            doc.append_child(body, li).unwrap();
-            li
-        }).collect();
+        let items: Vec<NodeId> = (0..5)
+            .map(|_| {
+                let li = doc.create_element("li");
+                doc.append_child(body, li).unwrap();
+                li
+            })
+            .collect();
 
         // :nth-child(2n) 匹配第 2、4 个
         let sel = Selector {
@@ -1066,10 +1076,22 @@ mod tests {
             },
         };
 
-        assert!(!matches_selector(&doc, items[0], &sel), "1st child should not match 2n");
-        assert!(matches_selector(&doc, items[1], &sel), "2nd child should match 2n");
-        assert!(!matches_selector(&doc, items[2], &sel), "3rd child should not match 2n");
-        assert!(matches_selector(&doc, items[3], &sel), "4th child should match 2n");
+        assert!(
+            !matches_selector(&doc, items[0], &sel),
+            "1st child should not match 2n"
+        );
+        assert!(
+            matches_selector(&doc, items[1], &sel),
+            "2nd child should match 2n"
+        );
+        assert!(
+            !matches_selector(&doc, items[2], &sel),
+            "3rd child should not match 2n"
+        );
+        assert!(
+            matches_selector(&doc, items[3], &sel),
+            "4th child should match 2n"
+        );
     }
 
     /// 测试 :where() 伪类匹配。
@@ -1093,7 +1115,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, div, &sel), "div.container should match :where(.container, .other)");
+        assert!(
+            matches_selector(&doc, div, &sel),
+            "div.container should match :where(.container, .other)"
+        );
     }
 
     /// 测试属性选择器 DashMatch（lang 属性）。
@@ -1119,7 +1144,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, elem, &sel), "lang='en-US' should match [lang|=en]");
+        assert!(
+            matches_selector(&doc, elem, &sel),
+            "lang='en-US' should match [lang|=en]"
+        );
     }
 
     /// 测试属性选择器 Prefix。
@@ -1145,7 +1173,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, elem, &sel), "data-type='button-primary' should match [data-type^=button]");
+        assert!(
+            matches_selector(&doc, elem, &sel),
+            "data-type='button-primary' should match [data-type^=button]"
+        );
     }
 
     /// 测试属性选择器 Suffix。
@@ -1171,7 +1202,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, elem, &sel), "href ending with '/page' should match [href$='/page']");
+        assert!(
+            matches_selector(&doc, elem, &sel),
+            "href ending with '/page' should match [href$='/page']"
+        );
     }
 
     /// 测试属性选择器 Substring。
@@ -1197,7 +1231,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, elem, &sel), "href containing 'example' should match [href*=example]");
+        assert!(
+            matches_selector(&doc, elem, &sel),
+            "href containing 'example' should match [href*=example]"
+        );
     }
 
     /// 测试类型选择器大小写不敏感。
@@ -1205,7 +1242,10 @@ mod tests {
     fn test_tag_selector_case_insensitive() {
         let (doc, _html, _body, div, _p) = make_test_dom();
         let sel = make_tag_selector("DIV");
-        assert!(matches_selector(&doc, div, &sel), "DIV should match div (case insensitive)");
+        assert!(
+            matches_selector(&doc, div, &sel),
+            "DIV should match div (case insensitive)"
+        );
     }
 
     /// 测试空选择器不匹配任何元素。
@@ -1213,11 +1253,12 @@ mod tests {
     fn test_empty_selector_no_match() {
         let (doc, _html, _body, div, _p) = make_test_dom();
         let sel = Selector {
-            complex: ComplexSelector {
-                parts: vec![],
-            },
+            complex: ComplexSelector { parts: vec![] },
         };
-        assert!(!matches_selector(&doc, div, &sel), "empty selector should not match");
+        assert!(
+            !matches_selector(&doc, div, &sel),
+            "empty selector should not match"
+        );
     }
 
     /// 测试 :not() 排除匹配。
@@ -1239,7 +1280,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, p, &sel_not_container), "p without .container should match :not(.container)");
+        assert!(
+            matches_selector(&doc, p, &sel_not_container),
+            "p without .container should match :not(.container)"
+        );
 
         // p:not(.text) — p 有 text 类，不应匹配
         let sel_not_text = Selector {
@@ -1255,7 +1299,10 @@ mod tests {
                 )],
             },
         };
-        assert!(!matches_selector(&doc, p, &sel_not_text), "p.text should not match :not(.text)");
+        assert!(
+            !matches_selector(&doc, p, &sel_not_text),
+            "p.text should not match :not(.text)"
+        );
     }
 
     /// 测试伪元素选择器不匹配任何元素。
@@ -1268,14 +1315,19 @@ mod tests {
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("div".to_string())),
                         subclass_selectors: vec![SubclassSelector::PseudoElement(
-                            zero_css_parser::ast::PseudoElementSelector::Standard("before".to_string()),
+                            zero_css_parser::ast::PseudoElementSelector::Standard(
+                                "before".to_string(),
+                            ),
                         )],
                     },
                     None,
                 )],
             },
         };
-        assert!(!matches_selector(&doc, div, &sel), "pseudo-element should never match DOM elements");
+        assert!(
+            !matches_selector(&doc, div, &sel),
+            "pseudo-element should never match DOM elements"
+        );
     }
 
     // ── :has() 伪类匹配测试 ──
@@ -1305,7 +1357,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, parent, &sel), "div with .child descendant should match :has(.child)");
+        assert!(
+            matches_selector(&doc, parent, &sel),
+            "div with .child descendant should match :has(.child)"
+        );
     }
 
     /// 测试 :has(> .direct) 匹配拥有 .direct 直接子元素的父元素。
@@ -1353,7 +1408,10 @@ mod tests {
                 )],
             },
         };
-        assert!(matches_selector(&doc, parent, &sel), "div with .direct child should match :has(> .direct)");
+        assert!(
+            matches_selector(&doc, parent, &sel),
+            "div with .direct child should match :has(> .direct)"
+        );
     }
 
     /// 测试 :has(.absent) 不匹配没有 .absent 后代的父元素。
@@ -1381,6 +1439,9 @@ mod tests {
                 )],
             },
         };
-        assert!(!matches_selector(&doc, parent, &sel), "div without .absent descendant should not match :has(.absent)");
+        assert!(
+            !matches_selector(&doc, parent, &sel),
+            "div without .absent descendant should not match :has(.absent)"
+        );
     }
 }

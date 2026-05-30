@@ -46,21 +46,24 @@ impl SimpleSelector {
     pub fn matches(&self, elem: &ElementData) -> bool {
         // 标签名匹配
         if let Some(tag) = &self.tag
-            && !elem.local_name().eq_ignore_ascii_case(tag) {
-                return false;
-            }
+            && !elem.local_name().eq_ignore_ascii_case(tag)
+        {
+            return false;
+        }
 
         // ID 匹配
         if let Some(id) = &self.id
-            && elem.id.as_deref() != Some(id.as_str()) {
-                return false;
-            }
+            && elem.id.as_deref() != Some(id.as_str())
+        {
+            return false;
+        }
 
         // 类名匹配
         if let Some(class) = &self.class
-            && !elem.class_list.iter().any(|c| c == class) {
-                return false;
-            }
+            && !elem.class_list.iter().any(|c| c == class)
+        {
+            return false;
+        }
 
         // 属性匹配
         if let Some(attr_sel) = &self.attribute {
@@ -160,9 +163,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             } else if let Some(eq_pos) = attr_content.find('=') {
                 AttributeSelector {
                     name: attr_content[..eq_pos].trim().to_string(),
-                    matcher: AttributeMatcher::Exact(
-                        attr_content[eq_pos + 1..].trim().to_string(),
-                    ),
+                    matcher: AttributeMatcher::Exact(attr_content[eq_pos + 1..].trim().to_string()),
                 }
             } else {
                 AttributeSelector {

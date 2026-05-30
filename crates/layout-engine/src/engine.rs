@@ -48,11 +48,7 @@ impl LayoutEngine {
     ///
     /// - `doc` — DOM 文档
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
-    pub fn compute(
-        &self,
-        doc: &Document,
-        styles: &HashMap<NodeId, ComputedStyle>,
-    ) -> LayoutResult {
+    pub fn compute(&self, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> LayoutResult {
         // 1. 构建 taffy 树
         let (mut taffy_tree, root_id, taffy_to_dom) =
             build_layout_tree(doc, styles, self.viewport_width, self.viewport_height);
@@ -87,12 +83,8 @@ impl LayoutEngine {
         // 获取 ComputedStyle 用于提取定位和溢出信息
         let computed = dom_id.and_then(|id| styles.get(&id));
 
-        let is_absolute = computed.is_some_and(|s| {
-            matches!(s.position, PositionValue::Absolute)
-        });
-        let is_fixed = computed.is_some_and(|s| {
-            matches!(s.position, PositionValue::Fixed)
-        });
+        let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
+        let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| {
             convert_overflow_to_clip(&s.overflow_x)
         });
@@ -120,7 +112,12 @@ impl LayoutEngine {
         let children_taffy = taffy.children(taffy_id).unwrap_or_default();
         let mut children_boxes = Vec::with_capacity(children_taffy.len());
         for child_taffy in &children_taffy {
-            children_boxes.push(Self::extract_layout(taffy, *child_taffy, taffy_to_dom, styles));
+            children_boxes.push(Self::extract_layout(
+                taffy,
+                *child_taffy,
+                taffy_to_dom,
+                styles,
+            ));
         }
 
         LayoutBox {
@@ -165,6 +162,7 @@ fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use zero_css_parser::values::{
@@ -205,7 +203,10 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(div, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(
+            div,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -227,7 +228,10 @@ mod tests {
 
         let mut styles = HashMap::new();
         for id in div_ids {
-            styles.insert(id, make_style_with_display(DisplayValue::Block, 100.0, 30.0));
+            styles.insert(
+                id,
+                make_style_with_display(DisplayValue::Block, 100.0, 30.0),
+            );
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -751,7 +755,10 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(div, make_style_with_display(DisplayValue::Block, 200.0, 100.0));
+        styles.insert(
+            div,
+            make_style_with_display(DisplayValue::Block, 200.0, 100.0),
+        );
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -791,7 +798,10 @@ mod tests {
         // 总宽度 = width + padding_left + padding_right
         assert_eq!(div_box.width, 240.0, "total width = 200 + 20 + 20");
         // 内容区域 = width（content-box 模式）
-        assert_eq!(div_box.content_width, 200.0, "content width = 200 (content-box)");
+        assert_eq!(
+            div_box.content_width, 200.0,
+            "content width = 200 (content-box)"
+        );
     }
 
     /// 验证 border 正确出现在布局盒中。
@@ -834,8 +844,14 @@ mod tests {
         doc.append_child(body, div2).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(div1, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
-        styles.insert(div2, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(
+            div1,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
+        styles.insert(
+            div2,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -847,7 +863,9 @@ mod tests {
         assert!(
             box2.y >= box1.y + box1.height,
             "div2 (y={}) should be below div1 (y={}, h={})",
-            box2.y, box1.y, box1.height
+            box2.y,
+            box1.y,
+            box1.height
         );
     }
 
@@ -868,8 +886,14 @@ mod tests {
         container_style.width = LengthValue::Px(400.0);
         container_style.height = LengthValue::Px(100.0);
         styles.insert(container, container_style);
-        styles.insert(item1, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
-        styles.insert(item2, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(
+            item1,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
+        styles.insert(
+            item2,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -881,7 +905,8 @@ mod tests {
         assert!(
             box2.x > box1.x,
             "item2 (x={}) should be right of item1 (x={})",
-            box2.x, box1.x
+            box2.x,
+            box1.x
         );
     }
 

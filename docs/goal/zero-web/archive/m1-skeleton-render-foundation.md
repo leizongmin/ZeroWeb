@@ -9,7 +9,7 @@
 
 ## 1. 里程碑概述
 
-M1 是 ZeroBrowser 项目的第一个里程碑，目标是搭建完整的 Cargo workspace 骨架、从 OmniTerm 终端项目迁移并适配 GPU/CPU 双路径渲染基础设施、建立宿主运行时（窗口 + 事件循环）、创建演示二进制并验证端到端 GPU 渲染能力。
+M1 是 ZeroWeb 项目的第一个里程碑，目标是搭建完整的 Cargo workspace 骨架、从 OmniTerm 终端项目迁移并适配 GPU/CPU 双路径渲染基础设施、建立宿主运行时（窗口 + 事件循环）、创建演示二进制并验证端到端 GPU 渲染能力。
 
 此里程碑验证了核心技术选型（wgpu + winit + fontdue）的可行性，确立了统一管线渲染架构，并为后续 CSS 解析、布局引擎、DOM 构建等里程碑奠定了基础设施。
 
@@ -22,7 +22,7 @@ M1 是 ZeroBrowser 项目的第一个里程碑，目标是搭建完整的 Cargo 
 | 1 | Cargo workspace 结构 | ✅ 完成 | 16 个 crate + 2 个 app，全部骨架就位 |
 | 2 | render-foundation crate | ✅ 完成 | CPU + wgpu GPU 双路径渲染，含 geometry、color、primitive、font、surface、gpu 六大模块 |
 | 3 | host-runtime crate | ✅ 完成 | winit 0.30 窗口创建 + ApplicationHandler 事件循环 + `run_with_window()` 供 GPU surface 使用 |
-| 4 | Demo 二进制 | ✅ 完成 | wgpu GPU 渲染 "Hello ZeroBrowser" + CPU PPM 回退输出 |
+| 4 | Demo 二进制 | ✅ 完成 | wgpu GPU 渲染 "Hello ZeroWeb" + CPU PPM 回退输出 |
 | 5 | 全 crate 编译 + clippy | ✅ 完成 | 零警告，`cargo clippy --workspace` 通过 |
 | 6 | 单元测试 | ✅ 完成 | 70 个测试全绿（render-foundation: 53, host-runtime: 3, 占位: 14） |
 | 7 | criterion 基准 | ✅ 完成 | 5 个基准可运行并输出结果 |
@@ -153,7 +153,7 @@ fontdue 在 CPU 侧将字形光栅化为 alpha 位图 → 通过 `queue.write_te
 | 提交 | 说明 |
 |------|------|
 | `8983a3d` | feat: initialize Cargo workspace with 16 crate skeletons, render-foundation core, host-runtime, CI |
-| `abba545` | feat: add Hello ZeroBrowser demo with CPU text rendering and fallback font |
+| `abba545` | feat: add Hello ZeroWeb demo with CPU text rendering and fallback font |
 | `f1e50f0` | docs: update master.md with M1 progress — demo completed |
 | `b9a4121` | docs: update Spec+RFC to v1.1 Confirmed, resolve TBD-1 (MSRV = 1.85) |
 | `7586580` | docs: refine Spec+RFC v1.2 — update As-Is analysis with M1 progress, fix run-benchmarks.sh path |
@@ -181,7 +181,7 @@ fontdue 在 CPU 侧将字形光栅化为 alpha 位图 → 通过 `queue.write_te
 
 ### 8.2 M2 前瞻要点
 
-1. **CSS 解析器是 M2 的核心挑战**：完全自建 CSS 解析器（排除 MPL 的 rust-cssparser）是 ZeroBrowser 最大的技术风险。建议先实现选择器解析 + 盒模型属性，再逐步扩展。
+1. **CSS 解析器是 M2 的核心挑战**：完全自建 CSS 解析器（排除 MPL 的 rust-cssparser）是 ZeroWeb 最大的技术风险。建议先实现选择器解析 + 盒模型属性，再逐步扩展。
 
 2. **DOM 树构建**：基于 html5ever 的 HTML 解析 + 自建 DOM 树实现。需要设计好 Node 结构以支持 Shadow DOM 和后续的 Mutation Observer。
 
@@ -203,7 +203,7 @@ crates/
   css-parser/           CSS 解析器（骨架）
   style-system/         样式系统（骨架）
   layout-engine/        布局引擎（骨架）
-  engine-core/          引擎核心（骨架）
+  engine/          引擎核心（骨架）
   canvas/               Canvas 2D（骨架）
   render-foundation/    渲染基础设施（M1 核心交付）
     src/
@@ -228,7 +228,7 @@ crates/
   protocol/             协议（骨架）
   script-sandbox/       脚本沙箱（骨架）
   wasm-sandbox/         WASM 沙箱（骨架）
-  webview-api/          WebView API（骨架）
+  webview/          WebView API（骨架）
   browser-shell/        浏览器 Shell（骨架）
 apps/
   browser/              浏览器入口（占位）

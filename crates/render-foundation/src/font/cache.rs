@@ -162,9 +162,7 @@ mod tests {
         let key = GlyphKey::new(0, 65, 16.0);
 
         // 首次访问，应该调用 f
-        let result = cache.get_or_insert_with(key.clone(), || {
-            Ok(make_bitmap(&[42; 4], 2, 2))
-        });
+        let result = cache.get_or_insert_with(key.clone(), || Ok(make_bitmap(&[42; 4], 2, 2)));
         assert!(result.is_ok());
         assert_eq!(cache.len(), 1);
 
@@ -210,7 +208,9 @@ mod tests {
         assert_eq!(cache.len(), 4);
         // Insert a new key — should trigger eviction of half
         let new_key = GlyphKey::new(0, 99, 16.0);
-        cache.get_or_insert_with(new_key, || Ok(make_bitmap(&[0; 4], 2, 2))).unwrap();
+        cache
+            .get_or_insert_with(new_key, || Ok(make_bitmap(&[0; 4], 2, 2)))
+            .unwrap();
         // After eviction + insertion, count should be <= (4 - 2) + 1 = 3
         assert!(cache.len() <= 3);
     }
@@ -247,9 +247,8 @@ mod tests {
     fn test_cache_get_or_insert_error_propagation() {
         let mut cache = GlyphCache::new(100);
         let key = GlyphKey::new(0, 65, 16.0);
-        let result = cache.get_or_insert_with(key.clone(), || {
-            Err(FontError::NotFound("test".to_string()))
-        });
+        let result =
+            cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
         assert!(result.is_err());
         // Failed insert should not add to cache
         assert!(cache.get(&key).is_none());

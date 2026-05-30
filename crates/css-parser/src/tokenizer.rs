@@ -337,11 +337,13 @@ impl Tokenizer {
                 }
                 // 消耗可选的空白
                 if let Some(ws) = self.peek()
-                    && Self::is_whitespace(ws) {
-                        self.consume();
-                    }
+                    && Self::is_whitespace(ws)
+                {
+                    self.consume();
+                }
                 let codepoint = u32::from_str_radix(&hex, 16).unwrap_or(0);
-                if codepoint == 0 || codepoint > 0x10FFFF || (0xD800..=0xDFFF).contains(&codepoint) {
+                if codepoint == 0 || codepoint > 0x10FFFF || (0xD800..=0xDFFF).contains(&codepoint)
+                {
                     Some('\u{FFFD}') // 替换字符
                 } else {
                     Some(char::from_u32(codepoint).unwrap_or('\u{FFFD}'))
@@ -377,33 +379,35 @@ impl Tokenizer {
         // 小数部分
         if self.peek() == Some('.')
             && let Some(next) = self.peek_at(1)
-                && Self::is_digit(next) {
-                    num_str.push(self.consume().unwrap()); // .
-                    while let Some(c) = self.peek() {
-                        if Self::is_digit(c) {
-                            num_str.push(self.consume().unwrap());
-                        } else {
-                            break;
-                        }
-                    }
+            && Self::is_digit(next)
+        {
+            num_str.push(self.consume().unwrap()); // .
+            while let Some(c) = self.peek() {
+                if Self::is_digit(c) {
+                    num_str.push(self.consume().unwrap());
+                } else {
+                    break;
                 }
+            }
+        }
 
         // 科学计数法（e/E）
         if let Some('e') | Some('E') = self.peek()
             && let Some(next) = self.peek_at(1)
-                && (Self::is_digit(next) || next == '+' || next == '-') {
-                    num_str.push(self.consume().unwrap()); // e/E
-                    if self.peek() == Some('+') || self.peek() == Some('-') {
-                        num_str.push(self.consume().unwrap());
-                    }
-                    while let Some(c) = self.peek() {
-                        if Self::is_digit(c) {
-                            num_str.push(self.consume().unwrap());
-                        } else {
-                            break;
-                        }
-                    }
+            && (Self::is_digit(next) || next == '+' || next == '-')
+        {
+            num_str.push(self.consume().unwrap()); // e/E
+            if self.peek() == Some('+') || self.peek() == Some('-') {
+                num_str.push(self.consume().unwrap());
+            }
+            while let Some(c) = self.peek() {
+                if Self::is_digit(c) {
+                    num_str.push(self.consume().unwrap());
+                } else {
+                    break;
                 }
+            }
+        }
 
         num_str.parse().unwrap_or(0.0)
     }
@@ -660,10 +664,11 @@ impl Iterator for Tokenizer {
                     }
                     // 检查 \ 转义开始的单位
                     if next == '\\'
-                        && let Some(_escaped) = self.peek_at(1) {
-                            let unit = self.consume_ident();
-                            return Some(Token::Dimension(number, unit));
-                        }
+                        && let Some(_escaped) = self.peek_at(1)
+                    {
+                        let unit = self.consume_ident();
+                        return Some(Token::Dimension(number, unit));
+                    }
                 }
 
                 Some(Token::Number(number))
@@ -680,9 +685,10 @@ impl Iterator for Tokenizer {
                         is_number = true;
                     } else if next == '.'
                         && let Some(after_dot) = self.peek_at(1)
-                            && Self::is_digit(after_dot) {
-                                is_number = true;
-                            }
+                        && Self::is_digit(after_dot)
+                    {
+                        is_number = true;
+                    }
                 }
 
                 if is_number {
@@ -694,10 +700,11 @@ impl Iterator for Tokenizer {
                     }
 
                     if let Some(next) = self.peek()
-                        && (Self::is_ident_start(next) || next == '\\') {
-                            let unit = self.consume_ident();
-                            return Some(Token::Dimension(number, unit));
-                        }
+                        && (Self::is_ident_start(next) || next == '\\')
+                    {
+                        let unit = self.consume_ident();
+                        return Some(Token::Dimension(number, unit));
+                    }
 
                     return Some(Token::Number(number));
                 }
@@ -705,10 +712,11 @@ impl Iterator for Tokenizer {
                 // 检查 ident-start（以 - 开头的标识符）
                 if sign == '-'
                     && let Some(next) = self.peek()
-                        && (Self::is_ident_start(next) || next == '\\' || next == '-') {
-                            self.pos -= 1; // 回退
-                            return Some(self.consume_ident_like());
-                        }
+                    && (Self::is_ident_start(next) || next == '\\' || next == '-')
+                {
+                    self.pos -= 1; // 回退
+                    return Some(self.consume_ident_like());
+                }
 
                 // 特殊组合器
                 if sign == '|' && self.peek() == Some('|') {
@@ -799,9 +807,7 @@ impl Iterator for Tokenizer {
             }
 
             // 标识符
-            _ if Self::is_ident_start(c) => {
-                Some(self.consume_ident_like())
-            }
+            _ if Self::is_ident_start(c) => Some(self.consume_ident_like()),
 
             // 未知字符
             _ => {

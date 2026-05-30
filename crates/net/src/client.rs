@@ -92,7 +92,9 @@ impl HttpClient {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
             .collect();
-        let body = response.bytes().map_err(|e| NetError::Network(e.to_string()))?;
+        let body = response
+            .bytes()
+            .map_err(|e| NetError::Network(e.to_string()))?;
         let body = body.to_vec();
 
         Ok(HttpResponse {

@@ -4,7 +4,7 @@
 
 ## 概述
 
-zero-dom 是 ZeroBrowser 渲染管线的第一步 —— 将 HTML 文本解析为结构化的 DOM 树。它基于 html5ever 构建解析器，使用 slotmap 存储节点以实现 O(1) 查找与稳定 ID，同时提供符合 WHATWG DOM 规范的树操作 API、CSS 选择器查询、HTML 序列化以及 MutationObserver 变更追踪。
+zero-dom 是 ZeroWeb 渲染管线的第一步 —— 将 HTML 文本解析为结构化的 DOM 树。它基于 html5ever 构建解析器，使用 slotmap 存储节点以实现 O(1) 查找与稳定 ID，同时提供符合 WHATWG DOM 规范的树操作 API、CSS 选择器查询、HTML 序列化以及 MutationObserver 变更追踪。
 
 ## 主要功能
 
@@ -42,7 +42,7 @@ let mut doc = Document::new();
 let html = doc.create_element("html");
 let body = doc.create_element("body");
 let p = doc.create_element("p");
-let text = doc.create_text_node("Hello, ZeroBrowser!");
+let text = doc.create_text_node("Hello, ZeroWeb!");
 
 doc.append_child(doc.root(), html).unwrap();
 doc.append_child(html, body).unwrap();
@@ -50,5 +50,5 @@ doc.append_child(body, p).unwrap();
 doc.append_child(p, text).unwrap();
 
 // 序列化为 HTML
-assert_eq!(doc.inner_html(body), "<p>Hello, ZeroBrowser!</p>");
+assert_eq!(doc.inner_html(body), "<p>Hello, ZeroWeb!</p>");
 ```

@@ -60,9 +60,9 @@
 
 ## 项目概述
 
-ZeroBrowser — 用 Rust 构建的跨平台浏览器。两个交付物：
-1. 可复用的嵌入式 `webview` 库（Rust lib）
-2. 完整的跨平台浏览器应用（macOS、Linux、Windows、Android）
+ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
+1. 可复用的嵌入式 `ZeroWebView` 库（Rust lib）
+2. 完整的 `ZeroBrowser` 浏览器应用（macOS、Linux、Windows、Android）
 
 项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、rusty_v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
@@ -98,7 +98,7 @@ ZeroBrowser — 用 Rust 构建的跨平台浏览器。两个交付物：
 
 ```
 apps/
-├── browser/          # zero-browser-app — 浏览器应用入口
+├── browser/          # zero-browser — 浏览器应用入口
 └── webview-demo/     # zero-webview-demo — WebView 嵌入示例
 
 crates/
@@ -106,7 +106,7 @@ crates/
 ├── css-parser/       # zero-css-parser — CSS 词法分析器 + 解析器
 ├── style-system/     # zero-style-system — 层叠、继承、计算值
 ├── layout-engine/    # zero-layout-engine — 基于 Taffy 的布局（Block/Inline/Flex/Grid）
-├── engine-core/      # zero-engine-core — 页面内核（协调所有子系统）
+├── engine/           # zero-engine — 页面内核（协调所有子系统）
 ├── canvas/           # zero-canvas — Canvas 2D API
 ├── render-foundation/ # zero-render-foundation — GPU/CPU 渲染、字体栈、图像缓存
 ├── host-runtime/     # zero-host-runtime — 窗口、事件循环、surface、IME（winit）
@@ -116,7 +116,7 @@ crates/
 ├── protocol/         # zero-protocol — 多进程 IPC
 ├── script-sandbox/   # zero-script-sandbox — JS 引擎（V8/QuickJS feature gate）
 ├── wasm-sandbox/     # zero-wasm-sandbox — WASM 运行时（Wasmtime/wasmi）
-├── webview-api/      # zero-webview-api — 稳定的嵌入式 API
+├── webview/          # zero-webview — 稳定的嵌入式 API
 └── browser-shell/    # zero-browser-shell — 浏览器 UI（标签页、书签、地址栏）
 ```
 

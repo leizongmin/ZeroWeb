@@ -1,6 +1,6 @@
 //! 样式系统性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use zero_css_parser::Parser as CssParser;
 use zero_dom::parse_html;
 use zero_style_system::{StyleSystem, cascade, matcher, property};

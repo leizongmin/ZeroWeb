@@ -1,4 +1,4 @@
-# ZeroBrowser 运行时控制平面
+# ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
 **执行状态**: 14/16 crate 已实现，1215 个测试全绿，14 个 crate 有基准测试
@@ -27,7 +27,7 @@
 | css-parser | 196 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、**:has()** |
 | style-system | 260 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、outline、**:has() 匹配** |
 | layout-engine | 85 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、几何验证 |
-| engine-core | 64 | ✅ | 渲染管线、paint、dirty tracking、compositing |
+| engine | 64 | ✅ | 渲染管线、paint、dirty tracking、compositing |
 | render-foundation | 74 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
 | net | 74 | ✅ | HTTP client、URL、导航历史、Cookie |
@@ -35,7 +35,7 @@
 | protocol | 57 | ✅ | IPC 消息、bincode 序列化 |
 | storage | 47 | ✅ | localStorage、sessionStorage、IndexedDB |
 | canvas | 81 | ✅ | Canvas 2D API、路径、变换 |
-| webview-api | 43 | ✅ | WebView 嵌入 API、Builder |
+| webview | 43 | ✅ | WebView 嵌入 API、Builder |
 | wasm-sandbox | 22 | ✅ | WASM 运行时（wasmi 纯 Rust 解释器） |
 
 ### 跨 crate 集成测试
@@ -158,7 +158,7 @@
 | M7 网络栈 + 导航模型 | ✅ |
 | M8 多进程架构 (IPC) | ✅ (protocol crate) |
 | M9 Canvas + Storage | ✅ |
-| M10 WebView API | ✅ (webview-api + integration tests) |
+| M10 WebView API | ✅ (webview + integration tests) |
 
 ---
 

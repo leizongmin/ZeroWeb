@@ -161,7 +161,11 @@ impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for BasicApp
                 }
             }
             winit::event::WindowEvent::Focused(focused) => {
-                let event = if focused { AppEvent::Focused } else { AppEvent::Unfocused };
+                let event = if focused {
+                    AppEvent::Focused
+                } else {
+                    AppEvent::Unfocused
+                };
                 (self.on_event)(event);
             }
             _ => {}
@@ -177,10 +181,7 @@ struct GpuApp<'a, F> {
 }
 
 impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
-    fn new_with_window(
-        window_attrs: winit::window::WindowAttributes,
-        on_event: &'a mut F,
-    ) -> Self {
+    fn new_with_window(window_attrs: winit::window::WindowAttributes, on_event: &'a mut F) -> Self {
         Self {
             window_attrs: Some(window_attrs),
             window: None,
@@ -189,8 +190,8 @@ impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
     }
 }
 
-impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application::ApplicationHandler<()>
-    for GpuApp<'_, F>
+impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)>
+    winit::application::ApplicationHandler<()> for GpuApp<'_, F>
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none()
@@ -232,7 +233,11 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application:
             }
             winit::event::WindowEvent::Focused(focused) => {
                 (self.on_event)(
-                    if focused { AppEvent::Focused } else { AppEvent::Unfocused },
+                    if focused {
+                        AppEvent::Focused
+                    } else {
+                        AppEvent::Unfocused
+                    },
                     win_ref,
                 );
             }

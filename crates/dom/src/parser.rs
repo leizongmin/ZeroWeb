@@ -105,9 +105,10 @@ impl DomBuilder {
             // 设置父引用
             if let Some(old_parent) = node_data.parent
                 && let Some(&new_parent) = mapping.get(&old_parent)
-                    && let Some(child_data) = doc.get_mut(new_id) {
-                        child_data.parent = Some(new_parent);
-                    }
+                && let Some(child_data) = doc.get_mut(new_id)
+            {
+                child_data.parent = Some(new_parent);
+            }
 
             // 设置子节点列表
             let new_children: Vec<NodeId> = node_data
@@ -117,9 +118,10 @@ impl DomBuilder {
                 .collect();
 
             if !new_children.is_empty()
-                && let Some(node_data) = doc.get_mut(new_id) {
-                    node_data.children = new_children;
-                }
+                && let Some(node_data) = doc.get_mut(new_id)
+            {
+                node_data.children = new_children;
+            }
         }
 
         doc.set_quirks_mode(inner.quirks_mode);
@@ -157,7 +159,10 @@ impl ElemName for OwnedElemName {
 impl TreeSink for DomBuilder {
     type Handle = NodeId;
     type Output = Document;
-    type ElemName<'a> = OwnedElemName where Self: 'a;
+    type ElemName<'a>
+        = OwnedElemName
+    where
+        Self: 'a;
 
     fn finish(self) -> Self::Output {
         self.into_document()
@@ -243,7 +248,14 @@ impl TreeSink for DomBuilder {
                     .unwrap_or(false);
 
                 if should_merge {
-                    let last_child = inner.nodes.get(*parent).unwrap().children.last().copied().unwrap();
+                    let last_child = inner
+                        .nodes
+                        .get(*parent)
+                        .unwrap()
+                        .children
+                        .last()
+                        .copied()
+                        .unwrap();
                     let new_content = match inner.nodes.get(node_id).map(|n| n.kind.clone()) {
                         Some(NodeKind::Text(data)) => data.content,
                         _ => return,
@@ -270,12 +282,14 @@ impl TreeSink for DomBuilder {
                     .get(*parent)
                     .and_then(|p| p.children.last().copied());
 
-                let should_merge = last_child.map(|last| {
-                    matches!(
-                        inner.nodes.get(last).map(|n| &n.kind),
-                        Some(NodeKind::Text(_))
-                    )
-                }).unwrap_or(false);
+                let should_merge = last_child
+                    .map(|last| {
+                        matches!(
+                            inner.nodes.get(last).map(|n| &n.kind),
+                            Some(NodeKind::Text(_))
+                        )
+                    })
+                    .unwrap_or(false);
 
                 if should_merge {
                     let last = last_child.unwrap();
@@ -307,11 +321,7 @@ impl TreeSink for DomBuilder {
     ) {
         let has_parent = {
             let inner = self.inner.borrow();
-            inner
-                .nodes
-                .get(*element)
-                .and_then(|n| n.parent)
-                .is_some()
+            inner.nodes.get(*element).and_then(|n| n.parent).is_some()
         };
 
         if has_parent {
@@ -329,21 +339,22 @@ impl TreeSink for DomBuilder {
     ) {
         let mut inner = self.inner.borrow_mut();
         let root = inner.root;
-        let doctype_id = inner.nodes.insert(NodeData::new(NodeKind::DocumentType(
-            DocumentTypeData {
-                name: name.to_string(),
-                public_id: if public_id.is_empty() {
-                    None
-                } else {
-                    Some(public_id.to_string())
-                },
-                system_id: if system_id.is_empty() {
-                    None
-                } else {
-                    Some(system_id.to_string())
-                },
-            },
-        )));
+        let doctype_id =
+            inner
+                .nodes
+                .insert(NodeData::new(NodeKind::DocumentType(DocumentTypeData {
+                    name: name.to_string(),
+                    public_id: if public_id.is_empty() {
+                        None
+                    } else {
+                        Some(public_id.to_string())
+                    },
+                    system_id: if system_id.is_empty() {
+                        None
+                    } else {
+                        Some(system_id.to_string())
+                    },
+                })));
 
         if let Some(dt_data) = inner.nodes.get_mut(doctype_id) {
             dt_data.parent = Some(root);
@@ -366,18 +377,11 @@ impl TreeSink for DomBuilder {
         self.inner.borrow_mut().quirks_mode = mode;
     }
 
-    fn append_before_sibling(
-        &self,
-        sibling: &Self::Handle,
-        new_node: NodeOrText<Self::Handle>,
-    ) {
+    fn append_before_sibling(&self, sibling: &Self::Handle, new_node: NodeOrText<Self::Handle>) {
         let mut inner = self.inner.borrow_mut();
 
         // 获取 sibling 的父节点
-        let parent = inner
-            .nodes
-            .get(*sibling)
-            .and_then(|n| n.parent);
+        let parent = inner.nodes.get(*sibling).and_then(|n| n.parent);
 
         let parent = match parent {
             Some(p) => p,
@@ -400,9 +404,10 @@ impl TreeSink for DomBuilder {
                 // 从旧父节点移除
                 let old_parent = inner.nodes.get(node_id).and_then(|n| n.parent);
                 if let Some(old_p) = old_parent
-                    && let Some(old_pd) = inner.nodes.get_mut(old_p) {
-                        old_pd.children.retain(|&id| id != node_id);
-                    }
+                    && let Some(old_pd) = inner.nodes.get_mut(old_p)
+                {
+                    old_pd.children.retain(|&id| id != node_id);
+                }
 
                 if let Some(child_data) = inner.nodes.get_mut(node_id) {
                     child_data.parent = Some(parent);
@@ -447,9 +452,7 @@ impl TreeSink for DomBuilder {
 
     fn add_attrs_if_missing(&self, target: &Self::Handle, attrs: Vec<Attribute>) {
         let mut inner = self.inner.borrow_mut();
-        if let Some(NodeKind::Element(elem)) =
-            inner.nodes.get_mut(*target).map(|n| &mut n.kind)
-        {
+        if let Some(NodeKind::Element(elem)) = inner.nodes.get_mut(*target).map(|n| &mut n.kind) {
             for attr in attrs {
                 if !elem.has_attribute(&attr.name.local) {
                     let local = attr.name.local.clone();
@@ -465,12 +468,7 @@ impl TreeSink for DomBuilder {
                             .attributes
                             .iter()
                             .find(|a| &*a.name.local == "class")
-                            .map(|a| {
-                                a.value
-                                    .split_whitespace()
-                                    .map(String::from)
-                                    .collect()
-                            })
+                            .map(|a| a.value.split_whitespace().map(String::from).collect())
                             .unwrap_or_default();
                     }
                 }
@@ -483,9 +481,10 @@ impl TreeSink for DomBuilder {
         let parent = inner.nodes.get(*target).and_then(|n| n.parent);
 
         if let Some(parent) = parent
-            && let Some(parent_data) = inner.nodes.get_mut(parent) {
-                parent_data.children.retain(|&id| id != *target);
-            }
+            && let Some(parent_data) = inner.nodes.get_mut(parent)
+        {
+            parent_data.children.retain(|&id| id != *target);
+        }
 
         if let Some(target_data) = inner.nodes.get_mut(*target) {
             target_data.parent = None;

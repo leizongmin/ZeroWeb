@@ -53,8 +53,8 @@ ctx.set_font(FontDescriptor {
     weight: FontWeight::Bold,
     ..Default::default()
 });
-ctx.fill_text("Hello, ZeroBrowser!", 50.0, 50.0);
-let metrics = ctx.measure_text("Hello, ZeroBrowser!");
+ctx.fill_text("Hello, ZeroWeb!", 50.0, 50.0);
+let metrics = ctx.measure_text("Hello, ZeroWeb!");
 
 // 获取渲染图元，交由渲染器处理
 let primitives = ctx.into_primitives();

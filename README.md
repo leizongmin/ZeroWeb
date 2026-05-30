@@ -1,14 +1,14 @@
-# ZeroBrowser
+# ZeroWeb
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-experimental-brown.svg)](#当前状态)
 [![CI](https://img.shields.io/badge/ci-github--actions-black.svg)](.github/workflows/ci.yml)
 
-ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库同时在做两件事：
+ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库同时在做两件事：
 
-- 一个可嵌入、可复用的 `webview` 库
-- 一个完整的跨平台浏览器应用
+- 一个可嵌入、可复用的 `ZeroWebView` 库
+- 一个完整的 `ZeroBrowser` 浏览器应用
 
 项目主线会尽量把核心代码和依赖边界握在自己手里，所以页面内核主要基于宽松许可证的 Rust 组件慢慢搭起来。DOM、CSS、布局、渲染、导航和安全边界，都在这个仓库里一层层补。
 
@@ -29,7 +29,7 @@ ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个�
 
 ## 项目定位
 
-- **以嵌入为先**: 除浏览器应用外，项目还要交付稳定的 Rust `webview` API，方便其他应用直接集成。
+- **以嵌入为先**: 除浏览器应用外，项目还要交付稳定的 Rust `ZeroWebView` API，方便其他应用直接集成。
 - **许可证边界优先**: 主线依赖优先选择 MIT、Apache-2.0、BSD 等宽松许可证，避免核心能力受不合适的 copyleft 依赖约束。
 - **Rust 全栈路线**: 页面内核、宿主层和渲染基础设施都尽量在 Rust 生态内完成。
 - **AI 可以写，但要能审**: 欢迎 AI 辅助贡献，但提交上来的改动必须能讲清楚、测清楚、看清楚。
@@ -38,7 +38,7 @@ ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个�
 
 | 方向 | 现状 |
 |------|------|
-| `webview` 内核 | 已有一批核心模块和 API，能跑 demo，也有跨 crate 测试 |
+| `ZeroWebView` | 已有一批核心模块和 API，能跑 demo，也有跨 crate 测试 |
 | 浏览器应用 | `browser-shell` 还在早期阶段，`zero-browser` 仍是占位入口 |
 | 页面 JavaScript | 还没完成，`script-sandbox` 目前是占位 crate |
 | 真实站点兼容性 | 还在往前推，WPT 覆盖和浏览器级加固都不够 |
@@ -46,9 +46,9 @@ ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个�
 
 现在已经有一批能跑起来的模块：
 
-- 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine-core`、`canvas`
+- 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine`、`canvas`
 - 基础设施：`render-foundation`、`host-runtime`、`net`、`security`、`storage`、`protocol`
-- 对外与产品层：`webview-api`、`browser-shell`
+- 对外与产品层：`webview`、`browser-shell`
 - 应用与测试：`apps/browser`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
 
 还没做完的地方也很明确：
@@ -117,7 +117,7 @@ cargo run --bin zero-browser
 | `crates/css-parser` | CSS tokenizer、parser 与值解析 |
 | `crates/style-system` | 级联、继承与计算值 |
 | `crates/layout-engine` | 布局整合层 |
-| `crates/engine-core` | 渲染管线、paint、dirty tracking、compositing |
+| `crates/engine` | 渲染管线、paint、dirty tracking、compositing |
 | `crates/canvas` | Canvas 2D 能力 |
 
 ### 基础设施
@@ -137,7 +137,7 @@ cargo run --bin zero-browser
 
 | Path | 用途 |
 |------|------|
-| `crates/webview-api` | 对外暴露的稳定嵌入 API |
+| `crates/webview` | 对外暴露的稳定嵌入 API |
 | `crates/browser-shell` | 浏览器产品层 UI |
 | `docs` | 规格、研究、路线图和架构文档 |
 | `tests` | 集成测试、WPT runner、benchmark 结果 |
@@ -153,8 +153,8 @@ cargo run --bin zero-browser
 | [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
 | [docs/releases/github-metadata.md](docs/releases/github-metadata.md) | GitHub 仓库介绍、Topics、tag 和 release 标题建议 |
 | [docs/releases/v0.1.0-alpha.0.md](docs/releases/v0.1.0-alpha.0.md) | 首个预发布版本的 release 文案草稿 |
-| [docs/specs/zero-browser-spec-rfc.md](docs/specs/zero-browser-spec-rfc.md) | 主规格与技术 RFC |
-| [docs/goal/zero-browser/master.md](docs/goal/zero-browser/master.md) | 当前实现状态与里程碑控制面 |
+| [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md) | 主规格与技术 RFC |
+| [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md) | 当前实现状态与里程碑控制面 |
 | [docs/research/rust-cross-platform-browser-research.md](docs/research/rust-cross-platform-browser-research.md) | 早期技术路线与许可证调研 |
 | `crates/*/README.md` | 各子系统的细节说明 |
 

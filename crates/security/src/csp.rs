@@ -52,11 +52,7 @@ impl ContentSecurityPolicy {
             .directives
             .iter()
             .find(|d| d.name == directive_name)
-            .or_else(|| {
-                self.directives
-                    .iter()
-                    .find(|d| d.name == "default-src")
-            });
+            .or_else(|| self.directives.iter().find(|d| d.name == "default-src"));
 
         let Some(directive) = directive else {
             // 没有 default-src 也没有对应指令，默认允许
@@ -69,11 +65,7 @@ impl ContentSecurityPolicy {
         }
 
         // 检查 'none'
-        if directive
-            .values
-            .iter()
-            .any(|v| v == "'none'")
-        {
+        if directive.values.iter().any(|v| v == "'none'") {
             return false;
         }
 
@@ -83,11 +75,7 @@ impl ContentSecurityPolicy {
         }
 
         // 检查 'self'
-        if directive
-            .values
-            .iter()
-            .any(|v| v == "'self'")
-        {
+        if directive.values.iter().any(|v| v == "'self'") {
             // 简化：如果 URL 不以 http 开头（相对路径），视为同源
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return true;
@@ -121,11 +109,7 @@ impl ContentSecurityPolicy {
             .directives
             .iter()
             .find(|d| d.name == "script-src")
-            .or_else(|| {
-                self.directives
-                    .iter()
-                    .find(|d| d.name == "default-src")
-            });
+            .or_else(|| self.directives.iter().find(|d| d.name == "default-src"));
 
         let Some(directive) = directive else {
             return true;
@@ -143,11 +127,7 @@ impl ContentSecurityPolicy {
             .directives
             .iter()
             .find(|d| d.name == "style-src")
-            .or_else(|| {
-                self.directives
-                    .iter()
-                    .find(|d| d.name == "default-src")
-            });
+            .or_else(|| self.directives.iter().find(|d| d.name == "default-src"));
 
         let Some(directive) = directive else {
             return true;
@@ -270,8 +250,7 @@ mod tests {
 
     #[test]
     fn test_csp_resource_allowed_fallback_to_default_src() {
-        let csp =
-            ContentSecurityPolicy::parse("default-src 'self'; img-src https://images.com");
+        let csp = ContentSecurityPolicy::parse("default-src 'self'; img-src https://images.com");
         // "script" type falls back to default-src
         assert!(csp.is_resource_allowed("script", "app.js"));
         // "img" has specific directive

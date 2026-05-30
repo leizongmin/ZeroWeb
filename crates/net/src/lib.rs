@@ -6,17 +6,17 @@
 
 #![warn(missing_docs)]
 
-pub mod url_parser;
-pub mod request;
 pub mod client;
-pub mod navigation;
 pub mod cookie;
+pub mod navigation;
+pub mod request;
+pub mod url_parser;
 
-pub use url_parser::*;
-pub use request::*;
 pub use client::*;
-pub use navigation::*;
 pub use cookie::*;
+pub use navigation::*;
+pub use request::*;
+pub use url_parser::*;
 
 use thiserror::Error;
 

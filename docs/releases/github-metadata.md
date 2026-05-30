@@ -1,6 +1,6 @@
 # GitHub 仓库元数据建议
 
-这份文档整理了 ZeroBrowser 在 GitHub 仓库设置页和首个 Release 页面里可以直接拿去用的文案。
+这份文档整理了 ZeroWeb 在 GitHub 仓库设置页和首个 Release 页面里可以直接拿去用的文案。
 
 ## 仓库一句话介绍
 
@@ -71,11 +71,11 @@ Topics 太多反而会把“Rust 浏览器内核 / WebView / 实验项目”这�
 
 ### 英文短摘要
 
-`ZeroBrowser v0.1.0-alpha.0 is the first public pre-release of an experimental Rust browser-engine workspace with early DOM, CSS, layout, rendering, networking, storage, WebView, Canvas, and WASM foundations. This release is intended for learning and research, not for production use.`
+`ZeroWeb v0.1.0-alpha.0 is the first public pre-release of an experimental Rust browser-engine workspace with early DOM, CSS, layout, rendering, networking, storage, WebView, Canvas, and WASM foundations. This release is intended for learning and research, not for production use.`
 
 ### 中文短摘要
 
-`ZeroBrowser v0.1.0-alpha.0 是首个公开预发布版本，当前已经具备 DOM、CSS、布局、渲染、网络、存储、WebView、Canvas 和 WASM 等基础模块。该版本主要面向学习和研究，不面向生产用途。`
+`ZeroWeb v0.1.0-alpha.0 是首个公开预发布版本，当前已经具备 DOM、CSS、布局、渲染、网络、存储、WebView、Canvas 和 WASM 等基础模块。该版本主要面向学习和研究，不面向生产用途。`
 
 更完整的首个发布说明草稿在 [v0.1.0-alpha.0.md]($HOME/work/ZeroBrowser/docs/releases/v0.1.0-alpha.0.md)。
 

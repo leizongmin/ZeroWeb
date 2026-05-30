@@ -10,14 +10,14 @@ zero-dom = { workspace = true }
 zero-css-parser = { workspace = true }
 zero-style-system = { workspace = true }
 zero-layout-engine = { workspace = true }
-zero-engine-core = { workspace = true }
+zero-engine = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-storage = { workspace = true }
 zero-protocol = { workspace = true }
 zero-canvas = { workspace = true }
 zero-wasm-sandbox = { workspace = true }
-zero-webview-api = { workspace = true }
+zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
 
 [dev-dependencies]

@@ -4,7 +4,7 @@
 
 ## 概述
 
-zero-style-system 是 ZeroBrowser 渲染管线中的样式计算模块，位于 CSS 解析器（zero-css-parser）和布局引擎（zero-layout-engine）之间。它接收解析后的 CSS 样式表和 DOM 文档，通过选择器匹配、级联优先级排序、属性继承和相对单位转换四个阶段，为每个 DOM 元素生成完整的 `ComputedStyle`。
+zero-style-system 是 ZeroWeb 渲染管线中的样式计算模块，位于 CSS 解析器（zero-css-parser）和布局引擎（zero-layout-engine）之间。它接收解析后的 CSS 样式表和 DOM 文档，通过选择器匹配、级联优先级排序、属性继承和相对单位转换四个阶段，为每个 DOM 元素生成完整的 `ComputedStyle`。
 
 ## 主要功能
 

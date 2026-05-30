@@ -21,19 +21,19 @@
 
 #![warn(missing_docs)]
 
-mod node;
-mod document;
 mod attributes;
+mod document;
+mod mutation;
+mod node;
+mod parser;
 mod query;
 mod serializer;
-mod mutation;
-mod parser;
 
-pub use node::*;
 pub use document::*;
-pub use query::*;
 pub use mutation::*;
+pub use node::*;
 pub use parser::*;
+pub use query::*;
 
 #[cfg(test)]
 mod tests;

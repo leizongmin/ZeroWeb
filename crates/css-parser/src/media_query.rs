@@ -329,7 +329,10 @@ mod tests {
     #[test]
     fn test_parse_orientation() {
         let q = parse_media_query("(orientation: landscape)").unwrap();
-        assert_eq!(q.conditions[0], MediaCondition::Orientation(OrientationValue::Landscape));
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Orientation(OrientationValue::Landscape)
+        );
     }
 
     #[test]
@@ -353,7 +356,10 @@ mod tests {
     #[test]
     fn test_parse_just_parentheses() {
         let q = parse_media_query("(width: 800px)").unwrap();
-        assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::Exact, 800.0));
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Width(MediaFeatureOp::Exact, 800.0)
+        );
     }
 
     // ── 评估测试 ──

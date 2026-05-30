@@ -92,8 +92,8 @@ impl ParsedUrl {
             result.push_str(host);
         }
         if let Some(port) = self.port {
-            let is_default = (self.scheme == "http" && port == 80)
-                || (self.scheme == "https" && port == 443);
+            let is_default =
+                (self.scheme == "http" && port == 80) || (self.scheme == "https" && port == 443);
             if !is_default {
                 result.push(':');
                 result.push_str(&port.to_string());
@@ -234,7 +234,10 @@ mod tests {
     #[test]
     fn test_parse_url_default_https_port() {
         let parsed = parse_url("https://example.com:443/").unwrap();
-        assert!(parsed.port.is_none(), "443 是 https 默认端口，应被规范化为 None");
+        assert!(
+            parsed.port.is_none(),
+            "443 是 https 默认端口，应被规范化为 None"
+        );
         assert_eq!(parsed.origin(), "https://example.com");
     }
 

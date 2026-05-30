@@ -1,6 +1,6 @@
 //! Host Runtime 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
 
 /// 基准：创建默认窗口配置
@@ -39,8 +39,7 @@ fn bench_many_configs(c: &mut Criterion) {
         b.iter(|| {
             let configs: Vec<WindowConfig> = (0..100)
                 .map(|i| {
-                    WindowConfig::new(format!("Tab {i}"))
-                        .with_size(800 + (i as u32 % 5) * 100, 600)
+                    WindowConfig::new(format!("Tab {i}")).with_size(800 + (i as u32 % 5) * 100, 600)
                 })
                 .collect();
             black_box(configs);

@@ -104,8 +104,14 @@ mod tests {
     #[test]
     fn test_manager_different_origins() {
         let mut manager = StorageManager::new();
-        manager.local_storage("https://a.com").set("key", "a").unwrap();
-        manager.local_storage("https://b.com").set("key", "b").unwrap();
+        manager
+            .local_storage("https://a.com")
+            .set("key", "a")
+            .unwrap();
+        manager
+            .local_storage("https://b.com")
+            .set("key", "b")
+            .unwrap();
 
         assert_eq!(manager.local_storage("https://a.com").get("key"), Some("a"));
         assert_eq!(manager.local_storage("https://b.com").get("key"), Some("b"));
@@ -114,9 +120,18 @@ mod tests {
     #[test]
     fn test_manager_clear_origin() {
         let mut manager = StorageManager::new();
-        manager.local_storage("https://a.com").set("key", "value").unwrap();
-        manager.session_storage("https://a.com").set("sk", "sv").unwrap();
-        manager.local_storage("https://b.com").set("key", "value").unwrap();
+        manager
+            .local_storage("https://a.com")
+            .set("key", "value")
+            .unwrap();
+        manager
+            .session_storage("https://a.com")
+            .set("sk", "sv")
+            .unwrap();
+        manager
+            .local_storage("https://b.com")
+            .set("key", "value")
+            .unwrap();
 
         manager.clear_origin("https://a.com");
 
@@ -128,9 +143,18 @@ mod tests {
     #[test]
     fn test_manager_clear_all() {
         let mut manager = StorageManager::new();
-        manager.local_storage("https://a.com").set("key", "value").unwrap();
-        manager.local_storage("https://b.com").set("key", "value").unwrap();
-        manager.session_storage("https://a.com").set("sk", "sv").unwrap();
+        manager
+            .local_storage("https://a.com")
+            .set("key", "value")
+            .unwrap();
+        manager
+            .local_storage("https://b.com")
+            .set("key", "value")
+            .unwrap();
+        manager
+            .session_storage("https://a.com")
+            .set("sk", "sv")
+            .unwrap();
 
         manager.clear_all_local();
         assert!(manager.local_storage("https://a.com").is_empty());

@@ -105,10 +105,7 @@ impl WebStorage {
 
     /// 估算已用字节数。
     pub fn used_size(&self) -> usize {
-        self.data
-            .iter()
-            .map(|(k, v)| k.len() + v.len())
-            .sum()
+        self.data.iter().map(|(k, v)| k.len() + v.len()).sum()
     }
 
     /// 获取存储类型。
@@ -153,7 +150,10 @@ mod tests {
     fn test_storage_set_returns_old() {
         let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
         assert_eq!(storage.set("key1", "value1").unwrap(), None);
-        assert_eq!(storage.set("key1", "value2").unwrap(), Some("value1".to_string()));
+        assert_eq!(
+            storage.set("key1", "value2").unwrap(),
+            Some("value1".to_string())
+        );
         assert_eq!(storage.get("key1"), Some("value2"));
     }
 
@@ -222,11 +222,8 @@ mod tests {
 
     #[test]
     fn test_storage_quota_exceeded() {
-        let mut storage = WebStorage::new_with_max_size(
-            StorageType::Local,
-            "https://example.com",
-            100,
-        );
+        let mut storage =
+            WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 100);
         // Each entry costs key.len() + value.len()
         storage.set("a", &"x".repeat(49)).unwrap(); // 1 + 49 = 50
         storage.set("b", &"y".repeat(49)).unwrap(); // 1 + 49 = 50, total = 100

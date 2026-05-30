@@ -15,18 +15,18 @@
 
 #![warn(missing_docs)]
 
-pub mod property;
 pub mod cascade;
-pub mod inheritance;
 pub mod computed;
+pub mod inheritance;
 pub mod matcher;
+pub mod property;
 pub mod shorthand;
 
-pub use property::*;
 pub use cascade::*;
-pub use inheritance::*;
 pub use computed::*;
+pub use inheritance::*;
 pub use matcher::*;
+pub use property::*;
 pub use shorthand::*;
 
 use std::collections::HashMap;
@@ -106,7 +106,8 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style);
+            let computed =
+                self.compute_element_style_internal(doc, node, stylesheets, parent_style);
             styles.insert(node, computed);
         }
 
@@ -176,13 +177,7 @@ impl StyleSystem {
             declarations.push(CascadedDeclaration {
                 property: property.clone(),
                 value: value.clone(),
-                order: CascadeOrder::new(
-                    Origin::Author,
-                    None,
-                    *specificity,
-                    position,
-                    *important,
-                ),
+                order: CascadeOrder::new(Origin::Author, None, *specificity, position, *important),
             });
         }
 
@@ -511,7 +506,10 @@ mod tests {
         assert_eq!(div_style.border_right_width, LengthValue::Px(1.0));
         assert_eq!(div_style.border_bottom_width, LengthValue::Px(1.0));
         assert_eq!(div_style.border_left_width, LengthValue::Px(1.0));
-        assert_eq!(div_style.border_top_style, property::BorderStyleValue::Solid);
+        assert_eq!(
+            div_style.border_top_style,
+            property::BorderStyleValue::Solid
+        );
         assert_eq!(div_style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
     }
 
