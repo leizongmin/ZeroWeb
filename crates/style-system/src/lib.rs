@@ -11,6 +11,7 @@
 //! - [`inheritance`] — 属性继承
 //! - [`computed`] — 计算值生成（相对单位转换）
 //! - [`matcher`] — 选择器匹配
+//! - [`shorthand`] — CSS 简写属性展开
 
 #![warn(missing_docs)]
 
@@ -19,12 +20,14 @@ pub mod cascade;
 pub mod inheritance;
 pub mod computed;
 pub mod matcher;
+pub mod shorthand;
 
 pub use property::*;
 pub use cascade::*;
 pub use inheritance::*;
 pub use computed::*;
 pub use matcher::*;
+pub use shorthand::*;
 
 use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
@@ -153,9 +156,12 @@ impl StyleSystem {
         // 1. 收集匹配的声明
         let matching = matcher::collect_matching_declarations(doc, element, stylesheets);
 
+        // 1.5. 展开简写属性
+        let expanded = shorthand::expand_shorthands(&matching);
+
         // 2. 构建 CascadedDeclaration 列表
         let mut declarations = Vec::new();
-        for (position, (property, value, important, specificity)) in matching.iter().enumerate() {
+        for (position, (property, value, important, specificity)) in expanded.iter().enumerate() {
             declarations.push(CascadedDeclaration {
                 property: property.clone(),
                 value: value.clone(),
@@ -210,7 +216,7 @@ mod tests {
         ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule,
         SubclassSelector, TypeSelector,
     };
-    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
+    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
     use zero_dom::{Document, NodeId};
 
     /// 创建测试 DOM：html > body > div#main > p.text
@@ -420,5 +426,159 @@ mod tests {
     fn test_default_style_system() {
         let sys = StyleSystem::default();
         assert!(sys.custom_properties.is_empty());
+    }
+
+    // ── 简写属性端到端测试 ──
+
+    #[test]
+    fn test_shorthand_margin_in_style_computation() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "margin".to_string(),
+                    value: "10px 20px".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.margin_top, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_right, LengthValue::Px(20.0));
+        assert_eq!(div_style.margin_bottom, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_left, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    fn test_shorthand_padding_in_style_computation() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "padding".to_string(),
+                    value: "5px".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.padding_top, LengthValue::Px(5.0));
+        assert_eq!(div_style.padding_right, LengthValue::Px(5.0));
+        assert_eq!(div_style.padding_bottom, LengthValue::Px(5.0));
+        assert_eq!(div_style.padding_left, LengthValue::Px(5.0));
+    }
+
+    #[test]
+    fn test_shorthand_border_in_style_computation() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "border".to_string(),
+                    value: "1px solid red".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.border_top_width, LengthValue::Px(1.0));
+        assert_eq!(div_style.border_right_width, LengthValue::Px(1.0));
+        assert_eq!(div_style.border_bottom_width, LengthValue::Px(1.0));
+        assert_eq!(div_style.border_left_width, LengthValue::Px(1.0));
+        assert_eq!(div_style.border_top_style, property::BorderStyleValue::Solid);
+        assert_eq!(div_style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_shorthand_overflow_in_style_computation() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "overflow".to_string(),
+                    value: "hidden".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.overflow_x, OverflowValue::Hidden);
+        assert_eq!(div_style.overflow_y, OverflowValue::Hidden);
+    }
+
+    #[test]
+    fn test_shorthand_border_radius_in_style_computation() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "border-radius".to_string(),
+                    value: "5px 10px".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.border_top_left_radius, LengthValue::Px(5.0));
+        assert_eq!(div_style.border_top_right_radius, LengthValue::Px(10.0));
+        assert_eq!(div_style.border_bottom_right_radius, LengthValue::Px(5.0));
+        assert_eq!(div_style.border_bottom_left_radius, LengthValue::Px(10.0));
+    }
+
+    #[test]
+    fn test_shorthand_margin_with_longhand_override() {
+        // margin 简写设置后，后面的 longhand 应该覆盖
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "margin".to_string(),
+                        value: "10px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "margin-top".to_string(),
+                        value: "20px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // margin-top 被 longhand 覆盖为 20px
+        assert_eq!(div_style.margin_top, LengthValue::Px(20.0));
+        // 其他边保持 10px
+        assert_eq!(div_style.margin_right, LengthValue::Px(10.0));
     }
 }
