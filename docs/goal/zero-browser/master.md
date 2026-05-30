@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，1176 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，1215 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 1176 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 1215 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,12 +23,12 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 105 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、**边角用例测试** |
-| css-parser | 162 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、**@keyframes** |
-| style-system | 257 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、**outline** |
-| layout-engine | 85 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、**repeat()/auto-rows/cols**、几何验证 |
-| engine-core | 52 | ✅ | 渲染管线、paint、dirty tracking、compositing |
-| render-foundation | 53 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
+| dom | 105 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、边角用例测试 |
+| css-parser | 196 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、**:has()** |
+| style-system | 260 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、outline、**:has() 匹配** |
+| layout-engine | 85 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、几何验证 |
+| engine-core | 64 | ✅ | 渲染管线、paint、dirty tracking、compositing |
+| render-foundation | 74 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
 | net | 74 | ✅ | HTTP client、URL、导航历史、Cookie |
 | security | 56 | ✅ | 同源策略、CORS、CSP |
