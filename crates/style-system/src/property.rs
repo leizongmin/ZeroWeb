@@ -1245,7 +1245,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
-        _ => return false,
+        _ => {}
     }
     false
 }
