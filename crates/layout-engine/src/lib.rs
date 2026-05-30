@@ -8,15 +8,18 @@
 //! - [`converter`] — ComputedStyle → taffy::Style 转换
 //! - [`tree`] — DOM 树到 taffy 树的构建
 //! - [`engine`] — LayoutEngine 协调器
+//! - [`inline`] — 行内格式化上下文（文本布局、行换行）
 
 #![warn(missing_docs)]
 
 pub mod converter;
 pub mod engine;
+pub mod inline;
 pub mod tree;
 pub mod types;
 
 pub use converter::*;
 pub use engine::*;
+pub use inline::*;
 pub use tree::*;
 pub use types::*;
