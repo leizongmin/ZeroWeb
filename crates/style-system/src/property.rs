@@ -1333,6 +1333,81 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             style.transition_delay = delays;
             return true;
         }
+
+        // ── 逻辑属性 ──
+        // margin-block-start → margin-top (horizontal writing-mode 映射)
+        "margin-block-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.margin_top = v;
+                return true;
+            }
+        }
+        "margin-block-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.margin_bottom = v;
+                return true;
+            }
+        }
+        "margin-inline-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.margin_left = v;
+                return true;
+            }
+        }
+        "margin-inline-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.margin_right = v;
+                return true;
+            }
+        }
+        "padding-block-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.padding_top = v;
+                return true;
+            }
+        }
+        "padding-block-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.padding_bottom = v;
+                return true;
+            }
+        }
+        "padding-inline-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.padding_left = v;
+                return true;
+            }
+        }
+        "padding-inline-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.padding_right = v;
+                return true;
+            }
+        }
+        "inset-block-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.top = v;
+                return true;
+            }
+        }
+        "inset-block-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.bottom = v;
+                return true;
+            }
+        }
+        "inset-inline-start" => {
+            if let Some(v) = values::parse_length(value) {
+                style.left = v;
+                return true;
+            }
+        }
+        "inset-inline-end" => {
+            if let Some(v) = values::parse_length(value) {
+                style.right = v;
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -2169,5 +2244,108 @@ mod tests {
 
         let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
         assert_eq!(result.len(), 3);
+    }
+
+    // ── 逻辑属性测试 ──
+
+    #[test]
+    fn test_margin_block_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-block-start", "10px"));
+        assert_eq!(style.margin_top, LengthValue::Px(10.0));
+    }
+
+    #[test]
+    fn test_margin_block_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-block-end", "20px"));
+        assert_eq!(style.margin_bottom, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    fn test_margin_inline_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-inline-start", "5px"));
+        assert_eq!(style.margin_left, LengthValue::Px(5.0));
+    }
+
+    #[test]
+    fn test_margin_inline_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-inline-end", "15px"));
+        assert_eq!(style.margin_right, LengthValue::Px(15.0));
+    }
+
+    #[test]
+    fn test_padding_block_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "padding-block-start", "8px"));
+        assert_eq!(style.padding_top, LengthValue::Px(8.0));
+    }
+
+    #[test]
+    fn test_padding_block_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "padding-block-end", "12px"));
+        assert_eq!(style.padding_bottom, LengthValue::Px(12.0));
+    }
+
+    #[test]
+    fn test_padding_inline_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "padding-inline-start", "3px"));
+        assert_eq!(style.padding_left, LengthValue::Px(3.0));
+    }
+
+    #[test]
+    fn test_padding_inline_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "padding-inline-end", "7px"));
+        assert_eq!(style.padding_right, LengthValue::Px(7.0));
+    }
+
+    #[test]
+    fn test_inset_block_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "inset-block-start", "100px"));
+        assert_eq!(style.top, LengthValue::Px(100.0));
+    }
+
+    #[test]
+    fn test_inset_block_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "inset-block-end", "200px"));
+        assert_eq!(style.bottom, LengthValue::Px(200.0));
+    }
+
+    #[test]
+    fn test_inset_inline_start() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "inset-inline-start", "50px"));
+        assert_eq!(style.left, LengthValue::Px(50.0));
+    }
+
+    #[test]
+    fn test_inset_inline_end() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "inset-inline-end", "75px"));
+        assert_eq!(style.right, LengthValue::Px(75.0));
+    }
+
+    #[test]
+    fn test_logical_properties_with_percentage() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-block-start", "10%"));
+        assert_eq!(style.margin_top, LengthValue::Percentage(10.0));
+
+        assert!(apply_property_value(&mut style, "padding-inline-end", "5%"));
+        assert_eq!(style.padding_right, LengthValue::Percentage(5.0));
+    }
+
+    #[test]
+    fn test_logical_properties_with_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "margin-block-start", "auto"));
+        assert_eq!(style.margin_top, LengthValue::Auto);
     }
 }

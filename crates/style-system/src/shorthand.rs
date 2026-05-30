@@ -126,6 +126,14 @@ fn expand_one(
         // 简化实现：单组值
         "transition" => expand_transition(value, important, specificity),
 
+        // ── 逻辑属性简写 ──
+        "margin-block" => expand_axis_logical(value, "margin-block-start", "margin-block-end", important, specificity),
+        "margin-inline" => expand_axis_logical(value, "margin-inline-start", "margin-inline-end", important, specificity),
+        "padding-block" => expand_axis_logical(value, "padding-block-start", "padding-block-end", important, specificity),
+        "padding-inline" => expand_axis_logical(value, "padding-inline-start", "padding-inline-end", important, specificity),
+        "inset-block" => expand_axis_logical(value, "inset-block-start", "inset-block-end", important, specificity),
+        "inset-inline" => expand_axis_logical(value, "inset-inline-start", "inset-inline-end", important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -432,6 +440,28 @@ fn split_outside_parens(s: &str) -> Vec<String> {
     }
 
     result
+}
+
+/// 展开轴方向逻辑属性简写。
+///
+/// `margin-block: 10px` → `margin-block-start: 10px; margin-block-end: 10px`
+/// `margin-block: 10px 20px` → `margin-block-start: 10px; margin-block-end: 20px`
+fn expand_axis_logical(
+    value: &str,
+    start_prop: &str,
+    end_prop: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+    match parts.len() {
+        1 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
+        2 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
+        _ => vec![],
+    }
 }
 
 #[cfg(test)]
@@ -916,5 +946,77 @@ mod tests {
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].1, "all"); // default property
         assert_eq!(result[1].1, "0.5s");
+    }
+
+    // ── 逻辑属性简写测试 ──
+
+    #[test]
+    fn test_margin_block_shorthand_single() {
+        let result = expand_one("margin-block", "10px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "margin-block-start");
+        assert_eq!(result[0].1, "10px");
+        assert_eq!(result[1].0, "margin-block-end");
+        assert_eq!(result[1].1, "10px");
+    }
+
+    #[test]
+    fn test_margin_block_shorthand_two_values() {
+        let result = expand_one("margin-block", "10px 20px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "margin-block-start");
+        assert_eq!(result[0].1, "10px");
+        assert_eq!(result[1].0, "margin-block-end");
+        assert_eq!(result[1].1, "20px");
+    }
+
+    #[test]
+    fn test_margin_inline_shorthand() {
+        let result = expand_one("margin-inline", "5px 15px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "margin-inline-start");
+        assert_eq!(result[0].1, "5px");
+        assert_eq!(result[1].0, "margin-inline-end");
+        assert_eq!(result[1].1, "15px");
+    }
+
+    #[test]
+    fn test_padding_block_shorthand() {
+        let result = expand_one("padding-block", "8px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "padding-block-start");
+        assert_eq!(result[1].0, "padding-block-end");
+        assert_eq!(result[0].1, "8px");
+        assert_eq!(result[1].1, "8px");
+    }
+
+    #[test]
+    fn test_padding_inline_shorthand() {
+        let result = expand_one("padding-inline", "3px 7px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "padding-inline-start");
+        assert_eq!(result[0].1, "3px");
+        assert_eq!(result[1].0, "padding-inline-end");
+        assert_eq!(result[1].1, "7px");
+    }
+
+    #[test]
+    fn test_inset_block_shorthand() {
+        let result = expand_one("inset-block", "100px 200px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "inset-block-start");
+        assert_eq!(result[0].1, "100px");
+        assert_eq!(result[1].0, "inset-block-end");
+        assert_eq!(result[1].1, "200px");
+    }
+
+    #[test]
+    fn test_inset_inline_shorthand() {
+        let result = expand_one("inset-inline", "50px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "inset-inline-start");
+        assert_eq!(result[1].0, "inset-inline-end");
+        assert_eq!(result[0].1, "50px");
+        assert_eq!(result[1].1, "50px");
     }
 }
