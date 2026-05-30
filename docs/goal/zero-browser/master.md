@@ -48,9 +48,9 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | # | 交付物 | 状态 | 备注 |
 |---|--------|------|------|
 | 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
-| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | 核心抽象已建立，待完整 GPU 渲染器迁移 |
+| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | CPU 渲染数据模型已建立（1,271 行源码，38 个测试，5 个基准）；wgpu GPU 后端、swash 字体整形、图片缓存待迁移 |
 | 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
-| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | "Hello ZeroBrowser" CPU 渲染 demo + PPM 输出 |
+| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | 🔄 进行中 | CPU 渲染 demo + PPM 输出已完成；wgpu GPU 渲染升级待完成 |
 | 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
 | 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 38 个测试用例（geometry:9, color:5, primitive:4, font/loader:6, font/cache:6, surface:8） |
 | 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
@@ -72,12 +72,12 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 ### M1 验收标准
 
 - ✅ `cargo build` 在 Linux 上成功
-- ✅ `cargo test` 全通过
+- ✅ `cargo test` 全通过（55 个测试全绿）
 - ✅ `cargo clippy` 零警告
-- ✅ `cargo bench` 可运行并输出结果
-- 🔄 `cargo build` 在 macOS/Windows 上成功（CI 待验证）
-- 🔲 运行 demo 二进制可以看到窗口和渲染文本
-- 🔄 render-foundation 覆盖率 ≥ 50%（待测量）
+- ✅ `cargo bench` 可运行并输出结果（5 个基准）
+- 🔄 `cargo build` 在 macOS/Windows 上成功（CI 配置就位，待验证实际运行）
+- 🔲 运行 demo 二进制可以看到窗口和渲染文本（CPU 版已就绪，wgpu GPU 版待完成）
+- 🔄 render-foundation 覆盖率 ≥ 50%（待测量，脚本已就位）
 
 ---
 
