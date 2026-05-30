@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**执行状态**: 14/16 crate 已实现，910 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，939 个测试全绿，14 个 crate 有基准测试
 
 ---
 
@@ -11,7 +11,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 910 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 939 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -20,14 +20,14 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 84 | ✅ | DOM 树、html5ever 集成、查询 API |
+| dom | 93 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver |
 | css-parser | 137 | ✅ | Tokenizer、Parser、选择器、值解析 |
 | style-system | 101 | ✅ | 级联、继承、计算值、DOM 集成 |
-| layout-engine | 61 | ✅ | taffy 集成（Block/Flex/Grid/Position） |
+| layout-engine | 69 | ✅ | taffy 集成（Block/Flex/Grid/Position）、几何验证 |
 | engine-core | 52 | ✅ | 渲染管线、paint、dirty tracking、compositing |
 | render-foundation | 53 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
-| net | 47 | ✅ | HTTP client、URL、导航历史、Cookie |
+| net | 56 | ✅ | HTTP client、URL、导航历史、Cookie |
 | security | 55 | ✅ | 同源策略、CORS、CSP |
 | protocol | 55 | ✅ | IPC 消息、bincode 序列化 |
 | storage | 47 | ✅ | localStorage、sessionStorage、IndexedDB |
