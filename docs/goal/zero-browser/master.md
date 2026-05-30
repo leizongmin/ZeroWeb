@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，1062 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，1127 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 1062 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 1127 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,9 +24,9 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 93 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver |
-| css-parser | 153 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、**Transform** |
-| style-system | 185 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、**Transform** |
-| layout-engine | 77 | ✅ | taffy 集成（Block/Flex/Grid/Position）、**Grid 轨道解析**、几何验证 |
+| css-parser | 162 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、**@keyframes** |
+| style-system | 228 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、**Transitions**、**Animations**、**逻辑属性** |
+| layout-engine | 77 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、几何验证 |
 | engine-core | 52 | ✅ | 渲染管线、paint、dirty tracking、compositing |
 | render-foundation | 53 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
@@ -78,37 +78,70 @@
 | `border-radius` | 4 个角半径 |
 | `flex` | `flex-grow` + `flex-shrink` + `flex-basis` |
 | `inset` | `top` + `right` + `bottom` + `left` |
+| `transition` | `transition-property/duration/timing-function/delay` |
+| `animation` | 8 个长属性（name/duration/timing/delay/iteration-count/direction/fill-mode/play-state） |
+| `margin-block/inline` | `margin-block-start/end` 或 `margin-inline-start/end` |
+| `padding-block/inline` | `padding-block-start/end` 或 `padding-inline-start/end` |
+| `inset-block/inline` | `inset-block-start/end` 或 `inset-inline-start/end` |
 
-### 2. 百分比值 + auto 关键字（css-parser → layout-engine）
+### 2. CSS Transitions（css-parser → style-system）
 
-- 新增 `LengthValue::Percentage(f64)` 和 `LengthValue::Auto` 变体
-- `parse_length` 现在支持 `"50%"` 和 `"auto"` 值
-- 修复了 `Px(0.0)` 被误当作 `auto` 的问题：width/height 默认值现在正确使用 `Auto`
-- 布局引擎正确传递：`Auto`→taffy Auto，`Percentage`→taffy Percent
+- `TimingFunctionValue` 枚举：ease、linear、ease-in/out、cubic-bezier、steps
+- `parse_time()` 支持 s/ms 时间值
+- `ComputedStyle` 新增：`transition_property`、`transition_duration`、`transition_timing_function`、`transition_delay`
+- `transition` 简写展开，正确处理 cubic-bezier() 和 steps() 内部逗号
+- 21 个新测试
 
-### 3. CSS Grid 属性传递（style-system → layout-engine）
+### 3. CSS Animations + @keyframes（css-parser → style-system）
 
-- `ComputedStyle` 新增：`grid_template_columns`、`grid_template_rows`、`grid_auto_flow`、`row_gap`
-- 实现了完整的 grid track 解析器：px、fr、%、auto、minmax() → taffy TrackSizingFunction
-- `grid-auto-flow` 支持 row/column/dense/column-dense
-- gap 分离为 column-gap（gap）和 row-gap（row_gap）
+- `KeyframesRule`、`KeyframeBlock`、`KeyframeSelector` AST 类型
+- `@keyframes` 专用解析器：from/to/百分比选择器、逗号分隔、声明块
+- `AnimationDirectionValue`、`AnimationFillModeValue`、`AnimationPlayStateValue` 枚举
+- `ComputedStyle` 新增 8 个动画字段
+- `animation` 简写展开（8 个子属性）
+- matcher 中正确跳过 `Rule::Keyframes`
+- 23 个新测试
 
-### 4. CSS @media 媒体查询（css-parser → style-system）
+### 4. CSS 逻辑属性（style-system）
 
-- 新增 `media_query.rs` 模块，支持完整的媒体查询解析和评估
+- 12 个逻辑长属性：`margin-block-start/end`、`margin-inline-start/end`、`padding-block-start/end`、`padding-inline-start/end`、`inset-block-start/end`、`inset-inline-start/end`
+- 水平书写模式映射：block→top/bottom，inline→left/right
+- 6 个轴简写：`margin-block`、`margin-inline`、`padding-block`、`padding-inline`、`inset-block`、`inset-inline`
+- 21 个新测试
+
+### 5. CSS @media 媒体查询（css-parser → style-system）
+
 - 媒体类型：`screen`、`print`、`all`
 - 媒体特性：`width/min-width/max-width`、`height/min-height/max-height`、`orientation`
-- 支持 `not` 取反和多条件 `and` 组合
-- 集成到样式系统：`@media` 规则只在条件匹配时递归进入
-- 无视口信息时 `@media` 规则不应用（安全默认值）
+- `not` 取反和多条件 `and` 组合
+- 无视口信息时 `@media` 规则不应用
 
-### 5. CSS Transform 属性（css-parser → style-system）
+### 6. CSS Transform 属性（css-parser → style-system）
 
-- `TransformValue` 和 `TransformFunction` 类型支持
-- 变换函数：`translate`/`translateX`/`translateY`、`rotate`（deg/rad/turn）、`scale`/`scaleX`/`scaleY`、`skew`
-- 支持多函数链式组合（如 `translate(10px) rotate(45deg) scale(2)`）
+- 变换函数：translate/translateX/translateY、rotate、scale/scaleX/scaleY、skew
+- 多函数链式组合
 - `ComputedStyle` 新增 `transform` 字段
-- 注意：taffy 不处理视觉变换，transform 由渲染管线在 paint 时应用
+
+---
+
+## Tier 1 CSS 覆盖状态
+
+| Tier 1 类别 | 状态 |
+|-------------|------|
+| 选择器全量 | ✅ ~95% |
+| 盒模型 | ✅ 100% |
+| Block/Inline/Flexbox 布局 | ✅ 已实现 |
+| Grid 布局 | ⚠️ ~30%（基础 display + auto-flow） |
+| 颜色 | ✅ ~95% |
+| 字体 | ✅ 100% |
+| 定位 | ✅ 100% |
+| Overflow | ✅ 100% |
+| Transforms | ✅ ~70%（核心 2D 函数） |
+| **Transitions** | ✅ 已实现 |
+| 自定义属性 | ✅ ~90% |
+| 媒体查询 | ✅ ~70% |
+| **逻辑属性** | ✅ 已实现 |
+| **Animations/@keyframes** | ✅ 已实现 |
 
 ---
 
@@ -131,10 +164,11 @@
 
 ## 下一步优先级
 
-1. **CSS Transforms 基础**（高优先级）— transform 属性解析与计算值
-2. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
-3. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
-4. **渲染管线改进**（中优先级）— border-radius 绘制、overflow clip、图片渲染
+1. **渲染管线改进**（高优先级）— 文本渲染（paint 阶段 glyph 生成）、border-radius 绘制、overflow clip
+2. **Grid 布局增强**（高优先级）— grid-column/row 放置、grid-area、repeat()/minmax() 解析
+3. **内联布局**（高优先级）— 行内格式化上下文、文本换行、white-space 处理
+4. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
+5. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
 
 ---
 
