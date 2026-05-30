@@ -1,7 +1,7 @@
 # ZeroBrowser 运行时控制平面
 
 **最后更新**: 2026-05-30
-**执行状态**: 14/16 crate 已实现，999 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，1019 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 999 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 1019 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,9 +24,9 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 93 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver |
-| css-parser | 137 | ✅ | Tokenizer、Parser、选择器、值解析 |
-| style-system | 161 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、**简写属性展开** |
-| layout-engine | 69 | ✅ | taffy 集成（Block/Flex/Grid/Position）、几何验证 |
+| css-parser | 138 | ✅ | Tokenizer、Parser、选择器、值解析、**百分比和 auto 支持** |
+| style-system | 177 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、**Grid 属性** |
+| layout-engine | 77 | ✅ | taffy 集成（Block/Flex/Grid/Position）、**Grid 轨道解析**、几何验证 |
 | engine-core | 52 | ✅ | 渲染管线、paint、dirty tracking、compositing |
 | render-foundation | 53 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
 | host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
@@ -63,7 +63,7 @@
 
 ## 最近完成的改进
 
-### CSS 简写属性展开（style-system）
+### 1. CSS 简写属性展开（style-system）
 
 实现了完整的 CSS 简写属性展开模块（`shorthand.rs`），在级联之前将简写属性自动展开为长属性：
 
@@ -71,17 +71,27 @@
 |----------|--------|
 | `margin` | `margin-top/right/bottom/left` |
 | `padding` | `padding-top/right/bottom/left` |
-| `border-width` | 4 边 `border-*-width` |
-| `border-style` | 4 边 `border-*-style` |
-| `border-color` | 4 边 `border-*-color` |
+| `border-width/style/color` | 4 边对应属性 |
 | `border` | 12 个长属性（4 边 × width/style/color） |
-| `border-top/right/bottom/left` | 3 个长属性（该边的 width/style/color） |
+| `border-top/right/bottom/left` | 3 个长属性 |
 | `overflow` | `overflow-x` + `overflow-y` |
 | `border-radius` | 4 个角半径 |
 | `flex` | `flex-grow` + `flex-shrink` + `flex-basis` |
 | `inset` | `top` + `right` + `bottom` + `left` |
 
-关键设计：展开发生在 `collect_matching_declarations` 之后、级联之前，保留 important 和 specificity。
+### 2. 百分比值 + auto 关键字（css-parser → layout-engine）
+
+- 新增 `LengthValue::Percentage(f64)` 和 `LengthValue::Auto` 变体
+- `parse_length` 现在支持 `"50%"` 和 `"auto"` 值
+- 修复了 `Px(0.0)` 被误当作 `auto` 的问题：width/height 默认值现在正确使用 `Auto`
+- 布局引擎正确传递：`Auto`→taffy Auto，`Percentage`→taffy Percent
+
+### 3. CSS Grid 属性传递（style-system → layout-engine）
+
+- `ComputedStyle` 新增：`grid_template_columns`、`grid_template_rows`、`grid_auto_flow`、`row_gap`
+- 实现了完整的 grid track 解析器：px、fr、%、auto、minmax() → taffy TrackSizingFunction
+- `grid-auto-flow` 支持 row/column/dense/column-dense
+- gap 分离为 column-gap（gap）和 row-gap（row_gap）
 
 ---
 
@@ -104,10 +114,10 @@
 
 ## 下一步优先级
 
-1. **CSS 百分比值 + auto 关键字**（高优先级）— LengthValue 缺少百分比和 auto 表示
-2. **CSS Grid 属性传递**（高优先级）— grid-template-columns/rows 未传递给 taffy
-3. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
-4. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
+1. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
+2. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
+3. **渲染管线改进**（中优先级）— 更多 paint 命令、合成层优化
+4. **CSS 动画基础**（低优先级）— transitions 和 keyframes 基础支持
 
 ---
 
