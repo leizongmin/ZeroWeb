@@ -598,6 +598,119 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
     }
 }
 
+// ── CSS Transition 值类型 ──────────────────────────────────────────────
+
+/// CSS transition-timing-function 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimingFunctionValue {
+    /// ease。
+    Ease,
+    /// linear。
+    Linear,
+    /// ease-in。
+    EaseIn,
+    /// ease-out。
+    EaseOut,
+    /// ease-in-out。
+    EaseInOut,
+    /// cubic-bezier(x1, y1, x2, y2)。
+    CubicBezier(f64, f64, f64, f64),
+    /// step-start。
+    StepStart,
+    /// step-end。
+    StepEnd,
+    /// steps(n, position)。
+    Steps(i32, Option<StepPosition>),
+}
+
+/// steps() 的位置参数。
+#[derive(Debug, Clone, PartialEq)]
+pub enum StepPosition {
+    /// jump-start / start。
+    Start,
+    /// jump-end / end（默认）。
+    End,
+    /// jump-both。
+    Both,
+    /// jump-none。
+    None,
+}
+
+/// 解析 CSS transition-timing-function 值。
+pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
+    let value = value.trim();
+
+    match value {
+        "ease" => Some(TimingFunctionValue::Ease),
+        "linear" => Some(TimingFunctionValue::Linear),
+        "ease-in" => Some(TimingFunctionValue::EaseIn),
+        "ease-out" => Some(TimingFunctionValue::EaseOut),
+        "ease-in-out" => Some(TimingFunctionValue::EaseInOut),
+        "step-start" => Some(TimingFunctionValue::StepStart),
+        "step-end" => Some(TimingFunctionValue::StepEnd),
+        _ if value.starts_with("cubic-bezier(") => {
+            let inner = extract_parens_content(value, "cubic-bezier")?;
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 4 {
+                return None;
+            }
+            let x1 = parts[0].parse::<f64>().ok()?;
+            let y1 = parts[1].parse::<f64>().ok()?;
+            let x2 = parts[2].parse::<f64>().ok()?;
+            let y2 = parts[3].parse::<f64>().ok()?;
+            Some(TimingFunctionValue::CubicBezier(x1, y1, x2, y2))
+        }
+        _ if value.starts_with("steps(") => {
+            let inner = extract_parens_content(value, "steps")?;
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            let n: i32 = parts.first()?.parse().ok()?;
+            let position = if parts.len() > 1 {
+                Some(parse_step_position(parts[1])?)
+            } else {
+                None
+            };
+            Some(TimingFunctionValue::Steps(n, position))
+        }
+        _ => None,
+    }
+}
+
+/// 解析 steps() 位置参数。
+fn parse_step_position(s: &str) -> Option<StepPosition> {
+    match s.trim() {
+        "jump-start" | "start" => Some(StepPosition::Start),
+        "jump-end" | "end" => Some(StepPosition::End),
+        "jump-both" | "both" => Some(StepPosition::Both),
+        "jump-none" | "none" => Some(StepPosition::None),
+        _ => None,
+    }
+}
+
+/// 提取函数括号内的内容。
+fn extract_parens_content<'a>(value: &'a str, func_name: &str) -> Option<&'a str> {
+    let prefix = format!("{}(", func_name);
+    if !value.starts_with(&prefix) || !value.ends_with(')') {
+        return None;
+    }
+    Some(&value[func_name.len() + 1..value.len() - 1])
+}
+
+/// 解析 CSS 时间值（如 `"0.3s"`、`"200ms"`）。
+///
+/// 返回秒为单位的 f64 值。
+pub fn parse_time(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.ends_with("ms") {
+        let ms: f64 = value.trim_end_matches("ms").trim().parse().ok()?;
+        Some(ms / 1000.0)
+    } else if value.ends_with('s') {
+        let s: f64 = value.trim_end_matches('s').trim().parse().ok()?;
+        Some(s)
+    } else {
+        None
+    }
+}
+
 // ── CSS Transform 值类型 ──────────────────────────────────────────────
 
 /// CSS transform 属性值。
@@ -793,4 +906,84 @@ fn parse_css_number(s: &str) -> Option<f64> {
 /// 解析角度值（返回度数）。
 fn parse_angle(s: &str) -> Option<f64> {
     parse_css_number(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_timing_function ──
+
+    #[test]
+    fn test_parse_timing_function_keywords() {
+        assert_eq!(parse_timing_function("ease"), Some(TimingFunctionValue::Ease));
+        assert_eq!(parse_timing_function("linear"), Some(TimingFunctionValue::Linear));
+        assert_eq!(parse_timing_function("ease-in"), Some(TimingFunctionValue::EaseIn));
+        assert_eq!(parse_timing_function("ease-out"), Some(TimingFunctionValue::EaseOut));
+        assert_eq!(
+            parse_timing_function("ease-in-out"),
+            Some(TimingFunctionValue::EaseInOut)
+        );
+        assert_eq!(parse_timing_function("step-start"), Some(TimingFunctionValue::StepStart));
+        assert_eq!(parse_timing_function("step-end"), Some(TimingFunctionValue::StepEnd));
+    }
+
+    #[test]
+    fn test_parse_timing_function_cubic_bezier() {
+        let result = parse_timing_function("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
+        assert_eq!(result, Some(TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0)));
+    }
+
+    #[test]
+    fn test_parse_timing_function_steps() {
+        assert_eq!(
+            parse_timing_function("steps(4)"),
+            Some(TimingFunctionValue::Steps(4, None))
+        );
+        assert_eq!(
+            parse_timing_function("steps(4, end)"),
+            Some(TimingFunctionValue::Steps(4, Some(StepPosition::End)))
+        );
+        assert_eq!(
+            parse_timing_function("steps(4, start)"),
+            Some(TimingFunctionValue::Steps(4, Some(StepPosition::Start)))
+        );
+        assert_eq!(
+            parse_timing_function("steps(2, jump-both)"),
+            Some(TimingFunctionValue::Steps(2, Some(StepPosition::Both)))
+        );
+    }
+
+    #[test]
+    fn test_parse_timing_function_invalid() {
+        assert_eq!(parse_timing_function("invalid"), None);
+    }
+
+    // ── parse_time ──
+
+    #[test]
+    fn test_parse_time_seconds() {
+        assert_eq!(parse_time("0.3s"), Some(0.3));
+        assert_eq!(parse_time("1s"), Some(1.0));
+        assert_eq!(parse_time("2.5s"), Some(2.5));
+    }
+
+    #[test]
+    fn test_parse_time_milliseconds() {
+        assert_eq!(parse_time("200ms"), Some(0.2));
+        assert_eq!(parse_time("1000ms"), Some(1.0));
+        assert_eq!(parse_time("50ms"), Some(0.05));
+    }
+
+    #[test]
+    fn test_parse_time_invalid() {
+        assert_eq!(parse_time("10"), None);
+        assert_eq!(parse_time("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_time_zero() {
+        assert_eq!(parse_time("0s"), Some(0.0));
+        assert_eq!(parse_time("0ms"), Some(0.0));
+    }
 }

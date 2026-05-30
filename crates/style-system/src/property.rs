@@ -367,6 +367,16 @@ pub struct ComputedStyle {
     // ── Transforms ──
     /// transform 属性。
     pub transform: zero_css_parser::values::TransformValue,
+
+    // ── Transitions ──
+    /// transition-property 属性（逗号分隔的属性名列表）。
+    pub transition_property: Vec<String>,
+    /// transition-duration 属性（逗号分隔的秒数列表）。
+    pub transition_duration: Vec<f64>,
+    /// transition-timing-function 属性（逗号分隔的时间函数列表）。
+    pub transition_timing_function: Vec<zero_css_parser::values::TimingFunctionValue>,
+    /// transition-delay 属性（逗号分隔的秒数列表）。
+    pub transition_delay: Vec<f64>,
 }
 
 impl Default for ComputedStyle {
@@ -467,6 +477,12 @@ impl Default for ComputedStyle {
 
             // Transforms
             transform: zero_css_parser::values::TransformValue::None,
+
+            // Transitions
+            transition_property: vec![],
+            transition_duration: vec![],
+            transition_timing_function: vec![],
+            transition_delay: vec![],
         }
     }
 }
@@ -555,6 +571,10 @@ impl PropertyRegistry {
 
             // Overflow
             "overflow-x" | "overflow-y" => Some(Overflow(OverflowValue::Visible)),
+
+            // Transitions
+            "transition-property" => Some(StringList(vec![])),
+            "transition-duration" | "transition-delay" => Some(Number(0.0)),
 
             _ => None,
         }
@@ -653,6 +673,10 @@ impl PropertyRegistry {
             "z-index",
             "overflow-x",
             "overflow-y",
+            "transition-property",
+            "transition-duration",
+            "transition-timing-function",
+            "transition-delay",
         ]
     }
 }
@@ -684,6 +708,40 @@ pub fn parse_grid_auto_flow(value: &str) -> Option<GridAutoFlowValue> {
         "column dense" => Some(GridAutoFlowValue::ColumnDense),
         _ => None,
     }
+}
+
+/// 解析逗号分隔的 transition-timing-function 列表。
+///
+/// 需要处理 cubic-bezier() 和 steps() 内部的逗号。
+fn parse_comma_separated_timing_functions(
+    value: &str,
+) -> Vec<zero_css_parser::values::TimingFunctionValue> {
+    let mut result = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+
+    for (i, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                let part = value[start..i].trim();
+                if let Some(tf) = values::parse_timing_function(part) {
+                    result.push(tf);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+
+    // 处理最后一个
+    let last = value[start..].trim();
+    if let Some(tf) = values::parse_timing_function(last) {
+        result.push(tf);
+    }
+
+    result
 }
 
 /// 解析 CSS line-height 值。
@@ -1244,6 +1302,36 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 style.transform = v;
                 return true;
             }
+        }
+        // ── Transitions ──
+        "transition-property" => {
+            style.transition_property =
+                value.split(',').map(|s| s.trim().to_string()).collect();
+            return true;
+        }
+        "transition-duration" => {
+            let durations = value
+                .split(',')
+                .filter_map(|s| values::parse_time(s.trim()))
+                .collect();
+            style.transition_duration = durations;
+            return true;
+        }
+        "transition-timing-function" => {
+            // 简化解析：按逗号分割，但注意 cubic-bezier() 和 steps() 内部也有逗号
+            let funcs = parse_comma_separated_timing_functions(value);
+            if !funcs.is_empty() {
+                style.transition_timing_function = funcs;
+                return true;
+            }
+        }
+        "transition-delay" => {
+            let delays = value
+                .split(',')
+                .filter_map(|s| values::parse_time(s.trim()))
+                .collect();
+            style.transition_delay = delays;
+            return true;
         }
         _ => {}
     }
@@ -1975,5 +2063,111 @@ mod tests {
         assert_eq!(style.grid_template_rows, None);
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Row);
         assert_eq!(style.row_gap, LengthValue::Px(0.0));
+    }
+
+    // ── Transition 属性测试 ──
+
+    #[test]
+    fn test_computed_style_default_transition() {
+        let style = ComputedStyle::default();
+        assert!(style.transition_property.is_empty());
+        assert!(style.transition_duration.is_empty());
+        assert!(style.transition_timing_function.is_empty());
+        assert!(style.transition_delay.is_empty());
+    }
+
+    #[test]
+    fn test_apply_transition_property() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "transition-property", "opacity"));
+        assert_eq!(style.transition_property, vec!["opacity"]);
+
+        assert!(apply_property_value(&mut style, "transition-property", "opacity, transform"));
+        assert_eq!(style.transition_property, vec!["opacity", "transform"]);
+
+        assert!(apply_property_value(&mut style, "transition-property", "all"));
+        assert_eq!(style.transition_property, vec!["all"]);
+    }
+
+    #[test]
+    fn test_apply_transition_duration() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "transition-duration", "0.3s"));
+        assert_eq!(style.transition_duration, vec![0.3]);
+
+        assert!(apply_property_value(&mut style, "transition-duration", "0.3s, 0.5s"));
+        assert_eq!(style.transition_duration, vec![0.3, 0.5]);
+
+        assert!(apply_property_value(&mut style, "transition-duration", "200ms"));
+        assert_eq!(style.transition_duration, vec![0.2]);
+    }
+
+    #[test]
+    fn test_apply_transition_timing_function() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "transition-timing-function", "ease"));
+        assert_eq!(style.transition_timing_function.len(), 1);
+        assert_eq!(
+            style.transition_timing_function[0],
+            zero_css_parser::values::TimingFunctionValue::Ease
+        );
+
+        assert!(apply_property_value(
+            &mut style,
+            "transition-timing-function",
+            "cubic-bezier(0.25, 0.1, 0.25, 1.0)"
+        ));
+        assert_eq!(style.transition_timing_function.len(), 1);
+
+        assert!(apply_property_value(
+            &mut style,
+            "transition-timing-function",
+            "ease, linear"
+        ));
+        assert_eq!(style.transition_timing_function.len(), 2);
+    }
+
+    #[test]
+    fn test_apply_transition_delay() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "transition-delay", "0.1s"));
+        assert_eq!(style.transition_delay, vec![0.1]);
+
+        assert!(apply_property_value(&mut style, "transition-delay", "0.1s, 0.2s"));
+        assert_eq!(style.transition_delay, vec![0.1, 0.2]);
+
+        assert!(apply_property_value(&mut style, "transition-delay", "50ms"));
+        assert_eq!(style.transition_delay, vec![0.05]);
+    }
+
+    #[test]
+    fn test_transition_property_registry() {
+        assert!(PropertyRegistry::initial_value("transition-property").is_some());
+        assert!(PropertyRegistry::initial_value("transition-duration").is_some());
+        assert!(PropertyRegistry::initial_value("transition-delay").is_some());
+        // transition-timing-function 没有 PropertyValue 变体，但仍应被已知属性接受
+        assert!(!PropertyRegistry::is_inherited("transition-property"));
+        assert!(!PropertyRegistry::is_inherited("transition-duration"));
+    }
+
+    #[test]
+    fn test_transition_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"transition-property"));
+        assert!(props.contains(&"transition-duration"));
+        assert!(props.contains(&"transition-timing-function"));
+        assert!(props.contains(&"transition-delay"));
+    }
+
+    #[test]
+    fn test_parse_comma_separated_timing_functions() {
+        let result = parse_comma_separated_timing_functions("ease, linear");
+        assert_eq!(result.len(), 2);
+
+        let result = parse_comma_separated_timing_functions("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
+        assert_eq!(result.len(), 1);
+
+        let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
+        assert_eq!(result.len(), 3);
     }
 }

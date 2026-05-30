@@ -121,6 +121,11 @@ fn expand_one(
             vec![mk("top", t), mk("right", r), mk("bottom", b), mk("left", l)]
         }
 
+        // ── transition 简写 ──
+        // transition: <property> <duration> <timing-function> <delay>
+        // 简化实现：单组值
+        "transition" => expand_transition(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -322,6 +327,111 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         3 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", parts[1]), mk("flex-basis", parts[2])],
         _ => vec![],
     }
+}
+
+/// 展开 transition 简写。
+///
+/// CSS `transition` 简写格式为：
+/// `transition: [property] [duration] [timing-function] [delay]`
+///
+/// 简化实现：解析空格分隔的标记，识别类型：
+/// - 时间值（带 s/ms 后缀）→ duration 或 delay
+/// - timing-function 关键字 → timing-function
+/// - 其他 → property
+fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+
+    if value == "none" {
+        return vec![
+            mk("transition-property", "none"),
+            mk("transition-duration", "0s"),
+            mk("transition-timing-function", "ease"),
+            mk("transition-delay", "0s"),
+        ];
+    }
+
+    // 解析空格分隔的标记，但保留括号内的内容
+    let tokens = split_outside_parens(value);
+    let mut property = "all";
+    let mut duration = "0s";
+    let mut timing = "ease";
+    let mut delay = "0s";
+    let mut found_duration = false;
+
+    for token in &tokens {
+        let t = token.trim();
+        if t.is_empty() {
+            continue;
+        }
+        // 判断是否为时间值（duration/delay）
+        if is_time_value(t) {
+            if !found_duration {
+                duration = t;
+                found_duration = true;
+            } else {
+                delay = t;
+            }
+        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+            timing = t;
+        } else {
+            property = t;
+        }
+    }
+
+    vec![
+        mk("transition-property", property),
+        mk("transition-duration", duration),
+        mk("transition-timing-function", timing),
+        mk("transition-delay", delay),
+    ]
+}
+
+/// 检查字符串是否为 CSS 时间值。
+fn is_time_value(s: &str) -> bool {
+    s.ends_with("ms") || (s.ends_with('s') && !s.ends_with("ease"))
+        && s.trim_end_matches("ms").trim_end_matches('s').parse::<f64>().is_ok()
+}
+
+/// 检查字符串是否为 timing-function 关键字。
+fn is_timing_function_keyword(s: &str) -> bool {
+    matches!(s, "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end")
+}
+
+/// 按空格分割字符串，但保留括号内的内容不分割。
+fn split_outside_parens(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ' ' | '\t' if depth == 0 => {
+                if !current.is_empty() {
+                    result.push(std::mem::take(&mut current));
+                }
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        result.push(current);
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -748,5 +858,63 @@ mod tests {
         assert_eq!(result[0].1, "1px"); // width
         assert_eq!(result[1].1, "solid"); // style
         assert_eq!(result[2].1, "red"); // color
+    }
+
+    // ── transition 简写测试 ──
+
+    #[test]
+    fn test_transition_shorthand_none() {
+        let result = expand_one("transition", "none", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].0, "transition-property");
+        assert_eq!(result[0].1, "none");
+        assert_eq!(result[1].0, "transition-duration");
+        assert_eq!(result[1].1, "0s");
+        assert_eq!(result[2].0, "transition-timing-function");
+        assert_eq!(result[2].1, "ease");
+        assert_eq!(result[3].0, "transition-delay");
+        assert_eq!(result[3].1, "0s");
+    }
+
+    #[test]
+    fn test_transition_shorthand_property_duration() {
+        let result = expand_one("transition", "opacity 0.3s", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].0, "transition-property");
+        assert_eq!(result[0].1, "opacity");
+        assert_eq!(result[1].0, "transition-duration");
+        assert_eq!(result[1].1, "0.3s");
+    }
+
+    #[test]
+    fn test_transition_shorthand_full() {
+        let result = expand_one("transition", "opacity 0.3s ease-in 0.1s", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "opacity");
+        assert_eq!(result[1].1, "0.3s");
+        assert_eq!(result[2].1, "ease-in");
+        assert_eq!(result[3].1, "0.1s");
+    }
+
+    #[test]
+    fn test_transition_shorthand_with_cubic_bezier() {
+        let result = expand_one(
+            "transition",
+            "transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+            false,
+            (0, 0, 1),
+        );
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "transform");
+        assert_eq!(result[1].1, "0.5s");
+        assert_eq!(result[2].1, "cubic-bezier(0.25, 0.1, 0.25, 1.0)");
+    }
+
+    #[test]
+    fn test_transition_shorthand_duration_only() {
+        let result = expand_one("transition", "0.5s", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "all"); // default property
+        assert_eq!(result[1].1, "0.5s");
     }
 }
