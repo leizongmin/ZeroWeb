@@ -220,6 +220,10 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // :where() 匹配逻辑同 :is()
             selectors.iter().any(|s| matches_selector(doc, element, s))
         }
+        PseudoClassSelector::Has(selectors) => {
+            // :has() 匹配拥有满足条件的后代/子元素的元素
+            selectors.iter().any(|s| matches_has_inner(doc, element, s))
+        }
         PseudoClassSelector::NthChild(pattern) => matches_nth_child(doc, element, pattern),
         _ => false, // 其他伪类暂不支持
     }
@@ -311,6 +315,130 @@ fn matches_nth_child(doc: &Document, element: NodeId, pattern: &zero_css_parser:
         }
     }
     false
+}
+
+/// 检查 `:has()` 内部选择器是否匹配当前元素的某个后代或子元素。
+///
+/// 选择器的最后一个复合选择器是匹配目标。我们遍历元素的后代，
+/// 找到匹配最后一个复合选择器的节点，然后验证组合器链。
+fn matches_has_inner(doc: &Document, element: NodeId, selector: &Selector) -> bool {
+    let parts = &selector.complex.parts;
+    if parts.is_empty() {
+        return false;
+    }
+
+    let last_idx = parts.len() - 1;
+    let (last_compound, _) = &parts[last_idx];
+
+    // 确定搜索范围：如果倒数第二个组合器是 Child，只搜索直接子元素
+    let search_direct_children_only = if parts.len() >= 2 {
+        let (_, combinator) = &parts[last_idx - 1];
+        matches!(combinator, Some(Combinator::Child))
+    } else {
+        false
+    };
+
+    let mut search_candidates = Vec::new();
+
+    if search_direct_children_only {
+        // 只检查直接子元素
+        for &child in &doc.child_nodes(element) {
+            if is_element(doc, child) {
+                search_candidates.push(child);
+            }
+        }
+    } else {
+        // 递归收集所有后代元素
+        collect_descendants(doc, element, &mut search_candidates);
+    }
+
+    // 检查每个候选元素是否匹配完整选择器
+    for &candidate in &search_candidates {
+        if matches_compound(doc, candidate, last_compound)
+            && matches_has_selector_chain(doc, candidate, parts, last_idx)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// 递归收集所有后代元素节点。
+fn collect_descendants(doc: &Document, element: NodeId, result: &mut Vec<NodeId>) {
+    for &child in &doc.child_nodes(element) {
+        if is_element(doc, child) {
+            result.push(child);
+            collect_descendants(doc, child, result);
+        }
+    }
+}
+
+/// 验证 `:has()` 内部选择器的组合器链。
+///
+/// `candidate` 是匹配最后一个复合选择器的元素。
+fn matches_has_selector_chain(
+    doc: &Document,
+    candidate: NodeId,
+    parts: &[(CompoundSelector, Option<Combinator>)],
+    part_idx: usize,
+) -> bool {
+    if part_idx == 0 {
+        return true;
+    }
+
+    let (prev_compound, combinator) = &parts[part_idx - 1];
+
+    match combinator {
+        Some(Combinator::Descendant) => {
+            // 后代：candidate 的某个祖先必须匹配 prev_compound
+            let mut ancestor = doc.parent_node(candidate);
+            while let Some(ancestor_id) = ancestor {
+                if matches_compound(doc, ancestor_id, prev_compound)
+                    && matches_has_selector_chain(doc, ancestor_id, parts, part_idx - 1)
+                {
+                    return true;
+                }
+                ancestor = doc.parent_node(ancestor_id);
+            }
+            false
+        }
+        Some(Combinator::Child) => {
+            // 子元素：candidate 的直接父元素必须匹配 prev_compound
+            if let Some(parent) = doc.parent_node(candidate)
+                && is_element(doc, parent)
+                && matches_compound(doc, parent, prev_compound)
+            {
+                return matches_has_selector_chain(doc, parent, parts, part_idx - 1);
+            }
+            false
+        }
+        Some(Combinator::NextSibling) => {
+            if let Some(prev) = doc.previous_sibling(candidate)
+                && is_element(doc, prev)
+                && matches_compound(doc, prev, prev_compound)
+            {
+                return matches_has_selector_chain(doc, prev, parts, part_idx - 1);
+            }
+            false
+        }
+        Some(Combinator::SubsequentSibling) => {
+            let mut sibling = doc.previous_sibling(candidate);
+            while let Some(sibling_id) = sibling {
+                if is_element(doc, sibling_id)
+                    && matches_compound(doc, sibling_id, prev_compound)
+                    && matches_has_selector_chain(doc, sibling_id, parts, part_idx - 1)
+                {
+                    return true;
+                }
+                sibling = doc.previous_sibling(sibling_id);
+            }
+            false
+        }
+        None => {
+            matches_has_selector_chain(doc, candidate, parts, part_idx - 1)
+        }
+    }
 }
 
 /// 检查位置是否匹配 an+b 模式。
@@ -1148,5 +1276,111 @@ mod tests {
             },
         };
         assert!(!matches_selector(&doc, div, &sel), "pseudo-element should never match DOM elements");
+    }
+
+    // ── :has() 伪类匹配测试 ──
+
+    /// 测试 :has(.child) 匹配拥有 .child 后代的父元素。
+    #[test]
+    fn test_has_descendant_match() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        doc.append_child(root, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        // div:has(.child)
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("div".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Has(vec![make_class_selector("child")]),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, parent, &sel), "div with .child descendant should match :has(.child)");
+    }
+
+    /// 测试 :has(> .direct) 匹配拥有 .direct 直接子元素的父元素。
+    #[test]
+    fn test_has_direct_child_match() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        doc.append_child(root, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "direct");
+        doc.append_child(parent, child).unwrap();
+
+        // div:has(> .direct) — parsed as * > .direct
+        let inner_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![
+                    (
+                        CompoundSelector {
+                            type_selector: Some(TypeSelector::Universal),
+                            subclass_selectors: vec![],
+                        },
+                        Some(Combinator::Child),
+                    ),
+                    (
+                        CompoundSelector {
+                            type_selector: None,
+                            subclass_selectors: vec![SubclassSelector::Class("direct".to_string())],
+                        },
+                        None,
+                    ),
+                ],
+            },
+        };
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("div".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Has(vec![inner_sel]),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(matches_selector(&doc, parent, &sel), "div with .direct child should match :has(> .direct)");
+    }
+
+    /// 测试 :has(.absent) 不匹配没有 .absent 后代的父元素。
+    #[test]
+    fn test_has_no_match() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        doc.append_child(root, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "other");
+        doc.append_child(parent, child).unwrap();
+
+        // div:has(.absent)
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("div".to_string())),
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(
+                            PseudoClassSelector::Has(vec![make_class_selector("absent")]),
+                        )],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert!(!matches_selector(&doc, parent, &sel), "div without .absent descendant should not match :has(.absent)");
     }
 }

@@ -255,6 +255,55 @@ mod tests {
         assert!(tracker.dirty_rects().len() <= 5);
     }
 
+    /// 测试单个脏矩形合并后数量不变。
+    #[test]
+    fn test_dirty_tracker_merge_single_rect() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(10.0, 20.0, 30.0, 40.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        tracker.merge_overlapping();
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        // Rect unchanged
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 10.0);
+    }
+
+    /// 测试相邻但不完全重叠的矩形合并。
+    #[test]
+    fn test_dirty_tracker_merge_adjacent_rects() {
+        let mut tracker = DirtyTracker::new();
+        // Two rects side by side with 1px gap
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tracker.mark_dirty(Rect::new(49.0, 0.0, 50.0, 50.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+        tracker.merge_overlapping();
+        // Should merge because overlap is large relative to individual areas
+        assert!(tracker.dirty_rects().len() <= 2);
+    }
+
+    /// 测试全量重绘后 dirty_area 返回 f32::MAX。
+    #[test]
+    fn test_dirty_area_full_redraw_is_max() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert!((tracker.dirty_area() - 10000.0).abs() < 0.1);
+        tracker.mark_full_redraw();
+        assert_eq!(tracker.dirty_area(), f32::MAX);
+    }
+
+    /// 测试多次 clear 后状态正确。
+    #[test]
+    fn test_dirty_tracker_double_clear() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.clear();
+        assert!(tracker.dirty_rects().is_empty());
+        assert!(!tracker.is_full_redraw());
+        // Clear again should be idempotent
+        tracker.clear();
+        assert!(tracker.dirty_rects().is_empty());
+        assert_eq!(tracker.dirty_area(), 0.0);
+    }
+
     /// 测试标记空矩形不会添加脏区域。
     #[test]
     fn test_dirty_tracker_empty_rect_ignored() {

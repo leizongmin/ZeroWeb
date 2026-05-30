@@ -154,6 +154,36 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // 处理前导组合器（如 :has(> .child)），隐式添加通用选择器
+            let leading_combinator = match self.peek() {
+                Token::Delim('>') => {
+                    self.advance();
+                    self.skip_whitespace();
+                    Some(Combinator::Child)
+                }
+                Token::Delim('+') => {
+                    self.advance();
+                    self.skip_whitespace();
+                    Some(Combinator::NextSibling)
+                }
+                Token::Delim('~') => {
+                    self.advance();
+                    self.skip_whitespace();
+                    Some(Combinator::SubsequentSibling)
+                }
+                _ => None,
+            };
+
+            if leading_combinator.is_some() {
+                // 隐式主题（:has() 元素自身）作为通用选择器
+                let implicit = CompoundSelector {
+                    type_selector: Some(TypeSelector::Universal),
+                    subclass_selectors: vec![],
+                };
+                parts.push((implicit, leading_combinator));
+                continue;
+            }
+
             let compound = self.consume_compound_selector()?;
 
             // 保存当前位置，检查 skip_whitespace 是否跳过了空白
@@ -278,6 +308,7 @@ impl<'a> Parser<'a> {
                                 "not" => self.parse_pseudo_class_function_list("not"),
                                 "is" => self.parse_pseudo_class_function_list("is"),
                                 "where" => self.parse_pseudo_class_function_list("where"),
+                                "has" => self.parse_pseudo_class_function_list("has"),
                                 "nth-child" => self.parse_nth_pattern("nth-child"),
                                 "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
                                 "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
@@ -298,6 +329,7 @@ impl<'a> Parser<'a> {
                             "not" => self.parse_pseudo_class_function_list("not"),
                             "is" => self.parse_pseudo_class_function_list("is"),
                             "where" => self.parse_pseudo_class_function_list("where"),
+                            "has" => self.parse_pseudo_class_function_list("has"),
                             "nth-child" => self.parse_nth_pattern("nth-child"),
                             "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
                             "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
@@ -338,6 +370,7 @@ impl<'a> Parser<'a> {
             "not" => PseudoClassSelector::Not(selectors),
             "is" => PseudoClassSelector::Is(selectors),
             "where" => PseudoClassSelector::Where(selectors),
+            "has" => PseudoClassSelector::Has(selectors),
             _ => PseudoClassSelector::Simple(_name.to_string()),
         }
     }

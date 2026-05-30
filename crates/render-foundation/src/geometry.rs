@@ -291,4 +291,79 @@ mod tests {
         tracker.add_damage(Rect::new(0.0, 0.0, 0.0, 10.0));
         assert!(!tracker.is_dirty());
     }
+
+    #[test]
+    fn test_rect_intersection_no_overlap() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(20.0, 20.0, 10.0, 10.0);
+        assert!(a.intersection(&b).is_none());
+    }
+
+    #[test]
+    fn test_rect_intersection_containment() {
+        let outer = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let inner = Rect::new(10.0, 10.0, 20.0, 20.0);
+        let inter = outer.intersection(&inner).unwrap();
+        assert_eq!(inter, inner);
+    }
+
+    #[test]
+    fn test_rect_contains_boundary() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // Left-top edge is inside
+        assert!(r.contains(Point::new(0.0, 0.0)));
+        // Right-bottom edge is outside (exclusive)
+        assert!(!r.contains(Point::new(100.0, 100.0)));
+        // Just inside
+        assert!(r.contains(Point::new(99.9, 99.9)));
+    }
+
+    #[test]
+    fn test_rect_intersection_partial() {
+        let a = Rect::new(0.0, 0.0, 50.0, 50.0);
+        let b = Rect::new(25.0, 25.0, 50.0, 50.0);
+        let inter = a.intersection(&b).unwrap();
+        assert_eq!(inter.origin.x, 25.0);
+        assert_eq!(inter.origin.y, 25.0);
+        assert_eq!(inter.size.width, 25.0);
+        assert_eq!(inter.size.height, 25.0);
+    }
+
+    #[test]
+    fn test_size_operations() {
+        let s = Size::new(0.0, 100.0);
+        assert!(s.is_empty()); // zero width
+        let s2 = Size::new(50.0, 0.0);
+        assert!(s2.is_empty()); // zero height
+        let s3 = Size::new(-5.0, 10.0);
+        assert!(s3.is_empty()); // negative width
+    }
+
+    #[test]
+    fn test_damage_tracker_non_mergeable_rects() {
+        let mut tracker = DamageTracker::new();
+        // Two distant rects should not merge
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.add_damage(Rect::new(500.0, 500.0, 10.0, 10.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+    }
+
+    #[test]
+    fn test_damage_tracker_default() {
+        let tracker = DamageTracker::default();
+        assert!(!tracker.is_dirty());
+        assert!(tracker.dirty_rects().is_empty());
+    }
+
+    #[test]
+    fn test_damage_tracker_damage_all_clears_previous() {
+        let mut tracker = DamageTracker::new();
+        tracker.add_damage(Rect::new(10.0, 10.0, 5.0, 5.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        tracker.damage_all(Size::new(800.0, 600.0));
+        // damage_all replaces with full surface rect
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].size.width, 800.0);
+        assert_eq!(tracker.dirty_rects()[0].size.height, 600.0);
+    }
 }

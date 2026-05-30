@@ -601,6 +601,82 @@ mod tests {
         assert!(painter.primitives().is_empty());
     }
 
+    /// 测试 background + border 同时存在时填充数量（1 background + 4 border = 5）。
+    #[test]
+    fn test_painter_background_plus_border_fill_count() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // 1 background fill + 4 border fills = 5
+        assert_eq!(painter.primitives().fills.len(), 5);
+        // First fill is background
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(200, 200, 200));
+    }
+
+    /// 测试无样式节点（no node_id）不产生任何填充。
+    #[test]
+    fn test_painter_no_style_no_fills() {
+        let layout = make_box(None, 0.0, 0.0, 100.0, 50.0);
+        let mut painter = Painter::new();
+        let styles = HashMap::new();
+        painter.paint(&layout, &styles);
+        assert!(painter.primitives().is_empty());
+    }
+
+    /// 测试 only background（no border）产生恰好 1 个填充。
+    #[test]
+    fn test_painter_only_background_fill_count() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 80.0, 40.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(0, 128, 255, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        assert_eq!(painter.primitives().fills.len(), 1);
+    }
+
+    /// 测试 only border（transparent background）产生恰好 4 个填充。
+    #[test]
+    fn test_painter_only_border_fill_count() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 80.0, 40.0, 1.0, 1.0, 1.0, 1.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        // background is transparent by default
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        // 4 border fills, no background fill
+        assert_eq!(painter.primitives().fills.len(), 4);
+    }
+
     /// 测试带 padding 的子节点偏移。
     #[test]
     fn test_painter_child_offset_with_padding() {

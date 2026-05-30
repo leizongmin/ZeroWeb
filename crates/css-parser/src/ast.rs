@@ -191,6 +191,8 @@ pub enum PseudoClassSelector {
     Is(Vec<Selector>),
     /// `:where()` 选择器。
     Where(Vec<Selector>),
+    /// `:has()` 选择器。
+    Has(Vec<Selector>),
     /// `:nth-child()` 选择器。
     NthChild(NthPattern),
     /// `:nth-last-child()` 选择器。

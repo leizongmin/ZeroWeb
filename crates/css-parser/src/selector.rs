@@ -35,7 +35,8 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
                 SubclassSelector::PseudoClass(pc) => {
                     match pc {
                         PseudoClassSelector::Is(sels)
-                        | PseudoClassSelector::Not(sels) => {
+                        | PseudoClassSelector::Not(sels)
+                        | PseudoClassSelector::Has(sels) => {
                             // :is() 和 :not() 取参数列表中最大的 specificity
                             let max_spec = sels
                                 .iter()

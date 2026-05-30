@@ -402,6 +402,195 @@ mod tests {
         assert!(layers[0].is_root);
     }
 
+    /// 测试 is_fixed=true 的 LayoutBox 被提升（无需 style 中 position=Fixed）。
+    #[test]
+    fn test_compositing_layer_layout_fixed_flag() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, true);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        // Default style (no position: fixed, no opacity) — but is_fixed=true on box
+        let mut styles = HashMap::new();
+        styles.insert(elem, ComputedStyle::default());
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 2, "is_fixed=true should promote to own layer");
+        assert!(layers[0].is_root);
+        assert!(!layers[1].is_root);
+    }
+
+    /// 测试 opacity=1.0 的元素不被提升。
+    #[test]
+    fn test_compositing_layer_opacity_one_not_promoted() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 1.0;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // Only root layer — opacity=1.0 should NOT promote
+        assert_eq!(layers.len(), 1);
+        assert!(layers[0].is_root);
+    }
+
+    /// 测试提升图层的 offset/width/height 正确。
+    #[test]
+    fn test_compositing_layer_promoted_geometry() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 20.0, 30.0, 200.0, 150.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.8;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 2);
+        let promoted = &layers[1];
+        assert!((promoted.opacity - 0.8).abs() < 0.001);
+        assert!((promoted.offset_x - 20.0).abs() < f32::EPSILON);
+        assert!((promoted.offset_y - 30.0).abs() < f32::EPSILON);
+        assert!((promoted.width - 200.0).abs() < f32::EPSILON);
+        assert!((promoted.height - 150.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试根图层包含未提升的子元素。
+    #[test]
+    fn test_compositing_layer_root_contains_unpromoted() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        styles.insert(elem, ComputedStyle::default());
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 1);
+        // Root layer should contain root box + child box = 2
+        assert_eq!(layers[0].boxes.len(), 2);
+    }
+
     /// 测试 CompositingLayer 的 bounding_box 方法。
     #[test]
     fn test_compositing_layer_bounding_box() {

@@ -1726,3 +1726,66 @@ fn test_parse_animation_play_state() {
     assert_eq!(parse_animation_play_state("paused"), Some(crate::values::AnimationPlayStateValue::Paused));
     assert_eq!(parse_animation_play_state("invalid"), None);
 }
+
+// ── :has() 选择器解析测试 ──
+
+#[test]
+/// 测试 :has(.active) 解析
+fn test_parse_has_selector() {
+    let stylesheet = Parser::parse_stylesheet("div:has(.active) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(matches!(
+            &compound.type_selector,
+            Some(TypeSelector::Tag(t)) if t == "div"
+        ));
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Has(selectors))
+                if selectors.len() == 1
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :has(> .child) 解析（子组合器）
+fn test_parse_has_child_combinator() {
+    let stylesheet = Parser::parse_stylesheet("div:has(> .child) { color: blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        let has_inner = compound.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Has(selectors)) => Some(selectors),
+            _ => None,
+        });
+        assert!(has_inner.is_some(), "Expected :has() pseudo-class");
+        let inner = has_inner.unwrap();
+        assert_eq!(inner.len(), 1);
+        // 内部选择器应有 Child 组合器
+        let inner_parts = &inner[0].complex.parts;
+        assert_eq!(inner_parts.len(), 2, "Expected compound > compound");
+        assert_eq!(inner_parts[0].1, Some(Combinator::Child));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :has(div, span) 解析（逗号分隔选择器列表）
+fn test_parse_has_selector_list() {
+    let stylesheet = Parser::parse_stylesheet("section:has(div, span) { background: white; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Has(selectors))
+                if selectors.len() == 2
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
