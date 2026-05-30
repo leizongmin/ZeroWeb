@@ -19,3 +19,9 @@ url = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+zero-css-parser = { workspace = true }
+
+[[bench]]
+name = "engine_bench"
+harness = false

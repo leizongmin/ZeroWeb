@@ -1,0 +1,359 @@
+//! 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
+
+use std::collections::HashMap;
+use std::time::Instant;
+
+use zero_css_parser::Stylesheet;
+use zero_dom::{Document, NodeId};
+use zero_layout_engine::{LayoutEngine, LayoutResult};
+use zero_render_foundation::primitive::RenderPrimitives;
+use zero_style_system::ComputedStyle;
+use zero_style_system::StyleSystem;
+
+use crate::dirty::DirtyTracker;
+use crate::paint::Painter;
+
+/// 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
+///
+/// 整合 DOM 解析、CSS 解析、样式计算、布局计算和绘制命令生成，
+/// 提供完整的端到端渲染能力。
+pub struct RenderPipeline {
+    /// 视口宽度。
+    viewport_width: f32,
+    /// 视口高度。
+    viewport_height: f32,
+    /// 样式系统。
+    style_system: StyleSystem,
+    /// 布局引擎。
+    layout_engine: LayoutEngine,
+    /// 脏区域追踪器。
+    dirty_tracker: DirtyTracker,
+    /// 缓存的布局结果。
+    cached_layout: Option<LayoutResult>,
+}
+
+/// 管线阶段耗时。
+#[derive(Debug, Clone, Default)]
+pub struct PipelineTimings {
+    /// HTML 解析耗时（毫秒）。
+    pub parse_ms: f64,
+    /// 样式计算耗时（毫秒）。
+    pub style_ms: f64,
+    /// 布局计算耗时（毫秒）。
+    pub layout_ms: f64,
+    /// 绘制命令生成耗时（毫秒）。
+    pub paint_ms: f64,
+    /// 总耗时（毫秒）。
+    pub total_ms: f64,
+}
+
+/// 渲染结果 — 包含图元、布局和计时信息。
+pub struct RenderResult {
+    /// 生成的渲染图元。
+    pub primitives: RenderPrimitives,
+    /// 布局结果。
+    pub layout: LayoutResult,
+    /// 各阶段计时。
+    pub timings: PipelineTimings,
+}
+
+impl RenderPipeline {
+    /// 创建新的渲染管线。
+    ///
+    /// # 参数
+    ///
+    /// - `viewport_width` — 视口宽度（像素）
+    /// - `viewport_height` — 视口高度（像素）
+    pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
+        Self {
+            viewport_width,
+            viewport_height,
+            style_system: StyleSystem::new(),
+            layout_engine: LayoutEngine::new(viewport_width, viewport_height),
+            dirty_tracker: DirtyTracker::new(),
+            cached_layout: None,
+        }
+    }
+
+    /// 渲染 HTML 文档（全流程）。
+    ///
+    /// 执行完整的 HTML→CSS→Style→Layout→Paint 管线。
+    ///
+    /// # 参数
+    ///
+    /// - `html` — HTML 字符串
+    /// - `css` — CSS 字符串
+    pub fn render_html(&mut self, html: &str, css: &str) -> RenderResult {
+        let total_start = Instant::now();
+
+        // 1. 解析 HTML → DOM
+        let parse_start = Instant::now();
+        let doc = zero_dom::parse_html(html);
+        let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 2. 解析 CSS → Stylesheets
+        let stylesheets = if css.is_empty() {
+            vec![]
+        } else {
+            vec![zero_css_parser::Parser::parse_stylesheet(css)]
+        };
+
+        // 3. 计算样式
+        let style_start = Instant::now();
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 4. 计算布局
+        let layout_start = Instant::now();
+        let layout_result = self.layout_engine.compute(&doc, &styles);
+        let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 5. 生成绘制命令
+        let paint_start = Instant::now();
+        let mut painter = Painter::new();
+        painter.paint(&layout_result.root, &styles);
+        let primitives = painter.into_primitives();
+        let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
+
+        let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 缓存布局结果
+        let layout = LayoutResult {
+            root: layout_result.root.clone(),
+            viewport_width: layout_result.viewport_width,
+            viewport_height: layout_result.viewport_height,
+        };
+        self.cached_layout = Some(layout_result);
+
+        RenderResult {
+            primitives,
+            layout,
+            timings: PipelineTimings {
+                parse_ms,
+                style_ms,
+                layout_ms,
+                paint_ms,
+                total_ms,
+            },
+        }
+    }
+
+    /// 仅重新计算样式和布局（增量更新）。
+    ///
+    /// 在 DOM 或样式表变化后调用，重新计算样式和布局，
+    /// 然后重新生成绘制命令。
+    pub fn recompute_styles(
+        &mut self,
+        doc: &Document,
+        stylesheets: &[Stylesheet],
+    ) -> (RenderPrimitives, HashMap<NodeId, ComputedStyle>, LayoutResult) {
+        // 计算样式
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let styles = self.style_system.compute_styles(doc, stylesheets);
+
+        // 计算布局
+        let layout_result = self.layout_engine.compute(doc, &styles);
+
+        // 生成绘制命令
+        let mut painter = Painter::new();
+        painter.paint(&layout_result.root, &styles);
+        let primitives = painter.into_primitives();
+
+        let layout = LayoutResult {
+            root: layout_result.root.clone(),
+            viewport_width: layout_result.viewport_width,
+            viewport_height: layout_result.viewport_height,
+        };
+        self.cached_layout = Some(layout_result);
+
+        (primitives, styles, layout)
+    }
+
+    /// 增量渲染 — 标记脏区域后重新渲染。
+    ///
+    /// 标记指定节点为脏，然后执行完整的重新渲染。
+    pub fn incremental_render(
+        &mut self,
+        html: &str,
+        css: &str,
+        dirty_node_layout: &zero_layout_engine::LayoutBox,
+    ) -> RenderResult {
+        // 标记脏区域
+        self.dirty_tracker
+            .mark_node_dirty(dirty_node_layout, 0.0, 0.0);
+
+        // 执行完整重绘（简化实现：增量重绘退化为全量重绘）
+        self.dirty_tracker.mark_full_redraw();
+        let result = self.render_html(html, css);
+        self.dirty_tracker.clear();
+        result
+    }
+
+    /// 获取当前布局结果。
+    pub fn layout(&self) -> Option<&LayoutResult> {
+        self.cached_layout.as_ref()
+    }
+
+    /// 获取视口宽度。
+    pub fn viewport_width(&self) -> f32 {
+        self.viewport_width
+    }
+
+    /// 获取视口高度。
+    pub fn viewport_height(&self) -> f32 {
+        self.viewport_height
+    }
+
+    /// 获取脏区域追踪器引用。
+    pub fn dirty_tracker(&self) -> &DirtyTracker {
+        &self.dirty_tracker
+    }
+
+    /// 获取脏区域追踪器可变引用。
+    pub fn dirty_tracker_mut(&mut self) -> &mut DirtyTracker {
+        &mut self.dirty_tracker
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试创建渲染管线。
+    #[test]
+    fn test_pipeline_new() {
+        let pipeline = RenderPipeline::new(800.0, 600.0);
+        assert_eq!(pipeline.viewport_width(), 800.0);
+        assert_eq!(pipeline.viewport_height(), 600.0);
+        assert!(pipeline.layout().is_none());
+    }
+
+    /// 测试渲染简单 HTML 文档。
+    #[test]
+    fn test_pipeline_render_simple_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let result = pipeline.render_html(html, "");
+
+        assert!(pipeline.layout().is_some());
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(result.layout.viewport_width > 0.0);
+    }
+
+    /// 测试带 CSS 的渲染。
+    #[test]
+    fn test_pipeline_render_with_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div id=\"main\">Hello</div></body></html>";
+        let css = "div { background-color: red; width: 200px; height: 100px; }";
+        let result = pipeline.render_html(html, css);
+
+        // CSS 应用后应产生背景填充
+        assert!(!result.primitives.fills.is_empty());
+    }
+
+    /// 测试渲染空 HTML 文档。
+    #[test]
+    fn test_pipeline_render_empty_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "";
+        let result = pipeline.render_html(html, "");
+
+        // 空 HTML 也能正常渲染
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(result.layout.viewport_width > 0.0);
+    }
+
+    /// 测试渲染嵌套元素。
+    #[test]
+    fn test_pipeline_render_nested_elements() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div><p><span>Deep</span></p></div></body></html>";
+        let css = "div { background-color: #ff0000; width: 300px; height: 200px; }";
+        let result = pipeline.render_html(html, css);
+
+        assert!(!result.primitives.fills.is_empty());
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染计时信息存在。
+    #[test]
+    fn test_pipeline_timings_present() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Test</div></body></html>";
+        let result = pipeline.render_html(html, "");
+
+        assert!(result.timings.parse_ms >= 0.0);
+        assert!(result.timings.style_ms >= 0.0);
+        assert!(result.timings.layout_ms >= 0.0);
+        assert!(result.timings.paint_ms >= 0.0);
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试重新计算样式。
+    #[test]
+    fn test_pipeline_recompute_styles() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        // 首次渲染
+        let _first = pipeline.render_html(html, "");
+
+        // 修改后重新计算
+        let doc = zero_dom::parse_html(html);
+        let css = "div { background-color: blue; }";
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (primitives, _styles, layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        assert!(layout.viewport_width > 0.0);
+        // CSS 应该为 div 生成背景填充
+        assert!(!primitives.fills.is_empty());
+    }
+
+    /// 测试增量渲染。
+    #[test]
+    fn test_pipeline_incremental_render() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        // 首次渲染
+        let _first = pipeline.render_html(html, "");
+
+        // 创建一个脏区域的 LayoutBox
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!pipeline.dirty_tracker().is_full_redraw());
+    }
+}
