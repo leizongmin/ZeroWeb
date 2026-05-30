@@ -838,3 +838,585 @@ fn test_parse_var_invalid() {
     let result = parse_var("not-a-var");
     assert_eq!(result, None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 8. 值解析扩展测试 — 提升 values.rs 覆盖率
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 #RGBA 四位十六进制颜色解析
+fn test_parse_color_hex4() {
+    let result = parse_color("#f00f");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+
+    let result = parse_color("#f000");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 0)));
+}
+
+#[test]
+/// 测试 rgb() 使用百分比分量
+fn test_parse_color_rgb_with_percent() {
+    let result = parse_color("rgb(100%, 0%, 0%)");
+    assert!(result.is_some());
+    let rgba = result.unwrap();
+    assert!(matches!(rgba, ColorValue::Rgba(255, 0, 0, 255)));
+}
+
+#[test]
+/// 测试 rgba() 带透明度
+fn test_parse_color_rgba() {
+    let result = parse_color("rgba(255, 0, 0, 0.5)");
+    assert!(result.is_some());
+    // alpha=0.5 → 0.5*255=127.5 → round=128
+    assert!(matches!(result, Some(ColorValue::Rgba(255, 0, 0, 128))));
+}
+
+#[test]
+/// 测试 hsl() 颜色
+fn test_parse_color_hsl() {
+    let result = parse_color("hsl(120, 50%, 50%)");
+    assert!(result.is_some());
+    assert!(matches!(result, Some(ColorValue::Hsla(120.0, 50.0, 50.0, 1.0))));
+}
+
+#[test]
+/// 测试 hsla() 颜色
+fn test_parse_color_hsla() {
+    let result = parse_color("hsla(240, 100%, 50%, 0.5)");
+    assert!(result.is_some());
+    assert!(matches!(result, Some(ColorValue::Hsla(240.0, 100.0, 50.0, 0.5))));
+}
+
+#[test]
+/// 测试无效颜色返回 None
+fn test_parse_color_invalid() {
+    // 无效的十六进制长度
+    assert_eq!(parse_color("#12"), None);
+    // rgb 参数不足
+    assert_eq!(parse_color("rgb(255, 0)"), None);
+}
+
+#[test]
+/// 测试所有 16 种基本命名颜色
+fn test_parse_color_named_all() {
+    assert_eq!(parse_color("black"), Some(ColorValue::Rgba(0, 0, 0, 255)));
+    assert_eq!(parse_color("white"), Some(ColorValue::Rgba(255, 255, 255, 255)));
+    assert_eq!(parse_color("green"), Some(ColorValue::Rgba(0, 128, 0, 255)));
+    assert_eq!(parse_color("blue"), Some(ColorValue::Rgba(0, 0, 255, 255)));
+    assert_eq!(parse_color("yellow"), Some(ColorValue::Rgba(255, 255, 0, 255)));
+    assert_eq!(parse_color("cyan"), Some(ColorValue::Rgba(0, 255, 255, 255)));
+    assert_eq!(parse_color("magenta"), Some(ColorValue::Rgba(255, 0, 255, 255)));
+    assert_eq!(parse_color("silver"), Some(ColorValue::Rgba(192, 192, 192, 255)));
+    assert_eq!(parse_color("gray"), Some(ColorValue::Rgba(128, 128, 128, 255)));
+    assert_eq!(parse_color("maroon"), Some(ColorValue::Rgba(128, 0, 0, 255)));
+    assert_eq!(parse_color("olive"), Some(ColorValue::Rgba(128, 128, 0, 255)));
+    assert_eq!(parse_color("lime"), Some(ColorValue::Rgba(0, 255, 0, 255)));
+    assert_eq!(parse_color("teal"), Some(ColorValue::Rgba(0, 128, 128, 255)));
+    assert_eq!(parse_color("navy"), Some(ColorValue::Rgba(0, 0, 128, 255)));
+    assert_eq!(parse_color("purple"), Some(ColorValue::Rgba(128, 0, 128, 255)));
+    // grey 别名
+    assert_eq!(parse_color("grey"), Some(ColorValue::Rgba(128, 128, 128, 255)));
+    // aqua 别名
+    assert_eq!(parse_color("aqua"), Some(ColorValue::Rgba(0, 255, 255, 255)));
+    // fuchsia 别名
+    assert_eq!(parse_color("fuchsia"), Some(ColorValue::Rgba(255, 0, 255, 255)));
+    // orange
+    assert_eq!(parse_color("orange"), Some(ColorValue::Rgba(255, 165, 0, 255)));
+    // 未知命名颜色应返回 Named
+    assert!(matches!(parse_color("customcolor"), Some(ColorValue::Named(_))));
+}
+
+#[test]
+/// 测试长度值为零（无单位 "0"）
+fn test_parse_length_zero() {
+    let result = parse_length("0");
+    // "0" 解析为数字 0.0，单位为空字符串 ""，匹配 _ => None
+    assert_eq!(result, None);
+}
+
+#[test]
+/// 测试无效长度值
+fn test_parse_length_invalid() {
+    assert_eq!(parse_length("abc"), None);
+}
+
+#[test]
+/// 测试 ch 单位
+fn test_parse_length_ch() {
+    let result = parse_length("2ch");
+    assert_eq!(result, Some(LengthValue::Ch(2.0)));
+}
+
+#[test]
+/// 测试 vmin 单位
+fn test_parse_length_vmin() {
+    let result = parse_length("50vmin");
+    assert_eq!(result, Some(LengthValue::Vmin(50.0)));
+}
+
+#[test]
+/// 测试 vmax 单位
+fn test_parse_length_vmax() {
+    let result = parse_length("50vmax");
+    assert_eq!(result, Some(LengthValue::Vmax(50.0)));
+}
+
+#[test]
+/// 测试所有 DisplayValue 变体
+fn test_parse_display_all() {
+    assert_eq!(parse_display("block"), Some(DisplayValue::Block));
+    assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+    assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
+    assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
+    assert_eq!(parse_display("inline-grid"), Some(DisplayValue::InlineGrid));
+    assert_eq!(parse_display("none"), Some(DisplayValue::None));
+    assert_eq!(parse_display("contents"), Some(DisplayValue::Contents));
+    assert_eq!(parse_display("flow"), Some(DisplayValue::Flow));
+    assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
+    assert_eq!(parse_display("list-item"), Some(DisplayValue::ListItem));
+    assert_eq!(parse_display("unknown"), None);
+}
+
+#[test]
+/// 测试所有 PositionValue 变体
+fn test_parse_position_all() {
+    assert_eq!(parse_position("static"), Some(PositionValue::Static));
+    assert_eq!(parse_position("relative"), Some(PositionValue::Relative));
+    assert_eq!(parse_position("absolute"), Some(PositionValue::Absolute));
+    assert_eq!(parse_position("fixed"), Some(PositionValue::Fixed));
+    assert_eq!(parse_position("sticky"), Some(PositionValue::Sticky));
+    assert_eq!(parse_position("unknown"), None);
+}
+
+#[test]
+/// 测试所有 OverflowValue 变体
+fn test_parse_overflow_all() {
+    assert_eq!(parse_overflow("visible"), Some(OverflowValue::Visible));
+    assert_eq!(parse_overflow("hidden"), Some(OverflowValue::Hidden));
+    assert_eq!(parse_overflow("scroll"), Some(OverflowValue::Scroll));
+    assert_eq!(parse_overflow("auto"), Some(OverflowValue::Auto));
+    assert_eq!(parse_overflow("clip"), Some(OverflowValue::Clip));
+    assert_eq!(parse_overflow("unknown"), None);
+}
+
+#[test]
+/// 测试所有 FlexDirectionValue 变体
+fn test_parse_flex_direction_all() {
+    assert_eq!(parse_flex_direction("row"), Some(FlexDirectionValue::Row));
+    assert_eq!(parse_flex_direction("row-reverse"), Some(FlexDirectionValue::RowReverse));
+    assert_eq!(parse_flex_direction("column"), Some(FlexDirectionValue::Column));
+    assert_eq!(parse_flex_direction("column-reverse"), Some(FlexDirectionValue::ColumnReverse));
+    assert_eq!(parse_flex_direction("unknown"), None);
+}
+
+#[test]
+/// 测试所有 FlexWrapValue 变体
+fn test_parse_flex_wrap_all() {
+    assert_eq!(parse_flex_wrap("nowrap"), Some(FlexWrapValue::Nowrap));
+    assert_eq!(parse_flex_wrap("wrap"), Some(FlexWrapValue::Wrap));
+    assert_eq!(parse_flex_wrap("wrap-reverse"), Some(FlexWrapValue::WrapReverse));
+    assert_eq!(parse_flex_wrap("unknown"), None);
+}
+
+#[test]
+/// 测试所有 AlignmentValue 变体
+fn test_parse_alignment_all() {
+    assert_eq!(parse_alignment("flex-start"), Some(AlignmentValue::FlexStart));
+    assert_eq!(parse_alignment("flex-end"), Some(AlignmentValue::FlexEnd));
+    assert_eq!(parse_alignment("center"), Some(AlignmentValue::Center));
+    assert_eq!(parse_alignment("space-between"), Some(AlignmentValue::SpaceBetween));
+    assert_eq!(parse_alignment("space-around"), Some(AlignmentValue::SpaceAround));
+    assert_eq!(parse_alignment("space-evenly"), Some(AlignmentValue::SpaceEvenly));
+    assert_eq!(parse_alignment("stretch"), Some(AlignmentValue::Stretch));
+    assert_eq!(parse_alignment("start"), Some(AlignmentValue::Start));
+    assert_eq!(parse_alignment("end"), Some(AlignmentValue::End));
+    assert_eq!(parse_alignment("baseline"), Some(AlignmentValue::Baseline));
+    assert_eq!(parse_alignment("unknown"), None);
+}
+
+#[test]
+/// 测试所有 BoxSizingValue 变体
+fn test_parse_box_sizing_all() {
+    assert_eq!(parse_box_sizing("content-box"), Some(BoxSizingValue::ContentBox));
+    assert_eq!(parse_box_sizing("border-box"), Some(BoxSizingValue::BorderBox));
+    assert_eq!(parse_box_sizing("unknown"), None);
+}
+
+#[test]
+/// 测试所有 VisibilityValue 变体
+fn test_parse_visibility_all() {
+    assert_eq!(parse_visibility("visible"), Some(VisibilityValue::Visible));
+    assert_eq!(parse_visibility("hidden"), Some(VisibilityValue::Hidden));
+    assert_eq!(parse_visibility("collapse"), Some(VisibilityValue::Collapse));
+    assert_eq!(parse_visibility("unknown"), None);
+}
+
+#[test]
+/// 测试所有 FontWeightValue 变体（100-900、bold、normal、bolder、lighter）
+fn test_parse_font_weight_all() {
+    assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
+    assert_eq!(parse_font_weight("200"), Some(FontWeightValue::Absolute(200)));
+    assert_eq!(parse_font_weight("300"), Some(FontWeightValue::Absolute(300)));
+    assert_eq!(parse_font_weight("400"), Some(FontWeightValue::Absolute(400)));
+    assert_eq!(parse_font_weight("500"), Some(FontWeightValue::Absolute(500)));
+    assert_eq!(parse_font_weight("600"), Some(FontWeightValue::Absolute(600)));
+    assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
+    assert_eq!(parse_font_weight("800"), Some(FontWeightValue::Absolute(800)));
+    assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
+    assert_eq!(parse_font_weight("bold"), Some(FontWeightValue::Bold));
+    assert_eq!(parse_font_weight("normal"), Some(FontWeightValue::Normal));
+    assert_eq!(parse_font_weight("bolder"), Some(FontWeightValue::Bolder));
+    assert_eq!(parse_font_weight("lighter"), Some(FontWeightValue::Lighter));
+    // 超出范围的值
+    assert_eq!(parse_font_weight("0"), None);
+    assert_eq!(parse_font_weight("50"), None);
+    assert_eq!(parse_font_weight("1000"), None);
+}
+
+#[test]
+/// 测试所有 FontStyleValue 变体
+fn test_parse_font_style_all() {
+    assert_eq!(parse_font_style("normal"), Some(FontStyleValue::Normal));
+    assert_eq!(parse_font_style("italic"), Some(FontStyleValue::Italic));
+    assert_eq!(parse_font_style("oblique"), Some(FontStyleValue::Oblique(None)));
+    assert_eq!(parse_font_style("oblique(15deg)"), Some(FontStyleValue::Oblique(Some(15.0))));
+    assert_eq!(parse_font_style("unknown"), None);
+}
+
+#[test]
+/// 测试 parse_length 对百分比的处理（parse_length 不支持 %）
+fn test_parse_length_percentage() {
+    let result = parse_length("50%");
+    // parse_length 不识别 % 单位
+    assert_eq!(result, None);
+}
+
+#[test]
+/// 测试 currentcolor 大小写不敏感
+fn test_parse_color_currentcolor_case_insensitive() {
+    assert_eq!(parse_color("currentColor"), Some(ColorValue::CurrentColor));
+    assert_eq!(parse_color("currentcolor"), Some(ColorValue::CurrentColor));
+    assert_eq!(parse_color("CURRENTcolor"), Some(ColorValue::CurrentColor));
+}
+
+#[test]
+/// 测试 display: flow
+fn test_parse_display_flow() {
+    assert_eq!(parse_display("flow"), Some(DisplayValue::Flow));
+}
+
+#[test]
+/// 测试 display: flow-root
+fn test_parse_display_flow_root() {
+    assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
+}
+
+#[test]
+/// 测试 display: list-item
+fn test_parse_display_list_item() {
+    assert_eq!(parse_display("list-item"), Some(DisplayValue::ListItem));
+}
+
+#[test]
+/// 测试 display: contents
+fn test_parse_display_contents() {
+    assert_eq!(parse_display("contents"), Some(DisplayValue::Contents));
+}
+
+#[test]
+/// 测试 display: inline-block
+fn test_parse_display_inline_block() {
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+}
+
+#[test]
+/// 测试 display: inline-flex
+fn test_parse_display_inline_flex() {
+    assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
+}
+
+#[test]
+/// 测试 display: inline-grid
+fn test_parse_display_inline_grid() {
+    assert_eq!(parse_display("inline-grid"), Some(DisplayValue::InlineGrid));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 9. Parser 扩展测试 — 提升 parser.rs 覆盖率
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 :nth-child(odd) 伪类
+fn test_parse_nth_child_odd() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-child(odd) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(NthPattern { a: 2, b: 1 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :nth-child(even) 伪类
+fn test_parse_nth_child_even() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-child(even) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(NthPattern { a: 2, b: 0 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :nth-child(2n+1) 公式伪类
+fn test_parse_nth_child_formula() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-child(2n+1) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(NthPattern { a: 2, b: 1 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :nth-of-type(3) 伪类
+fn test_parse_nth_of_type() {
+    let stylesheet = Parser::parse_stylesheet("li:nth-of-type(3) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 3 }))
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :not() 伪类
+fn test_parse_not_selector() {
+    let stylesheet = Parser::parse_stylesheet("p:not(.hidden) { display: block; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Not(_))
+        )));
+        // 验证声明
+        assert!(sr.declarations.iter().any(|d| d.property == "display"));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :is() 伪类
+fn test_parse_is_selector() {
+    let stylesheet = Parser::parse_stylesheet("p:is(.active, .visible) { color: green; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Is(selectors))
+                if selectors.len() == 2
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :where() 伪类
+fn test_parse_where_selector() {
+    let stylesheet = Parser::parse_stylesheet("p:where(.main) { font-size: 16px; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Where(selectors))
+                if selectors.len() == 1
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试 :lang() 伪类
+fn test_parse_lang() {
+    let stylesheet = Parser::parse_stylesheet("p:lang(en) { color: blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Lang(lang))
+                if lang == "en"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试属性前缀匹配选择器 [href^=https]
+fn test_parse_attribute_prefix() {
+    let stylesheet = Parser::parse_stylesheet("[href^=https] { color: green; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Prefix(val),
+            }) if name == "href" && val == "https"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试属性后缀匹配选择器 [href$=.pdf]
+fn test_parse_attribute_suffix() {
+    let stylesheet = Parser::parse_stylesheet("[href$=.pdf] { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Suffix(val),
+            }) if name == "href" && val == ".pdf"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试属性子串匹配选择器 [title*=hello]
+fn test_parse_attribute_substring() {
+    let stylesheet = Parser::parse_stylesheet("[title*=hello] { color: blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Substring(val),
+            }) if name == "title" && val == "hello"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试属性破折号匹配选择器 [lang|=en]
+fn test_parse_attribute_dash() {
+    let stylesheet = Parser::parse_stylesheet("[lang|=en] { color: blue; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        assert!(compound.subclass_selectors.iter().any(|s| matches!(
+            s,
+            SubclassSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::DashMatch(val),
+            }) if name == "lang" && val == "en"
+        )));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试多选择器多声明的复杂规则
+fn test_parse_multiple_selectors_and_declarations() {
+    let css = "div.container > p.text, span.highlight { color: red; font-size: 16px; display: block; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        // 两个选择器
+        assert_eq!(sr.selectors.len(), 2);
+        // 至少 3 条声明
+        assert!(sr.declarations.len() >= 3);
+        // 验证第一个选择器有 child 组合器
+        let parts = &sr.selectors[0].complex.parts;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].1, Some(Combinator::Child));
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+#[test]
+/// 测试嵌套 @media 带类选择器
+fn test_parse_nested_at_media_with_class() {
+    let css = "@media screen and (max-width: 768px) { .container { width: 100%; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::At(at_rule) => {
+            assert_eq!(at_rule.name, "media");
+            assert!(at_rule.prelude.contains("screen"));
+            if let AtRuleBody::Block(rules) = &at_rule.body {
+                assert_eq!(rules.len(), 1);
+                if let Rule::Style(sr) = &rules[0] {
+                    assert!(sr.declarations.iter().any(|d| d.property == "width"));
+                } else {
+                    panic!("Expected Style rule inside @media");
+                }
+            } else {
+                panic!("Expected Block body for @media");
+            }
+        }
+        _ => panic!("Expected At rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports 规则
+fn test_parse_at_supports() {
+    let css = "@supports (display: grid) { .container { display: grid; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::At(at_rule) => {
+            assert_eq!(at_rule.name, "supports");
+            assert!(at_rule.prelude.contains("grid"));
+            if let AtRuleBody::Block(rules) = &at_rule.body {
+                assert_eq!(rules.len(), 1);
+            } else {
+                panic!("Expected Block body for @supports");
+            }
+        }
+        _ => panic!("Expected At rule"),
+    }
+}
