@@ -19,6 +19,7 @@ ZeroBrowser 是一个用 Rust 写的实验性跨平台浏览器项目。这个�
 
 **快速导航**
 
+- [路线图](ROADMAP.md)
 - [当前状态](#当前状态)
 - [快速开始](#快速开始)
 - [仓库结构](#仓库结构)
@@ -147,6 +148,7 @@ cargo run --bin zero-browser
 
 | 文档 | 说明 |
 |------|------|
+| [ROADMAP.md](ROADMAP.md) | 对外路线图，说明已经做完什么、正在推什么、接下来补什么 |
 | [CHANGELOG.md](CHANGELOG.md) | 对外发布层面的变更记录 |
 | [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
 | [docs/releases/github-metadata.md](docs/releases/github-metadata.md) | GitHub 仓库介绍、Topics、tag 和 release 标题建议 |
