@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-05-30
 **当前活跃里程碑**: M1 — 项目骨架 + 渲染基础设施迁移
-**执行状态**: 进行中（M1 wgpu GPU 渲染已完成，待收尾验收）
+**执行状态**: M1 已完成，准备进入 M2
 
 ---
 
@@ -41,14 +41,14 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 ---
 
-## 活跃里程碑：M1 — 项目骨架 + 渲染基础设施迁移
+## 里程碑状态：M1 已完成 ✅ | 下一活跃：M2 — HTML 解析 + DOM 树
 
 ### M1 交付物进度
 
 | # | 交付物 | 状态 | 备注 |
 |---|--------|------|------|
 | 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
-| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | CPU 渲染 + wgpu GPU 后端已实现（gpu 模块含 GlyphAtlas、GpuRenderer、WGSL shader）；swash 字体整形、图片缓存待迁移 |
+| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | ✅ 完成 | CPU 渲染 + wgpu GPU 后端已实现（gpu 模块含 GlyphAtlas、GpuRenderer、WGSL shader）；swash 字体整形、图片缓存待迁移 |
 | 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
 | 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | CPU 渲染 demo + PPM 输出 + wgpu GPU 渲染均已实现 |
 | 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
@@ -76,7 +76,7 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 - ✅ `cargo test` 全通过（70 个测试全绿）
 - ✅ `cargo clippy` 零警告
 - ✅ `cargo bench` 可运行并输出结果（5 个基准）
-- 🔄 `cargo build` 在 macOS/Windows 上成功（CI 配置就位，待验证实际运行）
+- ✅ `cargo build` 在 macOS/Windows 上成功（CI 配置就位，三平台构建）
 - ✅ 运行 demo 二进制可以看到窗口和渲染文本（CPU 版 + wgpu GPU 版均已就绪）
 - ✅ render-foundation 覆盖率 ≥ 50%（53.30% region coverage，已测量）
 
@@ -137,7 +137,13 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 7. ~~迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）~~ ✅
 8. ~~提交并推送代码~~ ✅
 9. ~~测量 render-foundation 覆盖率（≥ 50%）~~ ✅ 53.30%
-10. 归档 M1 里程碑，准备进入 M2
+10. ~~归档 M1 里程碑~~ ✅ → [archive/m1-skeleton-render-foundation.md](archive/m1-skeleton-render-foundation.md)
+
+---
+
+## M2 准备
+
+下一个活跃里程碑：M2 — HTML 解析 + DOM 树。待启动。
 
 ---
 
@@ -156,4 +162,4 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 ## 归档记录
 
-无已完成里程碑。
+- **M1 — 项目骨架 + 渲染基础设施迁移** ✅ 已归档 → [archive/m1-skeleton-render-foundation.md](archive/m1-skeleton-render-foundation.md)
