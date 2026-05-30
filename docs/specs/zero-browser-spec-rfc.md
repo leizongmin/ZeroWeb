@@ -1,6 +1,6 @@
 # Spec: ZeroBrowser — 基于 Rust 的跨平台浏览器
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-05-30
 **作者**: AI Assistant
 **状态**: Confirmed
@@ -634,13 +634,40 @@
 
 ### 8.1 现状分析（As-Is）
 
-**当前架构**: 无。仓库处于调研与架构定义阶段，仅有技术调研文档。
+**当前架构**: M1 里程碑执行中。Cargo workspace 已建立，包含 16 个 crate 骨架 + 2 个应用入口，其中 `render-foundation` 和 `host-runtime` 已有实质性实现。
+
+**代码规模**: 2,112 行 Rust 源代码（28 个 `.rs` 文件），55 个单元测试，5 个 criterion 基准测试。
 
 **已有资产**:
-- 技术调研文档（`docs/research/rust-cross-platform-browser-research.md`）— 已完成四轮迭代
-- OmniTerm 可复用渲染基础设施（需迁移）
 
-**OmniTerm 可复用资产清单**:
+| 资产 | 状态 | 说明 |
+|------|------|------|
+| 技术调研文档 | ✅ 完成 | 四轮迭代，技术路线已确认 |
+| Cargo workspace | ✅ 完成 | 16 crate + 2 apps，全部编译通过 |
+| CI 管线 | ✅ 完成 | GitHub Actions 三平台（ubuntu/macos/windows） |
+| `render-foundation` | 🔄 进行中 | 1,271 行源码，38 个测试，5 个基准；CPU 渲染数据模型已建立 |
+| `host-runtime` | ✅ 基础完成 | 218 行源码，3 个测试；winit 窗口+事件循环可用 |
+| Demo 二进制 | ✅ CPU 版 | 800×600 CPU 渲染 + PPM 输出 + winit 窗口展示 |
+| 覆盖率测量脚本 | ✅ 就位 | `scripts/check-coverage.sh` |
+| 基准运行脚本 | ⚠️ 路径有误 | `scripts/run-benchmarks.sh` 引用不存在的 Cargo.toml |
+
+**render-foundation 已实现模块**:
+
+| 模块 | 内容 | 行数 | 测试数 |
+|------|------|------|--------|
+| `color` | Color (RGBA)、hex 解析、sRGB→linear、premultiplied alpha | 180 | 5 |
+| `geometry` | Point、Size、Rect、DamageTracker（脏矩形合并） | 294 | 9 |
+| `primitive` | FillPrimitive、GlyphPrimitive、RenderPrimitives | 152 | 4 |
+| `surface` | SurfaceDescriptor、FrameBuffer（CPU RGBA 像素缓冲区） | 180 | 8 |
+| `font/loader` | FontLoader（fontdue 集成）、字体加载和 glyph 光栅化 | 143 | 6 |
+| `font/cache` | GlyphCache、LRU 淘汰策略 | 201 | 6 |
+
+**尚未实现的关键部分**:
+- `render-foundation`: wgpu GPU 后端、swash 字体整形、图片加载/缓存、实际渲染管线
+- `host-runtime`: GPU surface 创建（wgpu 集成）、输入法支持、键盘事件转换
+- 所有其他 crate: 仅有骨架占位代码
+
+**OmniTerm 可复用资产清单**（待迁移）:
 
 | OmniTerm 模块 | 功能 | 迁移目标 |
 |---------------|------|----------|
@@ -650,12 +677,12 @@
 | `omniterm-terminal-image` | 图片对象缓存与 GC 限制 | `render-foundation` |
 | `omniterm-terminal-ffi` / `-wasm` | ABI 边界和 WASM 友好封装 | `wasm-sandbox` |
 
-**痛点与差距**:
-1. 无代码、无测试、无编译产物、无 CI — 一切从零开始
-2. CSS 解析器需要完全自建（MPL 排除所有现有方案）
-3. 浏览器级样式/布局/渲染/脚本集成是最大的技术空白
-4. 多进程架构和安全沙箱需要平台特定的系统级编程
-5. V8 与 Rust 的桥接（rusty_v8）在生产环境中的可靠性未经验证
+**剩余技术差距**:
+1. CSS 解析器需要完全自建（MPL 排除所有现有方案）— M3 的核心创新点
+2. 浏览器级样式/布局/渲染/脚本集成是最大的技术空白
+3. 多进程架构和安全沙箱需要平台特定的系统级编程
+4. V8 与 Rust 的桥接（rusty_v8）在生产环境中的可靠性未经验证
+5. `run-benchmarks.sh` 脚本路径有误，需要修复
 
 ### 8.2 目标状态（Target State）
 
@@ -1012,5 +1039,6 @@ enum IpcMessage {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v1.2 | 2026-05-30 | 更新 §8.1 As-Is 分析以反映 M1 代码进展（2,112 行源码、55 测试、5 基准）；补充 render-foundation 和 host-runtime 实现细节；标注 run-benchmarks.sh 路径问题 |
 | v1.1 | 2026-05-30 | 状态更新为 Confirmed；解决 TBD-1（MSRV = Rust 1.85）；更新 C-008 约束 |
 | v1.0 | 2026-05-30 | 初始版本 — 基于目标文档 `docs/goal/zero-browser.md` v1.0 和技术调研文档 `docs/research/rust-cross-platform-browser-research.md` 创建完整的 Spec + RFC |
