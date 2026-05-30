@@ -11,36 +11,37 @@ mkdir -p "$RESULTS_DIR"
 DATE=$(date +%Y%m%d_%H%M%S)
 REPORT="$RESULTS_DIR/benchmark_${DATE}.txt"
 
-# All crates with [[bench]] entries (order: pipeline stages first)
-BENCH_CRATES=(
-    zero-css-parser
-    zero-dom
-    zero-style-system
-    zero-layout-engine
-    zero-engine-core
-    zero-canvas
-    zero-render-foundation
-    zero-host-runtime
-    zero-webview-api
-    zero-net
-    zero-protocol
-    zero-security
-    zero-storage
-    zero-wasm-sandbox
+# All crates with [[bench]] entries and their bench file names
+declare -A BENCH_MAP=(
+    [zero-css-parser]="css_bench"
+    [zero-dom]="dom_bench"
+    [zero-style-system]="style_bench"
+    [zero-layout-engine]="layout_bench"
+    [zero-engine-core]="engine_bench"
+    [zero-canvas]="canvas_bench"
+    [zero-render-foundation]="render_bench"
+    [zero-host-runtime]="host_runtime_bench"
+    [zero-webview-api]="webview_bench"
+    [zero-net]="net_bench"
+    [zero-protocol]="protocol_bench"
+    [zero-security]="security_bench"
+    [zero-storage]="storage_bench"
+    [zero-wasm-sandbox]="wasm_bench"
 )
 
 echo "=== ZeroBrowser Benchmarks ===" | tee "$REPORT"
 echo "Date: $(date)" | tee -a "$REPORT"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" | tee -a "$REPORT"
-echo "Crates: ${#BENCH_CRATES[@]}" | tee -a "$REPORT"
+echo "Crates: ${#BENCH_MAP[@]}" | tee -a "$REPORT"
 echo "" | tee -a "$REPORT"
 
 PASSED=()
 FAILED=()
 
-for crate in "${BENCH_CRATES[@]}"; do
-    echo "--- $crate ---" | tee -a "$REPORT"
-    if cargo bench -p "$crate" 2>&1 | tee -a "$REPORT"; then
+for crate in "${!BENCH_MAP[@]}"; do
+    bench_name="${BENCH_MAP[$crate]}"
+    echo "--- $crate ($bench_name) ---" | tee -a "$REPORT"
+    if cargo bench -p "$crate" --bench "$bench_name" 2>&1 | grep -E "^(Benchmarking|$crate|time:|Found|change:)" | tee -a "$REPORT"; then
         PASSED+=("$crate")
     else
         FAILED+=("$crate")
@@ -50,7 +51,7 @@ for crate in "${BENCH_CRATES[@]}"; do
 done
 
 echo "=== Summary ===" | tee -a "$REPORT"
-echo "Passed: ${#PASSED[@]} / ${#BENCH_CRATES[@]}" | tee -a "$REPORT"
+echo "Passed: ${#PASSED[@]} / ${#BENCH_MAP[@]}" | tee -a "$REPORT"
 if [ ${#FAILED[@]} -gt 0 ]; then
     echo "Failed: ${FAILED[*]}" | tee -a "$REPORT"
 fi
