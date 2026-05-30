@@ -4444,9 +4444,11 @@ dependencies = [
 name = "zero-layout-engine"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "serde",
  "taffy",
  "thiserror 2.0.18",
+ "zero-css-parser",
  "zero-dom",
  "zero-style-system",
 ]
