@@ -4416,6 +4416,7 @@ dependencies = [
 name = "zero-engine-core"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "thiserror 2.0.18",
  "tracing",
  "url",
@@ -4563,6 +4564,10 @@ dependencies = [
  "zero-render-foundation",
  "zero-webview-api",
 ]
+
+[[package]]
+name = "zero-wpt-runner"
+version = "0.1.0"
 
 [[package]]
 name = "zerocopy"

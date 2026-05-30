@@ -28,6 +28,9 @@ members = [
     # 应用入口
     "apps/browser",
     "apps/webview-demo",
+
+    # 测试基础设施
+    "tests/wpt-runner",
 ]
 
 [workspace.package]
