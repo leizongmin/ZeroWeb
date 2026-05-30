@@ -19,7 +19,7 @@ echo ""
 # 运行 render-foundation 基准
 echo "--- render-foundation 基准 ---"
 cd "$PROJECT_ROOT"
-cargo bench --manifest-path tests/benchmarks/benches/Cargo.toml 2>&1 | tee "$REPORT"
+cargo bench -p zero-render-foundation 2>&1 | tee "$REPORT"
 
 echo ""
 echo "=== 基准测试完成 ==="

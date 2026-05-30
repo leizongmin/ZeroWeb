@@ -12,7 +12,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 个 crate 骨架 |
 | 编译状态 | ✅ `cargo check --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 38 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 55 个测试全绿 |
 | 覆盖率 | 待测量（脚本就位） |
 | WPT 通过率 | N/A |
 | 性能基线 | ✅ `cargo bench` 5 个基准可运行 |
@@ -52,7 +52,7 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
 | 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | "Hello ZeroBrowser" CPU 渲染 demo + PPM 输出 |
 | 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
-| 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 24 个测试用例（geometry:10, color:5, primitive:4, font:6, surface:7） |
+| 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 38 个测试用例（geometry:9, color:5, primitive:4, font/loader:6, font/cache:6, surface:8） |
 | 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
 | 8 | `render-foundation` 首批基准（≥3 个） | ✅ 完成 | 5 个基准（damage_tracker, glyph_cache, frame_buffer, primitives） |
 | 9 | 覆盖率测量脚本就位 | ✅ 完成 | scripts/check-coverage.sh |
@@ -62,12 +62,12 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 | 模块 | 内容 | 测试 |
 |------|------|------|
-| `geometry` | Point, Size, Rect, DamageTracker | 10 个测试 |
+| `geometry` | Point, Size, Rect, DamageTracker | 9 个测试 |
 | `color` | Color (RGBA), hex 解析, sRGB→linear, premultiplied alpha | 5 个测试 |
 | `primitive` | FillPrimitive, GlyphPrimitive, RenderPrimitives | 4 个测试 |
-| `font/loader` | FontLoader (fontdue), 字体加载和 glyph 光栅化 | 5 个测试 |
+| `font/loader` | FontLoader (fontdue), 字体加载和 glyph 光栅化 | 6 个测试 |
 | `font/cache` | GlyphCache, LRU 淘汰策略 | 6 个测试 |
-| `surface` | SurfaceDescriptor, FrameBuffer (CPU RGBA) | 7 个测试 |
+| `surface` | SurfaceDescriptor, FrameBuffer (CPU RGBA) | 8 个测试 |
 
 ### M1 验收标准
 
@@ -124,11 +124,12 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 
 | ID | 问题 | 优先级 | 状态 |
 |----|------|--------|------|
-| TBD-1 | MSRV（最低支持 Rust 版本）策略 | 重要 | 待定 |
+| TBD-1 | MSRV（最低支持 Rust 版本）策略 | 重要 | ✅ 已解决：Rust 1.85 |
 | TBD-2 | OmniTerm 代码复用许可证确认 | 重要 | 假设同团队可复用 |
 | TBD-3 | V8 二进制分发策略 | 重要 | 待定 |
 | TBD-4 | CSS 解析器性能目标 | 重要 | 待定 |
 | TBD-9 | 浏览器 UI 框架选型 | 重要 | 待定 |
+| ISSUE-1 | `run-benchmarks.sh` 引用不存在的 `tests/benchmarks/benches/Cargo.toml` | 重要 | ✅ 已修复：改为 `cargo bench -p zero-render-foundation` |
 
 ---
 
