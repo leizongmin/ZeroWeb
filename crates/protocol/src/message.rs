@@ -1,0 +1,213 @@
+//! IPC 消息类型定义。
+
+use serde::{Deserialize, Serialize};
+
+/// IPC 消息 — 浏览器进程与渲染进程之间的通信协议。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcMessage {
+    /// 消息 ID（用于匹配请求/响应）。
+    pub id: u64,
+    /// 消息类型。
+    pub kind: IpcMessageKind,
+}
+
+/// IPC 消息类型。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IpcMessageKind {
+    // ── 导航命令（浏览器→渲染）──
+    /// 加载 URL。
+    Navigate(NavigateParams),
+    /// 后退。
+    GoBack,
+    /// 前进。
+    GoForward,
+    /// 停止加载。
+    StopLoading,
+    /// 重新加载。
+    Reload,
+
+    // ── 页面事件（渲染→浏览器）──
+    /// 页面标题变更。
+    TitleChanged(String),
+    /// URL 变更。
+    UrlChanged(String),
+    /// 页面加载完成。
+    LoadComplete,
+    /// 页面加载失败。
+    LoadFailed(String),
+
+    // ── 网络请求（渲染→浏览器→网络）──
+    /// 发起网络请求。
+    FetchRequest(FetchParams),
+    /// 网络响应。
+    FetchResponse(FetchResponseParams),
+
+    // ── 存储请求（渲染→浏览器→存储）──
+    /// localStorage/sessionStorage 操作。
+    StorageOp(StorageOpParams),
+
+    // ── 输入事件（浏览器→渲染）──
+    /// 鼠标事件。
+    MouseEvent(MouseEventParams),
+    /// 键盘事件。
+    KeyboardEvent(KeyboardEventParams),
+    /// 滚动事件。
+    ScrollEvent(ScrollEventParams),
+
+    // ── 进程管理 ──
+    /// 进程心跳。
+    Heartbeat,
+    /// 进程崩溃通知。
+    CrashNotification(String),
+
+    // ── 通用响应 ──
+    /// 成功响应。
+    Ok,
+    /// 错误响应。
+    Error(String),
+}
+
+/// 导航参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigateParams {
+    /// 目标 URL。
+    pub url: String,
+    /// 来源页面 URL。
+    pub referrer: Option<String>,
+}
+
+/// 网络请求参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchParams {
+    /// 请求 ID。
+    pub request_id: u64,
+    /// 请求 URL。
+    pub url: String,
+    /// HTTP 方法。
+    pub method: String,
+    /// 请求头。
+    pub headers: Vec<(String, String)>,
+    /// 请求体。
+    pub body: Option<Vec<u8>>,
+}
+
+/// 网络响应参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchResponseParams {
+    /// 对应的请求 ID。
+    pub request_id: u64,
+    /// HTTP 状态码。
+    pub status_code: u16,
+    /// 响应头。
+    pub headers: Vec<(String, String)>,
+    /// 响应体。
+    pub body: Vec<u8>,
+}
+
+/// 存储操作参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageOpParams {
+    /// 存储类型。
+    pub storage_type: StorageType,
+    /// 操作类型。
+    pub operation: StorageOperation,
+    /// 键。
+    pub key: String,
+    /// 值。
+    pub value: Option<String>,
+    /// 来源。
+    pub origin: String,
+}
+
+/// 存储类型。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum StorageType {
+    /// localStorage。
+    Local,
+    /// sessionStorage。
+    Session,
+}
+
+/// 存储操作。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum StorageOperation {
+    /// 读取。
+    Get,
+    /// 写入。
+    Set,
+    /// 删除。
+    Remove,
+    /// 清空。
+    Clear,
+    /// 获取长度。
+    Length,
+    /// 按索引获取键名。
+    Key,
+}
+
+/// 鼠标事件参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MouseEventParams {
+    /// X 坐标。
+    pub x: f32,
+    /// Y 坐标。
+    pub y: f32,
+    /// 鼠标按键。
+    pub button: u8,
+    /// 事件类型。
+    pub event_type: MouseEventType,
+}
+
+/// 鼠标事件类型。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MouseEventType {
+    /// 按下。
+    Down,
+    /// 释放。
+    Up,
+    /// 移动。
+    Move,
+    /// 单击。
+    Click,
+    /// 双击。
+    DblClick,
+}
+
+/// 键盘事件参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyboardEventParams {
+    /// 按键值。
+    pub key: String,
+    /// 物理键码。
+    pub code: String,
+    /// Ctrl 键是否按下。
+    pub ctrl: bool,
+    /// Shift 键是否按下。
+    pub shift: bool,
+    /// Alt 键是否按下。
+    pub alt: bool,
+    /// Meta 键是否按下。
+    pub meta: bool,
+    /// 事件类型。
+    pub event_type: KeyboardEventType,
+}
+
+/// 键盘事件类型。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum KeyboardEventType {
+    /// 按下。
+    Down,
+    /// 释放。
+    Up,
+    /// 输入。
+    Press,
+}
+
+/// 滚动事件参数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrollEventParams {
+    /// 水平滚动量。
+    pub delta_x: f32,
+    /// 垂直滚动量。
+    pub delta_y: f32,
+}
