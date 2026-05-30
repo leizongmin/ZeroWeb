@@ -21,6 +21,10 @@ pub enum LengthValue {
     Vmax(f64),
     /// ch 单位。
     Ch(f64),
+    /// 百分比值（0-100）。
+    Percentage(f64),
+    /// auto 关键字。
+    Auto,
 }
 
 /// CSS 颜色值。
@@ -387,9 +391,14 @@ fn parse_named_color(value: &str) -> Option<ColorValue> {
 
 /// 解析 CSS 长度值。
 ///
-/// 支持格式如 `"10px"`、`"1.5em"`、`"2rem"`、`"100vh"` 等。
+/// 支持格式如 `"10px"`、`"1.5em"`、`"2rem"`、`"100vh"`、`"50%"`、`"auto"` 等。
 pub fn parse_length(value: &str) -> Option<LengthValue> {
     let value = value.trim();
+
+    // 处理 auto 关键字
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(LengthValue::Auto);
+    }
 
     // 找到数字部分的结束位置
     let num_end = value
@@ -410,6 +419,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vmin" => Some(LengthValue::Vmin(num)),
         "vmax" => Some(LengthValue::Vmax(num)),
         "ch" => Some(LengthValue::Ch(num)),
+        "%" => Some(LengthValue::Percentage(num)),
         _ => None,
     }
 }

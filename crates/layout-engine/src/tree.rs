@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(style.position, taffy::style::Position::Absolute);
     }
 
-    /// 测试 auto margin。
+    /// 测试 auto margin 和显式 0px margin。
     #[test]
     fn test_build_with_auto_margins() {
         let mut doc = Document::new();
@@ -377,12 +377,63 @@ mod tests {
         let div = doc.create_element("div");
         doc.append_child(html, div).unwrap();
 
-        // 默认 margin 是 Px(0.0) 表示 auto
+        // 默认 margin 是 Px(0.0)，不是 auto
         let styles = HashMap::new();
         let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
+        // 默认 margin 是 Px(0.0)，转换为 Length(0.0)
+        assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(0.0));
+    }
+
+    /// 测试 margin: auto 正确传递。
+    #[test]
+    fn test_build_with_explicit_auto_margin() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(html, div).unwrap();
+
+        let mut style = ComputedStyle::default();
+        style.margin_top = LengthValue::Auto;
+        style.margin_right = LengthValue::Auto;
+        let mut styles = HashMap::new();
+        styles.insert(div, style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
+        let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Auto);
+        assert_eq!(style.margin.right, taffy::style::LengthPercentageAuto::Auto);
+    }
+
+    /// 测试百分比 width 正确传递。
+    #[test]
+    fn test_build_with_percentage_width() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(html, div).unwrap();
+
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Percentage(50.0);
+        let mut styles = HashMap::new();
+        styles.insert(div, style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
+        let style = taffy_tree.style(div_taffy).unwrap();
+        assert_eq!(style.size.width, taffy::style::Dimension::Percent(0.5));
     }
 
     /// 测试空文档。

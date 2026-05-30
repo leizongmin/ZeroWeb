@@ -129,19 +129,10 @@ fn convert_box_sizing(value: &BoxSizingValue) -> taffy::style::BoxSizing {
 /// 将 LengthValue 转换为 taffy 的 Dimension。
 ///
 /// em/rem 单位已由 style-system 解析为 px，所以统一用 Length。
-/// Px(0.0) 在 ComputedStyle 中表示 auto（默认值），
-/// 对于 width/height 需要映射为 Auto。
+/// Auto 映射为 Auto，Percentage 映射为 Percent。
 fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
     match value {
-        LengthValue::Px(v) => {
-            let v = *v as f32;
-            // Px(0.0) 在 ComputedStyle 中表示 auto
-            if v == 0.0 {
-                taffy::style::Dimension::Auto
-            } else {
-                length(v)
-            }
-        }
+        LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Vh(v) => length(*v as f32),
@@ -149,6 +140,8 @@ fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
         LengthValue::Vmin(v) => length(*v as f32),
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
+        LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
+        LengthValue::Auto => taffy::style::Dimension::Auto,
     }
 }
 
@@ -159,7 +152,7 @@ fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimensi
     match value {
         LengthValue::Px(v) => {
             let v = *v as f32;
-            if v == 0.0 || v.is_infinite() {
+            if v.is_infinite() {
                 taffy::style::Dimension::Auto
             } else {
                 length(v)
@@ -172,6 +165,8 @@ fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimensi
         LengthValue::Vmin(v) => length(*v as f32),
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
+        LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
+        LengthValue::Auto => taffy::style::Dimension::Auto,
     }
 }
 
@@ -188,23 +183,17 @@ fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
         LengthValue::Vmin(v) => length(*v as f32),
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
+        LengthValue::Percentage(v) => taffy::style::LengthPercentage::Percent((*v / 100.0) as f32),
+        LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
     }
 }
 
 /// 将 LengthValue 转换为 taffy 的 LengthPercentageAuto。
 ///
 /// 用于 margin、inset 等接受 auto 的属性。
-/// Px(0.0) 在 ComputedStyle 中可能表示 auto（对于 margin/inset）。
 fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageAuto {
     match value {
-        LengthValue::Px(v) => {
-            let v = *v as f32;
-            if v == 0.0 {
-                taffy::style::LengthPercentageAuto::Auto
-            } else {
-                length(v)
-            }
-        }
+        LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Vh(v) => length(*v as f32),
@@ -212,6 +201,8 @@ fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageA
         LengthValue::Vmin(v) => length(*v as f32),
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
+        LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
+        LengthValue::Auto => taffy::style::LengthPercentageAuto::Auto,
     }
 }
 

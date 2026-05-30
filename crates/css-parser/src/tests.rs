@@ -1086,11 +1086,25 @@ fn test_parse_font_style_all() {
 }
 
 #[test]
-/// 测试 parse_length 对百分比的处理（parse_length 不支持 %）
+/// 测试 parse_length 对百分比的处理
 fn test_parse_length_percentage() {
     let result = parse_length("50%");
-    // parse_length 不识别 % 单位
-    assert_eq!(result, None);
+    assert_eq!(result, Some(LengthValue::Percentage(50.0)));
+
+    let result = parse_length("100%");
+    assert_eq!(result, Some(LengthValue::Percentage(100.0)));
+
+    let result = parse_length("33.33%");
+    assert_eq!(result, Some(LengthValue::Percentage(33.33)));
+}
+
+#[test]
+/// 测试 parse_length 对 auto 关键字的处理
+fn test_parse_length_auto() {
+    assert_eq!(parse_length("auto"), Some(LengthValue::Auto));
+    assert_eq!(parse_length("Auto"), Some(LengthValue::Auto));
+    assert_eq!(parse_length("AUTO"), Some(LengthValue::Auto));
+    assert_eq!(parse_length("  auto  "), Some(LengthValue::Auto));
 }
 
 #[test]

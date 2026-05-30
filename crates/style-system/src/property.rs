@@ -344,7 +344,7 @@ pub struct ComputedStyle {
 impl Default for ComputedStyle {
     fn default() -> Self {
         let zero = LengthValue::Px(0.0);
-        let auto_length = LengthValue::Px(0.0); // auto 用 Px(0.0) 表示
+        let auto_length = LengthValue::Auto;
         let initial_color = ColorValue::Rgba(0, 0, 0, 255); // black
         let transparent = ColorValue::Transparent;
 
