@@ -6,6 +6,46 @@ use crate::node::*;
 use hashbrown::HashMap;
 use slotmap::SlotMap;
 
+// ── DocumentPosition ─────────────────────────────────────────────────
+
+/// `compare_document_position` 返回的节点位置掩码常量。
+///
+/// 遵循 WHATWG DOM 规范中 `Node.compareDocumentPosition()` 的返回值定义。
+/// 多个标志可以组合（如 `CONTAINS | PRECEDING`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentPosition(u8);
+
+impl DocumentPosition {
+    /// 两个节点在不同的文档或未连接的树中。
+    pub const DISCONNECTED: u8 = 0x01;
+    /// node2 在 node1 之前（文档顺序）。
+    pub const PRECEDING: u8 = 0x02;
+    /// node2 在 node1 之后（文档顺序）。
+    pub const FOLLOWING: u8 = 0x04;
+    /// node2 是 node1 的祖先。
+    pub const CONTAINS: u8 = 0x08;
+    /// node2 是 node1 的后代。
+    pub const CONTAINED_BY: u8 = 0x10;
+
+    /// 从原始 u8 值创建。
+    #[inline]
+    pub fn from_bits(bits: u8) -> Self {
+        Self(bits)
+    }
+
+    /// 获取原始 u8 值。
+    #[inline]
+    pub fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// 检查是否包含指定标志。
+    #[inline]
+    pub fn contains(self, flag: u8) -> bool {
+        (self.0 & flag) != 0
+    }
+}
+
 // ── Document ────────────────────────────────────────────────────────
 
 /// DOM 文档，所有节点数据的容器。
@@ -457,6 +497,115 @@ impl Document {
             .get(id)
             .map(|n| n.has_children())
             .unwrap_or(false)
+    }
+
+    // ── 遍历扩展 ──────────────────────────────────────────────
+
+    /// 检查 `container` 是否包含 `node`（即 node 是 container 自身或其后代）。
+    pub fn node_contains(&self, container: NodeId, node: NodeId) -> bool {
+        if container == node {
+            return true;
+        }
+        self.is_ancestor(container, node)
+    }
+
+    /// 比较两个节点在文档中的相对位置，返回位置掩码。
+    ///
+    /// 遵循 WHATWG DOM 规范 `Node.compareDocumentPosition()` 语义。
+    /// 如果任一节点不存在，返回 `None`。
+    pub fn compare_document_position(
+        &self,
+        node1: NodeId,
+        node2: NodeId,
+    ) -> Option<DocumentPosition> {
+        if !self.contains(node1) || !self.contains(node2) {
+            return None;
+        }
+        if node1 == node2 {
+            return Some(DocumentPosition::from_bits(0));
+        }
+
+        // 检查包含关系
+        let node1_contains_node2 = self.is_ancestor(node1, node2);
+        let node2_contains_node1 = self.is_ancestor(node2, node1);
+
+        if node1_contains_node2 {
+            // node2 是 node1 的后代 → node2 在 node1 之后，且被 node1 包含
+            return Some(DocumentPosition::from_bits(
+                DocumentPosition::CONTAINED_BY | DocumentPosition::FOLLOWING,
+            ));
+        }
+        if node2_contains_node1 {
+            // node2 是 node1 的祖先 → node2 在 node1 之前，且包含 node1
+            return Some(DocumentPosition::from_bits(
+                DocumentPosition::CONTAINS | DocumentPosition::PRECEDING,
+            ));
+        }
+
+        // 既不包含也不被包含：找最近公共祖先，比较在兄弟列表中的顺序
+        let pos = self.compare_tree_position(node1, node2);
+        Some(DocumentPosition::from_bits(pos))
+    }
+
+    /// 收集 `root` 的所有后代节点，按文档顺序返回。
+    pub fn collect_descendants(&self, root: NodeId) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.collect_descendants_recursive(root, &mut result);
+        result
+    }
+
+    /// 获取节点到文档根的距离（根节点深度为 0）。
+    pub fn depth(&self, node: NodeId) -> Option<usize> {
+        if !self.contains(node) {
+            return None;
+        }
+        let mut depth = 0;
+        let mut current = node;
+        while let Some(parent) = self.nodes.get(current).and_then(|n| n.parent) {
+            depth += 1;
+            current = parent;
+        }
+        Some(depth)
+    }
+
+    /// 获取节点的直接子节点数量。
+    pub fn child_count(&self, node: NodeId) -> usize {
+        self.nodes
+            .get(node)
+            .map(|n| n.children.len())
+            .unwrap_or(0)
+    }
+
+    /// 获取 WHATWG 节点类型编号。
+    ///
+    /// 返回值：1=Element, 3=Text, 7=ProcessingInstruction,
+    /// 8=Comment, 9=Document, 10=DocumentType, 11=DocumentFragment。
+    /// 节点不存在时返回 `None`。
+    pub fn node_type(&self, node: NodeId) -> Option<u8> {
+        self.nodes.get(node).map(|n| match &n.kind {
+            NodeKind::Element(_) => 1,
+            NodeKind::Text(_) => 3,
+            NodeKind::ProcessingInstruction(_) => 7,
+            NodeKind::Comment(_) => 8,
+            NodeKind::Document(_) => 9,
+            NodeKind::DocumentType(_) => 10,
+            NodeKind::DocumentFragment => 11,
+        })
+    }
+
+    /// 获取节点所属的文档根节点 ID。
+    ///
+    /// 沿 parent 链向上走到顶端，返回该根节点。
+    /// 节点不存在时返回 `None`。
+    pub fn owner_document(&self, node: NodeId) -> Option<NodeId> {
+        if !self.contains(node) {
+            return None;
+        }
+        let mut current = node;
+        while let Some(parent) = self.nodes.get(current).and_then(|n| n.parent) {
+            current = parent;
+        }
+        Some(current)
     }
 
     // ── 文本内容 ────────────────────────────────────────────────
@@ -990,6 +1139,67 @@ impl Document {
         for &child in &node_data.children.clone() {
             self.collect_matching(child, selector, result);
         }
+    }
+
+    /// 递归收集所有后代节点（按文档顺序，不含 root 自身）。
+    fn collect_descendants_recursive(&self, node: NodeId, result: &mut Vec<NodeId>) {
+        let children = match self.nodes.get(node).map(|n| n.children.clone()) {
+            Some(c) => c,
+            None => return,
+        };
+        for child in children {
+            result.push(child);
+            self.collect_descendants_recursive(child, result);
+        }
+    }
+
+    /// 比较两个不互为祖先的节点在文档树中的相对位置。
+    ///
+    /// 返回 PRECEDING 或 FOLLOWING 位掩码。
+    fn compare_tree_position(&self, node1: NodeId, node2: NodeId) -> u8 {
+        // 获取从节点到根的祖先路径
+        let path1 = self.ancestor_path_with_self(node1);
+        let path2 = self.ancestor_path_with_self(node2);
+
+        // 找最近公共祖先
+        let mut i = 0;
+        while i < path1.len() && i < path2.len() && path1[i] == path2[i] {
+            i += 1;
+        }
+
+        // i 现在指向分歧点；i-1 是最近公共祖先
+        // path1[i] 和 path2[i] 是 LCA 的不同子节点
+        if i < path1.len() && i < path2.len() {
+            // 在 LCA 的子列表中比较顺序
+            let lca = path1[i - 1];
+            if let Some(lca_data) = self.nodes.get(lca) {
+                let idx1 = lca_data.children.iter().position(|&c| c == path1[i]);
+                let idx2 = lca_data.children.iter().position(|&c| c == path2[i]);
+                if let (Some(p1), Some(p2)) = (idx1, idx2) {
+                    if p1 < p2 {
+                        // node1 在 node2 之前 → node2 在 node1 之后
+                        return DocumentPosition::FOLLOWING;
+                    } else {
+                        return DocumentPosition::PRECEDING;
+                    }
+                }
+            }
+        }
+
+        // 回退：无法确定位置，标记为 disconnected
+        DocumentPosition::DISCONNECTED
+    }
+
+    /// 获取从文档根到节点自身的路径（含节点自身）。
+    fn ancestor_path_with_self(&self, node: NodeId) -> Vec<NodeId> {
+        let mut path = vec![node];
+        let mut current = node;
+        while let Some(parent) = self.nodes.get(current).and_then(|n| n.parent) {
+            path.push(parent);
+            current = parent;
+        }
+        path.reverse();
+        path
     }
 }
 

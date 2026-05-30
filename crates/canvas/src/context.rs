@@ -345,6 +345,10 @@ struct CanvasState {
     global_alpha: f32,
     transform: Transform2D,
     composite_operation: CompositeOperation,
+    shadow_color: Color,
+    shadow_blur: f32,
+    shadow_offset_x: f32,
+    shadow_offset_y: f32,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -377,6 +381,14 @@ pub struct CanvasContext {
     composite_operation: CompositeOperation,
     /// 当前裁剪路径（如果有）。
     clip_path: Option<Path2D>,
+    /// 阴影颜色。
+    shadow_color: Color,
+    /// 阴影模糊半径。
+    shadow_blur: f32,
+    /// 阴影水平偏移。
+    shadow_offset_x: f32,
+    /// 阴影垂直偏移。
+    shadow_offset_y: f32,
 }
 
 /// 文本度量。
@@ -420,6 +432,10 @@ impl CanvasContext {
             pixel_buffer: vec![0u8; buffer_size],
             composite_operation: CompositeOperation::default(),
             clip_path: None,
+            shadow_color: Color::TRANSPARENT,
+            shadow_blur: 0.0,
+            shadow_offset_x: 0.0,
+            shadow_offset_y: 0.0,
         }
     }
 
@@ -436,6 +452,10 @@ impl CanvasContext {
     /// 填充矩形。
     pub fn fill_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
         let rect = self.transform_rect(x, y, width, height);
+        // 绘制阴影（在形状之前）
+        if self.has_shadow() {
+            self.draw_shadow_rect(&rect);
+        }
         let color = self.apply_alpha(self.fill_color);
         self.primitives.add_fill(rect, color);
         self.blit_rect_to_pixels(&rect, color);
@@ -446,6 +466,12 @@ impl CanvasContext {
         // 简化实现：用描边颜色填充一个薄矩形表示描边
         let lw = self.line_width;
         let color = self.apply_alpha(self.stroke_color);
+
+        // 绘制阴影（在形状之前）
+        if self.has_shadow() {
+            let rect = self.transform_rect(x, y, width, height);
+            self.draw_shadow_rect(&rect);
+        }
 
         // 上边
         let top = self.transform_rect(x, y, width, lw);
@@ -584,6 +610,10 @@ impl CanvasContext {
         if vertices.is_empty() {
             return;
         }
+        // 绘制阴影（在形状之前）
+        if self.has_shadow() {
+            self.draw_shadow_path(&vertices);
+        }
         let color = self.apply_alpha(self.fill_color);
         self.primitives.add_path_fill(vertices.clone(), color);
         self.blit_path_to_pixels(&vertices, color);
@@ -594,6 +624,10 @@ impl CanvasContext {
         let vertices = self.flatten_path();
         if vertices.is_empty() {
             return;
+        }
+        // 绘制阴影（在形状之前）
+        if self.has_shadow() {
+            self.draw_shadow_path(&vertices);
         }
         let color = self.apply_alpha(self.stroke_color);
         let closed = self.current_path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
@@ -613,6 +647,10 @@ impl CanvasContext {
             global_alpha: self.global_alpha,
             transform: self.transform,
             composite_operation: self.composite_operation,
+            shadow_color: self.shadow_color,
+            shadow_blur: self.shadow_blur,
+            shadow_offset_x: self.shadow_offset_x,
+            shadow_offset_y: self.shadow_offset_y,
         });
     }
 
@@ -626,6 +664,10 @@ impl CanvasContext {
             self.global_alpha = state.global_alpha;
             self.transform = state.transform;
             self.composite_operation = state.composite_operation;
+            self.shadow_color = state.shadow_color;
+            self.shadow_blur = state.shadow_blur;
+            self.shadow_offset_x = state.shadow_offset_x;
+            self.shadow_offset_y = state.shadow_offset_y;
         }
     }
 
@@ -714,6 +756,48 @@ impl CanvasContext {
     /// 返回画布高度。
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    // ── Shadow properties ──
+
+    /// 设置阴影颜色。
+    pub fn set_shadow_color(&mut self, color: Color) {
+        self.shadow_color = color;
+    }
+
+    /// 设置阴影模糊半径。负值会被限制为 0。
+    pub fn set_shadow_blur(&mut self, blur: f32) {
+        self.shadow_blur = blur.max(0.0);
+    }
+
+    /// 设置阴影水平偏移。
+    pub fn set_shadow_offset_x(&mut self, offset: f32) {
+        self.shadow_offset_x = offset;
+    }
+
+    /// 设置阴影垂直偏移。
+    pub fn set_shadow_offset_y(&mut self, offset: f32) {
+        self.shadow_offset_y = offset;
+    }
+
+    /// 返回当前阴影颜色。
+    pub fn shadow_color(&self) -> &Color {
+        &self.shadow_color
+    }
+
+    /// 返回当前阴影模糊半径。
+    pub fn shadow_blur(&self) -> f32 {
+        self.shadow_blur
+    }
+
+    /// 返回当前阴影水平偏移。
+    pub fn shadow_offset_x(&self) -> f32 {
+        self.shadow_offset_x
+    }
+
+    /// 返回当前阴影垂直偏移。
+    pub fn shadow_offset_y(&self) -> f32 {
+        self.shadow_offset_y
     }
 
     // ── Clipping ──
@@ -849,7 +933,186 @@ impl CanvasContext {
         }
     }
 
+    // ── drawImage ──
+
+    /// 将图像绘制到画布的指定位置（原始尺寸）。应用当前变换。
+    pub fn draw_image(&mut self, image_data: &ImageData, dx: f32, dy: f32) {
+        self.draw_image_sized(
+            image_data,
+            0.0, 0.0,
+            image_data.width as f32, image_data.height as f32,
+            dx, dy,
+            image_data.width as f32, image_data.height as f32,
+        );
+    }
+
+    /// 将图像绘制到画布的指定位置，缩放到目标尺寸。应用当前变换。
+    pub fn draw_image_with_size(
+        &mut self,
+        image_data: &ImageData,
+        dx: f32,
+        dy: f32,
+        dw: f32,
+        dh: f32,
+    ) {
+        self.draw_image_sized(
+            image_data,
+            0.0, 0.0,
+            image_data.width as f32, image_data.height as f32,
+            dx, dy, dw, dh,
+        );
+    }
+
+    /// 将图像的指定切片区域绘制到画布的目标区域（支持缩放）。应用当前变换。
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_image_sliced(
+        &mut self,
+        image_data: &ImageData,
+        sx: f32,
+        sy: f32,
+        sw: f32,
+        sh: f32,
+        dx: f32,
+        dy: f32,
+        dw: f32,
+        dh: f32,
+    ) {
+        self.draw_image_sized(image_data, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+
+    /// 内部方法：将图像的指定区域绘制到画布的目标区域。
+    #[allow(clippy::too_many_arguments)]
+    fn draw_image_sized(
+        &mut self,
+        image_data: &ImageData,
+        sx: f32,
+        sy: f32,
+        sw: f32,
+        sh: f32,
+        dx: f32,
+        dy: f32,
+        dw: f32,
+        dh: f32,
+    ) {
+        let img_w = image_data.width as usize;
+        let img_h = image_data.height as usize;
+        if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {
+            return;
+        }
+
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        if canvas_w == 0 || canvas_h == 0 {
+            return;
+        }
+
+        let sx = sx.max(0.0) as usize;
+        let sy = sy.max(0.0) as usize;
+        let sw = sw.min((img_w - sx) as f32) as usize;
+        let sh = sh.min((img_h - sy) as f32) as usize;
+        if sw == 0 || sh == 0 {
+            return;
+        }
+
+        let x_scale = sw as f32 / dw;
+        let y_scale = sh as f32 / dh;
+
+        // 应用变换后的目标矩形用于逐像素计算
+        for py in 0..(dh as usize) {
+            for px in 0..(dw as usize) {
+                // 源像素坐标（最近邻采样）
+                let src_x = sx + (px as f32 * x_scale) as usize;
+                let src_y = sy + (py as f32 * y_scale) as usize;
+                if src_x >= img_w || src_y >= img_h {
+                    continue;
+                }
+
+                let src_idx = (src_y * img_w + src_x) * 4;
+                if src_idx + 3 >= image_data.data.len() {
+                    continue;
+                }
+                let r = image_data.data[src_idx];
+                let g = image_data.data[src_idx + 1];
+                let b = image_data.data[src_idx + 2];
+                let a = image_data.data[src_idx + 3];
+
+                // 变换目标坐标
+                let (dst_x, dst_y) = self.transform.transform_point(dx + px as f32, dy + py as f32);
+                let dst_x = dst_x as usize;
+                let dst_y = dst_y as usize;
+                if dst_x >= canvas_w || dst_y >= canvas_h {
+                    continue;
+                }
+
+                let dst_idx = (dst_y * canvas_w + dst_x) * 4;
+                // 简单 alpha 混合
+                let src_alpha = (a as f32 * self.global_alpha) as u8;
+                if src_alpha == 0 {
+                    continue;
+                }
+                if src_alpha == 255 {
+                    self.pixel_buffer[dst_idx] = r;
+                    self.pixel_buffer[dst_idx + 1] = g;
+                    self.pixel_buffer[dst_idx + 2] = b;
+                    self.pixel_buffer[dst_idx + 3] = src_alpha;
+                } else {
+                    let dst_a = self.pixel_buffer[dst_idx + 3] as f32 / 255.0;
+                    let src_a = src_alpha as f32 / 255.0;
+                    let out_a = src_a + dst_a * (1.0 - src_a);
+                    if out_a > 0.0 {
+                        let factor = 1.0 / out_a;
+                        self.pixel_buffer[dst_idx] = ((r as f32 * src_a + self.pixel_buffer[dst_idx] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
+                        self.pixel_buffer[dst_idx + 1] = ((g as f32 * src_a + self.pixel_buffer[dst_idx + 1] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
+                        self.pixel_buffer[dst_idx + 2] = ((b as f32 * src_a + self.pixel_buffer[dst_idx + 2] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
+                        self.pixel_buffer[dst_idx + 3] = (out_a * 255.0) as u8;
+                    }
+                }
+            }
+        }
+    }
+
     // ── Output ──
+
+    /// 判断当前是否启用了阴影（阴影颜色不透明且偏移或模糊非零）。
+    fn has_shadow(&self) -> bool {
+        self.shadow_color.a > 0
+            && (self.shadow_blur > 0.0 || self.shadow_offset_x != 0.0 || self.shadow_offset_y != 0.0)
+    }
+
+    /// 为矩形绘制阴影。简化实现：绘制一个偏移的矩形，alpha 根据 shadow_blur 降低。
+    fn draw_shadow_rect(&mut self, rect: &Rect) {
+        let blur_factor = if self.shadow_blur > 0.0 {
+            (1.0 / (1.0 + self.shadow_blur * 0.1)).min(1.0)
+        } else {
+            1.0
+        };
+        let shadow_alpha = ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
+        let color = Color::rgba(self.shadow_color.r, self.shadow_color.g, self.shadow_color.b, shadow_alpha);
+        let shadow_rect = Rect::new(
+            rect.left() + self.shadow_offset_x,
+            rect.top() + self.shadow_offset_y,
+            rect.size.width,
+            rect.size.height,
+        );
+        self.blit_rect_to_pixels(&shadow_rect, color);
+    }
+
+    /// 为路径绘制阴影。简化实现：绘制一个偏移的路径包围盒，alpha 根据 shadow_blur 降低。
+    fn draw_shadow_path(&mut self, vertices: &[f32]) {
+        let blur_factor = if self.shadow_blur > 0.0 {
+            (1.0 / (1.0 + self.shadow_blur * 0.1)).min(1.0)
+        } else {
+            1.0
+        };
+        let shadow_alpha = ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
+        let color = Color::rgba(self.shadow_color.r, self.shadow_color.g, self.shadow_color.b, shadow_alpha);
+        // 将路径的每个顶点偏移 shadow_offset
+        let offset_vertices: Vec<f32> = vertices
+            .chunks_exact(2)
+            .flat_map(|c| [c[0] + self.shadow_offset_x, c[1] + self.shadow_offset_y])
+            .collect();
+        self.blit_path_to_pixels(&offset_vertices, color);
+    }
 
     /// 消费上下文，返回渲染图元列表。
     pub fn into_primitives(self) -> RenderPrimitives {
@@ -2530,5 +2793,243 @@ mod tests {
     #[test]
     fn test_composite_operation_default_value() {
         assert_eq!(CompositeOperation::default(), CompositeOperation::SourceOver);
+    }
+
+    // ── Shadow properties 测试 ──
+
+    /// 测试阴影属性默认值。
+    #[test]
+    fn test_shadow_default_values() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(*ctx.shadow_color(), Color::TRANSPARENT);
+        assert!((ctx.shadow_blur() - 0.0).abs() < f32::EPSILON);
+        assert!((ctx.shadow_offset_x() - 0.0).abs() < f32::EPSILON);
+        assert!((ctx.shadow_offset_y() - 0.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试设置和获取阴影颜色。
+    #[test]
+    fn test_shadow_set_get_color() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_color(Color::RED);
+        assert_eq!(*ctx.shadow_color(), Color::RED);
+    }
+
+    /// 测试设置和获取阴影模糊半径。
+    #[test]
+    fn test_shadow_set_get_blur() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_blur(10.0);
+        assert!((ctx.shadow_blur() - 10.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试设置和获取阴影偏移。
+    #[test]
+    fn test_shadow_set_get_offset() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_offset_x(5.0);
+        ctx.set_shadow_offset_y(7.0);
+        assert!((ctx.shadow_offset_x() - 5.0).abs() < f32::EPSILON);
+        assert!((ctx.shadow_offset_y() - 7.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试阴影属性在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_shadow_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_color(Color::RED);
+        ctx.set_shadow_blur(5.0);
+        ctx.set_shadow_offset_x(3.0);
+        ctx.set_shadow_offset_y(4.0);
+        ctx.save();
+        ctx.set_shadow_color(Color::BLUE);
+        ctx.set_shadow_blur(20.0);
+        ctx.set_shadow_offset_x(10.0);
+        ctx.set_shadow_offset_y(15.0);
+        assert_eq!(*ctx.shadow_color(), Color::BLUE);
+        assert!((ctx.shadow_blur() - 20.0).abs() < f32::EPSILON);
+        ctx.restore();
+        assert_eq!(*ctx.shadow_color(), Color::RED);
+        assert!((ctx.shadow_blur() - 5.0).abs() < f32::EPSILON);
+        assert!((ctx.shadow_offset_x() - 3.0).abs() < f32::EPSILON);
+        assert!((ctx.shadow_offset_y() - 4.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试阴影模糊半径负值被限制为 0。
+    #[test]
+    fn test_shadow_blur_clamp_negative() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_blur(-10.0);
+        assert!((ctx.shadow_blur() - 0.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试阴影应用于 fill_rect。
+    #[test]
+    fn test_shadow_applied_to_fill_rect() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_color(Color::BLACK);
+        ctx.set_shadow_offset_x(5.0);
+        ctx.set_shadow_offset_y(5.0);
+        ctx.fill_rect(10.0, 10.0, 20.0, 20.0);
+        // 检查阴影区域有像素被写入（偏移位置）
+        let shadow_pixel = ctx.get_image_data(15, 15, 1, 1);
+        assert_ne!(shadow_pixel.data[3], 0, "shadow area should have pixels");
+    }
+
+    /// 测试阴影应用于 stroke_rect。
+    #[test]
+    fn test_shadow_applied_to_stroke_rect() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_color(Color::BLACK);
+        ctx.set_shadow_offset_x(5.0);
+        ctx.set_shadow_offset_y(5.0);
+        ctx.stroke_rect(10.0, 10.0, 20.0, 20.0);
+        // 检查阴影区域有像素被写入
+        let shadow_pixel = ctx.get_image_data(15, 15, 1, 1);
+        assert_ne!(shadow_pixel.data[3], 0, "shadow area should have pixels");
+    }
+
+    /// 测试多次阴影绘制。
+    #[test]
+    fn test_shadow_multiple_draws() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_color(Color::BLACK);
+        ctx.set_shadow_offset_x(2.0);
+        ctx.set_shadow_offset_y(2.0);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        ctx.fill_rect(30.0, 30.0, 10.0, 10.0);
+        // 两个阴影都应该存在
+        let shadow1 = ctx.get_image_data(2, 2, 1, 1);
+        let shadow2 = ctx.get_image_data(32, 32, 1, 1);
+        assert_ne!(shadow1.data[3], 0, "first shadow should exist");
+        assert_ne!(shadow2.data[3], 0, "second shadow should exist");
+    }
+
+    // ── drawImage 测试 ──
+
+    /// 测试 draw_image 基本 blit。
+    #[test]
+    fn test_draw_image_basic_blit() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        ctx.draw_image(&img, 0.0, 0.0);
+        let result = ctx.get_image_data(0, 0, 2, 2);
+        assert_eq!(result.data[0..4], [255, 0, 0, 255]); // 红色
+        assert_eq!(result.data[4..8], [0, 255, 0, 255]); // 绿色
+        assert_eq!(result.data[8..12], [0, 0, 255, 255]); // 蓝色
+        assert_eq!(result.data[12..16], [255, 255, 0, 255]); // 黄色
+    }
+
+    /// 测试 draw_image_with_size 缩放。
+    #[test]
+    fn test_draw_image_with_size_scaling() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![255, 0, 0, 255],
+        };
+        ctx.draw_image_with_size(&img, 0.0, 0.0, 4.0, 4.0);
+        let result = ctx.get_image_data(0, 0, 4, 4);
+        // 所有像素应该都是红色
+        for i in 0..4 {
+            for j in 0..4 {
+                let idx = (i * 4 + j) * 4;
+                assert_eq!(result.data[idx..idx + 4], [255, 0, 0, 255]);
+            }
+        }
+    }
+
+    /// 测试 draw_image_sliced。
+    #[test]
+    fn test_draw_image_sliced() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 4x4 图像，每个像素不同
+        let mut pixels = Vec::with_capacity(64);
+        for i in 0..16u8 {
+            pixels.extend_from_slice(&[i * 16, i * 16, i * 16, 255]);
+        }
+        let img = ImageData {
+            width: 4,
+            height: 4,
+            data: pixels,
+        };
+        // 切取左上角 2x2
+        ctx.draw_image_sliced(&img, 0.0, 0.0, 2.0, 2.0, 10.0, 10.0, 2.0, 2.0);
+        let result = ctx.get_image_data(10, 10, 2, 2);
+        // 左上角 2x2 像素
+        assert_eq!(result.data[0..4], [0, 0, 0, 255]); // pixel (0,0)
+        assert_eq!(result.data[4..8], [16, 16, 16, 255]); // pixel (1,0)
+        assert_eq!(result.data[8..12], [64, 64, 64, 255]); // pixel (0,1)
+        assert_eq!(result.data[12..16], [80, 80, 80, 255]); // pixel (1,1)
+    }
+
+    /// 测试 draw_image 应用变换。
+    #[test]
+    fn test_draw_image_with_transform() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255],
+        };
+        ctx.translate(5.0, 5.0);
+        ctx.draw_image(&img, 0.0, 0.0);
+        // 像素应出现在偏移 (5,5) 位置
+        let result = ctx.get_image_data(5, 5, 2, 2);
+        assert_eq!(result.data[0..4], [255, 0, 0, 255]);
+        // 原点应无像素
+        let origin = ctx.get_image_data(0, 0, 2, 2);
+        assert_eq!(origin.data[0..4], [0, 0, 0, 0]);
+    }
+
+    /// 测试 draw_image 越界不 panic。
+    #[test]
+    fn test_draw_image_out_of_bounds_no_panic() {
+        let mut ctx = CanvasContext::new(10, 10);
+        let img = ImageData {
+            width: 100,
+            height: 100,
+            data: vec![255; 100 * 100 * 4],
+        };
+        ctx.draw_image(&img, 90.0, 90.0); // 大部分超出画布
+        // 不应 panic
+    }
+
+    /// 测试 draw_image 零尺寸图像不 panic。
+    #[test]
+    fn test_draw_image_zero_size_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 0,
+            height: 0,
+            data: vec![],
+        };
+        ctx.draw_image(&img, 0.0, 0.0); // 不应 panic
+        ctx.draw_image_with_size(&img, 0.0, 0.0, 10.0, 10.0); // 不应 panic
+    }
+
+    /// 测试 draw_image 后 get_image_data 往返一致性。
+    #[test]
+    fn test_draw_image_round_trip() {
+        let mut ctx = CanvasContext::new(10, 10);
+        let pixels = vec![
+            255, 0, 0, 255, // 红
+            0, 255, 0, 255, // 绿
+            0, 0, 255, 255, // 蓝
+            255, 255, 255, 255, // 白
+        ];
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: pixels.clone(),
+        };
+        ctx.draw_image(&img, 0.0, 0.0);
+        let result = ctx.get_image_data(0, 0, 2, 2);
+        assert_eq!(result.data, pixels);
     }
 }

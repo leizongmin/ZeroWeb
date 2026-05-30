@@ -2134,3 +2134,292 @@ fn test_stop_propagation_in_capture_phase() {
         "stopPropagation in capture should prevent target phase"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 17. DOM 遍历和节点比较测试
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── node_contains ─────────────────────────────────────────────────────
+
+/// 测试 node_contains 对自身返回 true。
+#[test]
+fn test_node_contains_self() {
+    let doc = Document::new();
+    let root = doc.root();
+    assert!(
+        doc.node_contains(root, root),
+        "a node should contain itself"
+    );
+}
+
+/// 测试 node_contains 对后代节点返回 true。
+#[test]
+fn test_node_contains_descendant() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, p).unwrap();
+
+    assert!(doc.node_contains(root, div));
+    assert!(doc.node_contains(root, span));
+    assert!(doc.node_contains(root, p));
+    assert!(doc.node_contains(div, span));
+    assert!(doc.node_contains(div, p));
+}
+
+/// 测试 node_contains 对无关节点返回 false。
+#[test]
+fn test_node_contains_not_related() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let a = doc.create_element("div");
+    let b = doc.create_element("span");
+    doc.append_child(root, a).unwrap();
+    doc.append_child(root, b).unwrap();
+
+    // a 不包含 b，b 也不包含 a
+    assert!(!doc.node_contains(a, b));
+    assert!(!doc.node_contains(b, a));
+}
+
+/// 测试 node_contains 对兄弟节点返回 false。
+#[test]
+fn test_node_contains_sibling_false() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    assert!(!doc.node_contains(c1, c2));
+    assert!(!doc.node_contains(c2, c3));
+    assert!(!doc.node_contains(c3, c1));
+}
+
+// ── compare_document_position ─────────────────────────────────────────
+
+/// 测试 compare_document_position：前面的节点返回 FOLLOWING。
+#[test]
+fn test_compare_document_position_preceding() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    // c1 在 c2 之前 → c2 在 c1 之后（FOLLOWING）
+    let pos = doc.compare_document_position(c1, c2).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::FOLLOWING),
+        "c2 should be following c1"
+    );
+}
+
+/// 测试 compare_document_position：后面的节点返回 PRECEDING。
+#[test]
+fn test_compare_document_position_following() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    // c2 在 c1 之后 → c2 在 c1 的位置看来是在前面（PRECEDING）
+    let pos = doc.compare_document_position(c2, c1).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::PRECEDING),
+        "c1 should be preceding c2"
+    );
+}
+
+/// 测试 compare_document_position：包含关系。
+#[test]
+fn test_compare_document_position_contains() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+
+    // div 包含 span → 从 span 看 div，div 在前面且包含 span
+    let pos = doc.compare_document_position(span, div).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::CONTAINS),
+        "div should contain span"
+    );
+    assert!(
+        pos.contains(DocumentPosition::PRECEDING),
+        "div should be preceding span"
+    );
+}
+
+/// 测试 compare_document_position：被包含关系。
+#[test]
+fn test_compare_document_position_contained_by() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+
+    // span 被 div 包含 → 从 div 看 span，span 在后面且被包含
+    let pos = doc.compare_document_position(div, span).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::CONTAINED_BY),
+        "span should be contained by div"
+    );
+    assert!(
+        pos.contains(DocumentPosition::FOLLOWING),
+        "span should be following div"
+    );
+}
+
+// ── collect_descendants ──────────────────────────────────────────────
+
+/// 测试 collect_descendants 对空节点。
+#[test]
+fn test_collect_descendants_empty() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let descendants = doc.collect_descendants(elem);
+    assert!(descendants.is_empty(), "element with no children should have no descendants");
+}
+
+/// 测试 collect_descendants 对深层树。
+#[test]
+fn test_collect_descendants_deep_tree() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    let text = doc.create_text_node("hello");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(div, p).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let descendants = doc.collect_descendants(div);
+    assert_eq!(descendants.len(), 3, "div should have 3 descendants (span, text, p)");
+    assert_eq!(descendants[0], span, "first descendant should be span");
+    assert_eq!(descendants[1], text, "second descendant should be text (child of span)");
+    assert_eq!(descendants[2], p, "third descendant should be p");
+}
+
+// ── depth ────────────────────────────────────────────────────────────
+
+/// 测试文档根节点的深度为 0。
+#[test]
+fn test_depth_of_root() {
+    let doc = Document::new();
+    assert_eq!(doc.depth(doc.root()), Some(0));
+}
+
+/// 测试深层节点的深度。
+#[test]
+fn test_depth_of_deep_node() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, p).unwrap();
+
+    assert_eq!(doc.depth(div), Some(1));
+    assert_eq!(doc.depth(span), Some(2));
+    assert_eq!(doc.depth(p), Some(3));
+}
+
+// ── child_count ──────────────────────────────────────────────────────
+
+/// 测试 child_count。
+#[test]
+fn test_child_count() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    assert_eq!(doc.child_count(parent), 0);
+
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_text_node("hello");
+    let c3 = doc.create_comment("note");
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+    doc.append_child(parent, c3).unwrap();
+
+    assert_eq!(doc.child_count(parent), 3);
+}
+
+// ── node_type ────────────────────────────────────────────────────────
+
+/// 测试各种节点类型的 WHATWG nodeType 值。
+#[test]
+fn test_node_type_all_kinds() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let text = doc.create_text_node("hello");
+    let comment = doc.create_comment("note");
+    let doctype = doc.create_document_type("html", None, None);
+    let frag = doc.create_document_fragment();
+    let pi = doc.create_processing_instruction("xml", "version=\"1.0\"");
+
+    assert_eq!(doc.node_type(elem), Some(1), "Element = 1");
+    assert_eq!(doc.node_type(text), Some(3), "Text = 3");
+    assert_eq!(doc.node_type(pi), Some(7), "ProcessingInstruction = 7");
+    assert_eq!(doc.node_type(comment), Some(8), "Comment = 8");
+    assert_eq!(doc.node_type(doc.root()), Some(9), "Document = 9");
+    assert_eq!(doc.node_type(doctype), Some(10), "DocumentType = 10");
+    assert_eq!(doc.node_type(frag), Some(11), "DocumentFragment = 11");
+}
+
+// ── owner_document ───────────────────────────────────────────────────
+
+/// 测试 owner_document 返回文档根节点。
+#[test]
+fn test_owner_document() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("hello");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    assert_eq!(doc.owner_document(root), Some(root));
+    assert_eq!(doc.owner_document(div), Some(root));
+    assert_eq!(doc.owner_document(span), Some(root));
+    assert_eq!(doc.owner_document(text), Some(root));
+}
+
+/// 测试 owner_document 对孤立节点返回其自身（作为根）。
+#[test]
+fn test_owner_document_orphan() {
+    let doc = Document::new();
+    let _root = doc.root();
+    // 孤立节点没有 parent，owner_document 返回自身
+    let mut doc2 = Document::new();
+    let orphan = doc2.create_element("div");
+    assert_eq!(
+        doc2.owner_document(orphan),
+        Some(orphan),
+        "orphan node's owner_document should be itself"
+    );
+    // 但 root 下面的节点应该指向 root
+    assert_eq!(doc2.owner_document(doc2.root()), Some(doc2.root()));
+}

@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，1809 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，1878 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 1809 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 1878 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,9 +23,9 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 118+ | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、**Range API** |
-| css-parser | 240+ | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、:has()、**gradient 解析**、calc 改进 |
-| style-system | 300+ | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、outline、:has() 匹配、**所有属性初始值** |
+| dom | 162 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、**Range API**、**遍历/比较方法** |
+| css-parser | 277 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、:has()、**@container**、**scroll-snap**、gradient 解析、calc 改进 |
+| style-system | 313 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**scroll-snap**、**container query**、所有属性初始值 |
 | layout-engine | 85 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、几何验证 |
 | engine | 80+ | ✅ | 渲染管线、paint（**文本/glyph 渲染、overflow clip、border-radius**）、dirty tracking、compositing（**z-index 排序**）、**CSS transform**、**增量渲染** |
 | render-foundation | 80+ | ✅ | GPU/CPU 渲染、字体栈、**image cache + GC**、**GPU pixel verification**、**clipping/scissor** |
@@ -34,7 +34,7 @@
 | security | 75+ | ✅ | 同源策略、CORS（**preflight**）、CSP（**nonce/hash/navigation/document**）、**mixed content blocking**、**sandbox** |
 | protocol | 57 | ✅ | IPC 消息、bincode 序列化 |
 | storage | 70+ | ✅ | localStorage、sessionStorage、IndexedDB（**IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction**）、**Cache API** |
-| canvas | 100+ | ✅ | Canvas 2D API、路径、变换、**HSL/HSLA 颜色**、**gradient 解析** |
+| canvas | 150 | ✅ | Canvas 2D API、路径、变换、**drawImage**、**shadow 属性**、HSL/HSLA 颜色、gradient 解析 |
 | webview | 45+ | ✅ | WebView 嵌入 API、Builder、**event callbacks**、**load_url fetch**、**execute_script** |
 | wasm-sandbox | 30+ | ✅ | WASM 运行时（wasmi）、**host function imports**、**fuel/execution limiting** |
 
@@ -164,6 +164,8 @@
 | **@supports** | ✅ 已实现 |
 | **@layer** | ✅ 已实现 |
 | **@import** | ✅ 已实现 |
+| **@container** | ✅ 已实现（解析 + 骨架评估） |
+| **scroll-snap** | ✅ 已实现（scroll-snap-type/align/stop + scroll-margin/scroll-padding） |
 
 ---
 
@@ -186,10 +188,10 @@
 
 ## 下一步优先级
 
-1. **渲染管线改进**（高优先级）— 文本渲染（paint 阶段 glyph 生成）、border-radius 绘制、overflow clip
-2. **Grid 布局增强**（高优先级）— grid-column/row 放置、grid-area、repeat()/minmax() 解析
-3. **内联布局**（高优先级）— 行内格式化上下文、文本换行、white-space 处理
-4. **更多 DOM API**（中优先级）— Shadow DOM、Range、Selection 等
+1. **Shadow DOM**（高优先级）— Shadow root、slot、DOM 树封装
+2. **Grid 布局增强**（高优先级）— auto-fill 真实支持、命名区域、minmax()
+3. **内联布局集成**（高优先级）— 行内格式化上下文集成到 paint 管线、文本换行
+4. **更多 Canvas API**（中优先级）— OffscreenCanvas、Path2D 完善、更多合成模式测试
 5. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
 
 ---

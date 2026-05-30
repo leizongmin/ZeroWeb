@@ -621,6 +621,72 @@ fn is_element(doc: &Document, node: NodeId) -> bool {
         .unwrap_or(false)
 }
 
+/// 容器查询评估上下文。
+///
+/// 包含查询所需的容器尺寸信息。
+/// 在完整实现中，此上下文由布局引擎提供。
+#[derive(Debug, Clone)]
+pub struct ContainerContext {
+    /// 容器宽度（px）。
+    pub container_width: Option<f64>,
+    /// 容器高度（px）。
+    pub container_height: Option<f64>,
+}
+
+impl ContainerContext {
+    /// 创建空的容器上下文。
+    pub fn new() -> Self {
+        Self {
+            container_width: None,
+            container_height: None,
+        }
+    }
+
+    /// 创建带尺寸的容器上下文。
+    pub fn with_size(width: f64, height: f64) -> Self {
+        Self {
+            container_width: Some(width),
+            container_height: Some(height),
+        }
+    }
+}
+
+impl Default for ContainerContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 评估 @container 条件。
+///
+/// 骨架实现：简化条件评估。
+/// 完整实现需要布局引擎提供容器尺寸，此处通过 ContainerContext 评估。
+fn evaluate_container_condition(
+    container_rule: &zero_css_parser::ast::ContainerRule,
+) -> bool {
+    use zero_css_parser::values::parse_length;
+
+    let condition = &container_rule.condition;
+    let size_cond = match condition {
+        zero_css_parser::ast::ContainerCondition::Size(s)
+        | zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+    };
+
+    let feature = size_cond.feature.to_ascii_lowercase();
+    let value_str = size_cond.value.trim();
+
+    // 尝试解析条件值为长度
+    let cond_px: Option<f64> = parse_length(value_str).map(|l| match l {
+        zero_css_parser::values::LengthValue::Px(n) => n,
+        _ => 0.0,
+    });
+
+    // 骨架实现：如果没有容器上下文信息，保守返回 true
+    // 让规则参与级联。完整实现需要在 collect_from_rules 中传递 ContainerContext。
+    let _ = (feature, cond_px);
+    true
+}
+
 /// 评估 @supports 条件。
 ///
 /// 对于属性值测试 `(property: value)`，检查解析器是否能识别该属性和值。
@@ -692,6 +758,15 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         }
         "transform" => parse_transform(trimmed).is_some(),
         "background" | "background-image" => parse_gradient(trimmed).is_some() || parse_color(trimmed).is_some(),
+        "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
+        "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),
+        "scroll-snap-stop" => parse_scroll_snap_stop(trimmed).is_some(),
+        "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom" | "scroll-margin-left" => parse_length(trimmed).is_some(),
+        "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom" | "scroll-padding-left" => {
+            trimmed.eq_ignore_ascii_case("auto") || parse_length(trimmed).is_some()
+        }
+        "container-type" => parse_container_type(trimmed).is_some(),
+        "container-name" => true, // 任何非空字符串都有效
         // 未知属性：默认不支持（安全保守策略）
         _ => false,
     }
@@ -835,6 +910,22 @@ fn collect_from_rules(
                         doc,
                         element,
                         &supports_rule.rules,
+                        results,
+                        media_ctx,
+                        current_layer,
+                        layer_counter,
+                    );
+                }
+            }
+            zero_css_parser::ast::Rule::Container(container_rule) => {
+                // @container 规则：骨架实现
+                // 完整评估需要布局信息（容器尺寸），此处始终递归进入
+                // 让规则中的声明参与级联。引擎层在实际应用时会过滤。
+                if evaluate_container_condition(container_rule) {
+                    collect_from_rules(
+                        doc,
+                        element,
+                        &container_rule.rules,
                         results,
                         media_ctx,
                         current_layer,
@@ -2032,5 +2123,60 @@ mod tests {
         assert!(!matches_selector(&doc, s2, &sel)); // 2nd
         assert!(matches_selector(&doc, s3, &sel));  // 3rd
         assert!(!matches_selector(&doc, s4, &sel)); // 4th
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ContainerContext 和 @container 规则匹配测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_container_context_creation() {
+        let ctx = ContainerContext::new();
+        assert_eq!(ctx.container_width, None);
+        assert_eq!(ctx.container_height, None);
+
+        let ctx = ContainerContext::with_size(400.0, 600.0);
+        assert_eq!(ctx.container_width, Some(400.0));
+        assert_eq!(ctx.container_height, Some(600.0));
+    }
+
+    #[test]
+    fn test_container_context_default() {
+        let ctx = ContainerContext::default();
+        assert_eq!(ctx.container_width, None);
+        assert_eq!(ctx.container_height, None);
+    }
+
+    #[test]
+    fn test_container_rule_collects_declarations() {
+        use zero_css_parser::ast::{ContainerCondition, ContainerRule, ContainerSizeCondition, Declaration, StyleRule};
+
+        let (doc, _html, _body, _div, p) = make_test_dom();
+
+        let container_rule = ContainerRule {
+            name: None,
+            condition: ContainerCondition::Size(ContainerSizeCondition {
+                feature: "min-width".to_string(),
+                value: "400px".to_string(),
+            }),
+            rules: vec![zero_css_parser::ast::Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("p")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                }],
+            })],
+        };
+
+        let stylesheets = vec![zero_css_parser::Stylesheet {
+            rules: vec![zero_css_parser::ast::Rule::Container(container_rule)],
+        }];
+
+        let results = collect_matching_declarations(&doc, p, &stylesheets);
+        // 骨架实现：@container 规则应该应用（保守返回 true）
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "color");
+        assert_eq!(results[0].1, "red");
     }
 }

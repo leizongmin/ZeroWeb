@@ -4,9 +4,10 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, DisplayValue, FlexDirectionValue,
-    FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue,
-    VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, DisplayValue,
+    FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue,
+    OverflowValue, PositionValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
+    ScrollSnapTypeValue, VisibilityValue,
 };
 
 // ── 额外枚举类型 ─────────────────────────────────────────────────────
@@ -233,6 +234,70 @@ pub enum GridLineValue {
     Span(u16),
 }
 
+/// CSS scroll-snap-type 计算值。
+///
+/// 包含吸附严格度和轴方向。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrollSnapType {
+    /// 吸附严格度。
+    pub strictness: ScrollSnapStrictness,
+    /// 吸附轴。
+    pub axis: ScrollSnapAxis,
+}
+
+/// scroll-snap-type 严格度。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapStrictness {
+    /// none — 不吸附。
+    None,
+    /// mandatory — 必须吸附。
+    Mandatory,
+    /// proximity — 接近时吸附。
+    Proximity,
+}
+
+/// CSS scroll-snap-align 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapAlign {
+    /// none。
+    None,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// center。
+    Center,
+}
+
+/// CSS scroll-snap-stop 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapStop {
+    /// normal。
+    Normal,
+    /// always。
+    Always,
+}
+
+/// CSS scroll-padding 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollPadding {
+    /// auto。
+    Auto,
+    /// 长度值（px）。
+    Length(f32),
+}
+
+/// CSS container-type 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContainerType {
+    /// normal。
+    Normal,
+    /// size。
+    Size,
+    /// inline-size。
+    InlineSize,
+}
+
 /// 属性值枚举，用于 PropertyRegistry 返回的初始值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
@@ -306,6 +371,18 @@ pub enum PropertyValue {
     Transform(zero_css_parser::values::TransformValue),
     /// 可选字符串（grid-template-columns/rows、grid-auto-rows/columns）。
     OptionalString(Option<String>),
+    /// scroll-snap-type 值。
+    ScrollSnapType(ScrollSnapType),
+    /// scroll-snap-align 值。
+    ScrollSnapAlign(ScrollSnapAlign),
+    /// scroll-snap-stop 值。
+    ScrollSnapStop(ScrollSnapStop),
+    /// scroll-padding 值。
+    ScrollPadding(ScrollPadding),
+    /// container-type 值。
+    ContainerType(ContainerType),
+    /// container-name 值。
+    ContainerName(Option<String>),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -532,6 +609,36 @@ pub struct ComputedStyle {
     pub animation_fill_mode: Vec<zero_css_parser::values::AnimationFillModeValue>,
     /// animation-play-state 属性（逗号分隔的播放状态列表）。
     pub animation_play_state: Vec<zero_css_parser::values::AnimationPlayStateValue>,
+
+    // ── Scroll Snap ──
+    /// scroll-snap-type 属性。
+    pub scroll_snap_type: ScrollSnapType,
+    /// scroll-snap-align 属性。
+    pub scroll_snap_align: ScrollSnapAlign,
+    /// scroll-snap-stop 属性。
+    pub scroll_snap_stop: ScrollSnapStop,
+    /// scroll-margin-top 属性（px）。
+    pub scroll_margin_top: f32,
+    /// scroll-margin-right 属性（px）。
+    pub scroll_margin_right: f32,
+    /// scroll-margin-bottom 属性（px）。
+    pub scroll_margin_bottom: f32,
+    /// scroll-margin-left 属性（px）。
+    pub scroll_margin_left: f32,
+    /// scroll-padding-top 属性。
+    pub scroll_padding_top: ScrollPadding,
+    /// scroll-padding-right 属性。
+    pub scroll_padding_right: ScrollPadding,
+    /// scroll-padding-bottom 属性。
+    pub scroll_padding_bottom: ScrollPadding,
+    /// scroll-padding-left 属性。
+    pub scroll_padding_left: ScrollPadding,
+
+    // ── Container Query ──
+    /// container-type 属性。
+    pub container_type: ContainerType,
+    /// container-name 属性。
+    pub container_name: Option<String>,
 }
 
 impl Default for ComputedStyle {
@@ -663,6 +770,26 @@ impl Default for ComputedStyle {
             animation_direction: vec![],
             animation_fill_mode: vec![],
             animation_play_state: vec![],
+
+            // Scroll Snap
+            scroll_snap_type: ScrollSnapType {
+                strictness: ScrollSnapStrictness::None,
+                axis: ScrollSnapAxis::Both,
+            },
+            scroll_snap_align: ScrollSnapAlign::None,
+            scroll_snap_stop: ScrollSnapStop::Normal,
+            scroll_margin_top: 0.0,
+            scroll_margin_right: 0.0,
+            scroll_margin_bottom: 0.0,
+            scroll_margin_left: 0.0,
+            scroll_padding_top: ScrollPadding::Auto,
+            scroll_padding_right: ScrollPadding::Auto,
+            scroll_padding_bottom: ScrollPadding::Auto,
+            scroll_padding_left: ScrollPadding::Auto,
+
+            // Container Query
+            container_type: ContainerType::Normal,
+            container_name: None,
         }
     }
 }
@@ -785,6 +912,25 @@ impl PropertyRegistry {
             // Transform
             "transform" => Some(Transform(zero_css_parser::values::TransformValue::None)),
 
+            // Scroll Snap
+            "scroll-snap-type" => {
+                let default_sst = crate::property::ScrollSnapType {
+                    strictness: crate::property::ScrollSnapStrictness::None,
+                    axis: zero_css_parser::values::ScrollSnapAxis::Both,
+                };
+                Some(ScrollSnapType(default_sst))
+            }
+            "scroll-snap-align" => Some(ScrollSnapAlign(crate::property::ScrollSnapAlign::None)),
+            "scroll-snap-stop" => Some(ScrollSnapStop(crate::property::ScrollSnapStop::Normal)),
+            "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom"
+            | "scroll-margin-left" => Some(Number(0.0)),
+            "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom"
+            | "scroll-padding-left" => Some(ScrollPadding(crate::property::ScrollPadding::Auto)),
+
+            // Container Query
+            "container-type" => Some(ContainerType(crate::property::ContainerType::Normal)),
+            "container-name" => Some(ContainerName(None)),
+
             _ => None,
         }
     }
@@ -903,6 +1049,19 @@ impl PropertyRegistry {
             "outline-style",
             "outline-color",
             "outline-offset",
+            "scroll-snap-type",
+            "scroll-snap-align",
+            "scroll-snap-stop",
+            "scroll-margin-top",
+            "scroll-margin-right",
+            "scroll-margin-bottom",
+            "scroll-margin-left",
+            "scroll-padding-top",
+            "scroll-padding-right",
+            "scroll-padding-bottom",
+            "scroll-padding-left",
+            "container-type",
+            "container-name",
         ]
     }
 }
@@ -1143,6 +1302,70 @@ pub fn parse_cursor(value: &str) -> Option<CursorValue> {
         "zoom-in" => Some(CursorValue::ZoomIn),
         "zoom-out" => Some(CursorValue::ZoomOut),
         _ => None,
+    }
+}
+
+/// 解析 CSS scroll-snap-type 值。
+///
+/// 格式：none | [ mandatory | proximity ] [ x | y | both ]?
+pub fn parse_scroll_snap_type_computed(value: &str) -> Option<ScrollSnapType> {
+    let parsed = values::parse_scroll_snap_type(value)?;
+    let strictness = match parsed.0 {
+        ScrollSnapTypeValue::None => ScrollSnapStrictness::None,
+        ScrollSnapTypeValue::Mandatory => ScrollSnapStrictness::Mandatory,
+        ScrollSnapTypeValue::Proximity => ScrollSnapStrictness::Proximity,
+    };
+    let axis = parsed.1.unwrap_or(ScrollSnapAxis::Both);
+    Some(ScrollSnapType { strictness, axis })
+}
+
+/// 解析 CSS scroll-snap-align 值。
+pub fn parse_scroll_snap_align_computed(value: &str) -> Option<ScrollSnapAlign> {
+    match values::parse_scroll_snap_align(value)? {
+        ScrollSnapAlignValue::None => Some(ScrollSnapAlign::None),
+        ScrollSnapAlignValue::Start => Some(ScrollSnapAlign::Start),
+        ScrollSnapAlignValue::End => Some(ScrollSnapAlign::End),
+        ScrollSnapAlignValue::Center => Some(ScrollSnapAlign::Center),
+    }
+}
+
+/// 解析 CSS scroll-snap-stop 值。
+pub fn parse_scroll_snap_stop_computed(value: &str) -> Option<ScrollSnapStop> {
+    match values::parse_scroll_snap_stop(value)? {
+        ScrollSnapStopValue::Normal => Some(ScrollSnapStop::Normal),
+        ScrollSnapStopValue::Always => Some(ScrollSnapStop::Always),
+    }
+}
+
+/// 解析 CSS scroll-padding 值。
+pub fn parse_scroll_padding(value: &str) -> Option<ScrollPadding> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(ScrollPadding::Auto);
+    }
+    values::parse_length(v).map(|l| {
+        let px = match l {
+            LengthValue::Px(n) => n as f32,
+            other => resolve_length_to_px(other),
+        };
+        ScrollPadding::Length(px)
+    })
+}
+
+/// 将 LengthValue 转换为 f32 px（简单近似，非相对单位返回 0.0）。
+fn resolve_length_to_px(l: LengthValue) -> f32 {
+    match l {
+        LengthValue::Px(n) => n as f32,
+        _ => 0.0,
+    }
+}
+
+/// 解析 CSS container-type 值。
+pub fn parse_container_type_computed(value: &str) -> Option<ContainerType> {
+    match values::parse_container_type(value)? {
+        ContainerTypeValue::Normal => Some(ContainerType::Normal),
+        ContainerTypeValue::Size => Some(ContainerType::Size),
+        ContainerTypeValue::InlineSize => Some(ContainerType::InlineSize),
     }
 }
 
@@ -1833,6 +2056,89 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Scroll Snap 属性 ──
+        "scroll-snap-type" => {
+            if let Some(v) = parse_scroll_snap_type_computed(value) {
+                style.scroll_snap_type = v;
+                return true;
+            }
+        }
+        "scroll-snap-align" => {
+            if let Some(v) = parse_scroll_snap_align_computed(value) {
+                style.scroll_snap_align = v;
+                return true;
+            }
+        }
+        "scroll-snap-stop" => {
+            if let Some(v) = parse_scroll_snap_stop_computed(value) {
+                style.scroll_snap_stop = v;
+                return true;
+            }
+        }
+        "scroll-margin-top" => {
+            if let Some(v) = values::parse_length(value) {
+                style.scroll_margin_top = resolve_length_to_px(v);
+                return true;
+            }
+        }
+        "scroll-margin-right" => {
+            if let Some(v) = values::parse_length(value) {
+                style.scroll_margin_right = resolve_length_to_px(v);
+                return true;
+            }
+        }
+        "scroll-margin-bottom" => {
+            if let Some(v) = values::parse_length(value) {
+                style.scroll_margin_bottom = resolve_length_to_px(v);
+                return true;
+            }
+        }
+        "scroll-margin-left" => {
+            if let Some(v) = values::parse_length(value) {
+                style.scroll_margin_left = resolve_length_to_px(v);
+                return true;
+            }
+        }
+        "scroll-padding-top" => {
+            if let Some(v) = parse_scroll_padding(value) {
+                style.scroll_padding_top = v;
+                return true;
+            }
+        }
+        "scroll-padding-right" => {
+            if let Some(v) = parse_scroll_padding(value) {
+                style.scroll_padding_right = v;
+                return true;
+            }
+        }
+        "scroll-padding-bottom" => {
+            if let Some(v) = parse_scroll_padding(value) {
+                style.scroll_padding_bottom = v;
+                return true;
+            }
+        }
+        "scroll-padding-left" => {
+            if let Some(v) = parse_scroll_padding(value) {
+                style.scroll_padding_left = v;
+                return true;
+            }
+        }
+        // ── Container Query 属性 ──
+        "container-type" => {
+            if let Some(v) = parse_container_type_computed(value) {
+                style.container_type = v;
+                return true;
+            }
+        }
+        "container-name" => {
+            let trimmed = value.trim();
+            if trimmed.eq_ignore_ascii_case("none") {
+                style.container_name = None;
+            } else {
+                style.container_name = Some(trimmed.to_string());
+            }
+            return true;
+        }
         _ => {}
     }
     false
@@ -2013,6 +2319,21 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "animation-direction" => { style.animation_direction = default_style.animation_direction; true }
         "animation-fill-mode" => { style.animation_fill_mode = default_style.animation_fill_mode; true }
         "animation-play-state" => { style.animation_play_state = default_style.animation_play_state; true }
+        // Scroll Snap
+        "scroll-snap-type" => { style.scroll_snap_type = default_style.scroll_snap_type; true }
+        "scroll-snap-align" => { style.scroll_snap_align = default_style.scroll_snap_align; true }
+        "scroll-snap-stop" => { style.scroll_snap_stop = default_style.scroll_snap_stop; true }
+        "scroll-margin-top" => { style.scroll_margin_top = default_style.scroll_margin_top; true }
+        "scroll-margin-right" => { style.scroll_margin_right = default_style.scroll_margin_right; true }
+        "scroll-margin-bottom" => { style.scroll_margin_bottom = default_style.scroll_margin_bottom; true }
+        "scroll-margin-left" => { style.scroll_margin_left = default_style.scroll_margin_left; true }
+        "scroll-padding-top" => { style.scroll_padding_top = default_style.scroll_padding_top; true }
+        "scroll-padding-right" => { style.scroll_padding_right = default_style.scroll_padding_right; true }
+        "scroll-padding-bottom" => { style.scroll_padding_bottom = default_style.scroll_padding_bottom; true }
+        "scroll-padding-left" => { style.scroll_padding_left = default_style.scroll_padding_left; true }
+        // Container Query
+        "container-type" => { style.container_type = default_style.container_type; true }
+        "container-name" => { style.container_name = default_style.container_name; true }
         _ => false,
     }
 }
@@ -3597,5 +3918,243 @@ mod tests {
             PropertyRegistry::initial_value("grid-auto-rows"),
             Some(OptionalString(None))
         );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scroll Snap 和 Container Query 属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_scroll_snap_type_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None);
+        assert_eq!(style.scroll_snap_type.axis, ScrollSnapAxis::Both);
+    }
+
+    #[test]
+    fn test_scroll_snap_type_variants() {
+        let mut style = ComputedStyle::default();
+
+        assert!(apply_property_value(&mut style, "scroll-snap-type", "mandatory y"));
+        assert_eq!(style.scroll_snap_type.strictness, ScrollSnapStrictness::Mandatory);
+        assert_eq!(style.scroll_snap_type.axis, ScrollSnapAxis::Y);
+
+        assert!(apply_property_value(&mut style, "scroll-snap-type", "proximity x"));
+        assert_eq!(style.scroll_snap_type.strictness, ScrollSnapStrictness::Proximity);
+        assert_eq!(style.scroll_snap_type.axis, ScrollSnapAxis::X);
+
+        assert!(apply_property_value(&mut style, "scroll-snap-type", "none"));
+        assert_eq!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None);
+
+        assert!(!apply_property_value(&mut style, "scroll-snap-type", "invalid"));
+    }
+
+    #[test]
+    fn test_scroll_snap_align_default_and_variants() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.scroll_snap_align, ScrollSnapAlign::None);
+
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scroll-snap-align", "start"));
+        assert_eq!(style.scroll_snap_align, ScrollSnapAlign::Start);
+
+        assert!(apply_property_value(&mut style, "scroll-snap-align", "end"));
+        assert_eq!(style.scroll_snap_align, ScrollSnapAlign::End);
+
+        assert!(apply_property_value(&mut style, "scroll-snap-align", "center"));
+        assert_eq!(style.scroll_snap_align, ScrollSnapAlign::Center);
+
+        assert!(!apply_property_value(&mut style, "scroll-snap-align", "invalid"));
+    }
+
+    #[test]
+    fn test_scroll_snap_stop_default_and_variants() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.scroll_snap_stop, ScrollSnapStop::Normal);
+
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scroll-snap-stop", "always"));
+        assert_eq!(style.scroll_snap_stop, ScrollSnapStop::Always);
+
+        assert!(apply_property_value(&mut style, "scroll-snap-stop", "normal"));
+        assert_eq!(style.scroll_snap_stop, ScrollSnapStop::Normal);
+
+        assert!(!apply_property_value(&mut style, "scroll-snap-stop", "invalid"));
+    }
+
+    #[test]
+    fn test_scroll_margin_defaults() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.scroll_margin_top, 0.0);
+        assert_eq!(style.scroll_margin_right, 0.0);
+        assert_eq!(style.scroll_margin_bottom, 0.0);
+        assert_eq!(style.scroll_margin_left, 0.0);
+    }
+
+    #[test]
+    fn test_scroll_margin_applied() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scroll-margin-top", "10px"));
+        assert_eq!(style.scroll_margin_top, 10.0);
+
+        assert!(apply_property_value(&mut style, "scroll-margin-right", "20px"));
+        assert_eq!(style.scroll_margin_right, 20.0);
+
+        assert!(apply_property_value(&mut style, "scroll-margin-bottom", "5px"));
+        assert_eq!(style.scroll_margin_bottom, 5.0);
+
+        assert!(apply_property_value(&mut style, "scroll-margin-left", "15px"));
+        assert_eq!(style.scroll_margin_left, 15.0);
+    }
+
+    #[test]
+    fn test_scroll_padding_defaults() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.scroll_padding_top, ScrollPadding::Auto);
+        assert_eq!(style.scroll_padding_right, ScrollPadding::Auto);
+        assert_eq!(style.scroll_padding_bottom, ScrollPadding::Auto);
+        assert_eq!(style.scroll_padding_left, ScrollPadding::Auto);
+    }
+
+    #[test]
+    fn test_scroll_padding_applied() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scroll-padding-top", "10px"));
+        assert_eq!(style.scroll_padding_top, ScrollPadding::Length(10.0));
+
+        assert!(apply_property_value(&mut style, "scroll-padding-right", "auto"));
+        assert_eq!(style.scroll_padding_right, ScrollPadding::Auto);
+
+        assert!(apply_property_value(&mut style, "scroll-padding-bottom", "5px"));
+        assert_eq!(style.scroll_padding_bottom, ScrollPadding::Length(5.0));
+
+        assert!(apply_property_value(&mut style, "scroll-padding-left", "0px"));
+        assert_eq!(style.scroll_padding_left, ScrollPadding::Length(0.0));
+    }
+
+    #[test]
+    fn test_container_type_default_and_variants() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.container_type, ContainerType::Normal);
+
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "container-type", "size"));
+        assert_eq!(style.container_type, ContainerType::Size);
+
+        assert!(apply_property_value(&mut style, "container-type", "inline-size"));
+        assert_eq!(style.container_type, ContainerType::InlineSize);
+
+        assert!(apply_property_value(&mut style, "container-type", "normal"));
+        assert_eq!(style.container_type, ContainerType::Normal);
+
+        assert!(!apply_property_value(&mut style, "container-type", "invalid"));
+    }
+
+    #[test]
+    fn test_container_name_default_and_applied() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.container_name, None);
+
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "container-name", "sidebar"));
+        assert_eq!(style.container_name, Some("sidebar".to_string()));
+
+        assert!(apply_property_value(&mut style, "container-name", "none"));
+        assert_eq!(style.container_name, None);
+
+        assert!(apply_property_value(&mut style, "container-name", "my-container"));
+        assert_eq!(style.container_name, Some("my-container".to_string()));
+    }
+
+    #[test]
+    fn test_computed_style_new_fields_present() {
+        let style = ComputedStyle::default();
+        // 验证所有新字段都存在且可访问
+        let _ = &style.scroll_snap_type;
+        let _ = &style.scroll_snap_align;
+        let _ = &style.scroll_snap_stop;
+        let _ = &style.scroll_margin_top;
+        let _ = &style.scroll_margin_right;
+        let _ = &style.scroll_margin_bottom;
+        let _ = &style.scroll_margin_left;
+        let _ = &style.scroll_padding_top;
+        let _ = &style.scroll_padding_right;
+        let _ = &style.scroll_padding_bottom;
+        let _ = &style.scroll_padding_left;
+        let _ = &style.container_type;
+        let _ = &style.container_name;
+    }
+
+    #[test]
+    fn test_scroll_snap_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("scroll-snap-type"));
+        assert!(!PropertyRegistry::is_inherited("scroll-snap-align"));
+        assert!(!PropertyRegistry::is_inherited("scroll-snap-stop"));
+        assert!(!PropertyRegistry::is_inherited("scroll-margin-top"));
+        assert!(!PropertyRegistry::is_inherited("scroll-padding-top"));
+    }
+
+    #[test]
+    fn test_container_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("container-type"));
+        assert!(!PropertyRegistry::is_inherited("container-name"));
+    }
+
+    #[test]
+    fn test_scroll_and_container_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"scroll-snap-type"));
+        assert!(props.contains(&"scroll-snap-align"));
+        assert!(props.contains(&"scroll-snap-stop"));
+        assert!(props.contains(&"scroll-margin-top"));
+        assert!(props.contains(&"scroll-margin-right"));
+        assert!(props.contains(&"scroll-margin-bottom"));
+        assert!(props.contains(&"scroll-margin-left"));
+        assert!(props.contains(&"scroll-padding-top"));
+        assert!(props.contains(&"scroll-padding-right"));
+        assert!(props.contains(&"scroll-padding-bottom"));
+        assert!(props.contains(&"scroll-padding-left"));
+        assert!(props.contains(&"container-type"));
+        assert!(props.contains(&"container-name"));
+    }
+
+    #[test]
+    fn test_scroll_and_container_initial_values() {
+        assert!(PropertyRegistry::initial_value("scroll-snap-type").is_some());
+        assert!(PropertyRegistry::initial_value("scroll-snap-align").is_some());
+        assert!(PropertyRegistry::initial_value("scroll-snap-stop").is_some());
+        assert!(PropertyRegistry::initial_value("scroll-margin-top").is_some());
+        assert!(PropertyRegistry::initial_value("scroll-padding-top").is_some());
+        assert!(PropertyRegistry::initial_value("container-type").is_some());
+        assert!(PropertyRegistry::initial_value("container-name").is_some());
+    }
+
+    #[test]
+    fn test_apply_initial_value_scroll_and_container() {
+        let mut style = ComputedStyle::default();
+        // 修改 scroll-snap-type
+        apply_property_value(&mut style, "scroll-snap-type", "mandatory y");
+        assert!(apply_initial_value(&mut style, "scroll-snap-type"));
+        assert_eq!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None);
+
+        // 修改 container-type
+        apply_property_value(&mut style, "container-type", "size");
+        assert!(apply_initial_value(&mut style, "container-type"));
+        assert_eq!(style.container_type, ContainerType::Normal);
+
+        // 修改 container-name
+        apply_property_value(&mut style, "container-name", "test");
+        assert!(apply_initial_value(&mut style, "container-name"));
+        assert_eq!(style.container_name, None);
+
+        // 修改 scroll-margin
+        apply_property_value(&mut style, "scroll-margin-top", "10px");
+        assert!(apply_initial_value(&mut style, "scroll-margin-top"));
+        assert_eq!(style.scroll_margin_top, 0.0);
+
+        // 修改 scroll-padding
+        apply_property_value(&mut style, "scroll-padding-top", "10px");
+        assert!(apply_initial_value(&mut style, "scroll-padding-top"));
+        assert_eq!(style.scroll_padding_top, ScrollPadding::Auto);
     }
 }

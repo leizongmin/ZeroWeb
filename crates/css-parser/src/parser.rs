@@ -92,6 +92,10 @@ impl<'a> Parser<'a> {
                 if name.eq_ignore_ascii_case("supports") {
                     return self.consume_supports_rule().map(Rule::Supports);
                 }
+                // 对 @container 使用专用解析器
+                if name.eq_ignore_ascii_case("container") {
+                    return self.consume_container_rule().map(Rule::Container);
+                }
                 Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
@@ -1152,4 +1156,154 @@ impl<'a> Parser<'a> {
 
         Some(SupportsRule { condition, rules })
     }
+
+    /// 消耗 @container 规则。
+    ///
+    /// 格式：`@container <name>? (<条件>) { <规则> }`
+    fn consume_container_rule(&mut self) -> Option<ContainerRule> {
+        self.skip_whitespace();
+
+        // 读取可选的容器名称（标识符，在括号之前）
+        // 名称是第一个标识符（如果后面跟着 '('），条件则以 '(' 开头
+        let name = if let Token::Ident(s) = self.peek().clone() {
+            // 保存位置，前进查看下一个非空白 token
+            let pos_before = self.pos;
+            self.advance();
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::LParen) {
+                // ident 后面跟着 '(' → ident 是容器名称
+                Some(s)
+            } else {
+                // ident 后面不是 '(' → 回退，这不是名称
+                self.pos = pos_before;
+                None
+            }
+        } else {
+            None
+        };
+
+        self.skip_whitespace();
+
+        // 收集条件文本（括号内容）
+        let condition = if matches!(self.peek(), Token::LParen) {
+            self.advance(); // (
+            let mut cond_text = String::new();
+            let mut depth = 1;
+            loop {
+                match self.peek() {
+                    Token::LParen => {
+                        depth += 1;
+                        cond_text.push('(');
+                        self.advance();
+                    }
+                    Token::RParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            self.advance(); // )
+                            break;
+                        }
+                        cond_text.push(')');
+                        self.advance();
+                    }
+                    Token::Whitespace => {
+                        cond_text.push(' ');
+                        self.advance();
+                    }
+                    Token::Eof => return None,
+                    _ => {
+                        cond_text.push_str(&format!("{}", self.peek()));
+                        self.advance();
+                    }
+                }
+            }
+            parse_container_condition(cond_text.trim())?
+        } else {
+            return None;
+        };
+
+        self.skip_whitespace();
+
+        // 期望 {
+        if !matches!(self.peek(), Token::LBrace) {
+            return None;
+        }
+        self.advance();
+
+        // 解析规则列表
+        let mut rules = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                if matches!(self.peek(), Token::RBrace) {
+                    self.advance();
+                }
+                break;
+            }
+            if let Some(rule) = self.consume_rule() {
+                rules.push(rule);
+            } else {
+                self.advance();
+            }
+        }
+
+        Some(ContainerRule {
+            name,
+            condition,
+            rules,
+        })
+    }
+}
+
+/// 解析容器条件文本。
+///
+/// 支持格式如 `min-width: 400px`、`width > 300px`、`max-width: 800px`。
+fn parse_container_condition(text: &str) -> Option<ContainerCondition> {
+    let text = text.trim();
+
+    // 检查 size() 或 inline-size() 包装
+    if let Some(inner) = text.strip_prefix("size(").and_then(|s| s.strip_suffix(')')) {
+        return Some(ContainerCondition::Size(parse_size_condition(inner.trim())?));
+    }
+    if let Some(inner) = text
+        .strip_prefix("inline-size(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return Some(ContainerCondition::InlineSize(parse_size_condition(
+            inner.trim(),
+        )?));
+    }
+
+    // 默认为 Size 条件（裸条件如 `min-width: 400px`）
+    Some(ContainerCondition::Size(parse_size_condition(text)?))
+}
+
+/// 解析尺寸条件。
+///
+/// 支持格式如 `min-width: 400px`、`width > 300px`。
+fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
+    let text = text.trim();
+
+    // 尝试冒号分隔格式：`min-width: 400px`
+    if let Some(colon_pos) = text.find(':') {
+        let feature = text[..colon_pos].trim().to_string();
+        let value = text[colon_pos + 1..].trim().to_string();
+        if feature.is_empty() || value.is_empty() {
+            return None;
+        }
+        return Some(ContainerSizeCondition { feature, value });
+    }
+
+    // 尝试比较运算符格式：`width > 300px`、`width >= 300px`、`width < 300px`、`width <= 300px`
+    for op in [">=", "<=", ">", "<"] {
+        if let Some(op_pos) = text.find(op) {
+            let feature = text[..op_pos].trim().to_string();
+            let value = text[op_pos + op.len()..].trim().to_string();
+            if feature.is_empty() || value.is_empty() {
+                return None;
+            }
+            return Some(ContainerSizeCondition { feature, value });
+        }
+    }
+
+    None
 }

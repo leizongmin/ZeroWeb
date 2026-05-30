@@ -775,6 +775,154 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
     }
 }
 
+// ── CSS Scroll Snap 值类型 ──────────────────────────────────────────
+
+/// CSS scroll-snap-type 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapTypeValue {
+    /// none。
+    None,
+    /// mandatory（必须吸附）。
+    Mandatory,
+    /// proximity（接近时吸附）。
+    Proximity,
+}
+
+/// CSS scroll-snap-type 轴。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapAxis {
+    /// x 轴。
+    X,
+    /// y 轴。
+    Y,
+    /// 两个轴。
+    Both,
+}
+
+/// CSS scroll-snap-align 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapAlignValue {
+    /// none。
+    None,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// center。
+    Center,
+}
+
+/// CSS scroll-snap-stop 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollSnapStopValue {
+    /// normal。
+    Normal,
+    /// always。
+    Always,
+}
+
+/// CSS container-type 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContainerTypeValue {
+    /// normal。
+    Normal,
+    /// size。
+    Size,
+    /// inline-size。
+    InlineSize,
+}
+
+/// 解析 CSS scroll-snap-type 属性值。
+///
+/// 支持格式如 `"none"`、`"x mandatory"`、`"y proximity"`、`"both mandatory"`。
+/// 返回 (strictness, axis) 元组。
+pub fn parse_scroll_snap_type(value: &str) -> Option<(ScrollSnapTypeValue, Option<ScrollSnapAxis>)> {
+    let value = value.trim().to_ascii_lowercase();
+
+    if value == "none" {
+        return Some((ScrollSnapTypeValue::None, None));
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut strictness = None;
+    let mut axis = None;
+
+    for part in parts {
+        match part {
+            "mandatory" => strictness = Some(ScrollSnapTypeValue::Mandatory),
+            "proximity" => strictness = Some(ScrollSnapTypeValue::Proximity),
+            "x" => axis = Some(ScrollSnapAxis::X),
+            "y" => axis = Some(ScrollSnapAxis::Y),
+            "both" => axis = Some(ScrollSnapAxis::Both),
+            _ => return None,
+        }
+    }
+
+    strictness.map(|s| (s, axis))
+}
+
+/// 解析 CSS scroll-snap-align 属性值。
+pub fn parse_scroll_snap_align(value: &str) -> Option<ScrollSnapAlignValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(ScrollSnapAlignValue::None),
+        "start" => Some(ScrollSnapAlignValue::Start),
+        "end" => Some(ScrollSnapAlignValue::End),
+        "center" => Some(ScrollSnapAlignValue::Center),
+        _ => None,
+    }
+}
+
+/// 解析 CSS scroll-snap-stop 属性值。
+pub fn parse_scroll_snap_stop(value: &str) -> Option<ScrollSnapStopValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(ScrollSnapStopValue::Normal),
+        "always" => Some(ScrollSnapStopValue::Always),
+        _ => None,
+    }
+}
+
+/// 解析 CSS container-type 属性值。
+pub fn parse_container_type(value: &str) -> Option<ContainerTypeValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(ContainerTypeValue::Normal),
+        "size" => Some(ContainerTypeValue::Size),
+        "inline-size" => Some(ContainerTypeValue::InlineSize),
+        _ => None,
+    }
+}
+
+/// 解析 1-4 个长度值的简写属性（如 scroll-margin、scroll-padding）。
+///
+/// 返回 [top, right, bottom, left]（按 CSS 简写规则展开）。
+pub fn parse_length_shorthand(value: &str) -> Option<[LengthValue; 4]> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => {
+            let v = parse_length(parts[0])?;
+            Some([v.clone(), v.clone(), v.clone(), v])
+        }
+        2 => {
+            let tb = parse_length(parts[0])?;
+            let lr = parse_length(parts[1])?;
+            Some([tb.clone(), lr.clone(), tb, lr])
+        }
+        3 => {
+            let top = parse_length(parts[0])?;
+            let lr = parse_length(parts[1])?;
+            let bottom = parse_length(parts[2])?;
+            Some([top, lr.clone(), bottom, lr])
+        }
+        4 => {
+            let top = parse_length(parts[0])?;
+            let right = parse_length(parts[1])?;
+            let bottom = parse_length(parts[2])?;
+            let left = parse_length(parts[3])?;
+            Some([top, right, bottom, left])
+        }
+        _ => None,
+    }
+}
+
 /// 解析 CSS var() 函数引用。
 ///
 /// 支持格式如 `var(--name)` 和 `var(--name, fallback)`。
