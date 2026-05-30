@@ -9,6 +9,7 @@ use crate::{HostError, HostResult};
 use std::sync::Arc;
 
 /// 窗口配置
+#[derive(Clone)]
 pub struct WindowConfig {
     /// 窗口标题
     pub title: String,

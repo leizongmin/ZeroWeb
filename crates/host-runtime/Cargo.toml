@@ -13,3 +13,8 @@ tracing = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "host_runtime_bench"
+harness = false

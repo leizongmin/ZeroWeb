@@ -271,4 +271,101 @@ mod tests {
         assert!(tracker.dirty_rects().is_empty());
         assert!(!tracker.is_full_redraw());
     }
+
+    /// 测试全量重绘后清除脏矩形列表。
+    #[test]
+    fn test_full_redraw_clears_existing_rects() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        tracker.mark_full_redraw();
+        assert!(tracker.dirty_rects().is_empty(), "全量重绘应清除脏矩形");
+        assert_eq!(tracker.dirty_area(), f32::MAX);
+    }
+
+    /// 测试不重叠的矩形不会合并。
+    #[test]
+    fn test_merge_non_overlapping_rects() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.mark_dirty(Rect::new(500.0, 500.0, 10.0, 10.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+        tracker.merge_overlapping();
+        // 远距离矩形不应合并
+        assert_eq!(tracker.dirty_rects().len(), 2);
+    }
+
+    /// 测试完全重叠的矩形会合并。
+    #[test]
+    fn test_merge_fully_overlapping_rects() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tracker.mark_dirty(Rect::new(10.0, 10.0, 20.0, 20.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+        tracker.merge_overlapping();
+        // 小矩形完全在大矩形内，合并后面积增长很小
+        assert_eq!(tracker.dirty_rects().len(), 1);
+    }
+
+    /// 测试 zero offset 的 mark_node_dirty。
+    #[test]
+    fn test_mark_node_dirty_zero_offset() {
+        let layout_box = LayoutBox {
+            node_id: None,
+            x: 42.0,
+            y: 99.0,
+            width: 10.0,
+            height: 10.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 10.0,
+            content_height: 10.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_node_dirty(&layout_box, 0.0, 0.0);
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 42.0);
+        assert_eq!(tracker.dirty_rects()[0].origin.y, 99.0);
+    }
+
+    /// 测试全量重绘后脏区域面积为最大值。
+    #[test]
+    fn test_dirty_area_after_clear() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert!((tracker.dirty_area() - 10000.0).abs() < 0.1);
+        tracker.clear();
+        assert_eq!(tracker.dirty_area(), 0.0);
+    }
+
+    /// 测试合并后再次标记脏区域。
+    #[test]
+    fn test_mark_after_merge() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tracker.mark_dirty(Rect::new(10.0, 10.0, 20.0, 20.0));
+        tracker.merge_overlapping();
+        let count_after_merge = tracker.dirty_rects().len();
+        assert!(count_after_merge <= 2);
+        tracker.mark_dirty(Rect::new(200.0, 200.0, 10.0, 10.0));
+        assert_eq!(tracker.dirty_rects().len(), count_after_merge + 1);
+    }
 }

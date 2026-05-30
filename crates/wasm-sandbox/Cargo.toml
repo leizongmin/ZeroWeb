@@ -24,3 +24,8 @@ optional = true
 
 [dev-dependencies]
 wat = "1"
+criterion = { workspace = true }
+
+[[bench]]
+name = "wasm_bench"
+harness = false
