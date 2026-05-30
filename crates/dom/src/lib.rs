@@ -33,6 +33,8 @@ mod serializer;
 
 pub use document::*;
 pub use event::*;
+pub use node::ShadowRootMode;
+pub use node::SlotAssignment;
 pub use mutation::*;
 pub use node::*;
 pub use parser::*;

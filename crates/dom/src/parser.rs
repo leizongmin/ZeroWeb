@@ -94,6 +94,7 @@ impl DomBuilder {
                 NodeKind::ProcessingInstruction(pi) => {
                     doc.create_processing_instruction(&pi.target, &pi.data)
                 }
+                NodeKind::ShadowRoot(_) => doc.create_document_fragment(),
             };
             mapping.insert(old_id, new_id);
         }

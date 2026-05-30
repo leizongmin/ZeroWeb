@@ -349,6 +349,8 @@ struct CanvasState {
     shadow_blur: f32,
     shadow_offset_x: f32,
     shadow_offset_y: f32,
+    line_dash: Vec<f32>,
+    line_dash_offset: f32,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -389,6 +391,10 @@ pub struct CanvasContext {
     shadow_offset_x: f32,
     /// 阴影垂直偏移。
     shadow_offset_y: f32,
+    /// 线段虚线模式。
+    line_dash: Vec<f32>,
+    /// 线段虚线偏移。
+    line_dash_offset: f32,
 }
 
 /// 文本度量。
@@ -436,6 +442,8 @@ impl CanvasContext {
             shadow_blur: 0.0,
             shadow_offset_x: 0.0,
             shadow_offset_y: 0.0,
+            line_dash: Vec::new(),
+            line_dash_offset: 0.0,
         }
     }
 
@@ -635,6 +643,87 @@ impl CanvasContext {
         self.blit_stroke_to_pixels(&vertices, color, self.line_width);
     }
 
+    /// 使用指定 Path2D 填充路径。
+    pub fn fill_with_path(&mut self, path: &Path2D) {
+        let vertices = self.flatten_path_for(path);
+        if vertices.is_empty() {
+            return;
+        }
+        if self.has_shadow() {
+            self.draw_shadow_path(&vertices);
+        }
+        let color = self.apply_alpha(self.fill_color);
+        self.primitives.add_path_fill(vertices.clone(), color);
+        self.blit_path_to_pixels(&vertices, color);
+    }
+
+    /// 使用指定 Path2D 描边路径。
+    pub fn stroke_with_path(&mut self, path: &Path2D) {
+        let vertices = self.flatten_path_for(path);
+        if vertices.is_empty() {
+            return;
+        }
+        if self.has_shadow() {
+            self.draw_shadow_path(&vertices);
+        }
+        let color = self.apply_alpha(self.stroke_color);
+        let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
+        self.primitives.add_path_stroke(vertices.clone(), color, self.line_width, closed);
+        self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+    }
+
+    /// 使用指定 Path2D 设置裁剪区域。
+    pub fn clip_with_path(&mut self, path: &Path2D) {
+        let vertices = self.flatten_path_for(path);
+        if vertices.is_empty() {
+            return;
+        }
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for chunk in vertices.chunks_exact(2) {
+            min_x = min_x.min(chunk[0]);
+            min_y = min_y.min(chunk[1]);
+            max_x = max_x.max(chunk[0]);
+            max_y = max_y.max(chunk[1]);
+        }
+        if min_x < max_x && min_y < max_y {
+            let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+            self.primitives.add_clip(rect);
+            self.clip_path = Some(path.clone());
+        }
+    }
+
+    // ── Line dash ──
+
+    /// 设置线段虚线模式。
+    pub fn set_line_dash(&mut self, segments: Vec<f32>) {
+        // 奇数长度时复制一份拼接到自身
+        if segments.len() % 2 == 1 {
+            let mut doubled = segments.clone();
+            doubled.extend_from_slice(&segments);
+            self.line_dash = doubled;
+        } else {
+            self.line_dash = segments;
+        }
+    }
+
+    /// 返回当前线段虚线模式。
+    pub fn get_line_dash(&self) -> &[f32] {
+        &self.line_dash
+    }
+
+    /// 设置线段虚线偏移。
+    pub fn set_line_dash_offset(&mut self, offset: f32) {
+        self.line_dash_offset = offset;
+    }
+
+    /// 返回当前线段虚线偏移。
+    pub fn get_line_dash_offset(&self) -> f32 {
+        self.line_dash_offset
+    }
+
     // ── State ──
 
     /// 保存当前状态到栈。
@@ -651,6 +740,8 @@ impl CanvasContext {
             shadow_blur: self.shadow_blur,
             shadow_offset_x: self.shadow_offset_x,
             shadow_offset_y: self.shadow_offset_y,
+            line_dash: self.line_dash.clone(),
+            line_dash_offset: self.line_dash_offset,
         });
     }
 
@@ -668,6 +759,8 @@ impl CanvasContext {
             self.shadow_blur = state.shadow_blur;
             self.shadow_offset_x = state.shadow_offset_x;
             self.shadow_offset_y = state.shadow_offset_y;
+            self.line_dash = state.line_dash;
+            self.line_dash_offset = state.line_dash_offset;
         }
     }
 
@@ -1232,9 +1325,194 @@ impl CanvasContext {
                     current_x = px;
                     current_y = py;
                 }
+                PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
+                    let cos_r = rotation.cos();
+                    let sin_r = rotation.sin();
+                    let angle_span = end_angle - start_angle;
+                    let step = angle_span / ARC_SEGMENTS as f32;
+                    let compute_point = |angle: f32| -> (f32, f32) {
+                        let cos_a = angle.cos();
+                        let sin_a = angle.sin();
+                        let px = rx * cos_a;
+                        let py = ry * sin_a;
+                        (cx + px * cos_r - py * sin_r, cy + px * sin_r + py * cos_r)
+                    };
+                    let (mut px, mut py) = compute_point(start_angle);
+                    for i in 0..ARC_SEGMENTS {
+                        let angle = start_angle + step * (i + 1) as f32;
+                        let (nx, ny) = compute_point(angle);
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = px;
+                    current_y = py;
+                }
+                PathCommand::RoundRect(x, y, w, h, ref radii) => {
+                    // 简化实现：忽略圆角，退化为矩形子路径
+                    // 使用与 Path2D::rect 相同的矩形线段
+                    let _ = radii;
+                    let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+                    vertices.push(current_x);
+                    vertices.push(current_y);
+                    vertices.push(corners[0].0);
+                    vertices.push(corners[0].1);
+                    for i in 0..3 {
+                        vertices.push(corners[i].0);
+                        vertices.push(corners[i].1);
+                        vertices.push(corners[i + 1].0);
+                        vertices.push(corners[i + 1].1);
+                    }
+                    // 闭合回起点
+                    vertices.push(corners[3].0);
+                    vertices.push(corners[3].1);
+                    vertices.push(corners[0].0);
+                    vertices.push(corners[0].1);
+                    current_x = corners[0].0;
+                    current_y = corners[0].1;
+                }
                 PathCommand::ClosePath => {
                     // ClosePath 不产生额外线段（路径自动闭合由渲染器处理）
                 }
+            }
+        }
+        vertices
+    }
+
+    /// 将指定 Path2D 的命令扁平化为顶点列表（x, y 交替）。
+    fn flatten_path_for(&self, path: &Path2D) -> Vec<f32> {
+        let mut vertices = Vec::new();
+        let mut current_x = 0.0f32;
+        let mut current_y = 0.0f32;
+        const ARC_SEGMENTS: usize = 16;
+
+        for cmd in path.commands() {
+            match *cmd {
+                PathCommand::MoveTo(x, y) => {
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::LineTo(x, y) => {
+                    vertices.push(current_x);
+                    vertices.push(current_y);
+                    vertices.push(x);
+                    vertices.push(y);
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
+                    const SEGMENTS: usize = 8;
+                    let mut px = current_x;
+                    let mut py = current_y;
+                    for i in 1..=SEGMENTS {
+                        let t = i as f32 / SEGMENTS as f32;
+                        let mt = 1.0 - t;
+                        let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * x;
+                        let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * y;
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
+                    const SEGMENTS: usize = 8;
+                    let mut px = current_x;
+                    let mut py = current_y;
+                    for i in 1..=SEGMENTS {
+                        let t = i as f32 / SEGMENTS as f32;
+                        let mt = 1.0 - t;
+                        let nx = mt * mt * mt * current_x
+                            + 3.0 * mt * mt * t * cp1x
+                            + 3.0 * mt * t * t * cp2x
+                            + t * t * t * x;
+                        let ny = mt * mt * mt * current_y
+                            + 3.0 * mt * mt * t * cp1y
+                            + 3.0 * mt * t * t * cp2y
+                            + t * t * t * y;
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = x;
+                    current_y = y;
+                }
+                PathCommand::Arc(cx, cy, radius, start_angle, end_angle) => {
+                    let angle_span = end_angle - start_angle;
+                    let step = angle_span / ARC_SEGMENTS as f32;
+                    let mut px = cx + radius * start_angle.cos();
+                    let mut py = cy + radius * start_angle.sin();
+                    for i in 0..ARC_SEGMENTS {
+                        let angle = start_angle + step * (i + 1) as f32;
+                        let nx = cx + radius * angle.cos();
+                        let ny = cy + radius * angle.sin();
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = px;
+                    current_y = py;
+                }
+                PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
+                    let cos_r = rotation.cos();
+                    let sin_r = rotation.sin();
+                    let angle_span = end_angle - start_angle;
+                    let step = angle_span / ARC_SEGMENTS as f32;
+                    let compute_point = |angle: f32| -> (f32, f32) {
+                        let cos_a = angle.cos();
+                        let sin_a = angle.sin();
+                        let px = rx * cos_a;
+                        let py = ry * sin_a;
+                        (cx + px * cos_r - py * sin_r, cy + px * sin_r + py * cos_r)
+                    };
+                    let (mut px, mut py) = compute_point(start_angle);
+                    for i in 0..ARC_SEGMENTS {
+                        let angle = start_angle + step * (i + 1) as f32;
+                        let (nx, ny) = compute_point(angle);
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(nx);
+                        vertices.push(ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    current_x = px;
+                    current_y = py;
+                }
+                PathCommand::RoundRect(x, y, w, h, ref radii) => {
+                    let _ = radii;
+                    let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+                    vertices.push(current_x);
+                    vertices.push(current_y);
+                    vertices.push(corners[0].0);
+                    vertices.push(corners[0].1);
+                    for i in 0..3 {
+                        vertices.push(corners[i].0);
+                        vertices.push(corners[i].1);
+                        vertices.push(corners[i + 1].0);
+                        vertices.push(corners[i + 1].1);
+                    }
+                    vertices.push(corners[3].0);
+                    vertices.push(corners[3].1);
+                    vertices.push(corners[0].0);
+                    vertices.push(corners[0].1);
+                    current_x = corners[0].0;
+                    current_y = corners[0].1;
+                }
+                PathCommand::ClosePath => {}
             }
         }
         vertices
@@ -3031,5 +3309,245 @@ mod tests {
         ctx.draw_image(&img, 0.0, 0.0);
         let result = ctx.get_image_data(0, 0, 2, 2);
         assert_eq!(result.data, pixels);
+    }
+
+    // ── Path2D ellipse 测试 ──
+
+    /// 测试 Path2D ellipse 命令生成正确的路径命令。
+    #[test]
+    fn test_path_ellipse_command() {
+        let mut p = Path2D::new();
+        p.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+        assert_eq!(p.len(), 1);
+        assert!(matches!(
+            p.commands()[0],
+            PathCommand::Ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, _)
+        ));
+    }
+
+    // ── Path2D rect 测试 ──
+
+    /// 测试 Path2D rect 命令生成 5 个子命令。
+    #[test]
+    fn test_path_rect_subpath_count() {
+        let mut p = Path2D::new();
+        p.rect(10.0, 20.0, 100.0, 50.0);
+        assert_eq!(p.len(), 5);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)));
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(110.0, 20.0)));
+        assert!(matches!(p.commands()[2], PathCommand::LineTo(110.0, 70.0)));
+        assert!(matches!(p.commands()[3], PathCommand::LineTo(10.0, 70.0)));
+        assert!(matches!(p.commands()[4], PathCommand::ClosePath));
+    }
+
+    // ── Path2D round_rect 测试 ──
+
+    /// 测试 Path2D round_rect 命令。
+    #[test]
+    fn test_path_round_rect_command() {
+        let mut p = Path2D::new();
+        p.round_rect(10.0, 20.0, 100.0, 50.0, vec![5.0]);
+        assert_eq!(p.len(), 1);
+        assert!(matches!(
+            p.commands()[0],
+            PathCommand::RoundRect(10.0, 20.0, 100.0, 50.0, ref r) if r == &vec![5.0]
+        ));
+    }
+
+    /// 测试 Path2D round_rect 使用不同圆角半径。
+    #[test]
+    fn test_path_round_rect_different_radii() {
+        let mut p = Path2D::new();
+        p.round_rect(0.0, 0.0, 80.0, 60.0, vec![5.0, 10.0, 15.0, 20.0]);
+        assert_eq!(p.len(), 1);
+        if let PathCommand::RoundRect(x, y, w, h, ref radii) = p.commands()[0] {
+            assert!((x).abs() < f32::EPSILON);
+            assert!((y).abs() < f32::EPSILON);
+            assert!((w - 80.0).abs() < f32::EPSILON);
+            assert!((h - 60.0).abs() < f32::EPSILON);
+            assert_eq!(radii, &[5.0, 10.0, 15.0, 20.0]);
+        } else {
+            panic!("expected RoundRect command");
+        }
+    }
+
+    // ── Path2D is_empty 和 len 测试 ──
+
+    /// 测试 Path2D is_empty 和 len。
+    #[test]
+    fn test_path_is_empty_and_len() {
+        let p = Path2D::new();
+        assert!(p.is_empty());
+        assert_eq!(p.len(), 0);
+
+        let mut p2 = Path2D::new();
+        p2.move_to(10.0, 20.0);
+        assert!(!p2.is_empty());
+        assert_eq!(p2.len(), 1);
+
+        p2.line_to(30.0, 40.0);
+        assert_eq!(p2.len(), 2);
+    }
+
+    // ── fill_with_path 测试 ──
+
+    /// 测试 fill_with_path 使用外部 Path2D 填充。
+    #[test]
+    fn test_fill_with_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.move_to(10.0, 10.0);
+        path.line_to(100.0, 10.0);
+        path.line_to(100.0, 100.0);
+        ctx.fill_with_path(&path);
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        let pf = &ctx.primitives().path_fills[0];
+        assert!(!pf.vertices.is_empty());
+    }
+
+    /// 测试 fill_with_path 空路径不生成图元。
+    #[test]
+    fn test_fill_with_path_empty() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let path = Path2D::new();
+        ctx.fill_with_path(&path);
+        assert_eq!(ctx.primitives().path_fills.len(), 0);
+    }
+
+    // ── stroke_with_path 测试 ──
+
+    /// 测试 stroke_with_path 使用外部 Path2D 描边。
+    #[test]
+    fn test_stroke_with_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(3.0);
+        ctx.set_stroke_color(Color::RED);
+        let mut path = Path2D::new();
+        path.move_to(10.0, 10.0);
+        path.line_to(100.0, 100.0);
+        ctx.stroke_with_path(&path);
+        assert_eq!(ctx.primitives().path_strokes.len(), 1);
+        let ps = &ctx.primitives().path_strokes[0];
+        assert_eq!(ps.color, Color::RED);
+        assert!((ps.line_width - 3.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 stroke_with_path 闭合路径标记。
+    #[test]
+    fn test_stroke_with_path_closed() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.move_to(0.0, 0.0);
+        path.line_to(50.0, 0.0);
+        path.line_to(50.0, 50.0);
+        path.close_path();
+        ctx.stroke_with_path(&path);
+        assert!(ctx.primitives().path_strokes[0].closed);
+    }
+
+    // ── clip_with_path 测试 ──
+
+    /// 测试 clip_with_path 使用外部 Path2D 裁剪。
+    #[test]
+    fn test_clip_with_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.move_to(10.0, 10.0);
+        path.line_to(100.0, 10.0);
+        path.line_to(100.0, 100.0);
+        path.close_path();
+        ctx.clip_with_path(&path);
+        assert_eq!(ctx.primitives().clips.len(), 1);
+    }
+
+    /// 测试 clip_with_path 空路径不生成裁剪图元。
+    #[test]
+    fn test_clip_with_path_empty() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let path = Path2D::new();
+        ctx.clip_with_path(&path);
+        assert_eq!(ctx.primitives().clips.len(), 0);
+    }
+
+    // ── line_dash set/get 测试 ──
+
+    /// 测试线段虚线模式设置和获取。
+    #[test]
+    fn test_line_dash_set_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        assert!(ctx.get_line_dash().is_empty());
+        ctx.set_line_dash(vec![5.0, 10.0]);
+        assert_eq!(ctx.get_line_dash(), &[5.0, 10.0]);
+    }
+
+    /// 测试线段虚线模式奇数长度时自动加倍。
+    #[test]
+    fn test_line_dash_odd_length_doubled() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_dash(vec![5.0, 10.0, 15.0]);
+        assert_eq!(ctx.get_line_dash(), &[5.0, 10.0, 15.0, 5.0, 10.0, 15.0]);
+    }
+
+    // ── line_dash_offset set/get 测试 ──
+
+    /// 测试线段虚线偏移设置和获取。
+    #[test]
+    fn test_line_dash_offset_set_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        assert!((ctx.get_line_dash_offset()).abs() < f32::EPSILON);
+        ctx.set_line_dash_offset(3.5);
+        assert!((ctx.get_line_dash_offset() - 3.5).abs() < f32::EPSILON);
+    }
+
+    // ── line_dash save/restore 测试 ──
+
+    /// 测试线段虚线模式在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_line_dash_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_dash(vec![5.0, 10.0]);
+        ctx.set_line_dash_offset(2.0);
+        ctx.save();
+        ctx.set_line_dash(vec![1.0, 2.0, 3.0]);
+        ctx.set_line_dash_offset(5.0);
+        assert_eq!(ctx.get_line_dash(), &[1.0, 2.0, 3.0, 1.0, 2.0, 3.0]);
+        assert!((ctx.get_line_dash_offset() - 5.0).abs() < f32::EPSILON);
+        ctx.restore();
+        assert_eq!(ctx.get_line_dash(), &[5.0, 10.0]);
+        assert!((ctx.get_line_dash_offset() - 2.0).abs() < f32::EPSILON);
+    }
+
+    // ── Path2D 多子路径测试 ──
+
+    /// 测试 Path2D 包含多个子路径时 fill_with_path 正确工作。
+    #[test]
+    fn test_fill_with_path_multiple_subpaths() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        // 第一个子路径：矩形
+        path.rect(10.0, 10.0, 30.0, 30.0);
+        // 第二个子路径：三角形
+        path.move_to(60.0, 10.0);
+        path.line_to(100.0, 10.0);
+        path.line_to(80.0, 50.0);
+        path.close_path();
+        ctx.fill_with_path(&path);
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        assert!(!ctx.primitives().path_fills[0].vertices.is_empty());
+    }
+
+    // ── Path2D ellipse 在 context 中使用 ──
+
+    /// 测试 ellipse 通过 fill_with_path 生成正确的顶点数量。
+    #[test]
+    fn test_ellipse_flattening_via_fill_with_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+        ctx.fill_with_path(&path);
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        let pf = &ctx.primitives().path_fills[0];
+        // 16 段细分 × 4 floats = 64
+        assert_eq!(pf.vertices.len(), 64);
     }
 }
