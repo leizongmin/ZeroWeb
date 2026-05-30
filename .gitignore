@@ -41,3 +41,6 @@ lcov.info
 
 # Rally event logs
 .rally/
+
+# Acceptance test reports and artifacts
+.acceptance/
