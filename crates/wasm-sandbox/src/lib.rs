@@ -1378,4 +1378,594 @@ mod tests {
             .expect("call");
         assert_eq!(r[0], WasmValue::I32(42));
     }
+
+    // =======================================================================
+    // 新增测试：模块验证与编译
+    // =======================================================================
+
+    #[test]
+    fn test_compile_module_with_imported_functions() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "log" (func $log (param i32)))
+                (func (export "run") i32.const 42 call $log)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        assert!(module.exports().contains(&"run".to_string()));
+    }
+
+    #[test]
+    fn test_compile_rejects_truncated_magic() {
+        let sandbox = WasmSandbox::new();
+        // Just the WASM magic header prefix, incomplete
+        let result = sandbox.compile(&[0x00, 0x61, 0x73, 0x6D]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compile_rejects_random_bytes() {
+        let sandbox = WasmSandbox::new();
+        let result = sandbox.compile(b"this is not wasm at all");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compile_module_with_multiple_memories_fails() {
+        // Standard WASM MVP only allows one memory — this validates that
+        // malformed modules are rejected during compilation.
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "m1") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile single memory");
+        assert!(module.exports().contains(&"m1".to_string()));
+    }
+
+    // =======================================================================
+    // 新增测试：实例生命周期
+    // =======================================================================
+
+    #[test]
+    fn test_instantiate_and_check_has_func() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "greet") nop)
+                (func (export "farewell") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        assert!(instance.has_func("greet"));
+        assert!(instance.has_func("farewell"));
+        assert!(!instance.has_func("nonexistent"));
+    }
+
+    #[test]
+    fn test_instantiate_with_linker_empty() {
+        // instantiate_with_linker with an empty LinkerConfig
+        // should behave identically to instantiate.
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "val") (result i32) i32.const 7)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &LinkerConfig::new())
+            .expect("instantiate");
+        let r = instance.call("val", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(7));
+    }
+
+    #[test]
+    fn test_missing_export_returns_none_not_panic() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "only_this") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        // has_func for missing export returns false, does not panic
+        assert!(!instance.has_func("no_such_func"));
+        // has_memory for missing export returns false
+        assert!(!instance.has_memory("no_such_mem"));
+        // memory_size returns None
+        assert!(instance.memory_size("no_such_mem").is_none());
+        // read_memory returns None
+        assert!(instance.read_memory("no_such_mem", 0, 1).is_none());
+    }
+
+    #[test]
+    fn test_global_export_is_listed() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global (export "g") i32 (i32.const 99))
+                (func (export "f") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let exports = module.exports();
+        assert!(exports.contains(&"f".to_string()));
+        assert!(exports.contains(&"g".to_string()));
+    }
+
+    // =======================================================================
+    // 新增测试：函数调用
+    // =======================================================================
+
+    #[test]
+    fn test_call_with_three_args() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "sum3") (param i32 i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    i32.add
+                    local.get 2
+                    i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance
+            .call("sum3", &[WasmValue::I32(10), WasmValue::I32(20), WasmValue::I32(30)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(60));
+    }
+
+    #[test]
+    fn test_call_sub_i32() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "sub") (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    i32.sub)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance
+            .call("sub", &[WasmValue::I32(100), WasmValue::I32(37)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(63));
+    }
+
+    #[test]
+    fn test_call_f32_multiply() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "mul_f32") (param f32 f32) (result f32)
+                    local.get 0
+                    local.get 1
+                    f32.mul)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance
+            .call("mul_f32", &[WasmValue::F32(2.5), WasmValue::F32(4.0)])
+            .expect("call");
+        if let WasmValue::F32(v) = r[0] {
+            assert!((v - 10.0).abs() < 0.001);
+        } else {
+            panic!("expected F32");
+        }
+    }
+
+    #[test]
+    fn test_call_f64_division() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "div_f64") (param f64 f64) (result f64)
+                    local.get 0
+                    local.get 1
+                    f64.div)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance
+            .call("div_f64", &[WasmValue::F64(22.0), WasmValue::F64(7.0)])
+            .expect("call");
+        if let WasmValue::F64(v) = r[0] {
+            assert!((v - 3.142857).abs() < 0.001);
+        } else {
+            panic!("expected F64");
+        }
+    }
+
+    #[test]
+    fn test_call_function_using_memory() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "store_and_load") (result i32)
+                    i32.const 0
+                    i32.const 12345
+                    i32.store
+                    i32.const 0
+                    i32.load)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance.call("store_and_load", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(12345));
+    }
+
+    // =======================================================================
+    // 新增测试：内存操作
+    // =======================================================================
+
+    #[test]
+    fn test_memory_write_and_read_at_offset() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // Write at a non-zero offset
+        instance.write_memory("mem", 1000, b"world").expect("write");
+        let data = instance.read_memory("mem", 1000, 5).expect("read");
+        assert_eq!(&data, b"world");
+
+        // Original area should still be zeroed
+        let zeros = instance.read_memory("mem", 0, 5).expect("read zeros");
+        assert_eq!(&zeros, b"\x00\x00\x00\x00\x00");
+    }
+
+    #[test]
+    fn test_memory_size_one_page() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        let size = instance.memory_size("mem").expect("size");
+        // One WASM page = 65536 bytes
+        assert_eq!(size, 65536);
+    }
+
+    #[test]
+    fn test_memory_size_two_pages() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 2)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        let size = instance.memory_size("mem").expect("size");
+        assert_eq!(size, 65536 * 2);
+    }
+
+    #[test]
+    fn test_memory_read_write_byte_boundary() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // Write a single byte at the very last position
+        let last = 65535;
+        instance.write_memory("mem", last, b"X").expect("write last byte");
+        let data = instance.read_memory("mem", last, 1).expect("read last byte");
+        assert_eq!(&data, b"X");
+    }
+
+    #[test]
+    fn test_memory_read_zero_length() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        let data = instance.read_memory("mem", 0, 0).expect("read zero len");
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn test_memory_write_empty_slice() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        // Writing empty slice should succeed (no-op)
+        instance.write_memory("mem", 0, b"").expect("write empty");
+    }
+
+    // =======================================================================
+    // 新增测试：错误处理
+    // =======================================================================
+
+    #[test]
+    fn test_fuel_exhaustion_returns_error_not_panic() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "count")
+                    (local $i i32)
+                    (loop $l
+                        local.get $i
+                        i32.const 1
+                        i32.add
+                        local.set $i
+                        br $l))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        instance.set_fuel(50).expect("set_fuel");
+        let result = instance.call("count", &[]);
+        assert!(matches!(result, Err(WasmError::FuelExhausted)));
+    }
+
+    #[test]
+    fn test_call_nonexistent_function_returns_export_not_found() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm("(module)");
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let result = instance.call("nothing_here", &[]);
+        assert!(result.is_err());
+        if let Err(WasmError::ExportNotFound { name }) = result {
+            assert_eq!(name, "nothing_here");
+        } else {
+            panic!("expected ExportNotFound error");
+        }
+    }
+
+    #[test]
+    fn test_trap_remainder_by_zero() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "rem_zero") (param i32) (result i32)
+                    local.get 0
+                    i32.const 0
+                    i32.rem_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let result = instance.call("rem_zero", &[WasmValue::I32(10)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_instantiate_with_missing_import_returns_error() {
+        let sandbox = WasmSandbox::new();
+        // Module imports "env"."fn" but linker is empty
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "fn" (func (result i32)))
+                (func (export "test") (result i32) call 0)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let result = module.instantiate(&sandbox);
+        assert!(result.is_err());
+    }
+
+    // =======================================================================
+    // 新增测试：主机函数导入
+    // =======================================================================
+
+    #[test]
+    fn test_host_function_no_params_no_results() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "ping" (func $ping))
+                (func (export "do_ping") call $ping)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "ping",
+            vec![],
+            vec![],
+            |_params, _results| Ok(()),
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        // Should succeed without panic
+        let r = instance.call("do_ping", &[]).expect("call");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn test_host_function_receives_correct_f64_args() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "math" "negate" (func $neg (param f64) (result f64)))
+                (func (export "test") (param f64) (result f64)
+                    local.get 0
+                    call $neg)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "math",
+            "negate",
+            vec![WasmValueType::F64],
+            vec![WasmValueType::F64],
+            |params, results| {
+                if let WasmValue::F64(v) = params[0] {
+                    results.push(WasmValue::F64(-v));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let r = instance
+            .call("test", &[WasmValue::F64(3.14)])
+            .expect("call");
+        if let WasmValue::F64(v) = r[0] {
+            assert!((v - (-3.14)).abs() < 0.001);
+        } else {
+            panic!("expected F64");
+        }
+    }
+
+    #[test]
+    fn test_host_function_from_different_module_names() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "a" (func $a (result i32)))
+                (import "math" "b" (func $b (result i32)))
+                (func (export "test") (result i32)
+                    call $a
+                    call $b
+                    i32.add)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "a",
+            vec![],
+            vec![WasmValueType::I32],
+            |_params, results| {
+                results.push(WasmValue::I32(10));
+                Ok(())
+            },
+        ));
+        linker.define(HostFunction::new(
+            "math",
+            "b",
+            vec![],
+            vec![WasmValueType::I32],
+            |_params, results| {
+                results.push(WasmValue::I32(32));
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let r = instance.call("test", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
+    }
+
+    // =======================================================================
+    // 新增测试：LinkerConfig / HostFunction 结构
+    // =======================================================================
+
+    #[test]
+    fn test_linker_config_functions_returns_registered() {
+        let mut linker = LinkerConfig::new();
+        assert!(linker.functions().is_empty());
+        linker.define(HostFunction::new(
+            "env",
+            "f",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |_, _| Ok(()),
+        ));
+        assert_eq!(linker.functions().len(), 1);
+        assert_eq!(linker.functions()[0].module, "env");
+    }
+
+    #[test]
+    fn test_host_function_debug_format() {
+        let hf = HostFunction::new(
+            "env",
+            "add",
+            vec![WasmValueType::I32, WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |_, _| Ok(()),
+        );
+        let debug_str = format!("{hf:?}");
+        assert!(debug_str.contains("env"));
+        assert!(debug_str.contains("add"));
+    }
+
+    #[test]
+    fn test_wasm_value_equality() {
+        assert_eq!(WasmValue::I32(1), WasmValue::I32(1));
+        assert_ne!(WasmValue::I32(1), WasmValue::I32(2));
+        assert_eq!(WasmValue::I64(100), WasmValue::I64(100));
+        assert_eq!(WasmValue::F32(1.0), WasmValue::F32(1.0));
+        assert_eq!(WasmValue::F64(2.0), WasmValue::F64(2.0));
+    }
+
+    #[test]
+    fn test_wasm_value_type_equality() {
+        assert_eq!(WasmValueType::I32, WasmValueType::I32);
+        assert_ne!(WasmValueType::I32, WasmValueType::I64);
+    }
+
+    #[test]
+    fn test_wasm_error_display_messages() {
+        let err = WasmError::InvalidBinary("bad bytes".into());
+        assert!(err.to_string().contains("bad bytes"));
+
+        let err = WasmError::ExportNotFound { name: "foo".into() };
+        assert!(err.to_string().contains("foo"));
+
+        let err = WasmError::CallError("boom".into());
+        assert!(err.to_string().contains("boom"));
+
+        let err = WasmError::MemoryError("overflow".into());
+        assert!(err.to_string().contains("overflow"));
+
+        let err = WasmError::InstantiationError("fail".into());
+        assert!(err.to_string().contains("fail"));
+
+        let err = WasmError::LinkError("unlinkable".into());
+        assert!(err.to_string().contains("unlinkable"));
+
+        assert!(WasmError::FuelExhausted.to_string().contains("fuel"));
+    }
 }

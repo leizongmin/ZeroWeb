@@ -245,4 +245,81 @@ mod tests {
         storage.set("abc", "12345").unwrap(); // 3 + 5 = 8
         assert_eq!(storage.used_size(), 8);
     }
+
+    // ── 新增测试 ──
+
+    #[test]
+    fn test_storage_clear_resets_size() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("key1", "value1").unwrap();
+        storage.set("key2", "value2").unwrap();
+        assert!(storage.used_size() > 0);
+        storage.clear();
+        assert_eq!(storage.used_size(), 0);
+        assert_eq!(storage.len(), 0);
+    }
+
+    #[test]
+    fn test_storage_key_enumeration_all() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("x", "1").unwrap();
+        storage.set("y", "2").unwrap();
+        storage.set("z", "3").unwrap();
+        let mut keys: Vec<&str> = (0..storage.len()).filter_map(|i| storage.key(i)).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["x", "y", "z"]);
+    }
+
+    #[test]
+    fn test_storage_length_tracking_after_remove() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("a", "1").unwrap();
+        storage.set("b", "2").unwrap();
+        assert_eq!(storage.len(), 2);
+        storage.remove("a");
+        assert_eq!(storage.len(), 1);
+        storage.remove("b");
+        assert_eq!(storage.len(), 0);
+        assert!(storage.is_empty());
+    }
+
+    #[test]
+    fn test_storage_large_value() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        let large = "x".repeat(100_000);
+        storage.set("big", &large).unwrap();
+        assert_eq!(storage.get("big"), Some(large.as_str()));
+        assert_eq!(storage.used_size(), 3 + 100_000); // "big" + value
+    }
+
+    #[test]
+    fn test_storage_json_roundtrip() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        let obj = serde_json::json!({"name": "Alice", "age": 30, "tags": [1, 2, 3]});
+        storage.set("user", &obj.to_string()).unwrap();
+        let retrieved: serde_json::Value =
+            serde_json::from_str(storage.get("user").unwrap()).unwrap();
+        assert_eq!(retrieved, obj);
+    }
+
+    #[test]
+    fn test_storage_null_undefined_as_strings() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("null_val", "null").unwrap();
+        storage.set("undefined_val", "undefined").unwrap();
+        assert_eq!(storage.get("null_val"), Some("null"));
+        assert_eq!(storage.get("undefined_val"), Some("undefined"));
+    }
+
+    #[test]
+    fn test_storage_quota_with_update() {
+        let mut storage =
+            WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 50);
+        storage.set("k", &"a".repeat(48)).unwrap(); // 1 + 48 = 49
+        // Updating same key to larger value that exceeds quota
+        let result = storage.set("k", &"b".repeat(50));
+        assert!(result.is_err());
+        // Original value preserved
+        assert_eq!(storage.get("k"), Some("a".repeat(48).as_str()));
+    }
 }

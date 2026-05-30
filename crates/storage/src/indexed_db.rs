@@ -2146,4 +2146,305 @@ mod tests {
         );
         assert!(result.is_err());
     }
+
+    // ── 新增测试：事务 ──
+
+    #[test]
+    fn test_transaction_commit_then_operations_fail() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        tx.commit().unwrap();
+        // After commit, operations should fail
+        let result = db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!("val"),
+            Some(IdbKey::String("k".into())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transaction_read_only_mode() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadOnly)
+            .unwrap();
+        assert_eq!(tx.mode(), IdbTransactionMode::ReadOnly);
+    }
+
+    #[test]
+    fn test_transaction_multiple_stores() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("a", None, false).unwrap();
+        db.create_object_store("b", None, false).unwrap();
+        let tx = db
+            .transaction(&["a", "b"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        assert_eq!(tx.store_names().len(), 2);
+
+        // Can add to both stores within the same transaction
+        db.tx_add(&tx, "a", serde_json::json!(1), Some(IdbKey::Number(1.0)))
+            .unwrap();
+        db.tx_add(&tx, "b", serde_json::json!(2), Some(IdbKey::Number(2.0)))
+            .unwrap();
+    }
+
+    #[test]
+    fn test_transaction_double_abort() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        tx.abort().unwrap();
+        // Second abort should fail
+        assert!(tx.abort().is_err());
+    }
+
+    #[test]
+    fn test_transaction_commit_after_abort_fails() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        tx.abort().unwrap();
+        // Commit after abort should fail
+        assert!(tx.commit().is_err());
+    }
+
+    #[test]
+    fn test_tx_put_and_delete() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        let key = IdbKey::String("k1".into());
+        db.tx_put(&tx, "store", serde_json::json!("v1"), Some(key.clone()))
+            .unwrap();
+        let rec = db.tx_get(&tx, "store", &key).unwrap().unwrap();
+        assert_eq!(rec.value, serde_json::json!("v1"));
+        let deleted = db.tx_delete(&tx, "store", &key).unwrap();
+        assert!(deleted);
+        assert!(db.tx_get(&tx, "store", &key).unwrap().is_none());
+    }
+
+    // ── 新增测试：游标与索引 ──
+
+    #[test]
+    fn test_cursor_forward_iteration_all() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=5 {
+            db.add(
+                "store",
+                serde_json::json!(i),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+        let mut cursor = db.open_cursor("store", None).unwrap().unwrap();
+        let mut collected = Vec::new();
+        loop {
+            let rec = db.cursor_record(&cursor).unwrap();
+            collected.push(rec.value.as_u64().unwrap());
+            if !cursor.continue_next() {
+                break;
+            }
+        }
+        assert_eq!(collected, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_cursor_with_lower_bound_range() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=5 {
+            db.add(
+                "store",
+                serde_json::json!(i),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+        let range = IdbKeyRange::lower_bound(IdbKey::Number(3.0), false);
+        let cursor = db.open_cursor("store", Some(&range)).unwrap().unwrap();
+        let rec = db.cursor_record(&cursor).unwrap();
+        assert_eq!(rec.value, serde_json::json!(3));
+    }
+
+    #[test]
+    fn test_key_cursor_continue_to() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=5 {
+            db.add(
+                "store",
+                serde_json::json!(i),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+        let mut cursor = db.open_key_cursor("store", None).unwrap().unwrap();
+        assert!(cursor.continue_to(&IdbKey::Number(4.0)));
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(4.0)));
+    }
+
+    #[test]
+    fn test_cursor_advance_skip() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=5 {
+            db.add(
+                "store",
+                serde_json::json!(i),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+        let mut cursor = db.open_cursor("store", None).unwrap().unwrap();
+        // Skip 2 positions (from 0 to 2, landing on 3rd record)
+        assert!(cursor.advance(2));
+        let rec = db.cursor_record(&cursor).unwrap();
+        assert_eq!(rec.value, serde_json::json!(3));
+    }
+
+    #[test]
+    fn test_index_rebuild_after_add() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"cat": "a"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.create_index("store", "cat_idx", "cat", false, false)
+            .unwrap();
+        // Add record after index creation — index should update
+        db.add(
+            "store",
+            serde_json::json!({"cat": "b"}),
+            Some(IdbKey::String("k2".into())),
+        )
+        .unwrap();
+        let results =
+            db.get_from_index("store", "cat_idx", &IdbKey::String("b".into()))
+                .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].value["cat"], "b");
+    }
+
+    #[test]
+    fn test_index_unique_allows_different_values() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"code": "AAA"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.create_index("store", "code_idx", "code", true, false)
+            .unwrap();
+        // Different value should succeed
+        db.add(
+            "store",
+            serde_json::json!({"code": "BBB"}),
+            Some(IdbKey::String("k2".into())),
+        )
+        .unwrap();
+        assert_eq!(db.count("store").unwrap(), 2);
+    }
+
+    #[test]
+    fn test_multi_entry_index_single_match() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"tags": ["rust", "web"]}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"tags": ["python"]}),
+            Some(IdbKey::String("k2".into())),
+        )
+        .unwrap();
+        db.create_index("store", "tags_idx", "tags", false, true)
+            .unwrap();
+        let results =
+            db.get_from_index("store", "tags_idx", &IdbKey::String("rust".into()))
+                .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].value["tags"][0], "rust");
+    }
+
+    #[test]
+    fn test_open_cursor_on_index_with_range() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"score": 10}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"score": 20}),
+            Some(IdbKey::String("k2".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"score": 30}),
+            Some(IdbKey::String("k3".into())),
+        )
+        .unwrap();
+        db.create_index("store", "score_idx", "score", false, false)
+            .unwrap();
+        let range = IdbKeyRange::lower_bound(IdbKey::Number(20.0), false);
+        let mut cursor = db
+            .open_cursor_on_index("store", "score_idx", Some(&range))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            db.cursor_record(&cursor).unwrap().value["score"],
+            20
+        );
+        assert!(cursor.continue_next());
+        assert_eq!(
+            db.cursor_record(&cursor).unwrap().value["score"],
+            30
+        );
+        assert!(!cursor.continue_next());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_record() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let deleted = db
+            .delete("store", &IdbKey::String("nope".into()))
+            .unwrap();
+        assert!(!deleted);
+    }
+
+    #[test]
+    fn test_idb_key_array_ordering() {
+        let a = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        let b = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::Number(3.0)]);
+        let c = IdbKey::Array(vec![IdbKey::Number(2.0)]);
+        assert!(a < b);
+        assert!(b < c);
+    }
 }

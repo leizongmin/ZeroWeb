@@ -861,4 +861,236 @@ mod tests {
         assert_eq!(layer.z_index, 0);
         assert_eq!(layer.id, 42);
     }
+
+    // ── 新增测试：z-index compositing / stacking contexts ─────
+
+    /// 测试嵌套元素内层 z-index 不影响外层堆叠。
+    #[test]
+    fn test_nested_stacking_context_inner_z_index() {
+        let mut doc = zero_dom::Document::new();
+        let outer = doc.create_element("div");
+        let inner = doc.create_element("span");
+
+        let inner_box = make_box(Some(inner), 0.0, 0.0, 50.0, 20.0, false);
+        let outer_box = LayoutBox {
+            node_id: Some(outer),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![inner_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        // outer has z-index = 5 -> promoted
+        let mut outer_style = ComputedStyle::default();
+        outer_style.z_index = ZIndexValue::Integer(5);
+        styles.insert(outer, outer_style);
+
+        // inner has z-index = 100 -> also promoted independently
+        let mut inner_style = ComputedStyle::default();
+        inner_style.z_index = ZIndexValue::Integer(100);
+        styles.insert(inner, inner_style);
+
+        let layers = promote_compositing_layers(&outer_box, &styles);
+        // root + outer (z=5) + inner (z=100) = 3
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[1].z_index, 5);
+        assert_eq!(layers[2].z_index, 100);
+    }
+
+    /// 测试默认 z-index(auto) 的元素和 z-index(0) 的元素排序。
+    #[test]
+    fn test_z_index_auto_vs_zero() {
+        let mut doc = zero_dom::Document::new();
+        let elem_auto = doc.create_element("div");
+        let elem_zero = doc.create_element("div");
+
+        let child_auto = make_box(Some(elem_auto), 0.0, 0.0, 100.0, 50.0, false);
+        let child_zero = make_box(Some(elem_zero), 0.0, 50.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_auto, child_zero],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        // auto -> not promoted
+        let mut style_auto = ComputedStyle::default();
+        style_auto.z_index = ZIndexValue::Auto;
+        styles.insert(elem_auto, style_auto);
+
+        // z-index: 0 -> promoted (explicit, non-auto)
+        let mut style_zero = ComputedStyle::default();
+        style_zero.z_index = ZIndexValue::Integer(0);
+        styles.insert(elem_zero, style_zero);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // root + 1 promoted (z-index: 0)
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[1].z_index, 0);
+    }
+
+    /// 测试多个负 z-index 图层排序正确。
+    #[test]
+    fn test_multiple_negative_z_index_sorting() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+        let e3 = doc.create_element("div");
+
+        let c1 = make_box(Some(e1), 0.0, 0.0, 50.0, 50.0, false);
+        let c2 = make_box(Some(e2), 0.0, 0.0, 50.0, 50.0, false);
+        let c3 = make_box(Some(e3), 0.0, 0.0, 50.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2, c3],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s1 = ComputedStyle::default();
+        s1.z_index = ZIndexValue::Integer(-5);
+        styles.insert(e1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.z_index = ZIndexValue::Integer(-1);
+        styles.insert(e2, s2);
+
+        let mut s3 = ComputedStyle::default();
+        s3.z_index = ZIndexValue::Integer(-10);
+        styles.insert(e3, s3);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // root + 3 promoted
+        assert_eq!(layers.len(), 4);
+        // Sorted ascending: -10, -5, -1
+        assert_eq!(layers[1].z_index, -10);
+        assert_eq!(layers[2].z_index, -5);
+        assert_eq!(layers[3].z_index, -1);
+    }
+
+    /// 测试 opacity + z-index 同时存在的元素只创建一个图层。
+    #[test]
+    fn test_opacity_and_z_index_single_layer() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.5;
+        style.z_index = ZIndexValue::Integer(10);
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // root + 1 promoted (not 2: both conditions on same element)
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[1].z_index, 10);
+        assert!((layers[1].opacity - 0.5).abs() < 0.001);
+    }
+
+    /// 测试 CompositingLayer bounding_box 空列表返回极限值。
+    #[test]
+    fn test_compositing_layer_bounding_box_empty() {
+        let layer = CompositingLayer::new(0);
+        let (x, y, _w, _h) = layer.bounding_box();
+        assert_eq!(x, f32::MAX);
+        assert_eq!(y, f32::MAX);
+    }
 }

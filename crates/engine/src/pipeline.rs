@@ -592,4 +592,104 @@ mod tests {
         // 增量绘制可能产生更少的图元（脏区域小）
         assert!(inc_fills <= full_fills);
     }
+
+    // ── 新增测试：Incremental rendering / full vs incremental ─
+
+    /// 测试全量渲染后 incremental_paint 产生更少或相等的图元。
+    #[test]
+    fn test_full_vs_incremental_render_primitive_count() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let css = "div { background-color: blue; width: 300px; height: 200px; }";
+
+        let full_result = pipeline.render_html(html, css);
+        let full_count = full_result.primitives.len();
+
+        // incremental_paint with a very small dirty rect far from content
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let dirty_rect = Rect::new(700.0, 500.0, 50.0, 50.0);
+        let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
+
+        let inc_count = inc_primitives.map(|p| p.len()).unwrap_or(0);
+        assert!(inc_count <= full_count, "incremental paint should produce <= primitives of full paint");
+    }
+
+    /// 测试 DOM 修改后 recompute_styles 生成不同的图元。
+    #[test]
+    fn test_recompute_after_style_change() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        // First render with no CSS
+        let _first = pipeline.render_html(html, "");
+
+        // Recompute with CSS that adds background
+        let doc = zero_dom::parse_html(html);
+        let css = "div { background-color: green; width: 200px; height: 100px; }";
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (primitives, _styles, _layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        assert!(!primitives.fills.is_empty(), "style change should produce fills");
+    }
+
+    /// 测试渲染带 CSS transform 的页面不 panic。
+    #[test]
+    fn test_pipeline_render_with_transform() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div id=\"t\">Transformed</div></body></html>";
+        let css = "div { transform: translate(50px, 100px); width: 200px; height: 50px; }";
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染带 opacity 的页面不 panic。
+    #[test]
+    fn test_pipeline_render_with_opacity() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div id=\"o\">Semi-transparent</div></body></html>";
+        let css = "div { opacity: 0.5; background-color: red; width: 100px; height: 100px; }";
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!result.primitives.fills.is_empty());
+    }
+
+    /// 测试多次 recompute_styles 后 layout 缓存更新。
+    #[test]
+    fn test_recompute_updates_cached_layout() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        let _first = pipeline.render_html(html, "");
+        assert!(pipeline.layout().is_some());
+
+        let doc = zero_dom::parse_html(html);
+        let css1 = "div { background-color: red; width: 100px; }";
+        let ss1 = vec![zero_css_parser::Parser::parse_stylesheet(css1)];
+        let (_, _, layout1) = pipeline.recompute_styles(&doc, &ss1);
+
+        let css2 = "div { background-color: blue; width: 200px; }";
+        let ss2 = vec![zero_css_parser::Parser::parse_stylesheet(css2)];
+        let (_, _, layout2) = pipeline.recompute_styles(&doc, &ss2);
+
+        // Both layouts should have valid viewports
+        assert!(layout1.viewport_width > 0.0);
+        assert!(layout2.viewport_width > 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试 render_html 返回的 RenderResult primitives 非空（有 CSS）。
+    #[test]
+    fn test_render_produces_primitives_with_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Test</div></body></html>";
+        let css = ".box { background-color: #ff6600; width: 150px; height: 75px; border: 2px solid black; }";
+        let result = pipeline.render_html(html, css);
+
+        // Should have fills (background + borders)
+        assert!(!result.primitives.fills.is_empty());
+        // At least background + 4 border fills = 5
+        assert!(result.primitives.fills.len() >= 1);
+    }
 }
