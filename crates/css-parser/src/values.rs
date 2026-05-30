@@ -597,3 +597,200 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
         })
     }
 }
+
+// ── CSS Transform 值类型 ──────────────────────────────────────────────
+
+/// CSS transform 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformValue {
+    /// none。
+    None,
+    /// 变换函数列表。
+    List(Vec<TransformFunction>),
+}
+
+/// CSS 单个变换函数。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformFunction {
+    /// translate(tx, ty)。
+    Translate(f64, f64),
+    /// translateX(tx)。
+    TranslateX(f64),
+    /// translateY(ty)。
+    TranslateY(f64),
+    /// rotate(angle) — 角度（度数）。
+    Rotate(f64),
+    /// scale(sx, sy)。
+    Scale(f64, Option<f64>),
+    /// scaleX(sx)。
+    ScaleX(f64),
+    /// scaleY(sy)。
+    ScaleY(f64),
+    /// skew(ax, ay) — 角度（度数）。
+    Skew(f64, Option<f64>),
+}
+
+/// 解析 CSS transform 属性值。
+///
+/// 支持格式如 `"translate(10px, 20px) rotate(45deg) scale(2)"`。
+pub fn parse_transform(value: &str) -> Option<TransformValue> {
+    let value = value.trim();
+
+    if value.eq_ignore_ascii_case("none") {
+        return Some(TransformValue::None);
+    }
+
+    let mut functions = Vec::new();
+    let mut pos = 0;
+    let bytes = value.as_bytes();
+
+    while pos < bytes.len() {
+        // 跳过空白
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+
+        // 读取函数名
+        let name_start = pos;
+        while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
+            pos += 1;
+        }
+        let name = &value[name_start..pos];
+
+        // 跳过空白和 '('
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() || bytes[pos] != b'(' {
+            return None;
+        }
+        pos += 1; // skip '('
+
+        // 找到匹配的 ')'
+        let args_start = pos;
+        let mut depth = 1;
+        while pos < bytes.len() && depth > 0 {
+            if bytes[pos] == b'(' {
+                depth += 1;
+            } else if bytes[pos] == b')' {
+                depth -= 1;
+            }
+            pos += 1;
+        }
+        let args_str = value[args_start..pos - 1].trim();
+
+        // 解析函数
+        if let Some(func) = parse_transform_function(name, args_str) {
+            functions.push(func);
+        } else {
+            return None;
+        }
+    }
+
+    if functions.is_empty() {
+        None
+    } else {
+        Some(TransformValue::List(functions))
+    }
+}
+
+/// 解析单个变换函数。
+fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
+    match name {
+        "translate" => {
+            let vals = parse_transform_args(args)?;
+            let tx = vals.first().copied()?;
+            let ty = vals.get(1).copied().unwrap_or(0.0);
+            Some(TransformFunction::Translate(tx, ty))
+        }
+        "translateX" => {
+            let vals = parse_transform_args(args)?;
+            let tx = vals.first().copied()?;
+            Some(TransformFunction::TranslateX(tx))
+        }
+        "translateY" => {
+            let vals = parse_transform_args(args)?;
+            let ty = vals.first().copied()?;
+            Some(TransformFunction::TranslateY(ty))
+        }
+        "rotate" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::Rotate(angle))
+        }
+        "scale" => {
+            let vals = parse_transform_args(args)?;
+            let sx = vals.first().copied()?;
+            let sy = vals.get(1).copied();
+            Some(TransformFunction::Scale(sx, sy))
+        }
+        "scaleX" => {
+            let vals = parse_transform_args(args)?;
+            let sx = vals.first().copied()?;
+            Some(TransformFunction::ScaleX(sx))
+        }
+        "scaleY" => {
+            let vals = parse_transform_args(args)?;
+            let sy = vals.first().copied()?;
+            Some(TransformFunction::ScaleY(sy))
+        }
+        "skew" => {
+            let vals = parse_transform_args(args)?;
+            let ax = vals.first().copied()?;
+            let ay = vals.get(1).copied();
+            Some(TransformFunction::Skew(ax, ay))
+        }
+        _ => None,
+    }
+}
+
+/// 解析变换参数列表（逗号或空格分隔的数值）。
+fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
+    let mut result = Vec::new();
+    for part in args.split(|c: char| c == ',' || c.is_whitespace()) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        // 尝试解析为带单位的角度或长度
+        if let Some(val) = parse_css_number(part) {
+            result.push(val);
+        } else {
+            return None;
+        }
+    }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+/// 解析 CSS 数值（可能带 px/deg/rad/turn 等单位）。
+///
+/// 返回原始数值（px 直接返回数值，deg 转为度数）。
+fn parse_css_number(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.ends_with("deg") {
+        s.trim_end_matches("deg").trim().parse::<f64>().ok()
+    } else if s.ends_with("rad") {
+        let rad: f64 = s.trim_end_matches("rad").trim().parse().ok()?;
+        Some(rad.to_degrees())
+    } else if s.ends_with("turn") {
+        let turn: f64 = s.trim_end_matches("turn").trim().parse().ok()?;
+        Some(turn * 360.0)
+    } else if s.ends_with("px") || s.ends_with("em") || s.ends_with("rem") {
+        // 对于 translate，返回数值部分
+        let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')?;
+        s[..num_end].parse::<f64>().ok()
+    } else {
+        s.parse::<f64>().ok()
+    }
+}
+
+/// 解析角度值（返回度数）。
+fn parse_angle(s: &str) -> Option<f64> {
+    parse_css_number(s)
+}

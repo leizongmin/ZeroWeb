@@ -4,6 +4,7 @@ use crate::tokenizer::{Token, Tokenizer};
 use crate::parser::Parser;
 use crate::ast::*;
 use crate::selector;
+use crate::values::{parse_transform, TransformFunction, TransformValue, parse_length, LengthValue};
 
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Tokenizer 测试
@@ -1432,5 +1433,187 @@ fn test_parse_at_supports() {
             }
         }
         _ => panic!("Expected At rule"),
+    }
+}
+
+// ── CSS Transform 解析测试 ──
+
+#[test]
+fn test_parse_transform_none() {
+    assert_eq!(parse_transform("none"), Some(TransformValue::None));
+    assert_eq!(parse_transform("NONE"), Some(TransformValue::None));
+}
+
+#[test]
+fn test_parse_transform_translate() {
+    let result = parse_transform("translate(10px, 20px)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns.len(), 1);
+            assert_eq!(fns[0], TransformFunction::Translate(10.0, 20.0));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_translate_single_arg() {
+    let result = parse_transform("translate(10px)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Translate(10.0, 0.0));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_translate_x_y() {
+    let result = parse_transform("translateX(15px)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::TranslateX(15.0));
+        }
+        _ => panic!("Expected List"),
+    }
+
+    let result = parse_transform("translateY(25px)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::TranslateY(25.0));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_rotate() {
+    let result = parse_transform("rotate(45deg)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Rotate(45.0));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_rotate_rad() {
+    let result = parse_transform("rotate(1.5708rad)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            // ~90 degrees
+            let angle = match fns[0] { TransformFunction::Rotate(a) => a, _ => 0.0 };
+            assert!((angle - 90.0).abs() < 1.0);
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_scale() {
+    let result = parse_transform("scale(2)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Scale(2.0, None));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_scale_xy() {
+    let result = parse_transform("scale(2, 3)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Scale(2.0, Some(3.0)));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_scale_x_y() {
+    let result = parse_transform("scaleX(1.5)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::ScaleX(1.5));
+        }
+        _ => panic!("Expected List"),
+    }
+
+    let result = parse_transform("scaleY(0.5)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::ScaleY(0.5));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_skew() {
+    let result = parse_transform("skew(10deg)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Skew(10.0, None));
+        }
+        _ => panic!("Expected List"),
+    }
+
+    let result = parse_transform("skew(10deg, 20deg)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Skew(10.0, Some(20.0)));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_multiple() {
+    let result = parse_transform("translate(10px, 20px) rotate(45deg) scale(2)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns.len(), 3);
+            assert_eq!(fns[0], TransformFunction::Translate(10.0, 20.0));
+            assert_eq!(fns[1], TransformFunction::Rotate(45.0));
+            assert_eq!(fns[2], TransformFunction::Scale(2.0, None));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_empty() {
+    assert_eq!(parse_transform(""), None);
+    assert_eq!(parse_transform("  "), None);
+}
+
+#[test]
+fn test_parse_transform_unknown_function() {
+    assert_eq!(parse_transform("unknown(10px)"), None);
+}
+
+#[test]
+fn test_parse_transform_negative_values() {
+    let result = parse_transform("translate(-10px, -20px)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::Translate(-10.0, -20.0));
+        }
+        _ => panic!("Expected List"),
+    }
+}
+
+#[test]
+fn test_parse_transform_turn() {
+    let result = parse_transform("rotate(0.5turn)").unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            let angle = match fns[0] { TransformFunction::Rotate(a) => a, _ => 0.0 };
+            assert!((angle - 180.0).abs() < 0.01);
+        }
+        _ => panic!("Expected List"),
     }
 }

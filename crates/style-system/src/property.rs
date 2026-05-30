@@ -363,6 +363,10 @@ pub struct ComputedStyle {
     pub overflow_x: OverflowValue,
     /// overflow-y 属性。
     pub overflow_y: OverflowValue,
+
+    // ── Transforms ──
+    /// transform 属性。
+    pub transform: zero_css_parser::values::TransformValue,
 }
 
 impl Default for ComputedStyle {
@@ -460,6 +464,9 @@ impl Default for ComputedStyle {
             // Overflow
             overflow_x: OverflowValue::Visible,
             overflow_y: OverflowValue::Visible,
+
+            // Transforms
+            transform: zero_css_parser::values::TransformValue::None,
         }
     }
 }
@@ -1228,6 +1235,13 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "row-gap" => {
             if let Some(v) = values::parse_length(value) {
                 style.row_gap = v;
+                return true;
+            }
+        }
+        // ── Transforms ──
+        "transform" => {
+            if let Some(v) = values::parse_transform(value) {
+                style.transform = v;
                 return true;
             }
         }
