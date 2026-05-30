@@ -3,18 +3,27 @@
 //! 自建 CSS 解析器 — tokenizer + parser，支持完整选择器和属性解析。
 //!
 //! 不依赖任何 MPL 许可的 CSS 解析库（rust-cssparser、lightningcss），完全自建。
+//!
+//! ## 核心模块
+//!
+//! - [`tokenizer`] — CSS 词法分析器，将字符流转换为 token 流
+//! - [`parser`] — CSS 语法解析器，将 token 流转换为 AST
+//! - [`selector`] — 选择器解析和匹配
+//! - [`values`] — CSS 属性值类型
+//! - [`ast`] — CSS AST 数据结构
 
 #![warn(missing_docs)]
 
-/// CSS 解析器
-pub struct CssParser {
-    // TODO: 在 M3 里程碑中实现
-}
+pub mod tokenizer;
+pub mod ast;
+pub mod selector;
+pub mod values;
+pub mod parser;
+
+pub use tokenizer::{Token, Tokenizer};
+pub use ast::*;
+pub use selector::*;
+pub use parser::Parser;
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        // M3 里程碑将在此处实现 CSS 解析器测试
-    }
-}
+mod tests;
