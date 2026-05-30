@@ -4,7 +4,8 @@ use crate::tokenizer::{Token, Tokenizer};
 use crate::parser::Parser;
 use crate::ast::*;
 use crate::selector;
-use crate::values::{parse_transform, TransformFunction, TransformValue, parse_length, LengthValue};
+use crate::values::{parse_transform, TransformFunction, TransformValue, parse_length, LengthValue,
+    parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state};
 
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Tokenizer 测试
@@ -1616,4 +1617,112 @@ fn test_parse_transform_turn() {
         }
         _ => panic!("Expected List"),
     }
+}
+
+// ── @keyframes 解析测试 ──
+
+#[test]
+fn test_parse_keyframes_basic() {
+    use crate::ast::*;
+    let css = "@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.name, "fadeIn");
+            assert_eq!(kf.keyframes.len(), 2);
+            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::From]);
+            assert_eq!(kf.keyframes[1].selectors, vec![KeyframeSelector::To]);
+            assert_eq!(kf.keyframes[0].declarations.len(), 1);
+            assert_eq!(kf.keyframes[0].declarations[0].property, "opacity");
+            assert_eq!(kf.keyframes[0].declarations[0].value, "0");
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+#[test]
+fn test_parse_keyframes_percentage() {
+    use crate::ast::*;
+    let css = "@keyframes slide { 0% { left: 0px; } 50% { left: 100px; } 100% { left: 200px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.name, "slide");
+            assert_eq!(kf.keyframes.len(), 3);
+            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::Percentage(0.0)]);
+            assert_eq!(kf.keyframes[1].selectors, vec![KeyframeSelector::Percentage(50.0)]);
+            assert_eq!(kf.keyframes[2].selectors, vec![KeyframeSelector::Percentage(100.0)]);
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+#[test]
+fn test_parse_keyframes_comma_selectors() {
+    use crate::ast::*;
+    let css = "@keyframes bounce { 0%, 100% { top: 0px; } 50% { top: 50px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.keyframes.len(), 2);
+            assert_eq!(
+                kf.keyframes[0].selectors,
+                vec![KeyframeSelector::Percentage(0.0), KeyframeSelector::Percentage(100.0)]
+            );
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+#[test]
+fn test_parse_keyframes_mixed_selectors() {
+    use crate::ast::*;
+    let css = "@keyframes test { from, 50% { color: red; } to { color: blue; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::From, KeyframeSelector::Percentage(50.0)]);
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+#[test]
+fn test_parse_keyframes_quoted_name() {
+    let css = "@keyframes \"my-animation\" { to { opacity: 1; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.name, "my-animation");
+        }
+        _ => panic!("Expected Keyframes rule"),
+    }
+}
+
+// ── Animation 值解析测试 ──
+
+#[test]
+fn test_parse_animation_direction() {
+    assert_eq!(parse_animation_direction("normal"), Some(crate::values::AnimationDirectionValue::Normal));
+    assert_eq!(parse_animation_direction("reverse"), Some(crate::values::AnimationDirectionValue::Reverse));
+    assert_eq!(parse_animation_direction("alternate"), Some(crate::values::AnimationDirectionValue::Alternate));
+    assert_eq!(parse_animation_direction("alternate-reverse"), Some(crate::values::AnimationDirectionValue::AlternateReverse));
+    assert_eq!(parse_animation_direction("invalid"), None);
+}
+
+#[test]
+fn test_parse_animation_fill_mode() {
+    assert_eq!(parse_animation_fill_mode("none"), Some(crate::values::AnimationFillModeValue::None));
+    assert_eq!(parse_animation_fill_mode("forwards"), Some(crate::values::AnimationFillModeValue::Forwards));
+    assert_eq!(parse_animation_fill_mode("backwards"), Some(crate::values::AnimationFillModeValue::Backwards));
+    assert_eq!(parse_animation_fill_mode("both"), Some(crate::values::AnimationFillModeValue::Both));
+    assert_eq!(parse_animation_fill_mode("invalid"), None);
+}
+
+#[test]
+fn test_parse_animation_play_state() {
+    assert_eq!(parse_animation_play_state("running"), Some(crate::values::AnimationPlayStateValue::Running));
+    assert_eq!(parse_animation_play_state("paused"), Some(crate::values::AnimationPlayStateValue::Paused));
+    assert_eq!(parse_animation_play_state("invalid"), None);
 }

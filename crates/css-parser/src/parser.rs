@@ -76,6 +76,10 @@ impl<'a> Parser<'a> {
         match self.peek().clone() {
             Token::AtKeyword(name) => {
                 self.advance();
+                // 对 @keyframes 使用专用解析器
+                if name.eq_ignore_ascii_case("keyframes") {
+                    return self.consume_keyframes_rule().map(Rule::Keyframes);
+                }
                 Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
@@ -805,5 +809,110 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+    }
+
+    /// 消耗 @keyframes 规则。
+    ///
+    /// 格式：`@keyframes name { from { ... } 50% { ... } to { ... } }`
+    fn consume_keyframes_rule(&mut self) -> Option<KeyframesRule> {
+        use crate::ast::*;
+
+        self.skip_whitespace();
+
+        // 读取动画名称
+        let name = match self.peek().clone() {
+            Token::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            Token::String(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+
+        // 期望 {
+        if !matches!(self.peek(), Token::LBrace) {
+            return None;
+        }
+        self.advance();
+
+        // 解析关键帧块列表
+        let mut keyframes = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                if matches!(self.peek(), Token::RBrace) {
+                    self.advance();
+                }
+                break;
+            }
+
+            // 读取关键帧选择器（百分比、from、to），逗号分隔
+            let mut selectors = Vec::new();
+            loop {
+                self.skip_whitespace();
+                match self.peek().clone() {
+                    Token::Ident(ref s) if s.eq_ignore_ascii_case("from") => {
+                        selectors.push(KeyframeSelector::From);
+                        self.advance();
+                    }
+                    Token::Ident(ref s) if s.eq_ignore_ascii_case("to") => {
+                        selectors.push(KeyframeSelector::To);
+                        self.advance();
+                    }
+                    Token::Percentage(pct) => {
+                        selectors.push(KeyframeSelector::Percentage(pct));
+                        self.advance();
+                    }
+                    _ => {
+                        // 无法识别的选择器，跳过这个关键帧块
+                        break;
+                    }
+                }
+
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            if selectors.is_empty() {
+                // 跳过无效内容直到 } 或下一个可识别的选择器
+                self.advance();
+                continue;
+            }
+
+            self.skip_whitespace();
+
+            // 期望 {
+            if !matches!(self.peek(), Token::LBrace) {
+                continue;
+            }
+            self.advance();
+
+            // 解析声明块
+            let declarations = self.consume_declaration_block();
+
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace) {
+                self.advance();
+            }
+
+            keyframes.push(KeyframeBlock {
+                selectors,
+                declarations,
+            });
+        }
+
+        Some(KeyframesRule { name, keyframes })
     }
 }

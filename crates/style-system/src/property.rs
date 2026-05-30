@@ -377,6 +377,25 @@ pub struct ComputedStyle {
     pub transition_timing_function: Vec<zero_css_parser::values::TimingFunctionValue>,
     /// transition-delay 属性（逗号分隔的秒数列表）。
     pub transition_delay: Vec<f64>,
+
+    // ── Animations ──
+    /// animation-name 属性（逗号分隔的动画名列表）。
+    pub animation_name: Vec<String>,
+    /// animation-duration 属性（逗号分隔的秒数列表）。
+    pub animation_duration: Vec<f64>,
+    /// animation-timing-function 属性（逗号分隔的时间函数列表）。
+    pub animation_timing_function: Vec<zero_css_parser::values::TimingFunctionValue>,
+    /// animation-delay 属性（逗号分隔的秒数列表）。
+    pub animation_delay: Vec<f64>,
+    /// animation-iteration-count 属性（逗号分隔的迭代次数列表）。
+    /// None 表示 infinite。
+    pub animation_iteration_count: Vec<Option<f64>>,
+    /// animation-direction 属性（逗号分隔的方向列表）。
+    pub animation_direction: Vec<zero_css_parser::values::AnimationDirectionValue>,
+    /// animation-fill-mode 属性（逗号分隔的填充模式列表）。
+    pub animation_fill_mode: Vec<zero_css_parser::values::AnimationFillModeValue>,
+    /// animation-play-state 属性（逗号分隔的播放状态列表）。
+    pub animation_play_state: Vec<zero_css_parser::values::AnimationPlayStateValue>,
 }
 
 impl Default for ComputedStyle {
@@ -483,6 +502,16 @@ impl Default for ComputedStyle {
             transition_duration: vec![],
             transition_timing_function: vec![],
             transition_delay: vec![],
+
+            // Animations
+            animation_name: vec![],
+            animation_duration: vec![],
+            animation_timing_function: vec![],
+            animation_delay: vec![],
+            animation_iteration_count: vec![],
+            animation_direction: vec![],
+            animation_fill_mode: vec![],
+            animation_play_state: vec![],
         }
     }
 }
@@ -677,6 +706,14 @@ impl PropertyRegistry {
             "transition-duration",
             "transition-timing-function",
             "transition-delay",
+            "animation-name",
+            "animation-duration",
+            "animation-timing-function",
+            "animation-delay",
+            "animation-iteration-count",
+            "animation-direction",
+            "animation-fill-mode",
+            "animation-play-state",
         ]
     }
 }
@@ -1405,6 +1442,78 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "inset-inline-end" => {
             if let Some(v) = values::parse_length(value) {
                 style.right = v;
+                return true;
+            }
+        }
+
+        // ── Animation 属性 ──
+        "animation-name" => {
+            style.animation_name = value.split(',').map(|s| s.trim().to_string()).collect();
+            return true;
+        }
+        "animation-duration" => {
+            style.animation_duration = value
+                .split(',')
+                .filter_map(|s| values::parse_time(s.trim()))
+                .collect();
+            return true;
+        }
+        "animation-timing-function" => {
+            let funcs = parse_comma_separated_timing_functions(value);
+            if !funcs.is_empty() {
+                style.animation_timing_function = funcs;
+                return true;
+            }
+        }
+        "animation-delay" => {
+            style.animation_delay = value
+                .split(',')
+                .filter_map(|s| values::parse_time(s.trim()))
+                .collect();
+            return true;
+        }
+        "animation-iteration-count" => {
+            let counts = value
+                .split(',')
+                .map(|s| {
+                    let s = s.trim();
+                    if s.eq_ignore_ascii_case("infinite") {
+                        None
+                    } else {
+                        s.parse::<f64>().ok()
+                    }
+                })
+                .collect();
+            style.animation_iteration_count = counts;
+            return true;
+        }
+        "animation-direction" => {
+            let dirs: Vec<_> = value
+                .split(',')
+                .filter_map(|s| values::parse_animation_direction(s.trim()))
+                .collect();
+            if !dirs.is_empty() {
+                style.animation_direction = dirs;
+                return true;
+            }
+        }
+        "animation-fill-mode" => {
+            let modes: Vec<_> = value
+                .split(',')
+                .filter_map(|s| values::parse_animation_fill_mode(s.trim()))
+                .collect();
+            if !modes.is_empty() {
+                style.animation_fill_mode = modes;
+                return true;
+            }
+        }
+        "animation-play-state" => {
+            let states: Vec<_> = value
+                .split(',')
+                .filter_map(|s| values::parse_animation_play_state(s.trim()))
+                .collect();
+            if !states.is_empty() {
+                style.animation_play_state = states;
                 return true;
             }
         }
@@ -2347,5 +2456,120 @@ mod tests {
         let mut style = ComputedStyle::default();
         assert!(apply_property_value(&mut style, "margin-block-start", "auto"));
         assert_eq!(style.margin_top, LengthValue::Auto);
+    }
+
+    // ── Animation 属性测试 ──
+
+    #[test]
+    fn test_computed_style_default_animation() {
+        let style = ComputedStyle::default();
+        assert!(style.animation_name.is_empty());
+        assert!(style.animation_duration.is_empty());
+        assert!(style.animation_timing_function.is_empty());
+        assert!(style.animation_delay.is_empty());
+        assert!(style.animation_iteration_count.is_empty());
+        assert!(style.animation_direction.is_empty());
+        assert!(style.animation_fill_mode.is_empty());
+        assert!(style.animation_play_state.is_empty());
+    }
+
+    #[test]
+    fn test_apply_animation_name() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-name", "fadeIn"));
+        assert_eq!(style.animation_name, vec!["fadeIn"]);
+
+        assert!(apply_property_value(&mut style, "animation-name", "fadeIn, slideIn"));
+        assert_eq!(style.animation_name, vec!["fadeIn", "slideIn"]);
+    }
+
+    #[test]
+    fn test_apply_animation_duration() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-duration", "0.5s"));
+        assert_eq!(style.animation_duration, vec![0.5]);
+
+        assert!(apply_property_value(&mut style, "animation-duration", "0.3s, 0.6s"));
+        assert_eq!(style.animation_duration, vec![0.3, 0.6]);
+
+        assert!(apply_property_value(&mut style, "animation-duration", "200ms"));
+        assert_eq!(style.animation_duration, vec![0.2]);
+    }
+
+    #[test]
+    fn test_apply_animation_timing_function() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-timing-function", "ease-in"));
+        assert_eq!(style.animation_timing_function.len(), 1);
+
+        assert!(apply_property_value(
+            &mut style,
+            "animation-timing-function",
+            "cubic-bezier(0.0, 0.0, 1.0, 1.0)"
+        ));
+        assert_eq!(style.animation_timing_function.len(), 1);
+    }
+
+    #[test]
+    fn test_apply_animation_delay() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-delay", "0.2s"));
+        assert_eq!(style.animation_delay, vec![0.2]);
+    }
+
+    #[test]
+    fn test_apply_animation_iteration_count() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-iteration-count", "3"));
+        assert_eq!(style.animation_iteration_count, vec![Some(3.0)]);
+
+        assert!(apply_property_value(&mut style, "animation-iteration-count", "infinite"));
+        assert_eq!(style.animation_iteration_count, vec![None]);
+
+        assert!(apply_property_value(&mut style, "animation-iteration-count", "2, infinite"));
+        assert_eq!(style.animation_iteration_count, vec![Some(2.0), None]);
+    }
+
+    #[test]
+    fn test_apply_animation_direction() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-direction", "alternate"));
+        assert_eq!(style.animation_direction.len(), 1);
+
+        assert!(apply_property_value(&mut style, "animation-direction", "normal, reverse"));
+        assert_eq!(style.animation_direction.len(), 2);
+    }
+
+    #[test]
+    fn test_apply_animation_fill_mode() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-fill-mode", "forwards"));
+        assert_eq!(style.animation_fill_mode.len(), 1);
+
+        assert!(apply_property_value(&mut style, "animation-fill-mode", "both"));
+        assert_eq!(style.animation_fill_mode.len(), 1);
+    }
+
+    #[test]
+    fn test_apply_animation_play_state() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "animation-play-state", "paused"));
+        assert_eq!(style.animation_play_state.len(), 1);
+
+        assert!(apply_property_value(&mut style, "animation-play-state", "running, paused"));
+        assert_eq!(style.animation_play_state.len(), 2);
+    }
+
+    #[test]
+    fn test_animation_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"animation-name"));
+        assert!(props.contains(&"animation-duration"));
+        assert!(props.contains(&"animation-timing-function"));
+        assert!(props.contains(&"animation-delay"));
+        assert!(props.contains(&"animation-iteration-count"));
+        assert!(props.contains(&"animation-direction"));
+        assert!(props.contains(&"animation-fill-mode"));
+        assert!(props.contains(&"animation-play-state"));
     }
 }
