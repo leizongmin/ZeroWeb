@@ -12,7 +12,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 个 crate 骨架 |
 | 编译状态 | ✅ `cargo check --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 69 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 70 个测试全绿 |
 | 覆盖率 | 待测量（脚本就位） |
 | WPT 通过率 | N/A |
 | 性能基线 | ✅ `cargo bench` 5 个基准可运行 |
@@ -73,7 +73,7 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 ### M1 验收标准
 
 - ✅ `cargo build` 在 Linux 上成功
-- ✅ `cargo test` 全通过（69 个测试全绿）
+- ✅ `cargo test` 全通过（70 个测试全绿）
 - ✅ `cargo clippy` 零警告
 - ✅ `cargo bench` 可运行并输出结果（5 个基准）
 - 🔄 `cargo build` 在 macOS/Windows 上成功（CI 配置就位，待验证实际运行）
@@ -117,7 +117,9 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 5. ~~创建 "Hello ZeroBrowser" 渲染 demo~~ ✅
 6. ~~将 CPU 渲染 demo 升级为 wgpu GPU 渲染~~ ✅
 7. ~~迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）~~ ✅
-8. 提交并推送代码 ← 当前
+8. ~~提交并推送代码~~ ✅
+9. 测量 render-foundation 覆盖率（≥ 50%）
+10. 归档 M1 里程碑，准备进入 M2
 
 ---
 
