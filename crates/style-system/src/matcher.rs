@@ -423,6 +423,9 @@ fn collect_from_rules(
                     }
                 }
             }
+            zero_css_parser::ast::Rule::Keyframes(_) => {
+                // @keyframes 规则不参与样式匹配，跳过
+            }
         }
     }
 }

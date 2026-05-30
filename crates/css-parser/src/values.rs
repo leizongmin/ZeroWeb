@@ -600,7 +600,7 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
 
 // ── CSS Transition 值类型 ──────────────────────────────────────────────
 
-/// CSS transition-timing-function 值。
+/// CSS transition-timing-function / animation-timing-function 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimingFunctionValue {
     /// ease。
@@ -634,6 +634,72 @@ pub enum StepPosition {
     Both,
     /// jump-none。
     None,
+}
+
+/// CSS animation-direction 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationDirectionValue {
+    /// normal。
+    Normal,
+    /// reverse。
+    Reverse,
+    /// alternate。
+    Alternate,
+    /// alternate-reverse。
+    AlternateReverse,
+}
+
+/// CSS animation-fill-mode 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationFillModeValue {
+    /// none。
+    None,
+    /// forwards。
+    Forwards,
+    /// backwards。
+    Backwards,
+    /// both。
+    Both,
+}
+
+/// CSS animation-play-state 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationPlayStateValue {
+    /// running。
+    Running,
+    /// paused。
+    Paused,
+}
+
+/// 解析 CSS animation-direction 值。
+pub fn parse_animation_direction(value: &str) -> Option<AnimationDirectionValue> {
+    match value.trim() {
+        "normal" => Some(AnimationDirectionValue::Normal),
+        "reverse" => Some(AnimationDirectionValue::Reverse),
+        "alternate" => Some(AnimationDirectionValue::Alternate),
+        "alternate-reverse" => Some(AnimationDirectionValue::AlternateReverse),
+        _ => None,
+    }
+}
+
+/// 解析 CSS animation-fill-mode 值。
+pub fn parse_animation_fill_mode(value: &str) -> Option<AnimationFillModeValue> {
+    match value.trim() {
+        "none" => Some(AnimationFillModeValue::None),
+        "forwards" => Some(AnimationFillModeValue::Forwards),
+        "backwards" => Some(AnimationFillModeValue::Backwards),
+        "both" => Some(AnimationFillModeValue::Both),
+        _ => None,
+    }
+}
+
+/// 解析 CSS animation-play-state 值。
+pub fn parse_animation_play_state(value: &str) -> Option<AnimationPlayStateValue> {
+    match value.trim() {
+        "running" => Some(AnimationPlayStateValue::Running),
+        "paused" => Some(AnimationPlayStateValue::Paused),
+        _ => None,
+    }
 }
 
 /// 解析 CSS transition-timing-function 值。

@@ -134,6 +134,10 @@ fn expand_one(
         "inset-block" => expand_axis_logical(value, "inset-block-start", "inset-block-end", important, specificity),
         "inset-inline" => expand_axis_logical(value, "inset-inline-start", "inset-inline-end", important, specificity),
 
+        // ── animation 简写 ──
+        // animation: name duration timing-function delay iteration-count direction fill-mode play-state
+        "animation" => expand_animation(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -440,6 +444,103 @@ fn split_outside_parens(s: &str) -> Vec<String> {
     }
 
     result
+}
+
+/// 展开 animation 简写。
+///
+/// CSS `animation` 简写格式：
+/// `animation: [name] [duration] [timing-function] [delay] [iteration-count] [direction] [fill-mode] [play-state]`
+///
+/// 简化实现：按空格分割，根据值的类型推断对应的子属性。
+fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl {
+        (prop.to_string(), val.to_string(), important, specificity)
+    };
+
+    // 特殊值 "none" 表示无动画
+    if value == "none" {
+        return vec![
+            mk("animation-name", "none"),
+            mk("animation-duration", "0s"),
+            mk("animation-timing-function", "ease"),
+            mk("animation-delay", "0s"),
+            mk("animation-iteration-count", "1"),
+            mk("animation-direction", "normal"),
+            mk("animation-fill-mode", "none"),
+            mk("animation-play-state", "running"),
+        ];
+    }
+
+    let tokens = split_outside_parens(value);
+    let mut name = "none";
+    let mut duration = "0s";
+    let mut timing = "ease";
+    let mut delay = "0s";
+    let mut iteration_count = "1";
+    let mut direction = "normal";
+    let mut fill_mode = "none";
+    let mut play_state = "running";
+    let mut found_time_count = 0u32;
+
+    for token in &tokens {
+        let t = token.trim();
+        if t.is_empty() {
+            continue;
+        }
+
+        // 时间值（duration/delay）
+        if is_time_value(t) {
+            found_time_count += 1;
+            if found_time_count == 1 {
+                duration = t;
+            } else if found_time_count == 2 {
+                delay = t;
+            }
+        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+            timing = t;
+        } else if t == "infinite" {
+            iteration_count = "infinite";
+        } else if is_animation_direction(t) {
+            direction = t;
+        } else if is_animation_fill_mode(t) {
+            fill_mode = t;
+        } else if is_animation_play_state(t) {
+            play_state = t;
+        } else if t.parse::<f64>().is_ok() {
+            // 纯数字 → iteration-count
+            iteration_count = t;
+        } else {
+            // 其他 → animation-name
+            name = t;
+        }
+    }
+
+    vec![
+        mk("animation-name", name),
+        mk("animation-duration", duration),
+        mk("animation-timing-function", timing),
+        mk("animation-delay", delay),
+        mk("animation-iteration-count", iteration_count),
+        mk("animation-direction", direction),
+        mk("animation-fill-mode", fill_mode),
+        mk("animation-play-state", play_state),
+    ]
+}
+
+/// 检查字符串是否为 animation-direction 关键字。
+fn is_animation_direction(s: &str) -> bool {
+    matches!(s, "normal" | "reverse" | "alternate" | "alternate-reverse")
+}
+
+/// 检查字符串是否为 animation-fill-mode 关键字。
+fn is_animation_fill_mode(s: &str) -> bool {
+    matches!(s, "none" | "forwards" | "backwards" | "both")
+}
+
+/// 检查字符串是否为 animation-play-state 关键字。
+fn is_animation_play_state(s: &str) -> bool {
+    matches!(s, "running" | "paused")
 }
 
 /// 展开轴方向逻辑属性简写。
@@ -1018,5 +1119,59 @@ mod tests {
         assert_eq!(result[1].0, "inset-inline-end");
         assert_eq!(result[0].1, "50px");
         assert_eq!(result[1].1, "50px");
+    }
+
+    // ── animation 简写测试 ──
+
+    #[test]
+    fn test_animation_shorthand_none() {
+        let result = expand_one("animation", "none", false, (0, 0, 1));
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].0, "animation-name");
+        assert_eq!(result[0].1, "none");
+    }
+
+    #[test]
+    fn test_animation_shorthand_name_duration() {
+        let result = expand_one("animation", "fadeIn 0.5s", false, (0, 0, 1));
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "fadeIn");
+        assert_eq!(result[1].1, "0.5s");
+    }
+
+    #[test]
+    fn test_animation_shorthand_full() {
+        let result = expand_one(
+            "animation",
+            "slideIn 0.3s ease-in 0.1s 3 alternate forwards",
+            false,
+            (0, 0, 1),
+        );
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "slideIn");  // name
+        assert_eq!(result[1].1, "0.3s");     // duration
+        assert_eq!(result[2].1, "ease-in");  // timing
+        assert_eq!(result[3].1, "0.1s");     // delay
+        assert_eq!(result[4].1, "3");        // iteration-count
+        assert_eq!(result[5].1, "alternate"); // direction
+        assert_eq!(result[6].1, "forwards"); // fill-mode
+    }
+
+    #[test]
+    fn test_animation_shorthand_infinite() {
+        let result = expand_one("animation", "bounce 1s linear infinite", false, (0, 0, 1));
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "bounce");
+        assert_eq!(result[1].1, "1s");
+        assert_eq!(result[2].1, "linear");
+        assert_eq!(result[4].1, "infinite");
+    }
+
+    #[test]
+    fn test_animation_shorthand_paused() {
+        let result = expand_one("animation", "spin 2s paused", false, (0, 0, 1));
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "spin");
+        assert_eq!(result[7].1, "paused");
     }
 }

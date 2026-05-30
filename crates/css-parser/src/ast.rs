@@ -16,6 +16,8 @@ pub enum Rule {
     Style(StyleRule),
     /// @规则。
     At(AtRule),
+    /// @keyframes 规则。
+    Keyframes(KeyframesRule),
 }
 
 /// CSS 样式规则。
@@ -45,6 +47,35 @@ pub enum AtRuleBody {
     Block(Vec<Rule>),
     /// 以分号结束的语句（如 `@import`）。
     Statement,
+}
+
+/// @keyframes 规则。
+#[derive(Debug, Clone)]
+pub struct KeyframesRule {
+    /// 动画名称。
+    pub name: String,
+    /// 关键帧列表。
+    pub keyframes: Vec<KeyframeBlock>,
+}
+
+/// 单个关键帧块（如 `0% { ... }` 或 `from { ... }`）。
+#[derive(Debug, Clone)]
+pub struct KeyframeBlock {
+    /// 关键帧选择器列表（如 `0%`、`50%`、`100%`、`from`、`to`）。
+    pub selectors: Vec<KeyframeSelector>,
+    /// 声明列表。
+    pub declarations: Vec<Declaration>,
+}
+
+/// 关键帧选择器。
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyframeSelector {
+    /// 百分比（0.0 - 100.0）。
+    Percentage(f64),
+    /// from（等同 0%）。
+    From,
+    /// to（等同 100%）。
+    To,
 }
 
 /// CSS 声明（属性名 + 值）。
