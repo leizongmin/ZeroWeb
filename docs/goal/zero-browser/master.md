@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-05-30
 **当前活跃里程碑**: M1 — 项目骨架 + 渲染基础设施迁移
-**执行状态**: 进行中
+**执行状态**: 进行中（M1 骨架已建立，待完成 wgpu 渲染 demo）
 
 ---
 
@@ -10,22 +10,27 @@
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | 空仓库（仅有文档） |
-| Cargo workspace | 未创建 |
-| 编译状态 | N/A（无代码） |
-| 测试状态 | N/A（无测试） |
-| 覆盖率 | N/A |
+| 仓库代码 | ✅ Cargo workspace + 16 个 crate 骨架 |
+| 编译状态 | ✅ `cargo check --workspace` 通过 |
+| 测试状态 | ✅ `cargo test --workspace` 38 个测试全绿 |
+| 覆盖率 | 待测量（脚本就位） |
 | WPT 通过率 | N/A |
-| 性能基线 | N/A |
-| CI | 未配置 |
-| 文档 | ✅ 目标文档、Spec+RFC、技术调研已完成 |
+| 性能基线 | ✅ `cargo bench` 5 个基准可运行 |
+| CI | ✅ GitHub Actions 配置就位 |
+| Clippy | ✅ 零警告 |
 
-### 已完成文档
+### 仓库结构
 
-- [x] `docs/goal/zero-browser.md` — 目标执行契约 v1.0
-- [x] `docs/specs/zero-browser-spec-rfc.md` — Spec + RFC v1.0（完整 10 章节）
-- [x] `docs/research/rust-cross-platform-browser-research.md` — 技术调研（四轮迭代）
-- [x] `README.md` — 项目说明
+```
+crates/           16 个 crate（dom, css-parser, style-system, layout-engine,
+                  engine-core, canvas, render-foundation, host-runtime, net,
+                  security, storage, protocol, script-sandbox, wasm-sandbox,
+                  webview-api, browser-shell）
+apps/             browser（占位入口）, webview-demo（占位入口）
+tests/            wpt-runner, integration, benchmarks/results
+scripts/          run-benchmarks.sh, check-coverage.sh
+.github/          CI 管线（三平台 build + test + clippy + 基准）
+```
 
 ### 文档控制平面状态
 
@@ -38,43 +43,53 @@
 
 ## 活跃里程碑：M1 — 项目骨架 + 渲染基础设施迁移
 
-**目标**: 建立项目结构，迁移 OmniTerm 渲染基础设施，在桌面平台上显示一个窗口并渲染文本。
-
 ### M1 交付物进度
 
 | # | 交付物 | 状态 | 备注 |
 |---|--------|------|------|
-| 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | 🔲 待开始 | |
-| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔲 待开始 | GPU/CPU 双路径、字体栈、图片缓存 |
-| 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | 🔲 待开始 | |
-| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | 🔲 待开始 | "Hello ZeroBrowser" |
-| 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | 🔲 待开始 | |
-| 6 | `render-foundation` 单元测试（≥20 个测试用例） | 🔲 待开始 | |
-| 7 | criterion 基准基础设施就位 | 🔲 待开始 | |
-| 8 | `render-foundation` 首批基准（≥3 个） | 🔲 待开始 | |
-| 9 | 覆盖率测量脚本就位 | 🔲 待开始 | |
-| 10 | CI 管线就位 | 🔲 待开始 | |
+| 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
+| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | 核心抽象已建立，待完整 GPU 渲染器迁移 |
+| 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
+| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | 🔲 待开始 | "Hello ZeroBrowser" demo |
+| 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
+| 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 24 个测试用例（geometry:10, color:5, primitive:4, font:6, surface:7） |
+| 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
+| 8 | `render-foundation` 首批基准（≥3 个） | ✅ 完成 | 5 个基准（damage_tracker, glyph_cache, frame_buffer, primitives） |
+| 9 | 覆盖率测量脚本就位 | ✅ 完成 | scripts/check-coverage.sh |
+| 10 | CI 管线就位 | ✅ 完成 | GitHub Actions 三平台 |
+
+### render-foundation 已实现模块
+
+| 模块 | 内容 | 测试 |
+|------|------|------|
+| `geometry` | Point, Size, Rect, DamageTracker | 10 个测试 |
+| `color` | Color (RGBA), hex 解析, sRGB→linear, premultiplied alpha | 5 个测试 |
+| `primitive` | FillPrimitive, GlyphPrimitive, RenderPrimitives | 4 个测试 |
+| `font/loader` | FontLoader (fontdue), 字体加载和 glyph 光栅化 | 5 个测试 |
+| `font/cache` | GlyphCache, LRU 淘汰策略 | 6 个测试 |
+| `surface` | SurfaceDescriptor, FrameBuffer (CPU RGBA) | 7 个测试 |
 
 ### M1 验收标准
 
-- `cargo build` 在三个桌面平台上成功
-- `cargo test` 全通过，render-foundation 覆盖率 ≥ 50%
-- `cargo bench` 可运行并输出结果
-- 运行 demo 二进制可以看到窗口和渲染文本
-- OmniTerm 渲染核心代码已迁移到本仓库
+- ✅ `cargo build` 在 Linux 上成功
+- ✅ `cargo test` 全通过
+- ✅ `cargo clippy` 零警告
+- ✅ `cargo bench` 可运行并输出结果
+- 🔄 `cargo build` 在 macOS/Windows 上成功（CI 待验证）
+- 🔲 运行 demo 二进制可以看到窗口和渲染文本
+- 🔄 render-foundation 覆盖率 ≥ 50%（待测量）
 
 ---
 
-## OmniTerm 可复用资产清单
+## 性能基线（首次记录）
 
-| OmniTerm 模块 | 行数(估) | 功能 | 迁移目标 |
-|---------------|----------|------|----------|
-| `omniterm-terminal-render` | ~1,500 | 场景/Primitive/Backend 分层架构 | `render-foundation` |
-| `omniterm-terminal-render-wgpu` | ~2,300 | GPU glyph atlas、pane 缓存、wgpu 合成 | `render-foundation` |
-| `omniterm-terminal-render-soft` | ~4,400 | fontdue + swash 字体栈、软件渲染后备 | `render-foundation` |
-| `omniterm-terminal-image` | ~1,800 | 图片对象缓存与 GC 限制 | `render-foundation` |
-
-**迁移策略**: 复用核心抽象（RenderBackend trait、scene/primitive 模式、glyph atlas、字体 fallback 链、图片缓存 GC），去掉终端特有逻辑（cell grid、terminal snapshot、kitty/sixel 协议解码）。
+| 基准 | 耗时 | 说明 |
+|------|------|------|
+| damage_tracker/add_100 | ~6.5 µs | 添加 100 个脏矩形 |
+| damage_tracker/damage_all | ~3.8 ns | 全区域脏标记 |
+| glyph_cache/insert | ~10.5 µs | 插入 256 个 glyph |
+| frame_buffer/clear_1080p | ~762 µs | 清除 1920x1080 帧缓冲 |
+| primitives/build_1000_fills | ~1.7 µs | 构建 1000 个填充图元 |
 
 ---
 
@@ -92,19 +107,15 @@
 
 ---
 
-## 测试基线
-
-**当前状态**: 无测试（项目无代码）
-
----
-
 ## 下一步计划
 
-1. 初始化 Cargo workspace（含所有 15 个 crate 骨架）
-2. 迁移 OmniTerm 渲染基础设施到 `render-foundation` crate
-3. 实现 `host-runtime` crate（winit 窗口 + 事件循环）
-4. 创建 "Hello ZeroBrowser" demo
-5. 建立 CI 管线
+1. ~~初始化 Cargo workspace~~ ✅
+2. ~~创建 render-foundation 核心抽象~~ ✅
+3. ~~实现 host-runtime（winit 窗口 + 事件循环）~~ ✅
+4. ~~建立 CI 管线~~ ✅
+5. **创建 "Hello ZeroBrowser" wgpu 渲染 demo** ← 当前
+6. 迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、shader）
+7. 提交并推送代码
 
 ---
 

@@ -1,0 +1,13 @@
+[package]
+name = "zero-css-parser"
+description = "自建 CSS 解析器 — tokenizer + parser，支持完整选择器和属性解析"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+compact_str = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

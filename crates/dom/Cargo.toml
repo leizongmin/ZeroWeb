@@ -1,0 +1,15 @@
+[package]
+name = "zero-dom"
+description = "DOM 树实现 — 完整的 DOM 节点类型、树操作和增量更新"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+html5ever = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+compact_str = { workspace = true }
+hashbrown = { workspace = true }
+
+[dev-dependencies]

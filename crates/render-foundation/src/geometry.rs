@@ -1,0 +1,294 @@
+//! 几何类型 — 矩形、点、尺寸等基础几何定义
+
+/// 二维点
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    /// X 坐标
+    pub x: f32,
+    /// Y 坐标
+    pub y: f32,
+}
+
+impl Point {
+    /// 原点
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+
+    /// 创建新点
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+/// 二维尺寸
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Size {
+    /// 宽度
+    pub width: f32,
+    /// 高度
+    pub height: f32,
+}
+
+impl Size {
+    /// 零尺寸
+    pub const ZERO: Self = Self {
+        width: 0.0,
+        height: 0.0,
+    };
+
+    /// 创建新尺寸
+    pub fn new(width: f32, height: f32) -> Self {
+        Self { width, height }
+    }
+
+    /// 面积
+    pub fn area(&self) -> f32 {
+        self.width * self.height
+    }
+
+    /// 是否为空（宽度或高度为 0）
+    pub fn is_empty(&self) -> bool {
+        self.width <= 0.0 || self.height <= 0.0
+    }
+}
+
+/// 矩形（左上角 + 尺寸）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect {
+    /// 原点（左上角）
+    pub origin: Point,
+    /// 尺寸
+    pub size: Size,
+}
+
+impl Rect {
+    /// 零矩形
+    pub const ZERO: Self = Self {
+        origin: Point::ZERO,
+        size: Size::ZERO,
+    };
+
+    /// 从位置和尺寸创建矩形
+    pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            origin: Point::new(x, y),
+            size: Size::new(width, height),
+        }
+    }
+
+    /// 左边界
+    pub fn left(&self) -> f32 {
+        self.origin.x
+    }
+
+    /// 上边界
+    pub fn top(&self) -> f32 {
+        self.origin.y
+    }
+
+    /// 右边界
+    pub fn right(&self) -> f32 {
+        self.origin.x + self.size.width
+    }
+
+    /// 下边界
+    pub fn bottom(&self) -> f32 {
+        self.origin.y + self.size.height
+    }
+
+    /// 是否包含指定点
+    pub fn contains(&self, point: Point) -> bool {
+        point.x >= self.left()
+            && point.x < self.right()
+            && point.y >= self.top()
+            && point.y < self.bottom()
+    }
+
+    /// 与另一个矩形的交集
+    pub fn intersection(&self, other: &Rect) -> Option<Rect> {
+        let left = self.left().max(other.left());
+        let top = self.top().max(other.top());
+        let right = self.right().min(other.right());
+        let bottom = self.bottom().min(other.bottom());
+
+        if right > left && bottom > top {
+            Some(Rect::new(left, top, right - left, bottom - top))
+        } else {
+            None
+        }
+    }
+
+    /// 是否为空
+    pub fn is_empty(&self) -> bool {
+        self.size.is_empty()
+    }
+}
+
+/// 脏区域追踪器 — 管理需要重绘的矩形区域
+#[derive(Debug, Clone)]
+pub struct DamageTracker {
+    /// 脏矩形列表
+    dirty_rects: Vec<Rect>,
+}
+
+impl DamageTracker {
+    /// 创建新的脏区域追踪器
+    pub fn new() -> Self {
+        Self {
+            dirty_rects: Vec::new(),
+        }
+    }
+
+    /// 添加一个脏矩形
+    pub fn add_damage(&mut self, rect: Rect) {
+        if rect.is_empty() {
+            return;
+        }
+        // 尝试与现有脏矩形合并
+        for existing in &mut self.dirty_rects {
+            if let Some(merged) = Self::try_merge(existing, &rect) {
+                *existing = merged;
+                return;
+            }
+        }
+        self.dirty_rects.push(rect);
+    }
+
+    /// 标记整个区域为脏
+    pub fn damage_all(&mut self, size: Size) {
+        self.dirty_rects.clear();
+        self.dirty_rects
+            .push(Rect::new(0.0, 0.0, size.width, size.height));
+    }
+
+    /// 获取所有脏矩形
+    pub fn dirty_rects(&self) -> &[Rect] {
+        &self.dirty_rects
+    }
+
+    /// 是否有任何脏区域
+    pub fn is_dirty(&self) -> bool {
+        !self.dirty_rects.is_empty()
+    }
+
+    /// 清除所有脏区域
+    pub fn clear(&mut self) {
+        self.dirty_rects.clear();
+    }
+
+    /// 尝试合并两个矩形（如果它们的并集面积不超过两者之和的 50%）
+    fn try_merge(a: &Rect, b: &Rect) -> Option<Rect> {
+        let union_left = a.left().min(b.left());
+        let union_top = a.top().min(b.top());
+        let union_right = a.right().max(b.right());
+        let union_bottom = a.bottom().max(b.bottom());
+        let union = Rect::new(
+            union_left,
+            union_top,
+            union_right - union_left,
+            union_bottom - union_top,
+        );
+
+        let individual_area = a.size.area() + b.size.area();
+        let union_area = union.size.area();
+
+        // 如果合并后的面积不超过两者之和的 50%，则合并
+        if union_area <= individual_area * 1.5 {
+            Some(union)
+        } else {
+            None
+        }
+    }
+}
+
+impl Default for DamageTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_point_zero() {
+        let p = Point::ZERO;
+        assert_eq!(p.x, 0.0);
+        assert_eq!(p.y, 0.0);
+    }
+
+    #[test]
+    fn test_size_area() {
+        let s = Size::new(10.0, 20.0);
+        assert_eq!(s.area(), 200.0);
+        assert!(!s.is_empty());
+        assert!(Size::ZERO.is_empty());
+    }
+
+    #[test]
+    fn test_rect_contains() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        assert!(r.contains(Point::new(50.0, 50.0)));
+        assert!(!r.contains(Point::new(150.0, 50.0)));
+        assert!(r.contains(Point::new(0.0, 0.0)));
+        assert!(!r.contains(Point::new(100.0, 100.0)));
+    }
+
+    #[test]
+    fn test_rect_intersection() {
+        let a = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let b = Rect::new(50.0, 50.0, 100.0, 100.0);
+        let inter = a.intersection(&b).unwrap();
+        assert_eq!(inter.origin.x, 50.0);
+        assert_eq!(inter.origin.y, 50.0);
+        assert_eq!(inter.size.width, 50.0);
+        assert_eq!(inter.size.height, 50.0);
+
+        let c = Rect::new(200.0, 200.0, 10.0, 10.0);
+        assert!(a.intersection(&c).is_none());
+    }
+
+    #[test]
+    fn test_damage_tracker_add() {
+        let mut tracker = DamageTracker::new();
+        assert!(!tracker.is_dirty());
+
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        assert!(tracker.is_dirty());
+        assert_eq!(tracker.dirty_rects().len(), 1);
+    }
+
+    #[test]
+    fn test_damage_tracker_merge() {
+        let mut tracker = DamageTracker::new();
+        // 两个相邻矩形应该合并
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.add_damage(Rect::new(5.0, 0.0, 10.0, 10.0));
+        // 应该合并为一个
+        assert!(tracker.dirty_rects().len() <= 2);
+    }
+
+    #[test]
+    fn test_damage_tracker_damage_all() {
+        let mut tracker = DamageTracker::new();
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.damage_all(Size::new(800.0, 600.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].size.width, 800.0);
+    }
+
+    #[test]
+    fn test_damage_tracker_clear() {
+        let mut tracker = DamageTracker::new();
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.clear();
+        assert!(!tracker.is_dirty());
+    }
+
+    #[test]
+    fn test_rect_empty_not_added_to_damage() {
+        let mut tracker = DamageTracker::new();
+        tracker.add_damage(Rect::new(0.0, 0.0, 0.0, 10.0));
+        assert!(!tracker.is_dirty());
+    }
+}

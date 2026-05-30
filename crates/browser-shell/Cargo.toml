@@ -1,0 +1,15 @@
+[package]
+name = "zero-browser-shell"
+description = "浏览器应用层 — 多标签页、收藏夹、地址栏、历史"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-webview-api = { workspace = true }
+zero-host-runtime = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]

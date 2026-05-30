@@ -1,0 +1,15 @@
+[package]
+name = "zero-host-runtime"
+description = "平台宿主 — 窗口、事件循环、surface、输入法（基于 winit）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+winit = { workspace = true }
+wgpu = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]

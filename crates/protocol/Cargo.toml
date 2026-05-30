@@ -1,0 +1,13 @@
+[package]
+name = "zero-protocol"
+description = "多进程 IPC 与协议定义"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+bincode = "1"
+
+[dev-dependencies]
