@@ -227,4 +227,89 @@ mod tests {
         let url_str = parsed.to_url_string();
         assert!(!url_str.contains('#'));
     }
+
+    // ── 边界条件补充测试 ──
+
+    /// 测试默认 HTTPS 端口（443）被规范化。
+    #[test]
+    fn test_parse_url_default_https_port() {
+        let parsed = parse_url("https://example.com:443/").unwrap();
+        assert!(parsed.port.is_none(), "443 是 https 默认端口，应被规范化为 None");
+        assert_eq!(parsed.origin(), "https://example.com");
+    }
+
+    /// 测试非标准协议（ftp、data、file）。
+    #[test]
+    fn test_parse_url_non_standard_schemes() {
+        let ftp = parse_url("ftp://files.example.com/pub").unwrap();
+        assert_eq!(ftp.scheme, "ftp");
+
+        let data = parse_url("data:text/plain,hello").unwrap();
+        assert_eq!(data.scheme, "data");
+
+        let file = parse_url("file:///etc/hosts").unwrap();
+        assert_eq!(file.scheme, "file");
+    }
+
+    /// 测试同源不同端口不匹配。
+    #[test]
+    fn test_url_same_origin_different_port() {
+        let a = parse_url("http://example.com:8080/page1").unwrap();
+        let b = parse_url("http://example.com:9090/page2").unwrap();
+        assert!(!a.is_same_origin(&b), "不同端口应不同源");
+    }
+
+    /// 测试 to_url_string 最小 URL（无查询、无片段）。
+    #[test]
+    fn test_url_to_url_string_minimal() {
+        let parsed = parse_url("http://example.com/path").unwrap();
+        let url_str = parsed.to_url_string();
+        assert_eq!(url_str, "http://example.com/path");
+    }
+
+    /// 测试只有用户名无密码。
+    #[test]
+    fn test_parse_url_username_only() {
+        let parsed = parse_url("http://user@example.com/path").unwrap();
+        assert_eq!(parsed.username, "user");
+        assert!(parsed.password.is_none());
+    }
+
+    /// 测试查询字符串含特殊字符。
+    #[test]
+    fn test_parse_url_special_query_chars() {
+        let parsed = parse_url("http://example.com/search?q=hello%20world&lang=%E4%B8%AD").unwrap();
+        assert!(parsed.query.is_some());
+        assert!(parsed.query.as_ref().unwrap().contains("q="));
+    }
+
+    /// 测试路径含特殊编码字符。
+    #[test]
+    fn test_parse_url_encoded_path() {
+        let parsed = parse_url("http://example.com/%E8%B7%AF%E5%BE%84/page").unwrap();
+        assert!(parsed.path.contains("page"));
+    }
+
+    /// 测试 IPv6 地址 URL。
+    #[test]
+    fn test_parse_url_ipv6() {
+        let parsed = parse_url("http://[::1]:8080/path").unwrap();
+        assert!(parsed.host.is_some());
+        assert_eq!(parsed.port, Some(8080));
+    }
+
+    /// 测试根路径 URL。
+    #[test]
+    fn test_parse_url_root_path() {
+        let parsed = parse_url("http://example.com").unwrap();
+        assert_eq!(parsed.path, "/");
+    }
+
+    /// 测试 to_url_string 不含默认端口。
+    #[test]
+    fn test_url_to_url_string_no_default_port() {
+        let parsed = parse_url("http://example.com/path").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(!url_str.contains(":80"), "默认端口不应出现在 URL 字符串中");
+    }
 }
