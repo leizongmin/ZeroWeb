@@ -9,7 +9,7 @@ license.workspace = true
 thiserror = { workspace = true }
 
 [features]
-default = []
+default = ["wasmi"]
 wasmtime = ["dep:wasmtime"]
 wasmi = ["dep:wasmi"]
 
@@ -23,3 +23,4 @@ version = "0.40"
 optional = true
 
 [dev-dependencies]
+wat = "1"
