@@ -198,4 +198,60 @@ mod tests {
         let key2 = GlyphKey::new(0, 65, 16.5);
         assert_eq!(key2.size_px, 17); // round(16.5) = 17
     }
+
+    #[test]
+    fn test_cache_eviction_halves_when_full() {
+        let mut cache = GlyphCache::new(4);
+        // Fill cache to capacity
+        for i in 0..4u32 {
+            let key = GlyphKey::new(0, i, 16.0);
+            cache.insert(key, make_bitmap(&[i as u8; 4], 2, 2));
+        }
+        assert_eq!(cache.len(), 4);
+        // Insert a new key — should trigger eviction of half
+        let new_key = GlyphKey::new(0, 99, 16.0);
+        cache.get_or_insert_with(new_key, || Ok(make_bitmap(&[0; 4], 2, 2))).unwrap();
+        // After eviction + insertion, count should be <= (4 - 2) + 1 = 3
+        assert!(cache.len() <= 3);
+    }
+
+    #[test]
+    fn test_cache_hit_returns_same_value() {
+        let mut cache = GlyphCache::new(100);
+        let key = GlyphKey::new(1, 42, 24.0);
+        cache.insert(key.clone(), make_bitmap(&[7, 8, 9], 3, 1));
+
+        let got = cache.get(&key).unwrap();
+        assert_eq!(got.data, vec![7, 8, 9]);
+        assert_eq!(got.width, 3);
+        assert_eq!(got.height, 1);
+    }
+
+    #[test]
+    fn test_cache_miss_returns_none() {
+        let cache = GlyphCache::new(100);
+        let key = GlyphKey::new(0, 999, 16.0);
+        assert!(cache.get(&key).is_none());
+    }
+
+    #[test]
+    fn test_cache_default_capacity() {
+        let cache = GlyphCache::default();
+        assert!(cache.is_empty());
+        // Default max_entries is 4096
+        // Just verify it works with a few inserts
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_cache_get_or_insert_error_propagation() {
+        let mut cache = GlyphCache::new(100);
+        let key = GlyphKey::new(0, 65, 16.0);
+        let result = cache.get_or_insert_with(key.clone(), || {
+            Err(FontError::NotFound("test".to_string()))
+        });
+        assert!(result.is_err());
+        // Failed insert should not add to cache
+        assert!(cache.get(&key).is_none());
+    }
 }

@@ -177,4 +177,81 @@ mod tests {
         let l = c.to_linear_f32();
         assert!((l[0] - 1.0).abs() < 0.01);
     }
+
+    #[test]
+    fn test_color_from_hex_short() {
+        // #RGB shorthand
+        let c = Color::from_hex("#f00").unwrap();
+        assert_eq!(c, Color::RED);
+        let c2 = Color::from_hex("#0f0").unwrap();
+        assert_eq!(c2, Color::GREEN);
+        let c3 = Color::from_hex("#00f").unwrap();
+        assert_eq!(c3, Color::BLUE);
+    }
+
+    #[test]
+    fn test_color_from_hex_with_alpha() {
+        // #RRGGBBAA
+        let c = Color::from_hex("#ff000080").unwrap();
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 128);
+    }
+
+    #[test]
+    fn test_color_from_hex_invalid() {
+        assert!(Color::from_hex("").is_none());
+        assert!(Color::from_hex("#").is_none());
+        assert!(Color::from_hex("#12").is_none());
+        assert!(Color::from_hex("ffffff").is_none()); // missing #
+        assert!(Color::from_hex("#gggggg").is_none()); // invalid hex digits
+    }
+
+    #[test]
+    fn test_color_srgb_to_linear_black() {
+        let c = Color::BLACK;
+        let l = c.to_linear_f32();
+        assert!(l[0].abs() < 0.001);
+        assert!(l[1].abs() < 0.001);
+        assert!(l[2].abs() < 0.001);
+        assert!((l[3] - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_srgb_to_linear_mid_gray() {
+        // 128/255 ~ 0.502 in sRGB
+        let c = Color::rgb(128, 128, 128);
+        let l = c.to_linear_f32();
+        // linear value should be ~0.216 (less than 0.5 due to gamma)
+        assert!(l[0] > 0.2 && l[0] < 0.25);
+        assert!((l[0] - l[1]).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_premultiplied_opaque() {
+        let c = Color::rgb(200, 100, 50);
+        let p = c.premultiplied();
+        assert!((p[0] - 200.0 / 255.0).abs() < 0.001);
+        assert!((p[1] - 100.0 / 255.0).abs() < 0.001);
+        assert!((p[2] - 50.0 / 255.0).abs() < 0.001);
+        assert!((p[3] - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_premultiplied_transparent() {
+        let c = Color::rgba(255, 255, 255, 0);
+        let p = c.premultiplied();
+        assert!(p[0].abs() < f32::EPSILON);
+        assert!(p[1].abs() < f32::EPSILON);
+        assert!(p[2].abs() < f32::EPSILON);
+        assert!(p[3].abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_equality_and_copy() {
+        let c1 = Color::rgba(10, 20, 30, 40);
+        let c2 = c1;
+        assert_eq!(c1, c2);
+    }
 }
