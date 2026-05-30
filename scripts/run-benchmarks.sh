@@ -17,11 +17,11 @@ declare -A BENCH_MAP=(
     [zero-dom]="dom_bench"
     [zero-style-system]="style_bench"
     [zero-layout-engine]="layout_bench"
-    [zero-engine-core]="engine_bench"
+    [zero-engine]="engine_bench"
     [zero-canvas]="canvas_bench"
     [zero-render-foundation]="render_bench"
     [zero-host-runtime]="host_runtime_bench"
-    [zero-webview-api]="webview_bench"
+    [zero-webview]="webview_bench"
     [zero-net]="net_bench"
     [zero-protocol]="protocol_bench"
     [zero-security]="security_bench"
@@ -29,7 +29,7 @@ declare -A BENCH_MAP=(
     [zero-wasm-sandbox]="wasm_bench"
 )
 
-echo "=== ZeroBrowser Benchmarks ===" | tee "$REPORT"
+echo "=== ZeroWeb Benchmarks ===" | tee "$REPORT"
 echo "Date: $(date)" | tee -a "$REPORT"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" | tee -a "$REPORT"
 echo "Crates: ${#BENCH_MAP[@]}" | tee -a "$REPORT"

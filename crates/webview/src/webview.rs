@@ -1,6 +1,6 @@
 //! WebView 主类型 — 可嵌入的网页渲染表面。
 
-use zero_engine_core::{PipelineTimings, RenderPipeline};
+use zero_engine::{PipelineTimings, RenderPipeline};
 use zero_render_foundation::primitive::RenderPrimitives;
 
 use crate::WebViewError;

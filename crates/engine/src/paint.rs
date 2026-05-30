@@ -191,6 +191,7 @@ pub fn named_color_to_render(name: &str) -> Color {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default, clippy::too_many_arguments)]
 mod tests {
     use super::*;
     use zero_css_parser::values::ColorValue;
@@ -234,13 +235,7 @@ mod tests {
     }
 
     /// 辅助函数：创建简单 LayoutBox。
-    fn make_box(
-        node_id: Option<NodeId>,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) -> LayoutBox {
+    fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) -> LayoutBox {
         LayoutBox {
             node_id,
             x,
@@ -452,7 +447,10 @@ mod tests {
         assert_eq!(painter.primitives().fills.len(), 2);
 
         // 第一个填充是父元素背景
-        assert_eq!(painter.primitives().fills[0].color, Color::rgb(200, 200, 200));
+        assert_eq!(
+            painter.primitives().fills[0].color,
+            Color::rgb(200, 200, 200)
+        );
         // 第二个填充是子元素背景（位置偏移 10,10）
         assert_eq!(painter.primitives().fills[1].rect.origin.x, 10.0);
         assert_eq!(painter.primitives().fills[1].rect.origin.y, 10.0);
@@ -623,7 +621,10 @@ mod tests {
         // 1 background fill + 4 border fills = 5
         assert_eq!(painter.primitives().fills.len(), 5);
         // First fill is background
-        assert_eq!(painter.primitives().fills[0].color, Color::rgb(200, 200, 200));
+        assert_eq!(
+            painter.primitives().fills[0].color,
+            Color::rgb(200, 200, 200)
+        );
     }
 
     /// 测试无样式节点（no node_id）不产生任何填充。

@@ -118,10 +118,7 @@ mod tests {
     #[test]
     fn test_primitives_add_fill() {
         let mut p = RenderPrimitives::new();
-        p.add_fill(
-            Rect::new(0.0, 0.0, 100.0, 100.0),
-            Color::RED,
-        );
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 100.0), Color::RED);
         assert!(!p.is_empty());
         assert_eq!(p.fills.len(), 1);
         assert_eq!(p.glyphs.len(), 0);

@@ -10,7 +10,7 @@ name = "webview-demo"
 path = "src/main.rs"
 
 [dependencies]
-zero-webview-api = { workspace = true }
+zero-webview = { workspace = true }
 zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
 winit = { workspace = true }

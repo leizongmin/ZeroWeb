@@ -1,7 +1,7 @@
 //! DOM Document 实现 — 节点容器和树操作 API。
 
+use crate::mutation::{MutationObserver, MutationRecord, MutationType};
 use crate::node::*;
-use crate::mutation::{MutationRecord, MutationType, MutationObserver};
 use hashbrown::HashMap;
 use slotmap::SlotMap;
 
@@ -81,7 +81,11 @@ impl Document {
     pub fn create_element(&mut self, name: &str) -> NodeId {
         use markup5ever::{LocalName, Namespace, QualName};
 
-        let qual_name = QualName::new(None, Namespace::from("http://www.w3.org/1999/xhtml"), LocalName::from(name));
+        let qual_name = QualName::new(
+            None,
+            Namespace::from("http://www.w3.org/1999/xhtml"),
+            LocalName::from(name),
+        );
         self.create_element_with_qname(qual_name, Vec::new())
     }
 
@@ -92,13 +96,16 @@ impl Document {
         attrs: Vec<markup5ever::Attribute>,
     ) -> NodeId {
         let elem_data = ElementData::new(name, attrs);
-        let node_id = self.nodes.insert(NodeData::new(NodeKind::Element(elem_data)));
+        let node_id = self
+            .nodes
+            .insert(NodeData::new(NodeKind::Element(elem_data)));
 
         // 注册 id 映射
         if let Some(NodeKind::Element(elem)) = self.nodes.get(node_id).map(|n| &n.kind)
-            && let Some(id) = &elem.id {
-                self.id_map.insert(id.clone(), node_id);
-            }
+            && let Some(id) = &elem.id
+        {
+            self.id_map.insert(id.clone(), node_id);
+        }
 
         node_id
     }
@@ -117,8 +124,7 @@ impl Document {
 
     /// 创建一个新的文档片段。
     pub fn create_document_fragment(&mut self) -> NodeId {
-        self.nodes
-            .insert(NodeData::new(NodeKind::DocumentFragment))
+        self.nodes.insert(NodeData::new(NodeKind::DocumentFragment))
     }
 
     /// 创建一个文档类型声明节点。
@@ -128,13 +134,12 @@ impl Document {
         public_id: Option<String>,
         system_id: Option<String>,
     ) -> NodeId {
-        self.nodes.insert(NodeData::new(NodeKind::DocumentType(
-            DocumentTypeData {
+        self.nodes
+            .insert(NodeData::new(NodeKind::DocumentType(DocumentTypeData {
                 name: name.to_string(),
                 public_id,
                 system_id,
-            },
-        )))
+            })))
     }
 
     /// 创建一个处理指令节点。
@@ -376,23 +381,23 @@ impl Document {
 
         // 注册 id 映射（如果克隆的元素有 id）
         if let Some(NodeKind::Element(elem)) = self.nodes.get(new_id).map(|n| &n.kind)
-            && let Some(id) = &elem.id {
-                self.id_map.insert(id.clone(), new_id);
-            }
+            && let Some(id) = &elem.id
+        {
+            self.id_map.insert(id.clone(), new_id);
+        }
 
-        if deep
-            && let Some(children) = self.nodes.get(node).map(|n| n.children.clone()) {
-                for child in children {
-                    let cloned_child = self.clone_node(child, true);
-                    // 直接追加（不触发 mutation）
-                    if let Some(node_data) = self.nodes.get_mut(new_id) {
-                        node_data.children.push(cloned_child);
-                    }
-                    if let Some(child_data) = self.nodes.get_mut(cloned_child) {
-                        child_data.parent = Some(new_id);
-                    }
+        if deep && let Some(children) = self.nodes.get(node).map(|n| n.children.clone()) {
+            for child in children {
+                let cloned_child = self.clone_node(child, true);
+                // 直接追加（不触发 mutation）
+                if let Some(node_data) = self.nodes.get_mut(new_id) {
+                    node_data.children.push(cloned_child);
+                }
+                if let Some(child_data) = self.nodes.get_mut(cloned_child) {
+                    child_data.parent = Some(new_id);
                 }
             }
+        }
 
         new_id
     }
@@ -444,7 +449,10 @@ impl Document {
 
     /// 检查节点是否有子节点。
     pub fn has_child_nodes(&self, id: NodeId) -> bool {
-        self.nodes.get(id).map(|n| n.has_children()).unwrap_or(false)
+        self.nodes
+            .get(id)
+            .map(|n| n.has_children())
+            .unwrap_or(false)
     }
 
     // ── 文本内容 ────────────────────────────────────────────────
@@ -473,8 +481,7 @@ impl Document {
         if let Some(node_data) = self.nodes.get(id) {
             match &node_data.kind {
                 NodeKind::Text(_) => {
-                    if let Some(NodeKind::Text(data)) =
-                        self.nodes.get_mut(id).map(|n| &mut n.kind)
+                    if let Some(NodeKind::Text(data)) = self.nodes.get_mut(id).map(|n| &mut n.kind)
                     {
                         data.content = text.to_string();
                     }
@@ -534,9 +541,7 @@ impl Document {
     pub fn set_attribute(&mut self, id: NodeId, name: &str, value: &str) {
         let old_value = self.get_attribute(id, name);
 
-        if let Some(NodeKind::Element(elem)) =
-            self.nodes.get_mut(id).map(|n| &mut n.kind)
-        {
+        if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
             elem.set_attribute(name, value);
 
             // 更新 id 映射
@@ -564,16 +569,15 @@ impl Document {
     pub fn remove_attribute(&mut self, id: NodeId, name: &str) {
         let old_value = self.get_attribute(id, name);
 
-        if let Some(NodeKind::Element(elem)) =
-            self.nodes.get_mut(id).map(|n| &mut n.kind)
-        {
+        if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
             elem.remove_attribute(name);
 
             // 更新 id 映射
             if name == "id"
-                && let Some(old_id) = &old_value {
-                    self.id_map.remove(old_id);
-                }
+                && let Some(old_id) = &old_value
+            {
+                self.id_map.remove(old_id);
+            }
         }
 
         if old_value.is_some() {
@@ -591,18 +595,24 @@ impl Document {
 
     /// 检查元素节点是否有指定属性。
     pub fn has_attribute(&self, id: NodeId, name: &str) -> bool {
-        self.nodes.get(id).map(|n| match &n.kind {
-            NodeKind::Element(elem) => elem.has_attribute(name),
-            _ => false,
-        }).unwrap_or(false)
+        self.nodes
+            .get(id)
+            .map(|n| match &n.kind {
+                NodeKind::Element(elem) => elem.has_attribute(name),
+                _ => false,
+            })
+            .unwrap_or(false)
     }
 
     /// 获取元素节点的所有属性名。
     pub fn attribute_names(&self, id: NodeId) -> Vec<String> {
-        self.nodes.get(id).map(|n| match &n.kind {
-            NodeKind::Element(elem) => elem.attribute_names(),
-            _ => vec![],
-        }).unwrap_or_default()
+        self.nodes
+            .get(id)
+            .map(|n| match &n.kind {
+                NodeKind::Element(elem) => elem.attribute_names(),
+                _ => vec![],
+            })
+            .unwrap_or_default()
     }
 
     // ── 查询 ────────────────────────────────────────────────────
@@ -661,9 +671,7 @@ impl Document {
 
     /// 设置文档的 quirks mode。
     pub fn set_quirks_mode(&mut self, mode: QuirksMode) {
-        if let Some(NodeKind::Document(data)) =
-            self.nodes.get_mut(self.root).map(|n| &mut n.kind)
-        {
+        if let Some(NodeKind::Document(data)) = self.nodes.get_mut(self.root).map(|n| &mut n.kind) {
             data.quirks_mode = mode;
         }
     }
@@ -694,9 +702,10 @@ impl Document {
     fn detach(&mut self, id: NodeId) {
         let old_parent = self.nodes.get(id).and_then(|n| n.parent);
         if let Some(parent) = old_parent
-            && let Some(parent_data) = self.nodes.get_mut(parent) {
-                parent_data.children.retain(|&c| c != id);
-            }
+            && let Some(parent_data) = self.nodes.get_mut(parent)
+        {
+            parent_data.children.retain(|&c| c != id);
+        }
         if let Some(node_data) = self.nodes.get_mut(id) {
             node_data.parent = None;
         }
@@ -754,9 +763,10 @@ impl Document {
         };
 
         if let NodeKind::Element(elem) = &node_data.kind
-            && elem.local_name().eq_ignore_ascii_case(tag) {
-                result.push(id);
-            }
+            && elem.local_name().eq_ignore_ascii_case(tag)
+        {
+            result.push(id);
+        }
 
         for &child in &node_data.children.clone() {
             self.collect_by_tag_name(child, tag, result);
@@ -771,9 +781,10 @@ impl Document {
         };
 
         if let NodeKind::Element(elem) = &node_data.kind
-            && elem.class_list.iter().any(|c| c == class) {
-                result.push(id);
-            }
+            && elem.class_list.iter().any(|c| c == class)
+        {
+            result.push(id);
+        }
 
         for &child in &node_data.children.clone() {
             self.collect_by_class_name(child, class, result);
@@ -808,9 +819,10 @@ impl Document {
     ) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem) {
-                return Some(id);
-            }
+            && selector.matches(elem)
+        {
+            return Some(id);
+        }
         for &child in &node_data.children.clone() {
             if let Some(found) = self.find_first_matching(child, selector) {
                 return Some(found);
@@ -832,9 +844,10 @@ impl Document {
         };
 
         if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem) {
-                result.push(id);
-            }
+            && selector.matches(elem)
+        {
+            result.push(id);
+        }
 
         for &child in &node_data.children.clone() {
             self.collect_matching(child, selector, result);

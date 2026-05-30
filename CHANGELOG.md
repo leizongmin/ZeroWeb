@@ -15,7 +15,7 @@
 
 ## [0.1.0-alpha.0] - 2026-05-30
 
-这是 ZeroBrowser 工作区的首个公开预发布版本。
+这是 ZeroWeb 工作区的首个公开预发布版本。
 
 ### 新增
 
@@ -25,11 +25,11 @@
 - 新增 `css-parser` crate，覆盖 tokenizer、parser、selector 和 CSS 值解析。
 - 新增 `style-system` crate，覆盖 cascade、inheritance、computed values、selector matching 和 shorthand expansion。
 - 新增 `layout-engine` crate，在 `taffy` 之上整合 block / flex / grid 布局能力。
-- 新增 `engine-core` 渲染管线，覆盖 paint、dirty tracking 和 compositing 基础能力。
+- 新增 `engine` 渲染管线，覆盖 paint、dirty tracking 和 compositing 基础能力。
 - 新增 `net` 与 `security` crate，覆盖 URL、导航历史、Cookie、同源检查、CORS 和 CSP 基础能力。
 - 新增 `protocol` 与 `storage` crate，覆盖 IPC 消息、localStorage、sessionStorage 和 IndexedDB 基础能力。
 - 新增 `canvas` crate，提供 Canvas 2D 图元和绘制能力。
-- 新增 `webview-api` crate，作为可嵌入渲染和生命周期 API 的对外入口。
+- 新增 `webview` crate，作为可嵌入渲染和生命周期 API 的对外入口。
 - 新增基于 `wasmi` 的 `wasm-sandbox` crate。
 - 新增跨 crate 集成测试、criterion benchmarks 和 GitHub Actions CI。
 

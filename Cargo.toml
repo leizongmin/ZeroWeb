@@ -6,7 +6,7 @@ members = [
     "crates/css-parser",
     "crates/style-system",
     "crates/layout-engine",
-    "crates/engine-core",
+    "crates/engine",
     "crates/canvas",
 
     # 基础设施层
@@ -22,7 +22,7 @@ members = [
     "crates/wasm-sandbox",
 
     # API 层
-    "crates/webview-api",
+    "crates/webview",
     "crates/browser-shell",
 
     # 应用入口
@@ -95,7 +95,7 @@ zero-dom = { path = "crates/dom" }
 zero-css-parser = { path = "crates/css-parser" }
 zero-style-system = { path = "crates/style-system" }
 zero-layout-engine = { path = "crates/layout-engine" }
-zero-engine-core = { path = "crates/engine-core" }
+zero-engine = { path = "crates/engine" }
 zero-canvas = { path = "crates/canvas" }
 zero-render-foundation = { path = "crates/render-foundation" }
 zero-host-runtime = { path = "crates/host-runtime" }
@@ -105,5 +105,5 @@ zero-storage = { path = "crates/storage" }
 zero-protocol = { path = "crates/protocol" }
 zero-script-sandbox = { path = "crates/script-sandbox" }
 zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
-zero-webview-api = { path = "crates/webview-api" }
+zero-webview = { path = "crates/webview" }
 zero-browser-shell = { path = "crates/browser-shell" }

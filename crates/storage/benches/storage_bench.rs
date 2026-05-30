@@ -1,7 +1,7 @@
 //! 存储 crate 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use zero_storage::{StorageManager, IdbDatabase, IdbKey};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use zero_storage::{IdbDatabase, IdbKey, StorageManager};
 
 /// 基准：localStorage 批量写入
 fn bench_local_storage_write(c: &mut Criterion) {
@@ -10,7 +10,7 @@ fn bench_local_storage_write(c: &mut Criterion) {
             let mut mgr = StorageManager::new();
             let store = mgr.local_storage("https://example.com");
             for i in 0..1000u32 {
-                black_box(store.set(&format!("key_{i}"), &format!("value_{i}")));
+                let _ = black_box(store.set(&format!("key_{i}"), &format!("value_{i}")));
             }
         })
     });
@@ -22,7 +22,9 @@ fn bench_local_storage_read(c: &mut Criterion) {
         let mut mgr = StorageManager::new();
         let store = mgr.local_storage("https://example.com");
         for i in 0..1000u32 {
-            store.set(&format!("key_{i}"), &format!("value_{i}")).unwrap();
+            store
+                .set(&format!("key_{i}"), &format!("value_{i}"))
+                .unwrap();
         }
         b.iter(|| {
             for i in 0..1000u32 {
@@ -41,7 +43,7 @@ fn bench_indexeddb_write(c: &mut Criterion) {
             for i in 0..100u32 {
                 let key = IdbKey::Number(i as f64);
                 let val = serde_json::json!({"name": format!("item_{i}"), "value": i});
-                black_box(db.add("items", val, Some(key)));
+                let _ = black_box(db.add("items", val, Some(key)));
             }
         })
     });

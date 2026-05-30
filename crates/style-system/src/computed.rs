@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{parse_var, LengthValue};
+use zero_css_parser::values::{LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
 
@@ -109,11 +109,7 @@ fn find_matching_paren(s: &str, start: usize) -> Option<usize> {
         }
         i += 1;
     }
-    if depth == 0 {
-        Some(i - 1)
-    } else {
-        None
-    }
+    if depth == 0 { Some(i - 1) } else { None }
 }
 
 /// 解析 var() 内部内容。
@@ -173,14 +169,49 @@ pub fn resolve_computed_style(
     let mut resolved = style.clone();
 
     // 解析所有长度属性
-    resolve_length_field(&mut resolved.width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.height, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.min_width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.min_height, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.max_width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.max_height, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(
+        &mut resolved.width,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.height,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.min_width,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.min_height,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.max_width,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.max_height,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
 
-    resolve_length_field(&mut resolved.margin_top, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(
+        &mut resolved.margin_top,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
     resolve_length_field(
         &mut resolved.margin_right,
         font_size_px,
@@ -193,9 +224,19 @@ pub fn resolve_computed_style(
         viewport_width,
         viewport_height,
     );
-    resolve_length_field(&mut resolved.margin_left, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(
+        &mut resolved.margin_left,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
 
-    resolve_length_field(&mut resolved.padding_top, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(
+        &mut resolved.padding_top,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
     resolve_length_field(
         &mut resolved.padding_right,
         font_size_px,
@@ -265,12 +306,42 @@ pub fn resolve_computed_style(
         viewport_height,
     );
 
-    resolve_length_field(&mut resolved.top, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.right, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.bottom, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.left, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.gap, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.row_gap, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(
+        &mut resolved.top,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.right,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.bottom,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.left,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.gap,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+    resolve_length_field(
+        &mut resolved.row_gap,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
     resolve_length_field(
         &mut resolved.letter_spacing,
         font_size_px,
@@ -323,9 +394,7 @@ pub fn compute_value(
 }
 
 /// 从自定义属性中收集所有 -- 开头的属性。
-pub fn collect_custom_properties(
-    cascaded: &HashMap<String, String>,
-) -> HashMap<String, String> {
+pub fn collect_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<String, String> {
     cascaded
         .iter()
         .filter(|(k, _)| k.starts_with("--"))
@@ -334,6 +403,7 @@ pub fn collect_custom_properties(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::property::ComputedStyle;

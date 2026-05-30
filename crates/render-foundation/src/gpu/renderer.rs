@@ -78,10 +78,10 @@ impl GpuRenderer {
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("ZeroBrowser GPU Device (headless)"),
+                label: Some("ZeroWeb GPU Device (headless)"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
+                required_limits:
+                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -117,10 +117,10 @@ impl GpuRenderer {
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("ZeroBrowser GPU Device"),
+                label: Some("ZeroWeb GPU Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
+                required_limits:
+                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -228,7 +228,10 @@ impl GpuRenderer {
         y_offset: i16,
         advance: f32,
     ) -> Option<crate::gpu::atlas::AtlasPlacement> {
-        match self.atlas.place(key.clone(), width, height, x_offset, y_offset, advance) {
+        match self
+            .atlas
+            .place(key.clone(), width, height, x_offset, y_offset, advance)
+        {
             Some(result) => {
                 if result.is_new {
                     // 新 glyph — 上传到 GPU 纹理
@@ -318,13 +321,24 @@ impl GpuRenderer {
         let glyph_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = glyphs
             .iter()
             .filter_map(|gd| {
-                let cache_key = crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, gd.font_size);
+                let cache_key =
+                    crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, gd.font_size);
                 glyph_cache
                     .get_or_insert_with(cache_key, || {
                         font_loader.rasterize_glyph(gd.font_id, gd.ch, gd.font_size)
                     })
                     .ok()
-                    .map(|bitmap| (gd.ch, gd.x, gd.baseline_y, gd.color, gd.font_id, gd.font_size, bitmap.clone()))
+                    .map(|bitmap| {
+                        (
+                            gd.ch,
+                            gd.x,
+                            gd.baseline_y,
+                            gd.color,
+                            gd.font_id,
+                            gd.font_size,
+                            bitmap.clone(),
+                        )
+                    })
             })
             .collect();
 
@@ -418,11 +432,11 @@ impl GpuRenderer {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                let mut encoder = self
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Render Encoder"),
-                    });
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Render Encoder"),
+                        });
 
                 self.run_render_pass(
                     &mut encoder,
@@ -438,11 +452,11 @@ impl GpuRenderer {
             (None, Some(tex)) => {
                 // 无头模式
                 let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = self
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Render Encoder (headless)"),
-                    });
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Render Encoder (headless)"),
+                        });
 
                 self.run_render_pass(
                     &mut encoder,
@@ -547,7 +561,12 @@ fn create_headless_texture(
 fn create_atlas_resources(
     device: &wgpu::Device,
     atlas_bgl: &wgpu::BindGroupLayout,
-) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler, wgpu::BindGroup) {
+) -> (
+    wgpu::Texture,
+    wgpu::TextureView,
+    wgpu::Sampler,
+    wgpu::BindGroup,
+) {
     let texture = device.create_texture(&GlyphAtlas::texture_descriptor());
     let view = texture.create_view(&GlyphAtlas::view_descriptor());
 

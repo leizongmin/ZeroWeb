@@ -1,9 +1,7 @@
 //! 安全 crate 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use zero_security::{
-    check_cors, is_simple_request, CorsPolicy, ContentSecurityPolicy, Origin,
-};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use zero_security::{ContentSecurityPolicy, CorsPolicy, Origin, check_cors};
 
 /// 基准：Origin 解析
 fn bench_origin_parse(c: &mut Criterion) {
@@ -11,7 +9,7 @@ fn bench_origin_parse(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..1000u32 {
                 let url = format!("https://example{}.com/path?q={}", i % 100, i);
-                black_box(Origin::parse(&url));
+                let _ = black_box(Origin::parse(&url));
             }
         })
     });

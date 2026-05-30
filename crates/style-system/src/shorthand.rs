@@ -48,13 +48,23 @@ fn expand_one(
             let Some((t, r, b, l)) = parse_rect_values(value) else {
                 return vec![];
             };
-            vec![mk("margin-top", t), mk("margin-right", r), mk("margin-bottom", b), mk("margin-left", l)]
+            vec![
+                mk("margin-top", t),
+                mk("margin-right", r),
+                mk("margin-bottom", b),
+                mk("margin-left", l),
+            ]
         }
         "padding" => {
             let Some((t, r, b, l)) = parse_rect_values(value) else {
                 return vec![];
             };
-            vec![mk("padding-top", t), mk("padding-right", r), mk("padding-bottom", b), mk("padding-left", l)]
+            vec![
+                mk("padding-top", t),
+                mk("padding-right", r),
+                mk("padding-bottom", b),
+                mk("padding-left", l),
+            ]
         }
 
         // ── border 边简写 ──
@@ -93,10 +103,38 @@ fn expand_one(
         }
 
         // ── 单边 border 简写 ──
-        "border-top" => expand_border_side(value, "border-top-width", "border-top-style", "border-top-color", important, specificity),
-        "border-right" => expand_border_side(value, "border-right-width", "border-right-style", "border-right-color", important, specificity),
-        "border-bottom" => expand_border_side(value, "border-bottom-width", "border-bottom-style", "border-bottom-color", important, specificity),
-        "border-left" => expand_border_side(value, "border-left-width", "border-left-style", "border-left-color", important, specificity),
+        "border-top" => expand_border_side(
+            value,
+            "border-top-width",
+            "border-top-style",
+            "border-top-color",
+            important,
+            specificity,
+        ),
+        "border-right" => expand_border_side(
+            value,
+            "border-right-width",
+            "border-right-style",
+            "border-right-color",
+            important,
+            specificity,
+        ),
+        "border-bottom" => expand_border_side(
+            value,
+            "border-bottom-width",
+            "border-bottom-style",
+            "border-bottom-color",
+            important,
+            specificity,
+        ),
+        "border-left" => expand_border_side(
+            value,
+            "border-left-width",
+            "border-left-style",
+            "border-left-color",
+            important,
+            specificity,
+        ),
 
         // ── border 全写 ──
         "border" => expand_border_all(value, important, specificity),
@@ -127,20 +165,68 @@ fn expand_one(
         "transition" => expand_transition(value, important, specificity),
 
         // ── 逻辑属性简写 ──
-        "margin-block" => expand_axis_logical(value, "margin-block-start", "margin-block-end", important, specificity),
-        "margin-inline" => expand_axis_logical(value, "margin-inline-start", "margin-inline-end", important, specificity),
-        "padding-block" => expand_axis_logical(value, "padding-block-start", "padding-block-end", important, specificity),
-        "padding-inline" => expand_axis_logical(value, "padding-inline-start", "padding-inline-end", important, specificity),
-        "inset-block" => expand_axis_logical(value, "inset-block-start", "inset-block-end", important, specificity),
-        "inset-inline" => expand_axis_logical(value, "inset-inline-start", "inset-inline-end", important, specificity),
+        "margin-block" => expand_axis_logical(
+            value,
+            "margin-block-start",
+            "margin-block-end",
+            important,
+            specificity,
+        ),
+        "margin-inline" => expand_axis_logical(
+            value,
+            "margin-inline-start",
+            "margin-inline-end",
+            important,
+            specificity,
+        ),
+        "padding-block" => expand_axis_logical(
+            value,
+            "padding-block-start",
+            "padding-block-end",
+            important,
+            specificity,
+        ),
+        "padding-inline" => expand_axis_logical(
+            value,
+            "padding-inline-start",
+            "padding-inline-end",
+            important,
+            specificity,
+        ),
+        "inset-block" => expand_axis_logical(
+            value,
+            "inset-block-start",
+            "inset-block-end",
+            important,
+            specificity,
+        ),
+        "inset-inline" => expand_axis_logical(
+            value,
+            "inset-inline-start",
+            "inset-inline-end",
+            important,
+            specificity,
+        ),
 
         // ── animation 简写 ──
         // animation: name duration timing-function delay iteration-count direction fill-mode play-state
         "animation" => expand_animation(value, important, specificity),
 
         // ── Grid placement 简写 ──
-        "grid-column" => expand_grid_axis(value, "grid-column-start", "grid-column-end", important, specificity),
-        "grid-row" => expand_grid_axis(value, "grid-row-start", "grid-row-end", important, specificity),
+        "grid-column" => expand_grid_axis(
+            value,
+            "grid-column-start",
+            "grid-column-end",
+            important,
+            specificity,
+        ),
+        "grid-row" => expand_grid_axis(
+            value,
+            "grid-row-start",
+            "grid-row-end",
+            important,
+            specificity,
+        ),
         "grid-area" => expand_grid_area(value, important, specificity),
 
         // ── outline 简写 ──
@@ -174,7 +260,11 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
 /// 展开 border 全写（如 `border: 1px solid red`）。
 ///
 /// 将 `border` 展开为 12 个长属性（4 边 × width/style/color）。
-fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+fn expand_border_all(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
     let parsed = parse_border_shorthand(value);
     let mk = |prop: &str, val: &str| -> MatchingDecl {
         (prop.to_string(), val.to_string(), important, specificity)
@@ -236,15 +326,27 @@ fn parse_border_shorthand(value: &str) -> BorderShorthand {
         }
     }
 
-    BorderShorthand { width, style, color }
+    BorderShorthand {
+        width,
+        style,
+        color,
+    }
 }
 
 /// 检查字符串是否为 border-style 关键字。
 fn is_border_style_keyword(s: &str) -> bool {
     matches!(
         s,
-        "none" | "hidden" | "dotted" | "dashed" | "solid" | "double" | "groove" | "ridge"
-            | "inset" | "outset"
+        "none"
+            | "hidden"
+            | "dotted"
+            | "dashed"
+            | "solid"
+            | "double"
+            | "groove"
+            | "ridge"
+            | "inset"
+            | "outset"
     )
 }
 
@@ -280,21 +382,94 @@ fn looks_like_color(s: &str) -> bool {
     // CSS 命名颜色（常见子集）
     matches!(
         s,
-        "black" | "white" | "red" | "green" | "blue" | "yellow" | "orange" | "purple"
-            | "pink" | "brown" | "gray" | "grey" | "cyan" | "magenta" | "lime" | "maroon"
-            | "navy" | "olive" | "teal" | "aqua" | "fuchsia" | "silver" | "gold" | "indigo"
-            | "violet" | "coral" | "salmon" | "tomato" | "skyblue" | "tan" | "wheat"
-            | "khaki" | "beige" | "ivory" | "snow" | "linen" | "azure" | "lavender"
-            | "whitesmoke" | "gainsboro" | "lightgray" | "darkgray" | "dimgray"
-            | "darkred" | "darkgreen" | "darkblue" | "lightblue" | "lightgreen" | "lightcoral"
-            | "deeppink" | "hotpink" | "orangered" | "crimson" | "firebrick" | "chocolate"
-            | "sienna" | "peru" | "goldenrod" | "darkgoldenrod" | "greenyellow"
-            | "chartreuse" | "limegreen" | "palegreen" | "seagreen" | "forestgreen"
-            | "yellowgreen" | "olivedrab" | "darkolivegreen" | "darkcyan" | "darkseagreen"
-            | "lightseagreen" | "mediumseagreen" | "turquoise" | "darkturquoise"
-            | "paleturquoise" | "deepskyblue" | "dodgerblue" | "cornflowerblue"
-            | "royalblue" | "mediumblue" | "midnightblue" | "darkviolet" | "blueviolet"
-            | "mediumpurple" | "darkorchid" | "orchid" | "plum" | "currentcolor"
+        "black"
+            | "white"
+            | "red"
+            | "green"
+            | "blue"
+            | "yellow"
+            | "orange"
+            | "purple"
+            | "pink"
+            | "brown"
+            | "gray"
+            | "grey"
+            | "cyan"
+            | "magenta"
+            | "lime"
+            | "maroon"
+            | "navy"
+            | "olive"
+            | "teal"
+            | "aqua"
+            | "fuchsia"
+            | "silver"
+            | "gold"
+            | "indigo"
+            | "violet"
+            | "coral"
+            | "salmon"
+            | "tomato"
+            | "skyblue"
+            | "tan"
+            | "wheat"
+            | "khaki"
+            | "beige"
+            | "ivory"
+            | "snow"
+            | "linen"
+            | "azure"
+            | "lavender"
+            | "whitesmoke"
+            | "gainsboro"
+            | "lightgray"
+            | "darkgray"
+            | "dimgray"
+            | "darkred"
+            | "darkgreen"
+            | "darkblue"
+            | "lightblue"
+            | "lightgreen"
+            | "lightcoral"
+            | "deeppink"
+            | "hotpink"
+            | "orangered"
+            | "crimson"
+            | "firebrick"
+            | "chocolate"
+            | "sienna"
+            | "peru"
+            | "goldenrod"
+            | "darkgoldenrod"
+            | "greenyellow"
+            | "chartreuse"
+            | "limegreen"
+            | "palegreen"
+            | "seagreen"
+            | "forestgreen"
+            | "yellowgreen"
+            | "olivedrab"
+            | "darkolivegreen"
+            | "darkcyan"
+            | "darkseagreen"
+            | "lightseagreen"
+            | "mediumseagreen"
+            | "turquoise"
+            | "darkturquoise"
+            | "paleturquoise"
+            | "deepskyblue"
+            | "dodgerblue"
+            | "cornflowerblue"
+            | "royalblue"
+            | "mediumblue"
+            | "midnightblue"
+            | "darkviolet"
+            | "blueviolet"
+            | "mediumpurple"
+            | "darkorchid"
+            | "orchid"
+            | "plum"
+            | "currentcolor"
             | "transparent"
     )
 }
@@ -302,7 +477,11 @@ fn looks_like_color(s: &str) -> bool {
 /// 展开 border-radius 简写。
 ///
 /// 支持 1-4 值模式，与 4 边简写相同。
-fn expand_border_radius(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+fn expand_border_radius(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
     let Some((tl, tr, br, bl)) = parse_rect_values(value) else {
         return vec![];
     };
@@ -331,20 +510,44 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     };
 
     if value == "none" {
-        return vec![mk("flex-grow", "0"), mk("flex-shrink", "0"), mk("flex-basis", "auto")];
+        return vec![
+            mk("flex-grow", "0"),
+            mk("flex-shrink", "0"),
+            mk("flex-basis", "auto"),
+        ];
     }
     if value == "auto" {
-        return vec![mk("flex-grow", "1"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
+        return vec![
+            mk("flex-grow", "1"),
+            mk("flex-shrink", "1"),
+            mk("flex-basis", "auto"),
+        ];
     }
     if value == "initial" {
-        return vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
+        return vec![
+            mk("flex-grow", "0"),
+            mk("flex-shrink", "1"),
+            mk("flex-basis", "auto"),
+        ];
     }
 
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
-        1 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", "1"), mk("flex-basis", "0")],
-        2 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", parts[1]), mk("flex-basis", "0")],
-        3 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", parts[1]), mk("flex-basis", parts[2])],
+        1 => vec![
+            mk("flex-grow", parts[0]),
+            mk("flex-shrink", "1"),
+            mk("flex-basis", "0"),
+        ],
+        2 => vec![
+            mk("flex-grow", parts[0]),
+            mk("flex-shrink", parts[1]),
+            mk("flex-basis", "0"),
+        ],
+        3 => vec![
+            mk("flex-grow", parts[0]),
+            mk("flex-shrink", parts[1]),
+            mk("flex-basis", parts[2]),
+        ],
         _ => vec![],
     }
 }
@@ -358,7 +561,11 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 /// - 时间值（带 s/ms 后缀）→ duration 或 delay
 /// - timing-function 关键字 → timing-function
 /// - 其他 → property
-fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+fn expand_transition(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl {
         (prop.to_string(), val.to_string(), important, specificity)
@@ -394,7 +601,10 @@ fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32))
             } else {
                 delay = t;
             }
-        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+        } else if is_timing_function_keyword(t)
+            || t.starts_with("cubic-bezier(")
+            || t.starts_with("steps(")
+        {
             timing = t;
         } else {
             property = t;
@@ -411,13 +621,20 @@ fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32))
 
 /// 检查字符串是否为 CSS 时间值。
 fn is_time_value(s: &str) -> bool {
-    s.ends_with("ms") || (s.ends_with('s') && !s.ends_with("ease"))
-        && s.trim_end_matches("ms").trim_end_matches('s').parse::<f64>().is_ok()
+    s.ends_with("ms")
+        || (s.ends_with('s') && !s.ends_with("ease"))
+            && s.trim_end_matches("ms")
+                .trim_end_matches('s')
+                .parse::<f64>()
+                .is_ok()
 }
 
 /// 检查字符串是否为 timing-function 关键字。
 fn is_timing_function_keyword(s: &str) -> bool {
-    matches!(s, "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end")
+    matches!(
+        s,
+        "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
+    )
 }
 
 /// 按空格分割字符串，但保留括号内的内容不分割。
@@ -460,7 +677,11 @@ fn split_outside_parens(s: &str) -> Vec<String> {
 /// `animation: [name] [duration] [timing-function] [delay] [iteration-count] [direction] [fill-mode] [play-state]`
 ///
 /// 简化实现：按空格分割，根据值的类型推断对应的子属性。
-fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+fn expand_animation(
+    value: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl {
         (prop.to_string(), val.to_string(), important, specificity)
@@ -505,7 +726,10 @@ fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) 
             } else if found_time_count == 2 {
                 delay = t;
             }
-        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+        } else if is_timing_function_keyword(t)
+            || t.starts_with("cubic-bezier(")
+            || t.starts_with("steps(")
+        {
             timing = t;
         } else if t == "infinite" {
             iteration_count = "infinite";
@@ -717,28 +941,64 @@ mod tests {
     fn test_margin_2_values() {
         let result = expand_one("margin", "10px 20px", false, (0, 0, 1));
         assert_eq!(result.len(), 4);
-        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
-        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
-        assert_eq!(result[2], ("margin-bottom".into(), "10px".into(), false, (0, 0, 1)));
-        assert_eq!(result[3], ("margin-left".into(), "20px".into(), false, (0, 0, 1)));
+        assert_eq!(
+            result[0],
+            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[1],
+            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[2],
+            ("margin-bottom".into(), "10px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[3],
+            ("margin-left".into(), "20px".into(), false, (0, 0, 1))
+        );
     }
 
     #[test]
     fn test_margin_3_values() {
         let result = expand_one("margin", "10px 20px 30px", false, (0, 0, 1));
-        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
-        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
-        assert_eq!(result[2], ("margin-bottom".into(), "30px".into(), false, (0, 0, 1)));
-        assert_eq!(result[3], ("margin-left".into(), "20px".into(), false, (0, 0, 1)));
+        assert_eq!(
+            result[0],
+            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[1],
+            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[2],
+            ("margin-bottom".into(), "30px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[3],
+            ("margin-left".into(), "20px".into(), false, (0, 0, 1))
+        );
     }
 
     #[test]
     fn test_margin_4_values() {
         let result = expand_one("margin", "10px 20px 30px 40px", false, (0, 0, 1));
-        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
-        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
-        assert_eq!(result[2], ("margin-bottom".into(), "30px".into(), false, (0, 0, 1)));
-        assert_eq!(result[3], ("margin-left".into(), "40px".into(), false, (0, 0, 1)));
+        assert_eq!(
+            result[0],
+            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[1],
+            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[2],
+            ("margin-bottom".into(), "30px".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[3],
+            ("margin-left".into(), "40px".into(), false, (0, 0, 1))
+        );
     }
 
     // ── padding 简写测试 ──
@@ -767,7 +1027,12 @@ mod tests {
         let props: Vec<&str> = result.iter().map(|(p, _, _, _)| p.as_str()).collect();
         assert_eq!(
             props,
-            vec!["border-top-width", "border-right-width", "border-bottom-width", "border-left-width"]
+            vec![
+                "border-top-width",
+                "border-right-width",
+                "border-bottom-width",
+                "border-left-width"
+            ]
         );
         assert_eq!(result[0].1, "1px");
         assert_eq!(result[1].1, "2px");
@@ -912,9 +1177,18 @@ mod tests {
     fn test_flex_none() {
         let result = expand_one("flex", "none", false, (0, 0, 1));
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0], ("flex-grow".into(), "0".into(), false, (0, 0, 1)));
-        assert_eq!(result[1], ("flex-shrink".into(), "0".into(), false, (0, 0, 1)));
-        assert_eq!(result[2], ("flex-basis".into(), "auto".into(), false, (0, 0, 1)));
+        assert_eq!(
+            result[0],
+            ("flex-grow".into(), "0".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[1],
+            ("flex-shrink".into(), "0".into(), false, (0, 0, 1))
+        );
+        assert_eq!(
+            result[2],
+            ("flex-basis".into(), "auto".into(), false, (0, 0, 1))
+        );
     }
 
     #[test]
@@ -1268,11 +1542,11 @@ mod tests {
             (0, 0, 1),
         );
         assert_eq!(result.len(), 8);
-        assert_eq!(result[0].1, "slideIn");  // name
-        assert_eq!(result[1].1, "0.3s");     // duration
-        assert_eq!(result[2].1, "ease-in");  // timing
-        assert_eq!(result[3].1, "0.1s");     // delay
-        assert_eq!(result[4].1, "3");        // iteration-count
+        assert_eq!(result[0].1, "slideIn"); // name
+        assert_eq!(result[1].1, "0.3s"); // duration
+        assert_eq!(result[2].1, "ease-in"); // timing
+        assert_eq!(result[3].1, "0.1s"); // delay
+        assert_eq!(result[4].1, "3"); // iteration-count
         assert_eq!(result[5].1, "alternate"); // direction
         assert_eq!(result[6].1, "forwards"); // fill-mode
     }
@@ -1351,8 +1625,8 @@ mod tests {
     fn test_grid_area_shorthand_2_values() {
         let result = expand_one("grid-area", "1 / 3", false, (0, 0, 1));
         assert_eq!(result.len(), 4);
-        assert_eq!(result[0].1, "1");      // row-start
-        assert_eq!(result[2].1, "3");      // col-start
+        assert_eq!(result[0].1, "1"); // row-start
+        assert_eq!(result[2].1, "3"); // col-start
     }
 
     #[test]
@@ -1408,7 +1682,7 @@ mod tests {
     fn test_outline_shorthand_only_style() {
         let result = expand_one("outline", "dashed", false, (0, 0, 1));
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].1, "0px");    // default width
+        assert_eq!(result[0].1, "0px"); // default width
         assert_eq!(result[1].1, "dashed"); // style
         assert_eq!(result[2].1, "currentcolor"); // default color
     }
@@ -1424,7 +1698,7 @@ mod tests {
     fn test_outline_shorthand_color_and_width() {
         let result = expand_one("outline", "#ff0000 1px", false, (0, 0, 1));
         assert_eq!(result[0].1, "1px");
-        assert_eq!(result[1].1, "none");      // default style
+        assert_eq!(result[1].1, "none"); // default style
         assert_eq!(result[2].1, "#ff0000");
     }
 

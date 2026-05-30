@@ -14,7 +14,10 @@ fn test_create_document() {
     assert!(doc.root().is_valid());
     assert_eq!(doc.node_count(), 1);
     let root = doc.root();
-    assert!(matches!(doc.get(root).map(|n| &n.kind), Some(NodeKind::Document(_))));
+    assert!(matches!(
+        doc.get(root).map(|n| &n.kind),
+        Some(NodeKind::Document(_))
+    ));
 }
 
 #[test]
@@ -22,7 +25,10 @@ fn test_create_element() {
     let mut doc = Document::new();
     let elem = doc.create_element("div");
     assert!(doc.contains(elem));
-    assert!(matches!(doc.get(elem).map(|n| &n.kind), Some(NodeKind::Element(_))));
+    assert!(matches!(
+        doc.get(elem).map(|n| &n.kind),
+        Some(NodeKind::Element(_))
+    ));
     if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
         assert_eq!(e.local_name(), "div");
     }
@@ -53,7 +59,10 @@ fn test_create_document_fragment() {
     let mut doc = Document::new();
     let frag = doc.create_document_fragment();
     assert!(doc.contains(frag));
-    assert!(matches!(doc.get(frag).map(|n| &n.kind), Some(NodeKind::DocumentFragment)));
+    assert!(matches!(
+        doc.get(frag).map(|n| &n.kind),
+        Some(NodeKind::DocumentFragment)
+    ));
 }
 
 #[test]
@@ -327,7 +336,10 @@ fn test_set_get_attribute() {
     let elem = doc.create_element("div");
 
     doc.set_attribute(elem, "class", "container");
-    assert_eq!(doc.get_attribute(elem, "class"), Some("container".to_string()));
+    assert_eq!(
+        doc.get_attribute(elem, "class"),
+        Some("container".to_string())
+    );
     assert_eq!(doc.get_attribute(elem, "id"), None);
 }
 
@@ -481,19 +493,26 @@ fn test_parse_html_with_doctype() {
     let first_child = doc.first_child(root);
     assert!(first_child.is_some());
     if let Some(fc) = first_child {
-        assert!(matches!(doc.get(fc).map(|n| &n.kind), Some(NodeKind::DocumentType(_))));
+        assert!(matches!(
+            doc.get(fc).map(|n| &n.kind),
+            Some(NodeKind::DocumentType(_))
+        ));
     }
 }
 
 #[test]
 fn test_parse_html_with_attributes() {
-    let doc = parse_html("<html><body><div id=\"main\" class=\"container\">text</div></body></html>");
+    let doc =
+        parse_html("<html><body><div id=\"main\" class=\"container\">text</div></body></html>");
     let divs = doc.get_elements_by_tag_name("div");
     assert_eq!(divs.len(), 1);
 
     let div = divs[0];
     assert_eq!(doc.get_attribute(div, "id"), Some("main".to_string()));
-    assert_eq!(doc.get_attribute(div, "class"), Some("container".to_string()));
+    assert_eq!(
+        doc.get_attribute(div, "class"),
+        Some("container".to_string())
+    );
 }
 
 #[test]
@@ -551,7 +570,10 @@ fn test_get_element_by_id() {
     let doc = parse_html("<html><body><div id=\"main\">content</div></body></html>");
     let elem = doc.get_element_by_id("main");
     assert!(elem.is_some());
-    assert_eq!(doc.get_attribute(elem.unwrap(), "id"), Some("main".to_string()));
+    assert_eq!(
+        doc.get_attribute(elem.unwrap(), "id"),
+        Some("main".to_string())
+    );
 }
 
 #[test]
@@ -579,7 +601,9 @@ fn test_get_elements_by_tag_name_case_insensitive() {
 
 #[test]
 fn test_get_elements_by_class_name() {
-    let doc = parse_html("<html><body><div class=\"item\">a</div><div class=\"item\">b</div></body></html>");
+    let doc = parse_html(
+        "<html><body><div class=\"item\">a</div><div class=\"item\">b</div></body></html>",
+    );
     let items = doc.get_elements_by_class_name("item");
     assert_eq!(items.len(), 2);
 }
@@ -612,7 +636,8 @@ fn test_query_selector_class() {
 
 #[test]
 fn test_query_selector_attribute() {
-    let doc = parse_html("<html><body><input type=\"text\" /><input type=\"password\" /></body></html>");
+    let doc =
+        parse_html("<html><body><input type=\"text\" /><input type=\"password\" /></body></html>");
     let root = doc.root();
     let result = doc.query_selector(root, "[type=text]");
     assert!(result.is_some());
@@ -779,9 +804,7 @@ fn test_mutation_observer_callback() {
 
     let observer = MutationObserver::new(Box::new(move |records: &[MutationRecord]| {
         for r in records {
-            received_clone
-                .borrow_mut()
-                .push(r.mutation_type.clone());
+            received_clone.borrow_mut().push(r.mutation_type.clone());
         }
     }));
 
@@ -830,7 +853,10 @@ fn test_deep_nesting() {
     }
 
     // 验证最深层的文本内容
-    assert_eq!(doc.get_attribute(current, "data-depth"), Some("99".to_string()));
+    assert_eq!(
+        doc.get_attribute(current, "data-depth"),
+        Some("99".to_string())
+    );
     assert_eq!(doc.node_count(), 101); // 1 document + 100 divs
 }
 
@@ -899,7 +925,8 @@ fn test_node_not_found_error() {
 
 #[test]
 fn test_multiple_id_attribute() {
-    let doc = parse_html("<html><body><div id=\"first\">a</div><div id=\"second\">b</div></body></html>");
+    let doc =
+        parse_html("<html><body><div id=\"first\">a</div><div id=\"second\">b</div></body></html>");
     assert!(doc.get_element_by_id("first").is_some());
     assert!(doc.get_element_by_id("second").is_some());
     assert!(doc.get_element_by_id("third").is_none());
@@ -911,7 +938,9 @@ fn test_multiple_id_attribute() {
 
 #[test]
 fn test_query_selector_combined() {
-    let doc = parse_html("<html><body><div id=\"main\" class=\"container active\"><p>text</p></div></body></html>");
+    let doc = parse_html(
+        "<html><body><div id=\"main\" class=\"container active\"><p>text</p></div></body></html>",
+    );
     let root = doc.root();
 
     // 组合选择器
@@ -951,7 +980,10 @@ fn test_inner_vs_outer_html_distinct() {
 
     let outer = doc.outer_html(div);
     let inner = doc.inner_html(div);
-    assert!(outer.starts_with("<div>"), "outer should include the element tag");
+    assert!(
+        outer.starts_with("<div>"),
+        "outer should include the element tag"
+    );
     assert!(outer.ends_with("</div>"));
     assert_eq!(inner, "hello", "inner should only have children");
 }
@@ -984,7 +1016,10 @@ fn test_serialize_attribute_escaping() {
     doc.append_child(root, div).unwrap();
 
     let html = doc.outer_html(div);
-    assert!(html.contains("&quot;"), "should escape quotes in attributes");
+    assert!(
+        html.contains("&quot;"),
+        "should escape quotes in attributes"
+    );
     assert!(html.contains("&amp;"), "should escape & in attributes");
 }
 
@@ -994,7 +1029,10 @@ fn test_serialize_orphan_node() {
     let mut doc = Document::new();
     let orphan = doc.create_element("div");
     let html = doc.outer_html(orphan);
-    assert!(html.contains("<div"), "orphan node should still serialize, got: {html}");
+    assert!(
+        html.contains("<div"),
+        "orphan node should still serialize, got: {html}"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1095,9 +1133,13 @@ fn test_mutation_observer_repeated_notify() {
         old_value: None,
     };
 
-    observer.notify(&[record.clone()]);
+    observer.notify(std::slice::from_ref(&record));
     observer.notify(&[record.clone(), record.clone()]);
-    assert_eq!(*count.lock().unwrap(), 3, "should have received 3 total records");
+    assert_eq!(
+        *count.lock().unwrap(),
+        3,
+        "should have received 3 total records"
+    );
 }
 
 /// 测试 CharacterData mutation type 记录。
@@ -1121,7 +1163,10 @@ fn test_mutation_character_data_record() {
         old_value: Some("old text".to_string()),
     };
     observer.notify(&[record]);
-    assert_eq!(*received_type.lock().unwrap(), Some(MutationType::CharacterData));
+    assert_eq!(
+        *received_type.lock().unwrap(),
+        Some(MutationType::CharacterData)
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1269,7 +1314,6 @@ fn test_replace_child_reparenting() {
 #[test]
 fn test_remove_child_nonexistent() {
     let mut doc = Document::new();
-    let root = doc.root();
     let elem = doc.create_element("div");
     let orphan = doc.create_element("span");
     // orphan 从未被 append 到 elem

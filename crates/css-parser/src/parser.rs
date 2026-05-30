@@ -444,10 +444,7 @@ impl<'a> Parser<'a> {
 
         // 收集 nth 表达式的文本
         let mut expr = String::new();
-        while !matches!(
-            self.peek(),
-            Token::RParen | Token::Eof
-        ) {
+        while !matches!(self.peek(), Token::RParen | Token::Eof) {
             match self.peek() {
                 Token::Whitespace => {
                     if !expr.is_empty() && !expr.ends_with(' ') {

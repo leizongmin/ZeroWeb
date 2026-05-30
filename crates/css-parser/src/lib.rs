@@ -15,18 +15,18 @@
 
 #![warn(missing_docs)]
 
-pub mod tokenizer;
 pub mod ast;
-pub mod selector;
-pub mod values;
-pub mod parser;
 pub mod media_query;
+pub mod parser;
+pub mod selector;
+pub mod tokenizer;
+pub mod values;
 
-pub use tokenizer::{Token, Tokenizer};
 pub use ast::*;
-pub use selector::*;
-pub use parser::Parser;
 pub use media_query::*;
+pub use parser::Parser;
+pub use selector::*;
+pub use tokenizer::{Token, Tokenizer};
 
 #[cfg(test)]
 mod tests;

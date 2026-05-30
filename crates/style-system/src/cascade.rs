@@ -86,12 +86,12 @@ impl CascadeOrder {
         let layer_idx = self.layer_index.unwrap_or(0);
 
         (
-            self.important,          // 1. important > normal
-            origin_priority,         // 2. 来源优先级
-            is_unlayered,            // 3. unlayered > layered
-            layer_idx,               // 4. later layer > earlier
-            self.specificity,        // 5. higher specificity
-            self.position,           // 6. later position
+            self.important,   // 1. important > normal
+            origin_priority,  // 2. 来源优先级
+            is_unlayered,     // 3. unlayered > layered
+            layer_idx,        // 4. later layer > earlier
+            self.specificity, // 5. higher specificity
+            self.position,    // 6. later position
         )
     }
 }

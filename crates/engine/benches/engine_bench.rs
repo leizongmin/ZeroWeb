@@ -1,20 +1,23 @@
 //! Engine-core 基准测试 — 绘制、脏区域追踪、合成层分析、端到端管线。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::collections::HashMap;
 
 use zero_css_parser::values::ColorValue;
 use zero_dom::Document;
-use zero_layout_engine::types::OverflowClip;
+use zero_engine::{DirtyTracker, Painter, RenderPipeline, promote_compositing_layers};
 use zero_layout_engine::LayoutBox;
+use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
 use zero_style_system::ComputedStyle;
-use zero_engine_core::{Painter, DirtyTracker, promote_compositing_layers, RenderPipeline};
 
 // ── 辅助函数 ──────────────────────────────────────────────────────
 
 /// 创建扁平的 LayoutBox 树（N 个子节点）。
-fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero_dom::NodeId, ComputedStyle>) {
+fn make_flat_layout(
+    n: usize,
+    with_background: bool,
+) -> (LayoutBox, HashMap<zero_dom::NodeId, ComputedStyle>) {
     let mut doc = Document::new();
     let root = doc.root();
     let html = doc.create_element("html");
@@ -153,7 +156,10 @@ fn bench_compositing_layer_analysis(c: &mut Criterion) {
     let (layout, styles) = make_flat_layout(200, false);
     c.bench_function("compositing_layer_analysis_200", |b| {
         b.iter(|| {
-            black_box(promote_compositing_layers(black_box(&layout), black_box(&styles)));
+            black_box(promote_compositing_layers(
+                black_box(&layout),
+                black_box(&styles),
+            ));
         })
     });
 }

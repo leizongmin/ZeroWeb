@@ -1,4 +1,4 @@
-//! # zero-webview-api
+//! # zero-webview
 //!
 //! 面向外部应用的稳定嵌入接口。
 //!
@@ -69,10 +69,7 @@ mod tests {
         assert_eq!(wv.config().width, 1024);
         assert_eq!(wv.config().height, 768);
         assert!(wv.config().transparent);
-        assert_eq!(
-            wv.config().user_agent.as_deref(),
-            Some("TestAgent/1.0")
-        );
+        assert_eq!(wv.config().user_agent.as_deref(), Some("TestAgent/1.0"));
         assert!(wv.config().devtools);
     }
 
@@ -340,7 +337,7 @@ mod tests {
     fn test_webview_load_html_updates_last_render() {
         let mut wv = WebView::new(WebViewConfig::default());
         wv.load_html("<html><body>First</body></html>", None);
-        let first_timing = wv.last_render().unwrap().timings.total_ms;
+        let _first_timing = wv.last_render().unwrap().timings.total_ms;
         wv.load_html("<html><body>Second</body></html>", None);
         // last_render 应反映最近一次调用
         assert!(wv.last_render().is_some());

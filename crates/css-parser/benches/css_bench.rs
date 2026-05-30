@@ -1,6 +1,6 @@
 //! CSS 解析器性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use zero_css_parser::{Parser, Tokenizer, selector};
 
 /// 生成一个包含多个选择器和声明的基础 CSS 文档。
@@ -103,16 +103,12 @@ fn bench_css_parse_by_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("css_parse_by_size");
     for size in [100, 500, 1000, 5000] {
         let css = generate_base_css(size);
-        group.bench_with_input(
-            BenchmarkId::new("rules", size),
-            &css,
-            |b, css| {
-                b.iter(|| {
-                    let stylesheet = Parser::parse_stylesheet(black_box(css));
-                    black_box(&stylesheet);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("rules", size), &css, |b, css| {
+            b.iter(|| {
+                let stylesheet = Parser::parse_stylesheet(black_box(css));
+                black_box(&stylesheet);
+            });
+        });
     }
     group.finish();
 }
@@ -149,17 +145,15 @@ fn bench_specificity(c: &mut Criterion) {
     let css = "div#main.container > nav ul li.active a:hover";
     let stylesheet = Parser::parse_stylesheet(css);
 
-    if let Some(rule) = stylesheet.rules.first() {
-        if let zero_css_parser::ast::Rule::Style(style_rule) = rule {
-            if let Some(sel) = style_rule.selectors.first() {
-                c.bench_function("specificity_complex_selector", |b| {
-                    b.iter(|| {
-                        let spec = selector::specificity(black_box(sel));
-                        black_box(spec);
-                    });
-                });
-            }
-        }
+    if let Some(zero_css_parser::ast::Rule::Style(style_rule)) = stylesheet.rules.first()
+        && let Some(sel) = style_rule.selectors.first()
+    {
+        c.bench_function("specificity_complex_selector", |b| {
+            b.iter(|| {
+                let spec = selector::specificity(black_box(sel));
+                black_box(spec);
+            });
+        });
     }
 }
 

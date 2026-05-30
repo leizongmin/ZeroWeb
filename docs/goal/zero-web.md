@@ -1,4 +1,4 @@
-# ZeroBrowser: 基于 Rust 的跨平台浏览器 — 目标执行契约
+# ZeroWeb: 基于 Rust 的跨平台浏览器 — 目标执行契约
 
 **版本**: v1.0
 **日期**: 2026-05-30
@@ -6,7 +6,7 @@
 **执行模式**: 长期无人值守持续执行（rally run）
 
 > **说明**
-> 本文是 ZeroBrowser 的长期目标执行契约，用于定义目标状态和自动推进条件；它不是当前仓库已达到生产可用、可商用或其他生产级别的声明。当前项目仍是实验性项目，默认仅供学习、研究和工程探索使用。
+> 本文是 ZeroWeb 的长期目标执行契约，用于定义目标状态和自动推进条件；它不是当前仓库已达到生产可用、可商用或其他生产级别的声明。当前项目仍是实验性项目，默认仅供学习、研究和工程探索使用。
 
 ---
 
@@ -177,10 +177,10 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 ## 项目分层架构
 
 ```
-zero-browser/
+zero-web/
 ├── crates/
-│   ├── webview-api/           # 面向外部应用的稳定嵌入接口
-│   ├── engine-core/           # 页面内核：HTML/DOM/CSSOM/样式/布局/绘制/脚本
+│   ├── webview/           # 面向外部应用的稳定嵌入接口
+│   ├── engine/           # 页面内核：HTML/DOM/CSSOM/样式/布局/绘制/脚本
 │   ├── host-runtime/          # 平台宿主：窗口、事件循环、surface、输入法
 │   ├── render-foundation/     # 渲染基础设施：GPU/CPU 渲染、字体、图片缓存
 │   ├── script-sandbox/        # 扩展/用户脚本引擎（V8/QuickJS feature gate）
@@ -222,7 +222,7 @@ zero-browser/
 - [ ] 完整的 Cargo workspace 结构，所有 crate 骨架就位
 - [ ] `render-foundation` crate 从 OmniTerm 迁移并适配（GPU/CPU 双路径、字体栈、图片缓存）
 - [ ] `host-runtime` crate 支持 winit 窗口创建和事件循环
-- [ ] 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本（"Hello ZeroBrowser"）
+- [ ] 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本（"Hello ZeroWeb"）
 - [ ] 所有 crate 编译通过，`cargo clippy` 无警告
 - [ ] `render-foundation` 单元测试：覆盖 glyph 渲染、脏区域检测、字体 fallback、GPU vs CPU 结果一致性（≥20 个测试用例）
 - [ ] criterion 基准基础设施就位：`tests/benchmarks/` 目录结构、`scripts/run-benchmarks.sh`
@@ -341,7 +341,7 @@ zero-browser/
 **目标**：集成 V8 引擎，实现 JS 执行和完整的 DOM API。
 
 **交付物**：
-- [ ] V8 引擎通过 `rusty_v8` 集成到 `engine-core`
+- [ ] V8 引擎通过 `rusty_v8` 集成到 `engine`
 - [ ] JS → DOM bindings（`document.getElementById`、`querySelector`/`querySelectorAll`、`innerHTML`/`textContent`、`createElement`、`setAttribute`、DOM 树操作全量）
 - [ ] 事件系统（`addEventListener`、`removeEventListener`、事件冒泡/捕获、自定义事件、焦点事件、输入事件）
 - [ ] HTML spec event loop 集成（microtask、task、requestAnimationFrame、requestIdleCallback）
@@ -443,7 +443,7 @@ zero-browser/
 
 ### M10: WebView 库 API 稳定化
 
-**目标**：`webview-api` crate 达到可嵌入级别，其他应用可以集成使用。浏览器应用将基于此 API 构建。
+**目标**：`webview` crate 达到可嵌入级别，其他应用可以集成使用。浏览器应用将基于此 API 构建。
 
 **交付物**：
 - [ ] 稳定的 Rust API：创建 WebView、导航、注入 JS、回调
@@ -451,7 +451,7 @@ zero-browser/
 - [ ] 脚本桥（Rust ↔ JS 双向调用）
 - [ ] 嵌入示例代码（`apps/webview-demo/`）
 - [ ] API 文档和使用指南
-- [ ] 确认 browser-shell 将作为 webview-api 的消费者构建
+- [ ] 确认 browser-shell 将作为 webview 的消费者构建
 
 **验收标准**：
 - 可以创建独立的 Rust 项目，添加 webview 依赖后即可嵌入网页渲染
@@ -463,7 +463,7 @@ zero-browser/
 
 ### M11: 浏览器应用
 
-**目标**：构建完整的桌面浏览器应用（基于 webview-api）。
+**目标**：构建完整的桌面浏览器应用（基于 webview）。
 
 **交付物**：
 - [ ] 多标签页管理（创建、关闭、切换、拖拽排序）
@@ -630,7 +630,7 @@ tests/benchmarks/
 | `style-system` | 样式计算耗时（1000 元素页面级联）、自定义属性解析 | M3 |
 | `layout-engine` | Block/Inline/Flexbox/Grid 各模式（1000 元素）、增量重算 vs 全量重算 | M4 |
 | `render-foundation` (paint) | 绘制命令生成耗时、GPU 合成帧耗时 | M5 |
-| `engine-core` (JS) | Rust↔V8 桥调用开销、DOM 操作吞吐量、事件分发延迟 | M6 |
+| `engine` (JS) | Rust↔V8 桥调用开销、DOM 操作吞吐量、事件分发延迟 | M6 |
 | `net` | HTTP 请求延迟、资源加载吞吐量 | M7 |
 | `canvas` | 1000 矩形绘制、文本渲染、getImageData 耗时 | M9 |
 | 端到端 | 完整页面加载耗时（各阶段分解） | M5+ |
@@ -656,7 +656,7 @@ tests/benchmarks/
 
 - **目标**：核心 crate（dom、css-parser、style-system、layout-engine、canvas、security）行覆盖率 ≥ 70%；其他 crate ≥ 50%
 - **测量**：`cargo-llvm-cov` 或 `tarpaulin`，通过 `scripts/check-coverage.sh` 一键运行
-- **报告**：每轮记录覆盖率数据到 `docs/goal/zero-browser/master.md`
+- **报告**：每轮记录覆盖率数据到 `docs/goal/zero-web/master.md`
 - **持续扩展**：覆盖率提升是主线任务的一部分，不是附加工作
 - **不伪装合规**：不允许通过缩小测量范围来"达标"
 
@@ -694,14 +694,14 @@ tests/benchmarks/
 
 #### 入口文档（稳定、不频繁修改）
 
-- **路径**：`docs/goal/zero-browser.md`（本文件）
+- **路径**：`docs/goal/zero-web.md`（本文件）
 - **职责**：定义长期 Mission、Done Criteria、执行协议、文档治理规则
 - **修改条件**：仅在目标本身发生实质性变化时修改（如新增平台、调整技术路线、修改完成标准）
 - **禁止行为**：每轮执行不重写本文件；日常进度、证据、活跃里程碑更新写入 master.md
 
 #### 运行时控制平面（持续演进）
 
-- **路径**：`docs/goal/zero-browser/master.md`
+- **路径**：`docs/goal/zero-web/master.md`
 - **职责**：当前真实状态的唯一控制面板，包含：
   - 当前活跃里程碑及其完成状态
   - 仍然有效的目标边界和完成标准
@@ -717,7 +717,7 @@ tests/benchmarks/
 
 #### 归档区域（历史记录）
 
-- **路径**：`docs/goal/zero-browser/archive/`
+- **路径**：`docs/goal/zero-web/archive/`
 - **职责**：存储已完成里程碑的详细过程、关键决策、验证结果、commit hash 和历史证据
 - **性质**：archive 是历史记录区，不是当前状态的来源
 
@@ -727,8 +727,8 @@ tests/benchmarks/
 
 - [ ] 探索当前仓库事实（代码状态、已有文档、依赖配置）
 - [ ] 定义/确认 Done Criteria（与本文件一致或提出合理调整）
-- [ ] 创建 `docs/goal/zero-browser/master.md`，包含完整的当前状态评估和首个活跃里程碑计划
-- [ ] 创建 `docs/goal/zero-browser/archive/` 目录
+- [ ] 创建 `docs/goal/zero-web/master.md`，包含完整的当前状态评估和首个活跃里程碑计划
+- [ ] 创建 `docs/goal/zero-web/archive/` 目录
 - [ ] 确认测试基线（当前为空，明确记录"无测试"）
 - [ ] 选择第一个活跃里程碑（M1）并开始执行
 

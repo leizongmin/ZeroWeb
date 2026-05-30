@@ -1,7 +1,7 @@
 //! WebView API 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use zero_webview_api::{WebView, WebViewBuilder, WebViewConfig};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use zero_webview::{WebView, WebViewBuilder, WebViewConfig};
 
 /// 基准：通过 Builder 创建 WebView
 fn bench_webview_builder_create(c: &mut Criterion) {

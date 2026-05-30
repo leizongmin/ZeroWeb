@@ -170,9 +170,10 @@ impl IdbDatabase {
         value: serde_json::Value,
         key: Option<IdbKey>,
     ) -> Result<IdbKey, StorageError> {
-        let store = self.stores.get_mut(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
 
         let key = match key {
             Some(k) => k,
@@ -196,7 +197,10 @@ impl IdbDatabase {
             )));
         }
 
-        store.records.push(IdbRecord { key: key.clone(), value });
+        store.records.push(IdbRecord {
+            key: key.clone(),
+            value,
+        });
         Ok(key)
     }
 
@@ -207,9 +211,10 @@ impl IdbDatabase {
         value: serde_json::Value,
         key: Option<IdbKey>,
     ) -> Result<IdbKey, StorageError> {
-        let store = self.stores.get_mut(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
 
         let key = match key {
             Some(k) => k,
@@ -229,7 +234,10 @@ impl IdbDatabase {
         if let Some(record) = store.records.iter_mut().find(|r| r.key == key) {
             record.value = value;
         } else {
-            store.records.push(IdbRecord { key: key.clone(), value });
+            store.records.push(IdbRecord {
+                key: key.clone(),
+                value,
+            });
         }
 
         Ok(key)
@@ -246,9 +254,10 @@ impl IdbDatabase {
 
     /// 删除记录。
     pub fn delete(&mut self, store_name: &str, key: &IdbKey) -> Result<bool, StorageError> {
-        let store = self.stores.get_mut(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         let before = store.records.len();
         store.records.retain(|r| &r.key != key);
         Ok(store.records.len() < before)
@@ -256,26 +265,29 @@ impl IdbDatabase {
 
     /// 获取 store 中所有记录。
     pub fn get_all(&self, store_name: &str) -> Result<Vec<&IdbRecord>, StorageError> {
-        let store = self.stores.get(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         Ok(store.records.iter().collect())
     }
 
     /// 清空 store 中所有记录。
     pub fn clear_store(&mut self, store_name: &str) -> Result<(), StorageError> {
-        let store = self.stores.get_mut(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         store.records.clear();
         Ok(())
     }
 
     /// 获取 store 中记录数量。
     pub fn count(&self, store_name: &str) -> Result<usize, StorageError> {
-        let store = self.stores.get(store_name).ok_or_else(|| {
-            StorageError::StoreNotFound(store_name.to_string())
-        })?;
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         Ok(store.records.len())
     }
 }
@@ -328,7 +340,9 @@ mod tests {
         let returned_key = db.add("users", value, Some(key.clone())).unwrap();
         assert_eq!(returned_key, key);
 
-        let record = db.get("users", &IdbKey::String("user1".to_string())).unwrap();
+        let record = db
+            .get("users", &IdbKey::String("user1".to_string()))
+            .unwrap();
         assert_eq!(record.value["name"], "Alice");
     }
 
@@ -350,8 +364,18 @@ mod tests {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("users", Some("id"), false).unwrap();
         let key = IdbKey::String("user1".to_string());
-        db.add("users", serde_json::json!({"name": "Alice"}), Some(key.clone())).unwrap();
-        db.put("users", serde_json::json!({"name": "Bob"}), Some(key.clone())).unwrap();
+        db.add(
+            "users",
+            serde_json::json!({"name": "Alice"}),
+            Some(key.clone()),
+        )
+        .unwrap();
+        db.put(
+            "users",
+            serde_json::json!({"name": "Bob"}),
+            Some(key.clone()),
+        )
+        .unwrap();
 
         let record = db.get("users", &key).unwrap();
         assert_eq!(record.value["name"], "Bob");
@@ -363,7 +387,8 @@ mod tests {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
         let key = IdbKey::Number(42.0);
-        db.add("store", serde_json::json!("hello"), Some(key.clone())).unwrap();
+        db.add("store", serde_json::json!("hello"), Some(key.clone()))
+            .unwrap();
         assert!(db.get("store", &key).is_some());
     }
 
@@ -379,7 +404,8 @@ mod tests {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
         let key = IdbKey::String("k".to_string());
-        db.add("store", serde_json::json!(1), Some(key.clone())).unwrap();
+        db.add("store", serde_json::json!(1), Some(key.clone()))
+            .unwrap();
         let deleted = db.delete("store", &key).unwrap();
         assert!(deleted);
         assert_eq!(db.get("store", &key), None);
@@ -389,8 +415,10 @@ mod tests {
     fn test_idb_get_all() {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
-        db.add("store", serde_json::json!(1), Some(IdbKey::Number(1.0))).unwrap();
-        db.add("store", serde_json::json!(2), Some(IdbKey::Number(2.0))).unwrap();
+        db.add("store", serde_json::json!(1), Some(IdbKey::Number(1.0)))
+            .unwrap();
+        db.add("store", serde_json::json!(2), Some(IdbKey::Number(2.0)))
+            .unwrap();
         let all = db.get_all("store").unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -399,7 +427,8 @@ mod tests {
     fn test_idb_clear_store() {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
-        db.add("store", serde_json::json!(1), Some(IdbKey::Number(1.0))).unwrap();
+        db.add("store", serde_json::json!(1), Some(IdbKey::Number(1.0)))
+            .unwrap();
         db.clear_store("store").unwrap();
         assert_eq!(db.count("store").unwrap(), 0);
     }
@@ -409,8 +438,18 @@ mod tests {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
         assert_eq!(db.count("store").unwrap(), 0);
-        db.add("store", serde_json::json!("a"), Some(IdbKey::String("k1".to_string()))).unwrap();
-        db.add("store", serde_json::json!("b"), Some(IdbKey::String("k2".to_string()))).unwrap();
+        db.add(
+            "store",
+            serde_json::json!("a"),
+            Some(IdbKey::String("k1".to_string())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!("b"),
+            Some(IdbKey::String("k2".to_string())),
+        )
+        .unwrap();
         assert_eq!(db.count("store").unwrap(), 2);
     }
 
@@ -431,7 +470,8 @@ mod tests {
         let mut db = IdbDatabase::new("testdb", 1);
         db.create_object_store("store", None, false).unwrap();
         let key = IdbKey::String("dup".to_string());
-        db.add("store", serde_json::json!(1), Some(key.clone())).unwrap();
+        db.add("store", serde_json::json!(1), Some(key.clone()))
+            .unwrap();
         let result = db.add("store", serde_json::json!(2), Some(key));
         assert!(result.is_err());
     }
@@ -553,7 +593,8 @@ mod tests {
         let mut db = IdbDatabase::new("test", 1);
         db.create_object_store("items", None, false).unwrap();
         let key = IdbKey::String("k1".into());
-        db.add("items", serde_json::json!("v1"), Some(key.clone())).unwrap();
+        db.add("items", serde_json::json!("v1"), Some(key.clone()))
+            .unwrap();
 
         let found = db.delete("items", &key).unwrap();
         assert!(found);
@@ -568,8 +609,10 @@ mod tests {
         let mut db = IdbDatabase::new("test", 1);
         db.create_object_store("items", None, false).unwrap();
         let key = IdbKey::String("k".into());
-        db.add("items", serde_json::json!("v1"), Some(key.clone())).unwrap();
-        db.put("items", serde_json::json!("v2"), Some(key.clone())).unwrap();
+        db.add("items", serde_json::json!("v1"), Some(key.clone()))
+            .unwrap();
+        db.put("items", serde_json::json!("v2"), Some(key.clone()))
+            .unwrap();
 
         let record = db.get("items", &key).unwrap();
         assert_eq!(record.value, serde_json::json!("v2"));

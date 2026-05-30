@@ -151,6 +151,7 @@ fn collect_layers(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use zero_css_parser::values::PositionValue;
@@ -158,7 +159,14 @@ mod tests {
     use zero_style_system::ComputedStyle;
 
     /// 辅助函数：创建简单 LayoutBox。
-    fn make_box(node_id: Option<NodeId>, x: f32, y: f32, w: f32, h: f32, is_fixed: bool) -> LayoutBox {
+    fn make_box(
+        node_id: Option<NodeId>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        is_fixed: bool,
+    ) -> LayoutBox {
         LayoutBox {
             node_id,
             x,
@@ -595,13 +603,17 @@ mod tests {
     #[test]
     fn test_compositing_layer_bounding_box() {
         let mut layer = CompositingLayer::new(0);
-        layer.boxes.push(make_box(None, 10.0, 20.0, 100.0, 50.0, false));
-        layer.boxes.push(make_box(None, 50.0, 30.0, 80.0, 60.0, false));
+        layer
+            .boxes
+            .push(make_box(None, 10.0, 20.0, 100.0, 50.0, false));
+        layer
+            .boxes
+            .push(make_box(None, 50.0, 30.0, 80.0, 60.0, false));
 
         let (x, y, w, h) = layer.bounding_box();
         assert_eq!(x, 10.0);
         assert_eq!(y, 20.0);
         assert_eq!(w, 120.0); // max right (130) - min left (10)
-        assert_eq!(h, 70.0);  // max bottom (90) - min top (20)
+        assert_eq!(h, 70.0); // max bottom (90) - min top (20)
     }
 }

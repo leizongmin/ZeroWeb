@@ -1,6 +1,7 @@
 //! 布局引擎性能基准测试。
+#![allow(clippy::field_reassign_with_default)]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
 use zero_dom::Document;

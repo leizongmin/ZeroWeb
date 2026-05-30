@@ -4,7 +4,7 @@
 
 ## 概述
 
-`zero-browser-shell` 是 ZeroBrowser 的应用层 crate，负责构建浏览器的用户界面交互。它基于 `zero-webview-api` 提供的稳定嵌入式 API 和 `zero-host-runtime` 提供的窗口与事件循环能力，实现多标签页管理、收藏夹、地址栏、历史记录等核心浏览器 Shell 功能。
+`zero-browser-shell` 是 ZeroWeb 的应用层 crate，负责构建浏览器的用户界面交互。它基于 `zero-webview` 提供的稳定嵌入式 API 和 `zero-host-runtime` 提供的窗口与事件循环能力，实现多标签页管理、收藏夹、地址栏、历史记录等核心浏览器 Shell 功能。
 
 ## 主要功能
 
@@ -18,7 +18,7 @@
 
 ```rust
 use zero_browser_shell::BrowserShell;
-use zero_webview_api::WebViewBuilder;
+use zero_webview::WebViewBuilder;
 
 // 创建浏览器 Shell 实例
 let mut shell = BrowserShell::new();

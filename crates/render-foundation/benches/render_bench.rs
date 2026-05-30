@@ -2,12 +2,12 @@
 //!
 //! Glyph 渲染吞吐量、脏区域检测耗时
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use zero_render_foundation::color::Color;
+use zero_render_foundation::font::GlyphBitmap;
+use zero_render_foundation::font::cache::{GlyphCache, GlyphKey};
 use zero_render_foundation::geometry::{DamageTracker, Rect, Size};
 use zero_render_foundation::primitive::RenderPrimitives;
-use zero_render_foundation::color::Color;
-use zero_render_foundation::font::cache::{GlyphCache, GlyphKey};
-use zero_render_foundation::font::GlyphBitmap;
 use zero_render_foundation::surface::FrameBuffer;
 
 fn bench_damage_tracker_add(c: &mut Criterion) {
@@ -77,7 +77,10 @@ fn bench_primitives_build(c: &mut Criterion) {
             for i in 0..1000u32 {
                 let x = (i % 50) as f32 * 20.0;
                 let y = (i / 50) as f32 * 20.0;
-                p.add_fill(Rect::new(x, y, 18.0, 18.0), Color::rgb((i % 256) as u8, 128, 64));
+                p.add_fill(
+                    Rect::new(x, y, 18.0, 18.0),
+                    Color::rgb((i % 256) as u8, 128, 64),
+                );
             }
             black_box(&p);
         });

@@ -1,11 +1,13 @@
 //! CSS 解析器综合测试。
 
-use crate::tokenizer::{Token, Tokenizer};
-use crate::parser::Parser;
 use crate::ast::*;
+use crate::parser::Parser;
 use crate::selector;
-use crate::values::{parse_transform, TransformFunction, TransformValue, parse_length, LengthValue,
-    parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state};
+use crate::tokenizer::{Token, Tokenizer};
+use crate::values::{
+    LengthValue, TransformFunction, TransformValue, parse_animation_direction,
+    parse_animation_fill_mode, parse_animation_play_state, parse_length, parse_transform,
+};
 
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Tokenizer 测试
@@ -56,7 +58,8 @@ fn test_tokenize_number() {
 #[test]
 fn test_tokenize_number_decimal() {
     let tokens: Vec<_> = Tokenizer::new("3.14").collect();
-    assert!(matches!(tokens[0], Token::Number(n) if (n - 3.14).abs() < 0.001));
+    let expected = 314.0_f64 / 100.0;
+    assert!(matches!(tokens[0], Token::Number(n) if (n - expected).abs() < 0.001));
 }
 
 #[test]
@@ -546,7 +549,10 @@ fn test_parse_universal() {
     if let Rule::Style(sr) = &stylesheet.rules[0] {
         assert_eq!(sr.selectors.len(), 1);
         let compound = &sr.selectors[0].complex.parts[0].0;
-        assert!(matches!(compound.type_selector, Some(TypeSelector::Universal)));
+        assert!(matches!(
+            compound.type_selector,
+            Some(TypeSelector::Universal)
+        ));
     } else {
         panic!("Expected Style rule");
     }
@@ -794,7 +800,10 @@ fn test_parse_length_rem() {
 fn test_parse_display_values() {
     assert_eq!(parse_display("block"), Some(DisplayValue::Block));
     assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
-    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+    assert_eq!(
+        parse_display("inline-block"),
+        Some(DisplayValue::InlineBlock)
+    );
     assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
     assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
@@ -878,7 +887,10 @@ fn test_parse_color_rgba() {
 fn test_parse_color_hsl() {
     let result = parse_color("hsl(120, 50%, 50%)");
     assert!(result.is_some());
-    assert!(matches!(result, Some(ColorValue::Hsla(120.0, 50.0, 50.0, 1.0))));
+    assert!(matches!(
+        result,
+        Some(ColorValue::Hsla(120.0, 50.0, 50.0, 1.0))
+    ));
 }
 
 #[test]
@@ -886,7 +898,10 @@ fn test_parse_color_hsl() {
 fn test_parse_color_hsla() {
     let result = parse_color("hsla(240, 100%, 50%, 0.5)");
     assert!(result.is_some());
-    assert!(matches!(result, Some(ColorValue::Hsla(240.0, 100.0, 50.0, 0.5))));
+    assert!(matches!(
+        result,
+        Some(ColorValue::Hsla(240.0, 100.0, 50.0, 0.5))
+    ));
 }
 
 #[test]
@@ -902,30 +917,75 @@ fn test_parse_color_invalid() {
 /// 测试所有 16 种基本命名颜色
 fn test_parse_color_named_all() {
     assert_eq!(parse_color("black"), Some(ColorValue::Rgba(0, 0, 0, 255)));
-    assert_eq!(parse_color("white"), Some(ColorValue::Rgba(255, 255, 255, 255)));
+    assert_eq!(
+        parse_color("white"),
+        Some(ColorValue::Rgba(255, 255, 255, 255))
+    );
     assert_eq!(parse_color("green"), Some(ColorValue::Rgba(0, 128, 0, 255)));
     assert_eq!(parse_color("blue"), Some(ColorValue::Rgba(0, 0, 255, 255)));
-    assert_eq!(parse_color("yellow"), Some(ColorValue::Rgba(255, 255, 0, 255)));
-    assert_eq!(parse_color("cyan"), Some(ColorValue::Rgba(0, 255, 255, 255)));
-    assert_eq!(parse_color("magenta"), Some(ColorValue::Rgba(255, 0, 255, 255)));
-    assert_eq!(parse_color("silver"), Some(ColorValue::Rgba(192, 192, 192, 255)));
-    assert_eq!(parse_color("gray"), Some(ColorValue::Rgba(128, 128, 128, 255)));
-    assert_eq!(parse_color("maroon"), Some(ColorValue::Rgba(128, 0, 0, 255)));
-    assert_eq!(parse_color("olive"), Some(ColorValue::Rgba(128, 128, 0, 255)));
+    assert_eq!(
+        parse_color("yellow"),
+        Some(ColorValue::Rgba(255, 255, 0, 255))
+    );
+    assert_eq!(
+        parse_color("cyan"),
+        Some(ColorValue::Rgba(0, 255, 255, 255))
+    );
+    assert_eq!(
+        parse_color("magenta"),
+        Some(ColorValue::Rgba(255, 0, 255, 255))
+    );
+    assert_eq!(
+        parse_color("silver"),
+        Some(ColorValue::Rgba(192, 192, 192, 255))
+    );
+    assert_eq!(
+        parse_color("gray"),
+        Some(ColorValue::Rgba(128, 128, 128, 255))
+    );
+    assert_eq!(
+        parse_color("maroon"),
+        Some(ColorValue::Rgba(128, 0, 0, 255))
+    );
+    assert_eq!(
+        parse_color("olive"),
+        Some(ColorValue::Rgba(128, 128, 0, 255))
+    );
     assert_eq!(parse_color("lime"), Some(ColorValue::Rgba(0, 255, 0, 255)));
-    assert_eq!(parse_color("teal"), Some(ColorValue::Rgba(0, 128, 128, 255)));
+    assert_eq!(
+        parse_color("teal"),
+        Some(ColorValue::Rgba(0, 128, 128, 255))
+    );
     assert_eq!(parse_color("navy"), Some(ColorValue::Rgba(0, 0, 128, 255)));
-    assert_eq!(parse_color("purple"), Some(ColorValue::Rgba(128, 0, 128, 255)));
+    assert_eq!(
+        parse_color("purple"),
+        Some(ColorValue::Rgba(128, 0, 128, 255))
+    );
     // grey 别名
-    assert_eq!(parse_color("grey"), Some(ColorValue::Rgba(128, 128, 128, 255)));
+    assert_eq!(
+        parse_color("grey"),
+        Some(ColorValue::Rgba(128, 128, 128, 255))
+    );
     // aqua 别名
-    assert_eq!(parse_color("aqua"), Some(ColorValue::Rgba(0, 255, 255, 255)));
+    assert_eq!(
+        parse_color("aqua"),
+        Some(ColorValue::Rgba(0, 255, 255, 255))
+    );
     // fuchsia 别名
-    assert_eq!(parse_color("fuchsia"), Some(ColorValue::Rgba(255, 0, 255, 255)));
+    assert_eq!(
+        parse_color("fuchsia"),
+        Some(ColorValue::Rgba(255, 0, 255, 255))
+    );
     // orange
-    assert_eq!(parse_color("orange"), Some(ColorValue::Rgba(255, 165, 0, 255)));
+    assert_eq!(
+        parse_color("orange"),
+        Some(ColorValue::Rgba(255, 165, 0, 255))
+    );
     // 未知命名颜色应返回 Named
-    assert!(matches!(parse_color("customcolor"), Some(ColorValue::Named(_))));
+    assert!(matches!(
+        parse_color("customcolor"),
+        Some(ColorValue::Named(_))
+    ));
 }
 
 #[test]
@@ -968,7 +1028,10 @@ fn test_parse_length_vmax() {
 fn test_parse_display_all() {
     assert_eq!(parse_display("block"), Some(DisplayValue::Block));
     assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
-    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+    assert_eq!(
+        parse_display("inline-block"),
+        Some(DisplayValue::InlineBlock)
+    );
     assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
     assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
@@ -1007,9 +1070,18 @@ fn test_parse_overflow_all() {
 /// 测试所有 FlexDirectionValue 变体
 fn test_parse_flex_direction_all() {
     assert_eq!(parse_flex_direction("row"), Some(FlexDirectionValue::Row));
-    assert_eq!(parse_flex_direction("row-reverse"), Some(FlexDirectionValue::RowReverse));
-    assert_eq!(parse_flex_direction("column"), Some(FlexDirectionValue::Column));
-    assert_eq!(parse_flex_direction("column-reverse"), Some(FlexDirectionValue::ColumnReverse));
+    assert_eq!(
+        parse_flex_direction("row-reverse"),
+        Some(FlexDirectionValue::RowReverse)
+    );
+    assert_eq!(
+        parse_flex_direction("column"),
+        Some(FlexDirectionValue::Column)
+    );
+    assert_eq!(
+        parse_flex_direction("column-reverse"),
+        Some(FlexDirectionValue::ColumnReverse)
+    );
     assert_eq!(parse_flex_direction("unknown"), None);
 }
 
@@ -1018,19 +1090,34 @@ fn test_parse_flex_direction_all() {
 fn test_parse_flex_wrap_all() {
     assert_eq!(parse_flex_wrap("nowrap"), Some(FlexWrapValue::Nowrap));
     assert_eq!(parse_flex_wrap("wrap"), Some(FlexWrapValue::Wrap));
-    assert_eq!(parse_flex_wrap("wrap-reverse"), Some(FlexWrapValue::WrapReverse));
+    assert_eq!(
+        parse_flex_wrap("wrap-reverse"),
+        Some(FlexWrapValue::WrapReverse)
+    );
     assert_eq!(parse_flex_wrap("unknown"), None);
 }
 
 #[test]
 /// 测试所有 AlignmentValue 变体
 fn test_parse_alignment_all() {
-    assert_eq!(parse_alignment("flex-start"), Some(AlignmentValue::FlexStart));
+    assert_eq!(
+        parse_alignment("flex-start"),
+        Some(AlignmentValue::FlexStart)
+    );
     assert_eq!(parse_alignment("flex-end"), Some(AlignmentValue::FlexEnd));
     assert_eq!(parse_alignment("center"), Some(AlignmentValue::Center));
-    assert_eq!(parse_alignment("space-between"), Some(AlignmentValue::SpaceBetween));
-    assert_eq!(parse_alignment("space-around"), Some(AlignmentValue::SpaceAround));
-    assert_eq!(parse_alignment("space-evenly"), Some(AlignmentValue::SpaceEvenly));
+    assert_eq!(
+        parse_alignment("space-between"),
+        Some(AlignmentValue::SpaceBetween)
+    );
+    assert_eq!(
+        parse_alignment("space-around"),
+        Some(AlignmentValue::SpaceAround)
+    );
+    assert_eq!(
+        parse_alignment("space-evenly"),
+        Some(AlignmentValue::SpaceEvenly)
+    );
     assert_eq!(parse_alignment("stretch"), Some(AlignmentValue::Stretch));
     assert_eq!(parse_alignment("start"), Some(AlignmentValue::Start));
     assert_eq!(parse_alignment("end"), Some(AlignmentValue::End));
@@ -1041,8 +1128,14 @@ fn test_parse_alignment_all() {
 #[test]
 /// 测试所有 BoxSizingValue 变体
 fn test_parse_box_sizing_all() {
-    assert_eq!(parse_box_sizing("content-box"), Some(BoxSizingValue::ContentBox));
-    assert_eq!(parse_box_sizing("border-box"), Some(BoxSizingValue::BorderBox));
+    assert_eq!(
+        parse_box_sizing("content-box"),
+        Some(BoxSizingValue::ContentBox)
+    );
+    assert_eq!(
+        parse_box_sizing("border-box"),
+        Some(BoxSizingValue::BorderBox)
+    );
     assert_eq!(parse_box_sizing("unknown"), None);
 }
 
@@ -1051,22 +1144,52 @@ fn test_parse_box_sizing_all() {
 fn test_parse_visibility_all() {
     assert_eq!(parse_visibility("visible"), Some(VisibilityValue::Visible));
     assert_eq!(parse_visibility("hidden"), Some(VisibilityValue::Hidden));
-    assert_eq!(parse_visibility("collapse"), Some(VisibilityValue::Collapse));
+    assert_eq!(
+        parse_visibility("collapse"),
+        Some(VisibilityValue::Collapse)
+    );
     assert_eq!(parse_visibility("unknown"), None);
 }
 
 #[test]
 /// 测试所有 FontWeightValue 变体（100-900、bold、normal、bolder、lighter）
 fn test_parse_font_weight_all() {
-    assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
-    assert_eq!(parse_font_weight("200"), Some(FontWeightValue::Absolute(200)));
-    assert_eq!(parse_font_weight("300"), Some(FontWeightValue::Absolute(300)));
-    assert_eq!(parse_font_weight("400"), Some(FontWeightValue::Absolute(400)));
-    assert_eq!(parse_font_weight("500"), Some(FontWeightValue::Absolute(500)));
-    assert_eq!(parse_font_weight("600"), Some(FontWeightValue::Absolute(600)));
-    assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
-    assert_eq!(parse_font_weight("800"), Some(FontWeightValue::Absolute(800)));
-    assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
+    assert_eq!(
+        parse_font_weight("100"),
+        Some(FontWeightValue::Absolute(100))
+    );
+    assert_eq!(
+        parse_font_weight("200"),
+        Some(FontWeightValue::Absolute(200))
+    );
+    assert_eq!(
+        parse_font_weight("300"),
+        Some(FontWeightValue::Absolute(300))
+    );
+    assert_eq!(
+        parse_font_weight("400"),
+        Some(FontWeightValue::Absolute(400))
+    );
+    assert_eq!(
+        parse_font_weight("500"),
+        Some(FontWeightValue::Absolute(500))
+    );
+    assert_eq!(
+        parse_font_weight("600"),
+        Some(FontWeightValue::Absolute(600))
+    );
+    assert_eq!(
+        parse_font_weight("700"),
+        Some(FontWeightValue::Absolute(700))
+    );
+    assert_eq!(
+        parse_font_weight("800"),
+        Some(FontWeightValue::Absolute(800))
+    );
+    assert_eq!(
+        parse_font_weight("900"),
+        Some(FontWeightValue::Absolute(900))
+    );
     assert_eq!(parse_font_weight("bold"), Some(FontWeightValue::Bold));
     assert_eq!(parse_font_weight("normal"), Some(FontWeightValue::Normal));
     assert_eq!(parse_font_weight("bolder"), Some(FontWeightValue::Bolder));
@@ -1082,8 +1205,14 @@ fn test_parse_font_weight_all() {
 fn test_parse_font_style_all() {
     assert_eq!(parse_font_style("normal"), Some(FontStyleValue::Normal));
     assert_eq!(parse_font_style("italic"), Some(FontStyleValue::Italic));
-    assert_eq!(parse_font_style("oblique"), Some(FontStyleValue::Oblique(None)));
-    assert_eq!(parse_font_style("oblique(15deg)"), Some(FontStyleValue::Oblique(Some(15.0))));
+    assert_eq!(
+        parse_font_style("oblique"),
+        Some(FontStyleValue::Oblique(None))
+    );
+    assert_eq!(
+        parse_font_style("oblique(15deg)"),
+        Some(FontStyleValue::Oblique(Some(15.0)))
+    );
     assert_eq!(parse_font_style("unknown"), None);
 }
 
@@ -1144,7 +1273,10 @@ fn test_parse_display_contents() {
 #[test]
 /// 测试 display: inline-block
 fn test_parse_display_inline_block() {
-    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+    assert_eq!(
+        parse_display("inline-block"),
+        Some(DisplayValue::InlineBlock)
+    );
 }
 
 #[test]
@@ -1220,7 +1352,10 @@ fn test_parse_nth_of_type() {
         let compound = &sr.selectors[0].complex.parts[0].0;
         assert!(compound.subclass_selectors.iter().any(|s| matches!(
             s,
-            SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 3 }))
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(NthPattern {
+                a: 0,
+                b: 3
+            }))
         )));
     } else {
         panic!("Expected Style rule");
@@ -1375,7 +1510,8 @@ fn test_parse_attribute_dash() {
 #[test]
 /// 测试多选择器多声明的复杂规则
 fn test_parse_multiple_selectors_and_declarations() {
-    let css = "div.container > p.text, span.highlight { color: red; font-size: 16px; display: block; }";
+    let css =
+        "div.container > p.text, span.highlight { color: red; font-size: 16px; display: block; }";
     let stylesheet = Parser::parse_stylesheet(css);
     assert_eq!(stylesheet.rules.len(), 1);
     if let Rule::Style(sr) = &stylesheet.rules[0] {
@@ -1504,7 +1640,10 @@ fn test_parse_transform_rotate_rad() {
     match result {
         TransformValue::List(fns) => {
             // ~90 degrees
-            let angle = match fns[0] { TransformFunction::Rotate(a) => a, _ => 0.0 };
+            let angle = match fns[0] {
+                TransformFunction::Rotate(a) => a,
+                _ => 0.0,
+            };
             assert!((angle - 90.0).abs() < 1.0);
         }
         _ => panic!("Expected List"),
@@ -1612,7 +1751,10 @@ fn test_parse_transform_turn() {
     let result = parse_transform("rotate(0.5turn)").unwrap();
     match result {
         TransformValue::List(fns) => {
-            let angle = match fns[0] { TransformFunction::Rotate(a) => a, _ => 0.0 };
+            let angle = match fns[0] {
+                TransformFunction::Rotate(a) => a,
+                _ => 0.0,
+            };
             assert!((angle - 180.0).abs() < 0.01);
         }
         _ => panic!("Expected List"),
@@ -1650,9 +1792,18 @@ fn test_parse_keyframes_percentage() {
         Rule::Keyframes(kf) => {
             assert_eq!(kf.name, "slide");
             assert_eq!(kf.keyframes.len(), 3);
-            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::Percentage(0.0)]);
-            assert_eq!(kf.keyframes[1].selectors, vec![KeyframeSelector::Percentage(50.0)]);
-            assert_eq!(kf.keyframes[2].selectors, vec![KeyframeSelector::Percentage(100.0)]);
+            assert_eq!(
+                kf.keyframes[0].selectors,
+                vec![KeyframeSelector::Percentage(0.0)]
+            );
+            assert_eq!(
+                kf.keyframes[1].selectors,
+                vec![KeyframeSelector::Percentage(50.0)]
+            );
+            assert_eq!(
+                kf.keyframes[2].selectors,
+                vec![KeyframeSelector::Percentage(100.0)]
+            );
         }
         _ => panic!("Expected Keyframes rule"),
     }
@@ -1668,7 +1819,10 @@ fn test_parse_keyframes_comma_selectors() {
             assert_eq!(kf.keyframes.len(), 2);
             assert_eq!(
                 kf.keyframes[0].selectors,
-                vec![KeyframeSelector::Percentage(0.0), KeyframeSelector::Percentage(100.0)]
+                vec![
+                    KeyframeSelector::Percentage(0.0),
+                    KeyframeSelector::Percentage(100.0)
+                ]
             );
         }
         _ => panic!("Expected Keyframes rule"),
@@ -1682,7 +1836,10 @@ fn test_parse_keyframes_mixed_selectors() {
     let stylesheet = Parser::parse_stylesheet(css);
     match &stylesheet.rules[0] {
         Rule::Keyframes(kf) => {
-            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::From, KeyframeSelector::Percentage(50.0)]);
+            assert_eq!(
+                kf.keyframes[0].selectors,
+                vec![KeyframeSelector::From, KeyframeSelector::Percentage(50.0)]
+            );
         }
         _ => panic!("Expected Keyframes rule"),
     }
@@ -1704,26 +1861,56 @@ fn test_parse_keyframes_quoted_name() {
 
 #[test]
 fn test_parse_animation_direction() {
-    assert_eq!(parse_animation_direction("normal"), Some(crate::values::AnimationDirectionValue::Normal));
-    assert_eq!(parse_animation_direction("reverse"), Some(crate::values::AnimationDirectionValue::Reverse));
-    assert_eq!(parse_animation_direction("alternate"), Some(crate::values::AnimationDirectionValue::Alternate));
-    assert_eq!(parse_animation_direction("alternate-reverse"), Some(crate::values::AnimationDirectionValue::AlternateReverse));
+    assert_eq!(
+        parse_animation_direction("normal"),
+        Some(crate::values::AnimationDirectionValue::Normal)
+    );
+    assert_eq!(
+        parse_animation_direction("reverse"),
+        Some(crate::values::AnimationDirectionValue::Reverse)
+    );
+    assert_eq!(
+        parse_animation_direction("alternate"),
+        Some(crate::values::AnimationDirectionValue::Alternate)
+    );
+    assert_eq!(
+        parse_animation_direction("alternate-reverse"),
+        Some(crate::values::AnimationDirectionValue::AlternateReverse)
+    );
     assert_eq!(parse_animation_direction("invalid"), None);
 }
 
 #[test]
 fn test_parse_animation_fill_mode() {
-    assert_eq!(parse_animation_fill_mode("none"), Some(crate::values::AnimationFillModeValue::None));
-    assert_eq!(parse_animation_fill_mode("forwards"), Some(crate::values::AnimationFillModeValue::Forwards));
-    assert_eq!(parse_animation_fill_mode("backwards"), Some(crate::values::AnimationFillModeValue::Backwards));
-    assert_eq!(parse_animation_fill_mode("both"), Some(crate::values::AnimationFillModeValue::Both));
+    assert_eq!(
+        parse_animation_fill_mode("none"),
+        Some(crate::values::AnimationFillModeValue::None)
+    );
+    assert_eq!(
+        parse_animation_fill_mode("forwards"),
+        Some(crate::values::AnimationFillModeValue::Forwards)
+    );
+    assert_eq!(
+        parse_animation_fill_mode("backwards"),
+        Some(crate::values::AnimationFillModeValue::Backwards)
+    );
+    assert_eq!(
+        parse_animation_fill_mode("both"),
+        Some(crate::values::AnimationFillModeValue::Both)
+    );
     assert_eq!(parse_animation_fill_mode("invalid"), None);
 }
 
 #[test]
 fn test_parse_animation_play_state() {
-    assert_eq!(parse_animation_play_state("running"), Some(crate::values::AnimationPlayStateValue::Running));
-    assert_eq!(parse_animation_play_state("paused"), Some(crate::values::AnimationPlayStateValue::Paused));
+    assert_eq!(
+        parse_animation_play_state("running"),
+        Some(crate::values::AnimationPlayStateValue::Running)
+    );
+    assert_eq!(
+        parse_animation_play_state("paused"),
+        Some(crate::values::AnimationPlayStateValue::Paused)
+    );
     assert_eq!(parse_animation_play_state("invalid"), None);
 }
 

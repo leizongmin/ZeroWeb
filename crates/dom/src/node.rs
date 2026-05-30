@@ -145,10 +145,7 @@ impl ElementData {
         if name == "id" {
             self.id = Some(value.to_string());
         } else if name == "class" {
-            self.class_list = value
-                .split_whitespace()
-                .map(String::from)
-                .collect();
+            self.class_list = value.split_whitespace().map(String::from).collect();
         }
     }
 

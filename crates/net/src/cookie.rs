@@ -2,8 +2,8 @@
 //!
 //! 提供 HTTP Cookie 解析、存储和匹配功能。
 
-use crate::url_parser::ParsedUrl;
 use crate::NetError;
+use crate::url_parser::ParsedUrl;
 
 /// SameSite 属性。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,9 +127,7 @@ impl CookieStore {
     pub fn add(&mut self, cookie: Cookie) {
         // 如果同名同 domain 同 path，替换旧值
         self.cookies.retain(|c| {
-            !(c.name == cookie.name
-                && c.domain == cookie.domain
-                && c.path == cookie.path)
+            !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path)
         });
         self.cookies.push(cookie);
     }
@@ -239,8 +237,7 @@ mod tests {
 
     #[test]
     fn test_parse_cookie_with_attributes() {
-        let cookie =
-            CookieStore::parse_set_cookie("id=42; Path=/app; Domain=example.com").unwrap();
+        let cookie = CookieStore::parse_set_cookie("id=42; Path=/app; Domain=example.com").unwrap();
         assert_eq!(cookie.name, "id");
         assert_eq!(cookie.value, "42");
         assert_eq!(cookie.path.as_deref(), Some("/app"));
@@ -274,12 +271,8 @@ mod tests {
     #[test]
     fn test_cookie_store_add_get() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("b=2; Domain=other.com").unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("b=2; Domain=other.com").unwrap());
         assert_eq!(store.len(), 2);
 
         let url = parse_url("http://example.com/page").unwrap();
@@ -291,9 +284,8 @@ mod tests {
     #[test]
     fn test_cookie_store_for_url() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("sess=abc; Domain=example.com; Path=/app").unwrap(),
-        );
+        store
+            .add(CookieStore::parse_set_cookie("sess=abc; Domain=example.com; Path=/app").unwrap());
 
         let matching = parse_url("http://example.com/app/page").unwrap();
         let not_matching = parse_url("http://example.com/other").unwrap();
@@ -310,12 +302,8 @@ mod tests {
     #[test]
     fn test_cookie_header() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("b=2; Domain=example.com").unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("b=2; Domain=example.com").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
         let header = store.cookie_header(&url);
@@ -360,12 +348,8 @@ mod tests {
     #[test]
     fn test_cookie_store_replace_same_name() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("a=1; Domain=x.com").unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("a=2; Domain=x.com").unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=x.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("a=2; Domain=x.com").unwrap());
         assert_eq!(store.len(), 1);
         let url = parse_url("http://x.com/").unwrap();
         let cookies = store.get_for_url(&url);
@@ -407,9 +391,7 @@ mod tests {
     #[test]
     fn test_cookie_domain_subdomain_match() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("a=1; Domain=.example.com").unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=.example.com").unwrap());
         let sub_url = parse_url("http://sub.example.com/").unwrap();
         let cookies = store.get_for_url(&sub_url);
         assert_eq!(cookies.len(), 1);

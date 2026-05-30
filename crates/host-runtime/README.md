@@ -4,7 +4,7 @@
 
 ## 概述
 
-zero-host-runtime 是 ZeroBrowser 的平台宿主层，负责创建和管理跨平台窗口、驱动事件循环、以及处理输入事件。它将 winit 的平台特定细节封装为简洁的 API，向上层渲染引擎和应用提供统一的窗口与事件接口。
+zero-host-runtime 是 ZeroWeb 的平台宿主层，负责创建和管理跨平台窗口、驱动事件循环、以及处理输入事件。它将 winit 的平台特定细节封装为简洁的 API，向上层渲染引擎和应用提供统一的窗口与事件接口。
 
 ## 主要功能
 
@@ -21,7 +21,7 @@ use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_host_runtime::event::AppEvent;
 
 fn main() -> zero_host_runtime::HostResult<()> {
-    let config = WindowConfig::new("ZeroBrowser")
+    let config = WindowConfig::new("ZeroWeb")
         .with_size(1280, 720);
 
     let runtime = HostRuntime::new(config);

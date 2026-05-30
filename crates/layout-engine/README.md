@@ -4,7 +4,7 @@
 
 ## 概述
 
-zero-layout-engine 是 ZeroBrowser 渲染管线中的布局阶段。它接收 DOM 树和计算样式（ComputedStyle），通过 Taffy 布局算法计算每个元素的位置和大小，输出一棵 `LayoutBox` 树供后续渲染使用。整个流程分为三步：将 `ComputedStyle` 转换为 `taffy::Style`、从 DOM 构建 Taffy 布局树、执行布局计算并提取结果。
+zero-layout-engine 是 ZeroWeb 渲染管线中的布局阶段。它接收 DOM 树和计算样式（ComputedStyle），通过 Taffy 布局算法计算每个元素的位置和大小，输出一棵 `LayoutBox` 树供后续渲染使用。整个流程分为三步：将 `ComputedStyle` 转换为 `taffy::Style`、从 DOM 构建 Taffy 布局树、执行布局计算并提取结果。
 
 ## 主要功能
 

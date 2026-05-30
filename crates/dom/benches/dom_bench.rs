@@ -1,7 +1,7 @@
 //! DOM crate 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use zero_dom::{Document, NodeId, parse_html};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use zero_dom::{Document, parse_html};
 
 /// 生成一个包含指定数量嵌套 div 的 HTML 文档。
 fn generate_nested_html(depth: usize) -> String {
@@ -21,7 +21,10 @@ fn generate_nested_html(depth: usize) -> String {
 fn generate_wide_html(width: usize) -> String {
     let mut html = String::from("<html><body>");
     for i in 0..width {
-        html.push_str(&format!("<div class=\"item\" id=\"item-{}\">text {}</div>", i, i));
+        html.push_str(&format!(
+            "<div class=\"item\" id=\"item-{}\">text {}</div>",
+            i, i
+        ));
     }
     html.push_str("</body></html>");
     html

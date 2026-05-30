@@ -1,10 +1,10 @@
-# zero-webview-api
+# zero-webview
 
 > 面向外部应用的稳定 WebView 嵌入接口
 
 ## 概述
 
-`zero-webview-api` 是 ZeroBrowser 对外暴露的稳定 API 层，提供构建器模式创建 WebView、加载 HTML/URL、注入 CSS、渲染表面输出等核心能力。它封装了底层渲染管线（`zero-engine-core`、`zero-render-foundation`），为嵌入方提供简洁、类型安全的接口，是浏览器 shell 和第三方应用接入 ZeroBrowser 渲染能力的唯一入口。
+`zero-webview` 是 ZeroWeb 对外暴露的稳定 API 层，提供构建器模式创建 WebView、加载 HTML/URL、注入 CSS、渲染表面输出等核心能力。它封装了底层渲染管线（`zero-engine`、`zero-render-foundation`），为嵌入方提供简洁、类型安全的接口，是浏览器 shell 和第三方应用接入 ZeroWeb 渲染能力的唯一入口。
 
 ## 主要功能
 
@@ -19,7 +19,7 @@
 ## 使用示例
 
 ```rust
-use zero_webview_api::{WebViewBuilder, WebViewEvent};
+use zero_webview::{WebViewBuilder, WebViewEvent};
 
 fn main() {
     // 使用构建器创建 WebView
@@ -31,7 +31,7 @@ fn main() {
         .build();
 
     // 加载 HTML 并渲染
-    let html = r#"<html><body><h1>Hello, ZeroBrowser!</h1></body></html>"#;
+    let html = r#"<html><body><h1>Hello, ZeroWeb!</h1></body></html>"#;
     let css = "h1 { color: blue; }";
     let result = webview.load_html(html, Some(css));
     println!("渲染耗时: {:.2}ms", result.timings.total_ms);

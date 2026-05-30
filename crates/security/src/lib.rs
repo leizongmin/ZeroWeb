@@ -4,13 +4,13 @@
 
 #![warn(missing_docs)]
 
-pub mod origin;
 pub mod cors;
 pub mod csp;
+pub mod origin;
 
-pub use origin::*;
 pub use cors::*;
 pub use csp::*;
+pub use origin::*;
 
 use thiserror::Error;
 

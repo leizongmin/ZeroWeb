@@ -1,6 +1,6 @@
-//! WebView Demo — "Hello ZeroBrowser" wgpu GPU 渲染
+//! WebView Demo — "Hello ZeroWeb" wgpu GPU 渲染
 //!
-//! M1 里程碑 demo：创建桌面窗口，使用 wgpu GPU 渲染 "Hello ZeroBrowser" 文本。
+//! M1 里程碑 demo：创建桌面窗口，使用 wgpu GPU 渲染 "Hello ZeroWeb" 文本。
 //! 演示 render-foundation GPU 渲染器 + host-runtime 窗口管理的集成。
 
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
-use zero_render_foundation::gpu::renderer::{GpuRenderer, GlyphDraw};
+use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::primitive::FillPrimitive;
 use zero_render_foundation::surface::FrameBuffer;
 
@@ -24,7 +24,9 @@ fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
     ];
 
     font_paths.iter().find_map(|path| {
-        std::fs::read(path).ok().and_then(|data| font_loader.load_font(&data).ok())
+        std::fs::read(path)
+            .ok()
+            .and_then(|data| font_loader.load_font(&data).ok())
     })
 }
 
@@ -144,7 +146,7 @@ impl DemoState {
     }
 
     fn render_gpu(&mut self, gpu: &mut GpuRenderer, width: u32, height: u32) {
-        let text = "Hello ZeroBrowser!";
+        let text = "Hello ZeroWeb!";
         let font_size = 32.0f32;
         let text_color = Color::rgb(33, 33, 33); // 深灰色文本
 
@@ -166,7 +168,8 @@ impl DemoState {
             // 计算文本起始位置（居中）
             let mut total_width = 0.0f32;
             for ch in text.chars() {
-                let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
+                let key =
+                    zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
                 if let Ok(bitmap) = self.glyph_cache.get_or_insert_with(key, || {
                     self.font_loader.rasterize_glyph(fid, ch, font_size)
                 }) {
@@ -187,7 +190,8 @@ impl DemoState {
                     font_id: fid,
                     font_size,
                 });
-                let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
+                let key =
+                    zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
                 if let Ok(bitmap) = self.glyph_cache.get_or_insert_with(key, || {
                     self.font_loader.rasterize_glyph(fid, ch, font_size)
                 }) {
@@ -201,7 +205,7 @@ impl DemoState {
 }
 
 fn main() {
-    println!("ZeroBrowser WebView Demo (wgpu GPU 渲染)");
+    println!("ZeroWeb WebView Demo (wgpu GPU 渲染)");
     println!("正在初始化...");
 
     // CPU 后备：仍然生成 PPM 文件
@@ -212,7 +216,7 @@ fn main() {
 
     if let Some(fid) = font_id {
         let mut glyph_cache = GlyphCache::new(8192);
-        let text = "Hello ZeroBrowser!";
+        let text = "Hello ZeroWeb!";
         let font_size = 32.0f32;
         let mut x = 40.0f32;
         let baseline_y = fb.height as f32 / 2.0;
@@ -220,9 +224,9 @@ fn main() {
         fb.clear(255, 255, 255, 255);
         for ch in text.chars() {
             let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
-            if let Ok(bitmap) = glyph_cache.get_or_insert_with(key, || {
-                font_loader.rasterize_glyph(fid, ch, font_size)
-            }) {
+            if let Ok(bitmap) = glyph_cache
+                .get_or_insert_with(key, || font_loader.rasterize_glyph(fid, ch, font_size))
+            {
                 // Blit glyph to framebuffer
                 let start_x = (x as i32 + bitmap.x_offset as i32).max(0) as u32;
                 let start_y = (baseline_y as i32 + bitmap.y_offset as i32).max(0) as u32;
@@ -233,7 +237,8 @@ fn main() {
                         if px >= fb.width || py >= fb.height {
                             continue;
                         }
-                        let alpha = bitmap.data[(row as usize * bitmap.width as usize) + col as usize];
+                        let alpha =
+                            bitmap.data[(row as usize * bitmap.width as usize) + col as usize];
                         if alpha == 0 {
                             continue;
                         }
@@ -250,7 +255,7 @@ fn main() {
         }
     } else {
         fb.clear(255, 255, 255, 255);
-        render_text_fallback(&mut fb, "Hello ZeroBrowser!", 40, 300);
+        render_text_fallback(&mut fb, "Hello ZeroWeb!", 40, 300);
     }
 
     // 保存 PPM
@@ -267,7 +272,7 @@ fn main() {
     }
 
     // 启动 GPU 窗口渲染
-    let config = WindowConfig::new("ZeroBrowser Demo — wgpu GPU").with_size(800, 600);
+    let config = WindowConfig::new("ZeroWeb Demo — wgpu GPU").with_size(800, 600);
     let runtime = HostRuntime::new(config);
 
     // 我们需要在事件循环中访问窗口来创建 GPU 表面
@@ -318,5 +323,5 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("ZeroBrowser WebView Demo 已退出");
+    println!("ZeroWeb WebView Demo 已退出");
 }

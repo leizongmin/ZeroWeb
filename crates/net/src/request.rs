@@ -197,10 +197,30 @@ mod tests {
 
     #[test]
     fn test_http_response_is_success_boundaries() {
-        let r199 = HttpResponse { status_code: 199, headers: vec![], body: vec![], url: String::new() };
-        let r200 = HttpResponse { status_code: 200, headers: vec![], body: vec![], url: String::new() };
-        let r299 = HttpResponse { status_code: 299, headers: vec![], body: vec![], url: String::new() };
-        let r300 = HttpResponse { status_code: 300, headers: vec![], body: vec![], url: String::new() };
+        let r199 = HttpResponse {
+            status_code: 199,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r200 = HttpResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r299 = HttpResponse {
+            status_code: 299,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r300 = HttpResponse {
+            status_code: 300,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
         assert!(!r199.is_success());
         assert!(r200.is_success());
         assert!(r299.is_success());
@@ -209,10 +229,30 @@ mod tests {
 
     #[test]
     fn test_http_response_is_redirect_boundaries() {
-        let r299 = HttpResponse { status_code: 299, headers: vec![], body: vec![], url: String::new() };
-        let r300 = HttpResponse { status_code: 300, headers: vec![], body: vec![], url: String::new() };
-        let r399 = HttpResponse { status_code: 399, headers: vec![], body: vec![], url: String::new() };
-        let r400 = HttpResponse { status_code: 400, headers: vec![], body: vec![], url: String::new() };
+        let r299 = HttpResponse {
+            status_code: 299,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r300 = HttpResponse {
+            status_code: 300,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r399 = HttpResponse {
+            status_code: 399,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        let r400 = HttpResponse {
+            status_code: 400,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
         assert!(!r299.is_redirect());
         assert!(r300.is_redirect());
         assert!(r399.is_redirect());

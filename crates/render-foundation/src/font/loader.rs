@@ -53,7 +53,12 @@ impl FontLoader {
     }
 
     /// 渲染指定字符的 glyph
-    pub fn rasterize_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+    pub fn rasterize_glyph(
+        &self,
+        font_id: u32,
+        code_point: char,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
         let font = self
             .fonts
             .get(&font_id)

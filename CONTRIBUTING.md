@@ -1,6 +1,6 @@
-# 参与 ZeroBrowser 开发
+# 参与 ZeroWeb 开发
 
-感谢你愿意为 ZeroBrowser 贡献代码、文档、测试或设计讨论。
+感谢你愿意为 ZeroWeb 贡献代码、文档、测试或设计讨论。
 
 这里欢迎人工编写，也欢迎 AI 辅助编写。标准只有一个：改动要说得清、测得到、看得懂。
 
@@ -12,7 +12,7 @@
 
 - [README.md](/home/lei/work/ZeroBrowser/README.md)
 - [docs/architecture.md](/home/lei/work/ZeroBrowser/docs/architecture.md)
-- [docs/specs/zero-browser-spec-rfc.md](/home/lei/work/ZeroBrowser/docs/specs/zero-browser-spec-rfc.md)
+- [docs/specs/zero-web-spec-rfc.md](/home/lei/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)
 - 你计划修改的 crate 下对应 `README.md`
 
 如果是跨 crate 的大改动，别直接开写。先开 issue 或 draft PR，把范围、目标和取舍说清楚。
@@ -104,7 +104,7 @@ AI 辅助是这个项目的重要工作方式，但也有几条额外要求：
 
 ## 依赖和许可证
 
-ZeroBrowser 会优先接受许可证边界清楚的依赖，比如：
+ZeroWeb 会优先接受许可证边界清楚的依赖，比如：
 
 - `MIT`
 - `Apache-2.0`

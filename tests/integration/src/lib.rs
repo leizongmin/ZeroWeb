@@ -116,7 +116,7 @@ mod css_style {
 
 #[cfg(test)]
 mod render_pipeline {
-    use zero_engine_core::RenderPipeline;
+    use zero_engine::RenderPipeline;
 
     /// 完整管线：HTML + CSS → 渲染结果
     #[test]
@@ -181,7 +181,7 @@ mod render_pipeline {
 #[cfg(test)]
 mod net_security {
     use zero_net::url_parser::parse_url;
-    use zero_security::{check_cors, CorsPolicy, Origin};
+    use zero_security::{CorsPolicy, Origin, check_cors};
 
     /// URL 解析 + 同源策略
     #[test]
@@ -228,8 +228,8 @@ mod net_security {
 #[cfg(test)]
 mod storage {
     use zero_protocol::{
-        serialize, deserialize, IpcMessage, IpcMessageKind, StorageOpParams, StorageOperation,
-        StorageType,
+        IpcMessage, IpcMessageKind, StorageOpParams, StorageOperation, StorageType, deserialize,
+        serialize,
     };
     use zero_storage::StorageManager;
 
@@ -281,8 +281,14 @@ mod storage {
         let session = mgr.session_storage("https://example.com");
         session.set("shared_key", "session_value").unwrap();
 
-        assert_eq!(mgr.local_storage("https://example.com").get("shared_key"), Some("local_value"));
-        assert_eq!(mgr.session_storage("https://example.com").get("shared_key"), Some("session_value"));
+        assert_eq!(
+            mgr.local_storage("https://example.com").get("shared_key"),
+            Some("local_value")
+        );
+        assert_eq!(
+            mgr.session_storage("https://example.com").get("shared_key"),
+            Some("session_value")
+        );
     }
 
     /// 不同源的存储隔离
@@ -296,17 +302,21 @@ mod storage {
         let store_b = mgr.local_storage("https://b.com");
         store_b.set("key", "value_b").unwrap();
 
-        assert_eq!(mgr.local_storage("https://a.com").get("key"), Some("value_a"));
-        assert_eq!(mgr.local_storage("https://b.com").get("key"), Some("value_b"));
+        assert_eq!(
+            mgr.local_storage("https://a.com").get("key"),
+            Some("value_a")
+        );
+        assert_eq!(
+            mgr.local_storage("https://b.com").get("key"),
+            Some("value_b")
+        );
     }
 }
 
 #[cfg(test)]
 mod protocol_navigation {
     use zero_net::navigation::NavigationHistory;
-    use zero_protocol::{
-        serialize, deserialize, IpcMessage, IpcMessageKind, NavigateParams,
-    };
+    use zero_protocol::{IpcMessage, IpcMessageKind, NavigateParams, deserialize, serialize};
 
     /// 导航历史操作 → IPC 消息序列化
     #[test]
@@ -342,7 +352,7 @@ mod protocol_navigation {
 #[cfg(test)]
 mod canvas_render {
     use zero_canvas::CanvasContext;
-    use zero_webview_api::{WebView, WebViewConfig};
+    use zero_webview::{WebView, WebViewConfig};
 
     /// Canvas 2D 绘图操作 → 渲染图元
     #[test]
@@ -531,7 +541,7 @@ mod wasm_sandbox {
 
 #[cfg(test)]
 mod webview_full_pipeline {
-    use zero_webview_api::{WebView, WebViewBuilder, WebViewConfig};
+    use zero_webview::{WebView, WebViewBuilder, WebViewConfig};
 
     /// WebView 完整生命周期：创建 → 加载 HTML → 渲染 → 注入 CSS → 调整大小 → 重新渲染
     #[test]

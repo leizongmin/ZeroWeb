@@ -92,9 +92,10 @@ pub fn check_cors(
     }
 
     // 检查方法
-    let method_allowed = policy.allow_methods.iter().any(|m| {
-        m.eq_ignore_ascii_case(request_method)
-    });
+    let method_allowed = policy
+        .allow_methods
+        .iter()
+        .any(|m| m.eq_ignore_ascii_case(request_method));
     if !method_allowed {
         return CorsResult {
             allowed: false,

@@ -132,35 +132,48 @@ mod wasmi_backend {
 
     impl WasmInstance {
         /// 调用导出函数
-        pub fn call(&mut self, name: &str, args: &[WasmValue]) -> Result<Vec<WasmValue>, WasmError> {
+        pub fn call(
+            &mut self,
+            name: &str,
+            args: &[WasmValue],
+        ) -> Result<Vec<WasmValue>, WasmError> {
             let func = self.instance.get_func(&self.store, name).ok_or_else(|| {
                 WasmError::ExportNotFound {
                     name: name.to_string(),
                 }
             })?;
 
-            let params: Vec<wasmi::Val> = args.iter().map(|v| match v {
-                WasmValue::I32(n) => wasmi::Val::I32(*n),
-                WasmValue::I64(n) => wasmi::Val::I64(*n),
-                WasmValue::F32(n) => wasmi::Val::F32((*n).into()),
-                WasmValue::F64(n) => wasmi::Val::F64((*n).into()),
-            }).collect();
+            let params: Vec<wasmi::Val> = args
+                .iter()
+                .map(|v| match v {
+                    WasmValue::I32(n) => wasmi::Val::I32(*n),
+                    WasmValue::I64(n) => wasmi::Val::I64(*n),
+                    WasmValue::F32(n) => wasmi::Val::F32((*n).into()),
+                    WasmValue::F64(n) => wasmi::Val::F64((*n).into()),
+                })
+                .collect();
 
             // 获取返回值类型以分配输出缓冲区
             let func_type = func.ty(&self.store);
             let result_types: Vec<_> = func_type.results().to_vec();
-            let mut outputs: Vec<wasmi::Val> = result_types.iter().map(|t| wasmi::Val::default(*t)).collect();
+            let mut outputs: Vec<wasmi::Val> = result_types
+                .iter()
+                .map(|t| wasmi::Val::default(*t))
+                .collect();
 
             func.call(&mut self.store, &params, &mut outputs)
                 .map_err(|e| WasmError::CallError(e.to_string()))?;
 
-            Ok(outputs.iter().map(|v| match v {
-                wasmi::Val::I32(n) => WasmValue::I32(*n),
-                wasmi::Val::I64(n) => WasmValue::I64(*n),
-                wasmi::Val::F32(n) => WasmValue::F32(f32::from(*n)),
-                wasmi::Val::F64(n) => WasmValue::F64(f64::from(*n)),
-                _ => WasmValue::I32(0),
-            }).collect())
+            Ok(outputs
+                .iter()
+                .map(|v| match v {
+                    wasmi::Val::I32(n) => WasmValue::I32(*n),
+                    wasmi::Val::I64(n) => WasmValue::I64(*n),
+                    wasmi::Val::F32(n) => WasmValue::F32(f32::from(*n)),
+                    wasmi::Val::F64(n) => WasmValue::F64(f64::from(*n)),
+                    _ => WasmValue::I32(0),
+                })
+                .collect())
         }
 
         /// 读取线性内存
@@ -174,11 +187,20 @@ mod wasmi_backend {
         }
 
         /// 写入线性内存
-        pub fn write_memory(&mut self, name: &str, offset: usize, data: &[u8]) -> Result<(), WasmError> {
-            let memory = self.instance.get_memory(&self.store, name)
-                .ok_or_else(|| WasmError::ExportNotFound { name: name.to_string() })?;
+        pub fn write_memory(
+            &mut self,
+            name: &str,
+            offset: usize,
+            data: &[u8],
+        ) -> Result<(), WasmError> {
+            let memory = self.instance.get_memory(&self.store, name).ok_or_else(|| {
+                WasmError::ExportNotFound {
+                    name: name.to_string(),
+                }
+            })?;
             let mem_data = memory.data_mut(&mut self.store);
-            let end = offset.checked_add(data.len())
+            let end = offset
+                .checked_add(data.len())
                 .ok_or_else(|| WasmError::MemoryError("offset overflow".into()))?;
             if end > mem_data.len() {
                 return Err(WasmError::MemoryError("write out of bounds".into()));
@@ -255,7 +277,11 @@ mod stub_backend {
 
     impl WasmInstance {
         /// 调用导出函数
-        pub fn call(&mut self, _name: &str, _args: &[WasmValue]) -> Result<Vec<WasmValue>, WasmError> {
+        pub fn call(
+            &mut self,
+            _name: &str,
+            _args: &[WasmValue],
+        ) -> Result<Vec<WasmValue>, WasmError> {
             Err(WasmError::CallError("no backend".into()))
         }
 
@@ -265,7 +291,12 @@ mod stub_backend {
         }
 
         /// 写入线性内存
-        pub fn write_memory(&mut self, _name: &str, _offset: usize, _data: &[u8]) -> Result<(), WasmError> {
+        pub fn write_memory(
+            &mut self,
+            _name: &str,
+            _offset: usize,
+            _data: &[u8],
+        ) -> Result<(), WasmError> {
             Err(WasmError::MemoryError("no backend".into()))
         }
 
@@ -376,7 +407,8 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance.call("add", &[WasmValue::I32(10), WasmValue::I32(20)])
+        let results = instance
+            .call("add", &[WasmValue::I32(10), WasmValue::I32(20)])
             .expect("call");
         assert_eq!(results[0], WasmValue::I32(30));
     }
@@ -392,7 +424,8 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance.call("add64", &[WasmValue::I64(1000), WasmValue::I64(2000)])
+        let results = instance
+            .call("add64", &[WasmValue::I64(1000), WasmValue::I64(2000)])
             .expect("call");
         assert_eq!(results[0], WasmValue::I64(3000));
     }
@@ -408,7 +441,8 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance.call("double_f32", &[WasmValue::F32(3.5)])
+        let results = instance
+            .call("double_f32", &[WasmValue::F32(3.5)])
             .expect("call");
         if let WasmValue::F32(v) = results[0] {
             assert!((v - 7.0).abs() < 0.001);
@@ -428,7 +462,8 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance.call("double_f64", &[WasmValue::F64(2.5)])
+        let results = instance
+            .call("double_f64", &[WasmValue::F64(2.5)])
             .expect("call");
         if let WasmValue::F64(v) = results[0] {
             assert!((v - 5.0).abs() < 0.001);
@@ -494,9 +529,7 @@ mod tests {
         assert!(instance.memory_size("mem").unwrap() >= 65536);
 
         // 写入数据
-        instance
-            .write_memory("mem", 0, b"hello")
-            .expect("write");
+        instance.write_memory("mem", 0, b"hello").expect("write");
 
         // 读取数据
         let data = instance.read_memory("mem", 0, 5).expect("read");
@@ -581,7 +614,9 @@ mod tests {
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
 
-        let r = instance.call("factorial", &[WasmValue::I32(5)]).expect("call");
+        let r = instance
+            .call("factorial", &[WasmValue::I32(5)])
+            .expect("call");
         assert_eq!(r[0], WasmValue::I32(120));
     }
 
@@ -610,7 +645,9 @@ mod tests {
             WasmValue::I32(9)
         );
         assert_eq!(
-            instance.call("double", &[WasmValue::I32(7)]).expect("double")[0],
+            instance
+                .call("double", &[WasmValue::I32(7)])
+                .expect("double")[0],
             WasmValue::I32(14)
         );
     }
@@ -619,8 +656,8 @@ mod tests {
     fn test_wasm_value_display() {
         assert!(format!("{}", WasmValue::I32(42)).contains("42"));
         assert!(format!("{}", WasmValue::I64(100)).contains("100"));
-        assert!(format!("{}", WasmValue::F32(3.14)).contains("3.14"));
-        assert!(format!("{}", WasmValue::F64(2.718)).contains("2.718"));
+        assert!(format!("{}", WasmValue::F32(std::f32::consts::PI)).contains("3.141"));
+        assert!(format!("{}", WasmValue::F64(std::f64::consts::E)).contains("2.718"));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! 协议 crate 性能基准测试。
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use zero_protocol::{
-    serialize, deserialize, IpcMessage, IpcMessageKind,
-    NavigateParams, FetchParams, MouseEventParams, MouseEventType,
+    FetchParams, IpcMessage, IpcMessageKind, MouseEventParams, MouseEventType, NavigateParams,
+    deserialize, serialize,
 };
 
 /// 基准：IPC 消息序列化
@@ -19,7 +19,7 @@ fn bench_serialize(c: &mut Criterion) {
     c.bench_function("ipc_serialize_10000", |b| {
         b.iter(|| {
             for _ in 0..10000 {
-                black_box(serialize(&msg));
+                let _ = black_box(serialize(&msg));
             }
         })
     });
@@ -39,7 +39,7 @@ fn bench_deserialize(c: &mut Criterion) {
     c.bench_function("ipc_deserialize_10000", |b| {
         b.iter(|| {
             for _ in 0..10000 {
-                black_box(deserialize(&bytes));
+                let _ = black_box(deserialize(&bytes));
             }
         })
     });
@@ -61,7 +61,7 @@ fn bench_roundtrip(c: &mut Criterion) {
         b.iter(|| {
             for _ in 0..10000 {
                 let bytes = serialize(&msg).unwrap();
-                black_box(deserialize(&bytes));
+                let _ = black_box(deserialize(&bytes));
             }
         })
     });
@@ -88,7 +88,7 @@ fn bench_large_message(c: &mut Criterion) {
     c.bench_function("ipc_large_message_serialize_1000", |b| {
         b.iter(|| {
             for _ in 0..1000 {
-                black_box(serialize(&msg));
+                let _ = black_box(serialize(&msg));
             }
         })
     });

@@ -1,10 +1,10 @@
-# zero-engine-core
+# zero-engine
 
 > 页面渲染管线核心 — 编排 HTML 解析、CSS 样式计算、布局、绘制与合成的全流程。
 
 ## 概述
 
-`zero-engine-core` 是 ZeroBrowser 的页面内核，负责协调 DOM、CSSOM、样式系统、布局引擎和渲染基础层等子系统，实现完整的 HTML 到渲染图元的端到端管线。它整合了绘制命令生成、脏区域追踪、合成层提升等核心能力，是浏览器渲染架构的关键枢纽。
+`zero-engine` 是 ZeroWeb 的页面内核，负责协调 DOM、CSSOM、样式系统、布局引擎和渲染基础层等子系统，实现完整的 HTML 到渲染图元的端到端管线。它整合了绘制命令生成、脏区域追踪、合成层提升等核心能力，是浏览器渲染架构的关键枢纽。
 
 ## 主要功能
 
@@ -17,7 +17,7 @@
 ## 使用示例
 
 ```rust
-use zero_engine_core::RenderPipeline;
+use zero_engine::RenderPipeline;
 
 // 创建渲染管线，指定视口尺寸
 let mut pipeline = RenderPipeline::new(800.0, 600.0);

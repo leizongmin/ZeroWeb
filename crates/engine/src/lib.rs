@@ -1,4 +1,4 @@
-//! # zero-engine-core
+//! # zero-engine
 //!
 //! 页面内核 — HTML/DOM/CSSOM/样式/布局/绘制/脚本协调。
 //!
@@ -13,12 +13,12 @@
 
 #![warn(missing_docs)]
 
-pub mod paint;
-pub mod dirty;
 pub mod composite;
+pub mod dirty;
+pub mod paint;
 pub mod pipeline;
 
-pub use paint::*;
-pub use dirty::*;
 pub use composite::*;
+pub use dirty::*;
+pub use paint::*;
 pub use pipeline::*;

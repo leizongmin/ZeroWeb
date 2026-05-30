@@ -103,9 +103,10 @@ fn build_subtree(
             display: taffy::style::Display::None,
             ..taffy::Style::default()
         };
-        return ctx.taffy.new_leaf(hidden_style).unwrap_or_else(|_| {
-            ctx.taffy.new_leaf(taffy::Style::default()).unwrap()
-        });
+        return ctx
+            .taffy
+            .new_leaf(hidden_style)
+            .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
     }
 
     // 转换为 taffy 样式
@@ -113,9 +114,7 @@ fn build_subtree(
 
     // 收集需要创建 taffy 节点的子元素
     let node_data = doc.get(dom_id);
-    let children_dom: Vec<NodeId> = node_data
-        .map(|n| n.children.clone())
-        .unwrap_or_default();
+    let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
 
     // 先收集子元素
     let mut child_taffy_ids: Vec<taffy::NodeId> = Vec::new();
@@ -145,6 +144,7 @@ fn build_subtree(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
@@ -383,7 +383,10 @@ mod tests {
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         // 默认 margin 是 Px(0.0)，转换为 Length(0.0)
-        assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(0.0));
+        assert_eq!(
+            style.margin.top,
+            taffy::style::LengthPercentageAuto::Length(0.0)
+        );
     }
 
     /// 测试 margin: auto 正确传递。
@@ -512,7 +515,10 @@ mod tests {
         let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
         let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
         let style = taffy_tree.style(flex_taffy).unwrap();
-        assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(
+            style.gap.width,
+            taffy::style::LengthPercentage::Length(10.0)
+        );
     }
 
     /// 测试带 padding/border/margin。
@@ -535,9 +541,18 @@ mod tests {
         let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
-        assert_eq!(style.padding.top, taffy::style::LengthPercentage::Length(10.0));
-        assert_eq!(style.border.top, taffy::style::LengthPercentage::Length(2.0));
-        assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(5.0));
+        assert_eq!(
+            style.padding.top,
+            taffy::style::LengthPercentage::Length(10.0)
+        );
+        assert_eq!(
+            style.border.top,
+            taffy::style::LengthPercentage::Length(2.0)
+        );
+        assert_eq!(
+            style.margin.top,
+            taffy::style::LengthPercentageAuto::Length(5.0)
+        );
     }
 
     /// 测试带 min/max size。

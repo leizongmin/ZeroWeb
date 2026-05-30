@@ -4,9 +4,9 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self,
-    AlignmentValue, BoxSizingValue, ColorValue, DisplayValue, FlexDirectionValue, FlexWrapValue,
-    FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue, VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, DisplayValue, FlexDirectionValue,
+    FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue,
+    VisibilityValue,
 };
 
 // ── 额外枚举类型 ─────────────────────────────────────────────────────
@@ -1115,12 +1115,7 @@ pub fn parse_cursor(value: &str) -> Option<CursorValue> {
 pub fn parse_font_family(value: &str) -> Vec<String> {
     value
         .split(',')
-        .map(|s| {
-            s.trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_string()
-        })
+        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
         .filter(|s| !s.is_empty())
         .collect()
 }
@@ -1627,8 +1622,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         }
         // ── Transitions ──
         "transition-property" => {
-            style.transition_property =
-                value.split(',').map(|s| s.trim().to_string()).collect();
+            style.transition_property = value.split(',').map(|s| s.trim().to_string()).collect();
             return true;
         }
         "transition-duration" => {
@@ -1810,11 +1804,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
 /// 从父元素样式继承指定属性到子元素样式。
 ///
 /// 返回 true 表示成功继承。
-pub fn inherit_property(
-    parent: &ComputedStyle,
-    child: &mut ComputedStyle,
-    property: &str,
-) -> bool {
+pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, property: &str) -> bool {
     match property {
         "color" => {
             child.color = parent.color.clone();
@@ -1957,6 +1947,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 
@@ -2001,7 +1992,10 @@ mod tests {
     fn test_parse_line_height() {
         assert_eq!(parse_line_height("normal"), Some(LineHeightValue::Normal));
         assert_eq!(parse_line_height("1.5"), Some(LineHeightValue::Number(1.5)));
-        assert_eq!(parse_line_height("24px"), Some(LineHeightValue::Length(LengthValue::Px(24.0))));
+        assert_eq!(
+            parse_line_height("24px"),
+            Some(LineHeightValue::Length(LengthValue::Px(24.0)))
+        );
     }
 
     #[test]
@@ -2013,27 +2007,45 @@ mod tests {
 
     #[test]
     fn test_parse_text_decoration() {
-        assert_eq!(parse_text_decoration("underline"), Some(TextDecorationValue::Underline));
-        assert_eq!(parse_text_decoration("none"), Some(TextDecorationValue::None));
+        assert_eq!(
+            parse_text_decoration("underline"),
+            Some(TextDecorationValue::Underline)
+        );
+        assert_eq!(
+            parse_text_decoration("none"),
+            Some(TextDecorationValue::None)
+        );
     }
 
     #[test]
     fn test_parse_text_transform() {
-        assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
-        assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
+        assert_eq!(
+            parse_text_transform("uppercase"),
+            Some(TextTransformValue::Uppercase)
+        );
+        assert_eq!(
+            parse_text_transform("capitalize"),
+            Some(TextTransformValue::Capitalize)
+        );
     }
 
     #[test]
     fn test_parse_white_space() {
         assert_eq!(parse_white_space("nowrap"), Some(WhiteSpaceValue::Nowrap));
-        assert_eq!(parse_white_space("pre-wrap"), Some(WhiteSpaceValue::PreWrap));
+        assert_eq!(
+            parse_white_space("pre-wrap"),
+            Some(WhiteSpaceValue::PreWrap)
+        );
     }
 
     #[test]
     fn test_parse_flex_basis() {
         assert_eq!(parse_flex_basis("auto"), Some(FlexBasisValue::Auto));
         assert_eq!(parse_flex_basis("content"), Some(FlexBasisValue::Content));
-        assert_eq!(parse_flex_basis("100px"), Some(FlexBasisValue::Length(LengthValue::Px(100.0))));
+        assert_eq!(
+            parse_flex_basis("100px"),
+            Some(FlexBasisValue::Length(LengthValue::Px(100.0)))
+        );
     }
 
     #[test]
@@ -2073,10 +2085,18 @@ mod tests {
         assert!(apply_property_value(&mut style, "border-top-width", "2px"));
         assert_eq!(style.border_top_width, LengthValue::Px(2.0));
 
-        assert!(apply_property_value(&mut style, "border-top-style", "solid"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-top-style",
+            "solid"
+        ));
         assert_eq!(style.border_top_style, BorderStyleValue::Solid);
 
-        assert!(apply_property_value(&mut style, "border-top-color", "#ff0000"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-top-color",
+            "#ff0000"
+        ));
         assert_eq!(style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
     }
 
@@ -2120,7 +2140,10 @@ mod tests {
 
     #[test]
     fn test_parse_text_overflow() {
-        assert_eq!(parse_text_overflow("ellipsis"), Some(TextOverflowValue::Ellipsis));
+        assert_eq!(
+            parse_text_overflow("ellipsis"),
+            Some(TextOverflowValue::Ellipsis)
+        );
         assert_eq!(parse_text_overflow("clip"), Some(TextOverflowValue::Clip));
     }
 
@@ -2226,20 +2249,40 @@ mod tests {
     fn test_apply_property_border_style() {
         let mut style = ComputedStyle::default();
 
-        assert!(apply_property_value(&mut style, "border-top-style", "dashed"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-top-style",
+            "dashed"
+        ));
         assert_eq!(style.border_top_style, BorderStyleValue::Dashed);
 
-        assert!(apply_property_value(&mut style, "border-right-style", "dotted"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-right-style",
+            "dotted"
+        ));
         assert_eq!(style.border_right_style, BorderStyleValue::Dotted);
 
-        assert!(apply_property_value(&mut style, "border-bottom-style", "solid"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-bottom-style",
+            "solid"
+        ));
         assert_eq!(style.border_bottom_style, BorderStyleValue::Solid);
 
-        assert!(apply_property_value(&mut style, "border-left-style", "double"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-left-style",
+            "double"
+        ));
         assert_eq!(style.border_left_style, BorderStyleValue::Double);
 
         // 无效值应返回 false
-        assert!(!apply_property_value(&mut style, "border-top-style", "invalid"));
+        assert!(!apply_property_value(
+            &mut style,
+            "border-top-style",
+            "invalid"
+        ));
     }
 
     #[test]
@@ -2293,30 +2336,70 @@ mod tests {
 
         // 边框颜色各边
         assert!(apply_property_value(&mut style, "border-top-color", "red"));
-        assert!(apply_property_value(&mut style, "border-right-color", "#00ff00"));
-        assert!(apply_property_value(&mut style, "border-bottom-color", "blue"));
-        assert!(apply_property_value(&mut style, "border-left-color", "transparent"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-right-color",
+            "#00ff00"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-bottom-color",
+            "blue"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-left-color",
+            "transparent"
+        ));
         assert_eq!(style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
         assert_eq!(style.border_left_color, ColorValue::Transparent);
 
         // 边框宽度各边
         assert!(apply_property_value(&mut style, "border-top-width", "1px"));
-        assert!(apply_property_value(&mut style, "border-right-width", "2px"));
-        assert!(apply_property_value(&mut style, "border-bottom-width", "3px"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-right-width",
+            "2px"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-bottom-width",
+            "3px"
+        ));
         assert!(apply_property_value(&mut style, "border-left-width", "4px"));
         assert_eq!(style.border_top_width, LengthValue::Px(1.0));
         assert_eq!(style.border_left_width, LengthValue::Px(4.0));
 
         // 圆角各角
-        assert!(apply_property_value(&mut style, "border-top-left-radius", "8px"));
-        assert!(apply_property_value(&mut style, "border-top-right-radius", "4px"));
-        assert!(apply_property_value(&mut style, "border-bottom-right-radius", "8px"));
-        assert!(apply_property_value(&mut style, "border-bottom-left-radius", "4px"));
+        assert!(apply_property_value(
+            &mut style,
+            "border-top-left-radius",
+            "8px"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-top-right-radius",
+            "4px"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-bottom-right-radius",
+            "8px"
+        ));
+        assert!(apply_property_value(
+            &mut style,
+            "border-bottom-left-radius",
+            "4px"
+        ));
         assert_eq!(style.border_top_left_radius, LengthValue::Px(8.0));
         assert_eq!(style.border_bottom_left_radius, LengthValue::Px(4.0));
 
         // background-color
-        assert!(apply_property_value(&mut style, "background-color", "#0000ff"));
+        assert!(apply_property_value(
+            &mut style,
+            "background-color",
+            "#0000ff"
+        ));
         assert_eq!(style.background_color, ColorValue::Rgba(0, 0, 255, 255));
 
         // visibility
@@ -2333,14 +2416,25 @@ mod tests {
 
         // line-height
         assert!(apply_property_value(&mut style, "line-height", "24px"));
-        assert_eq!(style.line_height, LineHeightValue::Length(LengthValue::Px(24.0)));
+        assert_eq!(
+            style.line_height,
+            LineHeightValue::Length(LengthValue::Px(24.0))
+        );
 
         // text-decoration
-        assert!(apply_property_value(&mut style, "text-decoration", "underline"));
+        assert!(apply_property_value(
+            &mut style,
+            "text-decoration",
+            "underline"
+        ));
         assert_eq!(style.text_decoration, TextDecorationValue::Underline);
 
         // text-transform
-        assert!(apply_property_value(&mut style, "text-transform", "uppercase"));
+        assert!(apply_property_value(
+            &mut style,
+            "text-transform",
+            "uppercase"
+        ));
         assert_eq!(style.text_transform, TextTransformValue::Uppercase);
 
         // letter-spacing, word-spacing
@@ -2354,7 +2448,11 @@ mod tests {
         assert_eq!(style.white_space, WhiteSpaceValue::Nowrap);
 
         // text-overflow
-        assert!(apply_property_value(&mut style, "text-overflow", "ellipsis"));
+        assert!(apply_property_value(
+            &mut style,
+            "text-overflow",
+            "ellipsis"
+        ));
         assert_eq!(style.text_overflow, TextOverflowValue::Ellipsis);
 
         // flex-wrap
@@ -2362,7 +2460,11 @@ mod tests {
         assert_eq!(style.flex_wrap, FlexWrapValue::Wrap);
 
         // justify-content
-        assert!(apply_property_value(&mut style, "justify-content", "center"));
+        assert!(apply_property_value(
+            &mut style,
+            "justify-content",
+            "center"
+        ));
         assert_eq!(style.justify_content, AlignmentValue::Center);
 
         // align-items
@@ -2405,7 +2507,11 @@ mod tests {
         assert!(!apply_property_value(&mut style, "unknown-prop", "value"));
 
         // 无效值应返回 false
-        assert!(!apply_property_value(&mut style, "display", "invalid-display"));
+        assert!(!apply_property_value(
+            &mut style,
+            "display",
+            "invalid-display"
+        ));
     }
 
     #[test]
@@ -2468,9 +2574,18 @@ mod tests {
     #[test]
     /// 测试 parse_line_height 长度值
     fn test_parse_line_height_length() {
-        assert_eq!(parse_line_height("24px"), Some(LineHeightValue::Length(LengthValue::Px(24.0))));
-        assert_eq!(parse_line_height("2em"), Some(LineHeightValue::Length(LengthValue::Em(2.0))));
-        assert_eq!(parse_line_height("1.5rem"), Some(LineHeightValue::Length(LengthValue::Rem(1.5))));
+        assert_eq!(
+            parse_line_height("24px"),
+            Some(LineHeightValue::Length(LengthValue::Px(24.0)))
+        );
+        assert_eq!(
+            parse_line_height("2em"),
+            Some(LineHeightValue::Length(LengthValue::Em(2.0)))
+        );
+        assert_eq!(
+            parse_line_height("1.5rem"),
+            Some(LineHeightValue::Length(LengthValue::Rem(1.5)))
+        );
         assert_eq!(parse_line_height("normal"), Some(LineHeightValue::Normal));
         assert_eq!(parse_line_height("1.5"), Some(LineHeightValue::Number(1.5)));
         assert_eq!(parse_line_height("invalid"), None);
@@ -2481,14 +2596,25 @@ mod tests {
     #[test]
     fn test_apply_property_grid_template_columns() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "grid-template-columns", "100px 1fr auto"));
-        assert_eq!(style.grid_template_columns, Some("100px 1fr auto".to_string()));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-template-columns",
+            "100px 1fr auto"
+        ));
+        assert_eq!(
+            style.grid_template_columns,
+            Some("100px 1fr auto".to_string())
+        );
     }
 
     #[test]
     fn test_apply_property_grid_template_rows() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "grid-template-rows", "50px 1fr"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-template-rows",
+            "50px 1fr"
+        ));
         assert_eq!(style.grid_template_rows, Some("50px 1fr".to_string()));
     }
 
@@ -2498,14 +2624,26 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-auto-flow", "column"));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Column);
 
-        assert!(apply_property_value(&mut style, "grid-auto-flow", "row dense"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-auto-flow",
+            "row dense"
+        ));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::RowDense);
 
-        assert!(apply_property_value(&mut style, "grid-auto-flow", "column dense"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-auto-flow",
+            "column dense"
+        ));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::ColumnDense);
 
         // 无效值应返回 false
-        assert!(!apply_property_value(&mut style, "grid-auto-flow", "invalid"));
+        assert!(!apply_property_value(
+            &mut style,
+            "grid-auto-flow",
+            "invalid"
+        ));
     }
 
     #[test]
@@ -2518,10 +2656,22 @@ mod tests {
     #[test]
     fn test_parse_grid_auto_flow() {
         assert_eq!(parse_grid_auto_flow("row"), Some(GridAutoFlowValue::Row));
-        assert_eq!(parse_grid_auto_flow("column"), Some(GridAutoFlowValue::Column));
-        assert_eq!(parse_grid_auto_flow("dense"), Some(GridAutoFlowValue::RowDense));
-        assert_eq!(parse_grid_auto_flow("row dense"), Some(GridAutoFlowValue::RowDense));
-        assert_eq!(parse_grid_auto_flow("column dense"), Some(GridAutoFlowValue::ColumnDense));
+        assert_eq!(
+            parse_grid_auto_flow("column"),
+            Some(GridAutoFlowValue::Column)
+        );
+        assert_eq!(
+            parse_grid_auto_flow("dense"),
+            Some(GridAutoFlowValue::RowDense)
+        );
+        assert_eq!(
+            parse_grid_auto_flow("row dense"),
+            Some(GridAutoFlowValue::RowDense)
+        );
+        assert_eq!(
+            parse_grid_auto_flow("column dense"),
+            Some(GridAutoFlowValue::ColumnDense)
+        );
         assert_eq!(parse_grid_auto_flow("invalid"), None);
     }
 
@@ -2561,10 +2711,18 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-column-start", "-1"));
         assert_eq!(style.grid_column_start, GridLineValue::Line(-1));
 
-        assert!(apply_property_value(&mut style, "grid-column-start", "span 2"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-column-start",
+            "span 2"
+        ));
         assert_eq!(style.grid_column_start, GridLineValue::Span(2));
 
-        assert!(apply_property_value(&mut style, "grid-column-start", "auto"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-column-start",
+            "auto"
+        ));
         assert_eq!(style.grid_column_start, GridLineValue::Auto);
     }
 
@@ -2592,33 +2750,61 @@ mod tests {
     #[test]
     fn test_apply_transition_property() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "transition-property", "opacity"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-property",
+            "opacity"
+        ));
         assert_eq!(style.transition_property, vec!["opacity"]);
 
-        assert!(apply_property_value(&mut style, "transition-property", "opacity, transform"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-property",
+            "opacity, transform"
+        ));
         assert_eq!(style.transition_property, vec!["opacity", "transform"]);
 
-        assert!(apply_property_value(&mut style, "transition-property", "all"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-property",
+            "all"
+        ));
         assert_eq!(style.transition_property, vec!["all"]);
     }
 
     #[test]
     fn test_apply_transition_duration() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "transition-duration", "0.3s"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-duration",
+            "0.3s"
+        ));
         assert_eq!(style.transition_duration, vec![0.3]);
 
-        assert!(apply_property_value(&mut style, "transition-duration", "0.3s, 0.5s"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-duration",
+            "0.3s, 0.5s"
+        ));
         assert_eq!(style.transition_duration, vec![0.3, 0.5]);
 
-        assert!(apply_property_value(&mut style, "transition-duration", "200ms"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-duration",
+            "200ms"
+        ));
         assert_eq!(style.transition_duration, vec![0.2]);
     }
 
     #[test]
     fn test_apply_transition_timing_function() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "transition-timing-function", "ease"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-timing-function",
+            "ease"
+        ));
         assert_eq!(style.transition_timing_function.len(), 1);
         assert_eq!(
             style.transition_timing_function[0],
@@ -2646,7 +2832,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "transition-delay", "0.1s"));
         assert_eq!(style.transition_delay, vec![0.1]);
 
-        assert!(apply_property_value(&mut style, "transition-delay", "0.1s, 0.2s"));
+        assert!(apply_property_value(
+            &mut style,
+            "transition-delay",
+            "0.1s, 0.2s"
+        ));
         assert_eq!(style.transition_delay, vec![0.1, 0.2]);
 
         assert!(apply_property_value(&mut style, "transition-delay", "50ms"));
@@ -2680,7 +2870,9 @@ mod tests {
         let result = parse_comma_separated_timing_functions("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
         assert_eq!(result.len(), 1);
 
-        let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
+        let result = parse_comma_separated_timing_functions(
+            "ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)",
+        );
         assert_eq!(result.len(), 3);
     }
 
@@ -2689,7 +2881,11 @@ mod tests {
     #[test]
     fn test_margin_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "margin-block-start", "10px"));
+        assert!(apply_property_value(
+            &mut style,
+            "margin-block-start",
+            "10px"
+        ));
         assert_eq!(style.margin_top, LengthValue::Px(10.0));
     }
 
@@ -2703,49 +2899,77 @@ mod tests {
     #[test]
     fn test_margin_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "margin-inline-start", "5px"));
+        assert!(apply_property_value(
+            &mut style,
+            "margin-inline-start",
+            "5px"
+        ));
         assert_eq!(style.margin_left, LengthValue::Px(5.0));
     }
 
     #[test]
     fn test_margin_inline_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "margin-inline-end", "15px"));
+        assert!(apply_property_value(
+            &mut style,
+            "margin-inline-end",
+            "15px"
+        ));
         assert_eq!(style.margin_right, LengthValue::Px(15.0));
     }
 
     #[test]
     fn test_padding_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "padding-block-start", "8px"));
+        assert!(apply_property_value(
+            &mut style,
+            "padding-block-start",
+            "8px"
+        ));
         assert_eq!(style.padding_top, LengthValue::Px(8.0));
     }
 
     #[test]
     fn test_padding_block_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "padding-block-end", "12px"));
+        assert!(apply_property_value(
+            &mut style,
+            "padding-block-end",
+            "12px"
+        ));
         assert_eq!(style.padding_bottom, LengthValue::Px(12.0));
     }
 
     #[test]
     fn test_padding_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "padding-inline-start", "3px"));
+        assert!(apply_property_value(
+            &mut style,
+            "padding-inline-start",
+            "3px"
+        ));
         assert_eq!(style.padding_left, LengthValue::Px(3.0));
     }
 
     #[test]
     fn test_padding_inline_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "padding-inline-end", "7px"));
+        assert!(apply_property_value(
+            &mut style,
+            "padding-inline-end",
+            "7px"
+        ));
         assert_eq!(style.padding_right, LengthValue::Px(7.0));
     }
 
     #[test]
     fn test_inset_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "inset-block-start", "100px"));
+        assert!(apply_property_value(
+            &mut style,
+            "inset-block-start",
+            "100px"
+        ));
         assert_eq!(style.top, LengthValue::Px(100.0));
     }
 
@@ -2759,7 +2983,11 @@ mod tests {
     #[test]
     fn test_inset_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "inset-inline-start", "50px"));
+        assert!(apply_property_value(
+            &mut style,
+            "inset-inline-start",
+            "50px"
+        ));
         assert_eq!(style.left, LengthValue::Px(50.0));
     }
 
@@ -2773,7 +3001,11 @@ mod tests {
     #[test]
     fn test_logical_properties_with_percentage() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "margin-block-start", "10%"));
+        assert!(apply_property_value(
+            &mut style,
+            "margin-block-start",
+            "10%"
+        ));
         assert_eq!(style.margin_top, LengthValue::Percentage(10.0));
 
         assert!(apply_property_value(&mut style, "padding-inline-end", "5%"));
@@ -2783,7 +3015,11 @@ mod tests {
     #[test]
     fn test_logical_properties_with_auto() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "margin-block-start", "auto"));
+        assert!(apply_property_value(
+            &mut style,
+            "margin-block-start",
+            "auto"
+        ));
         assert_eq!(style.margin_top, LengthValue::Auto);
     }
 
@@ -2808,27 +3044,47 @@ mod tests {
         assert!(apply_property_value(&mut style, "animation-name", "fadeIn"));
         assert_eq!(style.animation_name, vec!["fadeIn"]);
 
-        assert!(apply_property_value(&mut style, "animation-name", "fadeIn, slideIn"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-name",
+            "fadeIn, slideIn"
+        ));
         assert_eq!(style.animation_name, vec!["fadeIn", "slideIn"]);
     }
 
     #[test]
     fn test_apply_animation_duration() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-duration", "0.5s"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-duration",
+            "0.5s"
+        ));
         assert_eq!(style.animation_duration, vec![0.5]);
 
-        assert!(apply_property_value(&mut style, "animation-duration", "0.3s, 0.6s"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-duration",
+            "0.3s, 0.6s"
+        ));
         assert_eq!(style.animation_duration, vec![0.3, 0.6]);
 
-        assert!(apply_property_value(&mut style, "animation-duration", "200ms"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-duration",
+            "200ms"
+        ));
         assert_eq!(style.animation_duration, vec![0.2]);
     }
 
     #[test]
     fn test_apply_animation_timing_function() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-timing-function", "ease-in"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-timing-function",
+            "ease-in"
+        ));
         assert_eq!(style.animation_timing_function.len(), 1);
 
         assert!(apply_property_value(
@@ -2849,43 +3105,79 @@ mod tests {
     #[test]
     fn test_apply_animation_iteration_count() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-iteration-count", "3"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-iteration-count",
+            "3"
+        ));
         assert_eq!(style.animation_iteration_count, vec![Some(3.0)]);
 
-        assert!(apply_property_value(&mut style, "animation-iteration-count", "infinite"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-iteration-count",
+            "infinite"
+        ));
         assert_eq!(style.animation_iteration_count, vec![None]);
 
-        assert!(apply_property_value(&mut style, "animation-iteration-count", "2, infinite"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-iteration-count",
+            "2, infinite"
+        ));
         assert_eq!(style.animation_iteration_count, vec![Some(2.0), None]);
     }
 
     #[test]
     fn test_apply_animation_direction() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-direction", "alternate"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-direction",
+            "alternate"
+        ));
         assert_eq!(style.animation_direction.len(), 1);
 
-        assert!(apply_property_value(&mut style, "animation-direction", "normal, reverse"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-direction",
+            "normal, reverse"
+        ));
         assert_eq!(style.animation_direction.len(), 2);
     }
 
     #[test]
     fn test_apply_animation_fill_mode() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-fill-mode", "forwards"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-fill-mode",
+            "forwards"
+        ));
         assert_eq!(style.animation_fill_mode.len(), 1);
 
-        assert!(apply_property_value(&mut style, "animation-fill-mode", "both"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-fill-mode",
+            "both"
+        ));
         assert_eq!(style.animation_fill_mode.len(), 1);
     }
 
     #[test]
     fn test_apply_animation_play_state() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "animation-play-state", "paused"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-play-state",
+            "paused"
+        ));
         assert_eq!(style.animation_play_state.len(), 1);
 
-        assert!(apply_property_value(&mut style, "animation-play-state", "running, paused"));
+        assert!(apply_property_value(
+            &mut style,
+            "animation-play-state",
+            "running, paused"
+        ));
         assert_eq!(style.animation_play_state.len(), 2);
     }
 
@@ -2910,7 +3202,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-auto-rows", "100px"));
         assert_eq!(style.grid_auto_rows, Some("100px".to_string()));
 
-        assert!(apply_property_value(&mut style, "grid-auto-rows", "minmax(100px, 1fr)"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-auto-rows",
+            "minmax(100px, 1fr)"
+        ));
         assert_eq!(style.grid_auto_rows, Some("minmax(100px, 1fr)".to_string()));
 
         // default is None
@@ -2921,7 +3217,11 @@ mod tests {
     #[test]
     fn test_apply_property_grid_auto_columns() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "grid-auto-columns", "1fr auto"));
+        assert!(apply_property_value(
+            &mut style,
+            "grid-auto-columns",
+            "1fr auto"
+        ));
         assert_eq!(style.grid_auto_columns, Some("1fr auto".to_string()));
 
         // default is None
@@ -2956,7 +3256,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-width", "0.5em"));
         assert_eq!(style.outline_width, LengthValue::Em(0.5));
 
-        assert!(!apply_property_value(&mut style, "outline-width", "invalid"));
+        assert!(!apply_property_value(
+            &mut style,
+            "outline-width",
+            "invalid"
+        ));
     }
 
     #[test]
@@ -2977,7 +3281,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-style", "none"));
         assert_eq!(style.outline_style, OutlineStyleValue::None);
 
-        assert!(!apply_property_value(&mut style, "outline-style", "invalid"));
+        assert!(!apply_property_value(
+            &mut style,
+            "outline-style",
+            "invalid"
+        ));
     }
 
     #[test]
@@ -2989,7 +3297,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-color", "#00ff00"));
         assert_eq!(style.outline_color, ColorValue::Rgba(0, 255, 0, 255));
 
-        assert!(apply_property_value(&mut style, "outline-color", "transparent"));
+        assert!(apply_property_value(
+            &mut style,
+            "outline-color",
+            "transparent"
+        ));
         assert_eq!(style.outline_color, ColorValue::Transparent);
     }
 
@@ -3002,7 +3314,11 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-offset", "-2px"));
         assert_eq!(style.outline_offset, LengthValue::Px(-2.0));
 
-        assert!(!apply_property_value(&mut style, "outline-offset", "invalid"));
+        assert!(!apply_property_value(
+            &mut style,
+            "outline-offset",
+            "invalid"
+        ));
     }
 
     #[test]
@@ -3028,13 +3344,28 @@ mod tests {
     fn test_parse_outline_style() {
         assert_eq!(parse_outline_style("solid"), Some(OutlineStyleValue::Solid));
         assert_eq!(parse_outline_style("none"), Some(OutlineStyleValue::None));
-        assert_eq!(parse_outline_style("dashed"), Some(OutlineStyleValue::Dashed));
-        assert_eq!(parse_outline_style("dotted"), Some(OutlineStyleValue::Dotted));
-        assert_eq!(parse_outline_style("double"), Some(OutlineStyleValue::Double));
-        assert_eq!(parse_outline_style("groove"), Some(OutlineStyleValue::Groove));
+        assert_eq!(
+            parse_outline_style("dashed"),
+            Some(OutlineStyleValue::Dashed)
+        );
+        assert_eq!(
+            parse_outline_style("dotted"),
+            Some(OutlineStyleValue::Dotted)
+        );
+        assert_eq!(
+            parse_outline_style("double"),
+            Some(OutlineStyleValue::Double)
+        );
+        assert_eq!(
+            parse_outline_style("groove"),
+            Some(OutlineStyleValue::Groove)
+        );
         assert_eq!(parse_outline_style("ridge"), Some(OutlineStyleValue::Ridge));
         assert_eq!(parse_outline_style("inset"), Some(OutlineStyleValue::Inset));
-        assert_eq!(parse_outline_style("outset"), Some(OutlineStyleValue::Outset));
+        assert_eq!(
+            parse_outline_style("outset"),
+            Some(OutlineStyleValue::Outset)
+        );
         assert_eq!(parse_outline_style("invalid"), None);
     }
 

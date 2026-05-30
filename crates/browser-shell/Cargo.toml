@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-zero-webview-api = { workspace = true }
+zero-webview = { workspace = true }
 zero-host-runtime = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
