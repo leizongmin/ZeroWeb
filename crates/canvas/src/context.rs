@@ -1141,4 +1141,158 @@ mod tests {
         };
         ctx.put_image_data(&img, 0, 0); // 不应 panic
     }
+
+    // ── 边界条件补充测试 ──
+
+    /// 测试 arc 命令不 panic（路径简化实现只记录中心点）。
+    #[test]
+    fn test_canvas_arc_no_panic() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.begin_path();
+        ctx.arc(200.0, 200.0, 50.0, 0.0, std::f32::consts::TAU);
+        // arc 不 panic 即可
+    }
+
+    /// 测试 arc 部分弧线不 panic。
+    #[test]
+    fn test_canvas_arc_partial_no_panic() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.begin_path();
+        ctx.arc(200.0, 200.0, 100.0, 0.0, std::f32::consts::PI);
+        // arc 不 panic 即可
+    }
+
+    /// 测试多次 fill_rect 累积图元。
+    #[test]
+    fn test_canvas_fill_rect_accumulates() {
+        let mut ctx = CanvasContext::new(400, 300);
+        for i in 0..10 {
+            ctx.fill_rect(i as f32 * 20.0, 0.0, 15.0, 15.0);
+        }
+        assert_eq!(ctx.primitives().fills.len(), 10);
+    }
+
+    /// 测试 fill_rect 负坐标。
+    #[test]
+    fn test_canvas_fill_rect_negative_coords() {
+        let mut ctx = CanvasContext::new(400, 300);
+        ctx.fill_rect(-50.0, -30.0, 100.0, 100.0);
+        assert_eq!(ctx.primitives().fills.len(), 1);
+    }
+
+    /// 测试 stroke_rect 多次调用累积。
+    #[test]
+    fn test_canvas_stroke_rect_accumulates() {
+        let mut ctx = CanvasContext::new(400, 300);
+        ctx.stroke_rect(10.0, 10.0, 50.0, 50.0);
+        ctx.stroke_rect(100.0, 100.0, 50.0, 50.0);
+        // 每个 stroke_rect 生成 4 条边
+        assert_eq!(ctx.primitives().fills.len(), 8);
+    }
+
+    /// 测试 into_primitives 消费上下文。
+    #[test]
+    fn test_canvas_into_primitives() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+        let count = ctx.primitives().fills.len();
+        let primitives = ctx.into_primitives();
+        assert_eq!(primitives.fills.len(), count);
+    }
+
+    /// 测试 get_image_data 各种尺寸。
+    #[test]
+    fn test_canvas_get_image_data_sizes() {
+        let ctx = CanvasContext::new(200, 200);
+        // 正常尺寸
+        let img = ctx.get_image_data(0, 0, 10, 10);
+        assert_eq!(img.width, 10);
+        assert_eq!(img.height, 10);
+        assert_eq!(img.data.len(), 400); // 10*10*4
+
+        // 1x1
+        let img1 = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(img1.width, 1);
+        assert_eq!(img1.data.len(), 4);
+    }
+
+    /// 测试极端变换：大旋转角度。
+    #[test]
+    fn test_canvas_rotate_large_angle() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.rotate(100.0_f32.to_radians());
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        assert_eq!(ctx.primitives().fills.len(), 1);
+    }
+
+    /// 测试变换后 reset_transform 恢复。
+    #[test]
+    fn test_canvas_reset_after_transform() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.translate(100.0, 100.0);
+        ctx.rotate(45.0_f32.to_radians());
+        ctx.reset_transform();
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        // reset_transform 后应在原始坐标系绘制
+        let fill = &ctx.primitives().fills[0];
+        assert_eq!(fill.rect.origin.x, 0.0);
+        assert_eq!(fill.rect.origin.y, 0.0);
+    }
+
+    /// 测试 fill_text 和 stroke_text 产生字形图元。
+    #[test]
+    fn test_canvas_text_produces_glyphs() {
+        let mut ctx = CanvasContext::new(400, 300);
+        ctx.fill_text("Hello", 10.0, 20.0);
+        assert_eq!(ctx.primitives().glyphs.len(), 1);
+        ctx.stroke_text("World", 10.0, 50.0);
+        assert_eq!(ctx.primitives().glyphs.len(), 2);
+    }
+
+    /// 测试 set_font 影响文本度量。
+    #[test]
+    fn test_canvas_font_affects_measure() {
+        let ctx = CanvasContext::new(400, 300);
+        let small = ctx.measure_text("test");
+        let mut ctx2 = CanvasContext::new(400, 300);
+        ctx2.set_font(FontDescriptor {
+            family: "serif".into(),
+            size: 32.0,
+            ..Default::default()
+        });
+        let large = ctx2.measure_text("test");
+        assert!(large.width > small.width, "大字体应产生更宽的文本度量");
+    }
+
+    /// 测试 Path2D 连续操作。
+    #[test]
+    fn test_canvas_complex_path() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.quadratic_curve_to(150.0, 50.0, 100.0, 100.0);
+        ctx.bezier_curve_to(80.0, 120.0, 20.0, 120.0, 10.0, 100.0);
+        ctx.close_path();
+        ctx.fill();
+        assert!(!ctx.primitives().fills.is_empty());
+    }
+
+    /// 测试 clear_rect 产生透明填充。
+    #[test]
+    fn test_canvas_clear_rect_transparent() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.clear_rect(10.0, 10.0, 50.0, 50.0);
+        assert_eq!(ctx.primitives().fills.len(), 1);
+        assert_eq!(ctx.primitives().fills[0].color.a, 0);
+    }
+
+    /// 测试 global_alpha 影响填充颜色透明度。
+    #[test]
+    fn test_canvas_alpha_affects_all_operations() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_global_alpha(0.5);
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+        assert_eq!(ctx.primitives().fills[0].color.a, 127); // 255 * 0.5 ≈ 127
+    }
 }
