@@ -11,3 +11,8 @@ compact_str = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "css_bench"
+harness = false

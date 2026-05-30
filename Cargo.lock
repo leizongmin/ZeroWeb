@@ -4392,6 +4392,7 @@ name = "zero-css-parser"
 version = "0.1.0"
 dependencies = [
  "compact_str",
+ "criterion",
  "serde",
  "thiserror 2.0.18",
 ]
