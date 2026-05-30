@@ -271,4 +271,54 @@ mod tests {
         let config = WindowConfig::new("Test");
         let _runtime = HostRuntime::new(config);
     }
+
+    #[test]
+    fn test_window_config_new_empty_title() {
+        let config = WindowConfig::new("");
+        assert_eq!(config.title, "");
+        assert_eq!(config.width, 800);
+    }
+
+    #[test]
+    fn test_window_config_with_size_zero() {
+        let config = WindowConfig::new("T").with_size(0, 0);
+        assert_eq!(config.width, 0);
+        assert_eq!(config.height, 0);
+    }
+
+    #[test]
+    fn test_window_config_with_size_max() {
+        let config = WindowConfig::new("T").with_size(u32::MAX, u32::MAX);
+        assert_eq!(config.width, u32::MAX);
+        assert_eq!(config.height, u32::MAX);
+    }
+
+    #[test]
+    fn test_window_config_builder_only_width() {
+        let config = WindowConfig::new("T").with_size(500, 600);
+        assert_eq!(config.width, 500);
+        assert_eq!(config.height, 600);
+    }
+
+    #[test]
+    fn test_window_config_fields_public_mutable() {
+        let mut config = WindowConfig::new("Original");
+        config.title = "Modified".to_string();
+        assert_eq!(config.title, "Modified");
+    }
+
+    #[test]
+    fn test_window_config_from_string_ref() {
+        let title = String::from("Test");
+        let config = WindowConfig::new(&title);
+        assert_eq!(config.title, "Test");
+    }
+
+    #[test]
+    fn test_host_runtime_new_custom_config() {
+        let config = WindowConfig::new("Custom")
+            .with_size(1920, 1080)
+            .with_resizable(false);
+        let _runtime = HostRuntime::new(config);
+    }
 }

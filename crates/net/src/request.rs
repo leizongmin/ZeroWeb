@@ -169,4 +169,86 @@ mod tests {
         };
         assert_eq!(resp.text().unwrap(), "Hello, World!");
     }
+
+    #[test]
+    fn test_http_request_get_constructor() {
+        let req = HttpRequest::get("https://example.com/api");
+        assert_eq!(req.method, HttpMethod::Get);
+        assert_eq!(req.url, "https://example.com/api");
+        assert!(req.body.is_none());
+        assert!(req.headers.is_empty());
+    }
+
+    #[test]
+    fn test_http_request_post_constructor() {
+        let req = HttpRequest::post("https://example.com/api", b"data".to_vec());
+        assert_eq!(req.method, HttpMethod::Post);
+        assert_eq!(req.body, Some(b"data".to_vec()));
+    }
+
+    #[test]
+    fn test_http_request_header_builder() {
+        let req = HttpRequest::get("https://example.com")
+            .header("Accept", "text/html")
+            .header("X-Custom", "value");
+        assert_eq!(req.headers.len(), 2);
+        assert_eq!(req.headers[0], ("Accept".into(), "text/html".into()));
+    }
+
+    #[test]
+    fn test_http_response_is_success_boundaries() {
+        let r199 = HttpResponse { status_code: 199, headers: vec![], body: vec![], url: String::new() };
+        let r200 = HttpResponse { status_code: 200, headers: vec![], body: vec![], url: String::new() };
+        let r299 = HttpResponse { status_code: 299, headers: vec![], body: vec![], url: String::new() };
+        let r300 = HttpResponse { status_code: 300, headers: vec![], body: vec![], url: String::new() };
+        assert!(!r199.is_success());
+        assert!(r200.is_success());
+        assert!(r299.is_success());
+        assert!(!r300.is_success());
+    }
+
+    #[test]
+    fn test_http_response_is_redirect_boundaries() {
+        let r299 = HttpResponse { status_code: 299, headers: vec![], body: vec![], url: String::new() };
+        let r300 = HttpResponse { status_code: 300, headers: vec![], body: vec![], url: String::new() };
+        let r399 = HttpResponse { status_code: 399, headers: vec![], body: vec![], url: String::new() };
+        let r400 = HttpResponse { status_code: 400, headers: vec![], body: vec![], url: String::new() };
+        assert!(!r299.is_redirect());
+        assert!(r300.is_redirect());
+        assert!(r399.is_redirect());
+        assert!(!r400.is_redirect());
+    }
+
+    #[test]
+    fn test_http_response_content_type_found() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "text/html; charset=utf-8".into())],
+            body: vec![],
+            url: String::new(),
+        };
+        assert_eq!(resp.content_type(), Some("text/html; charset=utf-8"));
+    }
+
+    #[test]
+    fn test_http_response_content_type_missing() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+        };
+        assert!(resp.content_type().is_none());
+    }
+
+    #[test]
+    fn test_http_response_text_invalid_utf8() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![0xFF, 0xFE],
+            url: String::new(),
+        };
+        assert!(resp.text().is_err());
+    }
 }

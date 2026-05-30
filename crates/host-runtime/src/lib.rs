@@ -25,3 +25,38 @@ pub enum HostError {
 
 /// 宿主运行时结果
 pub type HostResult<T> = Result<T, HostError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_error_window_creation_message() {
+        let err = HostError::WindowCreationFailed("display not found".into());
+        let msg = err.to_string();
+        assert!(msg.contains("display not found"), "message: {msg}");
+    }
+
+    #[test]
+    fn test_host_error_gpu_request_message() {
+        let err = HostError::GpuRequestFailed("no adapter".into());
+        let msg = err.to_string();
+        assert!(msg.contains("no adapter"), "message: {msg}");
+    }
+
+    #[test]
+    fn test_host_error_event_loop_message() {
+        let err = HostError::EventLoopError("interrupted".into());
+        let msg = err.to_string();
+        assert!(msg.contains("interrupted"), "message: {msg}");
+    }
+
+    #[test]
+    fn test_host_result_ok_and_err() {
+        let ok: HostResult<()> = Ok(());
+        assert!(ok.is_ok());
+
+        let err: HostResult<()> = Err(HostError::EventLoopError("x".into()));
+        assert!(err.is_err());
+    }
+}

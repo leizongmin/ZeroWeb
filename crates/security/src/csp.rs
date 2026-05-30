@@ -220,4 +220,101 @@ mod tests {
         assert!(csp.is_inline_script_allowed());
         assert!(csp.is_inline_style_allowed());
     }
+
+    #[test]
+    fn test_csp_parse_multiple_directives() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'; script-src https://cdn.com");
+        assert_eq!(csp.directives.len(), 2);
+        assert_eq!(csp.directives[0].name, "default-src");
+        assert_eq!(csp.directives[1].name, "script-src");
+        assert_eq!(csp.directives[1].values, vec!["https://cdn.com"]);
+    }
+
+    #[test]
+    fn test_csp_parse_trailing_semicolons() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self';");
+        assert_eq!(csp.directives.len(), 1);
+    }
+
+    #[test]
+    fn test_csp_parse_extra_whitespace() {
+        let csp = ContentSecurityPolicy::parse("  default-src   'self'  ;  script-src  'self'  ");
+        assert_eq!(csp.directives.len(), 2);
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_wildcard() {
+        let csp = ContentSecurityPolicy::parse("default-src *");
+        assert!(csp.is_resource_allowed("script", "https://evil.com/bad.js"));
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_exact_url_match() {
+        let csp = ContentSecurityPolicy::parse("script-src https://cdn.example.com/app.js");
+        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js"));
+        assert!(!csp.is_resource_allowed("script", "https://cdn.example.com/other.js"));
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_wildcard_domain() {
+        let csp = ContentSecurityPolicy::parse("script-src *.example.com");
+        assert!(csp.is_resource_allowed("script", "https://sub.example.com/script.js"));
+        assert!(!csp.is_resource_allowed("script", "https://other.com/script.js"));
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_url_prefix() {
+        let csp = ContentSecurityPolicy::parse("script-src https://cdn.example.com/libs/");
+        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/libs/v1/app.js"));
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_fallback_to_default_src() {
+        let csp =
+            ContentSecurityPolicy::parse("default-src 'self'; img-src https://images.com");
+        // "script" type falls back to default-src
+        assert!(csp.is_resource_allowed("script", "app.js"));
+        // "img" has specific directive
+        assert!(csp.is_resource_allowed("img", "https://images.com/logo.png"));
+    }
+
+    #[test]
+    fn test_csp_resource_allowed_directive_empty_values() {
+        let csp = ContentSecurityPolicy::parse("script-src");
+        // 无值的指令表示不限制
+        assert!(csp.is_resource_allowed("script", "https://evil.com/bad.js"));
+    }
+
+    #[test]
+    fn test_csp_inline_style_allowed_unsafe() {
+        let csp = ContentSecurityPolicy::parse("style-src 'unsafe-inline'");
+        assert!(csp.is_inline_style_allowed());
+    }
+
+    #[test]
+    fn test_csp_inline_style_blocked() {
+        let csp = ContentSecurityPolicy::parse("style-src 'self'");
+        assert!(!csp.is_inline_style_allowed());
+    }
+
+    #[test]
+    fn test_csp_inline_script_fallback_to_default_src() {
+        let csp = ContentSecurityPolicy::parse("default-src 'unsafe-inline'");
+        // 无 script-src，回退到 default-src
+        assert!(csp.is_inline_script_allowed());
+    }
+
+    #[test]
+    fn test_csp_inline_style_fallback_to_default_src() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'");
+        // 无 style-src，回退到 default-src
+        assert!(!csp.is_inline_style_allowed());
+    }
+
+    #[test]
+    fn test_csp_resource_type_img() {
+        let csp = ContentSecurityPolicy::parse("img-src https://images.com");
+        assert!(csp.is_resource_allowed("img", "https://images.com/photo.jpg"));
+        assert!(!csp.is_resource_allowed("img", "https://evil.com/photo.jpg"));
+    }
 }

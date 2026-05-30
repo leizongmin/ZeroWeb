@@ -147,4 +147,62 @@ mod tests {
         p.clear();
         assert!(p.is_empty());
     }
+
+    #[test]
+    fn test_path_quadratic_curve_to() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.commands_mut()
+            .push(PathCommand::QuadraticCurveTo(10.0, 20.0, 30.0, 40.0));
+        assert_eq!(p.commands().len(), 2);
+        assert!(matches!(
+            p.commands()[1],
+            PathCommand::QuadraticCurveTo(10.0, 20.0, 30.0, 40.0)
+        ));
+    }
+
+    #[test]
+    fn test_path_bezier_curve_to() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.commands_mut()
+            .push(PathCommand::BezierCurveTo(1.0, 2.0, 3.0, 4.0, 5.0, 6.0));
+        assert_eq!(p.commands().len(), 2);
+        assert!(matches!(
+            p.commands()[1],
+            PathCommand::BezierCurveTo(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        ));
+    }
+
+    #[test]
+    fn test_path_commands_mut_modification() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.commands_mut().push(PathCommand::LineTo(5.0, 5.0));
+        p.commands_mut().remove(0);
+        assert_eq!(p.commands().len(), 1);
+    }
+
+    #[test]
+    fn test_path_default_trait() {
+        let p = Path2D::default();
+        assert!(p.is_empty());
+    }
+
+    #[test]
+    fn test_path_clone_equality() {
+        let mut p = Path2D::new();
+        p.move_to(1.0, 2.0);
+        p.line_to(3.0, 4.0);
+        let cloned = p.clone();
+        assert_eq!(p.commands().len(), cloned.commands().len());
+    }
+
+    #[test]
+    fn test_path_multiple_rects() {
+        let mut p = Path2D::new();
+        p.rect(0.0, 0.0, 10.0, 10.0);
+        p.rect(20.0, 20.0, 10.0, 10.0);
+        assert_eq!(p.commands().len(), 10); // 2 × 5
+    }
 }

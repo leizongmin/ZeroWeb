@@ -224,4 +224,71 @@ mod tests {
         // Can't go forward N beyond end
         assert!(nav.go_forward_n(5).is_none());
     }
+
+    #[test]
+    fn test_navigation_go_back_n_happy_path() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+        let entry = nav.go_back_n(2).unwrap();
+        assert_eq!(entry.url, "http://b.com");
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
+
+    #[test]
+    fn test_navigation_go_forward_n_happy_path() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.go_back_n(2); // at a.com
+        let entry = nav.go_forward_n(2).unwrap();
+        assert_eq!(entry.url, "http://c.com");
+    }
+
+    #[test]
+    fn test_navigation_replace_empty_history() {
+        let mut nav = NavigationHistory::new(50);
+        nav.replace_current("http://x.com", None);
+        // 空历史中 replace 是 no-op
+        assert!(nav.is_empty());
+    }
+
+    #[test]
+    fn test_navigation_max_entries_one() {
+        let mut nav = NavigationHistory::new(1);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        assert_eq!(nav.len(), 1);
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
+
+    #[test]
+    fn test_navigation_multiple_back_then_forward() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+        nav.go_back(); // c
+        nav.go_back(); // b
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        nav.go_forward(); // c
+        nav.go_forward(); // d
+        assert_eq!(nav.current().unwrap().url, "http://d.com");
+    }
+
+    #[test]
+    fn test_navigation_eviction_and_go_back() {
+        let mut nav = NavigationHistory::new(2);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None); // a 被淘汰
+        assert_eq!(nav.len(), 2);
+        let entry = nav.go_back().unwrap();
+        assert_eq!(entry.url, "http://b.com");
+        assert!(nav.go_back().is_none()); // a 已被淘汰
+    }
 }

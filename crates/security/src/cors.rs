@@ -296,4 +296,180 @@ mod tests {
     fn test_is_not_simple_request_put() {
         assert!(!is_simple_request("PUT", None, &[]));
     }
+
+    #[test]
+    fn test_cors_policy_default_values() {
+        let policy = CorsPolicy::default();
+        assert_eq!(policy.allow_origins, vec!["*"]);
+        assert!(policy.allow_methods.contains(&"GET".to_string()));
+        assert!(policy.allow_headers.is_empty());
+        assert!(!policy.allow_credentials);
+        assert!(policy.max_age.is_none());
+    }
+
+    #[test]
+    fn test_cors_custom_port_origin_matching() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com:3000".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com:3000").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_port_80_origin_formatting() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        assert_eq!(origin.port, 80);
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_port_443_origin_formatting() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["https://example.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(origin.port, 443);
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_non_simple_header_blocked() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "GET",
+            &[("X-Custom".to_string(), "value".to_string())],
+        );
+        assert!(!result.allowed);
+        assert!(result.reason.contains("X-Custom"));
+    }
+
+    #[test]
+    fn test_cors_non_simple_header_allowed() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec!["X-Custom".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "GET",
+            &[("X-Custom".to_string(), "value".to_string())],
+        );
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_non_simple_content_type_blocked() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "POST",
+            &[("Content-Type".to_string(), "application/json".to_string())],
+        );
+        assert!(!result.allowed);
+    }
+
+    #[test]
+    fn test_cors_content_type_with_charset_param() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "POST",
+            &[(
+                "Content-Type".to_string(),
+                "text/plain; charset=utf-8".to_string(),
+            )],
+        );
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_case_insensitive_method_matching() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(&policy, &origin, "get", &[]);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_cors_empty_allow_origins_blocks_all() {
+        let policy = CorsPolicy {
+            allow_origins: vec![],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(!result.allowed);
+    }
+
+    #[test]
+    fn test_is_simple_request_head() {
+        assert!(is_simple_request("HEAD", None, &[]));
+    }
+
+    #[test]
+    fn test_is_simple_request_with_custom_header() {
+        assert!(!is_simple_request(
+            "GET",
+            None,
+            &[("X-Custom".to_string(), "val".to_string())]
+        ));
+    }
 }

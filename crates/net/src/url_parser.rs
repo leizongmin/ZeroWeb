@@ -170,4 +170,61 @@ mod tests {
         assert!(!http.is_secure());
         assert!(https.is_secure());
     }
+
+    #[test]
+    fn test_parse_url_with_credentials() {
+        let parsed = parse_url("http://user:pass@example.com/path").unwrap();
+        assert_eq!(parsed.username, "user");
+        assert_eq!(parsed.password.as_deref(), Some("pass"));
+    }
+
+    #[test]
+    fn test_parse_url_with_default_http_port() {
+        // url crate 对默认端口返回 None（即使用户显式写了 :80）
+        let parsed = parse_url("http://example.com:80/").unwrap();
+        assert!(parsed.port.is_none()); // 80 是 http 默认端口，被 url crate 规范化
+        assert_eq!(parsed.origin(), "http://example.com");
+    }
+
+    #[test]
+    fn test_parse_url_empty_string() {
+        assert!(parse_url("").is_err());
+    }
+
+    #[test]
+    fn test_url_is_same_origin_positive() {
+        let a = parse_url("https://example.com/page1").unwrap();
+        let b = parse_url("https://example.com/page2?q=1").unwrap();
+        assert!(a.is_same_origin(&b));
+    }
+
+    #[test]
+    fn test_url_is_same_origin_negative() {
+        let a = parse_url("https://example.com").unwrap();
+        let b = parse_url("https://other.com").unwrap();
+        assert!(!a.is_same_origin(&b));
+    }
+
+    #[test]
+    fn test_url_to_url_string_basic() {
+        let parsed = parse_url("http://example.com/path?q=1").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(url_str.starts_with("http://example.com"));
+        assert!(url_str.contains("/path"));
+        assert!(url_str.contains("q=1"));
+    }
+
+    #[test]
+    fn test_url_to_url_string_with_credentials() {
+        let parsed = parse_url("http://user:pass@example.com/path").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(url_str.contains("user:pass@"));
+    }
+
+    #[test]
+    fn test_url_to_url_string_excludes_fragment() {
+        let parsed = parse_url("http://example.com/path#section").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(!url_str.contains('#'));
+    }
 }

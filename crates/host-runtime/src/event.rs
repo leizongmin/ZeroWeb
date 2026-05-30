@@ -26,3 +26,68 @@ pub enum AppEvent {
         pressed: bool,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_event_resized_values() {
+        let event = AppEvent::Resized {
+            width: 1920,
+            height: 1080,
+        };
+        if let AppEvent::Resized { width, height } = event {
+            assert_eq!(width, 1920);
+            assert_eq!(height, 1080);
+        } else {
+            panic!("Expected Resized variant");
+        }
+    }
+
+    #[test]
+    fn test_app_event_keyboard_input_values() {
+        let pressed = AppEvent::KeyboardInput {
+            key: "A".to_string(),
+            pressed: true,
+        };
+        if let AppEvent::KeyboardInput { key, pressed: p } = &pressed {
+            assert_eq!(key, "A");
+            assert!(p);
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+
+        let released = AppEvent::KeyboardInput {
+            key: "Escape".to_string(),
+            pressed: false,
+        };
+        if let AppEvent::KeyboardInput { pressed: p, .. } = &released {
+            assert!(!p);
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+    }
+
+    #[test]
+    fn test_app_event_debug_format() {
+        assert!(!format!("{:?}", AppEvent::RedrawRequested).is_empty());
+        assert!(!format!("{:?}", AppEvent::CloseRequested).is_empty());
+        assert!(!format!("{:?}", AppEvent::Focused).is_empty());
+        assert!(!format!("{:?}", AppEvent::Unfocused).is_empty());
+        assert!(format!("{:?}", AppEvent::Resized { width: 100, height: 200 })
+            .contains("100"));
+        assert!(format!("{:?}", AppEvent::KeyboardInput {
+            key: "X".into(),
+            pressed: true
+        })
+        .contains("X"));
+    }
+
+    #[test]
+    fn test_app_event_focused_unfocused_distinct() {
+        let focused = format!("{:?}", AppEvent::Focused);
+        let unfocused = format!("{:?}", AppEvent::Unfocused);
+        assert_ne!(focused, unfocused);
+    }
+}
