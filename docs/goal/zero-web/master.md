@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，1215 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，1657 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 1215 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 1657 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,19 +24,19 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 105 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、边角用例测试 |
-| css-parser | 196 | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、**:has()** |
-| style-system | 260 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、outline、**:has() 匹配** |
+| css-parser | 240+ | ✅ | Tokenizer、Parser、选择器、值解析、百分比/auto、媒体查询、Transform、@keyframes、:has()、**gradient 解析**、calc 改进 |
+| style-system | 300+ | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、Grid 项放置、outline、:has() 匹配、**所有属性初始值** |
 | layout-engine | 85 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、几何验证 |
-| engine | 64 | ✅ | 渲染管线、paint、dirty tracking、compositing |
-| render-foundation | 74 | ✅ | GPU/CPU 渲染、字体栈、图片缓存 |
-| host-runtime | 18 | ✅ | winit 窗口、事件循环、事件类型 |
-| net | 74 | ✅ | HTTP client、URL、导航历史、Cookie |
-| security | 56 | ✅ | 同源策略、CORS、CSP |
+| engine | 80+ | ✅ | 渲染管线、paint（**文本/glyph 渲染、overflow clip、border-radius**）、dirty tracking、compositing（**z-index 排序**）、**CSS transform**、**增量渲染** |
+| render-foundation | 80+ | ✅ | GPU/CPU 渲染、字体栈、**image cache + GC**、**GPU pixel verification**、**clipping/scissor** |
+| host-runtime | 30+ | ✅ | winit 窗口、事件循环、**mouse/cursor/IME 事件**、**综合事件处理测试** |
+| net | 80+ | ✅ | HTTP client、URL、导航历史、Cookie、**send 集成测试**、**cookie 过期/SameSite** |
+| security | 75+ | ✅ | 同源策略、CORS（**preflight**）、CSP（**nonce/hash/navigation/document**）、**mixed content blocking**、**sandbox** |
 | protocol | 57 | ✅ | IPC 消息、bincode 序列化 |
-| storage | 47 | ✅ | localStorage、sessionStorage、IndexedDB |
-| canvas | 81 | ✅ | Canvas 2D API、路径、变换 |
-| webview | 43 | ✅ | WebView 嵌入 API、Builder |
-| wasm-sandbox | 22 | ✅ | WASM 运行时（wasmi 纯 Rust 解释器） |
+| storage | 70+ | ✅ | localStorage、sessionStorage、IndexedDB（**IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction**）、**Cache API** |
+| canvas | 100+ | ✅ | Canvas 2D API、路径、变换、**HSL/HSLA 颜色**、**gradient 解析** |
+| webview | 45+ | ✅ | WebView 嵌入 API、Builder、**event callbacks**、**load_url fetch**、**execute_script** |
+| wasm-sandbox | 30+ | ✅ | WASM 运行时（wasmi）、**host function imports**、**fuel/execution limiting** |
 
 ### 跨 crate 集成测试
 
@@ -62,6 +62,25 @@
 ---
 
 ## 最近完成的改进
+
+### 0. 全 crate 功能增强 + 测试覆盖率提升（本轮）
+
+通过并行扫描 14 个 crate 识别出 158 个功能缺口和 133 个测试覆盖缺口，按优先级实现了 373 个新测试和对应功能：
+
+| 模块 | 新增功能 | 新增测试 |
+|------|----------|----------|
+| engine | text/glyph 渲染、overflow clip、border-radius、z-index compositing、CSS transform、增量渲染 | ~18 |
+| render-foundation | image cache + GC、GPU pixel readback、clipping/scissor | ~8 |
+| security | CORS preflight、CSP nonce/hash/navigation/document、mixed content blocking、sandbox | ~20 |
+| storage | IdbKeyRange、IdbIndex、IdbCursor、IdbTransaction、Cache API | ~25 |
+| canvas | HSL/HSLA 颜色、gradient 解析 | ~20 |
+| host-runtime | mouse/cursor/IME 事件、综合事件处理 | ~15 |
+| net | HTTP send 集成、cookie 过期/SameSite enforcement | ~10 |
+| wasm-sandbox | host function imports、fuel limiting | ~10 |
+| webview | event callbacks、load_url fetch、execute_script | ~5 |
+| css-parser | gradient 解析、bare 0 parsing、calc 改进 | ~40 |
+| style-system | 所有属性初始值、grid e2e 测试、structural pseudo-class | ~40 |
+| dom | 多 class selector 查询 | ~5 |
 
 ### 1. CSS 简写属性展开（style-system）
 
