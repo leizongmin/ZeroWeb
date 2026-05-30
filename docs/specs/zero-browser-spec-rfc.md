@@ -1,6 +1,6 @@
 # Spec: ZeroBrowser — 基于 Rust 的跨平台浏览器
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-05-30
 **作者**: AI Assistant
 **状态**: Confirmed
@@ -634,9 +634,9 @@
 
 ### 8.1 现状分析（As-Is）
 
-**当前架构**: M1 里程碑执行中。Cargo workspace 已建立，包含 16 个 crate 骨架 + 2 个应用入口，其中 `render-foundation` 和 `host-runtime` 已有实质性实现。
+**当前架构**: M1 里程碑执行中。Cargo workspace 已建立，包含 16 个 crate 骨架 + 2 个应用入口，其中 `render-foundation` 和 `host-runtime` 已有实质性实现。wgpu GPU 渲染后端已在 `render-foundation` 中实现，`host-runtime` 提供 `run_with_window()` 用于 GPU surface 创建，Demo 二进制已切换到 wgpu GPU 渲染路径。
 
-**代码规模**: 2,112 行 Rust 源代码（28 个 `.rs` 文件），55 个单元测试，5 个 criterion 基准测试。
+**代码规模**: 3,616 行 Rust 源代码（32 个 `.rs` 文件），69 个单元测试，5 个 criterion 基准测试，零 clippy 警告。
 
 **已有资产**:
 
@@ -645,9 +645,9 @@
 | 技术调研文档 | ✅ 完成 | 四轮迭代，技术路线已确认 |
 | Cargo workspace | ✅ 完成 | 16 crate + 2 apps，全部编译通过 |
 | CI 管线 | ✅ 完成 | GitHub Actions 三平台（ubuntu/macos/windows） |
-| `render-foundation` | 🔄 进行中 | 1,271 行源码，38 个测试，5 个基准；CPU 渲染数据模型已建立 |
-| `host-runtime` | ✅ 基础完成 | 218 行源码，3 个测试；winit 窗口+事件循环可用 |
-| Demo 二进制 | ✅ CPU 版 | 800×600 CPU 渲染 + PPM 输出 + winit 窗口展示 |
+| `render-foundation` | ✅ GPU+CPU | 2,532 行源码，53 个测试，5 个基准；CPU 渲染数据模型 + wgpu GPU 后端已实现 |
+| `host-runtime` | ✅ 完成 | 329 行源码，3 个测试；winit 窗口+事件循环+GPU surface 创建（`run_with_window()`） |
+| Demo 二进制 | ✅ GPU 版 | 800×600 wgpu GPU 渲染 + CPU 后备 PPM 输出 + winit 窗口展示 |
 | 覆盖率测量脚本 | ✅ 就位 | `scripts/check-coverage.sh` |
 | 基准运行脚本 | ⚠️ 路径有误 | `scripts/run-benchmarks.sh` 引用不存在的 Cargo.toml |
 
@@ -661,10 +661,13 @@
 | `surface` | SurfaceDescriptor、FrameBuffer（CPU RGBA 像素缓冲区） | 180 | 8 |
 | `font/loader` | FontLoader（fontdue 集成）、字体加载和 glyph 光栅化 | 143 | 6 |
 | `font/cache` | GlyphCache、LRU 淘汰策略 | 201 | 6 |
+| `gpu/atlas` | GpuAtlas — wgpu 纹理图集，glyph 上传、纹理绑定 | 374 | — |
+| `gpu/pipeline` | GpuPipeline — wgpu 渲染管线（着色器、bind group、render pipeline） | 213 | — |
+| `gpu/renderer` | GpuRenderer — wgpu surface 管理、场景渲染、GPU glyph 合成 | 659 | — |
 
 **尚未实现的关键部分**:
-- `render-foundation`: wgpu GPU 后端、swash 字体整形、图片加载/缓存、实际渲染管线
-- `host-runtime`: GPU surface 创建（wgpu 集成）、输入法支持、键盘事件转换
+- `render-foundation`: swash 字体整形、图片加载/缓存、实际渲染管线（布局盒 → 渲染命令转换）
+- `host-runtime`: 输入法支持、键盘事件转换
 - 所有其他 crate: 仅有骨架占位代码
 
 **OmniTerm 可复用资产清单**（待迁移）:
@@ -1039,6 +1042,7 @@ enum IpcMessage {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v1.3 | 2026-05-30 | 更新 §8.1 As-Is 分析：wgpu GPU 渲染后端已在 render-foundation gpu 模块实现（atlas.rs、pipeline.rs、renderer.rs）；host-runtime 新增 run_with_window() 用于 GPU surface 创建；Demo 切换到 wgpu GPU 渲染路径；代码规模增至 3,616 行 / 32 文件 / 69 测试 / 零 clippy 警告；从「尚未实现」列表移除 wgpu GPU 后端和 GPU surface 创建 |
 | v1.2 | 2026-05-30 | 更新 §8.1 As-Is 分析以反映 M1 代码进展（2,112 行源码、55 测试、5 基准）；补充 render-foundation 和 host-runtime 实现细节；标注 run-benchmarks.sh 路径问题 |
 | v1.1 | 2026-05-30 | 状态更新为 Confirmed；解决 TBD-1（MSRV = Rust 1.85）；更新 C-008 约束 |
 | v1.0 | 2026-05-30 | 初始版本 — 基于目标文档 `docs/goal/zero-browser.md` v1.0 和技术调研文档 `docs/research/rust-cross-platform-browser-research.md` 创建完整的 Spec + RFC |
