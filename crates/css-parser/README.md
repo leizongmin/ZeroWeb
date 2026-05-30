@@ -1,10 +1,10 @@
-# zero-css-parser
+# ZeroWeb CSS Parser (`zero-css-parser`)
 
 > 自建 CSS 解析器 — tokenizer + parser，支持完整选择器和属性解析，不依赖任何 MPL 许可的 CSS 解析库。
 
 ## 概述
 
-`zero-css-parser` 是 ZeroWeb 浏览器渲染管线的第一阶段，负责将 CSS 文本转换为结构化的 AST。它包含一个基于 CSS Syntax Module Level 3 规范的词法分析器（Tokenizer）和一个递归下降语法解析器（Parser），能解析样式规则、@规则、完整的选择器语法以及常见的 CSS 属性值类型。该 crate 为下游的 `zero-style-system` 提供解析后的结构化数据。
+`ZeroWeb CSS Parser` (`zero-css-parser`) 是 ZeroWeb 渲染管线的第一阶段，负责将 CSS 文本转换为结构化的 AST。它包含一个基于 CSS Syntax Module Level 3 规范的词法分析器（Tokenizer）和一个递归下降语法解析器（Parser），能解析样式规则、@规则、完整的选择器语法以及常见的 CSS 属性值类型。该 crate 为下游的 `zero-style-system` 提供解析后的结构化数据。
 
 ## 主要功能
 

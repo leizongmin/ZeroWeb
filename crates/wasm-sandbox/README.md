@@ -1,10 +1,10 @@
-# zero-wasm-sandbox
+# ZeroWeb WASM Sandbox (`zero-wasm-sandbox`)
 
 > 基于 wasmi 的纯 Rust WASM 沙箱运行时，用于插件、扩展和受控计算任务
 
 ## 概述
 
-`zero-wasm-sandbox` 是 ZeroWeb 的 WASM 运行时模块，采用纯 Rust 实现的 wasmi 解释器作为后端。它在浏览器架构中承担非页面侧的 WebAssembly 执行职责，为插件系统、扩展能力或受控计算任务提供安全的沙箱环境。通过 feature gate 机制，未启用 wasmi 特性时自动退化为占位实现，确保编译通过。
+`ZeroWeb WASM Sandbox` (`zero-wasm-sandbox`) 是 ZeroWeb 的 WASM 运行时模块，采用纯 Rust 实现的 wasmi 解释器作为后端。它在浏览器架构中承担非页面侧的 WebAssembly 执行职责，为插件系统、扩展能力或受控计算任务提供安全的沙箱环境。通过 feature gate 机制，未启用 wasmi 特性时自动退化为占位实现，确保编译通过。
 
 ## 主要功能
 

@@ -1,10 +1,10 @@
-# zero-webview
+# ZeroWebView (`zero-webview`)
 
 > 面向外部应用的稳定 WebView 嵌入接口
 
 ## 概述
 
-`zero-webview` 是 ZeroWeb 对外暴露的稳定 API 层，提供构建器模式创建 WebView、加载 HTML/URL、注入 CSS、渲染表面输出等核心能力。它封装了底层渲染管线（`zero-engine`、`zero-render-foundation`），为嵌入方提供简洁、类型安全的接口，是浏览器 shell 和第三方应用接入 ZeroWeb 渲染能力的唯一入口。
+`ZeroWebView` (`zero-webview`) 是 ZeroWeb 对外暴露的稳定 API 层，提供构建器模式创建 WebView、加载 HTML/URL、注入 CSS、渲染表面输出等核心能力。它封装了底层渲染管线（`zero-engine`、`zero-render-foundation`），为嵌入方提供简洁、类型安全的接口，是浏览器 shell 和第三方应用接入 ZeroWeb 渲染能力的唯一入口。
 
 ## 主要功能
 

@@ -10,9 +10,9 @@
 
 先看这几份文档：
 
-- [README.md](/home/lei/work/ZeroBrowser/README.md)
-- [docs/architecture.md](/home/lei/work/ZeroBrowser/docs/architecture.md)
-- [docs/specs/zero-web-spec-rfc.md](/home/lei/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)
+- [README.md](README.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md)
 - 你计划修改的 crate 下对应 `README.md`
 
 如果是跨 crate 的大改动，别直接开写。先开 issue 或 draft PR，把范围、目标和取舍说清楚。
@@ -21,7 +21,7 @@
 
 - bug、feature、proposal、question 请优先使用 `.github/ISSUE_TEMPLATE/`
 - 提交 PR 时请按 `.github/pull_request_template.md` 填写验证、文档和许可证影响
-- 安全问题不要开公开 issue，按 [SECURITY.md](/home/lei/work/ZeroBrowser/SECURITY.md) 处理
+- 安全问题不要开公开 issue，按 [SECURITY.md](SECURITY.md) 处理
 
 ## 开发环境
 

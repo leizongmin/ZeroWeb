@@ -77,7 +77,7 @@ Topics 太多反而会把“Rust 浏览器内核 / WebView / 实验项目”这�
 
 `ZeroWeb v0.1.0-alpha.0 是首个公开预发布版本，当前已经具备 DOM、CSS、布局、渲染、网络、存储、WebView、Canvas 和 WASM 等基础模块。该版本主要面向学习和研究，不面向生产用途。`
 
-更完整的首个发布说明草稿在 [v0.1.0-alpha.0.md](/home/lei/work/ZeroBrowser/docs/releases/v0.1.0-alpha.0.md)。
+更完整的首个发布说明草稿在 [v0.1.0-alpha.0.md](v0.1.0-alpha.0.md)。
 
 ## 后续版本建议
 
