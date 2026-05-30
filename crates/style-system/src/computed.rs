@@ -46,6 +46,10 @@ pub fn resolve_length(
             // 近似：1ch ≈ 0.5em
             v * font_size * 0.5
         }
+        // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
+        LengthValue::Percentage(v) => *v,
+        // auto 不需要解析为 px
+        LengthValue::Auto => 0.0,
     }
 }
 
@@ -283,15 +287,21 @@ pub fn resolve_computed_style(
 }
 
 /// 将单个长度字段解析为绝对 px。
+///
+/// 百分比值和 auto 保持不变，由布局引擎处理。
 fn resolve_length_field(
     field: &mut LengthValue,
     font_size: f64,
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
 ) {
-    if !matches!(field, LengthValue::Px(_)) {
-        let px = resolve_length(field, font_size, viewport_width, viewport_height);
-        *field = LengthValue::Px(px);
+    match field {
+        LengthValue::Px(_) => { /* 已经是绝对值 */ }
+        LengthValue::Percentage(_) | LengthValue::Auto => { /* 由布局引擎处理 */ }
+        _ => {
+            let px = resolve_length(field, font_size, viewport_width, viewport_height);
+            *field = LengthValue::Px(px);
+        }
     }
 }
 
@@ -464,5 +474,70 @@ mod tests {
 
         let result = resolve_var("var(--a)", &custom);
         assert_eq!(result, "var(--b)"); // 只展开一层
+    }
+
+    // ── Percentage 和 Auto 测试 ──
+
+    #[test]
+    fn test_resolve_length_percentage() {
+        let pct = LengthValue::Percentage(50.0);
+        assert_eq!(resolve_length(&pct, 16.0, None, None), 50.0);
+    }
+
+    #[test]
+    fn test_resolve_length_auto() {
+        let auto = LengthValue::Auto;
+        assert_eq!(resolve_length(&auto, 16.0, None, None), 0.0);
+    }
+
+    #[test]
+    fn test_resolve_length_field_preserves_percentage() {
+        let mut field = LengthValue::Percentage(50.0);
+        resolve_length_field(&mut field, 16.0, None, None);
+        assert_eq!(field, LengthValue::Percentage(50.0));
+    }
+
+    #[test]
+    fn test_resolve_length_field_preserves_auto() {
+        let mut field = LengthValue::Auto;
+        resolve_length_field(&mut field, 16.0, None, None);
+        assert_eq!(field, LengthValue::Auto);
+    }
+
+    #[test]
+    fn test_resolve_length_field_converts_em() {
+        let mut field = LengthValue::Em(2.0);
+        resolve_length_field(&mut field, 16.0, None, None);
+        assert_eq!(field, LengthValue::Px(32.0));
+    }
+
+    #[test]
+    fn test_resolve_computed_style_preserves_auto_width() {
+        let style = ComputedStyle::default();
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None);
+        assert_eq!(resolved.width, LengthValue::Auto);
+        assert_eq!(resolved.height, LengthValue::Auto);
+    }
+
+    #[test]
+    fn test_resolve_computed_style_preserves_percentage() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Percentage(50.0);
+        style.margin_top = LengthValue::Percentage(10.0);
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None);
+        assert_eq!(resolved.width, LengthValue::Percentage(50.0));
+        assert_eq!(resolved.margin_top, LengthValue::Percentage(10.0));
+    }
+
+    #[test]
+    fn test_explicit_zero_px_not_auto() {
+        // 确保 0px 不被误认为 auto
+        let mut field = LengthValue::Px(0.0);
+        resolve_length_field(&mut field, 16.0, None, None);
+        assert_eq!(field, LengthValue::Px(0.0));
+        assert_ne!(field, LengthValue::Auto);
     }
 }
