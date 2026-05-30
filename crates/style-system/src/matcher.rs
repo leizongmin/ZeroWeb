@@ -3,8 +3,8 @@
 //! 实现选择器与 DOM 元素的匹配逻辑，从右到左遍历选择器部分，
 //! 检查标签名、ID、类、属性和伪类。
 
-/// 匹配声明结果类型：(属性名, 属性值, 是否important, 特异性)
-type MatchingDecl = (String, String, bool, (u32, u32, u32));
+/// 匹配声明结果类型：(属性名, 属性值, 是否important, 特异性, 层索引)
+type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
 use zero_css_parser::ast::{
     AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector,
@@ -621,6 +621,82 @@ fn is_element(doc: &Document, node: NodeId) -> bool {
         .unwrap_or(false)
 }
 
+/// 评估 @supports 条件。
+///
+/// 对于属性值测试 `(property: value)`，检查解析器是否能识别该属性和值。
+/// 对于 `selector()`，检查解析器是否能解析该选择器。
+/// 对于逻辑组合，递归评估子条件。
+fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsCondition) -> bool {
+    use zero_css_parser::ast::SupportsCondition;
+
+    match condition {
+        SupportsCondition::Property(property, value) => {
+            is_property_supported(property, value)
+        }
+        SupportsCondition::Selector(selector_text) => {
+            // 尝试解析选择器，能解析即为支持
+            let css = format!("{selector_text} {{ }}");
+            let stylesheet = zero_css_parser::Parser::parse_stylesheet(&css);
+            matches!(
+                stylesheet.rules.first(),
+                Some(zero_css_parser::ast::Rule::Style(_))
+            )
+        }
+        SupportsCondition::And(conditions) => {
+            conditions.iter().all(evaluate_supports_condition)
+        }
+        SupportsCondition::Or(conditions) => {
+            conditions.iter().any(evaluate_supports_condition)
+        }
+        SupportsCondition::Not(inner) => {
+            !evaluate_supports_condition(inner)
+        }
+    }
+}
+
+/// 检查 CSS 属性值对是否受支持。
+///
+/// 已知属性且值能被解析即为"支持"。
+fn is_property_supported(property: &str, value: &str) -> bool {
+    use zero_css_parser::values::*;
+
+    let lower = property.to_ascii_lowercase();
+    let trimmed = value.trim();
+
+    match lower.as_str() {
+        // 布尔特性：有值即为支持
+        "display" => parse_display(trimmed).is_some(),
+        "position" => parse_position(trimmed).is_some(),
+        "overflow" | "overflow-x" | "overflow-y" => parse_overflow(trimmed).is_some(),
+        "visibility" => parse_visibility(trimmed).is_some(),
+        "box-sizing" => parse_box_sizing(trimmed).is_some(),
+        "flex-direction" => parse_flex_direction(trimmed).is_some(),
+        "flex-wrap" => parse_flex_wrap(trimmed).is_some(),
+        "justify-content" | "align-items" | "align-content" | "align-self"
+        | "justify-self" => parse_alignment(trimmed).is_some(),
+        "font-weight" => parse_font_weight(trimmed).is_some(),
+        "font-style" => parse_font_style(trimmed).is_some(),
+        "color" | "background-color" | "border-color" | "border-top-color"
+        | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            parse_color(trimmed).is_some()
+        }
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height"
+        | "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left"
+        | "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
+        | "gap" | "top" | "right" | "bottom" | "left"
+        | "border-top-width" | "border-right-width" | "border-bottom-width"
+        | "border-left-width"
+        | "border-top-left-radius" | "border-top-right-radius"
+        | "border-bottom-right-radius" | "border-bottom-left-radius" => {
+            parse_length(trimmed).is_some()
+        }
+        "transform" => parse_transform(trimmed).is_some(),
+        "background" | "background-image" => parse_gradient(trimmed).is_some() || parse_color(trimmed).is_some(),
+        // 未知属性：默认不支持（安全保守策略）
+        _ => false,
+    }
+}
+
 /// 从样式表中收集匹配指定元素的声明。
 ///
 /// 遍历样式表中所有规则，检查每个选择器是否匹配元素，
@@ -639,6 +715,8 @@ pub fn collect_matching_declarations(
 ///
 /// 遍历样式表中所有规则，检查每个选择器是否匹配元素，
 /// 并在遇到 `@media` 规则时根据媒体上下文决定是否进入。
+///
+/// `@layer` 规则会为内部声明分配级联层索引。
 pub fn collect_matching_declarations_with_media(
     doc: &Document,
     element: NodeId,
@@ -646,21 +724,35 @@ pub fn collect_matching_declarations_with_media(
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
 ) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
 
     for stylesheet in stylesheets {
-        collect_from_rules(doc, element, &stylesheet.rules, &mut results, media_ctx);
+        collect_from_rules(
+            doc,
+            element,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            None,
+            &mut layer_counter,
+        );
     }
 
     results
 }
 
 /// 递归从规则中收集匹配的声明。
+///
+/// `current_layer` 为 `None` 表示未分层的声明，`Some(idx)` 表示当前级联层索引。
+/// `layer_counter` 在遇到 `@layer` 规则时递增，用于分配层索引。
 fn collect_from_rules(
     doc: &Document,
     element: NodeId,
     rules: &[zero_css_parser::ast::Rule],
     results: &mut Vec<MatchingDecl>,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
 ) {
     for rule in rules {
         match rule {
@@ -675,6 +767,7 @@ fn collect_from_rules(
                                 decl.value.clone(),
                                 decl.important,
                                 spec,
+                                current_layer,
                             ));
                         }
                         break; // 一个选择器匹配就够了
@@ -690,17 +783,64 @@ fn collect_from_rules(
                                 zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
                             && zero_css_parser::media_query::evaluate_media_query(&query, ctx)
                         {
-                            collect_from_rules(doc, element, inner_rules, results, media_ctx);
+                            collect_from_rules(
+                                doc,
+                                element,
+                                inner_rules,
+                                results,
+                                media_ctx,
+                                current_layer,
+                                layer_counter,
+                            );
                         }
                         // 没有 media_ctx 时，@media 规则不应用（安全默认值）
                     } else {
-                        // 非 @media 的 AtRule（如 @layer, @supports）无条件递归
-                        collect_from_rules(doc, element, inner_rules, results, media_ctx);
+                        // 非 @media 的 AtRule（如 @supports）无条件递归，保持当前层
+                        collect_from_rules(
+                            doc,
+                            element,
+                            inner_rules,
+                            results,
+                            media_ctx,
+                            current_layer,
+                            layer_counter,
+                        );
                     }
                 }
             }
             zero_css_parser::ast::Rule::Keyframes(_) => {
                 // @keyframes 规则不参与样式匹配，跳过
+            }
+            zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                // @layer 规则：分配层索引并递归
+                let layer_idx = *layer_counter;
+                *layer_counter += 1;
+                collect_from_rules(
+                    doc,
+                    element,
+                    &layer_rule.rules,
+                    results,
+                    media_ctx,
+                    Some(layer_idx),
+                    layer_counter,
+                );
+            }
+            zero_css_parser::ast::Rule::Import(_) => {
+                // @import 规则不参与样式匹配，跳过（实际导入由引擎处理）
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule) => {
+                // @supports 规则：评估条件，条件为真时递归进入
+                if evaluate_supports_condition(&supports_rule.condition) {
+                    collect_from_rules(
+                        doc,
+                        element,
+                        &supports_rule.rules,
+                        results,
+                        media_ctx,
+                        current_layer,
+                        layer_counter,
+                    );
+                }
             }
         }
     }

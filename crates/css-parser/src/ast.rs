@@ -18,6 +18,23 @@ pub enum Rule {
     At(AtRule),
     /// @keyframes 规则。
     Keyframes(KeyframesRule),
+    /// @layer 规则。
+    Layer(LayerRule),
+    /// @import 规则。
+    Import(ImportRule),
+    /// @supports 规则。
+    Supports(SupportsRule),
+}
+
+/// CSS @import 规则。
+///
+/// 格式：`@import url("path") media-query;` 或 `@import "path" media-query;`
+#[derive(Debug, Clone)]
+pub struct ImportRule {
+    /// 导入的 URL。
+    pub url: String,
+    /// 媒体查询列表（可选）。
+    pub media_queries: Vec<String>,
 }
 
 /// CSS 样式规则。
@@ -56,6 +73,18 @@ pub struct KeyframesRule {
     pub name: String,
     /// 关键帧列表。
     pub keyframes: Vec<KeyframeBlock>,
+}
+
+/// @layer 规则。
+///
+/// CSS 级联层，用于控制样式的级联顺序。
+/// 格式：`@layer <name> { <rules> }` 或 `@layer <name>;`（声明-only）。
+#[derive(Debug, Clone)]
+pub struct LayerRule {
+    /// 层名称（可能为空字符串表示匿名层）。
+    pub name: String,
+    /// 层内的规则列表。
+    pub rules: Vec<Rule>,
 }
 
 /// 单个关键帧块（如 `0% { ... }` 或 `from { ... }`）。
@@ -219,4 +248,32 @@ pub struct NthPattern {
 pub enum PseudoElementSelector {
     /// 标准伪元素（如 `::before`、`::after`）。
     Standard(String),
+}
+
+// ── @supports ─────────────────────────────────────────────────────────
+
+/// @supports 规则。
+///
+/// 格式：`@supports (<条件>) { <规则> }`
+#[derive(Debug, Clone)]
+pub struct SupportsRule {
+    /// 条件。
+    pub condition: SupportsCondition,
+    /// 条件为真时应用的规则列表。
+    pub rules: Vec<Rule>,
+}
+
+/// @supports 条件。
+#[derive(Debug, Clone, PartialEq)]
+pub enum SupportsCondition {
+    /// 属性值测试：`(property: value)`。
+    Property(String, String),
+    /// 选择器测试：`selector(<selector>)`。
+    Selector(String),
+    /// 逻辑与：`<cond1> and <cond2>`。
+    And(Vec<SupportsCondition>),
+    /// 逻辑或：`<cond1> or <cond2>`。
+    Or(Vec<SupportsCondition>),
+    /// 逻辑非：`not <cond>`。
+    Not(Box<SupportsCondition>),
 }

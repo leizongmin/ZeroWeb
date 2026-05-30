@@ -19,6 +19,7 @@ pub mod ast;
 pub mod media_query;
 pub mod parser;
 pub mod selector;
+pub mod supports_condition;
 pub mod tokenizer;
 pub mod values;
 
@@ -26,6 +27,7 @@ pub use ast::*;
 pub use media_query::*;
 pub use parser::Parser;
 pub use selector::*;
+pub use supports_condition::*;
 pub use tokenizer::{Token, Tokenizer};
 
 #[cfg(test)]

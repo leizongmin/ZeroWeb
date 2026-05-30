@@ -307,11 +307,66 @@ fn test_parse_at_import() {
     let stylesheet = Parser::parse_stylesheet("@import url(style.css);");
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
-        Rule::At(at_rule) => {
-            assert_eq!(at_rule.name, "import");
-            assert!(matches!(at_rule.body, AtRuleBody::Statement));
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "style.css");
+            assert!(import_rule.media_queries.is_empty());
         }
-        _ => panic!("Expected At rule"),
+        _ => panic!("Expected Import rule"),
+    }
+}
+
+#[test]
+fn test_parse_import_string_url() {
+    let stylesheet = Parser::parse_stylesheet("@import \"theme.css\";");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "theme.css");
+            assert!(import_rule.media_queries.is_empty());
+        }
+        _ => panic!("Expected Import rule"),
+    }
+}
+
+#[test]
+fn test_parse_import_with_media_query() {
+    let stylesheet = Parser::parse_stylesheet("@import \"style.css\" screen and (max-width: 600px);");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "style.css");
+            assert_eq!(import_rule.media_queries.len(), 1);
+            assert!(import_rule.media_queries[0].contains("screen"));
+            assert!(import_rule.media_queries[0].contains("max-width"));
+        }
+        _ => panic!("Expected Import rule"),
+    }
+}
+
+#[test]
+fn test_parse_import_with_multiple_media_queries() {
+    let stylesheet = Parser::parse_stylesheet("@import \"style.css\" screen, print;");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "style.css");
+            assert_eq!(import_rule.media_queries.len(), 2);
+            assert_eq!(import_rule.media_queries[0], "screen");
+            assert_eq!(import_rule.media_queries[1], "print");
+        }
+        _ => panic!("Expected Import rule"),
+    }
+}
+
+#[test]
+fn test_parse_import_url_function() {
+    let stylesheet = Parser::parse_stylesheet("@import url(path/to/style.css);");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Import(import_rule) => {
+            assert_eq!(import_rule.url, "path/to/style.css");
+        }
+        _ => panic!("Expected Import rule"),
     }
 }
 
@@ -344,10 +399,11 @@ fn test_parse_at_layer() {
     let stylesheet = Parser::parse_stylesheet("@layer base { div { color: red; } }");
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
-        Rule::At(at_rule) => {
-            assert_eq!(at_rule.name, "layer");
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "base");
+            assert_eq!(layer_rule.rules.len(), 1);
         }
-        _ => panic!("Expected At rule"),
+        _ => panic!("Expected Layer rule"),
     }
 }
 
@@ -1562,13 +1618,130 @@ fn test_parse_at_supports() {
     let stylesheet = Parser::parse_stylesheet(css);
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            assert_eq!(
+                supports_rule.condition,
+                SupportsCondition::Property("display".to_string(), "grid".to_string())
+            );
+            assert_eq!(supports_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+// ── @supports 解析扩展测试 ──
+
+#[test]
+/// 测试 @supports not 条件
+fn test_parse_at_supports_not() {
+    let css = "@supports not (display: grid) { .fallback { display: block; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            assert_eq!(
+                supports_rule.condition,
+                SupportsCondition::Not(Box::new(SupportsCondition::Property(
+                    "display".to_string(),
+                    "grid".to_string()
+                )))
+            );
+            assert_eq!(supports_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports and 条件
+fn test_parse_at_supports_and() {
+    let css = "@supports (display: grid) and (gap: 10px) { .grid { display: grid; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            match &supports_rule.condition {
+                SupportsCondition::And(conditions) => {
+                    assert_eq!(conditions.len(), 2);
+                }
+                _ => panic!("Expected And condition"),
+            }
+            assert_eq!(supports_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports or 条件
+fn test_parse_at_supports_or() {
+    let css = "@supports (display: grid) or (display: flex) { .container { display: flex; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            match &supports_rule.condition {
+                SupportsCondition::Or(conditions) => {
+                    assert_eq!(conditions.len(), 2);
+                }
+                _ => panic!("Expected Or condition"),
+            }
+            assert_eq!(supports_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports 多规则体
+fn test_parse_at_supports_multiple_rules() {
+    let css = "@supports (display: grid) { .a { display: grid; } .b { gap: 10px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            assert_eq!(supports_rule.rules.len(), 2);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports 带 selector() 函数
+fn test_parse_at_supports_selector() {
+    let css = "@supports selector(.a > .b) { .container { color: red; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            assert_eq!(
+                supports_rule.condition,
+                SupportsCondition::Selector(".a > .b".to_string())
+            );
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}
+
+#[test]
+/// 测试 @supports 嵌套在 @media 内（通过 AtRule::At 回退）
+fn test_parse_at_supports_nested_in_media() {
+    let css = "@media screen { @supports (display: grid) { .a { display: grid; } } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
         Rule::At(at_rule) => {
-            assert_eq!(at_rule.name, "supports");
-            assert!(at_rule.prelude.contains("grid"));
-            if let AtRuleBody::Block(rules) = &at_rule.body {
-                assert_eq!(rules.len(), 1);
+            assert_eq!(at_rule.name, "media");
+            if let AtRuleBody::Block(inner) = &at_rule.body {
+                assert_eq!(inner.len(), 1);
+                match &inner[0] {
+                    Rule::Supports(sr) => {
+                        assert_eq!(
+                            sr.condition,
+                            SupportsCondition::Property("display".to_string(), "grid".to_string())
+                        );
+                    }
+                    _ => panic!("Expected Supports rule inside @media"),
+                }
             } else {
-                panic!("Expected Block body for @supports");
+                panic!("Expected Block body");
             }
         }
         _ => panic!("Expected At rule"),
@@ -2355,4 +2528,109 @@ fn test_parse_gradient_invalid() {
     assert_eq!(parse_gradient("not-a-gradient"), None);
     assert_eq!(parse_gradient("linear-gradient()"), None);
     assert_eq!(parse_gradient(""), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 14. @layer 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 @layer 基本解析：@layer base { div { color: red; } }
+fn test_parse_layer_basic() {
+    let stylesheet = Parser::parse_stylesheet("@layer base { div { color: red; } }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "base");
+            assert_eq!(layer_rule.rules.len(), 1);
+            if let Rule::Style(sr) = &layer_rule.rules[0] {
+                assert_eq!(sr.declarations.len(), 1);
+                assert_eq!(sr.declarations[0].property, "color");
+                assert_eq!(sr.declarations[0].value, "red");
+            } else {
+                panic!("Expected Style rule inside @layer");
+            }
+        }
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试 @layer 多规则
+fn test_parse_layer_multiple_rules() {
+    let css = "@layer components { div { color: red; } span { font-size: 16px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "components");
+            assert_eq!(layer_rule.rules.len(), 2);
+        }
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试 @layer 仅声明（分号结尾）
+fn test_parse_layer_declaration_only() {
+    let stylesheet = Parser::parse_stylesheet("@layer base;");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "base");
+            assert!(layer_rule.rules.is_empty());
+        }
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试 @layer 匿名层（无名称）
+fn test_parse_layer_anonymous() {
+    let stylesheet = Parser::parse_stylesheet("@layer { div { color: blue; } }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "");
+            assert_eq!(layer_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试多个 @layer 规则
+fn test_parse_multiple_layers() {
+    let css = "@layer reset { * { margin: 0; } } @layer base { div { color: red; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 2);
+    match &stylesheet.rules[0] {
+        Rule::Layer(lr) => assert_eq!(lr.name, "reset"),
+        _ => panic!("Expected Layer rule"),
+    }
+    match &stylesheet.rules[1] {
+        Rule::Layer(lr) => assert_eq!(lr.name, "base"),
+        _ => panic!("Expected Layer rule"),
+    }
+}
+
+#[test]
+/// 测试 @layer 内嵌套 @media
+fn test_parse_layer_with_media() {
+    let css = "@layer responsive { @media (min-width: 600px) { div { width: 100%; } } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer_rule) => {
+            assert_eq!(layer_rule.name, "responsive");
+            assert_eq!(layer_rule.rules.len(), 1);
+            match &layer_rule.rules[0] {
+                Rule::At(at_rule) => {
+                    assert_eq!(at_rule.name, "media");
+                }
+                _ => panic!("Expected At rule inside @layer"),
+            }
+        }
+        _ => panic!("Expected Layer rule"),
+    }
 }
