@@ -4503,6 +4503,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "zero-css-parser",
+ "zero-dom",
+ "zero-engine-core",
+ "zero-layout-engine",
+ "zero-net",
+ "zero-protocol",
+ "zero-security",
+ "zero-storage",
+ "zero-style-system",
+]
+
+[[package]]
 name = "zero-layout-engine"
 version = "0.1.0"
 dependencies = [
