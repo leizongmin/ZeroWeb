@@ -356,4 +356,80 @@ mod tests {
         assert!(result.timings.total_ms >= 0.0);
         assert!(!pipeline.dirty_tracker().is_full_redraw());
     }
+
+    /// 测试多次渲染不 panic。
+    #[test]
+    fn test_pipeline_multiple_render() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        for i in 0..3 {
+            let html = format!("<html><body><div>Page {i}</div></body></html>");
+            let result = pipeline.render_html(&html, "");
+            assert!(result.timings.total_ms >= 0.0);
+        }
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染 malformed HTML 不 panic。
+    #[test]
+    fn test_pipeline_render_malformed_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<div><p>unclosed<span>no closing tags";
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "malformed HTML 应容错完成");
+    }
+
+    /// 测试渲染 Unicode 内容。
+    #[test]
+    fn test_pipeline_render_unicode() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body>こんにちは世界 🌍 Grüße</body></html>";
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试超大视口渲染。
+    #[test]
+    fn test_pipeline_large_viewport() {
+        let mut pipeline = RenderPipeline::new(7680.0, 4320.0);
+        let html = "<html><body><div>8K</div></body></html>";
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0);
+        assert_eq!(pipeline.viewport_width(), 7680.0);
+    }
+
+    /// 测试零尺寸视口渲染不 panic。
+    #[test]
+    fn test_pipeline_zero_viewport() {
+        let mut pipeline = RenderPipeline::new(0.0, 0.0);
+        let html = "<html><body><div>Zero</div></body></html>";
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试脏区域追踪器可通过管道访问。
+    #[test]
+    fn test_pipeline_dirty_tracker_accessible() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        assert!(!pipeline.dirty_tracker().is_full_redraw());
+        pipeline.dirty_tracker_mut().mark_full_redraw();
+        assert!(pipeline.dirty_tracker().is_full_redraw());
+    }
+
+    /// 测试渲染带大量 CSS 规则。
+    #[test]
+    fn test_pipeline_render_many_css_rules() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="a">A</div><div class="b">B</div><div class="c">C</div>
+        </body></html>"#;
+        let css = r#"
+            .a { color: red; background-color: #ff0000; width: 100px; height: 50px; }
+            .b { color: blue; background-color: #0000ff; margin: 10px; }
+            .c { color: green; background-color: #00ff00; padding: 5px; }
+            body { margin: 0; padding: 20px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(result.timings.style_ms >= 0.0);
+    }
 }

@@ -4444,6 +4444,7 @@ name = "zero-canvas"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "criterion",
  "thiserror 2.0.18",
  "zero-render-foundation",
 ]
@@ -4495,6 +4496,7 @@ dependencies = [
 name = "zero-host-runtime"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "parking_lot",
  "thiserror 2.0.18",
  "tracing",
@@ -4506,15 +4508,20 @@ dependencies = [
 name = "zero-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "wat",
+ "zero-canvas",
  "zero-css-parser",
  "zero-dom",
  "zero-engine-core",
  "zero-layout-engine",
  "zero-net",
  "zero-protocol",
+ "zero-render-foundation",
  "zero-security",
  "zero-storage",
  "zero-style-system",
+ "zero-wasm-sandbox",
+ "zero-webview-api",
 ]
 
 [[package]]
@@ -4548,6 +4555,7 @@ name = "zero-protocol"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "criterion",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -4583,6 +4591,7 @@ dependencies = [
 name = "zero-security"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "serde",
  "thiserror 2.0.18",
  "url",
@@ -4592,6 +4601,7 @@ dependencies = [
 name = "zero-storage"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4612,6 +4622,7 @@ dependencies = [
 name = "zero-wasm-sandbox"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "thiserror 2.0.18",
  "wasmi",
  "wasmtime",
@@ -4622,6 +4633,7 @@ dependencies = [
 name = "zero-webview-api"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "serde",
  "thiserror 2.0.18",
  "tracing",

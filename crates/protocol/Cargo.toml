@@ -11,3 +11,8 @@ thiserror = { workspace = true }
 bincode = "1"
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "protocol_bench"
+harness = false
