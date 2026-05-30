@@ -934,3 +934,192 @@ fn test_query_selector_attribute_includes() {
     assert!(result.is_some());
     assert_eq!(result.unwrap(), elem);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 12. 序列化补充测试（扩展已有序列化测试覆盖面）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 inner_html vs outer_html 区别。
+#[test]
+fn test_inner_vs_outer_html_distinct() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    doc.append_child(root, div).unwrap();
+    let text = doc.create_text_node("hello");
+    doc.append_child(div, text).unwrap();
+
+    let outer = doc.outer_html(div);
+    let inner = doc.inner_html(div);
+    assert!(outer.starts_with("<div>"), "outer should include the element tag");
+    assert!(outer.ends_with("</div>"));
+    assert_eq!(inner, "hello", "inner should only have children");
+}
+
+/// 测试嵌套树序列化。
+#[test]
+fn test_serialize_nested_tree() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let outer = doc.create_element("section");
+    doc.append_child(root, outer).unwrap();
+    let inner = doc.create_element("p");
+    doc.append_child(outer, inner).unwrap();
+    let text = doc.create_text_node("content");
+    doc.append_child(inner, text).unwrap();
+
+    let html = doc.outer_html(outer);
+    assert!(html.contains("<section>"));
+    assert!(html.contains("<p>content</p>"));
+    assert!(html.contains("</section>"));
+}
+
+/// 测试属性值中的特殊字符转义。
+#[test]
+fn test_serialize_attribute_escaping() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    doc.set_attribute(div, "title", "say \"hello\" & goodbye");
+    doc.append_child(root, div).unwrap();
+
+    let html = doc.outer_html(div);
+    assert!(html.contains("&quot;"), "should escape quotes in attributes");
+    assert!(html.contains("&amp;"), "should escape & in attributes");
+}
+
+/// 测试序列化未被添加到树的孤立节点。
+#[test]
+fn test_serialize_orphan_node() {
+    let mut doc = Document::new();
+    let orphan = doc.create_element("div");
+    let html = doc.outer_html(orphan);
+    assert!(html.contains("<div"), "orphan node should still serialize, got: {html}");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 13. 属性操作测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 set_attribute 覆盖已有属性。
+#[test]
+fn test_set_attribute_overwrite() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "old");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("old".to_string()));
+    doc.set_attribute(elem, "class", "new");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("new".to_string()));
+}
+
+/// 测试 remove_attribute 删除后属性为 None。
+#[test]
+fn test_remove_attribute_clears() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "test");
+    assert!(doc.has_attribute(elem, "id"));
+    doc.remove_attribute(elem, "id");
+    assert_eq!(doc.get_attribute(elem, "id"), None);
+    assert!(!doc.has_attribute(elem, "id"));
+}
+
+/// 测试 remove_attribute 不存在的属性不 panic。
+#[test]
+fn test_remove_nonexistent_attribute() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // 删除不存在的属性应正常完成
+    doc.remove_attribute(elem, "noexist");
+}
+
+/// 测试 has_attribute。
+#[test]
+fn test_has_attribute() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    assert!(!doc.has_attribute(elem, "class"));
+    doc.set_attribute(elem, "class", "active");
+    assert!(doc.has_attribute(elem, "class"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 14. MutationObserver 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+use std::sync::{Arc, Mutex};
+
+/// 测试 MutationObserver 手动 notify 回调被调用。
+#[test]
+fn test_mutation_observer_manual_notify() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let called = Arc::new(Mutex::new(false));
+    let called_clone = called.clone();
+    let observer = MutationObserver::new(Box::new(move |_records| {
+        *called_clone.lock().unwrap() = true;
+    }));
+
+    let record = MutationRecord {
+        mutation_type: MutationType::Attributes,
+        target: elem,
+        added_nodes: vec![],
+        removed_nodes: vec![],
+        previous_sibling: None,
+        attribute_name: Some("class".to_string()),
+        old_value: None,
+    };
+    observer.notify(&[record]);
+    assert!(*called.lock().unwrap(), "callback should have been called");
+}
+
+/// 测试 MutationObserver 多次手动调用。
+#[test]
+fn test_mutation_observer_repeated_notify() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let child = doc.create_element("span");
+    let count = Arc::new(Mutex::new(0usize));
+    let count_clone = count.clone();
+    let observer = MutationObserver::new(Box::new(move |records| {
+        *count_clone.lock().unwrap() += records.len();
+    }));
+
+    let record = MutationRecord {
+        mutation_type: MutationType::ChildList,
+        target: elem,
+        added_nodes: vec![child],
+        removed_nodes: vec![],
+        previous_sibling: None,
+        attribute_name: None,
+        old_value: None,
+    };
+
+    observer.notify(&[record.clone()]);
+    observer.notify(&[record.clone(), record.clone()]);
+    assert_eq!(*count.lock().unwrap(), 3, "should have received 3 total records");
+}
+
+/// 测试 CharacterData mutation type 记录。
+#[test]
+fn test_mutation_character_data_record() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let received_type = Arc::new(Mutex::new(None));
+    let received_clone = received_type.clone();
+    let observer = MutationObserver::new(Box::new(move |records| {
+        *received_clone.lock().unwrap() = Some(records[0].mutation_type.clone());
+    }));
+
+    let record = MutationRecord {
+        mutation_type: MutationType::CharacterData,
+        target: elem,
+        added_nodes: vec![],
+        removed_nodes: vec![],
+        previous_sibling: None,
+        attribute_name: None,
+        old_value: Some("old text".to_string()),
+    };
+    observer.notify(&[record]);
+    assert_eq!(*received_type.lock().unwrap(), Some(MutationType::CharacterData));
+}
