@@ -402,4 +402,109 @@ mod tests {
         // First cache that matches wins (HashMap iteration order)
         assert!(matched.body == b"first".to_vec() || matched.body == b"second".to_vec());
     }
+
+    // ── 新增测试 ──
+
+    #[test]
+    fn test_cache_response_new_custom_status() {
+        let resp = CacheResponse::new(404, b"not found".to_vec());
+        assert_eq!(resp.status, 404);
+        assert_eq!(resp.body, b"not found".to_vec());
+        assert!(resp.status_text.is_empty());
+    }
+
+    #[test]
+    fn test_cache_put_multiple_urls() {
+        let mut cache = Cache::new("v1");
+        cache.put(CacheRequest::new("https://a.com/1"), CacheResponse::ok(b"one".to_vec())).unwrap();
+        cache.put(CacheRequest::new("https://a.com/2"), CacheResponse::ok(b"two".to_vec())).unwrap();
+        cache.put(CacheRequest::new("https://a.com/3"), CacheResponse::ok(b"three".to_vec())).unwrap();
+        assert_eq!(cache.len(), 3);
+
+        let req1 = CacheRequest::new("https://a.com/1");
+        assert_eq!(cache.match_request(&req1).unwrap().body, b"one".to_vec());
+        let req3 = CacheRequest::new("https://a.com/3");
+        assert_eq!(cache.match_request(&req3).unwrap().body, b"three".to_vec());
+    }
+
+    #[test]
+    fn test_cache_delete_nonexistent() {
+        let mut cache = Cache::new("v1");
+        let req = CacheRequest::new("https://example.com/missing");
+        assert!(!cache.delete(&req));
+    }
+
+    #[test]
+    fn test_cache_keys_after_delete() {
+        let mut cache = Cache::new("v1");
+        cache.put(CacheRequest::new("https://a.com"), CacheResponse::ok(vec![])).unwrap();
+        cache.put(CacheRequest::new("https://b.com"), CacheResponse::ok(vec![])).unwrap();
+        cache.put(CacheRequest::new("https://c.com"), CacheResponse::ok(vec![])).unwrap();
+        assert_eq!(cache.keys().len(), 3);
+        cache.delete(&CacheRequest::new("https://b.com"));
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.contains(&"https://b.com"));
+    }
+
+    #[test]
+    fn test_cache_different_methods_same_url() {
+        let mut cache = Cache::new("v1");
+        let get_req = CacheRequest::new("https://example.com/api");
+        let post_req = CacheRequest::with_method("https://example.com/api", "POST");
+        cache.put(get_req.clone(), CacheResponse::ok(b"get_resp".to_vec())).unwrap();
+        cache.put(post_req.clone(), CacheResponse::ok(b"post_resp".to_vec())).unwrap();
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.match_request(&get_req).unwrap().body, b"get_resp".to_vec());
+        assert_eq!(cache.match_request(&post_req).unwrap().body, b"post_resp".to_vec());
+    }
+
+    #[test]
+    fn test_cache_storage_multiple_caches_isolation() {
+        let mut cs = CacheStorage::new();
+        let req = CacheRequest::new("https://example.com/data");
+        cs.open("cache-a")
+            .put(req.clone(), CacheResponse::ok(b"from-a".to_vec()))
+            .unwrap();
+        cs.open("cache-b")
+            .put(req.clone(), CacheResponse::ok(b"from-b".to_vec()))
+            .unwrap();
+
+        // Both caches have the URL
+        let resp = cs.open("cache-a").match_request(&req).unwrap();
+        assert_eq!(resp.body, b"from-a".to_vec());
+        let resp = cs.open("cache-b").match_request(&req).unwrap();
+        assert_eq!(resp.body, b"from-b".to_vec());
+
+        // Deleting one cache doesn't affect the other
+        cs.delete("cache-a");
+        assert!(!cs.has("cache-a"));
+        assert!(cs.has("cache-b"));
+        assert!(cs.match_request(&req).is_some());
+    }
+
+    #[test]
+    fn test_cache_with_response_headers() {
+        let mut cache = Cache::new("v1");
+        let req = CacheRequest::new("https://example.com/page");
+        let resp = CacheResponse::ok(b"html".to_vec())
+            .with_header("Content-Type", "text/html")
+            .with_header("Cache-Control", "max-age=3600");
+        cache.put(req.clone(), resp).unwrap();
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.headers.get("Content-Type"), Some(&"text/html".to_string()));
+        assert_eq!(matched.headers.get("Cache-Control"), Some(&"max-age=3600".to_string()));
+    }
+
+    #[test]
+    fn test_cache_storage_default() {
+        let cs = CacheStorage::default();
+        assert!(cs.keys().is_empty());
+    }
+
+    #[test]
+    fn test_cache_name() {
+        let cache = Cache::new("my-cache");
+        assert_eq!(cache.name(), "my-cache");
+    }
 }

@@ -166,4 +166,61 @@ mod tests {
         manager.clear_all_session();
         assert!(manager.session_storage("https://a.com").is_empty());
     }
+
+    // ── 新增测试 ──
+
+    #[test]
+    fn test_manager_default() {
+        let mut manager = StorageManager::default();
+        let storage = manager.local_storage("https://example.com");
+        assert_eq!(storage.origin(), "https://example.com");
+    }
+
+    #[test]
+    fn test_manager_per_origin_isolation() {
+        let mut manager = StorageManager::new();
+        manager.local_storage("https://a.com").set("x", "1").unwrap();
+        manager.local_storage("https://b.com").set("x", "2").unwrap();
+        manager.local_storage("https://c.com").set("x", "3").unwrap();
+
+        assert_eq!(manager.local_storage("https://a.com").get("x"), Some("1"));
+        assert_eq!(manager.local_storage("https://b.com").get("x"), Some("2"));
+        assert_eq!(manager.local_storage("https://c.com").get("x"), Some("3"));
+
+        // Removing from one origin does not affect others
+        manager.local_storage("https://b.com").remove("x");
+        assert_eq!(manager.local_storage("https://a.com").get("x"), Some("1"));
+        assert_eq!(manager.local_storage("https://b.com").get("x"), None);
+        assert_eq!(manager.local_storage("https://c.com").get("x"), Some("3"));
+    }
+
+    #[test]
+    fn test_manager_session_cleared_per_origin() {
+        let mut manager = StorageManager::new();
+        manager.session_storage("https://a.com").set("s", "v1").unwrap();
+        manager.session_storage("https://b.com").set("s", "v2").unwrap();
+        manager.clear_origin("https://a.com");
+        assert!(manager.session_storage("https://a.com").is_empty());
+        assert!(!manager.session_storage("https://b.com").is_empty());
+    }
+
+    #[test]
+    fn test_manager_local_and_session_independent() {
+        let mut manager = StorageManager::new();
+        manager.local_storage("https://a.com").set("key", "local-val").unwrap();
+        manager.session_storage("https://a.com").set("key", "session-val").unwrap();
+        assert_eq!(manager.local_storage("https://a.com").get("key"), Some("local-val"));
+        assert_eq!(manager.session_storage("https://a.com").get("key"), Some("session-val"));
+        // Clear local does not affect session
+        manager.clear_all_local();
+        assert!(manager.local_storage("https://a.com").is_empty());
+        assert_eq!(manager.session_storage("https://a.com").get("key"), Some("session-val"));
+    }
+
+    #[test]
+    fn test_manager_custom_max_size() {
+        let mut manager = StorageManager::with_max_size(50);
+        let result = manager.local_storage("https://example.com").set("k", &"x".repeat(50));
+        assert!(result.is_err());
+    }
 }

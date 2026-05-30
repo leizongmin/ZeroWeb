@@ -315,4 +315,91 @@ mod tests {
         let url_str = parsed.to_url_string();
         assert!(!url_str.contains(":80"), "默认端口不应出现在 URL 字符串中");
     }
+
+    // ── URL edge case tests ──
+
+    /// 测试 URL 同时包含 query 和 fragment。
+    #[test]
+    fn test_parse_url_query_and_fragment() {
+        let parsed = parse_url("http://example.com/page?key=val#section").unwrap();
+        assert_eq!(parsed.query.as_deref(), Some("key=val"));
+        assert_eq!(parsed.fragment.as_deref(), Some("section"));
+    }
+
+    /// 测试 URL 包含非默认端口。
+    #[test]
+    fn test_parse_url_explicit_port() {
+        let parsed = parse_url("http://example.com:3000/api").unwrap();
+        assert_eq!(parsed.port, Some(3000));
+        assert_eq!(parsed.path, "/api");
+    }
+
+    /// 测试 URL 同时包含 userinfo 和端口。
+    #[test]
+    fn test_parse_url_userinfo_with_port() {
+        let parsed = parse_url("https://admin:secret@api.example.com:9090/v2/data").unwrap();
+        assert_eq!(parsed.username, "admin");
+        assert_eq!(parsed.password.as_deref(), Some("secret"));
+        assert_eq!(parsed.host.as_deref(), Some("api.example.com"));
+        assert_eq!(parsed.port, Some(9090));
+        assert_eq!(parsed.path, "/v2/data");
+        assert!(parsed.is_secure());
+    }
+
+    /// 测试 percent-encoded 字符在 URL 各部分中正确保留。
+    #[test]
+    fn test_parse_url_percent_encoded() {
+        let parsed = parse_url("http://example.com/%E4%BD%A0%E5%A5%BD?q=%E4%B8%AD%E6%96%87").unwrap();
+        assert!(parsed.path.contains("%"));
+        assert!(parsed.query.as_ref().unwrap().contains("%"));
+    }
+
+    /// 测试 data: URL scheme。
+    #[test]
+    fn test_parse_url_data_scheme() {
+        let parsed = parse_url("data:text/html,<h1>Hello</h1>").unwrap();
+        assert_eq!(parsed.scheme, "data");
+        assert!(parsed.host.is_none());
+    }
+
+    /// 测试 javascript: URL scheme。
+    #[test]
+    fn test_parse_url_javascript_scheme() {
+        let parsed = parse_url("javascript:alert(1)").unwrap();
+        assert_eq!(parsed.scheme, "javascript");
+    }
+
+    /// 测试 is_secure 对非 https 协议返回 false。
+    #[test]
+    fn test_url_is_secure_various_schemes() {
+        let ftp = parse_url("ftp://files.example.com/").unwrap();
+        assert!(!ftp.is_secure());
+        let data = parse_url("data:text/plain,hello").unwrap();
+        assert!(!data.is_secure());
+    }
+
+    /// 测试同源判断：不同 scheme 不匹配。
+    #[test]
+    fn test_url_same_origin_different_scheme() {
+        let http = parse_url("http://example.com/").unwrap();
+        let https = parse_url("https://example.com/").unwrap();
+        assert!(!http.is_same_origin(&https));
+    }
+
+    /// 测试 to_url_string 包含非默认端口。
+    #[test]
+    fn test_url_to_url_string_with_non_default_port() {
+        let parsed = parse_url("http://example.com:8080/api").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(url_str.contains(":8080"), "非默认端口应出现在 URL 字符串中");
+    }
+
+    /// 测试解析 host 为空的 data URL 不 panic。
+    #[test]
+    fn test_url_origin_hostless() {
+        let parsed = parse_url("data:text/plain,hello").unwrap();
+        // host 为空，origin 不应 panic
+        let origin = parsed.origin();
+        assert!(origin.contains("data://"));
+    }
 }

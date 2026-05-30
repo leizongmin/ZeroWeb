@@ -1054,4 +1054,198 @@ mod integration_tests {
         let _ = h1.join();
         let _ = h2.join();
     }
+
+    // ── Additional redirect handling tests ──
+
+    /// 验证 302 POST 变 GET 后 body 被清除。
+    #[test]
+    fn test_send_post_301_changes_to_get_no_body() {
+        let (l1, url1) = bind_server();
+        let (l2, url2) = bind_server();
+        let target = format!("{url2}/moved");
+
+        let tc = target.clone();
+        let h1 = std::thread::spawn(move || {
+            let mut stream = l1.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let mut stream = l2.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let request_str = String::from_utf8_lossy(&buf[..n]);
+
+            assert!(
+                request_str.starts_with("GET"),
+                "POST + 301 should become GET, got: {request_str}"
+            );
+
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let client = HttpClient::new();
+        let resp = client.send(HttpRequest::post(&url1, b"original-body".to_vec())).unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.redirect_count, 1);
+
+        let _ = h1.join();
+        let _ = h2.join();
+    }
+
+    /// 验证 max_redirects = 1 时，恰好 1 次重定向成功，2 次则失败。
+    #[test]
+    fn test_send_redirect_max_limit_boundary() {
+        // 1 次重定向在 max=1 时应成功
+        let (l1, url1) = bind_server();
+        let (l2, url2) = bind_server();
+        let target = format!("{url2}/ok");
+
+        let tc = target.clone();
+        let h1 = std::thread::spawn(move || {
+            let mut stream = l1.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = format!("HTTP/1.1 302 Found\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let mut stream = l2.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let client = HttpClient::with_max_redirects(1);
+        let resp = client.send(HttpRequest::get(&url1)).unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.redirect_count, 1);
+
+        let _ = h1.join();
+        let _ = h2.join();
+    }
+
+    /// 验证重定向到不同 host 正常跟随。
+    #[test]
+    fn test_send_redirect_to_different_host() {
+        let (l1, url1) = bind_server();
+        let (l2, url2) = bind_server();
+        // 目标是完全不同的地址
+        let target = format!("{url2}/cross-origin");
+
+        let tc = target.clone();
+        let h1 = std::thread::spawn(move || {
+            let mut stream = l1.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = format!("HTTP/1.1 302 Found\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let mut stream = l2.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = "cross-origin";
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let client = HttpClient::new();
+        let resp = client.send(HttpRequest::get(&url1)).unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert!(resp.url.contains("/cross-origin"));
+        assert_eq!(resp.text().unwrap(), "cross-origin");
+
+        let _ = h1.join();
+        let _ = h2.join();
+    }
+
+    /// 验证 self-referencing 重定向（Location 指向自身）在超限时报错。
+    #[test]
+    fn test_send_self_referencing_redirect_loop() {
+        let (listener, url) = bind_server();
+        let self_url = format!("{url}/loop");
+
+        let su = self_url.clone();
+        let h = std::thread::spawn(move || {
+            // 每次请求都重定向到自身
+            for _ in 0..3 {
+                let mut stream = listener.incoming().next().unwrap().unwrap();
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let resp = format!("HTTP/1.1 302 Found\r\nLocation: {su}\r\nContent-Length: 0\r\n\r\n");
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let client = HttpClient::with_max_redirects(2);
+        let result = client.send(HttpRequest::get(&self_url));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            NetError::TooManyRedirects => {}
+            other => panic!("expected TooManyRedirects for self-loop, got: {other:?}"),
+        }
+
+        let _ = h.join();
+    }
+
+    /// 验证 307 保持 GET 方法不变。
+    #[test]
+    fn test_send_redirect_307_preserves_get() {
+        let (l1, url1) = bind_server();
+        let (l2, url2) = bind_server();
+        let target = format!("{url2}/temp-get");
+
+        let tc = target.clone();
+        let h1 = std::thread::spawn(move || {
+            let mut stream = l1.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let mut stream = l2.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let request_str = String::from_utf8_lossy(&buf[..n]);
+
+            assert!(
+                request_str.starts_with("GET"),
+                "GET + 307 should stay GET, got: {request_str}"
+            );
+
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let client = HttpClient::new();
+        let resp = client.send(HttpRequest::get(&url1)).unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.redirect_count, 1);
+
+        let _ = h1.join();
+        let _ = h2.join();
+    }
 }

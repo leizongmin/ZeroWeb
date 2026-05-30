@@ -973,4 +973,131 @@ mod tests {
         assert!(!header.contains("strict_cookie"));
         assert!(header.contains("none_cookie=v3"));
     }
+
+    // ── Cookie security tests ──
+
+    /// Secure cookie 只在 HTTPS 下发送。
+    #[test]
+    fn test_secure_cookie_only_over_https() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("secret=abc; Secure; Domain=example.com").unwrap());
+
+        let http_url = parse_url("http://example.com/").unwrap();
+        let https_url = parse_url("https://example.com/").unwrap();
+
+        assert!(store.get_for_url(&http_url).is_empty(), "Secure cookie 不应通过 HTTP 发送");
+        assert_eq!(store.get_for_url(&https_url).len(), 1, "Secure cookie 应通过 HTTPS 发送");
+    }
+
+    /// HttpOnly 属性正确解析（不可通过脚本访问）。
+    #[test]
+    fn test_httponly_flag_prevents_script_access() {
+        let cookie = CookieStore::parse_set_cookie("sid=secret; HttpOnly; Path=/").unwrap();
+        assert!(cookie.http_only, "HttpOnly cookie 的 http_only 应为 true");
+        assert_eq!(cookie.path.as_deref(), Some("/"));
+    }
+
+    /// SameSite=Strict 阻止跨站请求。
+    #[test]
+    fn test_samesite_strict_blocks_cross_site_request() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("auth=token; Domain=example.com; SameSite=Strict")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // 同站请求：发送
+        let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);
+        assert!(header.contains("auth=token"));
+
+        // 跨站顶层导航：阻止
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, true);
+        assert!(!header.contains("auth"));
+
+        // 跨站子资源：阻止
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteSubresource, true);
+        assert!(!header.contains("auth"));
+    }
+
+    /// SameSite=Lax 允许顶层安全方法导航。
+    #[test]
+    fn test_samesite_lax_allows_top_level_navigation() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("theme=dark; Domain=example.com; SameSite=Lax")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // 同站请求：发送
+        let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);
+        assert!(header.contains("theme=dark"));
+
+        // 跨站顶层 GET 导航：发送
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, true);
+        assert!(header.contains("theme=dark"), "Lax 应允许跨站顶层安全方法导航");
+
+        // 跨站顶层 POST：阻止
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, false);
+        assert!(!header.contains("theme"), "Lax 应阻止跨站不安全方法");
+    }
+
+    /// Cookie path 匹配：子路径匹配、不匹配兄弟路径。
+    #[test]
+    fn test_cookie_path_matching() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("app_sess=1; Path=/app; Domain=example.com").unwrap());
+
+        let matching = parse_url("http://example.com/app/page").unwrap();
+        let matching_exact = parse_url("http://example.com/app").unwrap();
+        // /application starts with "/app" per starts_with semantics, so it does match
+        let matching_prefix = parse_url("http://example.com/application").unwrap();
+        let not_matching_parent = parse_url("http://example.com/other").unwrap();
+        let not_matching_root = parse_url("http://example.com/").unwrap();
+
+        assert_eq!(store.get_for_url(&matching).len(), 1, "/app/page 应匹配 Path=/app");
+        assert_eq!(store.get_for_url(&matching_exact).len(), 1, "/app 应匹配 Path=/app");
+        assert_eq!(store.get_for_url(&matching_prefix).len(), 1, "/application 以 /app 开头，匹配 Path=/app");
+        assert!(store.get_for_url(&not_matching_parent).is_empty(), "/other 不应匹配 Path=/app");
+        assert!(store.get_for_url(&not_matching_root).is_empty(), "/ 不应匹配 Path=/app");
+    }
+
+    /// Cookie domain 匹配：精确匹配和子域名匹配。
+    #[test]
+    fn test_cookie_domain_matching_exact_and_subdomain() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("id=42; Domain=example.com").unwrap());
+
+        let exact = parse_url("http://example.com/").unwrap();
+        let sub = parse_url("http://sub.example.com/").unwrap();
+        let other = parse_url("http://notexample.com/").unwrap();
+
+        assert_eq!(store.get_for_url(&exact).len(), 1, "精确域名应匹配");
+        assert_eq!(store.get_for_url(&sub).len(), 1, "子域名应匹配");
+        assert!(store.get_for_url(&other).is_empty(), "不相关域名不应匹配");
+    }
+
+    /// 不同 Path 的同名 Cookie 是独立存储的。
+    #[test]
+    fn test_cookie_different_path_same_name_stored_separately() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("lang=en; Path=/en; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("lang=zh; Path=/zh; Domain=example.com").unwrap());
+
+        assert_eq!(store.len(), 2, "不同 path 同名 cookie 应独立存储");
+
+        let en_url = parse_url("http://example.com/en/page").unwrap();
+        let zh_url = parse_url("http://example.com/zh/page").unwrap();
+
+        let en_cookies = store.get_for_url(&en_url);
+        assert_eq!(en_cookies.len(), 1);
+        assert_eq!(en_cookies[0].value, "en");
+
+        let zh_cookies = store.get_for_url(&zh_url);
+        assert_eq!(zh_cookies.len(), 1);
+        assert_eq!(zh_cookies[0].value, "zh");
+    }
 }

@@ -291,4 +291,117 @@ mod tests {
         assert_eq!(entry.url, "http://b.com");
         assert!(nav.go_back().is_none()); // a 已被淘汰
     }
+
+    // ── Additional navigation history tests ──
+
+    /// 测试 replace_current 后历史长度不变。
+    #[test]
+    fn test_replace_preserves_length() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("A".to_string()));
+        nav.navigate("http://b.com", Some("B".to_string()));
+        assert_eq!(nav.len(), 2);
+
+        nav.replace_current("http://replaced.com", Some("R".to_string()));
+        assert_eq!(nav.len(), 2, "replace 不应改变历史长度");
+        assert_eq!(nav.current().unwrap().url, "http://replaced.com");
+    }
+
+    /// 测试 replace_current 在历史中间位置正常工作。
+    #[test]
+    fn test_replace_in_middle_of_history() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.go_back(); // at b.com
+
+        nav.replace_current("http://b-new.com", Some("B New".to_string()));
+        assert_eq!(nav.current().unwrap().url, "http://b-new.com");
+        assert_eq!(nav.current().unwrap().title.as_deref(), Some("B New"));
+        // forward history (c.com) should still exist
+        assert!(nav.can_go_forward());
+        let fwd = nav.go_forward().unwrap();
+        assert_eq!(fwd.url, "http://c.com");
+    }
+
+    /// 测试导航到相同 URL 仍然添加新条目。
+    #[test]
+    fn test_navigate_same_url_adds_entry() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("First".to_string()));
+        nav.navigate("http://a.com", Some("Second".to_string()));
+
+        assert_eq!(nav.len(), 2, "相同 URL 也应产生新的历史条目");
+        assert_eq!(nav.current().unwrap().title.as_deref(), Some("Second"));
+    }
+
+    /// 测试连续后退和前进后的状态一致性。
+    #[test]
+    fn test_back_forward_consistency() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+
+        // 后退两步到 b
+        nav.go_back();
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+
+        // 前进一步到 c
+        nav.go_forward();
+        assert_eq!(nav.current().unwrap().url, "http://c.com");
+
+        // 再后退一步到 b
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+
+        // 导航新 URL 清除 c,d
+        nav.navigate("http://e.com", None);
+        assert_eq!(nav.len(), 3); // a, b, e
+        assert!(!nav.can_go_forward());
+    }
+
+    /// 测试 go_back_n(0) 返回当前条目。
+    #[test]
+    fn test_go_back_n_zero() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+
+        let entry = nav.go_back_n(0).unwrap();
+        assert_eq!(entry.url, "http://b.com");
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
+
+    /// 测试 go_forward_n(0) 返回当前条目。
+    #[test]
+    fn test_go_forward_n_zero() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.go_back(); // at a
+
+        let entry = nav.go_forward_n(0).unwrap();
+        assert_eq!(entry.url, "http://a.com");
+    }
+
+    /// 测试在边界处 can_go_back / can_go_forward 正确返回。
+    #[test]
+    fn test_can_go_back_forward_at_boundaries() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        assert!(!nav.can_go_back(), "第一个条目不应能后退");
+        assert!(!nav.can_go_forward(), "最新条目不应能前进");
+
+        nav.navigate("http://b.com", None);
+        assert!(nav.can_go_back(), "非第一个条目应能后退");
+        assert!(!nav.can_go_forward());
+
+        nav.go_back();
+        assert!(!nav.can_go_back());
+        assert!(nav.can_go_forward(), "有前进历史时应能前进");
+    }
 }

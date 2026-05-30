@@ -1020,4 +1020,581 @@ mod tests {
             panic!("expected FetchResponse");
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  新增测试：提升覆盖率至 80+
+    // ══════════════════════════════════════════════════════════
+
+    // ── 1. 消息序列化往返 ──
+
+    #[test]
+    fn test_roundtrip_navigate_with_referrer_some() {
+        let msg = IpcMessage {
+            id: 100,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some("https://referrer.com".into()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!("https://example.com", p.url);
+            assert_eq!(Some("https://referrer.com".into()), p.referrer);
+        } else {
+            panic!("expected Navigate");
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_navigate_with_referrer_none() {
+        let msg = IpcMessage {
+            id: 101,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!("https://example.com", p.url);
+            assert!(p.referrer.is_none());
+        } else {
+            panic!("expected Navigate");
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_crash_notification() {
+        let msg = IpcMessage {
+            id: 102,
+            kind: IpcMessageKind::CrashNotification("segfault at 0xdeadbeef".into()),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::CrashNotification(reason) = out.kind {
+            assert_eq!("segfault at 0xdeadbeef", reason);
+        } else {
+            panic!("expected CrashNotification");
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_error_response() {
+        let msg = IpcMessage {
+            id: 103,
+            kind: IpcMessageKind::Error("network unreachable".into()),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Error(e) = out.kind {
+            assert_eq!("network unreachable", e);
+        } else {
+            panic!("expected Error");
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_nested_fetch_response_with_headers_and_body() {
+        let msg = IpcMessage {
+            id: 104,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 999,
+                status_code: 301,
+                headers: vec![
+                    ("Location".into(), "https://example.com/new".into()),
+                    ("Content-Length".into(), "0".into()),
+                ],
+                body: b"redirecting...".to_vec(),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(999, p.request_id);
+            assert_eq!(301, p.status_code);
+            assert_eq!(2, p.headers.len());
+            assert_eq!(b"redirecting...", p.body.as_slice());
+        } else {
+            panic!("expected FetchResponse");
+        }
+    }
+
+    // ── 2. 二进制序列化边界情况 ──
+
+    #[test]
+    fn test_fetch_response_large_binary_body() {
+        let body: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+        let msg = IpcMessage {
+            id: 205,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 1,
+                status_code: 200,
+                headers: vec![("Content-Length".into(), "4096".into())],
+                body: body.clone(),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(4096, p.body.len());
+            assert_eq!(body, p.body);
+        } else {
+            panic!("expected FetchResponse");
+        }
+    }
+
+    #[test]
+    fn test_large_payload_10kb() {
+        let large_body: Vec<u8> = (0..10_240).map(|i| (i % 256) as u8).collect();
+        let msg = IpcMessage {
+            id: 200,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 1,
+                status_code: 200,
+                headers: vec![],
+                body: large_body.clone(),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(10_240, p.body.len());
+            assert_eq!(large_body, p.body);
+        } else {
+            panic!("expected FetchResponse");
+        }
+    }
+
+    #[test]
+    fn test_binary_data_with_zeros() {
+        let zero_body = vec![0u8; 256];
+        let msg = IpcMessage {
+            id: 201,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "POST".into(),
+                headers: vec![],
+                body: Some(zero_body.clone()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(Some(zero_body), p.body);
+        } else {
+            panic!("expected FetchRequest");
+        }
+    }
+
+    #[test]
+    fn test_unicode_strings_in_messages() {
+        let msg = IpcMessage {
+            id: 202,
+            kind: IpcMessageKind::TitleChanged("こんにちは世界 🌍 Ñoño café".into()),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!("こんにちは世界 🌍 Ñoño café", t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+    }
+
+    #[test]
+    fn test_empty_string_in_url_changed() {
+        let msg = IpcMessage {
+            id: 203,
+            kind: IpcMessageKind::UrlChanged(String::new()),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::UrlChanged(url) = out.kind {
+            assert!(url.is_empty());
+        } else {
+            panic!("expected UrlChanged");
+        }
+    }
+
+    #[test]
+    fn test_nested_vec_header_structures() {
+        let many_headers: Vec<(String, String)> = (0..50)
+            .map(|i| (format!("X-Custom-{i}"), format!("value-{i}")))
+            .collect();
+        let msg = IpcMessage {
+            id: 204,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 42,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: many_headers.clone(),
+                body: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(50, p.headers.len());
+            assert_eq!(many_headers, p.headers);
+        } else {
+            panic!("expected FetchRequest");
+        }
+    }
+
+    // ── 3. 消息类型覆盖 ──
+
+    #[test]
+    fn test_navigation_messages_sequence() {
+        let msgs = vec![
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://a.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::GoBack,
+            },
+            IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::GoForward,
+            },
+            IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::Reload,
+            },
+            IpcMessage {
+                id: 5,
+                kind: IpcMessageKind::StopLoading,
+            },
+        ];
+        for msg in msgs {
+            let out = roundtrip(msg.clone());
+            assert_eq!(msg.id, out.id);
+        }
+    }
+
+    #[test]
+    fn test_dom_related_messages() {
+        let title_msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::TitleChanged("My Page".into()),
+        };
+        let url_msg = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::UrlChanged("https://example.com/page2".into()),
+        };
+        let load_msg = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::LoadComplete,
+        };
+        let failed_msg = IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::LoadFailed("DNS error".into()),
+        };
+
+        let out = roundtrip(title_msg);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!("My Page", t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+
+        let out = roundtrip(url_msg);
+        if let IpcMessageKind::UrlChanged(u) = out.kind {
+            assert_eq!("https://example.com/page2", u);
+        } else {
+            panic!("expected UrlChanged");
+        }
+
+        assert!(matches!(roundtrip(load_msg).kind, IpcMessageKind::LoadComplete));
+        if let IpcMessageKind::LoadFailed(r) = roundtrip(failed_msg).kind {
+            assert_eq!("DNS error", r);
+        } else {
+            panic!("expected LoadFailed");
+        }
+    }
+
+    #[test]
+    fn test_resource_loading_messages() {
+        let fetch_req = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 10,
+                url: "https://cdn.example.com/app.js".into(),
+                method: "GET".into(),
+                headers: vec![("Accept".into(), "*/*".into())],
+                body: None,
+            }),
+        };
+        let fetch_resp = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 10,
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: b"console.log('hi')".to_vec(),
+            }),
+        };
+
+        let out_req = roundtrip(fetch_req);
+        if let IpcMessageKind::FetchRequest(p) = out_req.kind {
+            assert_eq!(10, p.request_id);
+            assert_eq!("https://cdn.example.com/app.js", p.url);
+        } else {
+            panic!("expected FetchRequest");
+        }
+
+        let out_resp = roundtrip(fetch_resp);
+        if let IpcMessageKind::FetchResponse(p) = out_resp.kind {
+            assert_eq!(10, p.request_id);
+            assert_eq!(b"console.log('hi')", p.body.as_slice());
+        } else {
+            panic!("expected FetchResponse");
+        }
+    }
+
+    #[test]
+    fn test_script_execution_via_keyboard_events() {
+        let key_events = vec![
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key: "F5".into(),
+                    code: "F5".into(),
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                    meta: false,
+                    event_type: KeyboardEventType::Down,
+                }),
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key: "F5".into(),
+                    code: "F5".into(),
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                    meta: false,
+                    event_type: KeyboardEventType::Up,
+                }),
+            },
+        ];
+        for msg in key_events {
+            let out = roundtrip(msg);
+            if let IpcMessageKind::KeyboardEvent(p) = out.kind {
+                assert_eq!("F5", p.key);
+            } else {
+                panic!("expected KeyboardEvent");
+            }
+        }
+    }
+
+    #[test]
+    fn test_layout_render_scroll_and_mouse() {
+        let scroll = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x: 100.0,
+                delta_y: -50.0,
+            }),
+        };
+        let mouse = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: 400.0,
+                y: 300.0,
+                button: 0,
+                event_type: MouseEventType::Move,
+            }),
+        };
+
+        let out_scroll = roundtrip(scroll);
+        if let IpcMessageKind::ScrollEvent(p) = out_scroll.kind {
+            assert_eq!(100.0, p.delta_x);
+            assert_eq!(-50.0, p.delta_y);
+        } else {
+            panic!("expected ScrollEvent");
+        }
+
+        let out_mouse = roundtrip(mouse);
+        if let IpcMessageKind::MouseEvent(p) = out_mouse.kind {
+            assert_eq!(400.0, p.x);
+            assert_eq!(300.0, p.y);
+            assert_eq!(MouseEventType::Move, p.event_type);
+        } else {
+            panic!("expected MouseEvent");
+        }
+    }
+
+    // ── 4. 错误处理 ──
+
+    #[test]
+    fn test_deserialize_invalid_bytes_returns_error() {
+        let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA];
+        let result = deserialize(&garbage);
+        assert!(result.is_err());
+        if let Err(ProtocolError::Deserialization(msg)) = result {
+            assert!(!msg.is_empty());
+        } else {
+            panic!("expected Deserialization error");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_empty_bytes_returns_error() {
+        let result: Result<IpcMessage, ProtocolError> = deserialize(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_truncated_mid_field() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com/very/long/path".into(),
+                method: "POST".into(),
+                headers: vec![("Content-Type".into(), "text/plain".into())],
+                body: Some(b"some body data here".to_vec()),
+            }),
+        };
+        let bytes = serialize(&msg).expect("serialize");
+        // Truncate to 1/3 of original length
+        let truncated = &bytes[..bytes.len() / 3];
+        assert!(deserialize(truncated).is_err());
+    }
+
+    #[test]
+    fn test_deserialize_single_byte_returns_error() {
+        let result = deserialize(&[0x00]);
+        assert!(result.is_err());
+    }
+
+    // ── 5. 并发消息处理 ──
+
+    #[test]
+    fn test_multiple_messages_serialized_in_sequence() {
+        let messages: Vec<IpcMessage> = (0..20)
+            .map(|i| IpcMessage {
+                id: i,
+                kind: IpcMessageKind::Heartbeat,
+            })
+            .collect();
+
+        let serialized: Vec<Vec<u8>> = messages.iter().map(|m| serialize(m).expect("s")).collect();
+        let deserialized: Vec<IpcMessage> =
+            serialized.iter().map(|b| deserialize(b).expect("d")).collect();
+
+        for (i, msg) in deserialized.iter().enumerate() {
+            assert_eq!(i as u64, msg.id);
+            assert!(matches!(msg.kind, IpcMessageKind::Heartbeat));
+        }
+    }
+
+    #[test]
+    fn test_message_ordering_preserved() {
+        let msgs = vec![
+            IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://a.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::LoadComplete,
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::TitleChanged("A".into()),
+            },
+            IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: 1.0,
+                    y: 2.0,
+                    button: 0,
+                    event_type: MouseEventType::Click,
+                }),
+            },
+            IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::GoBack,
+            },
+        ];
+
+        let pairs: Vec<(Vec<u8>, IpcMessage)> = msgs
+            .into_iter()
+            .map(|m| {
+                let bytes = serialize(&m).expect("s");
+                (bytes, m)
+            })
+            .collect();
+
+        for (bytes, original) in pairs {
+            let out = deserialize(&bytes).expect("d");
+            assert_eq!(original.id, out.id);
+            // Verify correct kind by re-serializing and comparing bytes
+            let re_bytes = serialize(&out).expect("re-s");
+            assert_eq!(bytes, re_bytes);
+        }
+    }
+
+    #[test]
+    fn test_different_message_types_interleaved() {
+        let msgs: Vec<IpcMessage> = vec![
+            IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://example.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Heartbeat,
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: 1,
+                    url: "https://api.com".into(),
+                    method: "GET".into(),
+                    headers: vec![],
+                    body: None,
+                }),
+            },
+            IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::StorageOp(StorageOpParams {
+                    storage_type: StorageType::Local,
+                    operation: StorageOperation::Set,
+                    key: "k".into(),
+                    value: Some("v".into()),
+                    origin: "https://example.com".into(),
+                }),
+            },
+            IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key: "a".into(),
+                    code: "KeyA".into(),
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                    meta: false,
+                    event_type: KeyboardEventType::Down,
+                }),
+            },
+            IpcMessage {
+                id: 5,
+                kind: IpcMessageKind::Ok,
+            },
+        ];
+
+        // Serialize all, then deserialize all — interleaved types must not corrupt each other
+        let encoded: Vec<Vec<u8>> = msgs.iter().map(|m| serialize(m).expect("s")).collect();
+        for (i, bytes) in encoded.iter().enumerate() {
+            let out = deserialize(bytes).expect("d");
+            assert_eq!(i as u64, out.id);
+        }
+    }
 }

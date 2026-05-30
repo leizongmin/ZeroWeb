@@ -318,4 +318,148 @@ mod tests {
         };
         assert_eq!(resp.redirect_count, 3);
     }
+
+    // ── HTTP header handling tests ──
+
+    /// 验证多个同名 header 只返回第一个（当前行为）。
+    #[test]
+    fn test_header_multiple_same_name() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Set-Cookie".into(), "a=1".into()),
+                ("Set-Cookie".into(), "b=2".into()),
+            ],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        // header() 使用 find，返回第一个匹配
+        let val = resp.header("set-cookie");
+        assert_eq!(val, Some("a=1"));
+    }
+
+    /// 验证 header 查找是大小写不敏感的。
+    #[test]
+    fn test_header_case_insensitive() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Content-Type".into(), "text/html".into()),
+            ],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.header("content-type"), Some("text/html"));
+        assert_eq!(resp.header("CONTENT-TYPE"), Some("text/html"));
+        assert_eq!(resp.header("Content-Type"), Some("text/html"));
+    }
+
+    /// 验证自定义 header 通过 header() 可查询。
+    #[test]
+    fn test_custom_header_accessors() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("X-Request-Id".into(), "abc-123".into()),
+                ("X-Rate-Limit".into(), "100".into()),
+            ],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.header("x-request-id"), Some("abc-123"));
+        assert_eq!(resp.header("x-rate-limit"), Some("100"));
+    }
+
+    /// 验证 Content-Type 不含参数时 content_type_mime 等于 content_type。
+    #[test]
+    fn test_content_type_mime_equals_content_type_when_no_params() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "application/json".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.content_type(), resp.content_type_mime());
+    }
+
+    /// 验证 content_type_mime 对多种 MIME 类型正确提取。
+    #[test]
+    fn test_content_type_mime_various_types() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "text/html; charset=iso-8859-1".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.content_type_mime(), Some("text/html"));
+
+        let resp2 = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "multipart/form-data; boundary=----abc".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp2.content_type_mime(), Some("multipart/form-data"));
+    }
+
+    // ── Response status code helper tests ──
+
+    /// 验证常见 HTTP 错误状态码不是 success。
+    #[test]
+    fn test_status_code_helpers_various_codes() {
+        // 2xx = success
+        assert!(test_response(200, vec![], "").is_success());
+        assert!(test_response(201, vec![], "").is_success());
+        assert!(test_response(204, vec![], "").is_success());
+        assert!(!test_response(204, vec![], "").is_redirect());
+
+        // 3xx = redirect
+        assert!(test_response(301, vec![], "").is_redirect());
+        assert!(test_response(302, vec![], "").is_redirect());
+        assert!(test_response(304, vec![], "").is_redirect());
+        assert!(!test_response(301, vec![], "").is_success());
+
+        // 4xx/5xx = neither success nor redirect
+        assert!(!test_response(400, vec![], "").is_success());
+        assert!(!test_response(400, vec![], "").is_redirect());
+        assert!(!test_response(500, vec![], "").is_success());
+        assert!(!test_response(503, vec![], "").is_redirect());
+    }
+
+    /// 验证 HttpRequest 方法类型正确映射。
+    #[test]
+    fn test_http_method_variants() {
+        let methods = [
+            (HttpMethod::Get, "GET"),
+            (HttpMethod::Post, "POST"),
+            (HttpMethod::Put, "PUT"),
+            (HttpMethod::Delete, "DELETE"),
+            (HttpMethod::Patch, "PATCH"),
+            (HttpMethod::Head, "HEAD"),
+            (HttpMethod::Options, "OPTIONS"),
+        ];
+        for (method, expected) in methods {
+            assert_eq!(method.to_reqwest().as_str(), expected);
+        }
+    }
+
+    /// 验证多个 header 可通过 builder 链式添加。
+    #[test]
+    fn test_request_multiple_headers_builder() {
+        let req = HttpRequest::get("http://example.com")
+            .header("Accept", "text/html")
+            .header("Accept-Language", "en-US")
+            .header("Authorization", "Bearer token123");
+        assert_eq!(req.headers.len(), 3);
+
+        let auth = req.headers.iter().find(|(k, _)| k == "Authorization");
+        assert!(auth.is_some());
+        assert_eq!(auth.unwrap().1, "Bearer token123");
+    }
 }
