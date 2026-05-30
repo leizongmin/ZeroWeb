@@ -11,6 +11,7 @@
 //! - [`selector`] — 选择器解析和匹配
 //! - [`values`] — CSS 属性值类型
 //! - [`ast`] — CSS AST 数据结构
+//! - [`media_query`] — CSS 媒体查询解析与评估
 
 #![warn(missing_docs)]
 
@@ -19,11 +20,13 @@ pub mod ast;
 pub mod selector;
 pub mod values;
 pub mod parser;
+pub mod media_query;
 
 pub use tokenizer::{Token, Tokenizer};
 pub use ast::*;
 pub use selector::*;
 pub use parser::Parser;
+pub use media_query::*;
 
 #[cfg(test)]
 mod tests;
