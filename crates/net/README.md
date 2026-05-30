@@ -1,10 +1,10 @@
-# zero-net
+# ZeroWeb Network (`zero-net`)
 
 > 基于 reqwest 的 HTTP/HTTPS 网络栈，提供 URL 解析、HTTP 客户端、导航历史和 Cookie 管理功能。
 
 ## 概述
 
-zero-net 是 ZeroWeb 的网络层，封装了 HTTP/HTTPS 请求的完整生命周期。它负责 URL 解析与同源判断、同步 HTTP 请求发送（支持重定向和超时控制）、浏览器风格的导航历史栈（前进/后退/替换），以及 Cookie 的解析、存储和按域名/路径匹配。
+`ZeroWeb Network` (`zero-net`) 是 ZeroWeb 的网络层，封装了 HTTP/HTTPS 请求的完整生命周期。它负责 URL 解析与同源判断、同步 HTTP 请求发送（支持重定向和超时控制）、浏览器风格的导航历史栈（前进/后退/替换），以及 Cookie 的解析、存储和按域名/路径匹配。
 
 ## 主要功能
 

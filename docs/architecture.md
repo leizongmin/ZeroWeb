@@ -6,7 +6,7 @@
 2. 各个 crate 分别负责什么
 3. 应该从哪里开始阅读和修改
 
-更正式的需求和约束在 [docs/specs/zero-web-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)，当前实现进度看 [docs/goal/zero-web/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-web/master.md)。
+更正式的需求和约束在 [docs/specs/zero-web-spec-rfc.md](specs/zero-web-spec-rfc.md)，当前实现进度看 [docs/goal/zero-web/master.md](goal/zero-web/master.md)。
 
 > **注意**
 > 这份文档说的是当前结构和目标方向，不代表项目已经到了可日常使用、可商用或其他生产可用的程度。真要这么用，风险得自己评估。
@@ -107,10 +107,10 @@
 
 第一次进仓库，按这个顺序读，通常最省时间：
 
-1. [README.md]($HOME/work/ZeroBrowser/README.md)
+1. [README.md](../README.md)
 2. 本文档
-3. [docs/specs/zero-web-spec-rfc.md]($HOME/work/ZeroBrowser/docs/specs/zero-web-spec-rfc.md)
-4. [docs/goal/zero-web/master.md]($HOME/work/ZeroBrowser/docs/goal/zero-web/master.md)
+3. [docs/specs/zero-web-spec-rfc.md](specs/zero-web-spec-rfc.md)
+4. [docs/goal/zero-web/master.md](goal/zero-web/master.md)
 5. 目标 crate 的 `README.md`
 6. 对应 crate 的 `src/lib.rs` 和测试文件
 

@@ -1,10 +1,10 @@
-# zero-security
+# ZeroWeb Security (`zero-security`)
 
 > 浏览器安全模型实现：CORS、CSP、同源策略
 
 ## 概述
 
-zero-security 为 ZeroWeb 提供核心安全策略基础设施，涵盖跨源资源共享（CORS）检查、内容安全策略（CSP）解析与资源加载控制、以及同源策略判断。作为渲染引擎的安全边界层，它在网络请求、资源加载等环节拦截不安全的跨源访问，确保浏览器行为符合 Web 安全规范。
+`ZeroWeb Security` (`zero-security`) 为 ZeroWeb 提供核心安全策略基础设施，涵盖跨源资源共享（CORS）检查、内容安全策略（CSP）解析与资源加载控制、以及同源策略判断。作为渲染引擎的安全边界层，它在网络请求、资源加载等环节拦截不安全的跨源访问，确保浏览器行为符合 Web 安全规范。
 
 ## 主要功能
 

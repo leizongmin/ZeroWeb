@@ -1,10 +1,10 @@
-# zero-storage
+# ZeroWeb Storage (`zero-storage`)
 
 > 浏览器端存储后端 — 提供 localStorage、sessionStorage 和 IndexedDB 的 Rust 实现。
 
 ## 概述
 
-zero-storage 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）和 IndexedDB。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
+`ZeroWeb Storage` (`zero-storage`) 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）和 IndexedDB。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
 
 ## 主要功能
 

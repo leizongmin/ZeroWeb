@@ -1,10 +1,10 @@
-# zero-render-foundation
+# ZeroWeb Render Foundation (`zero-render-foundation`)
 
 > GPU/CPU 渲染基础设施，提供字体渲染栈、Glyph Atlas 纹理图集、增量脏区域追踪与统一 WGSL 渲染管线。
 
 ## 概述
 
-`zero-render-foundation` 是 ZeroWeb 渲染管线的底层基石，源自 OmniTerm 终端项目的渲染架构迁移。它采用 Scene / Primitive / Backend 三层分离设计，基于 wgpu 提供 GPU 加速渲染（含无头模式后备），同时集成 fontdue + swash 字体渲染栈和行式打包的 Glyph Atlas，为上层引擎提供高效的像素输出能力。
+`ZeroWeb Render Foundation` (`zero-render-foundation`) 是 ZeroWeb 渲染管线的底层基石，源自 OmniTerm 终端项目的渲染架构迁移。它采用 Scene / Primitive / Backend 三层分离设计，基于 wgpu 提供 GPU 加速渲染（含无头模式后备），同时集成 fontdue + swash 字体渲染栈和行式打包的 Glyph Atlas，为上层引擎提供高效的像素输出能力。
 
 ## 主要功能
 

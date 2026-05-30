@@ -1,10 +1,10 @@
-# zero-canvas
+# ZeroWeb Canvas (`zero-canvas`)
 
 > Canvas 2D 绘图 API 实现 — 渲染上下文、路径构建、仿射变换与图像数据
 
 ## 概述
 
-`zero-canvas` 实现了浏览器的 Canvas 2D 绘图能力，提供与 HTML Canvas `CanvasRenderingContext2D` API 对应的 Rust 接口。它在渲染管线中位于 `zero-render-foundation` 之上，将绘图命令转化为渲染图元（`RenderPrimitives`），供下游渲染器消费。核心组件包括 `CanvasContext`（2D 渲染上下文）和 `Path2D`（路径命令构建器）。
+`ZeroWeb Canvas` (`zero-canvas`) 实现了 ZeroWeb 的 Canvas 2D 绘图能力，提供与 HTML Canvas `CanvasRenderingContext2D` API 对应的 Rust 接口。它在渲染管线中位于 `zero-render-foundation` 之上，将绘图命令转化为渲染图元（`RenderPrimitives`），供下游渲染器消费。核心组件包括 `CanvasContext`（2D 渲染上下文）和 `Path2D`（路径命令构建器）。
 
 ## 主要功能
 
