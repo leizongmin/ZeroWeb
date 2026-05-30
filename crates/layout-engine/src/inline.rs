@@ -372,4 +372,368 @@ mod tests {
         let all_text: String = fragments.iter().map(|f| f.text.clone()).collect();
         assert!(all_text.contains("Hello"), "应包含 'Hello'，实际: {all_text}");
     }
+
+    // ── 新增综合测试 ──
+
+    /// 测试混合文本和 inline 元素（真实 HTML 结构）。
+    ///
+    /// 模拟 `<p>This is <em>important</em> and <strong>bold</strong> text</p>` 场景，
+    /// 验证从文档收集行内内容后能正确排列成行盒。
+    #[test]
+    fn test_mixed_text_and_inline_elements() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>This is <em>important</em> and <strong>bold</strong> text</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p);
+
+        let fragments = ctx.all_fragments();
+        assert!(
+            fragments.len() >= 5,
+            "应至少有 5 个文本片段（各单词），实际 {}",
+            fragments.len()
+        );
+
+        // 验证所有片段的 x 坐标在同一行内递增
+        for line in &ctx.lines {
+            for i in 1..line.runs.len() {
+                assert!(
+                    line.runs[i].x >= line.runs[i - 1].x,
+                    "片段 x 坐标应在行内递增"
+                );
+            }
+        }
+    }
+
+    /// 测试超长单个单词应溢出容器。
+    ///
+    /// 当一个单词宽度超过 container_width 时，它仍然被放置在行盒中
+    /// （浏览器行为：溢出而不截断）。
+    #[test]
+    fn test_very_long_single_word_overflow() {
+        let mut ctx = InlineFormattingContext::new(100.0);
+        // 构造一个超长单词，每个字符宽度约 16*0.6 = 9.6px
+        // 50 个字符 = ~480px，远超 100px 容器宽度
+        let long_word = "a".repeat(50);
+        let runs = vec![TextRun {
+            text: long_word.clone(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 应产生 1 行（单个不中断单词不换行）
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "超长单词应在单行中（溢出而不是换行）"
+        );
+        assert_eq!(ctx.lines[0].runs.len(), 1, "只有一个单词片段");
+
+        // 片段宽度应超过容器宽度
+        let fragment = &ctx.lines[0].runs[0];
+        assert!(
+            fragment.width > ctx.container_width,
+            "片段宽度 {} 应超过容器宽度 {}",
+            fragment.width,
+            ctx.container_width
+        );
+    }
+
+    /// 测试空容器（无文本节点）不产生任何行盒。
+    #[test]
+    fn test_empty_container_no_lines() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs: Vec<TextRun> = vec![];
+        ctx.break_into_lines(runs);
+
+        assert!(
+            ctx.lines.is_empty(),
+            "空容器不应产生行盒"
+        );
+        assert!(
+            ctx.all_fragments().is_empty(),
+            "空容器不应有文本片段"
+        );
+        assert!(
+            (ctx.total_height() - 0.0).abs() < 0.01,
+            "空容器总高度应为 0"
+        );
+    }
+
+    /// 测试空容器通过 Document layout 方法。
+    #[test]
+    fn test_empty_container_from_document() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p></p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p);
+
+        assert!(
+            ctx.lines.is_empty(),
+            "没有文本的空 p 元素不应产生行盒"
+        );
+    }
+
+    /// 测试行高计算 — 不同行高产生不同的行盒高度。
+    #[test]
+    fn test_line_height_calculation() {
+        // 行高 24px 的单行
+        let mut ctx24 = InlineFormattingContext::new(800.0);
+        let runs_24 = vec![TextRun {
+            text: "Short text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 24.0,
+        }];
+        ctx24.break_into_lines(runs_24);
+
+        // 行高 32px 的单行
+        let mut ctx32 = InlineFormattingContext::new(800.0);
+        let runs_32 = vec![TextRun {
+            text: "Short text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 32.0,
+        }];
+        ctx32.break_into_lines(runs_32);
+
+        assert!(
+            (ctx24.lines[0].height - 24.0).abs() < 0.01,
+            "行高 24px 应产生高度 24px 的行盒"
+        );
+        assert!(
+            (ctx32.lines[0].height - 32.0).abs() < 0.01,
+            "行高 32px 应产生高度 32px 的行盒"
+        );
+        assert!(
+            (ctx24.total_height() - 24.0).abs() < 0.01,
+            "总高度应为 24.0"
+        );
+        assert!(
+            (ctx32.total_height() - 32.0).abs() < 0.01,
+            "总高度应为 32.0"
+        );
+    }
+
+    /// 测试行高在多行中的累加效果。
+    #[test]
+    fn test_line_height_accumulation() {
+        let mut ctx = InlineFormattingContext::new(50.0);
+        let runs = vec![TextRun {
+            text: "a b c d e f g h i j".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "窄容器应产生多行");
+
+        // 每行高度应为 30px
+        for (i, line) in ctx.lines.iter().enumerate() {
+            assert!(
+                (line.height - 30.0).abs() < 0.01,
+                "第 {} 行高度应为 30.0，实际 {}",
+                i,
+                line.height
+            );
+        }
+
+        // 总高度 = 行数 × 30
+        let expected = ctx.lines.len() as f32 * 30.0;
+        assert!(
+            (ctx.total_height() - expected).abs() < 0.01,
+            "总高度应为 {}，实际 {}",
+            expected,
+            ctx.total_height()
+        );
+    }
+
+    /// 测试混合字体大小的行盒。
+    ///
+    /// 当同一行包含不同字体大小的文本时，行盒高度应取最大值。
+    #[test]
+    fn test_multiple_font_sizes_same_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![
+            TextRun {
+                text: "Small".to_string(),
+                node_id: NodeId::default(),
+                font_size: 12.0,
+                line_height: 16.0,
+            },
+            TextRun {
+                text: "Large".to_string(),
+                node_id: NodeId::default(),
+                font_size: 24.0,
+                line_height: 30.0,
+            },
+            TextRun {
+                text: "Medium".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1, "三个短词应在同一行");
+
+        // 行盒高度应取最大行高 30.0
+        assert!(
+            (ctx.lines[0].height - 30.0).abs() < 0.01,
+            "行盒高度应取最大行高 30.0，实际 {}",
+            ctx.lines[0].height
+        );
+
+        // 验证片段保留了各自的字体大小
+        let fragments = ctx.all_fragments();
+        let font_sizes: Vec<f32> = fragments.iter().map(|f| f.font_size).collect();
+        assert!(
+            font_sizes.iter().any(|&s| (s - 12.0).abs() < 0.01),
+            "应包含 12px 字体大小的片段"
+        );
+        assert!(
+            font_sizes.iter().any(|&s| (s - 24.0).abs() < 0.01),
+            "应包含 24px 字体大小的片段"
+        );
+    }
+
+    /// 测试混合字体大小时估算宽度与字体大小成正比。
+    #[test]
+    fn test_font_size_affects_width() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![
+            TextRun {
+                text: "Word".to_string(),
+                node_id: NodeId::default(),
+                font_size: 10.0,
+                line_height: 14.0,
+            },
+            TextRun {
+                text: "Word".to_string(),
+                node_id: NodeId::default(),
+                font_size: 20.0,
+                line_height: 24.0,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        let fragments = ctx.all_fragments();
+        assert_eq!(fragments.len(), 2, "两个单词各一个片段");
+
+        // 20px 字体的片段宽度应为 10px 字体的 2 倍
+        let ratio = fragments[1].width / fragments[0].width;
+        assert!(
+            (ratio - 2.0).abs() < 0.01,
+            "宽度比应为 2.0，实际 {}",
+            ratio
+        );
+    }
+
+    /// 测试窄容器中多个 TextRun 跨行排列。
+    #[test]
+    fn test_multiple_runs_wrap_across_lines() {
+        let mut ctx = InlineFormattingContext::new(80.0);
+        let runs = vec![
+            TextRun {
+                text: "alpha beta".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+            TextRun {
+                text: "gamma delta".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        assert!(
+            ctx.lines.len() > 1,
+            "窄容器中 4 个单词应产生多行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 验证 y 坐标连续递增
+        for i in 1..ctx.lines.len() {
+            assert!(
+                ctx.lines[i].y >= ctx.lines[i - 1].y + ctx.lines[i - 1].height - 0.01,
+                "行 y 坐标应连续递增"
+            );
+        }
+    }
+
+    /// 测试所有片段的 NodeId 正确保留。
+    #[test]
+    fn test_fragment_node_ids_preserved() {
+        let id1 = NodeId::default();
+        let id2 = NodeId::default();
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![
+            TextRun {
+                text: "First".to_string(),
+                node_id: id1,
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+            TextRun {
+                text: "Second".to_string(),
+                node_id: id2,
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        let fragments = ctx.all_fragments();
+        // 每个片段都应有有效的 NodeId（即使是默认值）
+        assert_eq!(fragments.len(), 2, "应有 2 个片段");
+        for f in &fragments {
+            assert!(
+                f.node_id.is_valid(),
+                "每个片段都应有有效的 NodeId"
+            );
+        }
+    }
+
+    /// 测试 Container width 为 0 的边界情况。
+    #[test]
+    fn test_zero_container_width() {
+        let mut ctx = InlineFormattingContext::new(0.0);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 容器宽度为 0 时，第一个单词放入第一行（即使溢出），
+        // 后续每个单词都换新行
+        assert!(
+            !ctx.lines.is_empty(),
+            "即使容器宽度为 0，也应产生行盒"
+        );
+        assert!(
+            ctx.lines.len() >= 2,
+            "零宽度容器中多个单词应产生多行"
+        );
+    }
 }

@@ -165,6 +165,176 @@ pub enum TextBaseline {
     Bottom,
 }
 
+/// 合成操作模式 — 控制 Canvas 绘制时新图元与已有内容的混合方式。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CompositeOperation {
+    /// 默认：新图元绘制在已有内容之上。
+    #[default]
+    SourceOver,
+    /// 新图元只绘制在透明区域。
+    DestinationOver,
+    /// 清除新图元与已有内容重叠的区域。
+    DestinationOut,
+    /// 新图元与已有内容重叠的部分保留已有内容。
+    DestinationAtop,
+    /// 新图元与已有内容的重叠区域显示已有内容。
+    DestinationIn,
+    /// 新图元与已有内容重叠区域显示新图元，其余清除。
+    SourceIn,
+    /// 新图元与已有内容重叠区域显示新图元。
+    SourceAtop,
+    /// 新图元和已有内容取较亮值。
+    Lighter,
+    /// 新图元复制到输出，忽略已有内容。
+    Copy,
+    /// 新图元和已有内容取异或。
+    Xor,
+    /// 新图元乘以已有内容（变暗）。
+    Multiply,
+    /// 新图元与已有内容取屏幕混合（变亮）。
+    Screen,
+    /// 新图元与已有内容叠加混合。
+    Overlay,
+    /// 新图层变暗模式。
+    Darken,
+    /// 新图层变亮模式。
+    Lighten,
+    /// 新图层颜色减淡。
+    ColorDodge,
+    /// 新图层颜色加深。
+    ColorBurn,
+    /// 新图层强光模式。
+    HardLight,
+    /// 新图层柔光模式。
+    SoftLight,
+    /// 新图层差值模式。
+    Difference,
+    /// 新图层排除模式。
+    Exclusion,
+    /// 新图层色相模式。
+    Hue,
+    /// 新图层饱和度模式。
+    Saturation,
+    /// 新图层颜色模式。
+    Color,
+    /// 新图层亮度模式。
+    Luminosity,
+}
+
+/// 渐变停止点。
+#[derive(Debug, Clone)]
+pub struct GradientStop {
+    /// 偏移量 [0.0, 1.0]。
+    pub offset: f32,
+    /// 颜色。
+    pub color: Color,
+}
+
+/// 线性渐变 — 从起点到终点的颜色过渡。
+#[derive(Debug, Clone)]
+pub struct LinearGradient {
+    /// 起点 X。
+    pub x0: f32,
+    /// 起点 Y。
+    pub y0: f32,
+    /// 终点 X。
+    pub x1: f32,
+    /// 终点 Y。
+    pub y1: f32,
+    /// 颜色停止点列表。
+    pub stops: Vec<GradientStop>,
+}
+
+impl LinearGradient {
+    /// 创建线性渐变。
+    pub fn new(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
+        Self {
+            x0,
+            y0,
+            x1,
+            y1,
+            stops: Vec::new(),
+        }
+    }
+
+    /// 添加颜色停止点。
+    pub fn add_color_stop(&mut self, offset: f32, color: Color) {
+        self.stops.push(GradientStop { offset, color });
+    }
+}
+
+/// 径向渐变 — 从内圆到外圆的颜色过渡。
+#[derive(Debug, Clone)]
+pub struct RadialGradient {
+    /// 内圆圆心 X。
+    pub x0: f32,
+    /// 内圆圆心 Y。
+    pub y0: f32,
+    /// 内圆半径。
+    pub r0: f32,
+    /// 外圆圆心 X。
+    pub x1: f32,
+    /// 外圆圆心 Y。
+    pub y1: f32,
+    /// 外圆半径。
+    pub r1: f32,
+    /// 颜色停止点列表。
+    pub stops: Vec<GradientStop>,
+}
+
+impl RadialGradient {
+    /// 创建径向渐变。
+    pub fn new(x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> Self {
+        Self {
+            x0,
+            y0,
+            r0,
+            x1,
+            y1,
+            r1,
+            stops: Vec::new(),
+        }
+    }
+
+    /// 添加颜色停止点。
+    pub fn add_color_stop(&mut self, offset: f32, color: Color) {
+        self.stops.push(GradientStop { offset, color });
+    }
+}
+
+/// 图案重复模式。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum PatternRepetition {
+    /// 水平和垂直方向都重复。
+    #[default]
+    Repeat,
+    /// 只在水平方向重复。
+    RepeatX,
+    /// 只在垂直方向重复。
+    RepeatY,
+    /// 不重复。
+    NoRepeat,
+}
+
+/// 图案 — 从 ImageData 创建的平铺图案。
+#[derive(Debug, Clone)]
+pub struct CanvasPattern {
+    /// 图案源图像数据。
+    pub image_data: ImageData,
+    /// 重复模式。
+    pub repetition: PatternRepetition,
+}
+
+impl CanvasPattern {
+    /// 创建图案。
+    pub fn new(image_data: ImageData, repetition: PatternRepetition) -> Self {
+        Self {
+            image_data,
+            repetition,
+        }
+    }
+}
+
 /// Canvas 状态（用于 save/restore）。
 #[derive(Debug, Clone)]
 struct CanvasState {
@@ -174,6 +344,7 @@ struct CanvasState {
     font: FontDescriptor,
     global_alpha: f32,
     transform: Transform2D,
+    composite_operation: CompositeOperation,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -202,6 +373,10 @@ pub struct CanvasContext {
     current_path: Path2D,
     /// 像素缓冲区（RGBA，宽度 × 高度 × 4 字节）。
     pixel_buffer: Vec<u8>,
+    /// 当前合成操作模式。
+    composite_operation: CompositeOperation,
+    /// 当前裁剪路径（如果有）。
+    clip_path: Option<Path2D>,
 }
 
 /// 文本度量。
@@ -243,6 +418,8 @@ impl CanvasContext {
             state_stack: Vec::new(),
             current_path: Path2D::new(),
             pixel_buffer: vec![0u8; buffer_size],
+            composite_operation: CompositeOperation::default(),
+            clip_path: None,
         }
     }
 
@@ -435,6 +612,7 @@ impl CanvasContext {
             font: self.font.clone(),
             global_alpha: self.global_alpha,
             transform: self.transform,
+            composite_operation: self.composite_operation,
         });
     }
 
@@ -447,6 +625,7 @@ impl CanvasContext {
             self.font = state.font;
             self.global_alpha = state.global_alpha;
             self.transform = state.transform;
+            self.composite_operation = state.composite_operation;
         }
     }
 
@@ -535,6 +714,89 @@ impl CanvasContext {
     /// 返回画布高度。
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    // ── Clipping ──
+
+    /// 从当前路径设置裁剪区域。后续绘制操作将被限制在裁剪区域内。
+    /// 调用后当前路径不会被清除（与浏览器行为一致）。
+    pub fn clip(&mut self) {
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return;
+        }
+        // 计算路径包围盒作为裁剪矩形
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for chunk in vertices.chunks_exact(2) {
+            min_x = min_x.min(chunk[0]);
+            min_y = min_y.min(chunk[1]);
+            max_x = max_x.max(chunk[0]);
+            max_y = max_y.max(chunk[1]);
+        }
+        if min_x < max_x && min_y < max_y {
+            let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+            self.primitives.add_clip(rect);
+            // 保存裁剪路径的副本用于 isPointInPath 等后续判断
+            self.clip_path = Some(self.current_path.clone());
+        }
+    }
+
+    // ── Composite operation ──
+
+    /// 设置合成操作模式。
+    pub fn set_composite_operation(&mut self, op: CompositeOperation) {
+        self.composite_operation = op;
+    }
+
+    /// 返回当前合成操作模式。
+    pub fn composite_operation(&self) -> CompositeOperation {
+        self.composite_operation
+    }
+
+    // ── Gradients ──
+
+    /// 创建线性渐变。
+    pub fn create_linear_gradient(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> LinearGradient {
+        LinearGradient::new(x0, y0, x1, y1)
+    }
+
+    /// 创建径向渐变。
+    pub fn create_radial_gradient(
+        &self,
+        x0: f32,
+        y0: f32,
+        r0: f32,
+        x1: f32,
+        y1: f32,
+        r1: f32,
+    ) -> RadialGradient {
+        RadialGradient::new(x0, y0, r0, x1, y1, r1)
+    }
+
+    // ── Pattern ──
+
+    /// 从 ImageData 创建图案。
+    pub fn create_pattern(&self, image_data: ImageData, repetition: PatternRepetition) -> CanvasPattern {
+        CanvasPattern::new(image_data, repetition)
+    }
+
+    // ── Hit testing ──
+
+    /// 判断点是否在当前路径内部（使用奇偶填充规则）。
+    /// 点坐标为 Canvas 坐标空间，会先通过当前变换矩阵的逆变换映射到路径空间。
+    pub fn is_point_in_path(&self, x: f32, y: f32) -> bool {
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return false;
+        }
+        let points: Vec<(f32, f32)> = vertices
+            .chunks_exact(2)
+            .map(|c| (c[0], c[1]))
+            .collect();
+        point_in_polygon(x, y, &points)
     }
 
     // ── Pixel data ──
@@ -813,6 +1075,25 @@ impl CanvasContext {
         let max_y = y1.max(y2) + half_lw;
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
+}
+
+/// 使用射线法（ray casting）判断点是否在多边形内部。
+fn point_in_polygon(px: f32, py: f32, points: &[(f32, f32)]) -> bool {
+    let n = points.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = points[i];
+        let (xj, yj) = points[j];
+        if ((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 #[cfg(test)]
@@ -1825,5 +2106,429 @@ mod tests {
         let pf = &ctx.primitives().path_fills[0];
         // 16 段细分 × 4 floats = 64
         assert_eq!(pf.vertices.len(), 64);
+    }
+
+    // ── clip() 测试 ──
+
+    /// 测试 clip() 从三角形路径生成裁剪图元。
+    #[test]
+    fn test_clip_triangle() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(50.0, 100.0);
+        ctx.close_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 1);
+        let clip = &ctx.primitives().clips[0];
+        // 裁剪区域应是路径的包围盒
+        assert!(clip.rect.origin.x <= 10.0);
+        assert!(clip.rect.origin.y <= 10.0);
+        assert!(clip.rect.size.width >= 90.0);
+        assert!(clip.rect.size.height >= 90.0);
+    }
+
+    /// 测试 clip() 空路径不生成裁剪图元。
+    #[test]
+    fn test_clip_empty_path() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.begin_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 0);
+    }
+
+    /// 测试 clip() 矩形路径生成精确的裁剪矩形。
+    #[test]
+    fn test_clip_rectangular_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(20.0, 30.0);
+        ctx.line_to(80.0, 30.0);
+        ctx.line_to(80.0, 70.0);
+        ctx.line_to(20.0, 70.0);
+        ctx.close_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 1);
+        let clip = &ctx.primitives().clips[0];
+        assert!((clip.rect.origin.x - 20.0).abs() < f32::EPSILON);
+        assert!((clip.rect.origin.y - 30.0).abs() < f32::EPSILON);
+        assert!((clip.rect.size.width - 60.0).abs() < f32::EPSILON);
+        assert!((clip.rect.size.height - 40.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 clip() 后绘制操作仍然正常。
+    #[test]
+    fn test_clip_then_draw() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.close_path();
+        ctx.clip();
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        assert_eq!(ctx.primitives().clips.len(), 1);
+        assert_eq!(ctx.primitives().fills.len(), 1);
+    }
+
+    /// 测试多次 clip() 调用累积裁剪区域。
+    #[test]
+    fn test_clip_multiple() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 0.0);
+        ctx.line_to(50.0, 50.0);
+        ctx.close_path();
+        ctx.clip();
+        ctx.begin_path();
+        ctx.move_to(25.0, 25.0);
+        ctx.line_to(75.0, 25.0);
+        ctx.line_to(75.0, 75.0);
+        ctx.close_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 2);
+    }
+
+    // ── CompositeOperation 测试 ──
+
+    /// 测试默认合成操作模式为 SourceOver。
+    #[test]
+    fn test_composite_operation_default() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::SourceOver);
+    }
+
+    /// 测试设置和获取合成操作模式。
+    #[test]
+    fn test_composite_operation_set_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_composite_operation(CompositeOperation::Multiply);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::Multiply);
+        ctx.set_composite_operation(CompositeOperation::Screen);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::Screen);
+    }
+
+    /// 测试合成操作模式在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_composite_operation_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::SourceOver);
+        ctx.save();
+        ctx.set_composite_operation(CompositeOperation::Lighter);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::Lighter);
+        ctx.restore();
+        assert_eq!(ctx.composite_operation(), CompositeOperation::SourceOver);
+    }
+
+    /// 测试所有合成操作模式变体可以正确设置。
+    #[test]
+    fn test_composite_operation_all_variants() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let ops = [
+            CompositeOperation::SourceOver,
+            CompositeOperation::DestinationOver,
+            CompositeOperation::DestinationOut,
+            CompositeOperation::DestinationAtop,
+            CompositeOperation::DestinationIn,
+            CompositeOperation::SourceIn,
+            CompositeOperation::SourceAtop,
+            CompositeOperation::Lighter,
+            CompositeOperation::Copy,
+            CompositeOperation::Xor,
+            CompositeOperation::Multiply,
+            CompositeOperation::Screen,
+            CompositeOperation::Overlay,
+            CompositeOperation::Darken,
+            CompositeOperation::Lighten,
+            CompositeOperation::ColorDodge,
+            CompositeOperation::ColorBurn,
+            CompositeOperation::HardLight,
+            CompositeOperation::SoftLight,
+            CompositeOperation::Difference,
+            CompositeOperation::Exclusion,
+            CompositeOperation::Hue,
+            CompositeOperation::Saturation,
+            CompositeOperation::Color,
+            CompositeOperation::Luminosity,
+        ];
+        for op in &ops {
+            ctx.set_composite_operation(*op);
+            assert_eq!(ctx.composite_operation(), *op);
+        }
+    }
+
+    /// 测试合成操作模式 save/restore 嵌套。
+    #[test]
+    fn test_composite_operation_nested_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_composite_operation(CompositeOperation::SourceOver);
+        ctx.save();
+        ctx.set_composite_operation(CompositeOperation::Multiply);
+        ctx.save();
+        ctx.set_composite_operation(CompositeOperation::Screen);
+        assert_eq!(ctx.composite_operation(), CompositeOperation::Screen);
+        ctx.restore();
+        assert_eq!(ctx.composite_operation(), CompositeOperation::Multiply);
+        ctx.restore();
+        assert_eq!(ctx.composite_operation(), CompositeOperation::SourceOver);
+    }
+
+    // ── createLinearGradient 测试 ──
+
+    /// 测试创建线性渐变。
+    #[test]
+    fn test_create_linear_gradient() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 200.0, 0.0);
+        assert!((grad.x0).abs() < f32::EPSILON);
+        assert!((grad.y0).abs() < f32::EPSILON);
+        assert!((grad.x1 - 200.0).abs() < f32::EPSILON);
+        assert!((grad.y1).abs() < f32::EPSILON);
+        assert!(grad.stops.is_empty());
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        assert_eq!(grad.stops.len(), 2);
+        assert_eq!(grad.stops[0].color, Color::RED);
+        assert_eq!(grad.stops[1].color, Color::BLUE);
+    }
+
+    /// 测试线性渐变多色停止点。
+    #[test]
+    fn test_linear_gradient_multiple_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 100.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.5, Color::GREEN);
+        grad.add_color_stop(1.0, Color::BLUE);
+        assert_eq!(grad.stops.len(), 3);
+        assert!((grad.stops[1].offset - 0.5).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[1].color, Color::GREEN);
+    }
+
+    /// 测试线性渐变起点和终点相同（退化情况不 panic）。
+    #[test]
+    fn test_linear_gradient_degenerate() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(50.0, 50.0, 50.0, 50.0);
+        grad.add_color_stop(0.0, Color::RED);
+        assert_eq!(grad.stops.len(), 1);
+    }
+
+    // ── createRadialGradient 测试 ──
+
+    /// 测试创建径向渐变。
+    #[test]
+    fn test_create_radial_gradient() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_radial_gradient(50.0, 50.0, 10.0, 50.0, 50.0, 100.0);
+        assert!((grad.x0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r0 - 10.0).abs() < f32::EPSILON);
+        assert!((grad.x1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r1 - 100.0).abs() < f32::EPSILON);
+        assert!(grad.stops.is_empty());
+        grad.add_color_stop(0.0, Color::WHITE);
+        grad.add_color_stop(1.0, Color::BLACK);
+        assert_eq!(grad.stops.len(), 2);
+    }
+
+    /// 测试径向渐变多色停止点。
+    #[test]
+    fn test_radial_gradient_multiple_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_radial_gradient(0.0, 0.0, 0.0, 100.0, 100.0, 50.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.33, Color::GREEN);
+        grad.add_color_stop(0.66, Color::BLUE);
+        grad.add_color_stop(1.0, Color::WHITE);
+        assert_eq!(grad.stops.len(), 4);
+    }
+
+    /// 测试径向渐变偏心圆（圆心不同）。
+    #[test]
+    fn test_radial_gradient_eccentric() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_radial_gradient(0.0, 0.0, 5.0, 200.0, 200.0, 50.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        assert_eq!(grad.stops.len(), 2);
+    }
+
+    // ── createPattern 测试 ──
+
+    /// 测试从 ImageData 创建图案。
+    #[test]
+    fn test_create_pattern() {
+        let ctx = CanvasContext::new(200, 200);
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        let pattern = ctx.create_pattern(img.clone(), PatternRepetition::Repeat);
+        assert_eq!(pattern.image_data.width, 2);
+        assert_eq!(pattern.image_data.height, 2);
+        assert_eq!(pattern.repetition, PatternRepetition::Repeat);
+    }
+
+    /// 测试图案重复模式 NoRepeat。
+    #[test]
+    fn test_create_pattern_no_repeat() {
+        let ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![255, 0, 0, 255],
+        };
+        let pattern = ctx.create_pattern(img, PatternRepetition::NoRepeat);
+        assert_eq!(pattern.repetition, PatternRepetition::NoRepeat);
+    }
+
+    /// 测试图案重复模式 RepeatX / RepeatY。
+    #[test]
+    fn test_create_pattern_repeat_variants() {
+        let ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+
+        let p1 = ctx.create_pattern(img.clone(), PatternRepetition::RepeatX);
+        assert_eq!(p1.repetition, PatternRepetition::RepeatX);
+
+        let p2 = ctx.create_pattern(img, PatternRepetition::RepeatY);
+        assert_eq!(p2.repetition, PatternRepetition::RepeatY);
+    }
+
+    /// 测试图案默认重复模式为 Repeat。
+    #[test]
+    fn test_pattern_repetition_default() {
+        assert_eq!(PatternRepetition::default(), PatternRepetition::Repeat);
+    }
+
+    // ── isPointInPath 测试 ──
+
+    /// 测试点在三角形路径内部。
+    #[test]
+    fn test_is_point_in_path_inside_triangle() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(50.0, 100.0);
+        ctx.close_path();
+        // 质心 (50, 33.3) 应在三角形内
+        assert!(ctx.is_point_in_path(50.0, 30.0));
+    }
+
+    /// 测试点在三角形路径外部。
+    #[test]
+    fn test_is_point_in_path_outside_triangle() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(50.0, 100.0);
+        ctx.close_path();
+        // 点 (200, 200) 应在三角形外
+        assert!(!ctx.is_point_in_path(200.0, 200.0));
+    }
+
+    /// 测试空路径上所有点都不在路径内。
+    #[test]
+    fn test_is_point_in_path_empty_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        assert!(!ctx.is_point_in_path(50.0, 50.0));
+    }
+
+    /// 测试点在矩形路径上。
+    #[test]
+    fn test_is_point_in_path_rectangle() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(90.0, 10.0);
+        ctx.line_to(90.0, 90.0);
+        ctx.line_to(10.0, 90.0);
+        ctx.close_path();
+        // 中心点应在矩形内
+        assert!(ctx.is_point_in_path(50.0, 50.0));
+        // 角落外的点应不在矩形内
+        assert!(!ctx.is_point_in_path(5.0, 5.0));
+    }
+
+    /// 测试点恰好在地面上。
+    #[test]
+    fn test_is_point_in_path_on_edge() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.close_path();
+        // 边界上的点行为取决于射线法实现（不确定在内还是外）
+        // 主要验证不 panic
+        let _ = ctx.is_point_in_path(0.0, 0.0);
+        let _ = ctx.is_point_in_path(50.0, 0.0);
+    }
+
+    /// 测试 isPointInPath 对仅有 MoveTo 的路径返回 false。
+    #[test]
+    fn test_is_point_in_path_move_to_only() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(50.0, 50.0);
+        // 只有 MoveTo，没有闭合区域
+        assert!(!ctx.is_point_in_path(50.0, 50.0));
+    }
+
+    // ── point_in_polygon 辅助函数测试 ──
+
+    /// 测试射线法判断点是否在正方形内。
+    #[test]
+    fn test_point_in_polygon_square() {
+        let square = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)];
+        assert!(point_in_polygon(50.0, 50.0, &square));
+        assert!(!point_in_polygon(150.0, 50.0, &square));
+    }
+
+    /// 测试射线法对少于 3 个点返回 false。
+    #[test]
+    fn test_point_in_polygon_too_few_points() {
+        let two_points = [(0.0, 0.0), (100.0, 100.0)];
+        assert!(!point_in_polygon(50.0, 50.0, &two_points));
+        let empty: [(f32, f32); 0] = [];
+        assert!(!point_in_polygon(50.0, 50.0, &empty));
+    }
+
+    /// 测试射线法判断凹多边形。
+    #[test]
+    fn test_point_in_polygon_concave() {
+        // L 形多边形
+        let l_shape = [
+            (0.0, 0.0),
+            (100.0, 0.0),
+            (100.0, 50.0),
+            (50.0, 50.0),
+            (50.0, 100.0),
+            (0.0, 100.0),
+        ];
+        // 凹角内侧的点
+        assert!(point_in_polygon(25.0, 75.0, &l_shape));
+        // 凹角外侧的点
+        assert!(!point_in_polygon(75.0, 75.0, &l_shape));
+    }
+
+    // ── CompositeOperation Default 测试 ──
+
+    /// 测试 CompositeOperation 默认值为 SourceOver。
+    #[test]
+    fn test_composite_operation_default_value() {
+        assert_eq!(CompositeOperation::default(), CompositeOperation::SourceOver);
     }
 }

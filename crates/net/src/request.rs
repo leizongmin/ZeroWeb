@@ -90,6 +90,8 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
     /// 最终 URL（重定向后的 URL）。
     pub url: String,
+    /// 经历的重定向次数。
+    pub redirect_count: usize,
 }
 
 impl HttpResponse {
@@ -111,9 +113,30 @@ impl HttpResponse {
             .map(|(_, value)| value.as_str())
     }
 
+    /// 获取 Content-Type 中的 MIME 类型（不含参数）。
+    ///
+    /// 例如 "text/html; charset=utf-8" 返回 "text/html"。
+    pub fn content_type_mime(&self) -> Option<&str> {
+        self.content_type().map(|ct| {
+            match ct.find(';') {
+                Some(idx) => &ct[..idx],
+                None => ct,
+            }
+            .trim()
+        })
+    }
+
     /// 获取 body 为 UTF-8 字符串。
     pub fn text(&self) -> Result<String, NetError> {
         String::from_utf8(self.body.clone()).map_err(|e| NetError::Http(e.to_string()))
+    }
+
+    /// 查找指定名称的响应头（大小写不敏感）。
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -121,52 +144,38 @@ impl HttpResponse {
 mod tests {
     use super::*;
 
+    /// 测试用 helper：创建一个最小 HttpResponse。
+    fn test_response(status_code: u16, body: Vec<u8>, url: &str) -> HttpResponse {
+        HttpResponse {
+            status_code,
+            headers: vec![],
+            body,
+            url: url.to_string(),
+            redirect_count: 0,
+        }
+    }
+
     #[test]
     fn test_http_response_is_success() {
-        let resp = HttpResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-            url: "http://example.com".to_string(),
-        };
+        let resp = test_response(200, vec![], "http://example.com");
         assert!(resp.is_success());
 
-        let resp_404 = HttpResponse {
-            status_code: 404,
-            headers: vec![],
-            body: vec![],
-            url: "http://example.com".to_string(),
-        };
+        let resp_404 = test_response(404, vec![], "http://example.com");
         assert!(!resp_404.is_success());
     }
 
     #[test]
     fn test_http_response_is_redirect() {
-        let resp = HttpResponse {
-            status_code: 301,
-            headers: vec![],
-            body: vec![],
-            url: "http://example.com".to_string(),
-        };
+        let resp = test_response(301, vec![], "http://example.com");
         assert!(resp.is_redirect());
 
-        let resp_200 = HttpResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-            url: "http://example.com".to_string(),
-        };
+        let resp_200 = test_response(200, vec![], "http://example.com");
         assert!(!resp_200.is_redirect());
     }
 
     #[test]
     fn test_http_response_text() {
-        let resp = HttpResponse {
-            status_code: 200,
-            headers: vec![],
-            body: b"Hello, World!".to_vec(),
-            url: "http://example.com".to_string(),
-        };
+        let resp = test_response(200, b"Hello, World!".to_vec(), "http://example.com");
         assert_eq!(resp.text().unwrap(), "Hello, World!");
     }
 
@@ -197,66 +206,18 @@ mod tests {
 
     #[test]
     fn test_http_response_is_success_boundaries() {
-        let r199 = HttpResponse {
-            status_code: 199,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r200 = HttpResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r299 = HttpResponse {
-            status_code: 299,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r300 = HttpResponse {
-            status_code: 300,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        assert!(!r199.is_success());
-        assert!(r200.is_success());
-        assert!(r299.is_success());
-        assert!(!r300.is_success());
+        assert!(!test_response(199, vec![], "").is_success());
+        assert!(test_response(200, vec![], "").is_success());
+        assert!(test_response(299, vec![], "").is_success());
+        assert!(!test_response(300, vec![], "").is_success());
     }
 
     #[test]
     fn test_http_response_is_redirect_boundaries() {
-        let r299 = HttpResponse {
-            status_code: 299,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r300 = HttpResponse {
-            status_code: 300,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r399 = HttpResponse {
-            status_code: 399,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        let r400 = HttpResponse {
-            status_code: 400,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        assert!(!r299.is_redirect());
-        assert!(r300.is_redirect());
-        assert!(r399.is_redirect());
-        assert!(!r400.is_redirect());
+        assert!(!test_response(299, vec![], "").is_redirect());
+        assert!(test_response(300, vec![], "").is_redirect());
+        assert!(test_response(399, vec![], "").is_redirect());
+        assert!(!test_response(400, vec![], "").is_redirect());
     }
 
     #[test]
@@ -266,29 +227,95 @@ mod tests {
             headers: vec![("Content-Type".into(), "text/html; charset=utf-8".into())],
             body: vec![],
             url: String::new(),
+            redirect_count: 0,
         };
         assert_eq!(resp.content_type(), Some("text/html; charset=utf-8"));
     }
 
     #[test]
     fn test_http_response_content_type_missing() {
-        let resp = HttpResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-            url: String::new(),
-        };
-        assert!(resp.content_type().is_none());
+        assert!(test_response(200, vec![], "").content_type().is_none());
     }
 
     #[test]
     fn test_http_response_text_invalid_utf8() {
+        let resp = test_response(200, vec![0xFF, 0xFE], "");
+        assert!(resp.text().is_err());
+    }
+
+    // ── Content-Type MIME 解析测试 ──
+
+    #[test]
+    fn test_content_type_mime_with_params() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "text/html; charset=utf-8".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.content_type_mime(), Some("text/html"));
+    }
+
+    #[test]
+    fn test_content_type_mime_without_params() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "application/json".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.content_type_mime(), Some("application/json"));
+    }
+
+    #[test]
+    fn test_content_type_mime_missing() {
+        let resp = test_response(200, vec![], "");
+        assert!(resp.content_type_mime().is_none());
+    }
+
+    // ── header() 查找方法测试 ──
+
+    #[test]
+    fn test_header_lookup_found() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Content-Type".into(), "text/plain".into()),
+                ("X-Custom".into(), "value".into()),
+            ],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert_eq!(resp.header("x-custom"), Some("value"));
+        assert_eq!(resp.header("Content-Type"), Some("text/plain"));
+    }
+
+    #[test]
+    fn test_header_lookup_missing() {
+        let resp = test_response(200, vec![], "");
+        assert!(resp.header("X-Not-Exist").is_none());
+    }
+
+    // ── redirect_count 字段测试 ──
+
+    #[test]
+    fn test_redirect_count_default() {
+        let resp = test_response(200, vec![], "http://example.com");
+        assert_eq!(resp.redirect_count, 0);
+    }
+
+    #[test]
+    fn test_redirect_count_with_redirects() {
         let resp = HttpResponse {
             status_code: 200,
             headers: vec![],
-            body: vec![0xFF, 0xFE],
-            url: String::new(),
+            body: vec![],
+            url: "http://example.com/final".to_string(),
+            redirect_count: 3,
         };
-        assert!(resp.text().is_err());
+        assert_eq!(resp.redirect_count, 3);
     }
 }

@@ -23,6 +23,7 @@
 
 mod attributes;
 mod document;
+mod event;
 mod mutation;
 mod node;
 mod parser;
@@ -31,6 +32,7 @@ mod range;
 mod serializer;
 
 pub use document::*;
+pub use event::*;
 pub use mutation::*;
 pub use node::*;
 pub use parser::*;

@@ -1,5 +1,6 @@
 //! DOM Document 实现 — 节点容器和树操作 API。
 
+use crate::event::{Event, EventListenerFn, EventPhase, ListenerEntry};
 use crate::mutation::{MutationObserver, MutationRecord, MutationType};
 use crate::node::*;
 use hashbrown::HashMap;
@@ -22,6 +23,8 @@ pub struct Document {
     observers: Vec<MutationObserver>,
     /// 待处理的 mutation 记录。
     pending_mutations: Vec<MutationRecord>,
+    /// 事件监听器存储：键为 (NodeId, event_type)，值为监听器列表。
+    event_listeners: HashMap<(NodeId, String), Vec<ListenerEntry>>,
 }
 
 impl Document {
@@ -38,6 +41,7 @@ impl Document {
             id_map: HashMap::new(),
             observers: Vec::new(),
             pending_mutations: Vec::new(),
+            event_listeners: HashMap::new(),
         }
     }
 
@@ -694,6 +698,140 @@ impl Document {
         for observer in &self.observers {
             observer.notify(&records);
         }
+    }
+
+    // ── 事件系统 ─────────────────────────────────────────────────
+
+    /// 为指定节点添加事件监听器。
+    ///
+    /// `event_type` 是事件类型名（如 "click"、"input"）。
+    /// `callback` 是事件触发时的回调函数。
+    /// `capture` 为 true 时监听器在捕获阶段触发，否则在冒泡阶段触发。
+    pub fn add_event_listener(
+        &mut self,
+        node: NodeId,
+        event_type: &str,
+        callback: EventListenerFn,
+        capture: bool,
+    ) {
+        let key = (node, event_type.to_string());
+        self.event_listeners
+            .entry(key)
+            .or_default()
+            .push(ListenerEntry { callback, capture });
+    }
+
+    /// 移除指定节点上的所有指定类型的事件监听器。
+    ///
+    /// 返回被移除的监听器数量。
+    pub fn remove_event_listener(&mut self, node: NodeId, event_type: &str) -> usize {
+        let key = (node, event_type.to_string());
+        self.event_listeners.remove(&key).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// 移除指定节点上的所有事件监听器。
+    pub fn remove_all_event_listeners(&mut self, node: NodeId) {
+        self.event_listeners.retain(|(n, _), _| *n != node);
+    }
+
+    /// 向指定节点派发事件。
+    ///
+    /// 根据 `event.bubbles()` 决定是否冒泡传播：
+    /// 1. 捕获阶段：从文档根到目标节点的路径上，触发 `capture = true` 的监听器
+    /// 2. 目标阶段：在目标节点上触发所有监听器
+    /// 3. 冒泡阶段：从目标节点到文档根的路径上，触发 `capture = false` 的监听器
+    ///
+    /// 返回 `true` 表示事件未被取消（默认行为可执行），`false` 表示 `preventDefault()` 被调用。
+    pub fn dispatch_event(&self, target: NodeId, event: &mut Event) -> bool {
+        event.init_for_dispatch(target);
+
+        // 构建从根到目标的祖先路径（不含目标自身）
+        let path = self.ancestor_path(target);
+
+        // 1. 捕获阶段：从根向目标方向（path 已是从根到目标的顺序）
+        event.phase = EventPhase::Capturing;
+        for &node in &path {
+            event.current_target = Some(node);
+            self.invoke_listeners(node, event, true);
+            if event.propagation_stopped() {
+                break;
+            }
+        }
+
+        // 2. 目标阶段
+        if !event.propagation_stopped() {
+            event.phase = EventPhase::AtTarget;
+            event.current_target = Some(target);
+            self.invoke_listeners(target, event, false);
+        }
+
+        // 3. 冒泡阶段：从目标向根方向（反序遍历 path）
+        if event.bubbles() && !event.propagation_stopped() {
+            event.phase = EventPhase::Bubbling;
+            for &node in path.iter().rev() {
+                event.current_target = Some(node);
+                self.invoke_listeners(node, event, false);
+                if event.propagation_stopped() {
+                    break;
+                }
+            }
+        }
+
+        event.current_target = None;
+        !event.default_prevented()
+    }
+
+    /// 获取指定节点上已注册的指定类型监听器数量。
+    pub fn listener_count(&self, node: NodeId, event_type: &str) -> usize {
+        let key = (node, event_type.to_string());
+        self.event_listeners.get(&key).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// 调用节点上的监听器。
+    ///
+    /// `capture_only` 为 true 时只调用捕获阶段的监听器，
+    /// 为 false 时在目标阶段调用所有监听器、在冒泡阶段只调用非捕获监听器。
+    ///
+    /// `stopPropagation` 允许当前节点上剩余的监听器继续执行，但阻止传播到其他节点。
+    /// `stopImmediatePropagation` 立即停止，不再调用当前节点上的后续监听器。
+    fn invoke_listeners(&self, node: NodeId, event: &mut Event, capture_only: bool) {
+        let key = (node, event.event_type().to_string());
+        let listeners = match self.event_listeners.get(&key) {
+            Some(l) => l,
+            None => return,
+        };
+
+        for entry in listeners {
+            // 捕获阶段只调用 capture=true 的监听器
+            // 目标和冒泡阶段只调用 capture=false 的监听器
+            // 但在目标阶段（AtTarget），两种都调用
+            let at_target = event.phase() == EventPhase::AtTarget;
+            if capture_only && !entry.capture {
+                continue;
+            }
+            if !capture_only && !at_target && entry.capture {
+                continue;
+            }
+
+            // stopImmediatePropagation 已设置则不再调用后续监听器
+            if event.immediate_propagation_stopped() {
+                break;
+            }
+
+            (entry.callback)(event);
+        }
+    }
+
+    /// 获取从节点到文档根的祖先路径（不含文档根，不含节点自身）。
+    fn ancestor_path(&self, node: NodeId) -> Vec<NodeId> {
+        let mut path = Vec::new();
+        let mut current = node;
+        while let Some(parent) = self.nodes.get(current).and_then(|n| n.parent) {
+            path.push(parent);
+            current = parent;
+        }
+        path.reverse();
+        path
     }
 
     // ── 内部辅助方法 ────────────────────────────────────────────
