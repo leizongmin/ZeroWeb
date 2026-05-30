@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-05-30
 **当前活跃里程碑**: M1 — 项目骨架 + 渲染基础设施迁移
-**执行状态**: 进行中（M1 骨架已建立，待完成 wgpu 渲染 demo）
+**执行状态**: 进行中（M1 wgpu GPU 渲染已完成，待收尾验收）
 
 ---
 
@@ -12,7 +12,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 个 crate 骨架 |
 | 编译状态 | ✅ `cargo check --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 55 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 69 个测试全绿 |
 | 覆盖率 | 待测量（脚本就位） |
 | WPT 通过率 | N/A |
 | 性能基线 | ✅ `cargo bench` 5 个基准可运行 |
@@ -48,9 +48,9 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | # | 交付物 | 状态 | 备注 |
 |---|--------|------|------|
 | 1 | 完整的 Cargo workspace 结构，所有 crate 骨架就位 | ✅ 完成 | 16 crate + 2 apps |
-| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | CPU 渲染数据模型已建立（1,271 行源码，38 个测试，5 个基准）；wgpu GPU 后端、swash 字体整形、图片缓存待迁移 |
+| 2 | `render-foundation` crate 从 OmniTerm 迁移并适配 | 🔄 进行中 | CPU 渲染 + wgpu GPU 后端已实现（gpu 模块含 GlyphAtlas、GpuRenderer、WGSL shader）；swash 字体整形、图片缓存待迁移 |
 | 3 | `host-runtime` crate 支持 winit 窗口创建和事件循环 | ✅ 完成 | winit 0.30 ApplicationHandler |
-| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | 🔄 进行中 | CPU 渲染 demo + PPM 输出已完成；wgpu GPU 渲染升级待完成 |
+| 4 | 可以在 macOS/Linux/Windows 上创建窗口，使用 wgpu 渲染文本 | ✅ 完成 | CPU 渲染 demo + PPM 输出 + wgpu GPU 渲染均已实现 |
 | 5 | 所有 crate 编译通过，`cargo clippy` 无警告 | ✅ 完成 | 零警告 |
 | 6 | `render-foundation` 单元测试（≥20 个测试用例） | ✅ 完成 | 38 个测试用例（geometry:9, color:5, primitive:4, font/loader:6, font/cache:6, surface:8） |
 | 7 | criterion 基准基础设施就位 | ✅ 完成 | render-foundation/benches/ |
@@ -68,15 +68,16 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 | `font/loader` | FontLoader (fontdue), 字体加载和 glyph 光栅化 | 6 个测试 |
 | `font/cache` | GlyphCache, LRU 淘汰策略 | 6 个测试 |
 | `surface` | SurfaceDescriptor, FrameBuffer (CPU RGBA) | 8 个测试 |
+| `gpu` | GlyphAtlas（glyph 纹理打包）, GpuRenderer（wgpu 渲染管线）, WGSL shader | 17 个测试 |
 
 ### M1 验收标准
 
 - ✅ `cargo build` 在 Linux 上成功
-- ✅ `cargo test` 全通过（55 个测试全绿）
+- ✅ `cargo test` 全通过（69 个测试全绿）
 - ✅ `cargo clippy` 零警告
 - ✅ `cargo bench` 可运行并输出结果（5 个基准）
 - 🔄 `cargo build` 在 macOS/Windows 上成功（CI 配置就位，待验证实际运行）
-- 🔲 运行 demo 二进制可以看到窗口和渲染文本（CPU 版已就绪，wgpu GPU 版待完成）
+- ✅ 运行 demo 二进制可以看到窗口和渲染文本（CPU 版 + wgpu GPU 版均已就绪）
 - 🔄 render-foundation 覆盖率 ≥ 50%（待测量，脚本已就位）
 
 ---
@@ -114,9 +115,9 @@ scripts/          run-benchmarks.sh, check-coverage.sh
 3. ~~实现 host-runtime（winit 窗口 + 事件循环）~~ ✅
 4. ~~建立 CI 管线~~ ✅
 5. ~~创建 "Hello ZeroBrowser" 渲染 demo~~ ✅
-6. **将 CPU 渲染 demo 升级为 wgpu GPU 渲染** ← 当前
-7. 迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）
-8. 提交并推送代码
+6. ~~将 CPU 渲染 demo 升级为 wgpu GPU 渲染~~ ✅
+7. ~~迁移 OmniTerm wgpu 渲染器（glyph atlas、vertex layout、WGSL shader）~~ ✅
+8. 提交并推送代码 ← 当前
 
 ---
 
