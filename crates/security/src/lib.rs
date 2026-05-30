@@ -4,15 +4,26 @@
 
 #![warn(missing_docs)]
 
-/// 同源策略判断
-pub struct SameOriginPolicy {
-    // TODO: 在 M7 里程碑中实现
-}
+pub mod origin;
+pub mod cors;
+pub mod csp;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        // M7 里程碑将在此处实现安全模型测试
-    }
+pub use origin::*;
+pub use cors::*;
+pub use csp::*;
+
+use thiserror::Error;
+
+/// 安全错误类型。
+#[derive(Error, Debug)]
+pub enum SecurityError {
+    /// 源解析错误。
+    #[error("Origin parse error: {0}")]
+    OriginParse(String),
+    /// CORS 错误。
+    #[error("CORS error: {0}")]
+    Cors(String),
+    /// CSP 违规。
+    #[error("CSP violation: {0}")]
+    CspViolation(String),
 }
