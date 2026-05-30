@@ -1,0 +1,36 @@
+default_agent: claudecode
+stages:
+  run:
+    plan:
+      agent: claudecode
+      model: ""
+      agent_command: ""
+    execute:
+      agent: claudecode
+      model: ""
+      agent_command: ""
+    accept:
+      agent: claudecode
+      model: ""
+      agent_command: ""
+  goal:
+    clarify:
+      agent: claudecode
+      model: ""
+      agent_command: ""
+ralph:
+  agent_timeout: 7200
+  kill_grace_period: 10
+  session_reuse: true
+  max_session_rounds: 10
+agent_options:
+  codex:
+    extra_args: []
+  opencode:
+    extra_args: []
+  claudecode:
+    extra_args: []
+  cursor:
+    extra_args: []
+  deepseek-tui:
+    extra_args: []
