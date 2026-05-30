@@ -5,11 +5,14 @@ use crate::parser::Parser;
 use crate::selector;
 use crate::tokenizer::{Token, Tokenizer};
 use crate::values::{
-    CalcContext, GradientDirection, GradientValue, LengthValue,
-    RadialShape, RadialSize, TransformFunction, TransformValue,
+    CalcContext, ContainerTypeValue, GradientDirection, GradientValue, LengthValue,
+    RadialShape, RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
+    ScrollSnapTypeValue, TransformFunction, TransformValue,
     eval_calc, eval_calc_with_context, parse_animation_direction,
     parse_animation_fill_mode, parse_animation_play_state, parse_calc,
-    parse_gradient, parse_length, parse_transform,
+    parse_container_type, parse_gradient, parse_length, parse_length_shorthand,
+    parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type,
+    parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2632,5 +2635,363 @@ fn test_parse_layer_with_media() {
             }
         }
         _ => panic!("Expected Layer rule"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 15. @container 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 @container 带名称和条件解析
+fn test_parse_container_with_name() {
+    let css = "@container sidebar (min-width: 400px) { .child { width: 100%; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Container(container_rule) => {
+            assert_eq!(container_rule.name.as_deref(), Some("sidebar"));
+            match &container_rule.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "min-width");
+                    assert_eq!(sc.value, "400px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+            assert_eq!(container_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试 @container 无名称解析
+fn test_parse_container_without_name() {
+    let css = "@container (min-width: 400px) { .child { width: 100%; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Container(container_rule) => {
+            assert!(container_rule.name.is_none());
+            match &container_rule.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "min-width");
+                    assert_eq!(sc.value, "400px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试 @container (min-width: 400px) 条件解析
+fn test_parse_container_min_width() {
+    let css = "@container (min-width: 400px) { div { display: block; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Container(cr) => {
+            match &cr.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "min-width");
+                    assert_eq!(sc.value, "400px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试 @container 嵌套规则
+fn test_parse_container_nested_rules() {
+    let css = "@container card (min-width: 300px) { .title { font-size: 24px; } .body { font-size: 16px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Container(cr) => {
+            assert_eq!(cr.name.as_deref(), Some("card"));
+            assert_eq!(cr.rules.len(), 2);
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试 @container 带 max-width 条件
+fn test_parse_container_max_width() {
+    let css = "@container (max-width: 800px) { .layout { flex-direction: column; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Container(cr) => {
+            match &cr.condition {
+                ContainerCondition::Size(sc) => {
+                    assert_eq!(sc.feature, "max-width");
+                    assert_eq!(sc.value, "800px");
+                }
+                _ => panic!("Expected Size condition"),
+            }
+        }
+        _ => panic!("Expected Container rule"),
+    }
+}
+
+#[test]
+/// 测试嵌套的 @container 规则保留在父规则中
+fn test_parse_container_nested_in_media() {
+    let css = "@media screen { @container (min-width: 500px) { .item { width: 50%; } } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::At(at_rule) => {
+            assert_eq!(at_rule.name, "media");
+            if let AtRuleBody::Block(rules) = &at_rule.body {
+                assert_eq!(rules.len(), 1);
+                match &rules[0] {
+                    Rule::Container(cr) => {
+                        assert!(cr.name.is_none());
+                        match &cr.condition {
+                            ContainerCondition::Size(sc) => {
+                                assert_eq!(sc.feature, "min-width");
+                                assert_eq!(sc.value, "500px");
+                            }
+                            _ => panic!("Expected Size condition"),
+                        }
+                    }
+                    _ => panic!("Expected Container rule inside @media"),
+                }
+            } else {
+                panic!("Expected Block body");
+            }
+        }
+        _ => panic!("Expected At rule"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 16. scroll-snap 属性值解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 scroll-snap-type 值解析
+fn test_parse_scroll_snap_type_values() {
+    assert_eq!(
+        parse_scroll_snap_type("none"),
+        Some((ScrollSnapTypeValue::None, None))
+    );
+    assert_eq!(
+        parse_scroll_snap_type("x mandatory"),
+        Some((ScrollSnapTypeValue::Mandatory, Some(ScrollSnapAxis::X)))
+    );
+    assert_eq!(
+        parse_scroll_snap_type("y proximity"),
+        Some((ScrollSnapTypeValue::Proximity, Some(ScrollSnapAxis::Y)))
+    );
+    assert_eq!(
+        parse_scroll_snap_type("both mandatory"),
+        Some((ScrollSnapTypeValue::Mandatory, Some(ScrollSnapAxis::Both)))
+    );
+    assert_eq!(
+        parse_scroll_snap_type("mandatory"),
+        Some((ScrollSnapTypeValue::Mandatory, None))
+    );
+    assert_eq!(parse_scroll_snap_type("invalid"), None);
+}
+
+#[test]
+/// 测试 scroll-snap-align 值解析
+fn test_parse_scroll_snap_align_values() {
+    assert_eq!(
+        parse_scroll_snap_align("none"),
+        Some(ScrollSnapAlignValue::None)
+    );
+    assert_eq!(
+        parse_scroll_snap_align("start"),
+        Some(ScrollSnapAlignValue::Start)
+    );
+    assert_eq!(
+        parse_scroll_snap_align("end"),
+        Some(ScrollSnapAlignValue::End)
+    );
+    assert_eq!(
+        parse_scroll_snap_align("center"),
+        Some(ScrollSnapAlignValue::Center)
+    );
+    assert_eq!(parse_scroll_snap_align("invalid"), None);
+}
+
+#[test]
+/// 测试 scroll-snap-stop 值解析
+fn test_parse_scroll_snap_stop_values() {
+    assert_eq!(
+        parse_scroll_snap_stop("normal"),
+        Some(ScrollSnapStopValue::Normal)
+    );
+    assert_eq!(
+        parse_scroll_snap_stop("always"),
+        Some(ScrollSnapStopValue::Always)
+    );
+    assert_eq!(parse_scroll_snap_stop("invalid"), None);
+}
+
+#[test]
+/// 测试 scroll-margin 简写解析
+fn test_parse_scroll_margin_shorthand() {
+    // 1 个值
+    let result = parse_length_shorthand("10px");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0),
+        ])
+    );
+    // 2 个值
+    let result = parse_length_shorthand("10px 20px");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Px(20.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(20.0),
+        ])
+    );
+    // 3 个值
+    let result = parse_length_shorthand("10px 20px 30px");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Px(20.0),
+            LengthValue::Px(30.0),
+            LengthValue::Px(20.0),
+        ])
+    );
+    // 4 个值
+    let result = parse_length_shorthand("10px 20px 30px 40px");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Px(20.0),
+            LengthValue::Px(30.0),
+            LengthValue::Px(40.0),
+        ])
+    );
+}
+
+#[test]
+/// 测试 scroll-margin 长属性解析（通过 parse_length）
+fn test_parse_scroll_margin_longhands() {
+    assert_eq!(parse_length("10px"), Some(LengthValue::Px(10.0)));
+    assert_eq!(parse_length("1em"), Some(LengthValue::Em(1.0)));
+    assert_eq!(parse_length("0"), Some(LengthValue::Px(0.0)));
+}
+
+#[test]
+/// 测试 scroll-padding 简写解析
+fn test_parse_scroll_padding_shorthand() {
+    let result = parse_length_shorthand("5px 10px");
+    assert_eq!(
+        result,
+        Some([
+            LengthValue::Px(5.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(5.0),
+            LengthValue::Px(10.0),
+        ])
+    );
+}
+
+#[test]
+/// 测试 scroll-padding 长属性解析（通过 parse_length）
+fn test_parse_scroll_padding_longhands() {
+    assert_eq!(parse_length("15px"), Some(LengthValue::Px(15.0)));
+    assert_eq!(parse_length("2rem"), Some(LengthValue::Rem(2.0)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 17. container-type 属性值解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 container-type 值解析
+fn test_parse_container_type_values() {
+    assert_eq!(
+        parse_container_type("normal"),
+        Some(ContainerTypeValue::Normal)
+    );
+    assert_eq!(
+        parse_container_type("size"),
+        Some(ContainerTypeValue::Size)
+    );
+    assert_eq!(
+        parse_container_type("inline-size"),
+        Some(ContainerTypeValue::InlineSize)
+    );
+    assert_eq!(parse_container_type("invalid"), None);
+}
+
+#[test]
+/// 测试 container-type 大小写不敏感
+fn test_parse_container_type_case_insensitive() {
+    assert_eq!(
+        parse_container_type("INLINE-SIZE"),
+        Some(ContainerTypeValue::InlineSize)
+    );
+    assert_eq!(
+        parse_container_type("Size"),
+        Some(ContainerTypeValue::Size)
+    );
+}
+
+#[test]
+/// 测试 container-type 在样式表中解析
+fn test_parse_container_type_in_stylesheet() {
+    let css = ".card { container-type: inline-size; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert!(sr.declarations.iter().any(|d| {
+                d.property == "container-type" && d.value == "inline-size"
+            }));
+        }
+        _ => panic!("Expected Style rule"),
+    }
+}
+
+#[test]
+/// 测试 scroll-snap-type 属性在样式表中解析
+fn test_parse_scroll_snap_type_in_stylesheet() {
+    let css = ".scroller { scroll-snap-type: x mandatory; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert!(sr.declarations.iter().any(|d| {
+                d.property == "scroll-snap-type" && d.value == "x mandatory"
+            }));
+        }
+        _ => panic!("Expected Style rule"),
+    }
+}
+
+#[test]
+/// 测试 scroll-snap-align 属性在样式表中解析
+fn test_parse_scroll_snap_align_in_stylesheet() {
+    let css = ".item { scroll-snap-align: start; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert!(sr.declarations.iter().any(|d| {
+                d.property == "scroll-snap-align" && d.value == "start"
+            }));
+        }
+        _ => panic!("Expected Style rule"),
     }
 }

@@ -24,6 +24,8 @@ pub enum Rule {
     Import(ImportRule),
     /// @supports 规则。
     Supports(SupportsRule),
+    /// @container 规则。
+    Container(ContainerRule),
 }
 
 /// CSS @import 规则。
@@ -276,4 +278,39 @@ pub enum SupportsCondition {
     Or(Vec<SupportsCondition>),
     /// 逻辑非：`not <cond>`。
     Not(Box<SupportsCondition>),
+}
+
+// ── @container ──────────────────────────────────────────────────────
+
+/// @container 规则。
+///
+/// 格式：`@container <name>? (<条件>) { <规则> }`
+#[derive(Debug, Clone)]
+pub struct ContainerRule {
+    /// 容器名称（可选）。
+    pub name: Option<String>,
+    /// 容器查询条件。
+    pub condition: ContainerCondition,
+    /// 条件为真时应用的规则列表。
+    pub rules: Vec<Rule>,
+}
+
+/// @container 条件。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContainerCondition {
+    /// 基于尺寸的查询：`size(<条件>)` 或直接 `(<条件>)`。
+    Size(ContainerSizeCondition),
+    /// 基于 inline-size 的查询：`inline-size(<条件>)`。
+    InlineSize(ContainerSizeCondition),
+}
+
+/// 容器尺寸条件。
+///
+/// 支持格式如 `(min-width: 400px)`、`(width > 300px)`、`(max-width: 800px)`。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContainerSizeCondition {
+    /// 查询的特征名（如 `min-width`、`width`、`max-width`）。
+    pub feature: String,
+    /// 比较值。
+    pub value: String,
 }
