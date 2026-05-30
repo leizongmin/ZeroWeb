@@ -1,0 +1,91 @@
+name: Bug Report
+description: Report a defect, regression, panic, rendering error, or incorrect behavior.
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.
+
+        Before submitting:
+
+        - Read `README.md` and `CONTRIBUTING.md`
+        - If the report involves a vulnerability, do not file it here; follow `SECURITY.md`
+        - Reduce the problem to the smallest reproducible example when possible
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I read the project documentation and this is not a support question.
+          required: true
+        - label: I confirmed this is not a security disclosure.
+          required: true
+        - label: I searched for existing issues that already describe this problem.
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and why it is incorrect.
+      placeholder: A concise summary of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: Describe the expected behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Provide exact steps, a failing test, or a minimal HTML/CSS/JS sample.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Suspected Area
+      description: Which crate, subsystem, or command appears to be involved?
+      placeholder: e.g. crates/layout-engine, webview-demo, cargo test -p zero-dom
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, Panic, or Screenshot
+      description: Paste relevant output or attach screenshots if useful.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Rust version, and any command or platform details that matter.
+      placeholder: |
+        OS:
+        Rust:
+        Command:
+        Target:
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any extra context, regression range, or suspected root cause.
+

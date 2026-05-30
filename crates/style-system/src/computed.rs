@@ -270,6 +270,7 @@ pub fn resolve_computed_style(
     resolve_length_field(&mut resolved.bottom, font_size_px, viewport_width, viewport_height);
     resolve_length_field(&mut resolved.left, font_size_px, viewport_width, viewport_height);
     resolve_length_field(&mut resolved.gap, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.row_gap, font_size_px, viewport_width, viewport_height);
     resolve_length_field(
         &mut resolved.letter_spacing,
         font_size_px,

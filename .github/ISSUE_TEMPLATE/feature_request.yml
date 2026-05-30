@@ -1,0 +1,73 @@
+name: Feature Request
+description: Propose a user-facing capability, API addition, or developer workflow improvement.
+title: "[feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for scoped feature requests.
+
+        For large cross-crate or architectural changes, prefer the `Proposal` template instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I searched existing issues and did not find the same request.
+          required: true
+        - label: I can explain why this belongs in ZeroBrowser rather than in downstream application code.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What user, developer, or product problem does this solve?
+      placeholder: Describe the current limitation or pain point.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the smallest useful version of the feature.
+      placeholder: Describe the desired behavior or API.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Include workarounds, downstream implementation options, or simpler variants.
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Likely Affected Areas
+      description: Which crates, docs, tests, or tools would probably be touched?
+      placeholder: e.g. crates/webview-api + tests/integration + docs/specs
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How would we know this is done?
+      placeholder: |
+        - API exists
+        - Tests cover ...
+        - Demo path works ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependency
+    attributes:
+      label: Dependency or License Impact
+      description: Mention if this likely needs a new third-party dependency or changes project license assumptions.
+      placeholder: None / likely needs discussion / likely needs new dependency because ...
+
