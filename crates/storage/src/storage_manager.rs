@@ -198,4 +198,26 @@ mod tests {
         let result = manager.local_storage("https://example.com").set("k", &"x".repeat(50));
         assert!(result.is_err());
     }
+
+    /// 测试 sessionStorage 源隔离：一个源的 sessionStorage 不会泄露到另一个源。
+    #[test]
+    fn test_session_storage_isolation() {
+        let mut manager = StorageManager::new();
+
+        // 两个不同源各自写入同名键
+        manager
+            .session_storage("https://alpha.com")
+            .set("token", "aaa")
+            .unwrap();
+        manager.session_storage("https://beta.com").set("token", "bbb").unwrap();
+
+        // 各自只能看到自己的数据
+        assert_eq!(manager.session_storage("https://alpha.com").get("token"), Some("aaa"));
+        assert_eq!(manager.session_storage("https://beta.com").get("token"), Some("bbb"));
+
+        // 清除一个源不影响另一个
+        manager.clear_origin("https://alpha.com");
+        assert!(manager.session_storage("https://alpha.com").is_empty());
+        assert_eq!(manager.session_storage("https://beta.com").get("token"), Some("bbb"));
+    }
 }

@@ -312,4 +312,24 @@ mod tests {
         // Original value preserved
         assert_eq!(storage.get("k"), Some("a".repeat(48).as_str()));
     }
+
+    /// 测试 localStorage clear() 操作：设置多个项，调用 clear()，验证全部被清除。
+    #[test]
+    fn test_local_storage_clear() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("user", "alice").unwrap();
+        storage.set("theme", "dark").unwrap();
+        storage.set("lang", "zh").unwrap();
+        assert_eq!(storage.len(), 3);
+        assert!(storage.used_size() > 0);
+
+        storage.clear();
+
+        assert_eq!(storage.len(), 0);
+        assert!(storage.is_empty());
+        assert_eq!(storage.used_size(), 0);
+        assert_eq!(storage.get("user"), None);
+        assert_eq!(storage.get("theme"), None);
+        assert_eq!(storage.get("lang"), None);
+    }
 }
