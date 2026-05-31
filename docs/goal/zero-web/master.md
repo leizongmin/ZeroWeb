@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2695 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2977 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2695 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2977 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,12 +23,12 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 258 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试** |
-| css-parser | 356 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear** |
-| style-system | 400 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear** |
-| layout-engine | 188 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align** |
-| engine | 155 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强** |
-| render-foundation | 205 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）** |
+| dom | 317 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试** |
+| css-parser | 359 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear** |
+| style-system | 478 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear** |
+| layout-engine | 233 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align** |
+| engine | 183 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强** |
+| render-foundation | 232 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
 | security | 155 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only** |
@@ -36,7 +36,7 @@
 | storage | 158 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD** |
 | canvas | 179 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出** |
 | webview | 107 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置** |
-| wasm-sandbox | 72 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出** |
+| wasm-sandbox | 83 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出** |
 
 ### 跨 crate 集成测试
 
@@ -63,7 +63,20 @@
 
 ## 最近完成的改进
 
-### -4. 多 crate 测试覆盖率提升（本轮，2695 测试）
+### -5. 6 crate 边界条件测试覆盖率提升（本轮，2977 测试）
+
+通过并行扫描 test-to-code 比率最低的 6 个 crate，识别测试缺口并批量添加边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| style-system | **级联优先级边界**：specificity 竞争、!important 覆盖、inherit/initial/unset/revert 关键字、非继承属性、ComputedStyle 默认值 | 74 |
+| dom | **节点操作边界**：insert_before 错误路径、replace_child、clone_node_deep、has_child_nodes、Document 工厂方法、属性覆盖/删除、get_elements_by_tag_name 通配符 | 57 |
+| render-foundation | **geometry 负坐标**：负坐标 Rect contains/intersection、负值 Size area、DamageTracker NaN/重复 rect；**surface 1x1/零尺寸**；**image_cache gc 后 insert、max_entries=1**；**primitive clips-only bounding_box** | 27 |
+| layout-engine | **types 负 margin/z_index**：outer_area 负值、深层嵌套 position、sticky flag；**tree display:none 全跳过**；**engine absolute-in-fixed、flex 窄容器 wrap**；**converter grid-auto-flow dense、percentage 尺寸** | 22 |
+| engine | **paint HSL 极端值**：色相 120/240、饱和度/亮度 0/100；**border-style hidden**：不产生填充；**dirty 负坐标/链式合并**；**composite opacity=0、z_index 极值** | 21 |
+| wasm-sandbox | **fuel 边界**：set_fuel(0) 即耗尽、fresh instance get_fuel；**memory round-trip**；**extreme i32**：MIN+MAX 溢出语义；**config/error display** | 7 |
+
+### -4. 多 crate 测试覆盖率提升（前轮，2769 测试）
 
 | 模块 | 实现内容 | 新增测试 |
 |------|----------|----------|

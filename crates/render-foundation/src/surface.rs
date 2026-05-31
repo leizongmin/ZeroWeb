@@ -291,4 +291,53 @@ mod tests {
             }
         }
     }
+
+    // -- 边界条件测试 --
+    /// 测试 1x1 FrameBuffer
+    #[test]
+    fn test_frame_buffer_1x1() {
+        let mut fb = FrameBuffer::new(1, 1);
+        fb.set_pixel(0, 0, [255, 0, 0, 255]);
+        assert_eq!(fb.get_pixel(0, 0), [255, 0, 0, 255]);
+        assert_eq!(fb.data.len(), 4);
+    }
+
+    /// 测试 FrameBuffer 角落像素
+    #[test]
+    fn test_frame_buffer_corner_pixels() {
+        let mut fb = FrameBuffer::new(10, 10);
+        fb.set_pixel(9, 9, [1, 2, 3, 4]);
+        assert_eq!(fb.get_pixel(9, 9), [1, 2, 3, 4]);
+    }
+
+    /// 测试 FrameBuffer::from_rgba 零尺寸
+    #[test]
+    fn test_frame_buffer_from_rgba_zero_size() {
+        let fb = FrameBuffer::from_rgba(vec![], 0, 0);
+        assert!(fb.is_ok());
+        let fb = fb.unwrap();
+        assert_eq!(fb.width, 0);
+        assert_eq!(fb.height, 0);
+        assert!(fb.data.is_empty());
+    }
+
+    /// 测试 FrameBuffer clear 为透明黑色
+    #[test]
+    fn test_frame_buffer_clear_transparent() {
+        let mut fb = FrameBuffer::new(3, 3);
+        fb.set_pixel(1, 1, [255, 255, 255, 255]);
+        fb.clear(0, 0, 0, 0);
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 0]);
+        assert_eq!(fb.get_pixel(1, 1), [0, 0, 0, 0]);
+        assert_eq!(fb.get_pixel(2, 2), [0, 0, 0, 0]);
+    }
+
+    /// 测试 SurfaceDescriptor 零尺寸
+    #[test]
+    fn test_surface_descriptor_zero_dims() {
+        let desc = SurfaceDescriptor::new(0, 0);
+        assert_eq!(desc.width, 0);
+        assert_eq!(desc.height, 0);
+        assert!(!desc.transparent);
+    }
 }

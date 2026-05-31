@@ -2159,4 +2159,148 @@ mod tests {
             "燃料为零时调用应立即返回 FuelExhausted"
         );
     }
+
+    // -- 边界条件测试 --
+
+    /// 测试 set_fuel(0) 后调用函数立即耗尽
+    #[test]
+    fn test_set_fuel_zero_exhausted() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 设置燃料为 0，调用函数应立即耗尽
+        instance.set_fuel(0).expect("set_fuel");
+        let result = instance.call("add", &[WasmValue::I32(1), WasmValue::I32(2)]);
+        assert!(
+            matches!(result, Err(WasmError::FuelExhausted)),
+            "燃料为 0 时调用应返回 FuelExhausted"
+        );
+    }
+
+    /// 测试 get_fuel 在新实例上的初始值
+    #[test]
+    fn test_get_fuel_fresh_instance() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 不调用 set_fuel，get_fuel 应返回 0 或优雅地返回初始值
+        let fuel = instance.get_fuel().expect("get_fuel");
+        assert_eq!(fuel, 0, "新实例的初始燃料应为 0");
+    }
+
+    /// 测试调用写入内存后读取的 WASM 函数（round-trip）
+    #[test]
+    fn test_memory_write_then_function_read_round_trip() {
+        let sandbox = WasmSandbox::new();
+        // 模块导出内存和一个函数：函数从内存偏移 0 读取 i32 并返回
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "read_i32") (result i32)
+                    i32.const 0
+                    i32.load)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 通过主机端写入 i32 值（小端序 305419896 = 0x12345678）
+        let value: i32 = 0x12345678;
+        instance.write_memory("mem", 0, &value.to_le_bytes()).expect("write");
+
+        // 调用 WASM 函数读取并返回该值
+        let results = instance.call("read_i32", &[]).expect("call");
+        assert_eq!(results[0], WasmValue::I32(value), "WASM 读回的值应与写入一致");
+    }
+
+    /// 测试 i32::MIN 和 i32::MAX 参数
+    #[test]
+    fn test_call_extreme_i32_values() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // i32::MIN + i32::MAX 在 WASM 中使用标准 wrapping 语义：结果为 -1
+        let results = instance
+            .call("add", &[WasmValue::I32(i32::MIN), WasmValue::I32(i32::MAX)])
+            .expect("call");
+        assert_eq!(results[0], WasmValue::I32(-1), "i32::MIN + i32::MAX (wrapping) 应为 -1");
+    }
+
+    /// 测试沙箱 engine() 访问器
+    #[test]
+    fn test_sandbox_engine_accessor() {
+        let sandbox = WasmSandbox::new();
+        // 调用 engine() 不应 panic，返回可用引擎引用
+        let _engine = sandbox.engine();
+    }
+
+    /// 测试 SandboxConfig with consume_fuel = false
+    #[test]
+    fn test_sandbox_config_no_fuel() {
+        let config = SandboxConfig::new().consume_fuel(false);
+        let sandbox = WasmSandbox::with_config(config);
+        assert!(!sandbox.config().is_consume_fuel(), "consume_fuel 应为 false");
+
+        // 不启用燃料计量时应能正常编译和实例化
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance.call("answer", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
+
+        // set_fuel 在未启用燃料计量时应报错
+        let fuel_result = instance.set_fuel(100);
+        assert!(fuel_result.is_err(), "未启用燃料计量时 set_fuel 应返回错误");
+    }
+
+    /// 测试 LinkerConfig 多个函数定义
+    #[test]
+    fn test_linker_config_multiple_functions() {
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "fn1",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |_, _| Ok(()),
+        ));
+        linker.define(HostFunction::new(
+            "env",
+            "fn2",
+            vec![WasmValueType::F64],
+            vec![WasmValueType::F64],
+            |_, _| Ok(()),
+        ));
+        linker.define(HostFunction::new("math", "fn3", vec![], vec![], |_, _| Ok(())));
+        assert_eq!(linker.functions().len(), 3, "应注册了 3 个主机函数");
+        assert_eq!(linker.functions()[0].name, "fn1");
+        assert_eq!(linker.functions()[1].name, "fn2");
+        assert_eq!(linker.functions()[2].name, "fn3");
+    }
 }

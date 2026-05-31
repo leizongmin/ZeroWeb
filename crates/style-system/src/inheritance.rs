@@ -139,7 +139,7 @@ fn resolve_keyword(value: &str, _property: &str, _parent: Option<&ComputedStyle>
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
-    use crate::property::ComputedStyle;
+    use crate::property::{ComputedStyle, LineHeightValue};
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, VisibilityValue};
 
     /// 创建一个带自定义 color 和 font-size 的父样式。
@@ -472,5 +472,162 @@ mod tests {
         let style = compute_inherited_style(Some(&parent), &cascaded);
         // margin-top 不是继承属性，revert-layer 等同于 unset = initial
         assert_eq!(style.margin_top, LengthValue::Px(0.0));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增继承边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// inherit 关键字对非继承属性：由于 inherit_property 不覆盖不可继承属性，
+    /// inherit 对 margin-top 等非继承属性回退到初始值
+    fn test_explicit_inherit_on_non_inherited_property() {
+        let mut parent = ComputedStyle::default();
+        parent.margin_top = LengthValue::Px(42.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("margin-top".to_string(), "inherit".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // margin-top 不在 inherit_property 的匹配列表中，所以保持初始值
+        assert_eq!(style.margin_top, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    /// initial 关键字重置继承属性为初始值（不取父元素值）
+    fn test_initial_resets_inherited_property() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255);
+        parent.font_size = LengthValue::Px(32.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "initial".to_string());
+        cascaded.insert("font-size".to_string(), "initial".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
+        assert_eq!(style.font_size, LengthValue::Px(16.0));
+    }
+
+    #[test]
+    /// unset 关键字：继承属性 = inherit，非继承属性 = initial
+    fn test_unset_dual_behavior() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(0, 128, 0, 255);
+        parent.display = DisplayValue::Flex;
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "unset".to_string());
+        cascaded.insert("display".to_string(), "unset".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // color 继承 → 取父元素值
+        assert_eq!(style.color, ColorValue::Rgba(0, 128, 0, 255));
+        // display 非继承 → 初始值 Inline
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// 隐式继承：无级联值的继承属性自动从父元素取值
+    fn test_implicit_inheritance_multiple_properties() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255);
+        parent.font_size = LengthValue::Px(24.0);
+        parent.visibility = VisibilityValue::Hidden;
+        parent.line_height = LineHeightValue::Number(1.8);
+
+        let cascaded = HashMap::new();
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(style.font_size, LengthValue::Px(24.0));
+        assert_eq!(style.visibility, VisibilityValue::Hidden);
+        assert_eq!(style.line_height, LineHeightValue::Number(1.8));
+    }
+
+    #[test]
+    /// 根元素：inherit 等同于 initial（无父元素）
+    fn test_root_inherit_equals_initial() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "inherit".to_string());
+        cascaded.insert("font-size".to_string(), "inherit".to_string());
+
+        let style = compute_inherited_style(None, &cascaded);
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
+        assert_eq!(style.font_size, LengthValue::Px(16.0));
+    }
+
+    #[test]
+    /// 根元素：unset 继承属性也等同于 initial（无父元素）
+    fn test_root_unset_inherited_equals_initial() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "unset".to_string());
+
+        let style = compute_inherited_style(None, &cascaded);
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    /// 非继承属性在无级联值时使用初始值
+    fn test_non_inherited_default_values() {
+        let mut parent = ComputedStyle::default();
+        parent.width = LengthValue::Px(500.0);
+        parent.margin_top = LengthValue::Px(10.0);
+        parent.padding_left = LengthValue::Px(5.0);
+        parent.border_top_width = LengthValue::Px(3.0);
+        parent.display = DisplayValue::Grid;
+
+        let cascaded = HashMap::new();
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+
+        assert_eq!(style.width, LengthValue::Auto);
+        assert_eq!(style.margin_top, LengthValue::Px(0.0));
+        assert_eq!(style.padding_left, LengthValue::Px(0.0));
+        assert_eq!(style.border_top_width, LengthValue::Px(0.0));
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// 混合级联属性：一个显式值，一个 inherit，一个 unset
+    fn test_mixed_keyword_resolution() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255);
+        parent.font_size = LengthValue::Px(20.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "blue".to_string());
+        cascaded.insert("font-size".to_string(), "inherit".to_string());
+        cascaded.insert("display".to_string(), "unset".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 255, 255));
+        assert_eq!(style.font_size, LengthValue::Px(20.0));
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// revert 对非继承属性使用初始值
+    fn test_revert_non_inherited_uses_initial_display() {
+        let mut parent = ComputedStyle::default();
+        parent.display = DisplayValue::Grid;
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("display".to_string(), "revert".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// 值带前后空格时应正确解析关键字
+    fn test_keyword_with_whitespace() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "  inherit  ".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
     }
 }

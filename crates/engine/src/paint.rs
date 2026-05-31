@@ -3003,4 +3003,238 @@ mod tests {
             "至少一个 glyph 应有非零字体大小"
         );
     }
+
+    // ── 边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 HSL 色相 120（绿色）。
+    #[test]
+    fn test_hsla_green_120() {
+        let color = hsla_to_rgba(120.0, 100.0, 50.0, 1.0);
+        assert_eq!(color.r, 0);
+        assert_eq!(color.g, 255);
+        assert_eq!(color.b, 0);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 色相 240（蓝色）。
+    #[test]
+    fn test_hsla_blue_240() {
+        let color = hsla_to_rgba(240.0, 100.0, 50.0, 1.0);
+        assert_eq!(color.r, 0);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 255);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 饱和度 0% 和亮度 0%（黑色）。
+    #[test]
+    fn test_hsla_zero_saturation_zero_lightness() {
+        let color = hsla_to_rgba(0.0, 0.0, 0.0, 1.0);
+        assert_eq!(color.r, 0);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 0);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 HSL 饱和度 0% 和亮度 100%（白色）。
+    #[test]
+    fn test_hsla_zero_saturation_full_lightness() {
+        let color = hsla_to_rgba(0.0, 0.0, 100.0, 1.0);
+        assert_eq!(color.r, 255);
+        assert_eq!(color.g, 255);
+        assert_eq!(color.b, 255);
+        assert_eq!(color.a, 255);
+    }
+
+    /// 测试 border-style: hidden 不产生填充。
+    #[test]
+    fn test_border_style_hidden_no_fill() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 5.0, 5.0, 5.0, 5.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_left_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_top_style = BorderStyleValue::Hidden;
+        style.border_right_style = BorderStyleValue::Hidden;
+        style.border_bottom_style = BorderStyleValue::Hidden;
+        style.border_left_style = BorderStyleValue::Hidden;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // border-style: hidden 与 none 行为一致，不绘制边框
+        assert_eq!(
+            painter.primitives().fills.len(),
+            0,
+            "hidden border should produce no fills"
+        );
+    }
+
+    /// 测试 zero-width border with solid style 不产生填充。
+    #[test]
+    fn test_border_zero_width_solid_style_no_fill() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // border_top = 0.0, style = Solid => no fill for top border
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 0.0, 5.0, 5.0, 5.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // 只有 3 个边框填充（top border 宽度为 0，不绘制）
+        assert_eq!(
+            painter.primitives().fills.len(),
+            3,
+            "zero-width top border should produce no fill"
+        );
+    }
+
+    /// 测试 named_color_to_render: lime, purple, maroon, olive, aqua, fuchsia, grey。
+    #[test]
+    fn test_named_colors_lime_purple_maroon() {
+        assert_eq!(named_color_to_render("lime"), Color::rgb(0, 255, 0));
+        assert_eq!(named_color_to_render("purple"), Color::rgb(128, 0, 128));
+        assert_eq!(named_color_to_render("maroon"), Color::rgb(128, 0, 0));
+        assert_eq!(named_color_to_render("olive"), Color::rgb(128, 128, 0));
+        assert_eq!(named_color_to_render("aqua"), Color::rgb(0, 255, 255));
+        assert_eq!(named_color_to_render("fuchsia"), Color::rgb(255, 0, 255));
+        assert_eq!(named_color_to_render("grey"), Color::rgb(128, 128, 128));
+    }
+
+    /// 测试 outline_width = 0 不产生填充。
+    #[test]
+    fn test_outline_zero_width_no_fill() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_width = LengthValue::Px(0.0);
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().is_empty(),
+            "zero-width outline should produce no fills"
+        );
+    }
+
+    /// 测试 paint_text with non-Px font size (Em) — early return, no glyph。
+    #[test]
+    fn test_paint_text_em_font_size_no_glyph() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Em(1.0);
+        style.color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+        assert!(
+            painter.primitives().glyphs.is_empty(),
+            "Em font size should produce no glyph"
+        );
+    }
+
+    /// 测试 paint_in_rect: parent outside dirty rect, child inside — parent culling should skip subtree。
+    #[test]
+    fn test_paint_in_rect_parent_outside_child_inside_skipped() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // child 在 (300, 300) 处
+        let child_box = make_box(Some(child), 0.0, 0.0, 50.0, 50.0);
+        // parent 在 (300, 300) 处，完全在脏区域外
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 300.0,
+            y: 300.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 300.0,
+            content_y: 300.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        styles.insert(parent, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        // 脏区域在 (0, 0) 处，parent 在 (300, 300) 完全不在脏区域内
+        let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&parent_box, &styles, &dirty_rect, None);
+
+        // parent 完全在脏区域外，整个子树（包括 child）被跳过
+        assert!(
+            painter.primitives().is_empty(),
+            "parent outside dirty rect should skip entire subtree including child"
+        );
+    }
+
+    /// 测试 zero-offset translate 不改变位置。
+    #[test]
+    fn test_transform_zero_translate_no_offset() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(0.0, 0.0)]);
+        let (dx, dy) = apply_transform_offset(&style, 10.0, 20.0);
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, 0.0);
+    }
 }

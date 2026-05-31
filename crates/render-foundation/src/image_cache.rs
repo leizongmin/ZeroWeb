@@ -567,4 +567,108 @@ mod tests {
         // 最终 key_big 也会被淘汰（因为 64 > 16）
         assert!(cache.total_bytes() <= 16, "GC 后总字节数应不超过 max_bytes");
     }
+
+    // -- 边界条件测试 --
+    /// 测试 ImageKey 边界值
+    #[test]
+    fn test_image_key_boundary_values() {
+        let k_min = ImageKey::new(0);
+        assert_eq!(k_min.0, 0);
+        let k_max = ImageKey::new(u64::MAX);
+        assert_eq!(k_max.0, u64::MAX);
+        assert_ne!(k_min, k_max);
+    }
+
+    /// 测试 ImageData::new_empty 零尺寸
+    #[test]
+    fn test_image_data_new_empty_zero_dims() {
+        let img = ImageData::new_empty(0, 0);
+        assert_eq!(img.width, 0);
+        assert_eq!(img.height, 0);
+        assert!(img.pixels.is_empty());
+    }
+
+    /// 测试 ImageData::from_rgba 零宽度
+    #[test]
+    fn test_image_data_from_rgba_zero_width() {
+        let result = ImageData::from_rgba(vec![], 0, 5);
+        assert!(result.is_ok());
+        let img = result.unwrap();
+        assert_eq!(img.width, 0);
+        assert_eq!(img.height, 5);
+        assert!(img.pixels.is_empty());
+    }
+
+    /// 测试 ImageData get_pixel 1x1 图片
+    #[test]
+    fn test_image_data_get_pixel_1x1() {
+        let pixels = vec![42, 84, 126, 255];
+        let img = ImageData::from_rgba(pixels, 1, 1).unwrap();
+        assert_eq!(img.get_pixel(0, 0), [42, 84, 126, 255]);
+    }
+
+    /// 测试 ImageCache gc 后再 insert
+    #[test]
+    fn test_cache_insert_after_gc() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let k1 = cache.insert(make_image(1, 1, 100));
+        cache.release(&k1);
+        cache.gc();
+        assert!(cache.is_empty());
+
+        let k2 = cache.insert(make_image(1, 1, 200));
+        assert_eq!(cache.ref_count(&k2), Some(1));
+        assert_eq!(cache.len(), 1);
+    }
+
+    /// 测试 ImageCache release 然后 get（ref_count 从 0 回到 1）
+    #[test]
+    fn test_cache_release_then_get() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(make_image(2, 2, 128));
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(0));
+
+        // get 仍然能取回数据（条目还在，只是 ref_count=0）
+        let img = cache.get(&key);
+        assert!(img.is_some());
+        assert_eq!(cache.ref_count(&key), Some(1));
+    }
+
+    /// 测试 ImageCache gc 在空缓存上
+    #[test]
+    fn test_cache_gc_empty() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        assert!(cache.is_empty());
+        assert_eq!(cache.generation(), 0);
+        cache.gc();
+        assert!(cache.is_empty());
+        assert_eq!(cache.generation(), 1);
+    }
+
+    /// 测试 ImageData::new_empty 所有像素透明
+    #[test]
+    fn test_image_data_new_empty_all_transparent() {
+        let img = ImageData::new_empty(2, 2);
+        assert_eq!(img.get_pixel(0, 0), [0, 0, 0, 0]);
+        assert_eq!(img.get_pixel(1, 0), [0, 0, 0, 0]);
+        assert_eq!(img.get_pixel(0, 1), [0, 0, 0, 0]);
+        assert_eq!(img.get_pixel(1, 1), [0, 0, 0, 0]);
+    }
+
+    /// 测试 ImageCache max_entries=1
+    #[test]
+    fn test_cache_max_entries_one() {
+        let mut cache = ImageCache::new(1, 1024 * 1024);
+        let k1 = cache.insert(make_image(1, 1, 10));
+        // gc to advance generation so k1 has older gen
+        cache.gc();
+        let k2 = cache.insert(make_image(1, 1, 20));
+        // Now len = 2 > max_entries = 1
+        cache.gc();
+        // Should evict oldest entry, keeping only 1
+        assert!(cache.len() <= 1);
+        assert!(cache.ref_count(&k2).is_some(), "较新的 k2 应保留");
+        assert!(cache.ref_count(&k1).is_none(), "较旧的 k1 应被淘汰");
+    }
 }

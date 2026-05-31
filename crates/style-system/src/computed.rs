@@ -341,7 +341,7 @@ pub fn collect_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<
 mod tests {
     use super::*;
     use crate::property::ComputedStyle;
-    use zero_css_parser::values::LengthValue;
+    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, PositionValue};
 
     #[test]
     fn test_resolve_px() {
@@ -673,5 +673,181 @@ mod tests {
         // 即使父元素 font-size 为 32px，rem 仍使用 root 16px
         let resolved = resolve_computed_style(&style, &custom, None, None, Some(32.0));
         assert_eq!(resolved.font_size, LengthValue::Px(32.0)); // 2 * 16 = 32
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增计算值边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// ComputedStyle::default 所有字段初始值正确性
+    fn test_default_computed_style_all_fields() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.display, DisplayValue::Inline);
+        assert_eq!(style.position, PositionValue::Static);
+        assert_eq!(style.width, LengthValue::Auto);
+        assert_eq!(style.height, LengthValue::Auto);
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
+        assert_eq!(style.background_color, ColorValue::Transparent);
+        assert_eq!(style.opacity, 1.0);
+        assert_eq!(style.font_size, LengthValue::Px(16.0));
+        assert_eq!(style.margin_top, LengthValue::Px(0.0));
+        assert_eq!(style.padding_top, LengthValue::Px(0.0));
+        assert_eq!(style.border_top_width, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    /// resolve_length: Px 原样返回
+    fn test_resolve_length_px_passthrough() {
+        let px = LengthValue::Px(42.0);
+        assert_eq!(resolve_length(&px, 16.0, None, None), 42.0);
+    }
+
+    #[test]
+    /// resolve_length: em 使用当前 font-size
+    fn test_resolve_length_em_context() {
+        let em = LengthValue::Em(3.0);
+        assert_eq!(resolve_length(&em, 10.0, None, None), 30.0);
+    }
+
+    #[test]
+    /// resolve_length: vmin 使用 min(vw, vh)
+    fn test_resolve_length_vmin_calculation() {
+        let vmin = LengthValue::Vmin(25.0);
+        // viewport 800x600, min=600, 25vmin = 150
+        assert_eq!(resolve_length(&vmin, 16.0, Some(800.0), Some(600.0)), 150.0);
+    }
+
+    #[test]
+    /// resolve_length: vmax 使用 max(vw, vh)
+    fn test_resolve_length_vmax_calculation() {
+        let vmax = LengthValue::Vmax(25.0);
+        // viewport 800x600, max=800, 25vmax = 200
+        assert_eq!(resolve_length(&vmax, 16.0, Some(800.0), Some(600.0)), 200.0);
+    }
+
+    #[test]
+    /// resolve_var 带嵌套回退值
+    fn test_resolve_var_nested_fallback() {
+        let mut custom = HashMap::new();
+        custom.insert("--primary".to_string(), "#ff0".to_string());
+
+        let result = resolve_var("var(--missing, var(--primary))", &custom);
+        assert_eq!(result, "#ff0");
+    }
+
+    #[test]
+    /// resolve_var 对不存在的变量无回退时返回原值
+    fn test_resolve_var_undefined_no_fallback_returns_original() {
+        let custom = HashMap::new();
+        let result = resolve_var("var(--nonexistent)", &custom);
+        assert_eq!(result, "var(--nonexistent)");
+    }
+
+    #[test]
+    /// resolve_var 空自定义属性表
+    fn test_resolve_var_empty_custom_properties() {
+        let custom = HashMap::new();
+        let result = resolve_var("color: var(--x, blue);", &custom);
+        assert_eq!(result, "color: blue;");
+    }
+
+    #[test]
+    /// compute_value 对不含 var() 的值返回 None
+    fn test_compute_value_plain_returns_none() {
+        let custom = HashMap::new();
+        assert_eq!(compute_value("100px", &custom, 16.0), None);
+        assert_eq!(compute_value("red", &custom, 16.0), None);
+    }
+
+    #[test]
+    /// collect_custom_properties 过滤非自定义属性
+    fn test_collect_custom_properties_filters_standard() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("--a".to_string(), "1".to_string());
+        cascaded.insert("--b".to_string(), "2".to_string());
+        cascaded.insert("color".to_string(), "red".to_string());
+        cascaded.insert("display".to_string(), "flex".to_string());
+
+        let custom = collect_custom_properties(&cascaded);
+        assert_eq!(custom.len(), 2);
+        assert_eq!(custom.get("--a"), Some(&"1".to_string()));
+        assert_eq!(custom.get("--b"), Some(&"2".to_string()));
+        assert!(custom.get("color").is_none());
+    }
+
+    #[test]
+    /// resolve_computed_style 带 parent_font_size 上下文
+    fn test_resolve_computed_style_parent_font_context() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Em(2.0);
+        style.margin_top = LengthValue::Em(1.0);
+
+        let custom = HashMap::new();
+        // parent font-size = 20px, so 2em font-size = 40px
+        // then margin-top 1em uses element's own font-size (40px) = 40px
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(20.0));
+        assert_eq!(resolved.font_size, LengthValue::Px(40.0));
+        assert_eq!(resolved.margin_top, LengthValue::Px(40.0));
+    }
+
+    #[test]
+    /// resolve_computed_style 百分比值保持不变
+    fn test_resolve_computed_style_preserves_percentages() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Percentage(75.0);
+        style.height = LengthValue::Percentage(50.0);
+        style.padding_top = LengthValue::Percentage(10.0);
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
+        assert_eq!(resolved.width, LengthValue::Percentage(75.0));
+        assert_eq!(resolved.height, LengthValue::Percentage(50.0));
+        assert_eq!(resolved.padding_top, LengthValue::Percentage(10.0));
+    }
+
+    #[test]
+    /// resolve_computed_style Auto 值保持不变
+    fn test_resolve_computed_style_preserves_auto() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Auto;
+        style.height = LengthValue::Auto;
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
+        assert_eq!(resolved.width, LengthValue::Auto);
+        assert_eq!(resolved.height, LengthValue::Auto);
+    }
+
+    #[test]
+    /// resolve_computed_style 默认视口值（None 时使用默认值）
+    fn test_resolve_computed_style_default_viewport() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Vw(10.0);
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
+        // 默认视口宽度 1440, 10vw = 144
+        assert_eq!(resolved.width, LengthValue::Px(144.0));
+    }
+
+    #[test]
+    /// resolve_var 同一字符串中多个不同 var() 替换
+    fn test_resolve_var_multiple_different_vars() {
+        let mut custom = HashMap::new();
+        custom.insert("--x".to_string(), "10px".to_string());
+        custom.insert("--y".to_string(), "20px".to_string());
+
+        let result = resolve_var("calc(var(--x) + var(--y))", &custom);
+        assert_eq!(result, "calc(10px + 20px)");
+    }
+
+    #[test]
+    /// find_matching_paren 正确匹配嵌套括号
+    fn test_find_matching_paren_nested() {
+        let s = "var(--x, calc(100px + 50px))";
+        let start = 4; // position of '(' after 'var'
+        let end = find_matching_paren(s, start);
+        assert_eq!(end, Some(s.len() - 1));
     }
 }

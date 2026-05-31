@@ -1699,4 +1699,252 @@ mod tests {
         // root layer height 应取最远底边界 max(600, 200, 350) = 600
         assert_eq!(layers[0].height, 600.0);
     }
+
+    // ── 边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 opacity = 0.0 被提升且 layer.opacity 为 0.0。
+    #[test]
+    fn test_opacity_zero_promoted() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.0;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // 根图层 + 1 个提升图层
+        assert_eq!(layers.len(), 2);
+        assert!(layers[0].is_root);
+        assert!(!layers[1].is_root);
+        assert!(
+            (layers[1].opacity - 0.0).abs() < f32::EPSILON,
+            "promoted layer opacity should be 0.0"
+        );
+    }
+
+    /// 测试 z_index = i32::MAX 排序正确。
+    #[test]
+    fn test_z_index_max_sorting() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+        let e3 = doc.create_element("div");
+
+        let c1 = make_box(Some(e1), 0.0, 0.0, 50.0, 50.0, false);
+        let c2 = make_box(Some(e2), 0.0, 0.0, 50.0, 50.0, false);
+        let c3 = make_box(Some(e3), 0.0, 0.0, 50.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2, c3],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s1 = ComputedStyle::default();
+        s1.z_index = ZIndexValue::Integer(0);
+        styles.insert(e1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.z_index = ZIndexValue::Integer(i32::MAX);
+        styles.insert(e2, s2);
+
+        let mut s3 = ComputedStyle::default();
+        s3.z_index = ZIndexValue::Integer(100);
+        styles.insert(e3, s3);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 4, "root + 3 promoted layers");
+
+        // 验证升序排列：0 < 100 < i32::MAX
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, 0);
+        assert_eq!(layers[2].z_index, 100);
+        assert_eq!(layers[3].z_index, i32::MAX);
+    }
+
+    /// 测试 z_index = i32::MIN 排序正确。
+    #[test]
+    fn test_z_index_min_sorting() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+        let e3 = doc.create_element("div");
+
+        let c1 = make_box(Some(e1), 0.0, 0.0, 50.0, 50.0, false);
+        let c2 = make_box(Some(e2), 0.0, 0.0, 50.0, 50.0, false);
+        let c3 = make_box(Some(e3), 0.0, 0.0, 50.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2, c3],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s1 = ComputedStyle::default();
+        s1.z_index = ZIndexValue::Integer(i32::MIN);
+        styles.insert(e1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.z_index = ZIndexValue::Integer(-5);
+        styles.insert(e2, s2);
+
+        let mut s3 = ComputedStyle::default();
+        s3.z_index = ZIndexValue::Integer(0);
+        styles.insert(e3, s3);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 4, "root + 3 promoted layers");
+
+        // 验证升序排列：i32::MIN < -5 < 0
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, i32::MIN);
+        assert_eq!(layers[2].z_index, -5);
+        assert_eq!(layers[3].z_index, 0);
+    }
+
+    /// 测试所有子元素都被提升时根层尺寸。
+    #[test]
+    fn test_root_layer_size_when_all_promoted() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+
+        // 两个子元素都有 opacity < 1.0，都会被提升
+        let c1 = make_box(Some(e1), 0.0, 0.0, 200.0, 100.0, false);
+        let c2 = make_box(Some(e2), 50.0, 50.0, 300.0, 200.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+
+        // 两个子元素都有 opacity < 1.0
+        let mut s1 = ComputedStyle::default();
+        s1.opacity = 0.5;
+        styles.insert(e1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.opacity = 0.8;
+        styles.insert(e2, s2);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // 根图层 + 2 个提升图层
+        assert_eq!(layers.len(), 3);
+
+        // 根图层仍然存在
+        assert!(layers[0].is_root);
+        // 根图层只包含根 box 自身（两个子元素都被提升了）
+        assert_eq!(layers[0].boxes.len(), 1, "root layer should only contain root box");
+    }
 }

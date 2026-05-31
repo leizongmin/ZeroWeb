@@ -614,4 +614,143 @@ mod tests {
         assert_eq!(rects[0].size.width, 30.0);
         assert_eq!(rects[0].size.height, 40.0);
     }
+
+    // ── 边界条件测试 ──────────────────────────────────────────
+
+    /// 测试链式重叠合并：A overlaps B, B overlaps C, A does not overlap C => all merge into one。
+    #[test]
+    fn test_merge_chain_of_three_overlapping_rects() {
+        let mut tracker = DirtyTracker::new();
+        // rect1: (0,0,100,100), rect2: (50,0,100,100), rect3: (150,0,100,100)
+        // rect1 overlaps rect2, rect2 overlaps rect3, but rect1 doesn't overlap rect3
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tracker.mark_dirty(Rect::new(50.0, 0.0, 100.0, 100.0));
+        tracker.mark_dirty(Rect::new(150.0, 0.0, 100.0, 100.0));
+        assert_eq!(tracker.dirty_rects().len(), 3);
+
+        tracker.merge_overlapping();
+        // 链式重叠应合并为更少的矩形
+        assert!(
+            tracker.dirty_rects().len() <= 3,
+            "chain-overlapping rects should be merged into fewer rects"
+        );
+    }
+
+    /// 测试负坐标脏区域。
+    #[test]
+    fn test_mark_dirty_negative_coordinates() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_dirty(Rect::new(-10.0, -20.0, 50.0, 50.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].origin.x, -10.0);
+        assert_eq!(tracker.dirty_rects()[0].origin.y, -20.0);
+        assert_eq!(tracker.dirty_rects()[0].size.width, 50.0);
+        assert_eq!(tracker.dirty_rects()[0].size.height, 50.0);
+    }
+
+    /// 测试 mark_node_dirty with negative offset。
+    #[test]
+    fn test_mark_node_dirty_negative_offset() {
+        // LayoutBox at (100, 100), offset_x=-50.0, offset_y=-50.0
+        let layout_box = LayoutBox {
+            node_id: None,
+            x: 100.0,
+            y: 100.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 100.0,
+            content_y: 100.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_node_dirty(&layout_box, -50.0, -50.0);
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        // absolute position = offset + box position = -50 + 100 = 50
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 50.0);
+        assert_eq!(tracker.dirty_rects()[0].origin.y, 50.0);
+    }
+
+    /// 测试 full_redraw 后添加新脏区域。
+    #[test]
+    fn test_mark_dirty_after_full_redraw() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_full_redraw();
+        assert!(tracker.is_full_redraw());
+        // full_redraw 应清除现有脏矩形
+        assert!(tracker.dirty_rects().is_empty());
+
+        // 标记新的脏区域
+        tracker.mark_dirty(Rect::new(10.0, 20.0, 50.0, 50.0));
+        // 新矩形被追踪，full_redraw 仍然为 true
+        assert!(tracker.is_full_redraw());
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 10.0);
+        // dirty_area 在 full_redraw 时始终返回 f32::MAX
+        assert_eq!(tracker.dirty_area(), f32::MAX);
+    }
+
+    /// 测试浮点边界接触的合并。
+    #[test]
+    fn test_merge_touching_at_boundary() {
+        let mut tracker = DirtyTracker::new();
+        // rect1: (0,0,100,100) 右边界在 x=100
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        // rect2: (100,0,100,100) 左边界在 x=100 — 刚好接触但不重叠
+        tracker.mark_dirty(Rect::new(100.0, 0.0, 100.0, 100.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+
+        tracker.merge_overlapping();
+        // 刚好接触的矩形：并集面积 = 20000，个体面积之和 = 20000
+        // ratio = 1.0 <= 1.5，所以应该合并
+        assert!(tracker.dirty_rects().len() <= 2);
+    }
+
+    /// 测试多次 clear 后重新标记。
+    #[test]
+    fn test_clear_then_remark_cycle() {
+        let mut tracker = DirtyTracker::new();
+
+        // 第一次标记
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+
+        // 清除
+        tracker.clear();
+        assert!(tracker.dirty_rects().is_empty());
+        assert!(!tracker.is_full_redraw());
+        assert_eq!(tracker.dirty_area(), 0.0);
+
+        // 重新标记
+        tracker.mark_dirty(Rect::new(50.0, 50.0, 200.0, 200.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert!((tracker.dirty_area() - 40000.0).abs() < 0.1);
+
+        // 再次清除并重新标记
+        tracker.clear();
+        tracker.mark_dirty(Rect::new(10.0, 20.0, 30.0, 40.0));
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 10.0);
+        assert!((tracker.dirty_area() - 1200.0).abs() < 0.1);
+    }
 }

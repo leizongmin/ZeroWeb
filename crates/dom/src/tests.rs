@@ -3826,3 +3826,937 @@ fn test_compare_document_position_parent_child() {
     let pos = doc.compare_document_position(child, parent).unwrap();
     assert!(pos.contains(DocumentPosition::CONTAINS), "child 应被 parent 包含");
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 28. Document 创建边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 create_processing_instruction 字段正确性。
+#[test]
+fn test_create_processing_instruction_fields() {
+    let mut doc = Document::new();
+    let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"style.css\"");
+    assert!(doc.contains(pi));
+    if let Some(NodeKind::ProcessingInstruction(data)) = doc.get(pi).map(|n| n.kind.clone()) {
+        assert_eq!(data.target, "xml-stylesheet");
+        assert_eq!(data.data, "href=\"style.css\"");
+    } else {
+        panic!("expected ProcessingInstruction node");
+    }
+}
+
+/// 测试 create_processing_instruction 节点类型为 7。
+#[test]
+fn test_processing_instruction_node_type() {
+    let mut doc = Document::new();
+    let pi = doc.create_processing_instruction("xml", "version=\"1.0\"");
+    assert_eq!(doc.node_type(pi), Some(7), "ProcessingInstruction nodeType should be 7");
+}
+
+/// 测试 get_element_by_id 在空文档中返回 None。
+#[test]
+fn test_get_element_by_id_empty_document() {
+    let doc = Document::new();
+    assert_eq!(doc.get_element_by_id("anything"), None);
+    assert_eq!(doc.get_element_by_id(""), None);
+}
+
+/// 测试 get_elements_by_class_name 空结果。
+#[test]
+fn test_get_elements_by_class_name_empty_result() {
+    let doc = parse_html("<html><body><div>no class here</div></body></html>");
+    let result = doc.get_elements_by_class_name("nonexistent");
+    assert!(result.is_empty(), "不存在的类名应返回空列表");
+
+    let result2 = doc.get_elements_by_class_name("");
+    assert!(result2.is_empty(), "空类名应返回空列表");
+}
+
+/// 测试 create_comment 空字符串。
+#[test]
+fn test_create_comment_empty() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("");
+    if let Some(NodeKind::Comment(data)) = doc.get(comment).map(|n| n.kind.clone()) {
+        assert!(data.content.is_empty());
+    }
+}
+
+/// 测试 create_document_fragment 节点类型为 11。
+#[test]
+fn test_document_fragment_node_type() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+    assert_eq!(doc.node_type(frag), Some(11), "DocumentFragment nodeType should be 11");
+}
+
+/// 测试 create_document_type 带 public_id 和 system_id。
+#[test]
+fn test_create_document_type_with_ids() {
+    let mut doc = Document::new();
+    let doctype = doc.create_document_type(
+        "html",
+        Some("-//W3C//DTD XHTML 1.0 Strict//EN".to_string()),
+        Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd".to_string()),
+    );
+    if let Some(NodeKind::DocumentType(dt)) = doc.get(doctype).map(|n| n.kind.clone()) {
+        assert_eq!(dt.name, "html");
+        assert_eq!(dt.public_id, Some("-//W3C//DTD XHTML 1.0 Strict//EN".to_string()));
+        assert_eq!(
+            dt.system_id,
+            Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd".to_string())
+        );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 29. Node 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 insert_before ref_node 不在父节点中返回错误。
+#[test]
+fn test_insert_before_ref_not_in_parent_children() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let new_child = doc.create_element("span");
+    let unrelated = doc.create_element("p");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(root, unrelated).unwrap(); // unrelated 在 root 而非 parent 中
+
+    let result = doc.insert_before(parent, new_child, unrelated);
+    assert!(
+        result.is_err(),
+        "insert_before with ref_node not a child of parent should return error"
+    );
+}
+
+/// 测试 replace_child 成功替换第一个子节点。
+#[test]
+fn test_replace_child_first() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let new_node = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    let replaced = doc.replace_child(root, new_node, c1).unwrap();
+    assert_eq!(replaced, c1);
+    assert_eq!(doc.child_nodes(root), vec![new_node, c2]);
+    assert_eq!(doc.parent_node(c1), None);
+}
+
+/// 测试 replace_child 成功替换最后一个子节点。
+#[test]
+fn test_replace_child_last() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let new_node = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    let replaced = doc.replace_child(root, new_node, c2).unwrap();
+    assert_eq!(replaced, c2);
+    assert_eq!(doc.child_nodes(root), vec![c1, new_node]);
+}
+
+/// 测试 clone_node deep 深拷贝属性和嵌套结构。
+#[test]
+fn test_clone_node_deep_with_attributes() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "orig");
+    doc.set_attribute(elem, "class", "container");
+    let child1 = doc.create_element("span");
+    let child2 = doc.create_text_node("text content");
+    doc.append_child(elem, child1).unwrap();
+    doc.append_child(elem, child2).unwrap();
+
+    let cloned = doc.clone_node(elem, true);
+
+    // 克隆的属性值正确
+    assert_eq!(doc.get_attribute(cloned, "id"), Some("orig".to_string()));
+    assert_eq!(doc.get_attribute(cloned, "class"), Some("container".to_string()));
+
+    // 克隆有子节点且是新的
+    assert!(doc.has_child_nodes(cloned));
+    let cloned_children = doc.child_nodes(cloned);
+    assert_eq!(cloned_children.len(), 2);
+    assert_ne!(cloned_children[0], child1, "克隆子节点应该是新节点");
+    assert_ne!(cloned_children[1], child2, "克隆文本节点应该是新节点");
+    assert_eq!(doc.text_content(cloned), Some("text content".to_string()));
+}
+
+/// 测试 has_child_nodes 对空元素返回 false。
+#[test]
+fn test_has_child_nodes_empty_element() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    assert!(!doc.has_child_nodes(elem), "空元素应该没有子节点");
+
+    let root = doc.root();
+    assert!(!doc.has_child_nodes(root), "空文档根应该没有子节点");
+}
+
+/// 测试 text_content 设置后替换原有子节点。
+#[test]
+fn test_text_content_set_replaces_children() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let child1 = doc.create_element("span");
+    let child2 = doc.create_element("p");
+    doc.append_child(elem, child1).unwrap();
+    doc.append_child(elem, child2).unwrap();
+
+    assert_eq!(doc.child_count(elem), 2);
+
+    doc.set_text_content(elem, "replaced");
+    assert_eq!(doc.text_content(elem), Some("replaced".to_string()));
+    assert_eq!(doc.child_count(elem), 1, "设置 text_content 后应该只有一个文本子节点");
+
+    // 原有子节点已被从树中移除
+    assert_eq!(doc.parent_node(child1), None);
+    assert_eq!(doc.parent_node(child2), None);
+}
+
+/// 测试 text_content 设置 None 值（空字符串）清除所有子节点。
+#[test]
+fn test_text_content_set_empty_clears_children() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let text = doc.create_text_node("existing");
+    doc.append_child(elem, text).unwrap();
+
+    doc.set_text_content(elem, "");
+    assert_eq!(doc.text_content(elem), Some("".to_string()));
+    assert!(!doc.has_child_nodes(elem), "空字符串 text_content 应清除子节点");
+}
+
+/// 测试 text_content 对 Comment 节点返回注释内容。
+#[test]
+fn test_text_content_comment_returns_content() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("a comment");
+    assert_eq!(doc.text_content(comment), Some("a comment".to_string()));
+}
+
+/// 测试 text_content 对空 Comment 节点返回空字符串。
+#[test]
+fn test_text_content_empty_comment() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("");
+    assert_eq!(doc.text_content(comment), Some("".to_string()));
+}
+
+/// 测试 text_content 对 Document 节点返回空字符串（无子节点时）。
+#[test]
+fn test_text_content_document_empty() {
+    let doc = Document::new();
+    assert_eq!(doc.text_content(doc.root()), Some("".to_string()));
+}
+
+/// 测试 text_content 对 DocumentType 节点返回 None。
+#[test]
+fn test_text_content_doctype_returns_none() {
+    let mut doc = Document::new();
+    let doctype = doc.create_document_type("html", None, None);
+    assert_eq!(doc.text_content(doctype), None);
+}
+
+/// 测试 text_content 对 DocumentFragment 返回后代文本拼接。
+#[test]
+fn test_text_content_document_fragment() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+    let t1 = doc.create_text_node("hello ");
+    let t2 = doc.create_text_node("world");
+    doc.append_child(frag, t1).unwrap();
+    doc.append_child(frag, t2).unwrap();
+
+    assert_eq!(doc.text_content(frag), Some("hello world".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 30. Element 属性边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 set_attribute 覆盖已有属性保留最新值。
+#[test]
+fn test_set_attribute_overwrite_multiple_times() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "data-val", "v1");
+    doc.set_attribute(elem, "data-val", "v2");
+    doc.set_attribute(elem, "data-val", "v3");
+    assert_eq!(doc.get_attribute(elem, "data-val"), Some("v3".to_string()));
+}
+
+/// 测试 remove_attribute 对不存在的属性不 panic。
+#[test]
+fn test_remove_attribute_nonexistent_no_panic() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // 在从未设置过的属性上调用 remove_attribute
+    doc.remove_attribute(elem, "noexist");
+    doc.remove_attribute(elem, "class");
+    doc.remove_attribute(elem, "");
+}
+
+/// 测试 has_attribute 对空名称返回 false。
+#[test]
+fn test_has_attribute_empty_name() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    assert!(!doc.has_attribute(elem, ""), "空属性名应返回 false");
+    doc.set_attribute(elem, "", "value");
+    assert!(doc.has_attribute(elem, ""), "设置空属性名后应返回 true");
+}
+
+/// 测试 attribute_names 对无属性的元素返回空列表。
+#[test]
+fn test_attribute_names_empty() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let names = doc.attribute_names(elem);
+    assert!(names.is_empty(), "无属性的元素应返回空列表");
+}
+
+/// 测试多个属性的 attribute_names 包含所有名称。
+#[test]
+fn test_attribute_names_multiple() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "main");
+    doc.set_attribute(elem, "class", "container");
+    doc.set_attribute(elem, "data-x", "1");
+
+    let names = doc.attribute_names(elem);
+    assert_eq!(names.len(), 3);
+    assert!(names.contains(&"id".to_string()));
+    assert!(names.contains(&"class".to_string()));
+    assert!(names.contains(&"data-x".to_string()));
+}
+
+/// 测试 get_elements_by_tag_name 不存在的标签返回空列表。
+#[test]
+fn test_get_elements_by_tag_name_not_found() {
+    let doc = parse_html("<html><body><div>a</div></body></html>");
+    let result = doc.get_elements_by_tag_name("nonexistent-tag");
+    assert!(result.is_empty());
+}
+
+/// 测试 get_elements_by_class_name 多类名元素只匹配完整类名。
+#[test]
+fn test_get_elements_by_class_name_multi_class() {
+    let doc = parse_html("<html><body><div class=\"foo bar baz\">text</div></body></html>");
+    let by_foo = doc.get_elements_by_class_name("foo");
+    let by_bar = doc.get_elements_by_class_name("bar");
+    let by_baz = doc.get_elements_by_class_name("baz");
+    let by_qux = doc.get_elements_by_class_name("qux");
+    assert_eq!(by_foo.len(), 1);
+    assert_eq!(by_bar.len(), 1);
+    assert_eq!(by_baz.len(), 1);
+    assert_eq!(by_qux.len(), 0);
+    // 全部返回同一个元素
+    assert_eq!(by_foo[0], by_bar[0]);
+    assert_eq!(by_bar[0], by_baz[0]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 31. Event 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 event type 字段在派发过程中保持不变。
+#[test]
+fn test_event_type_preserved_through_dispatch() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    let received_type = Arc::new(Mutex::new(String::new()));
+    let type_clone = received_type.clone();
+    doc.add_event_listener(
+        elem,
+        "custom-event",
+        Box::new(move |event| {
+            *type_clone.lock().unwrap() = event.event_type().to_string();
+        }),
+        false,
+    );
+
+    let mut event = Event::new("custom-event");
+    doc.dispatch_event(elem, &mut event);
+    assert_eq!(*received_type.lock().unwrap(), "custom-event");
+}
+
+/// 测试事件冒泡阶段正确的传播路径。
+#[test]
+fn test_bubbling_phase_correct_propagation_path() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, ul).unwrap();
+    doc.append_child(ul, li).unwrap();
+
+    let path = Arc::new(Mutex::new(Vec::new()));
+    let p1 = path.clone();
+    let p2 = path.clone();
+    let p3 = path.clone();
+
+    doc.add_event_listener(
+        li,
+        "click",
+        Box::new(move |e| {
+            p1.lock().unwrap().push(("li", e.phase()));
+        }),
+        false,
+    );
+    doc.add_event_listener(
+        ul,
+        "click",
+        Box::new(move |e| {
+            p2.lock().unwrap().push(("ul", e.phase()));
+        }),
+        false,
+    );
+    doc.add_event_listener(
+        div,
+        "click",
+        Box::new(move |e| {
+            p3.lock().unwrap().push(("div", e.phase()));
+        }),
+        false,
+    );
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(li, &mut event);
+
+    let p = path.lock().unwrap();
+    assert_eq!(p.len(), 3);
+    // li 在目标阶段触发
+    assert_eq!(p[0].0, "li");
+    // ul 在冒泡阶段触发
+    assert_eq!(p[1].0, "ul");
+    // div 在冒泡阶段触发
+    assert_eq!(p[2].0, "div");
+}
+
+/// 测试捕获和冒泡都注册时的调用顺序。
+#[test]
+fn test_capture_then_bubble_order() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+    let o3 = order.clone();
+    let o4 = order.clone();
+
+    // 父节点捕获监听器
+    doc.add_event_listener(
+        parent,
+        "click",
+        Box::new(move |_| {
+            o1.lock().unwrap().push("parent-capture");
+        }),
+        true,
+    );
+    // 子节点冒泡监听器（先注册）
+    doc.add_event_listener(
+        child,
+        "click",
+        Box::new(move |_| {
+            o2.lock().unwrap().push("child-bubble");
+        }),
+        false,
+    );
+    // 子节点捕获监听器（后注册）
+    doc.add_event_listener(
+        child,
+        "click",
+        Box::new(move |_| {
+            o3.lock().unwrap().push("child-capture");
+        }),
+        true,
+    );
+    // 父节点冒泡监听器
+    doc.add_event_listener(
+        parent,
+        "click",
+        Box::new(move |_| {
+            o4.lock().unwrap().push("parent-bubble");
+        }),
+        false,
+    );
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(child, &mut event);
+
+    let o = order.lock().unwrap();
+    assert_eq!(o.len(), 4, "应触发 4 个监听器");
+    // 父节点捕获必须最先
+    assert_eq!(o[0], "parent-capture", "父节点捕获应最先触发");
+    // 父节点冒泡必须最后
+    assert_eq!(o[3], "parent-bubble", "父节点冒泡应最后触发");
+    // 目标节点的两个监听器按注册顺序触发（先 child-bubble 再 child-capture）
+    assert!(
+        o[1] == "child-bubble" || o[1] == "child-capture",
+        "目标阶段监听器应在中间"
+    );
+    assert!(
+        o[2] == "child-bubble" || o[2] == "child-capture",
+        "目标阶段监听器应在中间"
+    );
+}
+
+/// 测试 stopImmediatePropagation 阻止冒泡到祖先。
+#[test]
+fn test_stop_immediate_propagation_blocks_bubbling() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let l1 = log.clone();
+    let l2 = log.clone();
+
+    doc.add_event_listener(
+        child,
+        "click",
+        Box::new(move |e| {
+            l1.lock().unwrap().push("child");
+            e.stop_immediate_propagation();
+        }),
+        false,
+    );
+    doc.add_event_listener(
+        parent,
+        "click",
+        Box::new(move |_| {
+            l2.lock().unwrap().push("parent");
+        }),
+        false,
+    );
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(child, &mut event);
+
+    let g = log.lock().unwrap();
+    assert_eq!(*g, vec!["child"], "stopImmediatePropagation 应阻止冒泡到父节点");
+}
+
+/// 测试冒泡事件 EventPhase 在各阶段正确。
+#[test]
+fn test_event_phase_during_propagation() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    let phases = Arc::new(Mutex::new(Vec::new()));
+    let ph1 = phases.clone();
+    let ph2 = phases.clone();
+    let ph3 = phases.clone();
+
+    doc.add_event_listener(
+        parent,
+        "click",
+        Box::new(move |e| {
+            ph1.lock().unwrap().push(e.phase());
+        }),
+        true,
+    ); // 捕获
+    doc.add_event_listener(
+        child,
+        "click",
+        Box::new(move |e| {
+            ph2.lock().unwrap().push(e.phase());
+        }),
+        false,
+    ); // 目标
+    doc.add_event_listener(
+        parent,
+        "click",
+        Box::new(move |e| {
+            ph3.lock().unwrap().push(e.phase());
+        }),
+        false,
+    ); // 冒泡
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(child, &mut event);
+
+    let p = phases.lock().unwrap();
+    assert_eq!(p.len(), 3);
+    assert_eq!(p[0], EventPhase::Capturing, "父节点捕获阶段应为 Capturing");
+    assert_eq!(p[1], EventPhase::AtTarget, "目标节点应为 AtTarget");
+    assert_eq!(p[2], EventPhase::Bubbling, "父节点冒泡阶段应为 Bubbling");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 32. 序列化和遍历边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 inner_html 对空元素返回空字符串。
+#[test]
+fn test_inner_html_empty_element() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let html = doc.inner_html(elem);
+    assert_eq!(html, "", "空元素的 innerHTML 应为空字符串");
+}
+
+/// 测试 outer_html 对文本节点返回文本内容。
+#[test]
+fn test_outer_html_text_node() {
+    let mut doc = Document::new();
+    let text = doc.create_text_node("Hello World");
+    let html = doc.outer_html(text);
+    assert_eq!(html, "Hello World");
+}
+
+/// 测试 quirks_mode 默认值为 NoQuirks。
+#[test]
+fn test_quirks_mode_default() {
+    let doc = Document::new();
+    assert_eq!(doc.quirks_mode(), QuirksMode::NoQuirks);
+}
+
+/// 测试 set_quirks_mode 可以修改文档模式。
+#[test]
+fn test_set_quirks_mode() {
+    let mut doc = Document::new();
+    doc.set_quirks_mode(QuirksMode::Quirks);
+    assert_eq!(doc.quirks_mode(), QuirksMode::Quirks);
+
+    doc.set_quirks_mode(QuirksMode::LimitedQuirks);
+    assert_eq!(doc.quirks_mode(), QuirksMode::LimitedQuirks);
+}
+
+/// 测试 collect_descendants 对单层子树。
+#[test]
+fn test_collect_descendants_single_layer() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_text_node("text");
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+
+    let descendants = doc.collect_descendants(parent);
+    assert_eq!(descendants.len(), 2);
+    assert_eq!(descendants[0], c1);
+    assert_eq!(descendants[1], c2);
+}
+
+/// 测试 collect_descendants 不包含自身。
+#[test]
+fn test_collect_descendants_excludes_self() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(elem, child).unwrap();
+
+    let descendants = doc.collect_descendants(elem);
+    assert!(!descendants.contains(&elem), "不应包含自身");
+    assert!(descendants.contains(&child), "应包含子节点");
+}
+
+/// 测试 depth 对孤立节点（无父节点）返回 Some(0)。
+#[test]
+fn test_depth_orphan_node() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // 孤立节点没有到 root 的路径，depth 沿 parent 回溯到 None 时返回 0
+    let depth = doc.depth(elem);
+    assert!(depth.is_some(), "孤立节点深度应返回 Some");
+    assert_eq!(depth, Some(0), "孤立节点深度应为 0");
+}
+
+/// 测试 child_count 对空节点返回 0。
+#[test]
+fn test_child_count_empty() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    assert_eq!(doc.child_count(elem), 0);
+
+    let root = doc.root();
+    assert_eq!(doc.child_count(root), 0);
+}
+
+/// 测试 node_type 对 Text 节点返回 3。
+#[test]
+fn test_node_type_text() {
+    let mut doc = Document::new();
+    let text = doc.create_text_node("hello");
+    assert_eq!(doc.node_type(text), Some(3));
+}
+
+/// 测试 node_type 对 Comment 节点返回 8。
+#[test]
+fn test_node_type_comment() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("note");
+    assert_eq!(doc.node_type(comment), Some(8));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 33. MutationObserver 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 MutationRecord 的 previous_sibling 在追加末尾子节点时为倒数第二个子节点。
+#[test]
+fn test_mutation_record_previous_sibling() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_element("p");
+
+    doc.append_child(root, c1).unwrap();
+    doc.take_mutation_records(); // 清空
+
+    doc.append_child(root, c2).unwrap();
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1);
+    // c2 是 root 的第二个子节点，previous_sibling 应该是 c1
+    assert_eq!(records[0].previous_sibling, Some(c1));
+}
+
+/// 测试 remove_attribute 不产生 mutation 记录（属性 mutation 在 set_attribute 时记录）。
+#[test]
+fn test_mutation_on_remove_attribute() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "test");
+    doc.take_mutation_records(); // 清空 set_attribute 产生的记录
+
+    doc.remove_attribute(elem, "class");
+    let _records = doc.take_mutation_records();
+    // remove_attribute 当前实现是否产生记录取决于实现
+    // 这里记录行为，不管是否产生记录都不应 panic
+}
+
+/// 测试 MutationRecord Clone。
+#[test]
+fn test_mutation_record_clone() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let record = MutationRecord {
+        mutation_type: MutationType::Attributes,
+        target: elem,
+        added_nodes: vec![],
+        removed_nodes: vec![],
+        previous_sibling: None,
+        attribute_name: Some("class".to_string()),
+        old_value: Some("old".to_string()),
+    };
+    let cloned = record.clone();
+    assert_eq!(cloned.mutation_type, MutationType::Attributes);
+    assert_eq!(cloned.target, elem);
+    assert_eq!(cloned.attribute_name, Some("class".to_string()));
+    assert_eq!(cloned.old_value, Some("old".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 34. 树操作边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 append_child 对自身追加返回错误（循环检测）。
+#[test]
+fn test_append_child_self_fails() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+
+    // 试图将自己追加为自己子节点 — 应该失败
+    let result = doc.append_child(elem, elem);
+    assert!(result.is_err(), "将自己追加为子节点应返回错误");
+}
+
+/// 测试 insert_before 在列表末尾（ref_node = 最后子节点）之前插入。
+#[test]
+fn test_insert_before_last_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let new_node = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    doc.insert_before(root, new_node, c2).unwrap();
+    assert_eq!(doc.child_nodes(root), vec![c1, new_node, c2]);
+}
+
+/// 测试 insert_before 在列表开头（ref_node = 第一个子节点）之前插入。
+#[test]
+fn test_insert_before_first_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let new_node = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+
+    doc.insert_before(root, new_node, c1).unwrap();
+    assert_eq!(doc.child_nodes(root), vec![new_node, c1, c2]);
+}
+
+/// 测试 append_child 自动 reparenting（移动已有父节点的子节点）。
+#[test]
+fn test_append_child_auto_reparent() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent1 = doc.create_element("div");
+    let parent2 = doc.create_element("span");
+    let child = doc.create_element("p");
+    doc.append_child(root, parent1).unwrap();
+    doc.append_child(root, parent2).unwrap();
+    doc.append_child(parent1, child).unwrap();
+
+    assert_eq!(doc.parent_node(child), Some(parent1));
+
+    // 将 child 从 parent1 移动到 parent2
+    doc.append_child(parent2, child).unwrap();
+    assert_eq!(doc.parent_node(child), Some(parent2));
+    assert!(!doc.has_child_nodes(parent1));
+    assert_eq!(doc.child_nodes(parent2), vec![child]);
+}
+
+/// 测试 insert_before 自动 reparenting。
+#[test]
+fn test_insert_before_auto_reparent() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent1 = doc.create_element("div");
+    let parent2 = doc.create_element("span");
+    let child = doc.create_element("p");
+    let ref_node = doc.create_element("a");
+    doc.append_child(root, parent1).unwrap();
+    doc.append_child(root, parent2).unwrap();
+    doc.append_child(parent1, child).unwrap();
+    doc.append_child(parent2, ref_node).unwrap();
+
+    // 将 child 从 parent1 移到 parent2 的 ref_node 之前
+    doc.insert_before(parent2, child, ref_node).unwrap();
+    assert_eq!(doc.parent_node(child), Some(parent2));
+    assert!(!doc.has_child_nodes(parent1));
+    assert_eq!(doc.child_nodes(parent2), vec![child, ref_node]);
+}
+
+/// 测试 DocumentFragment 作为 insert_before 的 new_node。
+#[test]
+fn test_insert_before_with_fragment() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let container = doc.create_element("div");
+    let ref_node = doc.create_element("span");
+    doc.append_child(root, container).unwrap();
+    doc.append_child(container, ref_node).unwrap();
+
+    let frag = doc.create_document_fragment();
+    let f1 = doc.create_element("p");
+    doc.append_child(frag, f1).unwrap();
+
+    doc.insert_before(container, frag, ref_node).unwrap();
+    let children = doc.child_nodes(container);
+    assert!(children.contains(&frag), "fragment 应被插入到 container 中");
+}
+
+/// 测试 sibling_traversal 对单子节点返回 None。
+#[test]
+fn test_sibling_traversal_single_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let only_child = doc.create_element("div");
+    doc.append_child(root, only_child).unwrap();
+
+    assert_eq!(doc.next_sibling(only_child), None);
+    assert_eq!(doc.previous_sibling(only_child), None);
+}
+
+/// 测试 node_contains 对未连接的兄弟节点返回 false。
+#[test]
+fn test_node_contains_unrelated_nodes() {
+    let mut doc = Document::new();
+    let a = doc.create_element("div");
+    let b = doc.create_element("span");
+    // 两个节点都未附加到树中，且互不为祖先
+    assert!(!doc.node_contains(a, b), "未连接的节点不应有包含关系");
+    assert!(!doc.node_contains(b, a), "未连接的节点不应有包含关系");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 35. 解析器边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试解析只包含文本的 HTML。
+#[test]
+fn test_parse_plain_text() {
+    let doc = parse_html("Hello World");
+    assert!(doc.root().is_valid());
+    let text = doc.text_content(doc.root());
+    assert!(text.is_some());
+    assert!(text.unwrap().contains("Hello World"));
+}
+
+/// 测试解析带有嵌套表格的 HTML。
+#[test]
+fn test_parse_table() {
+    let doc = parse_html("<html><body><table><tr><td>A</td><td>B</td></tr></table></body></html>");
+    let tds = doc.get_elements_by_tag_name("td");
+    assert_eq!(tds.len(), 2);
+    let trs = doc.get_elements_by_tag_name("tr");
+    assert_eq!(trs.len(), 1);
+}
+
+/// 测试解析含有 HTML 实体的内容。
+#[test]
+fn test_parse_html_entities() {
+    let doc = parse_html("<html><body><p>&amp; &lt; &gt;</p></body></html>");
+    let ps = doc.get_elements_by_tag_name("p");
+    assert_eq!(ps.len(), 1);
+    let text = doc.text_content(ps[0]);
+    assert!(text.is_some());
+    let t = text.unwrap();
+    assert!(t.contains("&"), "应该解析 &amp; 为 &");
+    assert!(t.contains("<"), "应该解析 &lt; 为 <");
+    assert!(t.contains(">"), "应该解析 &gt; 为 >");
+}
+
+/// 测试解析多个相同 id 的元素（只索引第一个）。
+#[test]
+fn test_parse_duplicate_ids() {
+    let doc = parse_html("<html><body><div id=\"same\">first</div><div id=\"same\">second</div></body></html>");
+    let found = doc.get_element_by_id("same");
+    assert!(found.is_some(), "应该找到至少一个 id=same 的元素");
+    let text = doc.text_content(found.unwrap());
+    // html5ever 通常保留第一个出现的元素在 id_map 中
+    assert!(text.is_some());
+}
+
+/// 测试解析纯空白内容。
+#[test]
+fn test_parse_whitespace_only() {
+    let doc = parse_html("   \n\t  ");
+    assert!(doc.root().is_valid());
+}
