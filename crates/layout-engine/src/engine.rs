@@ -2384,4 +2384,254 @@ mod tests {
             "content_y offset should be border_top + padding_top"
         );
     }
+
+    // ── 高优先级边缘场景测试 ──
+
+    /// 零尺寸容器包含子元素 — 验证布局引擎对 0x0 容器不会 panic，
+    /// 且子元素几何值合理（不出现 NaN 或负值）。
+    #[test]
+    fn test_zero_size_container_with_children() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child1 = doc.create_element("span");
+        doc.append_child(container, child1).unwrap();
+        let child2 = doc.create_element("span");
+        doc.append_child(container, child2).unwrap();
+
+        let mut styles = HashMap::new();
+        // 容器显式 0x0
+        let mut container_style = ComputedStyle::default();
+        container_style.width = LengthValue::Px(0.0);
+        container_style.height = LengthValue::Px(0.0);
+        styles.insert(container, container_style);
+
+        // 子元素有明确尺寸
+        styles.insert(
+            child1,
+            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
+        );
+        styles.insert(
+            child2,
+            make_style_with_display(DisplayValue::Block, 80.0, 40.0),
+        );
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let container_box =
+            find_child_by_node_id(&result.root, container).expect("容器应找到");
+        let child1_box =
+            find_child_by_node_id(&result.root, child1).expect("子元素 1 应找到");
+        let child2_box =
+            find_child_by_node_id(&result.root, child2).expect("子元素 2 应找到");
+
+        // 容器尺寸不为 NaN 或负值
+        assert!(
+            container_box.width.is_finite() && container_box.width >= 0.0,
+            "容器宽度应为有限非负值，实际 {}",
+            container_box.width
+        );
+        assert!(
+            container_box.height.is_finite() && container_box.height >= 0.0,
+            "容器高度应为有限非负值，实际 {}",
+            container_box.height
+        );
+
+        // 子元素尺寸不受零尺寸容器影响，仍保持正确
+        assert_eq!(child1_box.width, 100.0, "子元素 1 宽度应为 100");
+        assert_eq!(child1_box.height, 50.0, "子元素 1 高度应为 50");
+        assert_eq!(child2_box.width, 80.0, "子元素 2 宽度应为 80");
+        assert_eq!(child2_box.height, 40.0, "子元素 2 高度应为 40");
+    }
+
+    /// 深层嵌套 flexbox（15 层）— 验证布局引擎不会栈溢出，
+    /// 且最内层元素尺寸正确。
+    #[test]
+    fn test_deeply_nested_flexbox() {
+        let (mut doc, body) = make_doc_with_body();
+        let depth = 15;
+        let mut ids: Vec<NodeId> = Vec::new();
+        let mut parent = body;
+
+        for i in 0..depth {
+            let div = doc.create_element("div");
+            doc.append_child(parent, div).unwrap();
+            ids.push(div);
+            parent = div;
+
+            // 最后一级加一个叶子
+            if i == depth - 1 {
+                let leaf = doc.create_element("span");
+                doc.append_child(div, leaf).unwrap();
+                ids.push(leaf);
+            }
+        }
+
+        let mut styles = HashMap::new();
+        for (i, &id) in ids.iter().enumerate() {
+            let mut s = ComputedStyle::default();
+            if i < depth {
+                // 中间层都是 flex 容器
+                s.display = DisplayValue::Flex;
+                s.flex_direction = FlexDirectionValue::Column;
+                let size = 600.0 - (i as f64) * 35.0;
+                if size > 0.0 {
+                    s.width = LengthValue::Px(size);
+                    s.height = LengthValue::Px(size * 0.8);
+                }
+            } else {
+                // 叶子节点
+                s.width = LengthValue::Px(50.0);
+                s.height = LengthValue::Px(30.0);
+            }
+            styles.insert(id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 最外层容器应有正确宽度
+        let outer = find_child_by_node_id(&result.root, ids[0]).expect("最外层应找到");
+        assert!(
+            (outer.width - 600.0).abs() < 1.0,
+            "最外层宽度应约 600，实际 {}",
+            outer.width
+        );
+
+        // 最内层叶子节点应有正确尺寸
+        let leaf = find_child_by_node_id(&result.root, ids[depth]).expect("叶子应找到");
+        assert_eq!(leaf.width, 50.0, "叶子宽度应为 50");
+        assert_eq!(leaf.height, 30.0, "叶子高度应为 30");
+    }
+
+    /// 绝对定位元素同时设置 top/left/right/bottom — 验证元素尺寸正确。
+    /// 当四个方向都指定时，元素尺寸由 inset 约束决定，而非 content 自动尺寸。
+    #[test]
+    fn test_absolute_position_all_insets() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let abs_el = doc.create_element("span");
+        doc.append_child(container, abs_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 定位容器：relative + 明确尺寸
+        let mut container_style = ComputedStyle::default();
+        container_style.position = PositionValue::Relative;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(300.0);
+        styles.insert(container, container_style);
+
+        // 绝对定位元素：四个方向全部设置
+        // top=20, bottom=40 → 可用高度 = 300 - 20 - 40 = 240
+        // left=30, right=50 → 可用宽度 = 400 - 30 - 50 = 320
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(20.0);
+        abs_style.bottom = LengthValue::Px(40.0);
+        abs_style.left = LengthValue::Px(30.0);
+        abs_style.right = LengthValue::Px(50.0);
+        styles.insert(abs_el, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_el).expect("绝对元素应找到");
+        assert!(abs_box.is_absolute, "应标记为绝对定位");
+
+        // 验证位置偏移
+        assert!(
+            (abs_box.x - 30.0).abs() < 1.0,
+            "x 偏移应约 30，实际 {}",
+            abs_box.x
+        );
+        assert!(
+            (abs_box.y - 20.0).abs() < 1.0,
+            "y 偏移应约 20，实际 {}",
+            abs_box.y
+        );
+
+        // 验证由 inset 约束推导的尺寸
+        assert!(
+            (abs_box.width - 320.0).abs() < 1.0,
+            "宽度应约 320（400-30-50），实际 {}",
+            abs_box.width
+        );
+        assert!(
+            (abs_box.height - 240.0).abs() < 1.0,
+            "高度应约 240（300-20-40），实际 {}",
+            abs_box.height
+        );
+    }
+
+    /// Grid 使用 repeat(auto-fill, ...) 模板 — 验证 grid template 解析不 panic，
+    /// 且 auto-fill 降级为单列时子元素布局正确。
+    #[test]
+    fn test_grid_auto_fill_columns() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        // 放 6 个子元素
+        let mut item_ids = Vec::new();
+        for _ in 0..6 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+
+        // grid: 使用 repeat(auto-fill, 100px) — taffy 降级为单次展开
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("repeat(auto-fill, 100px)".to_string());
+        grid_style.grid_auto_rows = Some("50px".to_string());
+        grid_style.width = LengthValue::Px(600.0);
+        grid_style.height = LengthValue::Px(400.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 所有子元素都应有有效的布局盒
+        let boxes: Vec<&LayoutBox> = item_ids
+            .iter()
+            .map(|id| find_child_by_node_id(&result.root, *id).expect("grid item 应找到"))
+            .collect();
+
+        // 所有元素宽度和高度应为有限非负值
+        for (i, b) in boxes.iter().enumerate() {
+            assert!(
+                b.width.is_finite() && b.width > 0.0,
+                "grid item {} 宽度应为正有限值，实际 {}",
+                i,
+                b.width
+            );
+            assert!(
+                b.height.is_finite() && b.height > 0.0,
+                "grid item {} 高度应为正有限值，实际 {}",
+                i,
+                b.height
+            );
+        }
+
+        // 元素应在网格中有规律排列（x 或 y 方向分布）
+        let x_vals: Vec<f32> = boxes.iter().map(|b| b.x).collect();
+        let y_vals: Vec<f32> = boxes.iter().map(|b| b.y).collect();
+        let has_x_spread = x_vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+            > x_vals.iter().cloned().fold(f32::INFINITY, f32::min);
+        let has_y_spread = y_vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+            > y_vals.iter().cloned().fold(f32::INFINITY, f32::min);
+        assert!(
+            has_x_spread || has_y_spread,
+            "grid 子元素应在 x 或 y 方向有不同位置"
+        );
+    }
 }

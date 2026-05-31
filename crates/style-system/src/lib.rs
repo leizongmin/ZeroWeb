@@ -209,11 +209,20 @@ impl StyleSystem {
         let style = inheritance::compute_inherited_style(parent_style, &resolved_cascaded);
 
         // 6. 解析计算值（相对单位转换）
+        // 提取父元素的计算 font-size，用于子元素 font-size 的 em 解析
+        let parent_fs = parent_style.map(|ps| {
+            // 父元素的 font_size 已经被解析为 Px
+            match &ps.font_size {
+                zero_css_parser::values::LengthValue::Px(v) => *v,
+                _ => computed::ROOT_FONT_SIZE,
+            }
+        });
         computed::resolve_computed_style(
             &style,
             &self.custom_properties,
             self.viewport_width,
             self.viewport_height,
+            parent_fs,
         )
     }
 }

@@ -316,4 +316,64 @@ mod tests {
         set.insert(Color::BLUE);
         assert_eq!(set.len(), 2);
     }
+
+    /// 测试 sRGB→linear 转换在阈值边界（v=10, s≈0.0392）使用线性分支
+    #[test]
+    fn test_color_to_linear_f32_threshold_boundary() {
+        // s = 10/255 ≈ 0.03922 ≤ 0.04045 → 使用 s/12.92 分支
+        let c_low = Color::rgb(10, 10, 10);
+        let l_low = c_low.to_linear_f32();
+        let expected_low = 10.0_f32 / 255.0 / 12.92;
+        assert!((l_low[0] - expected_low).abs() < 0.0001);
+
+        // s = 11/255 ≈ 0.04314 > 0.04045 → 使用幂函数分支
+        let c_high = Color::rgb(11, 11, 11);
+        let l_high = c_high.to_linear_f32();
+        let s_high = 11.0_f32 / 255.0;
+        let expected_high = ((s_high + 0.055) / 1.055).powf(2.4);
+        assert!((l_high[0] - expected_high).abs() < 0.0001);
+
+        // 确保两个分支的结果不同
+        assert!((l_low[0] - l_high[0]).abs() > 0.00001);
+    }
+
+    /// 测试 alpha=0 时 linear 转换：RGB 通道应正常转换，alpha 通道为 0.0
+    #[test]
+    fn test_color_to_linear_alpha_zero_with_nonzero_rgb() {
+        // alpha=0 但 RGB 非零 — linear 转换中 alpha 独立于 RGB
+        let c = Color::rgba(255, 128, 64, 0);
+        let l = c.to_linear_f32();
+        // RGB 通道应正常转换
+        assert!((l[0] - 1.0).abs() < 0.01, "R 通道应正常转换");
+        assert!(l[1] > 0.1 && l[1] < 0.3, "G 通道应正常转换");
+        assert!(l[2] > 0.01 && l[2] < 0.1, "B 通道应正常转换");
+        // alpha 通道应为 0.0
+        assert!(l[3].abs() < f32::EPSILON, "alpha=0 应转换为 0.0");
+    }
+
+    /// 测试 premultiplied alpha 在中等 alpha 值下的精度
+    #[test]
+    fn test_color_premultiplied_mid_alpha_precision() {
+        let c = Color::rgba(200, 150, 100, 128);
+        let p = c.premultiplied();
+        let a = 128.0_f32 / 255.0;
+        assert!((p[0] - 200.0 / 255.0 * a).abs() < 0.001);
+        assert!((p[1] - 150.0 / 255.0 * a).abs() < 0.001);
+        assert!((p[2] - 100.0 / 255.0 * a).abs() < 0.001);
+        assert!((p[3] - a).abs() < f32::EPSILON);
+    }
+
+    /// 测试 to_f32_array 在全边界值下的正确性（0 和 255）
+    #[test]
+    fn test_color_to_f32_array_boundary_values() {
+        // 全零
+        let c_zero = Color::rgba(0, 0, 0, 0);
+        let f_zero = c_zero.to_f32_array();
+        assert!(f_zero.iter().all(|&v| v.abs() < f32::EPSILON));
+
+        // 全 255
+        let c_max = Color::rgba(255, 255, 255, 255);
+        let f_max = c_max.to_f32_array();
+        assert!(f_max.iter().all(|&v| (v - 1.0).abs() < f32::EPSILON));
+    }
 }

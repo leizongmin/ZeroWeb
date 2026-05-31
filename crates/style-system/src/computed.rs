@@ -9,7 +9,7 @@ use zero_css_parser::values::{LengthValue, parse_var};
 use crate::property::ComputedStyle;
 
 /// 默认根字体大小（px）。
-const ROOT_FONT_SIZE: f64 = 16.0;
+pub const ROOT_FONT_SIZE: f64 = 16.0;
 
 /// 将相对长度转换为绝对像素值。
 ///
@@ -153,22 +153,33 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
 /// 将计算样式中的相对长度解析为绝对值。
 ///
 /// 返回一个新的 ComputedStyle，其中所有相对长度都被转换为 px。
+///
+/// # 参数
+///
+/// - `parent_font_size` — 父元素的计算 font-size（px），用于 font-size 属性本身的 em 解析。
+///   为 None 时（根元素）使用 ROOT_FONT_SIZE。
 pub fn resolve_computed_style(
     style: &ComputedStyle,
     _custom_properties: &HashMap<String, String>,
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
+    parent_font_size: Option<f64>,
 ) -> ComputedStyle {
+    // font-size 属性本身：em 相对于父元素的 font-size
+    let font_size_context = parent_font_size.unwrap_or(ROOT_FONT_SIZE);
     let font_size_px = resolve_length(
         &style.font_size,
-        ROOT_FONT_SIZE, // 根元素的 font-size 使用 root font-size
+        font_size_context,
         viewport_width,
         viewport_height,
     );
 
     let mut resolved = style.clone();
 
-    // 解析所有长度属性
+    // 将 font-size 解析为绝对值
+    resolved.font_size = LengthValue::Px(font_size_px);
+
+    // 解析所有长度属性（使用元素自身的 font-size）
     resolve_length_field(
         &mut resolved.width,
         font_size_px,
@@ -502,7 +513,7 @@ mod tests {
         style.padding_left = LengthValue::Rem(1.0);
 
         let custom = HashMap::new();
-        let resolved = resolve_computed_style(&style, &custom, None, None);
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
 
         assert_eq!(resolved.margin_top, LengthValue::Px(40.0)); // 2em * 20px
         assert_eq!(resolved.padding_left, LengthValue::Px(16.0)); // 1rem * 16px
@@ -586,7 +597,7 @@ mod tests {
     fn test_resolve_computed_style_preserves_auto_width() {
         let style = ComputedStyle::default();
         let custom = HashMap::new();
-        let resolved = resolve_computed_style(&style, &custom, None, None);
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
         assert_eq!(resolved.width, LengthValue::Auto);
         assert_eq!(resolved.height, LengthValue::Auto);
     }
@@ -598,7 +609,7 @@ mod tests {
         style.margin_top = LengthValue::Percentage(10.0);
 
         let custom = HashMap::new();
-        let resolved = resolve_computed_style(&style, &custom, None, None);
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
         assert_eq!(resolved.width, LengthValue::Percentage(50.0));
         assert_eq!(resolved.margin_top, LengthValue::Percentage(10.0));
     }
@@ -653,7 +664,7 @@ mod tests {
         style.margin_top = LengthValue::Em(2.0); // 2 * 24 = 48
 
         let custom = HashMap::new();
-        let resolved = resolve_computed_style(&style, &custom, None, None);
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
         assert_eq!(resolved.margin_top, LengthValue::Px(48.0));
     }
 
@@ -665,7 +676,7 @@ mod tests {
         style.height = LengthValue::Vh(25.0);
 
         let custom = HashMap::new();
-        let resolved = resolve_computed_style(&style, &custom, Some(1000.0), Some(800.0));
+        let resolved = resolve_computed_style(&style, &custom, Some(1000.0), Some(800.0), None);
         assert_eq!(resolved.width, LengthValue::Px(500.0)); // 50vw of 1000
         assert_eq!(resolved.height, LengthValue::Px(200.0)); // 25vh of 800
     }
@@ -715,5 +726,29 @@ mod tests {
     fn test_compute_value_plain_value() {
         let custom = HashMap::new();
         assert_eq!(compute_value("100px", &custom, 16.0), None);
+    }
+
+    #[test]
+    /// font-size 的 em 应该使用父元素的 font-size，而不是自身的
+    fn test_font_size_em_uses_parent() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Em(1.5); // 1.5em
+
+        let custom = HashMap::new();
+        // 父元素 font-size 为 20px，1.5em 应该 = 30px
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(20.0));
+        assert_eq!(resolved.font_size, LengthValue::Px(30.0));
+    }
+
+    #[test]
+    /// rem 应始终使用 16px 根字体大小，不受父元素影响
+    fn test_font_size_rem_uses_root() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Rem(2.0); // 2rem
+
+        let custom = HashMap::new();
+        // 即使父元素 font-size 为 32px，rem 仍使用 root 16px
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(32.0));
+        assert_eq!(resolved.font_size, LengthValue::Px(32.0)); // 2 * 16 = 32
     }
 }
