@@ -685,4 +685,161 @@ mod tests {
         );
         assert!(headers.allow_methods.is_none());
     }
+
+    /// 测试沙箱解析仅含无效/未知标志时等同于严格沙箱。
+    ///
+    /// 当 sandbox 属性值全部为无法识别的标志时，
+    /// 解析后 flags 列表应为空，所有功能均被禁止，
+    /// 行为等同于 IframeSandbox::strict()。
+    #[test]
+    fn test_sandbox_parse_only_unknown_flags() {
+        let sandbox = IframeSandbox::parse("allow-unknown-flag foo-bar not-a-real-flag");
+        // 所有标志均无法识别 → flags 为空
+        assert!(!sandbox.allows_scripts(), "未知标志不应允许脚本");
+        assert!(!sandbox.allows_forms(), "未知标志不应允许表单");
+        assert!(!sandbox.allows_same_origin(), "未知标志不应允许同源");
+        assert!(!sandbox.allows_popups(), "未知标志不应允许弹窗");
+        assert!(!sandbox.allows_top_navigation(), "未知标志不应允许顶层导航");
+
+        // effective_origin 为不透明源
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(sandbox.effective_origin(&iframe_origin), SandboxOrigin::Opaque);
+    }
+
+    /// 测试混合内容 upgrade_to_https 对边界 URL 的处理。
+    ///
+    /// 最小 HTTP URL（如 "http://x"）应能成功升级。
+    /// 带认证信息的 HTTP URL（含 userinfo）也应正确升级。
+    /// 非 http:// 开头的 URL（空字符串、ftp://）应返回 None。
+    #[test]
+    fn test_mixed_content_upgrade_edge_urls() {
+        // 最小 HTTP URL → 可升级
+        assert_eq!(
+            upgrade_to_https("http://x"),
+            Some("https://x".to_string()),
+            "最小 HTTP URL 应可升级"
+        );
+
+        // 带端口的 HTTP URL → 可升级
+        assert_eq!(
+            upgrade_to_https("http://example.com:8080/path"),
+            Some("https://example.com:8080/path".to_string()),
+            "带端口的 HTTP URL 应可升级"
+        );
+
+        // 空 URL → 不以 http:// 开头 → None
+        assert_eq!(upgrade_to_https(""), None, "空 URL 不应升级");
+
+        // ftp:// URL → 不以 http:// 开头 → None
+        assert_eq!(
+            upgrade_to_https("ftp://files.example.com/data"),
+            None,
+            "ftp URL 不应升级"
+        );
+
+        // 仅 "http://" 无主机 → 可升级为 "https://"
+        assert_eq!(
+            upgrade_to_https("http://"),
+            Some("https://".to_string()),
+            "仅 scheme 的 URL 应可升级"
+        );
+    }
+
+    /// 测试 CSP worker-src 回退链中 child-src 优先于 script-src。
+    ///
+    /// 当 worker-src 不存在时，is_worker_allowed 依次回退：
+    /// child-src → frame-src → script-src → default-src。
+    /// 验证 child-src 存在时优先使用 child-src，而非 script-src。
+    #[test]
+    fn test_csp_worker_src_fallback_prefers_child_over_script() {
+        let csp = ContentSecurityPolicy::parse(
+            "default-src 'none'; child-src https://child.com; script-src https://script.com",
+        );
+        // worker-src 不存在 → 回退到 child-src（而非 script-src）
+        assert!(
+            csp.is_worker_allowed("https://child.com/worker.js", None),
+            "应使用 child-src 而非 script-src"
+        );
+        // script-src 中的 URL 在 child-src 中不存在 → 不应允许
+        assert!(
+            !csp.is_worker_allowed("https://script.com/worker.js", None),
+            "child-src 存在时不应回退到 script-src"
+        );
+    }
+
+    /// 测试 COEP parse_coep 对空白字符、大小写和未知值的处理。
+    ///
+    /// parse_coep 应对头部值做 trim 后匹配，未知值回退到 UnsafeNone。
+    /// 带前导/尾随空格的合法值应正确解析。
+    #[test]
+    fn test_coep_parse_edge_cases() {
+        // 带前导/尾随空格
+        assert_eq!(
+            parse_coep("  require-corp  "),
+            CoepPolicy::RequireCorp,
+            "带空格的 require-corp 应正确解析"
+        );
+        assert_eq!(
+            parse_coep("\tcredentialless\n"),
+            CoepPolicy::Credentialless,
+            "带制表符和换行的 credentialless 应正确解析"
+        );
+
+        // 未知值 → UnsafeNone
+        assert_eq!(
+            parse_coep("require-corp-strict"),
+            CoepPolicy::UnsafeNone,
+            "未知策略值应回退到 UnsafeNone"
+        );
+
+        // 仅空格 → UnsafeNone
+        assert_eq!(parse_coep("   "), CoepPolicy::UnsafeNone, "仅空格应回退到 UnsafeNone");
+
+        // CORP 解析：未知值 → NoPolicy
+        assert_eq!(
+            parse_corp(Some("unknown-policy")),
+            CorpStatus::NoPolicy,
+            "未知 CORP 值应回退到 NoPolicy"
+        );
+        assert_eq!(
+            parse_corp(Some("  same-origin  ")),
+            CorpStatus::SameOrigin,
+            "带空格的 CORP 值应正确解析"
+        );
+    }
+
+    /// 测试 COOP evaluate_coop：导航方和响应方均为 SameOriginAllowPopups 时的行为。
+    ///
+    /// 当双方都为 SameOriginAllowPopups 且为跨源时，应允许共享浏览上下文组。
+    /// 同时验证 COOP 解析对空白字符的容错。
+    #[test]
+    fn test_coop_same_origin_allow_popups_mutual() {
+        // 跨源 + 双方均为 SameOriginAllowPopups → 允许
+        let result = evaluate_coop(
+            CoopPolicy::SameOriginAllowPopups,
+            CoopPolicy::SameOriginAllowPopups,
+            false,
+        );
+        assert_eq!(result, CoopResult::Allowed, "双方 SameOriginAllowPopups 跨源应允许");
+
+        // 同源 → 始终允许
+        let result_same = evaluate_coop(
+            CoopPolicy::SameOriginAllowPopups,
+            CoopPolicy::SameOriginAllowPopups,
+            true,
+        );
+        assert_eq!(result_same, CoopResult::Allowed, "同源应始终允许");
+
+        // parse_coop 空白容错
+        assert_eq!(
+            parse_coop("  same-origin-allow-popups  "),
+            CoopPolicy::SameOriginAllowPopups,
+            "带空格的 COOP 值应正确解析"
+        );
+        assert_eq!(
+            parse_coop("\t same-origin \n"),
+            CoopPolicy::SameOrigin,
+            "带特殊空白符的 same-origin 应正确解析"
+        );
+    }
 }

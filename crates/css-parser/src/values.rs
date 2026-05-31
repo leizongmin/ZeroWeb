@@ -3785,6 +3785,234 @@ fn parse_quoted_string_chars(chars: &mut std::iter::Peekable<std::str::Chars>) -
     None
 }
 
+// ── CSS Column 值类型 ──────────────────────────────────────────────
+
+/// CSS column-count 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnCountValue {
+    /// auto。
+    Auto,
+    /// 正整数值。
+    Number(u32),
+}
+
+/// 解析 CSS column-count 属性值。
+///
+/// 支持格式如 `"auto"`、`"3"`。
+pub fn parse_column_count(value: &str) -> Option<ColumnCountValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(ColumnCountValue::Auto);
+    }
+    let n: u32 = value.parse().ok()?;
+    if n > 0 { Some(ColumnCountValue::Number(n)) } else { None }
+}
+
+/// CSS column-width 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnWidthValue {
+    /// auto。
+    Auto,
+    /// 长度值。
+    Length(LengthValue),
+}
+
+/// 解析 CSS column-width 属性值。
+///
+/// 支持格式如 `"auto"`、`"200px"`、`"10em"`。
+pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(ColumnWidthValue::Auto);
+    }
+    parse_length(value).map(ColumnWidthValue::Length)
+}
+
+// ── CSS Object Fit 值类型 ──────────────────────────────────────────
+
+/// CSS object-fit 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjectFitValue {
+    /// fill。
+    Fill,
+    /// contain。
+    Contain,
+    /// cover。
+    Cover,
+    /// none。
+    None,
+    /// scale-down。
+    ScaleDown,
+}
+
+/// 解析 CSS object-fit 属性值。
+pub fn parse_object_fit(value: &str) -> Option<ObjectFitValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "fill" => Some(ObjectFitValue::Fill),
+        "contain" => Some(ObjectFitValue::Contain),
+        "cover" => Some(ObjectFitValue::Cover),
+        "none" => Some(ObjectFitValue::None),
+        "scale-down" => Some(ObjectFitValue::ScaleDown),
+        _ => None,
+    }
+}
+
+// ── CSS Filter 值类型 ──────────────────────────────────────────────
+
+/// CSS filter 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterValue {
+    /// none。
+    None,
+    /// blur(px)。
+    Blur(f32),
+    /// brightness(number)。
+    Brightness(f32),
+    /// contrast(number)。
+    Contrast(f32),
+    /// grayscale(number)。
+    Grayscale(f32),
+    /// hue-rotate(deg)。
+    HueRotate(f32),
+    /// invert(number)。
+    Invert(f32),
+    /// opacity(number)。
+    Opacity(f32),
+    /// saturate(number)。
+    Saturate(f32),
+    /// sepia(number)。
+    Sepia(f32),
+    /// drop-shadow(x-offset, y-offset, blur-radius, color)。
+    DropShadow(f32, f32, f32, ColorValue),
+}
+
+/// 解析 CSS filter 属性值。
+///
+/// 支持格式如 `"none"`、`"blur(5px)"`、`"brightness(1.5)"` 等。
+pub fn parse_filter(value: &str) -> Option<FilterValue> {
+    let value = value.trim();
+
+    if value.eq_ignore_ascii_case("none") {
+        return Some(FilterValue::None);
+    }
+
+    // 解析单个 filter 函数
+    if let Some(paren_pos) = value.find('(') {
+        let func_name = value[..paren_pos].trim();
+        if !value.ends_with(')') {
+            return None;
+        }
+        let inner = value[paren_pos + 1..value.len() - 1].trim();
+
+        match func_name.to_ascii_lowercase().as_str() {
+            "blur" => {
+                let px: f32 = parse_filter_length_px(inner)?;
+                Some(FilterValue::Blur(px))
+            }
+            "brightness" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Brightness(n))
+            }
+            "contrast" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Contrast(n))
+            }
+            "grayscale" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Grayscale(n))
+            }
+            "hue-rotate" => {
+                let deg: f32 = parse_filter_angle(inner)?;
+                Some(FilterValue::HueRotate(deg))
+            }
+            "invert" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Invert(n))
+            }
+            "opacity" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Opacity(n))
+            }
+            "saturate" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Saturate(n))
+            }
+            "sepia" => {
+                let n: f32 = parse_filter_number(inner)?;
+                Some(FilterValue::Sepia(n))
+            }
+            "drop-shadow" => parse_drop_shadow(inner),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+/// 解析 filter 函数中的长度值（返回 px 数值）。
+fn parse_filter_length_px(s: &str) -> Option<f32> {
+    let s = s.trim();
+    if s.ends_with("px") {
+        s.trim_end_matches("px").trim().parse::<f32>().ok()
+    } else {
+        // 无单位值在 blur 中无效，但尝试解析为纯数值
+        s.parse::<f32>().ok()
+    }
+}
+
+/// 解析 filter 函数中的数值（0-1 范围，也接受百分比和大于 1 的值）。
+fn parse_filter_number(s: &str) -> Option<f32> {
+    let s = s.trim();
+    if s.ends_with('%') {
+        let pct: f32 = s.trim_end_matches('%').parse().ok()?;
+        Some(pct / 100.0)
+    } else {
+        s.parse::<f32>().ok()
+    }
+}
+
+/// 解析 filter 函数中的角度值（返回度数）。
+fn parse_filter_angle(s: &str) -> Option<f32> {
+    let s = s.trim();
+    if s.ends_with("deg") {
+        s.trim_end_matches("deg").trim().parse::<f32>().ok()
+    } else if s.ends_with("rad") {
+        let rad: f32 = s.trim_end_matches("rad").trim().parse().ok()?;
+        Some(rad.to_degrees())
+    } else if s.ends_with("turn") {
+        let turn: f32 = s.trim_end_matches("turn").trim().parse().ok()?;
+        Some(turn * 360.0)
+    } else {
+        s.parse::<f32>().ok()
+    }
+}
+
+/// 解析 drop-shadow 参数。
+///
+/// 格式：`x-offset y-offset blur-radius color` 或 `x-offset y-offset color`。
+fn parse_drop_shadow(inner: &str) -> Option<FilterValue> {
+    // 简化解析：按空格分割，识别颜色值
+    let parts: Vec<&str> = inner.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let x: f32 = parts[0].parse().ok()?;
+    let y: f32 = parts[1].parse().ok()?;
+    // 尝试解析第三个参数为 blur 或 color
+    let (blur, color) = if parts.len() >= 4 {
+        let blur: f32 = parts[2].parse().ok()?;
+        let color = parse_color(parts[3..].join(" ").as_str())?;
+        (blur, color)
+    } else {
+        // 第三个参数是颜色
+        let color = parse_color(parts[2..].join(" ").as_str())?;
+        (0.0, color)
+    };
+
+    Some(FilterValue::DropShadow(x, y, blur, color))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5166,5 +5394,104 @@ mod tests {
         assert_eq!(parse_tab_size("-1"), None);
         assert_eq!(parse_tab_size("abc"), None);
         assert_eq!(parse_tab_size(""), None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边界条件/错误路径边缘测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 eval_calc 除以零返回 None
+    #[test]
+    fn test_eval_calc_divide_by_zero() {
+        let expr = parse_calc("calc(10px / 0)").unwrap();
+        let result = eval_calc(&expr, None);
+        // 除以 0 应返回 None（除法分支的边界保护）
+        assert_eq!(result, None);
+    }
+
+    /// 测试 parse_length 边界条件：负值、零值、无单位非零、科学计数法
+    #[test]
+    fn test_parse_length_boundary_conditions() {
+        // 负值应正常解析
+        assert_eq!(parse_length("-10px"), Some(LengthValue::Px(-10.0)));
+        assert_eq!(parse_length("-5em"), Some(LengthValue::Em(-5.0)));
+        // 零值（无单位）应解析为 Px(0.0)
+        assert_eq!(parse_length("0"), Some(LengthValue::Px(0.0)));
+        // 非零无单位值应返回 None
+        assert_eq!(parse_length("5"), None);
+        // 未知单位应返回 None
+        assert_eq!(parse_length("10abc"), None);
+        // 百分比零值
+        assert_eq!(parse_length("0%"), Some(LengthValue::Percentage(0.0)));
+        // 负百分比
+        assert_eq!(parse_length("-50%"), Some(LengthValue::Percentage(-50.0)));
+        // 科学计数法解析
+        assert_eq!(parse_length("1e2px"), Some(LengthValue::Px(100.0)));
+    }
+
+    /// 测试 parse_color 边界条件：无效十六进制长度、超出范围的 rgb 分量、空 hwb
+    #[test]
+    fn test_parse_color_edge_cases() {
+        // 无效十六进制长度（2、5、7 位）应返回 None
+        assert_eq!(parse_color("#12"), None);
+        assert_eq!(parse_color("#12345"), None);
+        assert_eq!(parse_color("#1234567"), None);
+        // 仅 # 号应返回 None
+        assert_eq!(parse_color("#"), None);
+        // rgb 超出范围的分量（>255）应被 clamp
+        let result = parse_color("rgb(300, -10, 128)");
+        assert!(result.is_some());
+        match result {
+            Some(ColorValue::Rgba(r, g, b, _)) => {
+                assert_eq!(r, 255); // 300 被钳制到 255
+                assert_eq!(g, 0); // -10 被钳制到 0
+                assert_eq!(b, 128);
+            }
+            _ => panic!("expected Rgba"),
+        }
+        // rgb 只有 2 个分量应返回 None
+        assert_eq!(parse_color("rgb(255, 0)"), None);
+        // hwb() 无效格式（缺少参数）应返回 None
+        assert_eq!(parse_color("hwb(120 50%)"), None);
+    }
+
+    /// 测试 parse_opacity 边界条件：0、1、超出范围值、百分比边界
+    #[test]
+    fn test_parse_opacity_boundary() {
+        // 0.0 和 1.0 边界
+        assert_eq!(parse_opacity("0"), Some(0.0));
+        assert_eq!(parse_opacity("1"), Some(1.0));
+        assert_eq!(parse_opacity("0.0"), Some(0.0));
+        assert_eq!(parse_opacity("1.0"), Some(1.0));
+        // 超出范围值应被 clamp
+        assert_eq!(parse_opacity("-0.5"), Some(0.0));
+        assert_eq!(parse_opacity("2.0"), Some(1.0));
+        // 百分比边界
+        assert_eq!(parse_opacity("0%"), Some(0.0));
+        assert_eq!(parse_opacity("100%"), Some(1.0));
+        assert_eq!(parse_opacity("150%"), Some(1.0));
+        assert_eq!(parse_opacity("-10%"), Some(0.0));
+        // 非法输入
+        assert_eq!(parse_opacity("abc"), None);
+        assert_eq!(parse_opacity(""), None);
+    }
+
+    /// 测试 parse_var 边界条件：空名称、回退值为空、嵌套 var
+    #[test]
+    fn test_parse_var_edge_cases() {
+        // 基本解析带回退值
+        let result = parse_var("var(--color, red)").unwrap();
+        assert_eq!(result.name, "--color");
+        assert_eq!(result.fallback, Some("red".to_string()));
+        // 仅名称，无回退
+        let result = parse_var("var(--spacing)").unwrap();
+        assert_eq!(result.name, "--spacing");
+        assert_eq!(result.fallback, None);
+        // 不以 var( 开头应返回 None
+        assert_eq!(parse_var("calc(10px)"), None);
+        // 空字符串应返回 None
+        assert_eq!(parse_var(""), None);
+        // 缺少右括号应返回 None
+        assert_eq!(parse_var("var(--color"), None);
     }
 }

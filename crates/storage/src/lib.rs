@@ -444,4 +444,104 @@ mod tests {
         assert!(!storage.contains_key("a"), "clear 后的键应返回 false");
         assert!(!storage.contains_key("b"), "clear 后的键应返回 false");
     }
+
+    /// 测试 localStorage 使用 Unicode 多字节字符作为键和值，验证 used_size 按字节计算。
+    #[test]
+    fn test_local_storage_unicode_keys_and_values() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        // 中文键值：每个 UTF-8 中文字符占 3 字节
+        storage.set("用户名", "张三").unwrap();
+        assert_eq!(storage.get("用户名"), Some("张三"));
+        // "用户名" = 9 bytes, "张三" = 6 bytes → total = 15
+        assert_eq!(storage.used_size(), 15);
+
+        // emoji 键值：每个 emoji 占 4 字节
+        storage.set("🎉", "🎊🎁").unwrap();
+        assert_eq!(storage.get("🎉"), Some("🎊🎁"));
+        // "🎉" = 4 bytes, "🎊🎁" = 8 bytes → 12, 加上之前的 15 = 27
+        assert_eq!(storage.used_size(), 27);
+    }
+
+    /// 测试 CacheStorage 多次 open 同名缓存是幂等的，已有数据不丢失。
+    #[test]
+    fn test_cache_storage_open_same_name_idempotent() {
+        let mut cs = CacheStorage::new();
+        cs.open("assets")
+            .put(
+                CacheRequest::new("https://example.com/app.js"),
+                CacheResponse::ok(b"v1".to_vec()),
+            )
+            .unwrap();
+
+        // 再次 open 同名缓存
+        let cache = cs.open("assets");
+        assert_eq!(cache.len(), 1, "重复 open 同名缓存不应丢失数据");
+
+        // 可以继续追加
+        cache
+            .put(
+                CacheRequest::new("https://example.com/style.css"),
+                CacheResponse::ok(b"css".to_vec()),
+            )
+            .unwrap();
+
+        let cache = cs.open("assets");
+        assert_eq!(cache.len(), 2, "追加后应有 2 条记录");
+        assert!(cs.has("assets"));
+        assert_eq!(cs.keys().len(), 1, "只有一个缓存实例");
+    }
+
+    /// 测试 IndexedDB 在非自增 store 上调用 add() 不提供主键应返回错误。
+    #[test]
+    fn test_idb_add_without_key_on_non_auto_increment() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("manual", None, false).unwrap();
+
+        let result = db.add("manual", serde_json::json!({"data": 1}), None);
+        assert!(result.is_err(), "非自增 store 不提供主键应返回错误");
+        assert_eq!(db.count("manual").unwrap(), 0, "不应有记录被插入");
+    }
+
+    /// 测试 IndexedDB 对不存在的 store 调用 clear_store 应返回 StoreNotFound 错误。
+    #[test]
+    fn test_idb_clear_store_on_nonexistent() {
+        let mut db = IdbDatabase::new("test", 1);
+        let result = db.clear_store("ghost");
+        assert!(result.is_err(), "对不存在的 store 调用 clear_store 应返回错误");
+        if let Err(e) = result {
+            let msg = format!("{e}");
+            assert!(
+                msg.contains("not found") || msg.contains("Store"),
+                "错误消息应提及 store 未找到"
+            );
+        }
+    }
+
+    /// 测试 CacheResponse 不同状态码的构造：0（异常）、100（信息）、404（客户端错误）、599（非标准）。
+    #[test]
+    fn test_cache_response_various_status_codes() {
+        let resp_0 = CacheResponse::new(0, vec![]);
+        assert_eq!(resp_0.status, 0);
+        assert!(resp_0.body.is_empty());
+
+        let resp_100 = CacheResponse::new(100, vec![]);
+        assert_eq!(resp_100.status, 100);
+
+        let resp_404 = CacheResponse::new(404, b"not found".to_vec());
+        assert_eq!(resp_404.status, 404);
+        assert_eq!(resp_404.body, b"not found".to_vec());
+
+        let resp_599 = CacheResponse::new(599, b"nonstandard".to_vec());
+        assert_eq!(resp_599.status, 599);
+        assert_eq!(resp_599.body, b"nonstandard".to_vec());
+
+        // 验证带自定义状态码的响应可以正常存入缓存并取回
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("status-test");
+        let req = CacheRequest::new("https://example.com/missing");
+        cache.put(req.clone(), resp_404).unwrap();
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.status, 404);
+        assert_eq!(matched.body, b"not found".to_vec());
+    }
 }

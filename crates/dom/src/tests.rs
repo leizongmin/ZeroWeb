@@ -6408,3 +6408,140 @@ fn test_range_select_node_and_clone() {
     // 原始树不变
     assert_eq!(doc.child_nodes(div).len(), 2);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 37. 边界条件补充测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 get_elements_by_tag_name_ns 按命名空间查找元素。
+///
+/// 解析 HTML 后通过命名空间限定标签名查找，验证跨命名空间查询行为。
+#[test]
+fn test_get_elements_by_tag_name_ns_basic() {
+    let doc = parse_html("<html><body><div>a</div><span>b</span></body></html>");
+    // 使用 XHTML 命名空间查询 div
+    let xhtml_divs = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/1999/xhtml"), "div");
+    assert!(!xhtml_divs.is_empty(), "XHTML 命名空间下应找到 div 元素");
+
+    // 不存在的命名空间应返回空列表
+    let svg_divs = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/2000/svg"), "div");
+    assert!(svg_divs.is_empty(), "SVG 命名空间下不应找到 div 元素");
+
+    // None 命名空间（通配）
+    let all_divs = doc.get_elements_by_tag_name_ns(None, "div");
+    assert_eq!(all_divs.len(), doc.get_elements_by_tag_name("div").len());
+}
+
+/// 测试 normalize 对单文本节点的元素不产生副作用。
+///
+/// 只有一个文本子节点的元素，normalize 后结构不变，
+/// 不会意外移除或替换该节点。
+#[test]
+fn test_normalize_single_text_node_unchanged() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let text = doc.create_text_node("only child");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, text).unwrap();
+
+    doc.normalize(parent);
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 1, "单文本节点 normalize 后仍应保留 1 个子节点");
+    assert_eq!(children[0], text, "文本节点 ID 应不变");
+    assert_eq!(doc.text_content(parent), Some("only child".to_string()));
+}
+
+/// 测试 node_count 反映已创建的节点总数，remove_child 不减少计数。
+///
+/// create_element 增加节点计数，remove_child 仅断开父子关系，
+/// 节点本身仍存在于文档存储中，因此 node_count 不会减少。
+#[test]
+fn test_node_count_unaffected_by_remove() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let initial_count = doc.node_count();
+
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    let after_append = doc.node_count();
+    assert_eq!(after_append, initial_count + 3);
+
+    // remove_child 只是断开父子关系，不删除节点存储
+    doc.remove_child(root, c2).unwrap();
+    assert_eq!(doc.node_count(), after_append, "remove_child 不减少 node_count");
+
+    doc.remove_child(root, c1).unwrap();
+    doc.remove_child(root, c3).unwrap();
+    assert_eq!(doc.node_count(), after_append, "全部 remove 后 node_count 仍不变");
+
+    // 被移除的节点仍然可以被访问
+    assert_eq!(doc.text_content(c2), Some("".to_string()));
+}
+
+/// 测试 set_attribute 设置超长属性值不会 panic 且可正确取回。
+///
+/// 使用一个很大的字符串作为属性值，验证内部存储不受长度限制。
+#[test]
+fn test_set_attribute_large_value() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let large_value = "x".repeat(100_000);
+    doc.set_attribute(elem, "data-large", &large_value);
+    assert_eq!(
+        doc.get_attribute(elem, "data-large"),
+        Some(large_value),
+        "超长属性值应能完整取回"
+    );
+}
+
+/// 测试 get_elements_by_tag_name 对特殊标签名（含连字符）的查找。
+///
+/// Web Components 使用的自定义元素标签名含连字符（如 my-component），
+/// 验证 get_elements_by_tag_name 能正确匹配。
+#[test]
+fn test_get_elements_by_tag_name_custom_element() {
+    let doc = parse_html("<html><body><my-component>content</my-component></body></html>");
+    let custom = doc.get_elements_by_tag_name("my-component");
+    assert_eq!(custom.len(), 1, "应找到自定义元素 my-component");
+    assert_eq!(doc.text_content(custom[0]), Some("content".to_string()));
+
+    // 搜索不相关的自定义标签名返回空
+    let missing = doc.get_elements_by_tag_name("other-component");
+    assert!(missing.is_empty());
+}
+
+/// 测试 clone_node 浅拷贝的 text_content 为空字符串。
+///
+/// 一个带属性和子节点的元素，浅拷贝后 text_content 应为空（无子节点），
+/// 但属性应保留。
+#[test]
+fn test_clone_node_shallow_text_content_empty() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("article");
+    doc.set_attribute(elem, "data-id", "42");
+    let child = doc.create_text_node("original content");
+    doc.append_child(root, elem).unwrap();
+    doc.append_child(elem, child).unwrap();
+
+    let cloned = doc.clone_node(elem, false);
+
+    // 浅拷贝不包含子节点
+    assert!(!doc.has_child_nodes(cloned), "浅拷贝不应有子节点");
+    assert_eq!(
+        doc.text_content(cloned),
+        Some("".to_string()),
+        "浅拷贝的 textContent 应为空字符串"
+    );
+    // 属性应保留
+    assert_eq!(doc.get_attribute(cloned, "data-id"), Some("42".to_string()));
+    // 原始节点不受影响
+    assert_eq!(doc.text_content(elem), Some("original content".to_string()));
+}

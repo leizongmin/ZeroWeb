@@ -1267,6 +1267,80 @@ mod tests {
         assert_eq!(cached.viewport_width, 800.0);
     }
 
+    /// 测试完全空字符串的 HTML 渲染不 panic 且返回有效结果。
+    ///
+    /// 空字符串与空 HTML 文档不同，它不是有效的 HTML 结构。
+    /// 验证管线能容错处理并返回零或最小的渲染输出。
+    #[test]
+    fn test_pipeline_render_empty_string_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html("", "");
+
+        assert!(result.timings.total_ms >= 0.0, "空字符串 HTML 应容错完成");
+        assert!(result.layout.viewport_width >= 0.0, "视口宽度应有效");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+    }
+
+    /// 测试 1x1 像素极小视口的渲染管线不 panic。
+    ///
+    /// 极小视口是边界条件，布局和绘制需在极有限空间内完成。
+    /// 验证管线不因除零或溢出而崩溃。
+    #[test]
+    fn test_pipeline_very_small_viewport() {
+        let mut pipeline = RenderPipeline::new(1.0, 1.0);
+        let html = r#"<html><body><div class="tiny">X</div></body></html>"#;
+        let css = r#".tiny { background-color: red; width: 1px; height: 1px; }"#;
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "1x1 视口渲染应正常完成");
+        assert_eq!(pipeline.viewport_width(), 1.0);
+        assert_eq!(pipeline.viewport_height(), 1.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试 ColorValue::CurrentColor 转换为不透明黑色 rgba(0,0,0,255)。
+    ///
+    /// CurrentColor 在无上下文时应回退为默认的黑色（alpha=255），
+    /// 这与 Transparent（alpha=0）形成对比。
+    #[test]
+    fn test_color_value_current_color_render() {
+        let color = color_value_to_render(&ColorValue::CurrentColor);
+        assert_eq!(color.r, 0, "CurrentColor R should be 0");
+        assert_eq!(color.g, 0, "CurrentColor G should be 0");
+        assert_eq!(color.b, 0, "CurrentColor B should be 0");
+        assert_eq!(color.a, 255, "CurrentColor A should be 255 (fully opaque)");
+    }
+
+    /// 测试只包含空白字符的 HTML 文档渲染不 panic。
+    ///
+    /// 空格、换行、制表符组成的输入不是有效 HTML 结构，
+    /// 验证管线能安全处理并完成渲染。
+    #[test]
+    fn test_pipeline_render_whitespace_only_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "   \n\t\n   ";
+        let result = pipeline.render_html(html, "");
+
+        assert!(result.timings.total_ms >= 0.0, "纯空白 HTML 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width >= 0.0);
+    }
+
+    /// 测试渲染管线处理超大 CSS 值不 panic。
+    ///
+    /// CSS 中包含极大的像素值（999999px），
+    /// 验证布局引擎和绘制模块在处理超常数值时不溢出或崩溃。
+    #[test]
+    fn test_pipeline_render_extreme_css_values() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="huge">Big</div></body></html>"#;
+        let css = r#".huge { width: 999999px; height: 999999px; background-color: #123456; }"#;
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "超大 CSS 值应容错完成");
+        assert!(pipeline.layout().is_some());
+    }
+
     /// 测试 border-radius 裁剪：带圆角的元素尺寸信息正确。
     #[test]
     fn test_paint_border_radius_clipping_values() {

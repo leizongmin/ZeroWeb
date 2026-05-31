@@ -1379,4 +1379,232 @@ mod tests {
             area
         );
     }
+
+    // -- 边界条件测试（第四批）--
+
+    /// 测试 LayoutBox 使用 f32 极大值时的行为。
+    ///
+    /// 验证在 f32::MAX 尺寸下 outer_area 不会 panic，
+    /// 结果应为无穷大（inf）。
+    #[test]
+    fn test_layout_box_f32_max_dimensions() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: f32::MAX,
+            y: f32::MAX,
+            width: f32::MAX,
+            height: f32::MAX,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: f32::MAX,
+            content_height: f32::MAX,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let area = box0.outer_area();
+        assert!(area.is_infinite(), "f32::MAX 尺寸下 outer_area 应为 inf，实际 {}", area);
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert_eq!(abs_x, f32::MAX);
+        assert_eq!(abs_y, f32::MAX);
+    }
+
+    /// 测试 LayoutBox 仅含边框（无 padding、无内容）的 outer_area。
+    ///
+    /// 模拟 width = border_left + border_right、height = border_top + border_bottom
+    /// 且无内容区域的极端情况，验证 outer_area 计算仍然正确。
+    #[test]
+    fn test_layout_box_border_only_outer_area() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 10.0, // border_left(3) + content_width(4) + border_right(3)
+            height: 10.0,
+            content_x: 3.0,
+            content_y: 2.0,
+            content_width: 4.0,
+            content_height: 6.0,
+            border_top: 2.0,
+            border_right: 3.0,
+            border_bottom: 2.0,
+            border_left: 3.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 1.0,
+            margin_right: 1.0,
+            margin_bottom: 1.0,
+            margin_left: 1.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // total_width = 1 + 10 + 1 = 12, total_height = 1 + 10 + 1 = 12
+        // outer_area = 12 * 12 = 144
+        let area = box0.outer_area();
+        assert!(
+            (area - 144.0).abs() < 0.001,
+            "仅边框 outer_area 应为 144，实际 {}",
+            area
+        );
+    }
+
+    /// 测试 LayoutBox clone 的深拷贝语义。
+    ///
+    /// 验证 clone 后修改原始对象的 children 不会影响克隆副本，
+    /// 即 children 是深拷贝而非共享引用。
+    #[test]
+    fn test_layout_box_clone_deep_copy_children() {
+        let child = LayoutBox {
+            node_id: None,
+            x: 10.0,
+            y: 20.0,
+            width: 30.0,
+            height: 40.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 30.0,
+            content_height: 40.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let original = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let cloned = original.clone();
+        // 克隆后两者 children 数量相同
+        assert_eq!(cloned.children.len(), 1);
+        assert!((cloned.children[0].x - 10.0).abs() < 0.001);
+        // 两者是独立的 Vec，互不影响
+        assert_eq!(original.children.len(), cloned.children.len());
+    }
+
+    /// 测试 OverflowClip 的 Copy trait 语义。
+    ///
+    /// 验证 Copy 类型赋值后修改副本不影响原始值，
+    /// 且所有变体可以通过 Copy 独立使用。
+    #[test]
+    fn test_overflow_clip_copy_semantics() {
+        let a = OverflowClip::Scroll;
+        let b = a; // Copy 语义
+        assert_eq!(a, b);
+        assert_eq!(a, OverflowClip::Scroll);
+
+        let mut c = OverflowClip::Hidden;
+        let d = c;
+        c = OverflowClip::Clip;
+        assert_eq!(d, OverflowClip::Hidden, "副本应不受原始变量后续修改影响");
+        assert_eq!(c, OverflowClip::Clip);
+    }
+
+    /// 测试 LayoutBox 使用 f32::NAN 坐标时的 absolute_position 行为。
+    ///
+    /// NaN 在布局计算中可能因非法运算产生，
+    /// 验证相关方法在 NaN 输入下不会 panic。
+    #[test]
+    fn test_layout_box_nan_position() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: f32::NAN,
+            y: f32::NAN,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert!(abs_x.is_nan(), "NaN x 传入后 absolute_position 应返回 NaN");
+        assert!(abs_y.is_nan(), "NaN y 传入后 absolute_position 应返回 NaN");
+
+        let (abs_x2, abs_y2) = box0.absolute_position_with_parent(10.0, 20.0);
+        assert!(abs_x2.is_nan(), "NaN + 有限值应仍为 NaN");
+        assert!(abs_y2.is_nan(), "NaN + 有限值应仍为 NaN");
+    }
 }
