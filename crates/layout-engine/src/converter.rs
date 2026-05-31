@@ -171,6 +171,8 @@ fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
+        // Calc 表达式应由 style-system 的 resolve_computed_style 解析为 Px
+        LengthValue::Calc(_) => length(0.0),
     }
 }
 
@@ -196,6 +198,7 @@ fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimensi
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
+        LengthValue::Calc(_) => length(0.0),
     }
 }
 
@@ -214,6 +217,7 @@ fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentage::Percent((*v / 100.0) as f32),
         LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
+        LengthValue::Calc(_) => length(0.0),
     }
 }
 
@@ -232,6 +236,7 @@ fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageA
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::LengthPercentageAuto::Auto,
+        LengthValue::Calc(_) => length(0.0),
     }
 }
 

@@ -1839,4 +1839,149 @@ mod tests {
         let div_style = styles.get(&div).expect("div should have style");
         assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
     }
+
+    // ── CSS 数学函数端到端测试 ──
+
+    /// 测试 calc() 在宽度属性中的端到端应用。
+    #[test]
+    fn test_calc_width_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "width".to_string(),
+                    value: "calc(100px + 50px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // calc(100px + 50px) = 150px
+        assert_eq!(div_style.width, LengthValue::Px(150.0));
+    }
+
+    /// 测试 min() 在宽度属性中的端到端应用。
+    #[test]
+    fn test_min_width_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "width".to_string(),
+                    value: "min(200px, 100px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.width, LengthValue::Px(100.0));
+    }
+
+    /// 测试 max() 在高度属性中的端到端应用。
+    #[test]
+    fn test_max_height_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "height".to_string(),
+                    value: "max(50px, 120px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.height, LengthValue::Px(120.0));
+    }
+
+    /// 测试 clamp() 在边距属性中的端到端应用。
+    #[test]
+    fn test_clamp_margin_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "margin-top".to_string(),
+                    value: "clamp(10px, 50px, 100px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // clamp(10, 50, 100) — 50 在范围内，结果为 50
+        assert_eq!(div_style.margin_top, LengthValue::Px(50.0));
+    }
+
+    /// 测试 calc() 嵌套 min() 在内边距中的端到端应用。
+    #[test]
+    fn test_calc_nested_min_padding_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "padding-left".to_string(),
+                    value: "calc(min(30px, 20px) + 10px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // min(30,20)=20, 20+10=30
+        assert_eq!(div_style.padding_left, LengthValue::Px(30.0));
+    }
+
+    /// 测试 calc() 与 em 单位混合在宽度中的端到端应用。
+    #[test]
+    fn test_calc_em_width_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "font-size".to_string(),
+                        value: "20px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "width".to_string(),
+                        value: "calc(2em + 10px)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 2em = 2*20 = 40px, 40+10=50px
+        assert_eq!(div_style.width, LengthValue::Px(50.0));
+    }
 }
