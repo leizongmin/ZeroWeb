@@ -227,13 +227,19 @@ mod tests {
     /// 测试所有 void 元素的序列化（不应有闭合标签）。
     #[test]
     fn test_void_elements_serialization() {
-        let void_tags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
+        let void_tags = [
+            "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track",
+            "wbr",
+        ];
         for tag in &void_tags {
             assert!(is_void_element(tag), "{tag} should be void");
             let mut doc = Document::new();
             let elem = doc.create_element(tag);
             let html = doc.outer_html(elem);
-            assert!(html.starts_with(&format!("<{tag}")), "void element should start with <{tag}");
+            assert!(
+                html.starts_with(&format!("<{tag}")),
+                "void element should start with <{tag}"
+            );
             assert!(!html.contains("</"), "void element {tag} should not have closing tag");
         }
     }

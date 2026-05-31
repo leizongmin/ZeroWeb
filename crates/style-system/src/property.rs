@@ -322,6 +322,10 @@ pub enum PropertyValue {
     Display(DisplayValue),
     /// position 值。
     Position(PositionValue),
+    /// float 值。
+    Float(zero_css_parser::values::FloatValue),
+    /// clear 值。
+    Clear(zero_css_parser::values::ClearValue),
     /// overflow 值。
     Overflow(OverflowValue),
     /// flex-direction 值。
@@ -408,6 +412,10 @@ pub struct ComputedStyle {
     pub display: DisplayValue,
     /// position 属性。
     pub position: PositionValue,
+    /// float 属性。
+    pub float: zero_css_parser::values::FloatValue,
+    /// clear 属性。
+    pub clear: zero_css_parser::values::ClearValue,
     /// width 属性。
     pub width: LengthValue,
     /// height 属性。
@@ -673,6 +681,8 @@ impl Default for ComputedStyle {
             // 盒模型
             display: DisplayValue::Inline,
             position: PositionValue::Static,
+            float: zero_css_parser::values::FloatValue::None,
+            clear: zero_css_parser::values::ClearValue::None,
             width: auto_length.clone(),
             height: auto_length.clone(),
             min_width: LengthValue::Px(0.0),
@@ -836,6 +846,8 @@ impl PropertyRegistry {
             // 盒模型
             "display" => Some(Display(DisplayValue::Inline)),
             "position" => Some(Position(PositionValue::Static)),
+            "float" => Some(Float(zero_css_parser::values::FloatValue::None)),
+            "clear" => Some(Clear(zero_css_parser::values::ClearValue::None)),
             "width" | "height" => Some(Length(LengthValue::Px(0.0))),
             "min-width" | "min-height" => Some(Length(LengthValue::Px(0.0))),
             "max-width" | "max-height" => Some(Length(LengthValue::Px(f64::INFINITY))),
@@ -986,6 +998,8 @@ impl PropertyRegistry {
         &[
             "display",
             "position",
+            "float",
+            "clear",
             "width",
             "height",
             "min-width",
@@ -1428,6 +1442,18 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "float" => {
+            if let Some(v) = values::parse_float(value) {
+                style.float = v;
+                return true;
+            }
+        }
+        "clear" => {
+            if let Some(v) = values::parse_clear(value) {
+                style.clear = v;
+                return true;
+            }
+        }
         "width" => {
             if let Some(v) = parse_length_or_math(value) {
                 style.width = v;
@@ -1859,7 +1885,9 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                     Ok(v) => v,
                     Err(_) => return false,
                 };
-                if h == 0.0 { return false; }
+                if h == 0.0 {
+                    return false;
+                }
                 w / h
             } else {
                 match value.parse() {
@@ -2267,6 +2295,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "position" => {
             style.position = default_style.position;
+            true
+        }
+        "float" => {
+            style.float = default_style.float;
+            true
+        }
+        "clear" => {
+            style.clear = default_style.clear;
             true
         }
         "width" => {
@@ -3505,6 +3541,60 @@ mod tests {
 
         let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
         assert_eq!(result.len(), 3);
+    }
+
+    // ── float/clear 属性测试 ──
+
+    #[test]
+    fn test_apply_property_float() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.float, zero_css_parser::values::FloatValue::None);
+
+        assert!(apply_property_value(&mut style, "float", "left"));
+        assert_eq!(style.float, zero_css_parser::values::FloatValue::Left);
+
+        assert!(apply_property_value(&mut style, "float", "right"));
+        assert_eq!(style.float, zero_css_parser::values::FloatValue::Right);
+
+        assert!(apply_property_value(&mut style, "float", "none"));
+        assert_eq!(style.float, zero_css_parser::values::FloatValue::None);
+
+        assert!(!apply_property_value(&mut style, "float", "center"));
+    }
+
+    #[test]
+    fn test_apply_property_clear() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.clear, zero_css_parser::values::ClearValue::None);
+
+        assert!(apply_property_value(&mut style, "clear", "both"));
+        assert_eq!(style.clear, zero_css_parser::values::ClearValue::Both);
+
+        assert!(apply_property_value(&mut style, "clear", "left"));
+        assert_eq!(style.clear, zero_css_parser::values::ClearValue::Left);
+
+        assert!(apply_property_value(&mut style, "clear", "right"));
+        assert_eq!(style.clear, zero_css_parser::values::ClearValue::Right);
+
+        assert!(apply_property_value(&mut style, "clear", "none"));
+        assert_eq!(style.clear, zero_css_parser::values::ClearValue::None);
+
+        assert!(!apply_property_value(&mut style, "clear", "all"));
+    }
+
+    #[test]
+    fn test_float_clear_property_registry() {
+        assert!(PropertyRegistry::initial_value("float").is_some());
+        assert!(PropertyRegistry::initial_value("clear").is_some());
+        assert!(!PropertyRegistry::is_inherited("float"));
+        assert!(!PropertyRegistry::is_inherited("clear"));
+    }
+
+    #[test]
+    fn test_float_clear_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"float"));
+        assert!(props.contains(&"clear"));
     }
 
     // ── 逻辑属性测试 ──

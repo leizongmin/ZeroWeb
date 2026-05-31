@@ -74,6 +74,38 @@ pub enum DisplayValue {
     ListItem,
 }
 
+/// CSS float 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FloatValue {
+    /// none（默认值）。
+    None,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// inline-start。
+    InlineStart,
+    /// inline-end。
+    InlineEnd,
+}
+
+/// CSS clear 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClearValue {
+    /// none（默认值）。
+    None,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// both。
+    Both,
+    /// inline-start。
+    InlineStart,
+    /// inline-end。
+    InlineEnd,
+}
+
 /// CSS position 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PositionValue {
@@ -1019,6 +1051,31 @@ pub fn parse_overflow(value: &str) -> Option<OverflowValue> {
         "scroll" => Some(OverflowValue::Scroll),
         "auto" => Some(OverflowValue::Auto),
         "clip" => Some(OverflowValue::Clip),
+        _ => None,
+    }
+}
+
+/// 解析 CSS float 属性值。
+pub fn parse_float(value: &str) -> Option<FloatValue> {
+    match value.trim().to_lowercase().as_str() {
+        "none" => Some(FloatValue::None),
+        "left" => Some(FloatValue::Left),
+        "right" => Some(FloatValue::Right),
+        "inline-start" => Some(FloatValue::InlineStart),
+        "inline-end" => Some(FloatValue::InlineEnd),
+        _ => None,
+    }
+}
+
+/// 解析 CSS clear 属性值。
+pub fn parse_clear(value: &str) -> Option<ClearValue> {
+    match value.trim().to_lowercase().as_str() {
+        "none" => Some(ClearValue::None),
+        "left" => Some(ClearValue::Left),
+        "right" => Some(ClearValue::Right),
+        "both" => Some(ClearValue::Both),
+        "inline-start" => Some(ClearValue::InlineStart),
+        "inline-end" => Some(ClearValue::InlineEnd),
         _ => None,
     }
 }
@@ -2561,5 +2618,42 @@ mod tests {
         // parent_length=400, 100%-20px=380, clamp(50,380,500)=380
         let result = eval_calc(&expr, Some(400.0));
         assert_eq!(result, Some(380.0));
+    }
+
+    // ── float/clear 解析测试 ──
+
+    #[test]
+    fn test_parse_float_values() {
+        assert_eq!(parse_float("left"), Some(FloatValue::Left));
+        assert_eq!(parse_float("right"), Some(FloatValue::Right));
+        assert_eq!(parse_float("none"), Some(FloatValue::None));
+        assert_eq!(parse_float("inline-start"), Some(FloatValue::InlineStart));
+        assert_eq!(parse_float("inline-end"), Some(FloatValue::InlineEnd));
+        assert_eq!(parse_float("center"), None);
+        assert_eq!(parse_float(""), None);
+    }
+
+    #[test]
+    fn test_parse_clear_values() {
+        assert_eq!(parse_clear("left"), Some(ClearValue::Left));
+        assert_eq!(parse_clear("right"), Some(ClearValue::Right));
+        assert_eq!(parse_clear("both"), Some(ClearValue::Both));
+        assert_eq!(parse_clear("none"), Some(ClearValue::None));
+        assert_eq!(parse_clear("inline-start"), Some(ClearValue::InlineStart));
+        assert_eq!(parse_clear("inline-end"), Some(ClearValue::InlineEnd));
+        assert_eq!(parse_clear("all"), None);
+    }
+
+    #[test]
+    fn test_parse_float_case_insensitive() {
+        // CSS 关键字不区分大小写
+        assert_eq!(parse_float("LEFT"), Some(FloatValue::Left));
+        assert_eq!(parse_float(" Left "), Some(FloatValue::Left));
+        assert_eq!(parse_float("None"), Some(FloatValue::None));
+    }
+
+    #[test]
+    fn test_parse_clear_whitespace() {
+        assert_eq!(parse_clear("  both  "), Some(ClearValue::Both));
     }
 }

@@ -953,9 +953,7 @@ mod tests {
         // @supports selector(div > .class) { div { color: red; } }
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
-                condition: zero_css_parser::ast::SupportsCondition::Selector(
-                    "div > .class".to_string(),
-                ),
+                condition: zero_css_parser::ast::SupportsCondition::Selector("div > .class".to_string()),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
                     declarations: vec![Declaration {
@@ -985,9 +983,7 @@ mod tests {
         // @supports selector(:is(div, span)) { div { color: green; } }
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
-                condition: zero_css_parser::ast::SupportsCondition::Selector(
-                    ":is(div, span)".to_string(),
-                ),
+                condition: zero_css_parser::ast::SupportsCondition::Selector(":is(div, span)".to_string()),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
                     declarations: vec![Declaration {
@@ -1017,9 +1013,7 @@ mod tests {
         // @supports selector(>>>invalid) { div { color: red; } }
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
-                condition: zero_css_parser::ast::SupportsCondition::Selector(
-                    ">>>invalid".to_string(),
-                ),
+                condition: zero_css_parser::ast::SupportsCondition::Selector(">>>invalid".to_string()),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
                     declarations: vec![Declaration {
