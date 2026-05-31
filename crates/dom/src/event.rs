@@ -270,7 +270,10 @@ mod tests {
 
         let mut event = Event::new_with_options("click", true, true);
         let result = doc.dispatch_event(child, &mut event);
-        assert!(event.default_prevented(), "prevent_default should be true after capture-phase call");
+        assert!(
+            event.default_prevented(),
+            "prevent_default should be true after capture-phase call"
+        );
         assert!(!result, "dispatch should return false when default prevented");
     }
 
@@ -286,8 +289,8 @@ mod tests {
     /// 测试深层嵌套事件传播（5 层）。
     #[test]
     fn test_deep_nesting_propagation() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         let mut doc = Document::new();
         let mut current = doc.root();
@@ -326,6 +329,9 @@ mod tests {
         doc.dispatch_event(target, &mut event);
         let total = call_count.load(Ordering::SeqCst);
         // 6 个节点各 2 个监听器（capture + bubble）= 12
-        assert!(total >= 6, "deep nesting should propagate through all levels, got {total} calls");
+        assert!(
+            total >= 6,
+            "deep nesting should propagate through all levels, got {total} calls"
+        );
     }
 }

@@ -758,10 +758,7 @@ fn is_valid_selector_parse(input: &str, selectors: &[zero_css_parser::ast::Selec
     }
 
     // 检查选择器是否以组合器开头（不允许，除了在 :has() 等上下文中）
-    if trimmed.starts_with('>')
-        || trimmed.starts_with('+')
-        || trimmed.starts_with('~')
-    {
+    if trimmed.starts_with('>') || trimmed.starts_with('+') || trimmed.starts_with('~') {
         return false;
     }
 
