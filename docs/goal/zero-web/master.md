@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3477 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3478 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3477 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3478 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,7 +24,7 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 371 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains** |
-| css-parser | 400 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复** |
+| css-parser | 401 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字** |
 | style-system | 524 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear**、**grid-area/grid-column/grid-row 简写**、**cursor/opacity 管线集成**、**specificity 竞争/!important/继承/shorthand 展开/var 回退/media 无视口** |
 | layout-engine | 304 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块** |
 | engine | 237 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty**、**嵌套 overflow/hsla 极端值**、**inline style/script tag 渲染**、**paint 空文档/composite 单盒/recompute/hsla 命名颜色** |
@@ -63,7 +63,17 @@
 
 ## 最近完成的改进
 
-### -14. 6 crate 边界条件测试覆盖率提升第二轮（本轮，3477 测试）
+### -15. CSS min-content/max-content 关键字（本轮，3478 测试）
+
+新增 CSS `min-content` 和 `max-content` 尺寸关键字解析：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **min-content/max-content 关键字**：LengthValue::MinContent/MaxContent 变体、大小写不敏感解析 | 1 |
+| layout-engine | converter 全 4 个函数支持 MinContent/MaxContent → Auto 映射 | 0 |
+| style-system | computed resolve_length 支持 MinContent/MaxContent → 0.0 | 0 |
+
+### -14. 6 crate 边界条件测试覆盖率提升第二轮（前轮，3477 测试）
 
 在 6 个 crate 添加 33 个边界条件测试，覆盖级联、布局、渲染、事件、IPC、WASM 等：
 

@@ -200,6 +200,8 @@ fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
         LengthValue::Calc(_) => length(0.0),
         // fit-content() 将内部值转换为 dimension
         LengthValue::FitContent(inner) => convert_length_to_dimension(inner),
+        // min-content/max-content 映射为 Auto（由 taffy 内部处理内容尺寸）
+        LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
     }
 }
 
@@ -227,6 +229,7 @@ fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimensi
         LengthValue::Auto => taffy::style::Dimension::Auto,
         LengthValue::Calc(_) => length(0.0),
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner),
+        LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
     }
 }
 
@@ -247,6 +250,7 @@ fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
         LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
         LengthValue::Calc(_) => length(0.0),
         LengthValue::FitContent(inner) => convert_length_to_lp(inner),
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
     }
 }
 
@@ -267,6 +271,7 @@ fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageA
         LengthValue::Auto => taffy::style::LengthPercentageAuto::Auto,
         LengthValue::Calc(_) => length(0.0),
         LengthValue::FitContent(inner) => convert_length_to_lpa(inner),
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
     }
 }
 
