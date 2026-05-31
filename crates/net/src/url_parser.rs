@@ -402,4 +402,48 @@ mod tests {
         let origin = parsed.origin();
         assert!(origin.contains("data://"));
     }
+
+    // ── 高优先级边界条件测试 ──
+
+    /// 测试 URL 同时包含 userinfo、非默认端口、query（含特殊字符）和 fragment。
+    /// 验证各部分在组合场景下均正确解析。
+    #[test]
+    fn test_parse_url_userinfo_port_query_fragment_combined() {
+        let parsed = parse_url(
+            "https://admin:p%40ssw0rd@api.example.com:9090/v2/users?name=foo%20bar&ids=1%262%3D3#results",
+        )
+        .unwrap();
+        assert_eq!(parsed.username, "admin");
+        assert_eq!(parsed.password.as_deref(), Some("p%40ssw0rd"));
+        assert_eq!(parsed.host.as_deref(), Some("api.example.com"));
+        assert_eq!(parsed.port, Some(9090));
+        assert_eq!(parsed.path, "/v2/users");
+        assert_eq!(
+            parsed.query.as_deref(),
+            Some("name=foo%20bar&ids=1%262%3D3")
+        );
+        assert_eq!(parsed.fragment.as_deref(), Some("results"));
+        assert!(parsed.is_secure());
+    }
+
+    /// 测试 query 中包含多种特殊字符（% encoded、+、&、=、# encoded）。
+    #[test]
+    fn test_parse_url_query_special_chars() {
+        let parsed = parse_url("http://example.com/search?q=%E4%B8%AD%E6%96%87&r=1%2B2%3D3&x=a%26b%23c").unwrap();
+        let query = parsed.query.as_deref().unwrap();
+        assert!(query.contains("q=%E4%B8%AD%E6%96%87"), "percent-encoded CJK");
+        assert!(query.contains("r=1%2B2%3D3"), "percent-encoded + and =");
+        assert!(query.contains("x=a%26b%23c"), "percent-encoded & and #");
+    }
+
+    /// 测试 to_url_string 在完整组合（userinfo + 非默认端口 + query）下的输出。
+    #[test]
+    fn test_url_to_url_string_full_roundtrip() {
+        let parsed = parse_url("http://user:pass@host.com:8080/api?key=val#anchor").unwrap();
+        let url_str = parsed.to_url_string();
+        // to_url_string 不含 fragment
+        assert!(url_str.contains("user:pass@host.com:8080"));
+        assert!(url_str.contains("/api?key=val"));
+        assert!(!url_str.contains('#'), "fragment 不应出现在 to_url_string");
+    }
 }

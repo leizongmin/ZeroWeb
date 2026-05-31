@@ -1093,4 +1093,147 @@ mod tests {
         assert_eq!(x, f32::MAX);
         assert_eq!(y, f32::MAX);
     }
+
+    // ── 新增测试：z-index compositing order ──────────────────────
+
+    /// 测试高 z-index 图层在低 z-index 图层之后（绘制顺序靠后 = 视觉在上层）。
+    ///
+    /// 构建两个重叠元素：low(z=1) 和 high(z=10)。
+    /// 合成排序后 layers[1] 应为 z=1，layers[2] 应为 z=10。
+    /// 实际渲染时按 layers 顺序绘制，高 z-index 的后绘制 = 覆盖低 z-index。
+    #[test]
+    fn test_z_index_higher_renders_on_top() {
+        let mut doc = zero_dom::Document::new();
+        let elem_low = doc.create_element("div");
+        let elem_high = doc.create_element("div");
+
+        let child_low = make_box(Some(elem_low), 0.0, 0.0, 100.0, 100.0, false);
+        let child_high = make_box(Some(elem_high), 20.0, 20.0, 100.0, 100.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_low, child_high],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style_low = ComputedStyle::default();
+        style_low.z_index = ZIndexValue::Integer(1);
+        styles.insert(elem_low, style_low);
+
+        let mut style_high = ComputedStyle::default();
+        style_high.z_index = ZIndexValue::Integer(10);
+        styles.insert(elem_high, style_high);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 3, "root + 2 promoted layers");
+        assert!(layers[0].is_root);
+
+        // layers[1] z-index=1 先绘制（底层），layers[2] z-index=10 后绘制（上层）
+        assert_eq!(layers[1].z_index, 1);
+        assert_eq!(layers[2].z_index, 10);
+        assert!(layers[2].z_index > layers[1].z_index,
+            "higher z-index layer should render after (on top of) lower z-index layer");
+    }
+
+    /// 测试多个 z-index 值（负/零/正）的完整合成排序。
+    ///
+    /// 最终顺序：z=-5 → z=0 → z=3 → z=100，保证高 z-index 覆盖低 z-index。
+    #[test]
+    fn test_z_index_compositing_full_sorting_order() {
+        let mut doc = zero_dom::Document::new();
+        let e_neg = doc.create_element("div");
+        let e_zero = doc.create_element("div");
+        let e_pos = doc.create_element("div");
+        let e_high = doc.create_element("div");
+
+        let c_neg = make_box(Some(e_neg), 0.0, 0.0, 50.0, 50.0, false);
+        let c_zero = make_box(Some(e_zero), 0.0, 0.0, 50.0, 50.0, false);
+        let c_pos = make_box(Some(e_pos), 0.0, 0.0, 50.0, 50.0, false);
+        let c_high = make_box(Some(e_high), 0.0, 0.0, 50.0, 50.0, false);
+
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c_neg, c_zero, c_pos, c_high],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s_neg = ComputedStyle::default();
+        s_neg.z_index = ZIndexValue::Integer(-5);
+        styles.insert(e_neg, s_neg);
+
+        let mut s_zero = ComputedStyle::default();
+        s_zero.z_index = ZIndexValue::Integer(0);
+        styles.insert(e_zero, s_zero);
+
+        let mut s_pos = ComputedStyle::default();
+        s_pos.z_index = ZIndexValue::Integer(3);
+        styles.insert(e_pos, s_pos);
+
+        let mut s_high = ComputedStyle::default();
+        s_high.z_index = ZIndexValue::Integer(100);
+        styles.insert(e_high, s_high);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 5, "root + 4 promoted layers");
+
+        // 严格验证升序排列
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, -5);
+        assert_eq!(layers[2].z_index, 0);
+        assert_eq!(layers[3].z_index, 3);
+        assert_eq!(layers[4].z_index, 100);
+
+        // 验证单调递增
+        for i in 1..layers.len() - 1 {
+            assert!(layers[i].z_index <= layers[i + 1].z_index,
+                "layers should be sorted by ascending z-index");
+        }
+    }
 }

@@ -1100,4 +1100,51 @@ mod tests {
         assert_eq!(zh_cookies.len(), 1);
         assert_eq!(zh_cookies[0].value, "zh");
     }
+
+    // ── 高优先级 SameSite 完整组合测试 ──
+
+    /// 验证三种 SameSite 模式 × 三种请求上下文的完整组合行为。
+    /// 使用 cookie_header_with_context 进行端到端验证。
+    #[test]
+    fn test_samesite_full_matrix() {
+        let mut store = CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("strict_ck=s; Domain=example.com; SameSite=Strict")
+                .unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("lax_ck=l; Domain=example.com; SameSite=Lax")
+                .unwrap(),
+        );
+        store.add(
+            CookieStore::parse_set_cookie("none_ck=n; Domain=example.com; SameSite=None")
+                .unwrap(),
+        );
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // 同站请求（安全方法）：三种 cookie 都发送
+        let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);
+        assert!(header.contains("strict_ck=s"), "SameSite: Strict 应在同站发送");
+        assert!(header.contains("lax_ck=l"), "SameSite: Lax 应在同站发送");
+        assert!(header.contains("none_ck=n"), "SameSite: None 应在同站发送");
+
+        // 跨站顶层导航（安全方法）：Lax 和 None 发送，Strict 不发送
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, true);
+        assert!(!header.contains("strict_ck"), "SameSite: Strict 不应在跨站顶层发送");
+        assert!(header.contains("lax_ck=l"), "SameSite: Lax 应在跨站顶层安全方法发送");
+        assert!(header.contains("none_ck=n"), "SameSite: None 应在跨站顶层发送");
+
+        // 跨站顶层导航（不安全方法）：仅 None 发送
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, false);
+        assert!(!header.contains("strict_ck"), "SameSite: Strict 不应在跨站不安全方法发送");
+        assert!(!header.contains("lax_ck"), "SameSite: Lax 不应在跨站不安全方法发送");
+        assert!(header.contains("none_ck=n"), "SameSite: None 应在跨站不安全方法发送");
+
+        // 跨站子资源：仅 None 发送
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteSubresource, true);
+        assert!(!header.contains("strict_ck"), "SameSite: Strict 不应在跨站子资源发送");
+        assert!(!header.contains("lax_ck"), "SameSite: Lax 不应在跨站子资源发送");
+        assert!(header.contains("none_ck=n"), "SameSite: None 应在跨站子资源发送");
+    }
 }

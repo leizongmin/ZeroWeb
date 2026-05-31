@@ -3831,4 +3831,84 @@ mod tests {
         // 两种写法应产生相同的顶点
         assert_eq!(pf1.len(), pf2.len(), "2-radii should map to 4-radii [a,b,a,b]");
     }
+
+    // ── drawImage alpha blending 测试 ──
+
+    /// 测试 draw_image 对半透明像素（alpha=128）的 alpha compositing。
+    /// 在不透明红色背景上绘制半透明绿色源，验证混合结果符合 source-over 公式。
+    #[test]
+    fn test_draw_image_alpha_blending() {
+        // 准备 10x10 画布，先填充不透明红色背景
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+
+        // 创建 1x1 半透明绿色像素（alpha=128）
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![0, 255, 0, 128], // 绿色，alpha=128
+        };
+        ctx.draw_image(&img, 0.0, 0.0);
+
+        // 读取混合结果
+        let result = ctx.get_image_data(0, 0, 1, 1);
+        let r = result.data[0];
+        let g = result.data[1];
+        let b = result.data[2];
+        let a = result.data[3];
+
+        // source-over 公式（global_alpha=1.0）：
+        //   src_a = 128/255 ≈ 0.502
+        //   dst_a = 255/255 = 1.0
+        //   out_a = src_a + dst_a * (1 - src_a) = 0.502 + 0.498 = 1.0 → 255
+        //   out_r = (src_r * src_a + dst_r * dst_a * (1-src_a)) / out_a
+        //         = (0 * 0.502 + 255 * 1.0 * 0.498) / 1.0 ≈ 127
+        //   out_g = (255 * 0.502 + 0 * 1.0 * 0.498) / 1.0 ≈ 128
+        //   out_b = (0 * 0.502 + 0 * 1.0 * 0.498) / 1.0 = 0
+        assert_eq!(a, 255, "output alpha should be fully opaque");
+        assert!((r as i32 - 127).abs() <= 2, "red channel should be ~127, got {}", r);
+        assert!((g as i32 - 128).abs() <= 2, "green channel should be ~128, got {}", g);
+        assert_eq!(b, 0, "blue channel should be 0");
+    }
+
+    // ── put_image_data / get_image_data 边界溢出测试 ──
+
+    /// 测试 put_image_data 部分溢出画布边界时不 panic，且可见区域被正确写入。
+    #[test]
+    fn test_put_image_data_partial_overflow() {
+        let mut ctx = CanvasContext::new(10, 10);
+        // 创建 4x4 全红色 ImageData
+        let img = ImageData {
+            width: 4,
+            height: 4,
+            data: [255, 0, 0, 255].repeat(16), // 16 像素 × 4 通道 = 64 字节
+        };
+        // 放置在 (8, 8)，只有 2x2 区域在画布内
+        ctx.put_image_data(&img, 8, 8);
+
+        // 验证可见区域被正确写入
+        let visible = ctx.get_image_data(8, 8, 2, 2);
+        assert_eq!(visible.data[0..4], [255, 0, 0, 255], "visible pixel (8,8) should be red");
+        assert_eq!(visible.data[4..8], [255, 0, 0, 255], "visible pixel (9,8) should be red");
+        assert_eq!(visible.data[8..12], [255, 0, 0, 255], "visible pixel (8,9) should be red");
+        assert_eq!(visible.data[12..16], [255, 0, 0, 255], "visible pixel (9,9) should be red");
+
+        // 验证溢出区域未影响其他像素
+        let outside = ctx.get_image_data(7, 7, 1, 1);
+        assert_eq!(outside.data[0..4], [0, 0, 0, 0], "pixel before offset should be untouched");
+    }
+
+    /// 测试 get_image_data 在完全超出画布边界时返回全零数据。
+    #[test]
+    fn test_get_image_data_out_of_bounds() {
+        let ctx = CanvasContext::new(10, 10);
+        // 请求画布范围外的区域
+        let result = ctx.get_image_data(20, 20, 2, 2);
+        // 应返回全零（4 像素 × 4 通道 = 16 字节）
+        assert_eq!(result.data, vec![0u8; 16], "out-of-bounds region should be all zeros");
+        // 尺寸信息应保持请求值
+        assert_eq!(result.width, 2);
+        assert_eq!(result.height, 2);
+    }
 }

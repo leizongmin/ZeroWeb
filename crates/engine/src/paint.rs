@@ -2330,4 +2330,192 @@ mod tests {
         assert_eq!(named_color_to_render("teal"), Color::rgb(0, 128, 128));
         assert_eq!(named_color_to_render("silver"), Color::rgb(192, 192, 192));
     }
+
+    // ── 新增测试：overflow clipping with nested elements ──────
+
+    /// 测试嵌套元素中 overflow:hidden 逐层裁剪。
+    ///
+    /// grandparent(overflow:hidden, 100x100) > parent(overflow:visible, 200x200) > child(50x50)
+    /// child 从 (80,80) 开始，parent 从 (0,0) 开始。
+    /// grandparent 的 overflow:hidden 应裁剪所有后代（包括 parent 的背景）。
+    #[test]
+    fn test_overflow_hidden_clips_deeply_nested_children() {
+        let mut doc = zero_dom::Document::new();
+        let grandparent = doc.create_element("div");
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // child 在 parent 内部，偏移 (80, 80)，大小 50x50
+        let child_box = make_box(Some(child), 80.0, 80.0, 50.0, 50.0);
+        // parent 大小 200x200（超出 grandparent 的 100x100）
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 200.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 200.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        // grandparent overflow:hidden, content 100x100
+        let grandparent_box = LayoutBox {
+            node_id: Some(grandparent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![parent_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(0, 128, 0, 255);
+        styles.insert(parent, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&grandparent_box, &styles);
+
+        let fills = &painter.primitives().fills;
+        assert!(!fills.is_empty(), "should produce fills from parent and child");
+
+        // parent fill (200x200) should be clipped to grandparent content (100x100)
+        let parent_fill = &fills[0];
+        assert!(parent_fill.rect.size.width <= 100.0, "parent width clipped to 100");
+        assert!(parent_fill.rect.size.height <= 100.0, "parent height clipped to 100");
+
+        // child fill starts at (80,80) size 50x50 → clipped at right/bottom edge
+        // visible area: x=[80,100], y=[80,100] → width=20, height=20
+        let child_fill = &fills[1];
+        assert_eq!(child_fill.rect.origin.x, 80.0);
+        assert_eq!(child_fill.rect.origin.y, 80.0);
+        assert_eq!(child_fill.rect.size.width, 20.0, "child width clipped at grandparent boundary");
+        assert_eq!(child_fill.rect.size.height, 20.0, "child height clipped at grandparent boundary");
+    }
+
+    /// 测试双层 overflow:hidden 嵌套，内层和外层各自裁剪。
+    ///
+    /// outer(overflow:hidden, 80x80) > inner(overflow:hidden, 40x40) > child(100x100)
+    /// child 完全在 inner 内，但 inner 裁剪到 40x40，outer 再裁剪 inner 的结果。
+    #[test]
+    fn test_overflow_hidden_double_nesting_clips() {
+        let mut doc = zero_dom::Document::new();
+        let outer = doc.create_element("div");
+        let inner = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 0.0, 0.0, 100.0, 100.0);
+        let inner_box = LayoutBox {
+            node_id: Some(inner),
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 40.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 40.0,
+            content_height: 40.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+        let outer_box = LayoutBox {
+            node_id: Some(outer),
+            x: 0.0,
+            y: 0.0,
+            width: 80.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 80.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![inner_box],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&outer_box, &styles);
+
+        // child(100x100) → clipped by inner(40x40) → 40x40
+        // inner result(40x40) within outer(80x80) → no further clipping needed
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.size.width, 40.0, "child clipped by inner overflow:hidden");
+        assert_eq!(fill.rect.size.height, 40.0, "child clipped by inner overflow:hidden");
+    }
 }

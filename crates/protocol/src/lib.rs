@@ -1538,6 +1538,238 @@ mod tests {
         }
     }
 
+    // ══════════════════════════════════════════════════════════
+    //  新增测试：IpcChannel 契约、序列化确定性、对抗性反序列化
+    // ══════════════════════════════════════════════════════════
+
+    /// 基于 Vec 的内存 mock IpcChannel，用于验证 trait 契约。
+    struct MockChannel {
+        queue: Vec<IpcMessage>,
+        closed: bool,
+    }
+
+    impl MockChannel {
+        fn new() -> Self {
+            Self {
+                queue: Vec::new(),
+                closed: false,
+            }
+        }
+    }
+
+    impl crate::IpcChannel for MockChannel {
+        fn send(&mut self, msg: IpcMessage) -> Result<(), ProtocolError> {
+            if self.closed {
+                return Err(ProtocolError::Channel("channel closed".into()));
+            }
+            self.queue.push(msg);
+            Ok(())
+        }
+
+        fn recv(&mut self) -> Result<IpcMessage, ProtocolError> {
+            if self.closed {
+                return Err(ProtocolError::Channel("channel closed".into()));
+            }
+            if self.queue.is_empty() {
+                return Err(ProtocolError::Channel("empty".into()));
+            }
+            Ok(self.queue.remove(0))
+        }
+
+        fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {
+            if self.closed {
+                return Err(ProtocolError::Channel("channel closed".into()));
+            }
+            if self.queue.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(self.queue.remove(0)))
+        }
+
+        fn close(&mut self) {
+            self.closed = true;
+        }
+    }
+
+    #[test]
+    fn test_ipc_channel_mock_send_recv() {
+        let mut ch = MockChannel::new();
+
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some("https://ref.com".into()),
+            }),
+        };
+
+        // send → recv：消息保持不变
+        ch.send(msg.clone()).expect("send");
+        let out = ch.recv().expect("recv");
+        assert_eq!(msg.id, out.id);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!("https://example.com", p.url);
+            assert_eq!(Some("https://ref.com".into()), p.referrer);
+        } else {
+            panic!("expected Navigate");
+        }
+
+        // 空通道 recv 应返回错误
+        assert!(ch.recv().is_err());
+    }
+
+    #[test]
+    fn test_ipc_channel_mock_try_recv() {
+        let mut ch = MockChannel::new();
+
+        // 空通道 try_recv 返回 Ok(None)
+        assert!(ch.try_recv().expect("try_recv empty").is_none());
+
+        ch.send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Heartbeat,
+        })
+        .expect("send");
+
+        // 有消息时 try_recv 返回 Ok(Some(..))
+        let opt = ch.try_recv().expect("try_recv");
+        assert!(opt.is_some());
+        assert_eq!(1, opt.unwrap().id);
+
+        // 再取一次应为空
+        assert!(ch.try_recv().expect("try_recv again").is_none());
+    }
+
+    #[test]
+    fn test_ipc_channel_mock_close() {
+        let mut ch = MockChannel::new();
+
+        ch.send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Ok,
+        })
+        .expect("send before close");
+
+        ch.close();
+
+        // 关闭后 send 应失败
+        let res = ch.send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::Ok,
+        });
+        assert!(res.is_err());
+
+        // 关闭后 recv 也应失败（即使队列有消息）
+        assert!(ch.recv().is_err());
+        assert!(ch.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_ipc_channel_mock_fifo_order() {
+        let mut ch = MockChannel::new();
+
+        for i in 0u64..5 {
+            ch.send(IpcMessage {
+                id: i,
+                kind: IpcMessageKind::Heartbeat,
+            })
+            .expect("send");
+        }
+
+        for i in 0u64..5 {
+            let msg = ch.recv().expect("recv");
+            assert_eq!(i, msg.id, "FIFO order violated");
+        }
+    }
+
+    #[test]
+    fn test_serialization_deterministic() {
+        let msgs = vec![
+            IpcMessage {
+                id: 100,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://example.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 200,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: 1,
+                    url: "https://api.com".into(),
+                    method: "POST".into(),
+                    headers: vec![("X-Foo".into(), "bar".into())],
+                    body: Some(vec![1, 2, 3]),
+                }),
+            },
+            IpcMessage {
+                id: 300,
+                kind: IpcMessageKind::Heartbeat,
+            },
+        ];
+
+        for msg in &msgs {
+            let b1 = serialize(msg).expect("serialize 1");
+            let b2 = serialize(msg).expect("serialize 2");
+            assert_eq!(
+                b1, b2,
+                "deterministic encoding violated for message id={}",
+                msg.id
+            );
+        }
+    }
+
+    #[test]
+    fn test_deserialization_trailing_bytes() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Ok,
+        };
+        let mut bytes = serialize(&msg).expect("serialize");
+
+        // 在有效载荷末尾追加额外字节
+        bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+
+        // bincode 1.x 默认配置不拒绝尾部多余数据，会成功解析并忽略尾部。
+        // 记录此行为：反序列化成功，消息内容不变。
+        let result = deserialize(&bytes);
+        assert!(
+            result.is_ok(),
+            "bincode 1.x default config accepts trailing bytes — document this behavior"
+        );
+        let out = result.expect("deserialize");
+        assert_eq!(1, out.id);
+        assert!(matches!(out.kind, IpcMessageKind::Ok));
+    }
+
+    #[test]
+    fn test_deserialization_random_bytes() {
+        // 各种长度的随机/对抗性字节，反序列化均应返回错误
+        let cases: Vec<Vec<u8>> = vec![
+            vec![],
+            vec![0x00],
+            vec![0xFF],
+            vec![0x01, 0x02, 0x03],
+            vec![0xDE, 0xAD, 0xBE, 0xEF],
+            vec![0xFF; 8],
+            vec![0xFF; 16],
+            vec![0xFF; 32],
+            vec![0xFF; 64],
+            vec![0xFF; 256],
+            // 看起来像合法 bincode 头但内容不完整
+            vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ];
+
+        for (i, bytes) in cases.iter().enumerate() {
+            let result = deserialize(bytes);
+            assert!(
+                result.is_err(),
+                "random bytes case {i} (len={}) should fail to deserialize",
+                bytes.len()
+            );
+        }
+    }
+
     #[test]
     fn test_different_message_types_interleaved() {
         let msgs: Vec<IpcMessage> = vec![

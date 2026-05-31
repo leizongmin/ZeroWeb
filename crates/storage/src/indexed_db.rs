@@ -2808,6 +2808,177 @@ mod tests {
         assert_eq!(rec.value, serde_json::json!("new"));
     }
 
+    // ── IdbKey 边界值排序测试 ──
+
+    /// 测试 NaN 键的排序行为。
+    ///
+    /// 当前实现使用 partial_cmp().unwrap_or(Ordering::Equal)，
+    /// 导致 NaN 被视为与任意数值相等（包括自身），这是不符合
+    /// IndexedDB 规范的已知行为。本测试记录当前行为。
+    #[test]
+    fn test_idb_key_nan_ordering() {
+        let nan_key = IdbKey::Number(f64::NAN);
+        let one_key = IdbKey::Number(1.0);
+        let inf_key = IdbKey::Number(f64::INFINITY);
+        let neg_inf_key = IdbKey::Number(f64::NEG_INFINITY);
+
+        // NaN 与自身比较：当前实现返回 Equal（因为 partial_cmp 返回 None）
+        assert_eq!(nan_key.cmp(&nan_key), Ordering::Equal);
+
+        // NaN 与普通数值比较：当前实现返回 Equal（不符合规范）
+        // 按 IndexedDB 规范，NaN 不应是有效 key，但当前实现允许。
+        // 此处断言记录当前行为：NaN 被视为与所有数值相等。
+        assert_eq!(nan_key.cmp(&one_key), Ordering::Equal);
+        assert_eq!(nan_key.cmp(&inf_key), Ordering::Equal);
+        assert_eq!(nan_key.cmp(&neg_inf_key), Ordering::Equal);
+
+        // 反向比较同样返回 Equal
+        assert_eq!(one_key.cmp(&nan_key), Ordering::Equal);
+
+        // NaN 与非 Number 类型比较：仍应保持 Number < String 的跨类型规则
+        let str_key = IdbKey::String("a".to_string());
+        assert_eq!(nan_key.cmp(&str_key), Ordering::Less);
+    }
+
+    /// 测试 +Infinity 和 -Infinity 键的排序行为。
+    ///
+    /// +Inf 应大于所有有限数值，-Inf 应小于所有有限数值。
+    #[test]
+    fn test_idb_key_infinity_ordering() {
+        let inf = IdbKey::Number(f64::INFINITY);
+        let neg_inf = IdbKey::Number(f64::NEG_INFINITY);
+        let max_finite = IdbKey::Number(f64::MAX);
+        let min_finite = IdbKey::Number(f64::MIN_POSITIVE);
+        let zero = IdbKey::Number(0.0);
+
+        // +Inf 大于所有有限数
+        assert_eq!(inf.cmp(&max_finite), Ordering::Greater);
+        assert_eq!(max_finite.cmp(&inf), Ordering::Less);
+
+        // -Inf 小于所有有限数（包括负数）
+        assert_eq!(neg_inf.cmp(&zero), Ordering::Less);
+        assert_eq!(neg_inf.cmp(&IdbKey::Number(-f64::MAX)), Ordering::Less);
+
+        // +Inf 大于 -Inf
+        assert_eq!(inf.cmp(&neg_inf), Ordering::Greater);
+        assert_eq!(neg_inf.cmp(&inf), Ordering::Less);
+
+        // +Inf 自身相等
+        assert_eq!(inf.cmp(&inf), Ordering::Equal);
+        assert_eq!(neg_inf.cmp(&neg_inf), Ordering::Equal);
+
+        // 在排序中的位置：-Inf < 0 < min_positive < MAX < +Inf
+        let mut keys = vec![inf.clone(), max_finite.clone(), zero.clone(), neg_inf.clone(), min_finite.clone()];
+        keys.sort();
+        assert_eq!(keys[0], neg_inf);
+        assert_eq!(keys[1], zero);
+        assert_eq!(keys[2], min_finite);
+        assert_eq!(keys[3], max_finite);
+        assert_eq!(keys[4], inf);
+    }
+
+    /// 测试 -0.0 与 +0.0 键的比较行为。
+    ///
+    /// 按 IEEE 754，-0.0 == +0.0。IdbKey 使用 PartialEq 派生，
+    /// 但 Hash 基于 to_bits()（不同），所以它们在 HashMap/HashSet 中
+    /// 是不同的键，但 Ord 比较返回 Equal。
+    #[test]
+    fn test_idb_key_zero_ordering() {
+        let pos_zero = IdbKey::Number(0.0);
+        let neg_zero = IdbKey::Number(-0.0);
+
+        // f64 的 == 认为 -0.0 == +0.0，所以 PartialEq 也不等
+        // 但 IdbKey 派生 PartialEq，Number(0.0) == Number(-0.0)
+        // 因为 f64 的 0.0 == -0.0 为 true
+        assert!(pos_zero == neg_zero, "+0.0 should equal -0.0 via PartialEq");
+
+        // Ord 排序：应为 Equal（因为底层 f64 的 partial_cmp 返回 Equal）
+        assert_eq!(pos_zero.cmp(&neg_zero), Ordering::Equal);
+
+        // Hash 行为：to_bits() 不同（+0=0, -0=0x8000000000000000），
+        // 所以它们在 HashSet 中被视为不同元素
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(pos_zero.clone());
+        set.insert(neg_zero.clone());
+        // 当前实现：discriminant 相同 + to_bits 不同 → 两个都插入
+        assert_eq!(set.len(), 2, "-0.0 and +0.0 should hash differently (to_bits mismatch)");
+
+        // 在 Vec 排序中，-0.0 和 +0.0 位置不确定（因为 Equal），
+        // 但排序后它们应该相邻
+        let mut keys = vec![
+            IdbKey::Number(1.0),
+            IdbKey::Number(-0.0),
+            IdbKey::Number(0.0),
+            IdbKey::Number(-1.0),
+        ];
+        keys.sort();
+        // -1.0, (-0.0, +0.0 顺序不确定), 1.0
+        assert_eq!(keys[0], IdbKey::Number(-1.0));
+        // keys[1] 和 keys[2] 都是某种零，无法确定顺序
+        assert!(keys[1] == IdbKey::Number(0.0) || keys[1] == IdbKey::Number(-0.0));
+        assert!(keys[2] == IdbKey::Number(0.0) || keys[2] == IdbKey::Number(-0.0));
+        assert_eq!(keys[3], IdbKey::Number(1.0));
+    }
+
+    /// 测试唯一索引在 put 覆盖路径上的约束违反检测。
+    ///
+    /// 场景：创建唯一索引，添加记录 A（索引值 X），添加记录 B（索引值 Y），
+    /// 然后 put(A, 新值) 将 A 的索引值改为 Y——此时应触发唯一约束违反。
+    ///
+    /// 已知问题：当前 put() 在检测约束之前已修改了 record.value，
+    /// 即使返回错误，记录值已被覆盖。本测试记录此行为。
+    #[test]
+    fn test_unique_index_put_violation() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+
+        // 添加记录 A，索引值为 "email_a@test.com"
+        db.add(
+            "store",
+            serde_json::json!({"email": "email_a@test.com"}),
+            Some(IdbKey::String("A".into())),
+        )
+        .unwrap();
+
+        // 添加记录 B，索引值为 "email_b@test.com"
+        db.add(
+            "store",
+            serde_json::json!({"email": "email_b@test.com"}),
+            Some(IdbKey::String("B".into())),
+        )
+        .unwrap();
+
+        // 创建唯一索引
+        db.create_index("store", "email_idx", "email", true, false)
+            .unwrap();
+
+        // 尝试 put 记录 A，将其 email 改为 "email_b@test.com"（与记录 B 冲突）
+        let result = db.put(
+            "store",
+            serde_json::json!({"email": "email_b@test.com"}),
+            Some(IdbKey::String("A".into())),
+        );
+
+        // put 应检测到唯一约束冲突并返回错误
+        assert!(
+            result.is_err(),
+            "put() changing indexed value to conflict with another record should fail unique constraint"
+        );
+
+        // 已知问题：尽管 put 返回了错误，record.value 已被提前修改。
+        // 正确行为应为回滚到原始值，但当前实现先修改值再检查索引约束。
+        // 下面断言记录当前（有缺陷的）行为：
+        let record_a = db.get("store", &IdbKey::String("A".into())).unwrap();
+        assert_eq!(
+            record_a.value["email"], "email_b@test.com",
+            "BUG: put() modified record value before unique check, value is corrupted despite error"
+        );
+
+        // 记录数量不变
+        assert_eq!(db.count("store").unwrap(), 2);
+    }
+
     /// 混合操作：add + put + delete + abort，store 不受影响。
     #[test]
     fn test_tx_mixed_operations_abort() {

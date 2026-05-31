@@ -194,4 +194,27 @@ mod tests {
         let status = check_mixed_content(&page, "http://cdn.example.com/flash.swf", "object");
         assert_eq!(status, MixedContentStatus::Blockable);
     }
+
+    // ---- 混合内容：不同资源类型的差异化处理 ----
+
+    #[test]
+    fn test_mixed_content_blocks_http_script_on_https() {
+        // HTTPS 页面加载 HTTP script → 必须阻止
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/app.js", "script");
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
+
+    #[test]
+    fn test_mixed_content_img_upgradeable_on_https() {
+        // HTTPS 页面加载 HTTP img → 可升级（OptionallyBlockable）
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/photo.jpg", "img");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+        // 可升级为 HTTPS
+        assert_eq!(
+            upgrade_to_https("http://cdn.example.com/photo.jpg"),
+            Some("https://cdn.example.com/photo.jpg".to_string())
+        );
+    }
 }

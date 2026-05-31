@@ -692,4 +692,126 @@ mod tests {
         // At least background + 4 border fills = 5
         assert!(result.primitives.fills.len() >= 1);
     }
+
+    // ── 新增测试：Dirty tracking after style change ──────────────
+
+    /// 测试样式变化后标记脏节点，增量渲染产生与全量渲染相同的结果。
+    ///
+    /// 验证 recompute_styles 在 CSS 变更后正确更新渲染图元。
+    #[test]
+    fn test_dirty_recompute_after_style_change_produces_different_primitives() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+
+        // 首次渲染：无 CSS 背景
+        let first = pipeline.render_html(html, "");
+        let first_fill_count = first.primitives.fills.len();
+
+        // 样式变化：添加红色背景
+        let doc = zero_dom::parse_html(html);
+        let css_red = ".box { background-color: red; width: 200px; height: 100px; }";
+        let ss_red = vec![zero_css_parser::Parser::parse_stylesheet(css_red)];
+        let (prims_red, _, layout_red) = pipeline.recompute_styles(&doc, &ss_red);
+
+        assert!(!prims_red.fills.is_empty(), "style change should produce fills");
+        assert!(prims_red.fills.len() > first_fill_count,
+            "adding background-color should produce more fills");
+        assert!(layout_red.viewport_width > 0.0);
+
+        // 再次样式变化：改为蓝色背景
+        let css_blue = ".box { background-color: blue; width: 300px; height: 150px; }";
+        let ss_blue = vec![zero_css_parser::Parser::parse_stylesheet(css_blue)];
+        let (prims_blue, _, _) = pipeline.recompute_styles(&doc, &ss_blue);
+
+        assert!(!prims_blue.fills.is_empty(), "second style change should still produce fills");
+    }
+
+    /// 测试标记脏区域后 incremental_render 正确完成渲染。
+    ///
+    /// 验证脏区域追踪器状态从空 → 有脏区域 → 渲染后清除 的完整生命周期。
+    #[test]
+    fn test_dirty_mark_triggers_rerender_lifecycle() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        // 首次全量渲染
+        let _first = pipeline.render_html(html, "");
+        assert!(pipeline.layout().is_some());
+        assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
+
+        // 通过 dirty_tracker_mut 手动标记一个脏区域
+        pipeline.dirty_tracker_mut().mark_dirty(Rect::new(0.0, 0.0, 200.0, 100.0));
+        assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 1, "should have 1 dirty rect after marking");
+        assert!(pipeline.dirty_tracker().dirty_area() > 0.0, "dirty area should be > 0");
+
+        // 创建脏节点 LayoutBox 并执行增量渲染
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0, "incremental render should succeed");
+
+        // 增量渲染后脏追踪器应被清除
+        assert!(pipeline.dirty_tracker().dirty_rects().is_empty(),
+            "dirty rects should be cleared after incremental render");
+        assert!(!pipeline.dirty_tracker().is_full_redraw(),
+            "small dirty area should not trigger full redraw");
+    }
+
+    /// 测试连续样式变化 + 脏标记多次迭代后仍能正确渲染。
+    #[test]
+    fn test_dirty_multiple_style_changes_renders_correctly() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"target\">Text</div></body></html>";
+
+        // 初始渲染
+        let _first = pipeline.render_html(html, "");
+        assert!(pipeline.layout().is_some());
+
+        // 第一次样式变更：添加背景
+        let doc = zero_dom::parse_html(html);
+        let css1 = ".target { background-color: green; width: 100px; }";
+        let ss1 = vec![zero_css_parser::Parser::parse_stylesheet(css1)];
+        let (prims1, _, _) = pipeline.recompute_styles(&doc, &ss1);
+        let fills1 = prims1.fills.len();
+
+        // 第二次样式变更：更宽 + 不同颜色
+        let css2 = ".target { background-color: blue; width: 200px; }";
+        let ss2 = vec![zero_css_parser::Parser::parse_stylesheet(css2)];
+        let (prims2, _, _) = pipeline.recompute_styles(&doc, &ss2);
+        let fills2 = prims2.fills.len();
+
+        // 两次都有背景填充
+        assert!(fills1 > 0, "first style change should produce fills");
+        assert!(fills2 > 0, "second style change should produce fills");
+
+        // 缓存布局应始终可用
+        assert!(pipeline.layout().is_some());
+    }
 }

@@ -893,4 +893,38 @@ mod tests {
         let csp = ContentSecurityPolicy::parse("default-src 'none'; child-src https://child.com");
         assert!(csp.is_worker_allowed("https://child.com/worker.js", None));
     }
+
+    // ---- nonce 白名单测试 ----
+
+    #[test]
+    fn test_csp_nonce_allows_matching_script() {
+        // CSP script-src 仅允许带 'nonce-abc123' 的脚本
+        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
+        // 匹配 nonce → 允许
+        assert!(csp.is_inline_script_allowed(Some("abc123"), None));
+    }
+
+    #[test]
+    fn test_csp_nonce_blocks_wrong_nonce() {
+        // CSP script-src 仅允许带 'nonce-abc123' 的脚本
+        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
+        // 错误 nonce → 拒绝
+        assert!(!csp.is_inline_script_allowed(Some("wrong"), None));
+        // 无 nonce → 拒绝
+        assert!(!csp.is_inline_script_allowed(None, None));
+    }
+
+    // ---- hash 白名单测试 ----
+
+    #[test]
+    fn test_csp_hash_allows_matching_script() {
+        // CSP script-src 仅允许特定 hash 的脚本
+        let csp =
+            ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
+        // 匹配 hash → 允许
+        assert!(csp.is_inline_script_allowed(
+            None,
+            Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")
+        ));
+    }
 }

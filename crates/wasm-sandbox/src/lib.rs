@@ -1968,4 +1968,96 @@ mod tests {
 
         assert!(WasmError::FuelExhausted.to_string().contains("fuel"));
     }
+
+    // =======================================================================
+    // 新增测试：主机函数错误传播、参数校验、内存溢出
+    // =======================================================================
+
+    /// 主机函数返回 Err(WasmError::CallError) 时，错误应通过 wasmi trap 传播到调用方。
+    #[test]
+    fn test_host_function_returns_error() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "fail" (func $fail (param i32) (result i32)))
+                (func (export "call_host") (param i32) (result i32)
+                    local.get 0
+                    call $fail)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "fail",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |_params, _results| Err(WasmError::CallError("host error from test".into())),
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate");
+        let result = instance.call("call_host", &[WasmValue::I32(1)]);
+        assert!(result.is_err());
+        if let Err(WasmError::CallError(msg)) = result {
+            assert!(
+                msg.contains("host error from test"),
+                "error message should contain original host error text, got: {msg}"
+            );
+        } else {
+            panic!("expected CallError from host function, got: {result:?}");
+        }
+    }
+
+    /// 传入错误数量的参数调用函数时，wasmi 应返回类型不匹配错误。
+    #[test]
+    fn test_call_with_wrong_argument_count() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 传入 0 个参数（期望 2 个）
+        let result = instance.call("add", &[]);
+        assert!(result.is_err(), "wrong arg count should return error");
+
+        // 传入 1 个参数（期望 2 个）
+        let result = instance.call("add", &[WasmValue::I32(1)]);
+        assert!(result.is_err(), "wrong arg count should return error");
+
+        // 传入 3 个参数（期望 2 个）
+        let result = instance.call("add", &[WasmValue::I32(1), WasmValue::I32(2), WasmValue::I32(3)]);
+        assert!(result.is_err(), "wrong arg count should return error");
+    }
+
+    /// write_memory 使用 usize::MAX 偏移量时，checked_add 应检测溢出并返回 MemoryError。
+    #[test]
+    fn test_write_memory_offset_overflow() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let result = instance.write_memory("mem", usize::MAX, b"data");
+        assert!(result.is_err());
+        if let Err(WasmError::MemoryError(msg)) = result {
+            assert!(
+                msg.contains("overflow"),
+                "expected overflow error message, got: {msg}"
+            );
+        } else {
+            panic!("expected MemoryError for offset overflow, got: {result:?}");
+        }
+    }
 }
