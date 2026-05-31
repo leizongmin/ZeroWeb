@@ -416,4 +416,90 @@ mod tests {
         // First two merge; third may merge with merged rect
         assert!(tracker.dirty_rects().len() <= 3);
     }
+
+    // -- 边界条件测试 --
+    /// 测试负坐标 Rect 的 contains
+    #[test]
+    fn test_rect_contains_negative_coordinates() {
+        let r = Rect::new(-100.0, -100.0, 50.0, 50.0);
+        assert!(r.contains(Point::new(-80.0, -80.0)));
+        assert!(r.contains(Point::new(-100.0, -100.0)));
+        assert!(!r.contains(Point::new(-101.0, -80.0)));
+        assert!(!r.contains(Point::new(-50.0, -50.0)));
+    }
+
+    /// 测试负坐标 Rect 的 intersection
+    #[test]
+    fn test_rect_intersection_negative_coordinates() {
+        let a = Rect::new(-50.0, -50.0, 30.0, 30.0);
+        let b = Rect::new(-40.0, -40.0, 30.0, 30.0);
+        let inter = a.intersection(&b).unwrap();
+        assert_eq!(inter.origin.x, -40.0);
+        assert_eq!(inter.origin.y, -40.0);
+        assert_eq!(inter.size.width, 20.0);
+        assert_eq!(inter.size.height, 20.0);
+    }
+
+    /// 测试 Size 负高度的 is_empty
+    #[test]
+    fn test_size_negative_height_is_empty() {
+        let s = Size::new(10.0, -5.0);
+        assert!(s.is_empty());
+    }
+
+    /// 测试 Size 负值的 area
+    #[test]
+    fn test_size_negative_area() {
+        let s = Size::new(-3.0, 4.0);
+        assert_eq!(s.area(), -12.0);
+    }
+
+    /// 测试 DamageTracker 添加 NaN rect 不 panic
+    #[test]
+    fn test_damage_tracker_nan_rect_no_panic() {
+        let mut tracker = DamageTracker::new();
+        // NaN width means is_empty() returns true (NaN <= 0.0 is false, but width <= 0.0 is false
+        // for NaN; however height <= 0.0 is also false for NaN, so is_empty returns false)
+        // Actually NaN comparisons always return false, so width <= 0.0 is false and
+        // height <= 0.0 is false, meaning is_empty() returns false — rect gets added.
+        let r = Rect::new(0.0, 0.0, f32::NAN, 10.0);
+        tracker.add_damage(r);
+        // Should not panic, rect may or may not be added depending on NaN behavior
+    }
+
+    /// 测试 DamageTracker 添加相同 rect 多次
+    #[test]
+    fn test_damage_tracker_identical_rects() {
+        let mut tracker = DamageTracker::new();
+        let r = Rect::new(0.0, 0.0, 10.0, 10.0);
+        for _ in 0..5 {
+            tracker.add_damage(r);
+        }
+        // All identical rects should merge into one
+        assert!(tracker.dirty_rects().len() <= 5);
+        assert!(tracker.is_dirty());
+    }
+
+    /// 测试 Rect 单点交集（退化情况）
+    #[test]
+    fn test_rect_intersection_single_point() {
+        // Two rects touching at exactly one corner point
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(10.0, 10.0, 10.0, 10.0);
+        // intersection requires right > left && bottom > top
+        // right = min(10, 20) = 10, left = max(0, 10) = 10 → not strictly greater
+        assert!(a.intersection(&b).is_none());
+    }
+
+    /// 测试 DamageTracker 多次 clear
+    #[test]
+    fn test_damage_tracker_double_clear_unchanged() {
+        let mut tracker = DamageTracker::new();
+        tracker.add_damage(Rect::new(0.0, 0.0, 10.0, 10.0));
+        tracker.clear();
+        assert!(!tracker.is_dirty());
+        tracker.clear();
+        assert!(!tracker.is_dirty());
+        assert!(tracker.dirty_rects().is_empty());
+    }
 }

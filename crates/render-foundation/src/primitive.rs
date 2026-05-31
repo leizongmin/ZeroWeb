@@ -804,4 +804,118 @@ mod tests {
         assert_eq!(rr.bottom_right_radius, 15.0);
         assert_eq!(rr.bottom_left_radius, 20.0);
     }
+
+    // -- 边界条件测试 --
+    /// 测试 bounding_box 只包含 clips 时返回 None
+    #[test]
+    fn test_bounding_box_clips_only_returns_none() {
+        let mut p = RenderPrimitives::new();
+        p.add_clip(Rect::new(0.0, 0.0, 100.0, 100.0));
+        p.add_clip(Rect::new(50.0, 50.0, 100.0, 100.0));
+        // clips 不参与 bounding_box 计算
+        assert!(p.bounding_box().is_none());
+    }
+
+    /// 测试 RenderPrimitives::len 包含所有类型
+    #[test]
+    fn test_len_all_primitive_types() {
+        let mut p = RenderPrimitives::new();
+        p.add_clip(Rect::new(0.0, 0.0, 10.0, 10.0));
+        p.add_fill(Rect::new(0.0, 0.0, 10.0, 10.0), Color::BLACK);
+        p.add_rounded_rect(RoundedRectPrimitive::uniform(
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            Color::BLACK,
+            5.0,
+        ));
+        p.add_path_fill(vec![0.0, 0.0, 10.0, 10.0], Color::BLACK);
+        p.add_path_stroke(vec![0.0, 0.0, 10.0, 10.0], Color::BLACK, 1.0, false);
+        p.add_stroke(StrokePrimitive {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 10.0,
+            y2: 10.0,
+            width: 1.0,
+            color: Color::BLACK,
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        });
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 10.0,
+                y1: 0.0,
+            },
+            stops: vec![],
+        });
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+        });
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            image_key: ImageKey::new(0),
+        });
+        p.add_glyph(GlyphPrimitive {
+            x: 0.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 0,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        assert_eq!(p.len(), 10);
+    }
+
+    /// 测试 bounding_box 包含负坐标
+    #[test]
+    fn test_bounding_box_negative_coordinates() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(-50.0, -30.0, 100.0, 60.0), Color::BLACK);
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), -50.0);
+        assert_eq!(bb.top(), -30.0);
+        assert_eq!(bb.right(), 50.0);
+        assert_eq!(bb.bottom(), 30.0);
+    }
+
+    /// 测试 path_fill 空 vertices 的 bounding_box
+    #[test]
+    fn test_bounding_box_empty_path_fill_vertices() {
+        let mut p = RenderPrimitives::new();
+        p.add_path_fill(vec![], Color::BLACK);
+        // Empty vertices means nothing contributes to bounding box
+        assert!(p.bounding_box().is_none());
+    }
+
+    /// 测试 StrokePrimitive width=0.0
+    #[test]
+    fn test_stroke_primitive_zero_width() {
+        let s = StrokePrimitive {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 10.0,
+            y2: 10.0,
+            width: 0.0,
+            color: Color::BLACK,
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        };
+        assert_eq!(s.width, 0.0);
+
+        let mut p = RenderPrimitives::new();
+        p.add_stroke(s);
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), 0.0);
+        assert_eq!(bb.top(), 0.0);
+        assert_eq!(bb.right(), 10.0);
+        assert_eq!(bb.bottom(), 10.0);
+    }
 }

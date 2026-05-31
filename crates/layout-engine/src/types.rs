@@ -715,4 +715,399 @@ mod tests {
         assert_eq!(sorted[1].z_index, 5);
         assert_eq!(sorted[2].z_index, 10);
     }
+
+    // -- 边界条件测试 --
+
+    /// 测试 LayoutBox outer_area 为负值（负 margin）
+    #[test]
+    fn test_layout_box_negative_margin_outer_area() {
+        // 负 margin 可以让 outer_area 变为负值或零
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 10.0,
+            content_height: 10.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: -20.0,
+            margin_right: -20.0,
+            margin_bottom: -20.0,
+            margin_left: -20.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // total_width = -20 + 10 + -20 = -30, total_height = -20 + 10 + -20 = -30
+        // outer_area = -30 * -30 = 900（两个负值相乘为正）
+        let area = box0.outer_area();
+        assert!(area >= 0.0 || area.is_nan(), "负 margin 导致 outer_area 为 {}", area);
+    }
+
+    /// 测试 LayoutBox 深层嵌套 absolute_position_with_parent
+    #[test]
+    fn test_layout_box_deeply_nested_position() {
+        // 3 层嵌套，验证绝对位置累积正确
+        let level3 = LayoutBox {
+            node_id: None,
+            x: 5.0,
+            y: 5.0,
+            width: 10.0,
+            height: 10.0,
+            content_x: 5.0,
+            content_y: 5.0,
+            content_width: 10.0,
+            content_height: 10.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let level2 = LayoutBox {
+            node_id: None,
+            x: 20.0,
+            y: 30.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 20.0,
+            content_y: 30.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![level3],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let level1 = LayoutBox {
+            node_id: None,
+            x: 100.0,
+            y: 200.0,
+            width: 500.0,
+            height: 500.0,
+            content_x: 100.0,
+            content_y: 200.0,
+            content_width: 500.0,
+            content_height: 500.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![level2],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // level1 → level2: (100+20, 200+30) = (120, 230)
+        let (abs_x2, abs_y2) = level1.children[0].absolute_position_with_parent(100.0, 200.0);
+        assert!((abs_x2 - 120.0).abs() < 0.001);
+        assert!((abs_y2 - 230.0).abs() < 0.001);
+
+        // level1 → level2 → level3: (120+5, 230+5) = (125, 235)
+        let (abs_x3, abs_y3) = level1.children[0].children[0].absolute_position_with_parent(abs_x2, abs_y2);
+        assert!((abs_x3 - 125.0).abs() < 0.001);
+        assert!((abs_y3 - 235.0).abs() < 0.001);
+    }
+
+    /// 测试 LayoutBox is_sticky 字段
+    #[test]
+    fn test_layout_box_sticky_flag() {
+        // 创建 is_sticky = true 的 LayoutBox
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: true,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert!(box0.is_sticky, "is_sticky 应为 true");
+        assert!(!box0.is_absolute, "is_absolute 应为 false");
+        assert!(!box0.is_fixed, "is_fixed 应为 false");
+    }
+
+    /// 测试 LayoutBox z_index 为负值
+    #[test]
+    fn test_layout_box_negative_z_index() {
+        // LayoutBox with z_index = -1
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: true,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: -1,
+        };
+        assert_eq!(box0.z_index, -1);
+        assert!(box0.z_index < 0, "z_index 应为负值");
+    }
+
+    /// 测试 LayoutBox 零尺寸子元素
+    #[test]
+    fn test_layout_box_zero_size_children() {
+        // 子元素 width=0, height=0
+        let child1 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let child2 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let parent = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child1, child2],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert_eq!(parent.children.len(), 2);
+        assert!((parent.children[0].width).abs() < 0.001);
+        assert!((parent.children[1].height).abs() < 0.001);
+    }
+
+    /// 测试 LayoutBox 大量子元素
+    #[test]
+    fn test_layout_box_many_children() {
+        // 100 个子元素，验证数量
+        let children: Vec<LayoutBox> = (0..100)
+            .map(|i| LayoutBox {
+                node_id: None,
+                x: i as f32,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+                content_x: i as f32,
+                content_y: 0.0,
+                content_width: 10.0,
+                content_height: 10.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 0,
+            })
+            .collect();
+        let parent = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 10.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 1000.0,
+            content_height: 10.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children,
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert_eq!(parent.children.len(), 100);
+        // 验证第一个和最后一个子元素
+        assert!((parent.children[0].x - 0.0).abs() < 0.001);
+        assert!((parent.children[99].x - 99.0).abs() < 0.001);
+    }
 }

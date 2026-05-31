@@ -4445,4 +4445,363 @@ mod tests {
         assert!(props.contains(&"list-style-type"));
         assert!(props.contains(&"list-style-position"));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增 property 边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// PropertyRegistry 已注册的属性数量
+    fn test_property_registry_count() {
+        let props = PropertyRegistry::known_properties();
+        // 确保至少有 80 个已知属性
+        assert!(
+            props.len() >= 80,
+            "known_properties should have at least 80 entries, got {}",
+            props.len()
+        );
+    }
+
+    #[test]
+    /// inherit 关键字在 apply_property_value 中不被当作 display 值
+    fn test_inherit_keyword_not_valid_display() {
+        let mut style = ComputedStyle::default();
+        // "inherit" 不是一个有效的 display 值
+        assert!(!apply_property_value(&mut style, "display", "inherit"));
+        // display 不应该改变
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// initial 关键字在 apply_property_value 中不被当作 display 值
+    fn test_initial_keyword_not_valid_display() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        // "initial" 不是一个有效的 display 值
+        assert!(!apply_property_value(&mut style, "display", "initial"));
+        assert_eq!(style.display, DisplayValue::Flex);
+    }
+
+    #[test]
+    /// unset 关键字在 apply_property_value 中不被当作 position 值
+    fn test_unset_keyword_not_valid_position() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "position", "unset"));
+        assert_eq!(style.position, PositionValue::Static);
+    }
+
+    #[test]
+    /// revert 关键字在 apply_property_value 中不被当作 position 值
+    fn test_revert_keyword_not_valid_position() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "position", "revert"));
+        assert_eq!(style.position, PositionValue::Static);
+    }
+
+    #[test]
+    /// ComputedStyle::default 所有继承属性初始值正确性
+    fn test_default_inherited_properties_initial_values() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
+        assert_eq!(style.font_family, Vec::<String>::new());
+        assert_eq!(style.font_size, LengthValue::Px(16.0));
+        assert_eq!(style.font_weight, FontWeightValue::Normal);
+        assert_eq!(style.font_style, FontStyleValue::Normal);
+        assert_eq!(style.line_height, LineHeightValue::Normal);
+        assert_eq!(style.text_align, TextAlignValue::Start);
+        assert_eq!(style.text_transform, TextTransformValue::None);
+        assert_eq!(style.letter_spacing, LengthValue::Px(0.0));
+        assert_eq!(style.word_spacing, LengthValue::Px(0.0));
+        assert_eq!(style.white_space, WhiteSpaceValue::Normal);
+        assert_eq!(style.visibility, VisibilityValue::Visible);
+        assert_eq!(style.cursor, CursorValue::Auto);
+    }
+
+    #[test]
+    /// apply_property_value 对 opacity 的 clamp 行为
+    fn test_opacity_clamp_edge_values() {
+        let mut style = ComputedStyle::default();
+
+        // 正常值
+        assert!(apply_property_value(&mut style, "opacity", "0.0"));
+        assert_eq!(style.opacity, 0.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "1.0"));
+        assert_eq!(style.opacity, 1.0);
+
+        // 超出范围 clamp
+        assert!(apply_property_value(&mut style, "opacity", "1.5"));
+        assert_eq!(style.opacity, 1.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "-0.1"));
+        assert_eq!(style.opacity, 0.0);
+
+        // 无效值
+        assert!(!apply_property_value(&mut style, "opacity", "abc"));
+    }
+
+    #[test]
+    /// parse_border_style 所有变体
+    fn test_parse_border_style_all_variants() {
+        assert_eq!(parse_border_style("none"), Some(BorderStyleValue::None));
+        assert_eq!(parse_border_style("hidden"), Some(BorderStyleValue::Hidden));
+        assert_eq!(parse_border_style("dotted"), Some(BorderStyleValue::Dotted));
+        assert_eq!(parse_border_style("dashed"), Some(BorderStyleValue::Dashed));
+        assert_eq!(parse_border_style("solid"), Some(BorderStyleValue::Solid));
+        assert_eq!(parse_border_style("double"), Some(BorderStyleValue::Double));
+        assert_eq!(parse_border_style("groove"), Some(BorderStyleValue::Groove));
+        assert_eq!(parse_border_style("ridge"), Some(BorderStyleValue::Ridge));
+        assert_eq!(parse_border_style("inset"), Some(BorderStyleValue::Inset));
+        assert_eq!(parse_border_style("outset"), Some(BorderStyleValue::Outset));
+        assert_eq!(parse_border_style("unknown"), None);
+    }
+
+    #[test]
+    /// parse_text_align 所有变体
+    fn test_parse_text_align_all_variants() {
+        assert_eq!(parse_text_align("left"), Some(TextAlignValue::Left));
+        assert_eq!(parse_text_align("right"), Some(TextAlignValue::Right));
+        assert_eq!(parse_text_align("center"), Some(TextAlignValue::Center));
+        assert_eq!(parse_text_align("justify"), Some(TextAlignValue::Justify));
+        assert_eq!(parse_text_align("start"), Some(TextAlignValue::Start));
+        assert_eq!(parse_text_align("end"), Some(TextAlignValue::End));
+        assert_eq!(parse_text_align("invalid"), None);
+    }
+
+    #[test]
+    /// parse_text_decoration 所有变体
+    fn test_parse_text_decoration_all_variants() {
+        assert_eq!(parse_text_decoration("none"), Some(TextDecorationValue::None));
+        assert_eq!(parse_text_decoration("underline"), Some(TextDecorationValue::Underline));
+        assert_eq!(parse_text_decoration("overline"), Some(TextDecorationValue::Overline));
+        assert_eq!(
+            parse_text_decoration("line-through"),
+            Some(TextDecorationValue::LineThrough)
+        );
+        assert_eq!(parse_text_decoration("blink"), None);
+    }
+
+    #[test]
+    /// parse_white_space 所有变体
+    fn test_parse_white_space_all_variants() {
+        assert_eq!(parse_white_space("normal"), Some(WhiteSpaceValue::Normal));
+        assert_eq!(parse_white_space("pre"), Some(WhiteSpaceValue::Pre));
+        assert_eq!(parse_white_space("nowrap"), Some(WhiteSpaceValue::Nowrap));
+        assert_eq!(parse_white_space("pre-wrap"), Some(WhiteSpaceValue::PreWrap));
+        assert_eq!(parse_white_space("pre-line"), Some(WhiteSpaceValue::PreLine));
+        assert_eq!(parse_white_space("invalid"), None);
+    }
+
+    #[test]
+    /// parse_text_transform 所有变体
+    fn test_parse_text_transform_all_variants() {
+        assert_eq!(parse_text_transform("none"), Some(TextTransformValue::None));
+        assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
+        assert_eq!(parse_text_transform("lowercase"), Some(TextTransformValue::Lowercase));
+        assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
+        assert_eq!(parse_text_transform("invalid"), None);
+    }
+
+    #[test]
+    /// parse_text_overflow 所有变体
+    fn test_parse_text_overflow_all_variants() {
+        assert_eq!(parse_text_overflow("clip"), Some(TextOverflowValue::Clip));
+        assert_eq!(parse_text_overflow("ellipsis"), Some(TextOverflowValue::Ellipsis));
+        assert_eq!(parse_text_overflow("invalid"), None);
+    }
+
+    #[test]
+    /// parse_grid_line: span 不带空格
+    fn test_parse_grid_line_span_no_space() {
+        assert_eq!(parse_grid_line("span2"), Some(GridLineValue::Span(2)));
+        assert_eq!(parse_grid_line("span3"), Some(GridLineValue::Span(3)));
+    }
+
+    #[test]
+    /// parse_grid_line: 命名区域
+    fn test_parse_grid_line_named_area() {
+        assert_eq!(
+            parse_grid_line("header"),
+            Some(GridLineValue::Name("header".to_string()))
+        );
+        assert_eq!(
+            parse_grid_line("sidebar"),
+            Some(GridLineValue::Name("sidebar".to_string()))
+        );
+    }
+
+    #[test]
+    /// parse_grid_line: 0 是非法值
+    fn test_parse_grid_line_zero_invalid() {
+        assert_eq!(parse_grid_line("0"), None);
+    }
+
+    #[test]
+    /// parse_flex_basis 所有变体
+    fn test_parse_flex_basis_all_variants() {
+        assert_eq!(parse_flex_basis("auto"), Some(FlexBasisValue::Auto));
+        assert_eq!(parse_flex_basis("content"), Some(FlexBasisValue::Content));
+        assert_eq!(
+            parse_flex_basis("50%"),
+            Some(FlexBasisValue::Length(LengthValue::Percentage(50.0)))
+        );
+        assert_eq!(parse_flex_basis("invalid-basis"), None);
+    }
+
+    #[test]
+    /// parse_z_index 正负整数和 auto
+    fn test_parse_z_index_variants() {
+        assert_eq!(parse_z_index("auto"), Some(ZIndexValue::Auto));
+        assert_eq!(parse_z_index("0"), Some(ZIndexValue::Integer(0)));
+        assert_eq!(parse_z_index("9999"), Some(ZIndexValue::Integer(9999)));
+        assert_eq!(parse_z_index("-999"), Some(ZIndexValue::Integer(-999)));
+        assert_eq!(parse_z_index("abc"), None);
+    }
+
+    #[test]
+    /// apply_property_value 对无效 display 值返回 false
+    fn test_apply_property_invalid_display() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "display", "invalid"));
+        assert!(!apply_property_value(&mut style, "display", ""));
+        assert_eq!(style.display, DisplayValue::Inline);
+    }
+
+    #[test]
+    /// apply_property_value 对 max-width: none 设置无穷大
+    fn test_apply_property_max_width_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "max-width", "none"));
+        assert_eq!(style.max_width, LengthValue::Px(f64::INFINITY));
+    }
+
+    #[test]
+    /// apply_property_value 对 max-height: none 设置无穷大
+    fn test_apply_property_max_height_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "max-height", "none"));
+        assert_eq!(style.max_height, LengthValue::Px(f64::INFINITY));
+    }
+
+    #[test]
+    /// apply_property_value 对 transform: none
+    fn test_apply_property_transform_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "transform", "none"));
+        assert_eq!(style.transform, zero_css_parser::values::TransformValue::None);
+    }
+
+    #[test]
+    /// apply_property_value 对 aspect-ratio: auto 设置为 None
+    fn test_apply_property_aspect_ratio_auto() {
+        let mut style = ComputedStyle::default();
+        style.aspect_ratio = Some(1.5);
+        assert!(apply_property_value(&mut style, "aspect-ratio", "auto"));
+        assert_eq!(style.aspect_ratio, None);
+    }
+
+    #[test]
+    /// apply_property_value 对 aspect-ratio: 16/9
+    fn test_apply_property_aspect_ratio_slash() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "aspect-ratio", "16 / 9"));
+        let ratio = style.aspect_ratio.expect("should have ratio");
+        assert!((ratio - 16.0 / 9.0).abs() < 0.01);
+    }
+
+    #[test]
+    /// apply_property_value 对 aspect-ratio: 数值
+    fn test_apply_property_aspect_ratio_number() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "aspect-ratio", "2"));
+        assert_eq!(style.aspect_ratio, Some(2.0));
+    }
+
+    #[test]
+    /// apply_property_value 对 aspect-ratio: 除零返回 false
+    fn test_apply_property_aspect_ratio_divide_by_zero() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "aspect-ratio", "1 / 0"));
+    }
+
+    #[test]
+    /// apply_property_value 对 vertical-align
+    fn test_apply_property_vertical_align() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "vertical-align", "middle"));
+        assert_eq!(style.vertical_align, VerticalAlignValue::Middle);
+
+        assert!(apply_property_value(&mut style, "vertical-align", "top"));
+        assert_eq!(style.vertical_align, VerticalAlignValue::Top);
+
+        assert!(apply_property_value(&mut style, "vertical-align", "baseline"));
+        assert_eq!(style.vertical_align, VerticalAlignValue::Baseline);
+    }
+
+    #[test]
+    /// apply_property_value 对 grid-template-areas
+    fn test_apply_property_grid_template_areas() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "grid-template-areas",
+            "\"header header\" \"sidebar main\""
+        ));
+        assert_eq!(
+            style.grid_template_areas,
+            Some("\"header header\" \"sidebar main\"".to_string())
+        );
+    }
+
+    #[test]
+    /// apply_property_value 对未知属性返回 false
+    fn test_apply_property_unknown() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "foobar", "baz"));
+    }
+
+    #[test]
+    /// parse_font_family 空字符串过滤
+    fn test_parse_font_family_empty_segments() {
+        let families = parse_font_family(", , Arial, , sans-serif, ");
+        assert_eq!(families, vec!["Arial", "sans-serif"]);
+    }
+
+    #[test]
+    /// parse_font_family 单个字体
+    fn test_parse_font_family_single() {
+        let families = parse_font_family("monospace");
+        assert_eq!(families, vec!["monospace"]);
+    }
+
+    #[test]
+    /// parse_line_height 无单位零
+    fn test_parse_line_height_zero() {
+        assert_eq!(parse_line_height("0"), Some(LineHeightValue::Number(0.0)));
+    }
+
+    #[test]
+    /// parse_grid_auto_flow 大小写不敏感
+    fn test_parse_grid_auto_flow_case_insensitive() {
+        assert_eq!(parse_grid_auto_flow("Row"), Some(GridAutoFlowValue::Row));
+        assert_eq!(parse_grid_auto_flow("COLUMN"), Some(GridAutoFlowValue::Column));
+        assert_eq!(parse_grid_auto_flow("Row Dense"), Some(GridAutoFlowValue::RowDense));
+    }
+
+    #[test]
+    /// inherit_property 对不可继承属性返回 false
+    fn test_inherit_property_returns_false_for_non_inheritable() {
+        let parent = ComputedStyle::default();
+        let mut child = ComputedStyle::default();
+        assert!(!inherit_property(&parent, &mut child, "display"));
+        assert!(!inherit_property(&parent, &mut child, "width"));
+        assert!(!inherit_property(&parent, &mut child, "unknown-prop"));
+    }
+
+    #[test]
+    /// apply_initial_value 对未知属性返回 false
+    fn test_apply_initial_value_unknown() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_initial_value(&mut style, "unknown-prop"));
+    }
 }

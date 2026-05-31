@@ -1519,4 +1519,78 @@ mod tests {
         let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.grid_auto_rows.len(), 1);
     }
+
+    // -- 边界条件测试 --
+
+    /// 测试 aspect-ratio auto 不设置值
+    #[test]
+    fn test_aspect_ratio_auto_conversion() {
+        // aspect_ratio 为 None（Auto）时，taffy style 中应为 None
+        let style = ComputedStyle::default();
+        assert_eq!(style.aspect_ratio, None);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.aspect_ratio, None, "auto aspect-ratio 应转换为 None");
+    }
+
+    /// 测试 grid-auto-flow dense 转换
+    #[test]
+    fn test_grid_auto_flow_dense_conversion() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+
+        // RowDense
+        style.grid_auto_flow = GridAutoFlowValue::RowDense;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::RowDense);
+
+        // ColumnDense
+        style.grid_auto_flow = GridAutoFlowValue::ColumnDense;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::ColumnDense);
+    }
+
+    /// 测试多个 inset 同时设置
+    #[test]
+    fn test_all_four_inset_values() {
+        // top/right/bottom/left 全部设置，验证全部转换
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Absolute;
+        style.top = LengthValue::Px(10.0);
+        style.right = LengthValue::Px(20.0);
+        style.bottom = LengthValue::Px(30.0);
+        style.left = LengthValue::Px(40.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
+        assert_eq!(
+            taffy_style.inset.right,
+            taffy::style::LengthPercentageAuto::Length(20.0)
+        );
+        assert_eq!(
+            taffy_style.inset.bottom,
+            taffy::style::LengthPercentageAuto::Length(30.0)
+        );
+        assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(40.0));
+    }
+
+    /// 测试 flex-basis: 0 转换
+    #[test]
+    fn test_flex_basis_zero() {
+        // flex-basis: 0px 应转换为 Length(0.0)
+        let mut style = ComputedStyle::default();
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Px(0.0));
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(0.0));
+    }
+
+    /// 测试 percentage 宽高转换
+    #[test]
+    fn test_percentage_size_conversion() {
+        // width: 50% 应转换为 Percent(0.5)
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Percentage(50.0);
+        style.height = LengthValue::Percentage(75.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Percent(0.5));
+        assert_eq!(taffy_style.size.height, taffy::style::Dimension::Percent(0.75));
+    }
 }

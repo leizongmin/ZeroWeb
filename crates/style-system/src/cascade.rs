@@ -424,4 +424,183 @@ mod tests {
         assert_eq!(cascaded[0].order.layer_index, Some(2));
         assert_eq!(cascaded[0].order.position, 10);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增级联边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 同优先级下后声明覆盖前声明
+    fn test_same_specificity_later_decl_wins() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "margin".to_string(),
+                value: "10px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "margin".to_string(),
+                value: "20px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("margin"), Some(&"20px".to_string()));
+    }
+
+    #[test]
+    /// !important 覆盖正常声明（即使特异性更低）
+    fn test_important_overrides_normal_declaration() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, true),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("color"), Some(&"red".to_string()));
+    }
+
+    #[test]
+    /// specificity: ID > class > type
+    fn test_specificity_id_gt_class_gt_type() {
+        let type_sel = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let class_sel = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let id_sel = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false);
+        assert!(id_sel > class_sel);
+        assert!(class_sel > type_sel);
+        assert!(id_sel > type_sel);
+    }
+
+    #[test]
+    /// 同优先级同特异性时，位置靠后的声明胜出
+    fn test_later_position_wins_at_same_specificity() {
+        let early = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 5, false);
+        let late = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 10, false);
+        assert!(late > early);
+    }
+
+    #[test]
+    /// 作者来源 important 仍然低于 UA 来源 important
+    fn test_author_important_below_ua_important() {
+        let ua_imp = CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, true);
+        let author_imp = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 10, true);
+        assert!(ua_imp > author_imp);
+    }
+
+    #[test]
+    /// 用户来源 important 在作者来源 important 和 UA 来源 important 之间
+    fn test_user_important_between_ua_and_author() {
+        let ua_imp = CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, true);
+        let user_imp = CascadeOrder::new(Origin::User, None, (0, 0, 0), 0, true);
+        let author_imp = CascadeOrder::new(Origin::Author, None, (0, 0, 0), 0, true);
+        assert!(ua_imp > user_imp);
+        assert!(user_imp > author_imp);
+    }
+
+    #[test]
+    /// 未分层声明胜过分层声明
+    fn test_unlayered_always_beats_layered() {
+        let layered = CascadeOrder::new(Origin::Author, Some(5), (1, 0, 0), 10, false);
+        let unlayered = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        assert!(unlayered > layered);
+    }
+
+    #[test]
+    /// 三个不同属性在级联中各自独立
+    fn test_cascade_three_distinct_properties() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "flex".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+            CascadedDeclaration {
+                property: "opacity".to_string(),
+                value: "0.5".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get("color"), Some(&"red".to_string()));
+        assert_eq!(result.get("display"), Some(&"flex".to_string()));
+        assert_eq!(result.get("opacity"), Some(&"0.5".to_string()));
+    }
+
+    #[test]
+    /// cascade 对同一属性的多个声明只保留一个胜者
+    fn test_cascade_single_winner_per_property() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 1, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 2, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("color"), Some(&"blue".to_string()));
+    }
+
+    #[test]
+    /// CascadeOrder 相等时比较结果
+    fn test_cascade_order_equality() {
+        let a = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 5, false);
+        let b = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 5, false);
+        assert_eq!(a, b);
+        assert!(a >= b);
+        assert!(a <= b);
+    }
+
+    #[test]
+    /// collect_declarations 递增位置
+    fn test_collect_declarations_position_increment() {
+        let decls = vec![
+            ("a".to_string(), "1".to_string(), false),
+            ("b".to_string(), "2".to_string(), true),
+            ("c".to_string(), "3".to_string(), false),
+        ];
+        let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 0, 1), 100);
+        assert_eq!(cascaded[0].order.position, 100);
+        assert_eq!(cascaded[1].order.position, 101);
+        assert_eq!(cascaded[2].order.position, 102);
+    }
+
+    #[test]
+    /// 分层内 important 胜过未分层 normal
+    fn test_layered_important_beats_unlayered_normal() {
+        let layered_imp = CascadeOrder::new(Origin::Author, Some(0), (0, 0, 1), 0, true);
+        let unlayered_normal = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 10, false);
+        assert!(layered_imp > unlayered_normal);
+    }
+
+    #[test]
+    /// 用户来源 normal 胜过 UA 来源 normal
+    fn test_user_normal_beats_ua_normal() {
+        let ua = CascadeOrder::new(Origin::UserAgent, None, (1, 0, 0), 0, false);
+        let user = CascadeOrder::new(Origin::User, None, (0, 0, 1), 0, false);
+        assert!(user > ua);
+    }
 }

@@ -3625,4 +3625,322 @@ mod tests {
             b2.width
         );
     }
+
+    // -- 边界条件测试 --
+
+    /// 测试嵌套 absolute in fixed 布局
+    #[test]
+    fn test_absolute_in_fixed_layout() {
+        // Fixed parent > absolute child，验证定位
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let fixed_parent = doc.create_element("div");
+        doc.append_child(container, fixed_parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(fixed_parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(300.0);
+        styles.insert(container, container_style);
+
+        let mut fixed_style = ComputedStyle::default();
+        fixed_style.position = PositionValue::Fixed;
+        fixed_style.top = LengthValue::Px(10.0);
+        fixed_style.left = LengthValue::Px(20.0);
+        fixed_style.width = LengthValue::Px(200.0);
+        fixed_style.height = LengthValue::Px(150.0);
+        styles.insert(fixed_parent, fixed_style);
+
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(5.0);
+        abs_style.left = LengthValue::Px(10.0);
+        abs_style.width = LengthValue::Px(50.0);
+        abs_style.height = LengthValue::Px(30.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let fixed_box = find_child_by_node_id(&result.root, fixed_parent).expect("fixed found");
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
+
+        assert!(fixed_box.is_fixed, "父元素应标记为 fixed");
+        assert!(abs_box.is_absolute, "子元素应标记为 absolute");
+        assert_eq!(fixed_box.width, 200.0);
+        assert_eq!(abs_box.width, 50.0);
+    }
+
+    /// 测试 flex wrap 在窄容器中的行为
+    #[test]
+    fn test_flex_wrap_very_narrow_container() {
+        // 100px items in 50px container
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..3 {
+            let item = doc.create_element("span");
+            doc.append_child(container, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_wrap = FlexWrapValue::Wrap;
+        container_style.width = LengthValue::Px(50.0);
+        container_style.height = LengthValue::Px(500.0);
+        styles.insert(container, container_style);
+
+        for id in &item_ids {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(100.0);
+            s.height = LengthValue::Px(30.0);
+            s.flex_shrink = 0.0;
+            styles.insert(*id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 布局不 panic，且所有元素存在
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+
+        // 元素应换行（窄容器中每个元素单独一行）
+        assert!(b1.y > b0.y, "item1 应在 item0 下方（换行）");
+        assert!(b2.y > b1.y, "item2 应在 item1 下方（换行）");
+    }
+
+    /// 测试 grid 空单元格
+    #[test]
+    fn test_grid_with_empty_cells() {
+        // 3x3 grid 只有 2 个 item，验证空单元格不影响布局
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px 50px".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(150.0);
+        styles.insert(grid, grid_style);
+
+        for id in [item1, item2] {
+            styles.insert(id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+
+        // 两个元素都应有有效布局
+        assert!(b1.width.is_finite() && b1.width > 0.0, "item1 应有正有限宽度");
+        assert!(b2.width.is_finite() && b2.width > 0.0, "item2 应有正有限宽度");
+        assert!(b1.height.is_finite() && b1.height > 0.0, "item1 应有正有限高度");
+        assert!(b2.height.is_finite() && b2.height > 0.0, "item2 应有正有限高度");
+    }
+
+    /// 测试 flex column 嵌套 block 布局
+    #[test]
+    fn test_flex_column_nested_block() {
+        // Flex column > block children
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        let block1 = doc.create_element("div");
+        doc.append_child(container, block1).unwrap();
+        let block2 = doc.create_element("div");
+        doc.append_child(container, block2).unwrap();
+        let block3 = doc.create_element("div");
+        doc.append_child(container, block3).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_direction = FlexDirectionValue::Column;
+        container_style.width = LengthValue::Px(300.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        styles.insert(block1, make_style_with_display(DisplayValue::Block, 100.0, 40.0));
+        styles.insert(block2, make_style_with_display(DisplayValue::Block, 150.0, 50.0));
+        styles.insert(block3, make_style_with_display(DisplayValue::Block, 200.0, 60.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, block1).expect("block1 found");
+        let b2 = find_child_by_node_id(&result.root, block2).expect("block2 found");
+        let b3 = find_child_by_node_id(&result.root, block3).expect("block3 found");
+
+        // 垂直排列：y 递增
+        assert!(b2.y > b1.y, "block2 应在 block1 下方");
+        assert!(b3.y > b2.y, "block3 应在 block2 下方");
+
+        // x 应相同（同一列）
+        assert!(
+            (b1.x - b2.x).abs() < 0.01 && (b2.x - b3.x).abs() < 0.01,
+            "flex column 中 block 子元素应在同一列"
+        );
+    }
+
+    /// 测试多层级联 margin collapse 近似
+    #[test]
+    fn test_block_nested_margin_effects() {
+        // 嵌套 block 多层有 margin，验证布局
+        let (mut doc, body) = make_doc_with_body();
+        let outer = doc.create_element("div");
+        doc.append_child(body, outer).unwrap();
+        let middle = doc.create_element("div");
+        doc.append_child(outer, middle).unwrap();
+        let inner = doc.create_element("div");
+        doc.append_child(middle, inner).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut outer_style = make_style_with_display(DisplayValue::Block, 400.0, 300.0);
+        outer_style.margin_top = LengthValue::Px(10.0);
+        outer_style.margin_bottom = LengthValue::Px(20.0);
+        styles.insert(outer, outer_style);
+
+        let mut middle_style = make_style_with_display(DisplayValue::Block, 300.0, 200.0);
+        middle_style.margin_top = LengthValue::Px(15.0);
+        middle_style.margin_bottom = LengthValue::Px(25.0);
+        styles.insert(middle, middle_style);
+
+        let mut inner_style = make_style_with_display(DisplayValue::Block, 200.0, 100.0);
+        inner_style.margin_top = LengthValue::Px(5.0);
+        styles.insert(inner, inner_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let outer_box = find_child_by_node_id(&result.root, outer).expect("outer found");
+        let middle_box = find_child_by_node_id(&result.root, middle).expect("middle found");
+        let inner_box = find_child_by_node_id(&result.root, inner).expect("inner found");
+
+        // 布局不 panic，尺寸正确
+        assert_eq!(outer_box.width, 400.0);
+        assert_eq!(middle_box.width, 300.0);
+        assert_eq!(inner_box.width, 200.0);
+
+        // middle 在 outer 内部
+        assert!(middle_box.y >= outer_box.content_y, "middle 应在 outer 内容区域内");
+        // inner 在 middle 内部
+        assert!(inner_box.y >= middle_box.content_y, "inner 应在 middle 内容区域内");
+    }
+
+    /// 测试 zero-padding zero-border 的内容区域
+    #[test]
+    fn test_zero_padding_border_content_area() {
+        // padding 和 border 都为 0 时，content area == total area
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.display = DisplayValue::Block;
+        div_style.width = LengthValue::Px(200.0);
+        div_style.height = LengthValue::Px(100.0);
+        // 不设置 padding 和 border（默认为 0）
+        styles.insert(div, div_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let div_box = find_child_by_node_id(&result.root, div).expect("div found");
+
+        // content_x 应等于 x（无 border/padding 偏移）
+        assert!(
+            (div_box.content_x - div_box.x).abs() < 0.001,
+            "content_x 应等于 x，实际 content_x={}, x={}",
+            div_box.content_x,
+            div_box.x
+        );
+        assert!(
+            (div_box.content_y - div_box.y).abs() < 0.001,
+            "content_y 应等于 y，实际 content_y={}, y={}",
+            div_box.content_y,
+            div_box.y
+        );
+        // content 尺寸应等于总尺寸
+        assert!(
+            (div_box.content_width - div_box.width).abs() < 0.001,
+            "content_width 应等于 width"
+        );
+        assert!(
+            (div_box.content_height - div_box.height).abs() < 0.001,
+            "content_height 应等于 height"
+        );
+    }
+
+    /// 测试 absolute 定位元素超出父容器边界
+    #[test]
+    fn test_absolute_exceeding_parent_bounds() {
+        // Absolute positioned element with top/left that goes outside parent
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(container, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.position = PositionValue::Relative;
+        container_style.width = LengthValue::Px(100.0);
+        container_style.height = LengthValue::Px(100.0);
+        styles.insert(container, container_style);
+
+        // 绝对定位元素 top=80, left=80, 尺寸 50x50 → 超出父容器
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(80.0);
+        abs_style.left = LengthValue::Px(80.0);
+        abs_style.width = LengthValue::Px(50.0);
+        abs_style.height = LengthValue::Px(50.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+        assert!((abs_box.x - 80.0).abs() < 1.0, "abs x 应约 80");
+        assert!((abs_box.y - 80.0).abs() < 1.0, "abs y 应约 80");
+        assert_eq!(abs_box.width, 50.0);
+        assert_eq!(abs_box.height, 50.0);
+
+        // 元素超出父容器边界
+        let container_box = find_child_by_node_id(&result.root, container).expect("container found");
+        assert!(
+            abs_box.x + abs_box.width > container_box.x + container_box.width,
+            "绝对元素应超出父容器右边界: abs_right={} > container_right={}",
+            abs_box.x + abs_box.width,
+            container_box.x + container_box.width
+        );
+        assert!(
+            abs_box.y + abs_box.height > container_box.y + container_box.height,
+            "绝对元素应超出父容器下边界: abs_bottom={} > container_bottom={}",
+            abs_box.y + abs_box.height,
+            container_box.y + container_box.height
+        );
+    }
 }

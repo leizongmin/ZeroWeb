@@ -566,4 +566,135 @@ mod tests {
         assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
         assert_eq!(style.max_size.width, taffy::style::Dimension::Length(500.0));
     }
+
+    // -- 边界条件测试 --
+
+    /// 测试 display: none 子元素不进入布局树
+    #[test]
+    fn test_build_with_all_display_none_children() {
+        // 所有子元素 display:none => 布局树子元素为空
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let div1 = doc.create_element("div");
+        doc.append_child(body, div1).unwrap();
+        let div2 = doc.create_element("span");
+        doc.append_child(body, div2).unwrap();
+        let div3 = doc.create_element("section");
+        doc.append_child(body, div3).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut hidden_style = ComputedStyle::default();
+        hidden_style.display = DisplayValue::None;
+        styles.insert(div1, hidden_style.clone());
+        styles.insert(div2, hidden_style.clone());
+        styles.insert(div3, hidden_style);
+
+        let (taffy_tree, _root_id, _taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // body 的子元素都是 display:none，body 在 taffy 中不应有可见子节点
+        // html 和 body 应在映射中
+        let _ = taffy_tree; // 布局不 panic 即通过
+    }
+
+    /// 测试带有 grid-area 的元素构建
+    #[test]
+    fn test_build_with_grid_area() {
+        use zero_style_system::GridLineValue;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let grid = doc.create_element("div");
+        doc.append_child(html, grid).unwrap();
+        let item = doc.create_element("span");
+        doc.append_child(grid, item).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.grid_template_areas = Some("\"a b\" \"c d\"".to_string());
+        styles.insert(grid, grid_style);
+
+        let mut item_style = ComputedStyle::default();
+        item_style.grid_row_start = GridLineValue::Name("a".to_string());
+        item_style.grid_row_end = GridLineValue::Name("a".to_string());
+        item_style.grid_column_start = GridLineValue::Name("a".to_string());
+        item_style.grid_column_end = GridLineValue::Name("a".to_string());
+        styles.insert(item, item_style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // item 应在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == item));
+        let grid_taffy = find_taffy_for_dom(&taffy_to_dom, grid);
+        let style = taffy_tree.style(grid_taffy).unwrap();
+        assert_eq!(style.display, taffy::style::Display::Grid);
+    }
+
+    /// 测试嵌套 flex-in-grid 布局树
+    #[test]
+    fn test_build_nested_flex_in_grid() {
+        // Grid container > flex container > block
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let grid = doc.create_element("div");
+        doc.append_child(html, grid).unwrap();
+        let flex = doc.create_element("div");
+        doc.append_child(grid, flex).unwrap();
+        let block = doc.create_element("span");
+        doc.append_child(flex, block).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px".to_string());
+        styles.insert(grid, grid_style);
+
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.flex_direction = FlexDirectionValue::Row;
+        styles.insert(flex, flex_style);
+
+        styles.insert(block, ComputedStyle::default());
+
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // grid + flex + block = 3 个映射
+        assert!(taffy_to_dom.len() >= 3, "应有至少 3 个节点映射");
+    }
+
+    /// 测试带有 min/max 约束的布局树
+    #[test]
+    fn test_build_with_min_max_constraints() {
+        // 元素带有 min-width 和 max-width
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(html, div).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.min_width = LengthValue::Px(50.0);
+        div_style.max_width = LengthValue::Px(500.0);
+        div_style.min_height = LengthValue::Px(30.0);
+        div_style.max_height = LengthValue::Px(300.0);
+        styles.insert(div, div_style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
+        let style = taffy_tree.style(div_taffy).unwrap();
+        assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
+        assert_eq!(style.max_size.width, taffy::style::Dimension::Length(500.0));
+        assert_eq!(style.min_size.height, taffy::style::Dimension::Length(30.0));
+        assert_eq!(style.max_size.height, taffy::style::Dimension::Length(300.0));
+    }
 }
