@@ -388,6 +388,59 @@ impl ContainComputedValue {
     pub const FLAG_PAINT: u8 = 0x08;
 }
 
+/// CSS appearance 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppearanceComputedValue {
+    /// none（默认值）— 不使用平台原生样式。
+    None,
+    /// auto — 使用平台原生样式。
+    Auto,
+    /// button。
+    Button,
+    /// checkbox。
+    Checkbox,
+    /// listbox。
+    Listbox,
+    /// menulist。
+    Menulist,
+    /// meter。
+    Meter,
+    /// progress-bar。
+    ProgressBar,
+    /// push-button。
+    PushButton,
+    /// radio。
+    Radio,
+    /// searchfield。
+    Searchfield,
+    /// slider-horizontal。
+    SliderHorizontal,
+    /// square-button。
+    SquareButton,
+    /// textarea。
+    Textarea,
+    /// textfield。
+    Textfield,
+}
+
+/// CSS accent-color 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccentColorComputedValue {
+    /// auto（默认值）— 使用浏览器默认强调色。
+    Auto,
+    /// 指定颜色。
+    Color(ColorValue),
+}
+
+/// CSS caret-color 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaretColorComputedValue {
+    /// auto（默认值）— 使用当前 color 属性值。
+    Auto,
+    /// 指定颜色。
+    Color(ColorValue),
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -926,6 +979,12 @@ pub enum PropertyValue {
     Contain(ContainComputedValue),
     /// column-rule-color 值。
     ColumnRuleColor(ColorValue),
+    /// appearance 值。
+    Appearance(AppearanceComputedValue),
+    /// accent-color 值。
+    AccentColor(AccentColorComputedValue),
+    /// caret-color 值。
+    CaretColor(CaretColorComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1400,6 +1459,14 @@ pub struct ComputedStyle {
     pub object_fit: ObjectFitComputedValue,
     /// filter 属性。
     pub filter: FilterComputedValue,
+
+    // ── UI Appearance ──
+    /// appearance 属性。
+    pub appearance: AppearanceComputedValue,
+    /// accent-color 属性。
+    pub accent_color: AccentColorComputedValue,
+    /// caret-color 属性。
+    pub caret_color: CaretColorComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1632,6 +1699,11 @@ impl Default for ComputedStyle {
             // Object Fit / Filter
             object_fit: ObjectFitComputedValue::Fill,
             filter: FilterComputedValue::None,
+
+            // UI Appearance
+            appearance: AppearanceComputedValue::Auto,
+            accent_color: AccentColorComputedValue::Auto,
+            caret_color: CaretColorComputedValue::Auto,
         }
     }
 }
@@ -1850,6 +1922,11 @@ impl PropertyRegistry {
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
 
+            // UI Appearance
+            "appearance" => Some(Appearance(AppearanceComputedValue::Auto)),
+            "accent-color" => Some(AccentColor(AccentColorComputedValue::Auto)),
+            "caret-color" => Some(CaretColor(CaretColorComputedValue::Auto)),
+
             _ => None,
         }
     }
@@ -1884,6 +1961,8 @@ impl PropertyRegistry {
                 | "font-variant-numeric"
                 | "direction"
                 | "tab-size"
+                | "accent-color"
+                | "caret-color"
         )
     }
 
@@ -2044,6 +2123,9 @@ impl PropertyRegistry {
             "filter",
             "column-rule-color",
             "contain",
+            "appearance",
+            "accent-color",
+            "caret-color",
         ]
     }
 }
@@ -3848,6 +3930,49 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── UI Appearance 属性 ──
+        "appearance" => {
+            if let Some(v) = values::parse_appearance(value) {
+                style.appearance = match v {
+                    zero_css_parser::values::AppearanceValue::None => AppearanceComputedValue::None,
+                    zero_css_parser::values::AppearanceValue::Auto => AppearanceComputedValue::Auto,
+                    zero_css_parser::values::AppearanceValue::Button => AppearanceComputedValue::Button,
+                    zero_css_parser::values::AppearanceValue::Checkbox => AppearanceComputedValue::Checkbox,
+                    zero_css_parser::values::AppearanceValue::Listbox => AppearanceComputedValue::Listbox,
+                    zero_css_parser::values::AppearanceValue::Menulist => AppearanceComputedValue::Menulist,
+                    zero_css_parser::values::AppearanceValue::Meter => AppearanceComputedValue::Meter,
+                    zero_css_parser::values::AppearanceValue::ProgressBar => AppearanceComputedValue::ProgressBar,
+                    zero_css_parser::values::AppearanceValue::PushButton => AppearanceComputedValue::PushButton,
+                    zero_css_parser::values::AppearanceValue::Radio => AppearanceComputedValue::Radio,
+                    zero_css_parser::values::AppearanceValue::Searchfield => AppearanceComputedValue::Searchfield,
+                    zero_css_parser::values::AppearanceValue::SliderHorizontal => {
+                        AppearanceComputedValue::SliderHorizontal
+                    }
+                    zero_css_parser::values::AppearanceValue::SquareButton => AppearanceComputedValue::SquareButton,
+                    zero_css_parser::values::AppearanceValue::Textarea => AppearanceComputedValue::Textarea,
+                    zero_css_parser::values::AppearanceValue::Textfield => AppearanceComputedValue::Textfield,
+                };
+                return true;
+            }
+        }
+        "accent-color" => {
+            if let Some(v) = values::parse_accent_color(value) {
+                style.accent_color = match v {
+                    zero_css_parser::values::AccentColorValue::Auto => AccentColorComputedValue::Auto,
+                    zero_css_parser::values::AccentColorValue::Color(c) => AccentColorComputedValue::Color(c),
+                };
+                return true;
+            }
+        }
+        "caret-color" => {
+            if let Some(v) = values::parse_caret_color(value) {
+                style.caret_color = match v {
+                    zero_css_parser::values::CaretColorValue::Auto => CaretColorComputedValue::Auto,
+                    zero_css_parser::values::CaretColorValue::Color(c) => CaretColorComputedValue::Color(c),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -3952,6 +4077,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "tab-size" => {
             child.tab_size = parent.tab_size.clone();
+            true
+        }
+        "accent-color" => {
+            child.accent_color = parent.accent_color.clone();
+            true
+        }
+        "caret-color" => {
+            child.caret_color = parent.caret_color.clone();
             true
         }
         _ => false,
@@ -4631,6 +4764,19 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         // Contain
         "contain" => {
             style.contain = default_style.contain;
+            true
+        }
+        // UI Appearance
+        "appearance" => {
+            style.appearance = default_style.appearance;
+            true
+        }
+        "accent-color" => {
+            style.accent_color = default_style.accent_color;
+            true
+        }
+        "caret-color" => {
+            style.caret_color = default_style.caret_color;
             true
         }
         _ => false,
@@ -8583,5 +8729,212 @@ mod tests {
         style.column_rule_color = ColorValue::Rgba(255, 0, 0, 255);
         assert!(apply_initial_value(&mut style, "column-rule-color"));
         assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    // ── appearance 属性测试 ──
+
+    #[test]
+    fn test_apply_property_appearance_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "appearance", "none"));
+        assert_eq!(style.appearance, AppearanceComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_appearance_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "appearance", "auto"));
+        assert_eq!(style.appearance, AppearanceComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_appearance_button() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "appearance", "button"));
+        assert_eq!(style.appearance, AppearanceComputedValue::Button);
+    }
+
+    #[test]
+    fn test_apply_property_appearance_checkbox() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "appearance", "checkbox"));
+        assert_eq!(style.appearance, AppearanceComputedValue::Checkbox);
+    }
+
+    #[test]
+    fn test_apply_property_appearance_textfield() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "appearance", "textfield"));
+        assert_eq!(style.appearance, AppearanceComputedValue::Textfield);
+    }
+
+    #[test]
+    fn test_apply_property_appearance_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "appearance", "invalid"));
+    }
+
+    #[test]
+    fn test_appearance_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("appearance"));
+    }
+
+    #[test]
+    fn test_appearance_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"appearance"));
+    }
+
+    #[test]
+    fn test_appearance_initial_value() {
+        assert!(PropertyRegistry::initial_value("appearance").is_some());
+        let mut style = ComputedStyle::default();
+        style.appearance = AppearanceComputedValue::None;
+        assert!(apply_initial_value(&mut style, "appearance"));
+        assert_eq!(style.appearance, AppearanceComputedValue::Auto);
+    }
+
+    // ── accent-color 属性测试 ──
+
+    #[test]
+    fn test_apply_property_accent_color_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "accent-color", "auto"));
+        assert_eq!(style.accent_color, AccentColorComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_accent_color_named() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "accent-color", "red"));
+        assert_eq!(
+            style.accent_color,
+            AccentColorComputedValue::Color(ColorValue::Rgba(255, 0, 0, 255))
+        );
+    }
+
+    #[test]
+    fn test_apply_property_accent_color_hex() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "accent-color", "#00ff00"));
+        assert_eq!(
+            style.accent_color,
+            AccentColorComputedValue::Color(ColorValue::Rgba(0, 255, 0, 255))
+        );
+    }
+
+    #[test]
+    fn test_apply_property_accent_color_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "accent-color", "not-a-color"));
+    }
+
+    #[test]
+    fn test_accent_color_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("accent-color"));
+    }
+
+    #[test]
+    fn test_accent_color_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.accent_color = AccentColorComputedValue::Color(ColorValue::Rgba(255, 0, 0, 255));
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "accent-color"));
+        assert_eq!(
+            child.accent_color,
+            AccentColorComputedValue::Color(ColorValue::Rgba(255, 0, 0, 255))
+        );
+    }
+
+    #[test]
+    fn test_accent_color_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"accent-color"));
+    }
+
+    #[test]
+    fn test_accent_color_initial_value() {
+        assert!(PropertyRegistry::initial_value("accent-color").is_some());
+        let mut style = ComputedStyle::default();
+        style.accent_color = AccentColorComputedValue::Color(ColorValue::Rgba(0, 128, 0, 255));
+        assert!(apply_initial_value(&mut style, "accent-color"));
+        assert_eq!(style.accent_color, AccentColorComputedValue::Auto);
+    }
+
+    // ── caret-color 属性测试 ──
+
+    #[test]
+    fn test_apply_property_caret_color_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "caret-color", "auto"));
+        assert_eq!(style.caret_color, CaretColorComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_caret_color_named() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "caret-color", "blue"));
+        assert_eq!(
+            style.caret_color,
+            CaretColorComputedValue::Color(ColorValue::Rgba(0, 0, 255, 255))
+        );
+    }
+
+    #[test]
+    fn test_apply_property_caret_color_hex() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "caret-color", "#abcdef"));
+        assert_eq!(
+            style.caret_color,
+            CaretColorComputedValue::Color(ColorValue::Rgba(0xAB, 0xCD, 0xEF, 255))
+        );
+    }
+
+    #[test]
+    fn test_apply_property_caret_color_transparent() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "caret-color", "transparent"));
+        assert_eq!(
+            style.caret_color,
+            CaretColorComputedValue::Color(ColorValue::Transparent)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_caret_color_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "caret-color", "not-a-color"));
+    }
+
+    #[test]
+    fn test_caret_color_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("caret-color"));
+    }
+
+    #[test]
+    fn test_caret_color_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.caret_color = CaretColorComputedValue::Color(ColorValue::Rgba(0, 0, 255, 255));
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "caret-color"));
+        assert_eq!(
+            child.caret_color,
+            CaretColorComputedValue::Color(ColorValue::Rgba(0, 0, 255, 255))
+        );
+    }
+
+    #[test]
+    fn test_caret_color_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"caret-color"));
+    }
+
+    #[test]
+    fn test_caret_color_initial_value() {
+        assert!(PropertyRegistry::initial_value("caret-color").is_some());
+        let mut style = ComputedStyle::default();
+        style.caret_color = CaretColorComputedValue::Color(ColorValue::Rgba(255, 0, 0, 255));
+        assert!(apply_initial_value(&mut style, "caret-color"));
+        assert_eq!(style.caret_color, CaretColorComputedValue::Auto);
     }
 }

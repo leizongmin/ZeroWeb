@@ -3611,4 +3611,312 @@ mod tests {
             panic!("期望 FetchResponse");
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  新增边界条件测试（第 2 批）
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 f32 负零（-0.0）在鼠标和滚动事件中的序列化/反序列化。
+    /// IEEE 754 中 +0.0 和 -0.0 的位模式不同，验证序列化能保留符号位。
+    #[test]
+    fn test_float_negative_zero_preserved() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: -0.0,
+                y: 0.0,
+                button: 0,
+                event_type: MouseEventType::Move,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::MouseEvent(p) = out.kind {
+            // 验证符号位被保留：-0.0 应为负号
+            assert!(p.x.is_sign_negative(), "x=-0.0 往返后应保持负号");
+            assert!(p.y.is_sign_positive(), "y=+0.0 往返后应保持正号");
+            // -0.0 == 0.0 在 IEEE 754 中为 true，但位模式不同
+            assert_eq!(0.0, p.x);
+        } else {
+            panic!("期望 MouseEvent");
+        }
+
+        // 滚动事件中的负零
+        let msg2 = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x: -0.0,
+                delta_y: -0.0,
+            }),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::ScrollEvent(p) = out2.kind {
+            assert!(p.delta_x.is_sign_negative(), "delta_x=-0.0 应保持负号");
+            assert!(p.delta_y.is_sign_negative(), "delta_y=-0.0 应保持负号");
+        } else {
+            panic!("期望 ScrollEvent");
+        }
+    }
+
+    /// 测试 FetchResponse 同时使用 request_id=u64::MAX 和 status_code=u16::MAX 的组合边界值。
+    /// 验证多个字段同时为最大值时序列化不会溢出或截断。
+    #[test]
+    fn test_fetch_response_combined_max_boundary() {
+        let msg = IpcMessage {
+            id: u64::MAX,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: u64::MAX,
+                status_code: u16::MAX,
+                headers: vec![
+                    ("X-Max-Id".into(), format!("{}", u64::MAX)),
+                    ("X-Status".into(), format!("{}", u16::MAX)),
+                ],
+                body: vec![0xFF; 16],
+            }),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(u64::MAX, out.id, "消息 id 应为 u64::MAX");
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(u64::MAX, p.request_id, "request_id 应为 u64::MAX");
+            assert_eq!(u16::MAX, p.status_code, "status_code 应为 u16::MAX");
+            assert_eq!(2, p.headers.len());
+            assert_eq!(format!("{}", u64::MAX), p.headers[0].1);
+            assert_eq!(format!("{}", u16::MAX), p.headers[1].1);
+            assert_eq!(vec![0xFF; 16], p.body);
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
+
+    /// 测试 FetchRequest 的 headers 中键和/或值为空字符串时的序列化/反序列化。
+    /// 空字符串键值对不应被序列化器丢弃或与无 header 混淆。
+    #[test]
+    fn test_headers_with_empty_key_or_value() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![
+                    (String::new(), "value-with-empty-key".into()), // 空 key
+                    ("key-with-empty-value".into(), String::new()), // 空 value
+                    (String::new(), String::new()),                 // 两者都为空
+                    ("normal".into(), "header".into()),             // 正常键值对
+                ],
+                body: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(4, p.headers.len(), "应保留所有 4 个 header");
+            assert_eq!("", p.headers[0].0, "第一个 header 的 key 应为空字符串");
+            assert_eq!("value-with-empty-key", p.headers[0].1);
+            assert_eq!("key-with-empty-value", p.headers[1].0);
+            assert_eq!("", p.headers[1].1, "第二个 header 的 value 应为空字符串");
+            assert_eq!("", p.headers[2].0, "第三个 header 的 key 应为空字符串");
+            assert_eq!("", p.headers[2].1, "第三个 header 的 value 应为空字符串");
+            assert_eq!("normal", p.headers[3].0);
+            assert_eq!("header", p.headers[3].1);
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // 验证含空键值对的 headers 序列化结果与空 headers 不同
+        let bytes_with_headers = serialize(&IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![(String::new(), String::new())],
+                body: None,
+            }),
+        })
+        .expect("serialize");
+        let bytes_no_headers = serialize(&IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            }),
+        })
+        .expect("serialize");
+        assert_ne!(
+            bytes_with_headers, bytes_no_headers,
+            "含一个空键值对 header 的序列化结果应与无 header 不同"
+        );
+    }
+
+    /// 测试两条不同消息序列化后拼接字节，分别取前缀和后缀反序列化互不干扰。
+    /// 验证 deserialize 只消费精确的字节数，不会越界读取。
+    #[test]
+    fn test_serialized_bytes_no_cross_contamination() {
+        let msg_a = IpcMessage {
+            id: 111,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://a.com".into(),
+                referrer: Some("https://ref.com".into()),
+            }),
+        };
+        let msg_b = IpcMessage {
+            id: 222,
+            kind: IpcMessageKind::TitleChanged("消息 B".into()),
+        };
+
+        let bytes_a = serialize(&msg_a).expect("serialize A");
+        let bytes_b = serialize(&msg_b).expect("serialize B");
+        let len_a = bytes_a.len();
+
+        // 拼接两条消息的字节
+        let mut concatenated = bytes_a.clone();
+        concatenated.extend_from_slice(&bytes_b);
+
+        // 从拼接缓冲区的前 len_a 字节反序列化应得到 msg_a
+        let out_a: IpcMessage = deserialize(&concatenated[..len_a]).expect("反序列化 A 应成功");
+        assert_eq!(111, out_a.id, "应为消息 A 的 id");
+        if let IpcMessageKind::Navigate(p) = out_a.kind {
+            assert_eq!("https://a.com", p.url);
+        } else {
+            panic!("期望 Navigate");
+        }
+
+        // 从拼接缓冲区的后段字节反序列化应得到 msg_b
+        let out_b: IpcMessage = deserialize(&concatenated[len_a..]).expect("反序列化 B 应成功");
+        assert_eq!(222, out_b.id, "应为消息 B 的 id");
+        if let IpcMessageKind::TitleChanged(t) = out_b.kind {
+            assert_eq!("消息 B", t);
+        } else {
+            panic!("期望 TitleChanged");
+        }
+    }
+
+    /// 测试通过 Box<dyn IpcChannel> trait object 发送 50 条混合类型消息后按 FIFO 顺序接收。
+    /// 验证大量消息下 trait object 动态派发的正确性和顺序保证。
+    #[test]
+    fn test_ipc_channel_trait_object_stress_50_messages() {
+        let mut ch: Box<dyn crate::IpcChannel> = Box::new(MockChannel::new());
+
+        // 构造 50 条混合类型消息
+        let messages: Vec<IpcMessage> = (0..50)
+            .map(|i| {
+                let kind = match i % 10 {
+                    0 => IpcMessageKind::Navigate(NavigateParams {
+                        url: format!("https://example.com/page/{i}"),
+                        referrer: if i % 3 == 0 {
+                            Some("https://ref.com".into())
+                        } else {
+                            None
+                        },
+                    }),
+                    1 => IpcMessageKind::TitleChanged(format!("标题 #{i}")),
+                    2 => IpcMessageKind::FetchRequest(FetchParams {
+                        request_id: i as u64,
+                        url: format!("https://api.com/{i}"),
+                        method: "GET".into(),
+                        headers: vec![(format!("X-Id-{i}"), format!("value-{i}"))],
+                        body: if i % 2 == 0 { Some(vec![i as u8; 4]) } else { None },
+                    }),
+                    3 => IpcMessageKind::FetchResponse(FetchResponseParams {
+                        request_id: i as u64,
+                        status_code: (200 + (i % 5) as u16),
+                        headers: vec![],
+                        body: vec![i as u8],
+                    }),
+                    4 => IpcMessageKind::StorageOp(StorageOpParams {
+                        storage_type: if i % 2 == 0 {
+                            StorageType::Local
+                        } else {
+                            StorageType::Session
+                        },
+                        operation: StorageOperation::Set,
+                        key: format!("key_{i}"),
+                        value: Some(format!("val_{i}")),
+                        origin: "https://example.com".into(),
+                    }),
+                    5 => IpcMessageKind::MouseEvent(MouseEventParams {
+                        x: i as f32 * 10.0,
+                        y: i as f32 * 20.0,
+                        button: (i % 4) as u8,
+                        event_type: MouseEventType::Click,
+                    }),
+                    6 => IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                        key: format!("Key{i}"),
+                        code: format!("Code{i}"),
+                        ctrl: i % 2 == 0,
+                        shift: i % 3 == 0,
+                        alt: false,
+                        meta: false,
+                        event_type: KeyboardEventType::Down,
+                    }),
+                    7 => IpcMessageKind::ScrollEvent(ScrollEventParams {
+                        delta_x: i as f32,
+                        delta_y: -(i as f32),
+                    }),
+                    8 => IpcMessageKind::Heartbeat,
+                    _ => IpcMessageKind::Error(format!("错误 #{i}")),
+                };
+                IpcMessage { id: i as u64, kind }
+            })
+            .collect();
+
+        // 通过 trait object 发送全部消息
+        for msg in &messages {
+            ch.send(msg.clone()).expect(&format!("发送消息 id={} 应成功", msg.id));
+        }
+
+        // 按 FIFO 顺序接收并逐一验证
+        for (i, expected) in messages.iter().enumerate() {
+            let received = ch.recv().expect(&format!("接收第 {i} 条消息应成功"));
+            assert_eq!(
+                expected.id, received.id,
+                "FIFO 顺序违反：索引 {i}，期望 id={}，实际 id={}",
+                expected.id, received.id
+            );
+
+            // 验证消息类型匹配
+            match (&expected.kind, &received.kind) {
+                (IpcMessageKind::Navigate(a), IpcMessageKind::Navigate(b)) => {
+                    assert_eq!(a.url, b.url, "索引 {i}: Navigate url 不匹配");
+                }
+                (IpcMessageKind::TitleChanged(a), IpcMessageKind::TitleChanged(b)) => {
+                    assert_eq!(a, b, "索引 {i}: TitleChanged 不匹配");
+                }
+                (IpcMessageKind::FetchRequest(a), IpcMessageKind::FetchRequest(b)) => {
+                    assert_eq!(a.request_id, b.request_id, "索引 {i}: FetchRequest request_id 不匹配");
+                }
+                (IpcMessageKind::FetchResponse(a), IpcMessageKind::FetchResponse(b)) => {
+                    assert_eq!(
+                        a.status_code, b.status_code,
+                        "索引 {i}: FetchResponse status_code 不匹配"
+                    );
+                }
+                (IpcMessageKind::StorageOp(a), IpcMessageKind::StorageOp(b)) => {
+                    assert_eq!(a.key, b.key, "索引 {i}: StorageOp key 不匹配");
+                }
+                (IpcMessageKind::MouseEvent(a), IpcMessageKind::MouseEvent(b)) => {
+                    assert_eq!(a.x, b.x, "索引 {i}: MouseEvent x 不匹配");
+                }
+                (IpcMessageKind::KeyboardEvent(a), IpcMessageKind::KeyboardEvent(b)) => {
+                    assert_eq!(a.key, b.key, "索引 {i}: KeyboardEvent key 不匹配");
+                }
+                (IpcMessageKind::ScrollEvent(a), IpcMessageKind::ScrollEvent(b)) => {
+                    assert_eq!(a.delta_x, b.delta_x, "索引 {i}: ScrollEvent delta_x 不匹配");
+                }
+                (IpcMessageKind::Heartbeat, IpcMessageKind::Heartbeat) => {}
+                (IpcMessageKind::Error(a), IpcMessageKind::Error(b)) => {
+                    assert_eq!(a, b, "索引 {i}: Error 不匹配");
+                }
+                _ => panic!("索引 {i}: 消息类型不匹配"),
+            }
+        }
+
+        // 所有消息已消费，再次 recv 应返回错误
+        assert!(ch.recv().is_err(), "消费全部消息后 recv 应返回错误");
+
+        // try_recv 应返回 Ok(None)
+        assert!(ch.try_recv().expect("try_recv").is_none());
+    }
 }

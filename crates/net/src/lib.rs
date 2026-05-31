@@ -609,4 +609,123 @@ mod tests {
             "Secure+SameSite=None 的 cookie 应通过 HTTPS 在跨站子资源中发送"
         );
     }
+
+    // ── 第二批边界条件补充测试（5 个） ──
+
+    /// 测试 NetError::from(url::ParseError) 正确将 URL 解析错误转换为 NetError::UrlParse。
+    /// 验证 From trait 实现使 ? 运算符能自动转换错误类型。
+    #[test]
+    fn test_net_error_from_url_parse_error() {
+        let url_err = url::ParseError::EmptyHost;
+        let net_err = super::NetError::from(url_err);
+        match net_err {
+            super::NetError::UrlParse(msg) => {
+                assert!(!msg.is_empty(), "错误消息不应为空");
+            }
+            other => panic!("期望 NetError::UrlParse，得到: {other:?}"),
+        }
+
+        // 验证 InvalidPort 也正确转换
+        let url_err2 = url::ParseError::InvalidPort;
+        let net_err2 = super::NetError::from(url_err2);
+        match net_err2 {
+            super::NetError::UrlParse(_) => {}
+            other => panic!("期望 NetError::UrlParse，得到: {other:?}"),
+        }
+    }
+
+    /// 测试 CookieStore::clear 清空后 cookie_header 返回空字符串。
+    /// 验证 clear() 彻底移除所有 cookie，后续 cookie_header 调用不 panic。
+    #[test]
+    fn test_cookie_store_clear_then_header_is_empty() {
+        let mut store = crate::CookieStore::new();
+        store.add(crate::CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap());
+        store.add(crate::CookieStore::parse_set_cookie("b=2; Domain=example.com").unwrap());
+        assert_eq!(store.len(), 2);
+
+        store.clear();
+        assert!(store.is_empty(), "clear 后 store 应为空");
+        assert_eq!(store.len(), 0);
+
+        let url = parse_url("http://example.com/").unwrap();
+        let header = store.cookie_header(&url);
+        assert!(header.is_empty(), "清空后 cookie_header 应返回空字符串");
+
+        // clear 后再添加新 cookie 应正常工作
+        store.add(crate::CookieStore::parse_set_cookie("c=3; Domain=example.com").unwrap());
+        assert_eq!(store.len(), 1);
+        let header = store.cookie_header(&url);
+        assert!(header.contains("c=3"), "clear 后重新添加的 cookie 应可检索");
+    }
+
+    /// 测试 NavigationHistory 在后退后执行 navigate 清除前进历史，
+    /// 此时 go_forward_n 应返回 None 而非 panic。
+    /// 验证 navigate 和 go_forward_n 两个方法的交互边界。
+    #[test]
+    fn test_navigation_go_forward_n_after_navigate_clears_forward() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+
+        // 后退两步到 b
+        nav.go_back();
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+
+        // 前进历史中有 c 和 d，go_forward_n(2) 应到达 d
+        assert_eq!(nav.go_forward_n(2).unwrap().url, "http://d.com");
+
+        // 再后退一步到 c
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://c.com");
+
+        // 新导航清除前进历史（d 被移除）
+        nav.navigate("http://e.com", None);
+        assert!(!nav.can_go_forward(), "新导航后不应有前进历史");
+
+        // go_forward_n 应返回 None
+        assert!(
+            nav.go_forward_n(1).is_none(),
+            "前进历史已清除，go_forward_n 应返回 None"
+        );
+        assert!(nav.go_forward_n(0).is_some(), "go_forward_n(0) 应返回当前条目");
+    }
+
+    /// 测试 WebSocket 在 Open 状态下发送空字符串消息不会 panic，
+    /// 且 receive() 能正确返回该空字符串。
+    /// 空字符串虽不常见但在协议层面是合法的消息内容。
+    #[test]
+    fn test_websocket_send_empty_string_message() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+        ws.connect();
+        assert_eq!(ws.state(), &WebSocketState::Open);
+
+        // 发送空字符串应成功
+        ws.send("").unwrap();
+
+        // 接收应返回空字符串（非 None）
+        let msg = ws.receive();
+        assert_eq!(msg, Some(String::new()), "应收到空字符串消息");
+
+        // 队列为空后 receive 返回 None
+        assert_eq!(ws.receive(), None);
+    }
+
+    /// 测试 HttpResponse::text() 对空 body（零字节）返回 Ok("")，
+    /// 而非 Err。空 body 在 204 No Content 等响应中很常见。
+    #[test]
+    fn test_http_response_text_empty_body() {
+        let resp = HttpResponse {
+            status_code: 204,
+            headers: vec![],
+            body: vec![], // 空 body
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let text = resp.text();
+        assert!(text.is_ok(), "空 body 的 text() 不应返回错误");
+        assert_eq!(text.unwrap(), "", "空 body 应解析为空字符串");
+    }
 }

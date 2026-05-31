@@ -544,4 +544,90 @@ mod tests {
         assert_eq!(matched.status, 404);
         assert_eq!(matched.body, b"not found".to_vec());
     }
+
+    /// 测试 StorageManager 对不存在的源调用 clear_origin 不报错，其他源数据不受影响。
+    #[test]
+    fn test_storage_manager_clear_nonexistent_origin_is_noop() {
+        use crate::storage_manager::StorageManager;
+        let mut manager = StorageManager::new();
+        manager.local_storage("https://real.com").set("k", "v").unwrap();
+        assert!(!manager.local_storage("https://real.com").is_empty());
+
+        // 对从未创建过存储的源调用 clear_origin 应为空操作
+        manager.clear_origin("https://ghost.com");
+        assert!(
+            !manager.local_storage("https://real.com").is_empty(),
+            "不相关的源数据不应被影响"
+        );
+        assert_eq!(manager.local_storage("https://real.com").get("k"), Some("v"));
+    }
+
+    /// 测试 WebStorage 反复设置同一键：旧值不断被替换，len 始终为 1，used_size 反映最新值。
+    #[test]
+    fn test_web_storage_repeated_overwrite() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("counter", "1").unwrap();
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.used_size(), 7 + 1); // "counter"=7 + "1"=1
+
+        storage.set("counter", "99").unwrap();
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.used_size(), 7 + 2); // "counter"=7 + "99"=2
+
+        storage.set("counter", "hello world").unwrap();
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.used_size(), 7 + 11); // "counter"=7 + "hello world"=11
+        assert_eq!(storage.get("counter"), Some("hello world"));
+    }
+
+    /// 测试 IndexedDB 事务元数据：db_name 和 db_version 应正确返回所属数据库的信息。
+    #[test]
+    fn test_idb_transaction_metadata() {
+        let mut db = IdbDatabase::new("my-app", 5);
+        db.create_object_store("data", None, false).unwrap();
+        let tx = db.transaction(&["data"], IdbTransactionMode::ReadWrite).unwrap();
+        assert_eq!(tx.db_name(), "my-app", "事务应返回正确的数据库名称");
+        assert_eq!(tx.db_version(), 5, "事务应返回正确的数据库版本");
+        assert_eq!(tx.store_names().len(), 1);
+        assert_eq!(tx.store_names()[0], "data");
+    }
+
+    /// 测试 CacheStorage delete 对不存在的缓存名称返回 false。
+    #[test]
+    fn test_cache_storage_delete_nonexistent() {
+        let mut cs = CacheStorage::new();
+        assert!(!cs.delete("phantom"), "删除不存在的缓存应返回 false");
+        assert!(!cs.has("phantom"));
+
+        // 创建后再删除，再删除一次应返回 false
+        cs.open("real");
+        assert!(cs.delete("real"), "删除已存在的缓存应返回 true");
+        assert!(!cs.delete("real"), "重复删除应返回 false");
+    }
+
+    /// 测试 IndexedDB 在自增 store 上 put() 不提供主键时自动生成键。
+    #[test]
+    fn test_idb_put_auto_increment_without_key() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("auto_store", None, true).unwrap();
+
+        // put 不提供 key → 自动生成
+        let k1 = db
+            .put("auto_store", serde_json::json!({"name": "first"}), None)
+            .unwrap();
+        assert!(matches!(&k1, IdbKey::Number(n) if *n == 1.0), "第一次 put 自增键应为 1");
+
+        let k2 = db
+            .put("auto_store", serde_json::json!({"name": "second"}), None)
+            .unwrap();
+        assert!(matches!(&k2, IdbKey::Number(n) if *n == 2.0), "第二次 put 自增键应为 2");
+
+        assert_eq!(db.count("auto_store").unwrap(), 2);
+
+        // 验证数据正确
+        let r1 = db.get("auto_store", &k1).unwrap();
+        assert_eq!(r1.value["name"], "first");
+        let r2 = db.get("auto_store", &k2).unwrap();
+        assert_eq!(r2.value["name"], "second");
+    }
 }

@@ -4227,6 +4227,105 @@ fn parse_drop_shadow(inner: &str) -> Option<FilterValue> {
     Some(FilterValue::DropShadow(x, y, blur, color))
 }
 
+// ── CSS Appearance 值类型 ──────────────────────────────────────────────
+
+/// CSS appearance 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppearanceValue {
+    /// none。
+    None,
+    /// auto。
+    Auto,
+    /// button。
+    Button,
+    /// checkbox。
+    Checkbox,
+    /// listbox。
+    Listbox,
+    /// menulist。
+    Menulist,
+    /// meter。
+    Meter,
+    /// progress-bar。
+    ProgressBar,
+    /// push-button。
+    PushButton,
+    /// radio。
+    Radio,
+    /// searchfield。
+    Searchfield,
+    /// slider-horizontal。
+    SliderHorizontal,
+    /// square-button。
+    SquareButton,
+    /// textarea。
+    Textarea,
+    /// textfield。
+    Textfield,
+}
+
+/// 解析 CSS appearance 属性值。
+pub fn parse_appearance(value: &str) -> Option<AppearanceValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(AppearanceValue::None),
+        "auto" => Some(AppearanceValue::Auto),
+        "button" => Some(AppearanceValue::Button),
+        "checkbox" => Some(AppearanceValue::Checkbox),
+        "listbox" => Some(AppearanceValue::Listbox),
+        "menulist" => Some(AppearanceValue::Menulist),
+        "meter" => Some(AppearanceValue::Meter),
+        "progress-bar" => Some(AppearanceValue::ProgressBar),
+        "push-button" => Some(AppearanceValue::PushButton),
+        "radio" => Some(AppearanceValue::Radio),
+        "searchfield" => Some(AppearanceValue::Searchfield),
+        "slider-horizontal" => Some(AppearanceValue::SliderHorizontal),
+        "square-button" => Some(AppearanceValue::SquareButton),
+        "textarea" => Some(AppearanceValue::Textarea),
+        "textfield" => Some(AppearanceValue::Textfield),
+        _ => None,
+    }
+}
+
+/// CSS accent-color 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccentColorValue {
+    /// auto。
+    Auto,
+    /// 指定颜色。
+    Color(ColorValue),
+}
+
+/// 解析 CSS accent-color 属性值。
+///
+/// 支持格式：`auto` 或任意有效 CSS 颜色值。
+pub fn parse_accent_color(value: &str) -> Option<AccentColorValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(AccentColorValue::Auto);
+    }
+    parse_color(v).map(AccentColorValue::Color)
+}
+
+/// CSS caret-color 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaretColorValue {
+    /// auto。
+    Auto,
+    /// 指定颜色。
+    Color(ColorValue),
+}
+
+/// 解析 CSS caret-color 属性值。
+///
+/// 支持格式：`auto` 或任意有效 CSS 颜色值。
+pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(CaretColorValue::Auto);
+    }
+    parse_color(v).map(CaretColorValue::Color)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5819,5 +5918,139 @@ mod tests {
     fn test_parse_column_rule_style_invalid() {
         assert_eq!(parse_column_rule_style("invalid"), None);
         assert_eq!(parse_column_rule_style(""), None);
+    }
+
+    // ── Appearance 测试 ──
+
+    #[test]
+    fn test_parse_appearance_none() {
+        assert_eq!(parse_appearance("none"), Some(AppearanceValue::None));
+    }
+
+    #[test]
+    fn test_parse_appearance_auto() {
+        assert_eq!(parse_appearance("auto"), Some(AppearanceValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_appearance_widgets() {
+        assert_eq!(parse_appearance("button"), Some(AppearanceValue::Button));
+        assert_eq!(parse_appearance("checkbox"), Some(AppearanceValue::Checkbox));
+        assert_eq!(parse_appearance("listbox"), Some(AppearanceValue::Listbox));
+        assert_eq!(parse_appearance("menulist"), Some(AppearanceValue::Menulist));
+        assert_eq!(parse_appearance("meter"), Some(AppearanceValue::Meter));
+        assert_eq!(parse_appearance("progress-bar"), Some(AppearanceValue::ProgressBar));
+        assert_eq!(parse_appearance("push-button"), Some(AppearanceValue::PushButton));
+        assert_eq!(parse_appearance("radio"), Some(AppearanceValue::Radio));
+        assert_eq!(parse_appearance("searchfield"), Some(AppearanceValue::Searchfield));
+        assert_eq!(
+            parse_appearance("slider-horizontal"),
+            Some(AppearanceValue::SliderHorizontal)
+        );
+        assert_eq!(parse_appearance("square-button"), Some(AppearanceValue::SquareButton));
+        assert_eq!(parse_appearance("textarea"), Some(AppearanceValue::Textarea));
+        assert_eq!(parse_appearance("textfield"), Some(AppearanceValue::Textfield));
+    }
+
+    #[test]
+    fn test_parse_appearance_case_insensitive() {
+        assert_eq!(parse_appearance("NONE"), Some(AppearanceValue::None));
+        assert_eq!(parse_appearance("  Auto  "), Some(AppearanceValue::Auto));
+        assert_eq!(parse_appearance("BUTTON"), Some(AppearanceValue::Button));
+    }
+
+    #[test]
+    fn test_parse_appearance_invalid() {
+        assert_eq!(parse_appearance("invalid"), None);
+        assert_eq!(parse_appearance(""), None);
+    }
+
+    // ── AccentColor 测试 ──
+
+    #[test]
+    fn test_parse_accent_color_auto() {
+        assert_eq!(parse_accent_color("auto"), Some(AccentColorValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_accent_color_named() {
+        assert_eq!(
+            parse_accent_color("red"),
+            Some(AccentColorValue::Color(ColorValue::Rgba(255, 0, 0, 255)))
+        );
+        assert_eq!(
+            parse_accent_color("blue"),
+            Some(AccentColorValue::Color(ColorValue::Rgba(0, 0, 255, 255)))
+        );
+    }
+
+    #[test]
+    fn test_parse_accent_color_hex() {
+        assert_eq!(
+            parse_accent_color("#ff0000"),
+            Some(AccentColorValue::Color(ColorValue::Rgba(255, 0, 0, 255)))
+        );
+        assert_eq!(
+            parse_accent_color("#0f0"),
+            Some(AccentColorValue::Color(ColorValue::Rgba(0, 255, 0, 255)))
+        );
+    }
+
+    #[test]
+    fn test_parse_accent_color_rgb() {
+        let result = parse_accent_color("rgb(100, 200, 50)");
+        assert!(result.is_some());
+        match result.unwrap() {
+            AccentColorValue::Color(ColorValue::Rgba(r, g, b, a)) => {
+                assert_eq!(r, 100);
+                assert_eq!(g, 200);
+                assert_eq!(b, 50);
+                assert_eq!(a, 255);
+            }
+            _ => panic!("expected Color variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_accent_color_invalid() {
+        assert_eq!(parse_accent_color("not-a-color"), None);
+        assert_eq!(parse_accent_color(""), None);
+    }
+
+    // ── CaretColor 测试 ──
+
+    #[test]
+    fn test_parse_caret_color_auto() {
+        assert_eq!(parse_caret_color("auto"), Some(CaretColorValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_caret_color_named() {
+        assert_eq!(
+            parse_caret_color("green"),
+            Some(CaretColorValue::Color(ColorValue::Rgba(0, 128, 0, 255)))
+        );
+    }
+
+    #[test]
+    fn test_parse_caret_color_hex() {
+        assert_eq!(
+            parse_caret_color("#abcdef"),
+            Some(CaretColorValue::Color(ColorValue::Rgba(0xAB, 0xCD, 0xEF, 255)))
+        );
+    }
+
+    #[test]
+    fn test_parse_caret_color_transparent() {
+        assert_eq!(
+            parse_caret_color("transparent"),
+            Some(CaretColorValue::Color(ColorValue::Transparent))
+        );
+    }
+
+    #[test]
+    fn test_parse_caret_color_invalid() {
+        assert_eq!(parse_caret_color("not-a-color"), None);
+        assert_eq!(parse_caret_color(""), None);
     }
 }
