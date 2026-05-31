@@ -4760,3 +4760,341 @@ fn test_parse_whitespace_only() {
     let doc = parse_html("   \n\t  ");
     assert!(doc.root().is_valid());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 36. Slot 分配解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 slot 分配：slot="header" 属性匹配 <slot name="header">。
+///
+/// 场景：宿主元素有一个带 slot="header" 的 light DOM 子节点，
+/// shadow 树中有一个 <slot name="header">。调用 resolve_slots 后，
+/// get_assigned_nodes 应返回该 light DOM 子节点。
+#[test]
+fn test_resolve_slots_matching_element() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 宿主元素
+    let host = doc.create_element("my-component");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：一个带 slot="header" 的元素
+    let header = doc.create_element("h1");
+    doc.set_attribute(header, "slot", "header");
+    doc.append_child(host, header).unwrap();
+
+    // shadow DOM：一个带 name="header" 的 slot
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.set_attribute(slot_elem, "name", "header");
+    doc.append_child(shadow, slot_elem).unwrap();
+
+    // 解析 slot 分配
+    doc.resolve_slots(host);
+
+    // 验证：header 被分配到 slot_elem
+    let assigned = doc.get_assigned_nodes(slot_elem);
+    assert_eq!(assigned.len(), 1, "应分配 1 个节点到 header slot");
+    assert_eq!(assigned[0], header, "分配的节点应是 header");
+}
+
+/// 测试 slot 分配：无匹配元素时使用 slot 的回退内容。
+///
+/// 场景：shadow 树中有 <slot name="footer">，但 light DOM 中
+/// 没有任何子节点有 slot="footer"。此时 get_assigned_nodes 返回空，
+/// 渲染时应使用 slot 元素自身的子节点作为回退内容。
+#[test]
+fn test_resolve_slots_fallback_content() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-component");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：没有 slot 属性的节点
+    let content = doc.create_element("div");
+    doc.append_child(host, content).unwrap();
+
+    // shadow DOM：<slot name="footer"> 带回退内容
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.set_attribute(slot_elem, "name", "footer");
+    let fallback = doc.create_text_node("Default Footer");
+    doc.append_child(shadow, slot_elem).unwrap();
+    doc.append_child(slot_elem, fallback).unwrap();
+
+    doc.resolve_slots(host);
+
+    // footer slot 没有匹配的 light DOM 节点
+    let assigned = doc.get_assigned_nodes(slot_elem);
+    assert!(
+        assigned.is_empty(),
+        "没有匹配的 light DOM 节点时，assigned_nodes 应为空"
+    );
+
+    // 回退内容仍然存在（slot 自身的子节点未被移除）
+    let slot_children = doc.child_nodes(slot_elem);
+    assert_eq!(slot_children.len(), 1, "slot 的回退内容应保留");
+    assert_eq!(doc.text_content(slot_elem), Some("Default Footer".to_string()));
+}
+
+/// 测试默认 slot（无名 slot）捕获没有 slot 属性的子节点。
+///
+/// 场景：shadow 树中有一个无 name 属性的 <slot>，
+/// light DOM 中有多个没有 slot 属性的子节点。
+/// 调用 resolve_slots 后，这些子节点都应分配到默认 slot。
+#[test]
+fn test_resolve_slots_default_slot() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-component");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：两个没有 slot 属性的子节点
+    let child1 = doc.create_element("p");
+    doc.append_child(host, child1).unwrap();
+    let child2 = doc.create_element("span");
+    doc.append_child(host, child2).unwrap();
+
+    // shadow DOM：一个无名 slot（默认 slot）
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots(host);
+
+    // 两个没有 slot 属性的子节点都应分配到默认 slot
+    let assigned = doc.get_assigned_nodes(default_slot);
+    assert_eq!(assigned.len(), 2, "默认 slot 应捕获 2 个子节点");
+    assert_eq!(assigned[0], child1, "第一个子节点应被分配");
+    assert_eq!(assigned[1], child2, "第二个子节点应被分配");
+}
+
+/// 测试多个元素分配到同一个命名 slot。
+///
+/// 场景：light DOM 中有多个带 slot="items" 的元素，
+/// shadow 树中有一个 <slot name="items">。
+/// 调用 resolve_slots 后，所有匹配元素都应分配到该 slot。
+#[test]
+fn test_resolve_slots_multiple_elements_same_slot() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-list");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：三个带 slot="items" 的元素
+    let item1 = doc.create_element("li");
+    doc.set_attribute(item1, "slot", "items");
+    doc.append_child(host, item1).unwrap();
+
+    let item2 = doc.create_element("li");
+    doc.set_attribute(item2, "slot", "items");
+    doc.append_child(host, item2).unwrap();
+
+    let item3 = doc.create_element("li");
+    doc.set_attribute(item3, "slot", "items");
+    doc.append_child(host, item3).unwrap();
+
+    // shadow DOM：<slot name="items">
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let items_slot = doc.create_element("slot");
+    doc.set_attribute(items_slot, "name", "items");
+    doc.append_child(shadow, items_slot).unwrap();
+
+    doc.resolve_slots(host);
+
+    let assigned = doc.get_assigned_nodes(items_slot);
+    assert_eq!(assigned.len(), 3, "应有 3 个节点分配到 items slot");
+    // 保持文档顺序
+    assert_eq!(assigned[0], item1);
+    assert_eq!(assigned[1], item2);
+    assert_eq!(assigned[2], item3);
+}
+
+/// 测试嵌套 slot 解析：外层组件的 slot 分配正确。
+///
+/// 场景：外层宿主有 shadow 树，shadow 树中嵌套了另一个自定义元素。
+/// resolve_slots 只解析指定宿主的直接 slot 分配，
+/// 不会穿透到嵌套的 shadow DOM 中。
+#[test]
+fn test_resolve_slots_nested_components() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 外层宿主
+    let outer_host = doc.create_element("outer-comp");
+    doc.append_child(root, outer_host).unwrap();
+
+    // 外层 light DOM
+    let header_el = doc.create_element("h1");
+    doc.set_attribute(header_el, "slot", "title");
+    doc.append_child(outer_host, header_el).unwrap();
+
+    let body_el = doc.create_element("p");
+    doc.append_child(outer_host, body_el).unwrap();
+
+    // 外层 shadow DOM：包含 slot 和一个嵌套的内部组件
+    let outer_shadow = doc.attach_shadow(outer_host, ShadowRootMode::Open).unwrap();
+
+    let title_slot = doc.create_element("slot");
+    doc.set_attribute(title_slot, "name", "title");
+    doc.append_child(outer_shadow, title_slot).unwrap();
+
+    let default_slot = doc.create_element("slot");
+    doc.append_child(outer_shadow, default_slot).unwrap();
+
+    // 内部组件（嵌套在外层 shadow 中）
+    let inner_host = doc.create_element("inner-comp");
+    doc.append_child(outer_shadow, inner_host).unwrap();
+    let inner_shadow = doc.attach_shadow(inner_host, ShadowRootMode::Open).unwrap();
+    let inner_slot = doc.create_element("slot");
+    doc.set_attribute(inner_slot, "name", "content");
+    doc.append_child(inner_shadow, inner_slot).unwrap();
+
+    // 解析外层 slot
+    doc.resolve_slots(outer_host);
+
+    // 验证外层分配
+    let title_assigned = doc.get_assigned_nodes(title_slot);
+    assert_eq!(title_assigned.len(), 1, "外层 title slot 应有 1 个分配");
+    assert_eq!(title_assigned[0], header_el);
+
+    let default_assigned = doc.get_assigned_nodes(default_slot);
+    assert_eq!(default_assigned.len(), 1, "外层默认 slot 应有 1 个分配");
+    assert_eq!(default_assigned[0], body_el);
+
+    // 内层 slot 没有被外层 resolve_slots 影响
+    let inner_assigned = doc.get_assigned_nodes(inner_slot);
+    assert!(inner_assigned.is_empty(), "内层 slot 不应被外层解析影响");
+}
+
+/// 测试 resolve_slots 对没有 shadow root 的元素不做任何操作。
+#[test]
+fn test_resolve_slots_no_shadow_root() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let host = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, host).unwrap();
+    doc.append_child(host, child).unwrap();
+
+    // 没有 shadow root，resolve_slots 应安全返回
+    doc.resolve_slots(host);
+    // 不应 panic
+}
+
+/// 测试 resolve_slots 后重新调用会覆盖之前的分配。
+#[test]
+fn test_resolve_slots_idempotent() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-comp");
+    doc.append_child(root, host).unwrap();
+
+    let header = doc.create_element("h1");
+    doc.set_attribute(header, "slot", "header");
+    doc.append_child(host, header).unwrap();
+
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.set_attribute(slot_elem, "name", "header");
+    doc.append_child(shadow, slot_elem).unwrap();
+
+    // 第一次解析
+    doc.resolve_slots(host);
+    let assigned1 = doc.get_assigned_nodes(slot_elem);
+    assert_eq!(assigned1.len(), 1);
+
+    // 第二次解析（幂等）
+    doc.resolve_slots(host);
+    let assigned2 = doc.get_assigned_nodes(slot_elem);
+    assert_eq!(assigned2.len(), 1, "重复调用不应产生重复分配");
+    assert_eq!(assigned2[0], header);
+}
+
+/// 测试混合命名 slot 和默认 slot 的分配。
+#[test]
+fn test_resolve_slots_mixed_named_and_default() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-comp");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：混合有 slot 属性和无 slot 属性的子节点
+    let header = doc.create_element("h1");
+    doc.set_attribute(header, "slot", "header");
+    doc.append_child(host, header).unwrap();
+
+    let content1 = doc.create_element("p");
+    doc.append_child(host, content1).unwrap();
+
+    let footer = doc.create_element("footer");
+    doc.set_attribute(footer, "slot", "footer");
+    doc.append_child(host, footer).unwrap();
+
+    let content2 = doc.create_element("span");
+    doc.append_child(host, content2).unwrap();
+
+    // shadow DOM
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+    let header_slot = doc.create_element("slot");
+    doc.set_attribute(header_slot, "name", "header");
+    doc.append_child(shadow, header_slot).unwrap();
+
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    let footer_slot = doc.create_element("slot");
+    doc.set_attribute(footer_slot, "name", "footer");
+    doc.append_child(shadow, footer_slot).unwrap();
+
+    doc.resolve_slots(host);
+
+    // header slot 分配到 header 元素
+    let header_assigned = doc.get_assigned_nodes(header_slot);
+    assert_eq!(header_assigned.len(), 1);
+    assert_eq!(header_assigned[0], header);
+
+    // footer slot 分配到 footer 元素
+    let footer_assigned = doc.get_assigned_nodes(footer_slot);
+    assert_eq!(footer_assigned.len(), 1);
+    assert_eq!(footer_assigned[0], footer);
+
+    // 默认 slot 分配到 content1 和 content2
+    let default_assigned = doc.get_assigned_nodes(default_slot);
+    assert_eq!(default_assigned.len(), 2, "默认 slot 应捕获 2 个无 slot 属性的子节点");
+    assert_eq!(default_assigned[0], content1);
+    assert_eq!(default_assigned[1], content2);
+}
+
+/// 测试文本节点不参与命名 slot 分配，但可以分配到默认 slot。
+#[test]
+fn test_resolve_slots_text_node_default_slot() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-comp");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM：一个文本节点
+    let text = doc.create_text_node("Hello World");
+    doc.append_child(host, text).unwrap();
+
+    // shadow DOM：默认 slot
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots(host);
+
+    // 文本节点没有 slot 属性，应分配到默认 slot
+    let assigned = doc.get_assigned_nodes(default_slot);
+    assert_eq!(assigned.len(), 1, "文本节点应分配到默认 slot");
+    assert_eq!(assigned[0], text);
+}

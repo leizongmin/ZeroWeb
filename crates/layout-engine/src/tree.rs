@@ -697,4 +697,317 @@ mod tests {
         assert_eq!(style.min_size.height, taffy::style::Dimension::Length(30.0));
         assert_eq!(style.max_size.height, taffy::style::Dimension::Length(300.0));
     }
+
+    // -- DOM 树构建边界条件测试 --
+
+    /// 注释节点在 DOM 树中应被跳过，不创建 taffy 节点。
+    #[test]
+    fn test_build_with_comment_nodes() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 在 body 和元素之间插入多个注释节点
+        let comment1 = doc.create_comment("这是注释1");
+        doc.append_child(body, comment1).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+        let comment2 = doc.create_comment("这是注释2");
+        doc.append_child(body, comment2).unwrap();
+        let span = doc.create_element("span");
+        doc.append_child(body, span).unwrap();
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 注释节点不应出现在 taffy 映射中
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == comment1),
+            "注释节点 comment1 不应出现在布局树映射中"
+        );
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == comment2),
+            "注释节点 comment2 不应出现在布局树映射中"
+        );
+        // 元素节点应正常出现
+        assert!(taffy_to_dom.values().any(|id| *id == div));
+        assert!(taffy_to_dom.values().any(|id| *id == span));
+        // 映射数量：html + body + div + span = 4
+        assert_eq!(taffy_to_dom.len(), 4);
+    }
+
+    /// ProcessingInstruction 节点应被跳过，不创建 taffy 节点。
+    #[test]
+    fn test_build_with_processing_instruction() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 插入 ProcessingInstruction 节点
+        let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"style.css\"");
+        doc.append_child(body, pi).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // ProcessingInstruction 不应出现在 taffy 映射中
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == pi),
+            "ProcessingInstruction 节点不应出现在布局树映射中"
+        );
+        // 元素节点应正常出现
+        assert!(taffy_to_dom.values().any(|id| *id == div));
+        // 映射数量：html + body + div = 3
+        assert_eq!(taffy_to_dom.len(), 3);
+    }
+
+    /// 20+ 层嵌套的 div，验证布局树深度与 DOM 深度一致。
+    #[test]
+    fn test_build_deeply_nested_tree() {
+        let depth = 25;
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+
+        let mut current = html;
+        let mut all_ids = vec![html];
+        for _ in 0..depth {
+            let div = doc.create_element("div");
+            doc.append_child(current, div).unwrap();
+            all_ids.push(div);
+            current = div;
+        }
+
+        let styles = HashMap::new();
+        let (taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 映射数量：html + 25 层 div = 26
+        assert_eq!(taffy_to_dom.len(), depth + 1);
+
+        // 验证 taffy 树的深度：从根节点逐层向下走，应有 depth 层子节点
+        let mut current_taffy = root_id;
+        let mut actual_depth = 0;
+        loop {
+            let children = taffy_tree.children(current_taffy).unwrap();
+            if children.is_empty() {
+                break;
+            }
+            actual_depth += 1;
+            current_taffy = children[0];
+        }
+        // html 本身是根，下面有 25 层 div 子节点
+        assert_eq!(actual_depth, depth, "布局树深度应与 DOM 嵌套深度一致");
+
+        // 验证最内层 div 确实在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == current));
+    }
+
+    /// 父元素可见，部分子元素 display:none，部分可见。
+    /// 只有可见的子元素应出现在布局树映射中。
+    #[test]
+    fn test_build_mixed_display_none_children() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 创建 5 个子元素：其中 3 个 visible，2 个 display:none
+        let vis1 = doc.create_element("div");
+        doc.append_child(body, vis1).unwrap();
+        let hidden1 = doc.create_element("span");
+        doc.append_child(body, hidden1).unwrap();
+        let vis2 = doc.create_element("section");
+        doc.append_child(body, vis2).unwrap();
+        let hidden2 = doc.create_element("p");
+        doc.append_child(body, hidden2).unwrap();
+        let vis3 = doc.create_element("article");
+        doc.append_child(body, vis3).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut hidden_style = ComputedStyle::default();
+        hidden_style.display = DisplayValue::None;
+        styles.insert(hidden1, hidden_style.clone());
+        styles.insert(hidden2, hidden_style);
+
+        let (taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 可见元素应在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == vis1), "vis1 应在布局树中");
+        assert!(taffy_to_dom.values().any(|id| *id == vis2), "vis2 应在布局树中");
+        assert!(taffy_to_dom.values().any(|id| *id == vis3), "vis3 应在布局树中");
+
+        // display:none 元素不在 taffy_to_dom 映射中（提前返回跳过了映射记录）
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == hidden1),
+            "hidden1 不应在布局树映射中"
+        );
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == hidden2),
+            "hidden2 不应在布局树映射中"
+        );
+
+        // body 在映射中，且有 taffy 子节点（包含 display:none 的隐藏节点）
+        let body_taffy = find_taffy_for_dom(&taffy_to_dom, body);
+        let body_children = taffy_tree.children(body_taffy).unwrap();
+        // display:none 元素仍创建了 taffy 节点作为 body 子节点
+        assert_eq!(body_children.len(), 5, "body 应有 5 个 taffy 子节点（含隐藏节点）");
+
+        // 检查 body 的 taffy 子节点中，有 3 个是 display 非 none 的（vis1/vis2/vis3）
+        let mut visible_count = 0;
+        let mut hidden_count = 0;
+        for &child_taffy in &body_children {
+            let style = taffy_tree.style(child_taffy).unwrap();
+            if style.display == taffy::style::Display::None {
+                hidden_count += 1;
+            } else {
+                visible_count += 1;
+            }
+        }
+        assert_eq!(visible_count, 3, "body 应有 3 个可见 taffy 子节点");
+        assert_eq!(hidden_count, 2, "body 应有 2 个 display:none 的 taffy 子节点");
+
+        // 验证可见节点不是 display:none
+        let vis1_taffy = find_taffy_for_dom(&taffy_to_dom, vis1);
+        let v1_style = taffy_tree.style(vis1_taffy).unwrap();
+        assert_ne!(v1_style.display, taffy::style::Display::None);
+
+        // root_id 应该是 html
+        assert_eq!(taffy_to_dom.get(&root_id), Some(&html));
+    }
+
+    /// Grid 容器带有 grid-template-areas，子元素使用 grid-area 命名引用，
+    /// 验证 grid 项被正确放置。
+    #[test]
+    fn test_build_with_grid_container_and_items() {
+        use zero_style_system::GridLineValue;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+
+        // 创建 grid 容器
+        let grid = doc.create_element("div");
+        doc.append_child(html, grid).unwrap();
+
+        // 创建 4 个 grid 子项
+        let header = doc.create_element("header");
+        doc.append_child(grid, header).unwrap();
+        let nav = doc.create_element("nav");
+        doc.append_child(grid, nav).unwrap();
+        let main = doc.create_element("main");
+        doc.append_child(grid, main).unwrap();
+        let footer = doc.create_element("footer");
+        doc.append_child(grid, footer).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // grid 容器样式
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("200px 200px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.grid_template_areas = Some("\"header header\" \"nav main\"".to_string());
+        styles.insert(grid, grid_style);
+
+        // header 使用 grid-area 命名 "header"
+        let mut header_style = ComputedStyle::default();
+        header_style.grid_row_start = GridLineValue::Name("header".to_string());
+        header_style.grid_row_end = GridLineValue::Name("header".to_string());
+        header_style.grid_column_start = GridLineValue::Name("header".to_string());
+        header_style.grid_column_end = GridLineValue::Name("header".to_string());
+        styles.insert(header, header_style);
+
+        // nav 使用 grid-area 命名 "nav"
+        let mut nav_style = ComputedStyle::default();
+        nav_style.grid_row_start = GridLineValue::Name("nav".to_string());
+        nav_style.grid_row_end = GridLineValue::Name("nav".to_string());
+        nav_style.grid_column_start = GridLineValue::Name("nav".to_string());
+        nav_style.grid_column_end = GridLineValue::Name("nav".to_string());
+        styles.insert(nav, nav_style);
+
+        // main 使用 grid-area 命名 "main"
+        let mut main_style = ComputedStyle::default();
+        main_style.grid_row_start = GridLineValue::Name("main".to_string());
+        main_style.grid_row_end = GridLineValue::Name("main".to_string());
+        main_style.grid_column_start = GridLineValue::Name("main".to_string());
+        main_style.grid_column_end = GridLineValue::Name("main".to_string());
+        styles.insert(main, main_style);
+
+        // footer 使用默认 auto 放置
+        styles.insert(footer, ComputedStyle::default());
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 所有元素都应在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == grid));
+        assert!(taffy_to_dom.values().any(|id| *id == header));
+        assert!(taffy_to_dom.values().any(|id| *id == nav));
+        assert!(taffy_to_dom.values().any(|id| *id == main));
+        assert!(taffy_to_dom.values().any(|id| *id == footer));
+
+        // 验证 grid 容器的 display
+        let grid_taffy = find_taffy_for_dom(&taffy_to_dom, grid);
+        let grid_taffy_style = taffy_tree.style(grid_taffy).unwrap();
+        assert_eq!(grid_taffy_style.display, taffy::style::Display::Grid);
+
+        // grid 容器应有 4 个子节点
+        let grid_children = taffy_tree.children(grid_taffy).unwrap();
+        assert_eq!(grid_children.len(), 4, "grid 容器应有 4 个子项");
+
+        // 验证 header 的 grid 位置已从命名引用解析为行号
+        let header_taffy = find_taffy_for_dom(&taffy_to_dom, header);
+        let header_taffy_style = taffy_tree.style(header_taffy).unwrap();
+        // "header" 区域在模板的第一行跨两列 → row 1-2, col 1-3
+        assert_eq!(
+            header_taffy_style.grid_row.start,
+            taffy::style::GridPlacement::from_line_index(1),
+            "header 应解析到 row start = 1"
+        );
+        assert_eq!(
+            header_taffy_style.grid_row.end,
+            taffy::style::GridPlacement::from_line_index(2),
+            "header 应解析到 row end = 2"
+        );
+        assert_eq!(
+            header_taffy_style.grid_column.start,
+            taffy::style::GridPlacement::from_line_index(1),
+            "header 应解析到 col start = 1"
+        );
+        assert_eq!(
+            header_taffy_style.grid_column.end,
+            taffy::style::GridPlacement::from_line_index(3),
+            "header 应解析到 col end = 3"
+        );
+
+        // 验证 nav 的位置 → row 2-3, col 1-2
+        let nav_taffy = find_taffy_for_dom(&taffy_to_dom, nav);
+        let nav_taffy_style = taffy_tree.style(nav_taffy).unwrap();
+        assert_eq!(
+            nav_taffy_style.grid_row.start,
+            taffy::style::GridPlacement::from_line_index(2),
+            "nav 应解析到 row start = 2"
+        );
+        assert_eq!(
+            nav_taffy_style.grid_column.start,
+            taffy::style::GridPlacement::from_line_index(1),
+            "nav 应解析到 col start = 1"
+        );
+        assert_eq!(
+            nav_taffy_style.grid_column.end,
+            taffy::style::GridPlacement::from_line_index(2),
+            "nav 应解析到 col end = 2"
+        );
+    }
 }

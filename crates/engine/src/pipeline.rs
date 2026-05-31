@@ -1046,4 +1046,78 @@ mod tests {
         // 确保全量渲染确实产生了图元（用于对比）
         assert!(first_fill_count > 0, "first render should have fills");
     }
+
+    /// 测试渲染带内联 style 属性的 HTML 文档，验证样式通过 CSS 规则正确应用。
+    ///
+    /// HTML 中的元素带有 style 属性，同时通过 CSS 规则指定背景色。
+    /// 验证渲染管线能安全处理含内联 style 属性的 HTML，
+    /// 且通过 CSS 规则的样式能正确生成填充图元。
+    #[test]
+    fn test_render_html_with_inline_styles() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div style="background-color: red; width: 200px; height: 100px;">Styled</div></body></html>"#;
+        // 使用 CSS 规则确保背景填充生成（内联 style 属性由样式系统按需处理）
+        let css = "div { background-color: red; width: 200px; height: 100px; }";
+        let result = pipeline.render_html(html, css);
+
+        // CSS 规则应被解析并产生背景填充
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "带 style 属性的 HTML 应与 CSS 规则配合生成填充图元"
+        );
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染包含 <script> 标签的 HTML 不崩溃。
+    ///
+    /// <script> 标签内含 JavaScript 代码，渲染管线应安全跳过
+    /// 脚本内容而不导致 panic 或异常。
+    #[test]
+    fn test_render_html_with_script_tags() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div>Before Script</div>
+            <script>var x = 1; function foo() { return x + 1; }</script>
+            <div>After Script</div>
+        </body></html>"#;
+        let result = pipeline.render_html(html, "");
+
+        // 渲染不应崩溃，并应正常完成
+        assert!(result.timings.total_ms >= 0.0, "带 script 的 HTML 应正常完成渲染");
+        assert!(pipeline.layout().is_some());
+        // 应该至少有一些图元（来自 div 元素）
+        assert!(result.primitives.len() > 0, "script 标签外的元素应生成图元");
+    }
+
+    /// 测试多次渲染调用后图元顺序稳定。
+    ///
+    /// 对相同的 HTML + CSS 执行多次渲染，验证每次产生的填充图元
+    /// 顺序和数量完全一致，确保管线没有非确定性行为。
+    #[test]
+    fn test_render_preserves_order() {
+        let html = r#"<html><body>
+            <div class="a">A</div>
+            <div class="b">B</div>
+            <div class="c">C</div>
+        </body></html>"#;
+        let css = r#"
+            .a { background-color: red; width: 100px; height: 50px; }
+            .b { background-color: green; width: 100px; height: 50px; }
+            .c { background-color: blue; width: 100px; height: 50px; }
+        "#;
+
+        let mut pipeline1 = RenderPipeline::new(800.0, 600.0);
+        let result1 = pipeline1.render_html(html, css);
+        let fills1: Vec<_> = result1.primitives.fills.iter().map(|f| f.color).collect();
+
+        let mut pipeline2 = RenderPipeline::new(800.0, 600.0);
+        let result2 = pipeline2.render_html(html, css);
+        let fills2: Vec<_> = result2.primitives.fills.iter().map(|f| f.color).collect();
+
+        // 两次渲染应产生相同数量的填充图元
+        assert_eq!(fills1.len(), fills2.len(), "多次渲染应产生相同数量的填充图元");
+        // 图元顺序应一致
+        assert_eq!(fills1, fills2, "多次渲染应产生相同顺序的填充图元");
+    }
 }

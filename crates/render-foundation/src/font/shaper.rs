@@ -405,6 +405,31 @@ mod tests {
         }
     }
 
+    /// 空字符串整形应不产生任何 glyph。
+    #[test]
+    fn test_shaper_empty_string() {
+        let shaper = make_empty_shaper();
+        let glyphs = shaper.shape_single_line("", 16.0);
+        assert!(glyphs.is_empty(), "空字符串不应产生 glyph");
+
+        // 换行模式也应返回空 glyph
+        let lines = shaper.shape_with_line_wrap("", 16.0, 1000.0);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].glyphs.is_empty(), "换行模式空字符串 glyph 应为空");
+        assert_eq!(lines[0].width, 0.0);
+    }
+
+    /// 单字符整形应精确产生一个 glyph。
+    #[test]
+    fn test_shaper_single_character() {
+        let shaper = make_empty_shaper();
+        let glyphs = shaper.shape_single_line("A", 16.0);
+        assert_eq!(glyphs.len(), 1, "单字符应产生恰好一个 glyph");
+        assert_eq!(glyphs[0].code_point, 'A');
+        assert_eq!(glyphs[0].glyph_id, 'A' as u32); // 无字体时 glyph_id = code_point
+        assert!(glyphs[0].advance_x > 0.0, "advance_x 应为正值");
+    }
+
     /// 测试使用真实字体测量文本宽度。
     #[test]
     fn test_measure_with_real_font() {

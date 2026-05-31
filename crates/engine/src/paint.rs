@@ -4169,4 +4169,174 @@ mod tests {
         assert_eq!(fill.rect.size.width, 30.0, "child 应被 inner 裁剪到 30 宽");
         assert_eq!(fill.rect.size.height, 30.0, "child 应被 inner 裁剪到 30 高");
     }
+
+    /// 测试三个嵌套 div 的重叠背景绘制顺序（z-order）。
+    ///
+    /// 结构：outer(灰色背景, 300x200) > middle(蓝色背景, 200x150) > inner(红色背景, 100x80)
+    /// 绘制顺序应为 outer → middle → inner（父先于子），
+    /// 在 fills 列表中依次为 fills[0]=outer, fills[1]=middle, fills[2]=inner。
+    #[test]
+    fn test_paint_multiple_overlapping_backgrounds() {
+        let mut doc = zero_dom::Document::new();
+        let outer = doc.create_element("div");
+        let middle = doc.create_element("div");
+        let inner = doc.create_element("div");
+
+        let inner_box = make_box(Some(inner), 10.0, 10.0, 100.0, 80.0);
+        let middle_box = LayoutBox {
+            node_id: Some(middle),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 150.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 150.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![inner_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let outer_box = LayoutBox {
+            node_id: Some(outer),
+            x: 0.0,
+            y: 0.0,
+            width: 300.0,
+            height: 200.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 300.0,
+            content_height: 200.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![middle_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut outer_style = ComputedStyle::default();
+        outer_style.background_color = ColorValue::Rgba(200, 200, 200, 255); // 灰色
+        styles.insert(outer, outer_style);
+
+        let mut middle_style = ComputedStyle::default();
+        middle_style.background_color = ColorValue::Rgba(0, 0, 255, 255); // 蓝色
+        styles.insert(middle, middle_style);
+
+        let mut inner_style = ComputedStyle::default();
+        inner_style.background_color = ColorValue::Rgba(255, 0, 0, 255); // 红色
+        styles.insert(inner, inner_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&outer_box, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.fills.len(), 3, "三个嵌套 div 应产生 3 个背景填充");
+
+        // z-order: 外层先绘制 → 中层 → 内层后绘制
+        assert_eq!(
+            prims.fills[0].color,
+            Color::rgb(200, 200, 200),
+            "第一个填充应为外层灰色背景"
+        );
+        assert_eq!(prims.fills[0].rect.size.width, 300.0, "外层宽度应为 300");
+        assert_eq!(prims.fills[0].rect.size.height, 200.0, "外层高度应为 200");
+
+        assert_eq!(
+            prims.fills[1].color,
+            Color::rgb(0, 0, 255),
+            "第二个填充应为中层蓝色背景"
+        );
+        assert_eq!(prims.fills[1].rect.size.width, 200.0, "中层宽度应为 200");
+        assert_eq!(prims.fills[1].rect.size.height, 150.0, "中层高度应为 150");
+
+        assert_eq!(
+            prims.fills[2].color,
+            Color::rgb(255, 0, 0),
+            "第三个填充应为内层红色背景"
+        );
+        assert_eq!(prims.fills[2].rect.origin.x, 10.0, "内层 x 偏移应为 10");
+        assert_eq!(prims.fills[2].rect.origin.y, 10.0, "内层 y 偏移应为 10");
+        assert_eq!(prims.fills[2].rect.size.width, 100.0, "内层宽度应为 100");
+        assert_eq!(prims.fills[2].rect.size.height, 80.0, "内层高度应为 80");
+    }
+
+    /// 测试仅有 border-top 和 border-right 时只绘制这两条边框。
+    ///
+    /// 元素只有顶部和右侧有边框（border-top: 3px solid red, border-right: 5px solid green），
+    /// 底部和左侧边框宽度为 0。验证只生成 2 个边框填充图元。
+    #[test]
+    fn test_paint_border_different_sides() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // 只有 top=3 和 right=5 有边框
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 60.0, 3.0, 5.0, 0.0, 0.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255); // 红色顶部
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255); // 绿色右侧
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        // 底部和左侧保持默认 border-style: none
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        // 只有 2 个边框填充（top + right），bottom 和 left 宽度为 0 不生成
+        assert_eq!(prims.fills.len(), 2, "应只绘制 top 和 right 两条边框");
+
+        // 第一个填充：顶部边框
+        let top_fill = &prims.fills[0];
+        assert_eq!(top_fill.color, Color::rgb(255, 0, 0), "顶部边框应为红色");
+        assert_eq!(top_fill.rect.origin.x, 0.0);
+        assert_eq!(top_fill.rect.origin.y, 0.0);
+        assert_eq!(top_fill.rect.size.width, 100.0, "顶部边框宽度应等于元素宽度");
+        assert_eq!(top_fill.rect.size.height, 3.0, "顶部边框高度应为 3");
+
+        // 第二个填充：右侧边框
+        let right_fill = &prims.fills[1];
+        assert_eq!(right_fill.color, Color::rgb(0, 255, 0), "右侧边框应为绿色");
+        assert_eq!(right_fill.rect.size.width, 5.0, "右侧边框宽度应为 5");
+        // 右侧边框高度 = 元素高度 - top - bottom = 60 - 3 - 0 = 57
+        assert_eq!(right_fill.rect.size.height, 57.0, "右侧边框高度应为 57（60-3-0）");
+        // 右侧边框 x = 元素宽度 - right = 100 - 5 = 95
+        assert_eq!(right_fill.rect.origin.x, 95.0, "右侧边框 x 应为 95（100-5）");
+        assert_eq!(
+            right_fill.rect.origin.y, 3.0,
+            "右侧边框 y 应为 3（从 top 边框下方开始）"
+        );
+    }
 }

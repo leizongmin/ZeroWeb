@@ -359,6 +359,40 @@ mod tests {
         assert!(result2.is_err(), "超出 max_size 时应失败");
     }
 
+    /// 清空所有数据后重新设置新项，验证干净状态。
+    #[test]
+    fn test_web_storage_clear_then_set() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        // 初始数据
+        storage.set("old_key1", "old_value1").unwrap();
+        storage.set("old_key2", "old_value2").unwrap();
+        storage.set("old_key3", "old_value3").unwrap();
+        assert_eq!(storage.len(), 3);
+        assert_eq!(storage.used_size(), 3 * (8 + 10)); // 3 * ("old_keyN" + "old_valueN") = 54
+
+        // 清空
+        storage.clear();
+        assert!(storage.is_empty());
+        assert_eq!(storage.len(), 0);
+        assert_eq!(storage.used_size(), 0);
+        assert_eq!(storage.get("old_key1"), None);
+        assert_eq!(storage.get("old_key2"), None);
+        assert_eq!(storage.get("old_key3"), None);
+
+        // 重新设置全新的键值对
+        storage.set("new_a", "alpha").unwrap();
+        storage.set("new_b", "beta").unwrap();
+        assert_eq!(storage.len(), 2);
+        assert!(!storage.is_empty());
+        assert_eq!(storage.get("new_a"), Some("alpha"));
+        assert_eq!(storage.get("new_b"), Some("beta"));
+        // 旧数据不应残留
+        assert_eq!(storage.get("old_key1"), None);
+        assert_eq!(storage.contains_key("old_key1"), false);
+        // used_size 应只反映新数据
+        assert_eq!(storage.used_size(), (5 + 5) + (5 + 4)); // "new_a"+"alpha" + "new_b"+"beta"
+    }
+
     /// 测试 localStorage clear() 操作：设置多个项，调用 clear()，验证全部被清除。
     #[test]
     fn test_local_storage_clear() {
