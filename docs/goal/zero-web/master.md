@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2661 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2695 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2661 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2695 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -31,9 +31,9 @@
 | render-foundation | 205 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
-| security | 155 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、**COOP/COEP** |
+| security | 155 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only** |
 | protocol | 87 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化** |
-| storage | 158 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突** |
+| storage | 158 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD** |
 | canvas | 179 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出** |
 | webview | 107 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置** |
 | wasm-sandbox | 72 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出** |
@@ -63,7 +63,19 @@
 
 ## 最近完成的改进
 
-### -3. z-index/is_sticky + 字体整形器 + 行内格式化增强（本轮，2661 测试）
+### -4. 多 crate 测试覆盖率提升（本轮，2695 测试）
+
+| 模块 | 实现内容 | 新增测试 |
+|------|----------|----------|
+| security | **mixed content data/blob/javascript URI**、**CORS wildcard + headers**、**same-origin 显式默认端口** | 13 |
+| security | **CSP scheme-source 匹配**、**frame-src 限制**、**report-only 模式** | 3 |
+| canvas | **变换组合非交换性**、**set_transform 替换验证**、**putImageData 边界** | 8 |
+| canvas | **gradient 多 stop 排序**、**重复 offset**、**越界 offset** | 3 |
+| dom | **shadow root closed 模式**、**compare_document_position 深度分支** | 4 |
+| net | **URL fragment+query**、**IPv4 host**、**相对路径解析**、**组合边界** | 7 |
+| storage | **Cache API CRUD**、**覆盖/keys**、**localStorage clear**、**session 隔离** | 5 |
+
+### -3. z-index/is_sticky + 字体整形器 + 行内格式化增强（前轮，2661 测试）
 
 | 模块 | 实现内容 | 新增测试 |
 |------|----------|----------|
