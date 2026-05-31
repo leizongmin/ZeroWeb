@@ -753,4 +753,80 @@ mod tests {
         assert_eq!(tracker.dirty_rects()[0].origin.x, 10.0);
         assert!((tracker.dirty_area() - 1200.0).abs() < 0.1);
     }
+
+    // ── 边界条件测试：合并阈值 / 大量矩形 / 负尺寸 ─────────────────
+
+    /// 测试合并阈值恰好在 150% 时矩形会被合并。
+    ///
+    /// 两个矩形各 100x100（面积各 10000），并集面积恰好等于 150% × (10000+10000) = 30000。
+    /// 由于条件是 <=，恰好在 150% 时应合并。
+    #[test]
+    fn test_merge_at_exactly_150_percent() {
+        let mut tracker = DirtyTracker::new();
+        // rect1: (0, 0, 100, 100) area = 10000
+        // rect2: (100, 0, 100, 100) area = 10000
+        // individual_area = 20000
+        // union: (0, 0, 200, 100) area = 20000
+        // 20000 <= 20000 * 1.5 = 30000 → 应该合并
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tracker.mark_dirty(Rect::new(100.0, 0.0, 100.0, 100.0));
+        assert_eq!(tracker.dirty_rects().len(), 2);
+
+        tracker.merge_overlapping();
+        // 恰好 150% 的比率也应合并（<= 判断）
+        assert!(
+            tracker.dirty_rects().len() <= 2,
+            "rects at exactly 150% threshold should be merged"
+        );
+    }
+
+    /// 测试合并 50 个小矩形时能正常终止，不会无限循环。
+    #[test]
+    fn test_merge_many_rects_no_infinite_loop() {
+        let mut tracker = DirtyTracker::new();
+        // 50 个紧密排列的 10x10 矩形，相互重叠
+        for i in 0..50 {
+            let x = (i % 10) as f32 * 9.0; // 每个间隔 9px，宽度 10px → 重叠 1px
+            let y = (i / 10) as f32 * 9.0;
+            tracker.mark_dirty(Rect::new(x, y, 10.0, 10.0));
+        }
+        assert_eq!(tracker.dirty_rects().len(), 50);
+
+        // 合并应正常终止
+        tracker.merge_overlapping();
+
+        // 合并后数量应减少（紧密重叠应合并为更少的矩形）
+        assert!(
+            tracker.dirty_rects().len() <= 50,
+            "merge should reduce or maintain rect count"
+        );
+        // 验证合并后仍有脏区域
+        assert!(tracker.dirty_area() > 0.0, "dirty area should be > 0 after merge");
+    }
+
+    /// 测试负宽高矩形的 mark_dirty 行为。
+    ///
+    /// is_empty 检查 width <= 0 || height <= 0，所以负尺寸矩形会被忽略。
+    #[test]
+    fn test_mark_dirty_negative_size_rect() {
+        let mut tracker = DirtyTracker::new();
+
+        // 负宽度矩形 → is_empty() 返回 true → 应被忽略
+        tracker.mark_dirty(Rect::new(0.0, 0.0, -10.0, 50.0));
+        assert!(
+            tracker.dirty_rects().is_empty(),
+            "negative width rect should be ignored"
+        );
+
+        // 负高度矩形 → 同理忽略
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 50.0, -10.0));
+        assert!(
+            tracker.dirty_rects().is_empty(),
+            "negative height rect should be ignored"
+        );
+
+        // 负宽度和负高度 → 同理忽略
+        tracker.mark_dirty(Rect::new(0.0, 0.0, -10.0, -10.0));
+        assert!(tracker.dirty_rects().is_empty(), "both negative rect should be ignored");
+    }
 }

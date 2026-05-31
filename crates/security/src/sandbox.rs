@@ -289,4 +289,52 @@ mod tests {
             assert_eq!(IframeSandboxFlag::parse_flag(name), Some(*flag));
         }
     }
+
+    /// 测试当 allows_same_origin 为 false 时，effective_origin 返回不透明源。
+    #[test]
+    fn test_effective_origin_opaque_when_no_same_origin() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-forms");
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert!(!sandbox.allows_same_origin());
+        let effective = sandbox.effective_origin(&iframe_origin);
+        assert_eq!(effective, SandboxOrigin::Opaque);
+    }
+
+    /// 测试当 allows_same_origin 为 true 时，effective_origin 保留原始源。
+    #[test]
+    fn test_effective_origin_preserves_when_same_origin_allowed() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-same-origin");
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert!(sandbox.allows_same_origin());
+        let effective = sandbox.effective_origin(&iframe_origin);
+        assert_eq!(effective, SandboxOrigin::Normal(iframe_origin.clone()));
+    }
+
+    /// 测试带用户激活的导航 → 允许。
+    #[test]
+    fn test_check_sandbox_navigation_with_activation() {
+        let sandbox = IframeSandbox::parse("allow-top-navigation-by-user-activation");
+        assert!(check_sandbox_navigation(&sandbox, true));
+    }
+
+    /// 测试不带用户激活的导航 → 在仅有 user-activation 标志时应被阻止。
+    #[test]
+    fn test_check_sandbox_navigation_without_activation() {
+        let sandbox = IframeSandbox::parse("allow-top-navigation-by-user-activation");
+        assert!(!check_sandbox_navigation(&sandbox, false));
+    }
+
+    /// 测试带用户激活的弹窗 → 允许（只要有 allow-popups 标志）。
+    #[test]
+    fn test_check_sandbox_popup_with_activation() {
+        let sandbox = IframeSandbox::parse("allow-popups");
+        assert!(check_sandbox_popup(&sandbox));
+    }
+
+    /// 测试不带用户激活的弹窗 → 不影响弹窗权限（popup 由标志控制，与用户激活无关）。
+    #[test]
+    fn test_check_sandbox_popup_without_activation() {
+        let sandbox = IframeSandbox::strict();
+        assert!(!check_sandbox_popup(&sandbox));
+    }
 }

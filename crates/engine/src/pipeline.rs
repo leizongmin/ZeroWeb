@@ -835,4 +835,215 @@ mod tests {
         // 缓存布局应始终可用
         assert!(pipeline.layout().is_some());
     }
+
+    // ── 边界条件测试：畸形 CSS / 增量阈值 / 无先前渲染 / 混合操作 ──
+
+    /// 测试渲染包含语法错误的 CSS 不 panic。
+    ///
+    /// CSS 包含无法解析的内容如 {{{，应容错完成。
+    #[test]
+    fn test_render_html_malformed_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let css = "{{{";
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0, "malformed CSS should not panic");
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试增量渲染在脏区域恰好为视口面积 50% 时的行为。
+    ///
+    /// viewport_area = 800 * 600 = 480000, 50% = 240000。
+    /// dirty_area 恰好为 240000 → 不触发全量重绘（> 50% 才触发，等于不触发）。
+    /// 但由于 incremental_render 内部直接调用 render_html 后 clear，
+    /// 最终 dirty_tracker 应处于 clear 状态。
+    #[test]
+    fn test_incremental_render_at_50_percent_threshold() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let _first = pipeline.render_html(html, "");
+
+        // 创建脏区域：恰好 50% 的视口面积
+        // 800 * 600 * 0.5 = 240000 → 例如 400 x 600 = 240000
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 400.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 400.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+        // 渲染后 dirty_tracker 被 clear，不应为 full_redraw
+        assert!(
+            !pipeline.dirty_tracker().is_full_redraw(),
+            "at exactly 50%, dirty_area > viewport_area * 0.5 is false, so no full redraw"
+        );
+    }
+
+    /// 测试增量渲染在脏区域低于 50% 视口面积时保持增量（不退化为全量重绘）。
+    ///
+    /// dirty_area = 49.9% of viewport → 不触发 full_redraw。
+    #[test]
+    fn test_incremental_render_below_50_percent() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+        let _first = pipeline.render_html(html, "");
+
+        // 49.9% of 800*600 = 239520 → 使用 399.2 x 600 ≈ 239520
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 399.2,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 399.2,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+        // 低于 50% → 不应退化为全量重绘
+        assert!(
+            !pipeline.dirty_tracker().is_full_redraw(),
+            "below 50% should not trigger full redraw"
+        );
+    }
+
+    /// 测试在全新 pipeline（未经过 render_html）上直接调用 recompute_styles 不 panic。
+    #[test]
+    fn test_recompute_styles_without_prior_render() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        assert!(pipeline.layout().is_none(), "fresh pipeline should have no layout");
+
+        let html = "<html><body><div>Fresh</div></body></html>";
+        let doc = zero_dom::parse_html(html);
+        let css = "div { background-color: red; width: 100px; height: 50px; }";
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+
+        // 直接调用 recompute_styles，无需先 render_html
+        let (primitives, _styles, layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        // 应正常完成
+        assert!(layout.viewport_width > 0.0, "layout should have valid viewport");
+        assert!(pipeline.layout().is_some(), "cached layout should be set");
+        assert!(!primitives.fills.is_empty(), "CSS should produce fills");
+    }
+
+    /// 测试混合渲染操作序列：render_html → recompute_styles → incremental_render。
+    ///
+    /// 验证每步后脏区域追踪器状态正确。
+    #[test]
+    fn test_mixed_render_operations() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+
+        // 步骤 1：全量渲染
+        let first = pipeline.render_html(html, "div { background-color: red; width: 200px; height: 100px; }");
+        assert!(pipeline.layout().is_some());
+        assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
+        let first_fill_count = first.primitives.fills.len();
+
+        // 步骤 2：重新计算样式（改为蓝色背景）
+        let doc = zero_dom::parse_html(html);
+        let css_blue = ".box { background-color: blue; width: 300px; height: 150px; }";
+        let ss_blue = vec![zero_css_parser::Parser::parse_stylesheet(css_blue)];
+        let (prims, _styles, _layout) = pipeline.recompute_styles(&doc, &ss_blue);
+        assert!(!prims.fills.is_empty());
+        assert!(pipeline.layout().is_some());
+
+        // 步骤 3：增量渲染（小脏区域）
+        let dirty_box = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0);
+
+        // 步骤 4：验证脏区域追踪器最终状态
+        // incremental_render 内部会 clear，所以应干净
+        assert!(
+            pipeline.dirty_tracker().dirty_rects().is_empty(),
+            "dirty rects should be empty after incremental_render clear"
+        );
+        assert!(
+            !pipeline.dirty_tracker().is_full_redraw(),
+            "small dirty area should not trigger full redraw"
+        );
+        assert!(pipeline.layout().is_some());
+
+        // 确保全量渲染确实产生了图元（用于对比）
+        assert!(first_fill_count > 0, "first render should have fills");
+    }
 }

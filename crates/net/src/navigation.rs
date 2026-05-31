@@ -517,4 +517,31 @@ mod tests {
         // 再前进应失败
         assert!(nav.go_forward_n(1).is_none());
     }
+
+    // ── 新增边界条件测试 ──
+
+    /// 测试 replace_current 在无历史条目时为 no-op，不产生任何副作用。
+    #[test]
+    fn test_navigation_replace_current_when_empty() {
+        let mut nav = NavigationHistory::new(50);
+        nav.replace_current("http://should-not-exist.com", Some("不应存在".into()));
+        assert!(nav.is_empty(), "空历史中 replace_current 应为 no-op");
+        assert_eq!(nav.len(), 0);
+        assert!(nav.current().is_none());
+    }
+
+    /// 测试恰好 max_entries 条目时不触发淘汰。
+    #[test]
+    fn test_navigation_max_entries_boundary() {
+        let mut nav = NavigationHistory::new(3);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        // 恰好 3 条，等于 max_entries，不应淘汰
+        assert_eq!(nav.len(), 3, "恰好 max_entries 条目不应淘汰");
+        assert!(nav.can_go_back());
+        // 添加第 4 条时才应淘汰最旧的
+        nav.navigate("http://d.com", None);
+        assert_eq!(nav.len(), 3, "超出 max_entries 后应淘汰到 3 条");
+    }
 }

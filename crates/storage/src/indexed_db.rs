@@ -2748,6 +2748,409 @@ mod tests {
         assert_eq!(db.count("store").unwrap(), 2);
     }
 
+    // ── 新增边界测试：游标 advance / continue / 迭代 ──
+
+    /// 打开值游标，advance(N) 跳过 N 条记录，验证游标停在正确位置。
+    #[test]
+    fn test_idb_cursor_advance() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=6 {
+            db.add(
+                "store",
+                serde_json::json!(format!("v{i}")),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+
+        let mut cursor = db.open_cursor("store", None).unwrap().unwrap();
+        // 初始位置：第一条记录（key=1）
+        assert_eq!(db.cursor_record(&cursor).unwrap().value, serde_json::json!("v1"));
+
+        // advance(3)：跳 3 步，落到第 4 条（key=4，value="v4"）
+        assert!(cursor.advance(3));
+        assert_eq!(db.cursor_record(&cursor).unwrap().value, serde_json::json!("v4"));
+        assert_eq!(cursor.position(), 3);
+
+        // advance(2)：跳 2 步，落到第 6 条（key=6，value="v6"）
+        assert!(cursor.advance(2));
+        assert_eq!(db.cursor_record(&cursor).unwrap().value, serde_json::json!("v6"));
+
+        // advance(1)：超出范围
+        assert!(!cursor.advance(1));
+        assert!(cursor.is_finished());
+    }
+
+    /// 打开键游标，continue_to 跳到指定键。
+    #[test]
+    fn test_idb_cursor_continue_to() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=5 {
+            db.add("store", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+                .unwrap();
+        }
+
+        let mut cursor = db.open_key_cursor("store", None).unwrap().unwrap();
+        // 初始在 key=1
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(1.0)));
+
+        // continue_to(3.0) → 跳到 key=3
+        assert!(cursor.continue_to(&IdbKey::Number(3.0)));
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(3.0)));
+
+        // continue_to(10.0) → 超出范围
+        assert!(!cursor.continue_to(&IdbKey::Number(10.0)));
+    }
+
+    /// 打开值游标并逐条迭代全部记录。
+    #[test]
+    fn test_idb_cursor_iteration() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        // 按 3-1-2 的顺序插入，验证迭代时按键排序
+        db.add("store", serde_json::json!("c"), Some(IdbKey::Number(3.0)))
+            .unwrap();
+        db.add("store", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+            .unwrap();
+        db.add("store", serde_json::json!("b"), Some(IdbKey::Number(2.0)))
+            .unwrap();
+
+        let mut cursor = db.open_cursor("store", None).unwrap().unwrap();
+        let mut values = Vec::new();
+        loop {
+            let rec = db.cursor_record(&cursor).unwrap();
+            values.push(rec.value.clone());
+            if !cursor.continue_next() {
+                break;
+            }
+        }
+        assert_eq!(
+            values,
+            vec![serde_json::json!("a"), serde_json::json!("b"), serde_json::json!("c"),]
+        );
+        assert!(cursor.is_finished());
+    }
+
+    /// 打开键游标，advance(N) 跳过 N 条记录，验证键序列。
+    #[test]
+    fn test_idb_key_cursor_advance() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in [10, 20, 30, 40, 50] {
+            db.add("store", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+                .unwrap();
+        }
+
+        let mut cursor = db.open_key_cursor("store", None).unwrap().unwrap();
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(10.0)));
+
+        // advance(2) → 跳到 30
+        assert!(cursor.advance(2));
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(30.0)));
+
+        // advance(1) → 跳到 40
+        assert!(cursor.advance(1));
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(40.0)));
+
+        // advance(1) → 跳到 50
+        assert!(cursor.advance(1));
+        assert_eq!(db.cursor_key(&cursor), Some(&IdbKey::Number(50.0)));
+
+        // advance(1) → 超出范围
+        assert!(!cursor.advance(1));
+        assert!(cursor.is_finished());
+    }
+
+    /// 打开键游标，continue_next 逐步前进。
+    #[test]
+    fn test_idb_key_cursor_continue_next() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        db.add("store", serde_json::json!("x"), Some(IdbKey::String("a".into())))
+            .unwrap();
+        db.add("store", serde_json::json!("y"), Some(IdbKey::String("b".into())))
+            .unwrap();
+        db.add("store", serde_json::json!("z"), Some(IdbKey::String("c".into())))
+            .unwrap();
+
+        let mut cursor = db.open_key_cursor("store", None).unwrap().unwrap();
+        let mut keys = Vec::new();
+        loop {
+            keys.push(db.cursor_key(&cursor).cloned());
+            if !cursor.advance(1) {
+                break;
+            }
+        }
+        assert_eq!(
+            keys,
+            vec![
+                Some(IdbKey::String("a".into())),
+                Some(IdbKey::String("b".into())),
+                Some(IdbKey::String("c".into())),
+            ]
+        );
+        assert!(cursor.is_finished());
+    }
+
+    /// 创建事务，添加多条记录，commit_tx，验证记录持久化。
+    #[test]
+    fn test_idb_transaction_commit() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+
+        let mut tx = db.transaction(&["store"], IdbTransactionMode::ReadWrite).unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Alice"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Bob"}),
+            Some(IdbKey::String("k2".into())),
+        )
+        .unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Charlie"}),
+            Some(IdbKey::String("k3".into())),
+        )
+        .unwrap();
+
+        // 提交前，store 中没有数据
+        assert_eq!(db.count("store").unwrap(), 0);
+
+        db.commit_tx(&mut tx).unwrap();
+        assert!(tx.is_committed());
+
+        // 提交后，3 条记录全部持久化
+        assert_eq!(db.count("store").unwrap(), 3);
+        assert_eq!(
+            db.get("store", &IdbKey::String("k1".into())).unwrap().value["name"],
+            "Alice"
+        );
+        assert_eq!(
+            db.get("store", &IdbKey::String("k2".into())).unwrap().value["name"],
+            "Bob"
+        );
+        assert_eq!(
+            db.get("store", &IdbKey::String("k3".into())).unwrap().value["name"],
+            "Charlie"
+        );
+    }
+
+    /// 创建事务，添加多条记录，abort，验证记录未持久化。
+    #[test]
+    fn test_idb_transaction_abort() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        // 预存一条数据
+        db.add(
+            "store",
+            serde_json::json!("original"),
+            Some(IdbKey::String("k0".into())),
+        )
+        .unwrap();
+
+        let mut tx = db.transaction(&["store"], IdbTransactionMode::ReadWrite).unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!("new1"),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.tx_put(
+            &tx,
+            "store",
+            serde_json::json!("modified"),
+            Some(IdbKey::String("k0".into())),
+        )
+        .unwrap();
+
+        // abort 丢弃所有缓冲变更
+        tx.abort().unwrap();
+        assert!(tx.is_aborted());
+
+        // k0 保持原始值，k1 不存在
+        assert_eq!(
+            db.get("store", &IdbKey::String("k0".into())).unwrap().value,
+            serde_json::json!("original")
+        );
+        assert!(db.get("store", &IdbKey::String("k1".into())).is_none());
+        assert_eq!(db.count("store").unwrap(), 1);
+    }
+
+    /// put() 覆盖已有记录，值更新且记录数不变。
+    #[test]
+    fn test_idb_put_overwrites_existing() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::Number(42.0);
+        db.add(
+            "store",
+            serde_json::json!({"version": 1, "data": "old"}),
+            Some(key.clone()),
+        )
+        .unwrap();
+        assert_eq!(db.count("store").unwrap(), 1);
+
+        // put 覆盖同一 key
+        let returned = db
+            .put(
+                "store",
+                serde_json::json!({"version": 2, "data": "new"}),
+                Some(key.clone()),
+            )
+            .unwrap();
+        assert_eq!(returned, key);
+
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value["version"], 2);
+        assert_eq!(record.value["data"], "new");
+        // 记录数不变
+        assert_eq!(db.count("store").unwrap(), 1);
+    }
+
+    /// add() 在主键已存在时应拒绝。
+    #[test]
+    fn test_idb_add_rejects_duplicate() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("dup".into());
+        db.add("store", serde_json::json!("first"), Some(key.clone())).unwrap();
+
+        // 再次 add 同一 key 应报错
+        let result = db.add("store", serde_json::json!("second"), Some(key.clone()));
+        assert!(result.is_err());
+
+        // 原始记录未被覆盖
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("first"));
+    }
+
+    /// count_with_range 对不同范围返回正确计数。
+    #[test]
+    fn test_idb_count_with_range() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        for i in 1..=10 {
+            db.add("store", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+                .unwrap();
+        }
+
+        // 全范围 [1, 10]
+        let full = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::Number(10.0), false, false);
+        assert_eq!(db.count_with_range("store", &full).unwrap(), 10);
+
+        // 子范围 [3, 7]
+        let mid = IdbKeyRange::bound(IdbKey::Number(3.0), IdbKey::Number(7.0), false, false);
+        assert_eq!(db.count_with_range("store", &mid).unwrap(), 5);
+
+        // 开区间 (3, 7)
+        let open = IdbKeyRange::bound(IdbKey::Number(3.0), IdbKey::Number(7.0), true, true);
+        assert_eq!(db.count_with_range("store", &open).unwrap(), 3);
+
+        // lower_bound >= 8
+        let lower = IdbKeyRange::lower_bound(IdbKey::Number(8.0), false);
+        assert_eq!(db.count_with_range("store", &lower).unwrap(), 3);
+
+        // upper_bound <= 2
+        let upper = IdbKeyRange::upper_bound(IdbKey::Number(2.0), false);
+        assert_eq!(db.count_with_range("store", &upper).unwrap(), 2);
+
+        // only(5.0)
+        let only = IdbKeyRange::only(IdbKey::Number(5.0));
+        assert_eq!(db.count_with_range("store", &only).unwrap(), 1);
+    }
+
+    /// 通过索引范围查询，验证过滤结果正确。
+    #[test]
+    fn test_idb_get_all_from_index_with_range() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        // 插入不同年龄段用户
+        db.add(
+            "store",
+            serde_json::json!({"name": "A", "age": 15}),
+            Some(IdbKey::String("u1".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"name": "B", "age": 25}),
+            Some(IdbKey::String("u2".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"name": "C", "age": 35}),
+            Some(IdbKey::String("u3".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"name": "D", "age": 45}),
+            Some(IdbKey::String("u4".into())),
+        )
+        .unwrap();
+
+        db.create_index("store", "age_idx", "age", false, false).unwrap();
+
+        // 查询 20 <= age <= 40
+        let range = IdbKeyRange::bound(IdbKey::Number(20.0), IdbKey::Number(40.0), false, false);
+        let results = db.get_all_from_index_with_range("store", "age_idx", &range).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].value["name"], "B");
+        assert_eq!(results[1].value["name"], "C");
+    }
+
+    /// 在索引上打开游标，验证迭代顺序按索引键排列。
+    #[test]
+    fn test_idb_cursor_on_index() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        // 按 name 插入顺序为 Z, A, M
+        db.add(
+            "store",
+            serde_json::json!({"name": "Zebra"}),
+            Some(IdbKey::String("u1".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"name": "Apple"}),
+            Some(IdbKey::String("u2".into())),
+        )
+        .unwrap();
+        db.add(
+            "store",
+            serde_json::json!({"name": "Mango"}),
+            Some(IdbKey::String("u3".into())),
+        )
+        .unwrap();
+
+        db.create_index("store", "name_idx", "name", false, false).unwrap();
+
+        let mut cursor = db.open_cursor_on_index("store", "name_idx", None).unwrap().unwrap();
+        let mut names = Vec::new();
+        loop {
+            let rec = db.cursor_record(&cursor).unwrap();
+            names.push(rec.value["name"].as_str().unwrap().to_string());
+            if !cursor.continue_next() {
+                break;
+            }
+        }
+        // 应按 name 索引键排序：Apple, Mango, Zebra
+        assert_eq!(names, vec!["Apple", "Mango", "Zebra"]);
+    }
+
     /// 混合操作：add + put + delete + abort，store 不受影响。
     #[test]
     fn test_tx_mixed_operations_abort() {

@@ -1593,4 +1593,325 @@ mod tests {
         assert_eq!(taffy_style.size.width, taffy::style::Dimension::Percent(0.5));
         assert_eq!(taffy_style.size.height, taffy::style::Dimension::Percent(0.75));
     }
+
+    // ── 边界条件测试（第二批）──
+
+    /// 测试 InlineFlex display 映射为 taffy::Display::Flex。
+    #[test]
+    fn test_convert_inline_flex_display() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::InlineFlex;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.display, taffy::style::Display::Flex);
+    }
+
+    /// 测试 InlineGrid display 映射为 taffy::Display::Grid。
+    #[test]
+    fn test_convert_inline_grid_display() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::InlineGrid;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.display, taffy::style::Display::Grid);
+    }
+
+    /// 测试 Flow、FlowRoot、ListItem、Contents 都映射为 taffy::Display::Block。
+    #[test]
+    fn test_convert_flow_variants_display() {
+        let mut style = ComputedStyle::default();
+        for value in [
+            DisplayValue::Flow,
+            DisplayValue::FlowRoot,
+            DisplayValue::ListItem,
+            DisplayValue::Contents,
+        ] {
+            style.display = value;
+            let taffy_style = computed_style_to_taffy(&style, None);
+            assert_eq!(taffy_style.display, taffy::style::Display::Block);
+        }
+    }
+
+    /// 测试 Em、Rem、Vw、Vh 单位转换为 length(v as f32)。
+    #[test]
+    fn test_convert_length_em_rem_vw_vh() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Em(16.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(16.0));
+
+        style.width = LengthValue::Rem(12.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(12.0));
+
+        style.width = LengthValue::Vw(50.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(50.0));
+
+        style.width = LengthValue::Vh(25.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(25.0));
+    }
+
+    /// 测试 Vmin、Vmax、Ch 单位转换为 length(v as f32)。
+    #[test]
+    fn test_convert_length_vmin_vmax_ch() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Vmin(10.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(10.0));
+
+        style.width = LengthValue::Vmax(20.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(20.0));
+
+        style.width = LengthValue::Ch(8.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(8.0));
+    }
+
+    /// 测试 LengthValue::Calc 在所有转换函数中映射为 length(0.0)。
+    #[test]
+    fn test_convert_length_calc_fallback() {
+        use zero_css_parser::values::CalcExpr;
+        let calc = LengthValue::Calc(Box::new(CalcExpr::Number(42.0)));
+
+        // convert_length_to_dimension
+        assert_eq!(convert_length_to_dimension(&calc), taffy::style::Dimension::Length(0.0));
+
+        // convert_max_length_to_dimension
+        assert_eq!(
+            convert_max_length_to_dimension(&calc),
+            taffy::style::Dimension::Length(0.0)
+        );
+
+        // convert_length_to_lp
+        assert_eq!(convert_length_to_lp(&calc), taffy::style::LengthPercentage::Length(0.0));
+
+        // convert_length_to_lpa
+        assert_eq!(
+            convert_length_to_lpa(&calc),
+            taffy::style::LengthPercentageAuto::Length(0.0)
+        );
+    }
+
+    /// 测试 max-width/max-height 中 Px(f64::INFINITY) 映射为 Auto。
+    #[test]
+    fn test_convert_max_length_infinity() {
+        let mut style = ComputedStyle::default();
+        style.max_width = LengthValue::Px(f64::INFINITY);
+        style.max_height = LengthValue::Px(f64::INFINITY);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Auto);
+        assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Auto);
+    }
+
+    /// 测试 max-width 的 Px 和 Percentage 值转换。
+    #[test]
+    fn test_convert_max_length_px_percentage() {
+        let mut style = ComputedStyle::default();
+        style.max_width = LengthValue::Px(500.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(500.0));
+
+        style.max_width = LengthValue::Percentage(80.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Percent(0.8));
+    }
+
+    /// 测试 FlexWrap::WrapReverse 映射为 taffy::FlexWrap::WrapReverse。
+    #[test]
+    fn test_convert_flex_wrap_reverse() {
+        let mut style = ComputedStyle::default();
+        style.flex_wrap = FlexWrapValue::WrapReverse;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_wrap, taffy::style::FlexWrap::WrapReverse);
+    }
+
+    /// 测试 FlexBasisValue::Content 映射为 Auto。
+    #[test]
+    fn test_convert_flex_basis_content() {
+        let mut style = ComputedStyle::default();
+        style.flex_basis = FlexBasisValue::Content;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Auto);
+    }
+
+    /// 测试 Auto 在 convert_length_to_lp 中映射为 length(0.0)。
+    #[test]
+    fn test_convert_length_to_lp_auto() {
+        let result = convert_length_to_lp(&LengthValue::Auto);
+        assert_eq!(result, taffy::style::LengthPercentage::Length(0.0));
+    }
+
+    /// 测试 Percentage 在 convert_length_to_lp 中转换为 Percent。
+    #[test]
+    fn test_convert_length_to_lp_percentage() {
+        let result = convert_length_to_lp(&LengthValue::Percentage(33.0));
+        assert_eq!(result, taffy::style::LengthPercentage::Percent(0.33));
+    }
+
+    /// 测试 Auto 在 convert_length_to_lpa 中映射为 LengthPercentageAuto::Auto。
+    #[test]
+    fn test_convert_length_to_lpa_auto() {
+        let result = convert_length_to_lpa(&LengthValue::Auto);
+        assert_eq!(result, taffy::style::LengthPercentageAuto::Auto);
+    }
+
+    /// 测试 Percentage 在 convert_length_to_lpa 中转换为 Percent。
+    #[test]
+    fn test_convert_length_to_lpa_percentage() {
+        let result = convert_length_to_lpa(&LengthValue::Percentage(60.0));
+        assert_eq!(result, taffy::style::LengthPercentageAuto::Percent(0.6));
+    }
+
+    /// 测试 align_content 的所有变体转换。
+    ///
+    /// 注意：computed_style_to_taffy 中 align_content 使用 style.justify_content，
+    /// 所以通过设置 justify_content 来测试 align_content 的转换结果。
+    #[test]
+    fn test_convert_alignment_align_content() {
+        let cases: Vec<(AlignmentValue, Option<taffy::style::AlignContent>)> = vec![
+            (
+                AlignmentValue::SpaceBetween,
+                Some(taffy::style::AlignContent::SpaceBetween),
+            ),
+            (
+                AlignmentValue::SpaceAround,
+                Some(taffy::style::AlignContent::SpaceAround),
+            ),
+            (
+                AlignmentValue::SpaceEvenly,
+                Some(taffy::style::AlignContent::SpaceEvenly),
+            ),
+            (AlignmentValue::Stretch, Some(taffy::style::AlignContent::Stretch)),
+            (AlignmentValue::FlexStart, Some(taffy::style::AlignContent::FlexStart)),
+            (AlignmentValue::FlexEnd, Some(taffy::style::AlignContent::FlexEnd)),
+            (AlignmentValue::Center, Some(taffy::style::AlignContent::Center)),
+            (AlignmentValue::Start, Some(taffy::style::AlignContent::Start)),
+            (AlignmentValue::End, Some(taffy::style::AlignContent::End)),
+        ];
+        for (value, expected) in cases {
+            let mut style = ComputedStyle::default();
+            style.justify_content = value;
+            let taffy_style = computed_style_to_taffy(&style, None);
+            assert_eq!(taffy_style.align_content, expected);
+        }
+    }
+
+    /// 测试 justify_content 的 SpaceBetween、SpaceAround、SpaceEvenly、Start、End、Stretch 变体。
+    #[test]
+    fn test_convert_alignment_justify_content_variants() {
+        let cases: Vec<(AlignmentValue, Option<taffy::style::JustifyContent>)> = vec![
+            (
+                AlignmentValue::SpaceBetween,
+                Some(taffy::style::JustifyContent::SpaceBetween),
+            ),
+            (
+                AlignmentValue::SpaceAround,
+                Some(taffy::style::JustifyContent::SpaceAround),
+            ),
+            (
+                AlignmentValue::SpaceEvenly,
+                Some(taffy::style::JustifyContent::SpaceEvenly),
+            ),
+            (AlignmentValue::Start, Some(taffy::style::JustifyContent::Start)),
+            (AlignmentValue::End, Some(taffy::style::JustifyContent::End)),
+            (AlignmentValue::Stretch, Some(taffy::style::JustifyContent::Stretch)),
+        ];
+        for (value, expected) in cases {
+            let mut style = ComputedStyle::default();
+            style.justify_content = value;
+            let taffy_style = computed_style_to_taffy(&style, None);
+            assert_eq!(taffy_style.justify_content, expected);
+        }
+    }
+
+    /// 测试 align_self 的 FlexStart、FlexEnd、Center、Stretch、Start、End 变体。
+    #[test]
+    fn test_convert_alignment_align_self_variants() {
+        let cases: Vec<(AlignmentValue, Option<taffy::style::AlignSelf>)> = vec![
+            (AlignmentValue::FlexStart, Some(taffy::style::AlignSelf::FlexStart)),
+            (AlignmentValue::FlexEnd, Some(taffy::style::AlignSelf::FlexEnd)),
+            (AlignmentValue::Center, Some(taffy::style::AlignSelf::Center)),
+            (AlignmentValue::Stretch, Some(taffy::style::AlignSelf::Stretch)),
+            (AlignmentValue::Start, Some(taffy::style::AlignSelf::Start)),
+            (AlignmentValue::End, Some(taffy::style::AlignSelf::End)),
+        ];
+        for (value, expected) in cases {
+            let mut style = ComputedStyle::default();
+            style.align_self = value;
+            let taffy_style = computed_style_to_taffy(&style, None);
+            assert_eq!(taffy_style.align_self, expected);
+        }
+    }
+
+    /// 测试 tokenize_track_list 正确处理嵌套括号。
+    #[test]
+    fn test_tokenized_track_list_nested_parens() {
+        let tokens = tokenize_track_list("repeat(2, minmax(10px, 1fr)) 100px");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], "repeat(2, minmax(10px, 1fr))");
+        assert_eq!(tokens[1], "100px");
+    }
+
+    /// 测试 parse_minmax_as_non_repeated 参数不足时返回 AUTO。
+    #[test]
+    fn test_parse_minmax_as_non_repeated_malformed() {
+        // 只有一个参数（缺少逗号分隔的第二部分），应返回 AUTO
+        let result = parse_minmax_as_non_repeated("100px");
+        assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    }
+
+    /// 测试 resolve_named_area 对未知 which 参数返回 Auto。
+    #[test]
+    fn test_resolve_named_area_unknown_which() {
+        use zero_style_system::GridLineValue;
+        let mut areas = std::collections::HashMap::new();
+        areas.insert("header".to_string(), (1, 2, 1, 3));
+
+        let val = resolve_named_area(
+            &GridLineValue::Name("header".to_string()),
+            Some(&areas),
+            "unknown-param",
+        );
+        assert_eq!(val, GridLineValue::Auto);
+    }
+
+    /// 测试 convert_float 对 Left、Right、InlineStart、InlineEnd 返回 true，None 返回 false。
+    #[test]
+    fn test_convert_float_variants() {
+        assert!(convert_float(&FloatValue::Left));
+        assert!(convert_float(&FloatValue::Right));
+        assert!(convert_float(&FloatValue::InlineStart));
+        assert!(convert_float(&FloatValue::InlineEnd));
+        assert!(!convert_float(&FloatValue::None));
+    }
+
+    /// 测试 convert_clear 对 Left、Right、Both、InlineStart、InlineEnd 返回 true，None 返回 false。
+    #[test]
+    fn test_convert_clear_variants() {
+        assert!(convert_clear(&ClearValue::Left));
+        assert!(convert_clear(&ClearValue::Right));
+        assert!(convert_clear(&ClearValue::Both));
+        assert!(convert_clear(&ClearValue::InlineStart));
+        assert!(convert_clear(&ClearValue::InlineEnd));
+        assert!(!convert_clear(&ClearValue::None));
+    }
+
+    /// 测试 OverflowValue::Auto 映射为 taffy Scroll。
+    #[test]
+    fn test_overflow_auto_maps_to_scroll() {
+        let mut style = ComputedStyle::default();
+        style.overflow_x = OverflowValue::Auto;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.overflow.x, taffy::style::Overflow::Scroll);
+    }
+
+    /// 测试 OverflowValue::Clip 映射为 taffy Clip。
+    #[test]
+    fn test_overflow_clip_maps_to_clip() {
+        let mut style = ComputedStyle::default();
+        style.overflow_y = OverflowValue::Clip;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.overflow.y, taffy::style::Overflow::Clip);
+    }
 }

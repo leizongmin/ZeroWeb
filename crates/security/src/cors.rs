@@ -879,4 +879,89 @@ mod tests {
         let result = check_cors(&policy, &origin_d, "GET", &[]);
         assert!(!result.allowed, "不在源列表中的源应被阻止");
     }
+
+    /// 测试 allow_credentials 为 true 且源为通配符 "*" 时请求应被拒绝。
+    /// 这是 CORS 安全的关键边界：带凭证的请求不能使用通配符源。
+    #[test]
+    fn test_check_cors_credentials_with_wildcard_rejected() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(!result.allowed, "通配符源 + allow_credentials=true 应被拒绝");
+        assert!(result.reason.contains("credentials"));
+    }
+
+    /// 测试 GET 请求 + 简单 Content-Type 为简单请求。
+    #[test]
+    fn test_is_simple_request_get_with_simple_content_type() {
+        assert!(is_simple_request("GET", Some("text/plain"), &[]));
+    }
+
+    /// 测试 POST 请求 + application/x-www-form-urlencoded 为简单请求。
+    #[test]
+    fn test_is_simple_request_post_simple_content_type() {
+        assert!(is_simple_request(
+            "POST",
+            Some("application/x-www-form-urlencoded"),
+            &[]
+        ));
+    }
+
+    /// 测试带有 X-Custom-Header 的请求不是简单请求。
+    #[test]
+    fn test_is_simple_request_custom_header_not_simple() {
+        assert!(!is_simple_request(
+            "GET",
+            None,
+            &[("X-Custom-Header".to_string(), "value".to_string())]
+        ));
+    }
+
+    /// 测试 POST + application/json 不是简单请求（非简单 Content-Type）。
+    #[test]
+    fn test_is_simple_request_non_simple_content_type() {
+        assert!(!is_simple_request("POST", Some("application/json"), &[]));
+    }
+
+    /// 测试 PUT 方法不是简单请求。
+    #[test]
+    fn test_is_simple_request_put_method() {
+        assert!(!is_simple_request("PUT", None, &[]));
+    }
+
+    /// 测试 generate_preflight_response 正确填充所有响应头字段。
+    #[test]
+    fn test_generate_preflight_response() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string(), "PUT".to_string()],
+            allow_headers: vec!["X-Custom".to_string(), "Authorization".to_string()],
+            allow_credentials: true,
+            max_age: Some(1800),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "POST", &["X-Custom".to_string()]);
+
+        // allow_origin 应为匹配的具体源
+        assert_eq!(headers.allow_origin, Some("http://example.com".to_string()));
+        // allow_methods 应包含策略中的所有方法
+        let methods = headers.allow_methods.unwrap();
+        assert!(methods.contains("GET"));
+        assert!(methods.contains("POST"));
+        assert!(methods.contains("PUT"));
+        // allow_headers 应包含策略中的自定义头
+        let hdrs = headers.allow_headers.unwrap();
+        assert!(hdrs.contains("X-Custom"));
+        assert!(hdrs.contains("Authorization"));
+        // max_age 应正确输出
+        assert_eq!(headers.max_age, Some("1800".to_string()));
+        // allow_credentials 应为 "true"
+        assert_eq!(headers.allow_credentials, Some("true".to_string()));
+    }
 }
