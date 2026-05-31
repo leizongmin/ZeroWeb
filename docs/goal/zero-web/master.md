@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4325 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4361 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4325 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4361 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -73,7 +73,22 @@
 
 ## 最近完成的改进
 
-### -30. CSS mix-blend-mode/scrollbar-width/scrollbar-gutter + 6 crate 边界测试 + 78 个测试（本轮，4325 测试）
+### -31. 6 集成测试 + columns 简写 + 6 crate 边界测试 + 36 个测试（本轮，4361 测试）
+
+新增 6 个跨 crate 集成测试（filter/mix-blend-mode/scrollbar-width/contain 多值/appearance/columns 简写管线）、columns 简写 apply_property_value 支持、6 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| integration | **filter/mix-blend-mode/scrollbar-width/contain 多值/appearance/columns 简写**管线 | 6 |
+| style-system | **columns 简写 apply_property_value** + 边界测试 | 5 |
+| security | CSP/CORS/sandbox 边界 | 5 |
+| storage | IndexedDB/Cache API 边界 | 5 |
+| net | URL/请求/Cookie 边界 | 5 |
+| css-parser | 解析边界 | 5 |
+| protocol | IPC 序列化边界 | 5 |
+Total: 4325 → 4361 (+36 tests)
+
+### -30. CSS mix-blend-mode/scrollbar-width/scrollbar-gutter + 6 crate 边界测试 + 78 个测试（前轮，4325 测试）
 
 新增 3 个 CSS 属性、6 个 crate 边界条件测试：
 
