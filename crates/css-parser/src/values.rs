@@ -214,6 +214,19 @@ pub enum CalcExpr {
     Length(LengthValue),
     /// 二元运算：left op right。
     BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
+    /// min() 函数：取所有参数中的最小值。
+    Min(Vec<CalcExpr>),
+    /// max() 函数：取所有参数中的最大值。
+    Max(Vec<CalcExpr>),
+    /// clamp(min, val, max) 函数：将 val 限制在 [min, max] 范围内。
+    Clamp {
+        /// 最小值。
+        min: Box<CalcExpr>,
+        /// 首选值。
+        val: Box<CalcExpr>,
+        /// 最大值。
+        max: Box<CalcExpr>,
+    },
 }
 
 /// CSS calc() 运算符。
@@ -368,6 +381,59 @@ impl<'a> CalcParser<'a> {
             }
             self.depth -= 1;
             inner
+        } else if self.try_consume("min(") {
+            // min(v1, v2, ...) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let args = self.parse_comma_list()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Min(args)
+        } else if self.try_consume("max(") {
+            // max(v1, v2, ...) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let args = self.parse_comma_list()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Max(args)
+        } else if self.try_consume("clamp(") {
+            // clamp(min, val, max) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let min = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                return None;
+            }
+            let val = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                return None;
+            }
+            let max = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Clamp {
+                min: Box::new(min),
+                val: Box::new(val),
+                max: Box::new(max),
+            }
         } else if self.try_consume("(") {
             // 括号表达式
             let inner = self.parse_expr()?;
@@ -388,15 +454,29 @@ impl<'a> CalcParser<'a> {
         Some(expr)
     }
 
+    /// 解析逗号分隔的表达式列表（用于 min/max 函数）。
+    fn parse_comma_list(&mut self) -> Option<Vec<CalcExpr>> {
+        let mut args = Vec::new();
+        args.push(self.parse_expr()?);
+        loop {
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                break;
+            }
+            args.push(self.parse_expr()?);
+        }
+        Some(args)
+    }
+
     /// 解析原子操作数（数值或带单位的长度值）。
     fn parse_atom(&mut self) -> Option<CalcExpr> {
         self.skip_whitespace();
         let rest = self.peek_rest();
 
-        // 从当前位置读取到下一个运算符、空白或右括号
+        // 从当前位置读取到下一个运算符、空白、右括号或逗号
         let end = rest
             .bytes()
-            .position(|b| b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b')')
+            .position(|b| b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b')' || b == b',')
             .unwrap_or(rest.len());
 
         if end == 0 {
@@ -459,6 +539,115 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
     Some(expr)
 }
 
+/// 解析 CSS 数学函数（calc/min/max/clamp）。
+///
+/// 根据前缀自动识别并解析对应的数学函数。
+/// 返回统一的 [`CalcExpr`] 表达式树。
+pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+
+    if value.starts_with("calc(") && value.ends_with(')') {
+        parse_calc(value)
+    } else if value.starts_with("min(") && value.ends_with(')') {
+        parse_min(value)
+    } else if value.starts_with("max(") && value.ends_with(')') {
+        parse_max(value)
+    } else if value.starts_with("clamp(") && value.ends_with(')') {
+        parse_clamp(value)
+    } else {
+        None
+    }
+}
+
+/// 解析 CSS min() 函数。
+///
+/// 格式：`min(v1, v2, ...)` — 取所有参数中的最小值。
+pub fn parse_min(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("min(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(4..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let args = parser.parse_comma_list()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Min(args))
+}
+
+/// 解析 CSS max() 函数。
+///
+/// 格式：`max(v1, v2, ...)` — 取所有参数中的最大值。
+pub fn parse_max(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("max(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(4..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let args = parser.parse_comma_list()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Max(args))
+}
+
+/// 解析 CSS clamp() 函数。
+///
+/// 格式：`clamp(min, val, max)` — 将 val 限制在 [min, max] 范围。
+pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("clamp(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(6..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let min = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if !parser.try_consume(",") {
+        return None;
+    }
+    let val = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if !parser.try_consume(",") {
+        return None;
+    }
+    let max = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Clamp {
+        min: Box::new(min),
+        val: Box::new(val),
+        max: Box::new(max),
+    })
+}
+
 /// 计算 CSS calc() 表达式的像素值。
 ///
 /// `parent_length` 用于解析百分比值（如 `100%` = `parent_length`）。
@@ -494,6 +683,28 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                     }
                 }
             }
+        }
+        CalcExpr::Min(args) => {
+            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.is_empty() {
+                None
+            } else {
+                Some(vals.into_iter().reduce(f64::min).unwrap())
+            }
+        }
+        CalcExpr::Max(args) => {
+            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.is_empty() {
+                None
+            } else {
+                Some(vals.into_iter().reduce(f64::max).unwrap())
+            }
+        }
+        CalcExpr::Clamp { min, val, max } => {
+            let min_v = eval_calc_with_context(min, ctx)?;
+            let val_v = eval_calc_with_context(val, ctx)?;
+            let max_v = eval_calc_with_context(max, ctx)?;
+            Some(val_v.clamp(min_v, max_v))
         }
     }
 }
@@ -2188,5 +2399,163 @@ mod tests {
         // 求值：parent_length=200, (200-10)+5=195
         let result = eval_calc(&expr, Some(200.0));
         assert_eq!(result, Some(195.0));
+    }
+
+    // ── min() / max() / clamp() 解析与求值 ──
+
+    /// 测试 min() 基本解析。
+    #[test]
+    fn test_parse_min_basic() {
+        let expr = parse_min("min(100px, 50%)").unwrap();
+        match &expr {
+            CalcExpr::Min(args) => assert_eq!(args.len(), 2),
+            _ => panic!("expected Min, got {expr:?}"),
+        }
+    }
+
+    /// 测试 min() 多参数。
+    #[test]
+    fn test_parse_min_three_args() {
+        let expr = parse_min("min(100px, 50%, 200px)").unwrap();
+        match &expr {
+            CalcExpr::Min(args) => assert_eq!(args.len(), 3),
+            _ => panic!("expected Min, got {expr:?}"),
+        }
+    }
+
+    /// 测试 min() 求值：取最小值。
+    #[test]
+    fn test_eval_min_basic() {
+        let expr = parse_min("min(100px, 50%)").unwrap();
+        // parent_length=300, 50%=150, min(100,150)=100
+        let result = eval_calc(&expr, Some(300.0));
+        assert_eq!(result, Some(100.0));
+    }
+
+    /// 测试 min() 求值：百分比更小。
+    #[test]
+    fn test_eval_min_percentage_smaller() {
+        let expr = parse_min("min(200px, 25%)").unwrap();
+        // parent_length=400, 25%=100, min(200,100)=100
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(100.0));
+    }
+
+    /// 测试 min() 包含 calc() 嵌套。
+    #[test]
+    fn test_parse_min_with_calc() {
+        let expr = parse_min("min(calc(100% - 20px), 300px)").unwrap();
+        // parent_length=400, 100%-20px=380, min(380,300)=300
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(300.0));
+    }
+
+    /// 测试 max() 基本解析。
+    #[test]
+    fn test_parse_max_basic() {
+        let expr = parse_max("max(100px, 50%)").unwrap();
+        match &expr {
+            CalcExpr::Max(args) => assert_eq!(args.len(), 2),
+            _ => panic!("expected Max, got {expr:?}"),
+        }
+    }
+
+    /// 测试 max() 求值：取最大值。
+    #[test]
+    fn test_eval_max_basic() {
+        let expr = parse_max("max(100px, 50%)").unwrap();
+        // parent_length=300, 50%=150, max(100,150)=150
+        let result = eval_calc(&expr, Some(300.0));
+        assert_eq!(result, Some(150.0));
+    }
+
+    /// 测试 max() 三参数求值。
+    #[test]
+    fn test_eval_max_three_args() {
+        let expr = parse_max("max(10px, 20px, 15px)").unwrap();
+        let result = eval_calc(&expr, None);
+        assert_eq!(result, Some(20.0));
+    }
+
+    /// 测试 clamp() 基本解析。
+    #[test]
+    fn test_parse_clamp_basic() {
+        let expr = parse_clamp("clamp(100px, 50%, 300px)").unwrap();
+        match &expr {
+            CalcExpr::Clamp { min, val, max } => {
+                assert_eq!(**min, CalcExpr::Length(LengthValue::Px(100.0)));
+                assert_eq!(**val, CalcExpr::Length(LengthValue::Percentage(50.0)));
+                assert_eq!(**max, CalcExpr::Length(LengthValue::Px(300.0)));
+            }
+            _ => panic!("expected Clamp, got {expr:?}"),
+        }
+    }
+
+    /// 测试 clamp() 求值：val 在范围内。
+    #[test]
+    fn test_eval_clamp_in_range() {
+        let expr = parse_clamp("clamp(100px, 50%, 300px)").unwrap();
+        // parent_length=400, 50%=200, clamp(100,200,300)=200
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(200.0));
+    }
+
+    /// 测试 clamp() 求值：val 小于 min，结果为 min。
+    #[test]
+    fn test_eval_clamp_below_min() {
+        let expr = parse_clamp("clamp(100px, 10%, 300px)").unwrap();
+        // parent_length=400, 10%=40, clamp(100,40,300)=100
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(100.0));
+    }
+
+    /// 测试 clamp() 求值：val 大于 max，结果为 max。
+    #[test]
+    fn test_eval_clamp_above_max() {
+        let expr = parse_clamp("clamp(100px, 80%, 300px)").unwrap();
+        // parent_length=400, 80%=320, clamp(100,320,300)=300
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(300.0));
+    }
+
+    /// 测试 parse_math_function 分发。
+    #[test]
+    fn test_parse_math_function_dispatch() {
+        assert!(parse_math_function("calc(100px + 10px)").is_some());
+        assert!(parse_math_function("min(100px, 50%)").is_some());
+        assert!(parse_math_function("max(100px, 50%)").is_some());
+        assert!(parse_math_function("clamp(100px, 50%, 300px)").is_some());
+        assert!(parse_math_function("invalid(100px)").is_none());
+    }
+
+    /// 测试 min()/max()/clamp() 无效输入。
+    #[test]
+    fn test_parse_min_max_clamp_invalid() {
+        assert_eq!(parse_min(""), None);
+        assert_eq!(parse_min("min()"), None);
+        assert_eq!(parse_min("min("), None);
+        assert_eq!(parse_max(""), None);
+        assert_eq!(parse_max("max()"), None);
+        assert_eq!(parse_clamp(""), None);
+        assert_eq!(parse_clamp("clamp()"), None);
+        assert_eq!(parse_clamp("clamp(100px, 50%)"), None); // 缺少第三个参数
+    }
+
+    /// 测试 min()/max() 嵌套使用。
+    #[test]
+    fn test_parse_min_nested_max() {
+        let expr = parse_min("min(max(100px, 50%), 300px)").unwrap();
+        // parent_length=200, max(100,100)=100, min(100,300)=100
+        let result = eval_calc(&expr, Some(200.0));
+        assert_eq!(result, Some(100.0));
+    }
+
+    /// 测试 clamp() 内部使用 calc()。
+    #[test]
+    fn test_parse_clamp_with_calc() {
+        let expr = parse_clamp("clamp(50px, calc(100% - 20px), 500px)").unwrap();
+        // parent_length=400, 100%-20px=380, clamp(50,380,500)=380
+        let result = eval_calc(&expr, Some(400.0));
+        assert_eq!(result, Some(380.0));
     }
 }
