@@ -228,7 +228,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -384,7 +386,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -448,7 +452,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -486,7 +492,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
         let box2 = LayoutBox {
@@ -514,7 +522,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -581,7 +591,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 

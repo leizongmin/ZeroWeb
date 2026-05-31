@@ -6,7 +6,7 @@
 use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, DisplayValue, FlexDirectionValue,
     FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue, ScrollSnapAlignValue,
-    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VisibilityValue,
+    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
@@ -400,6 +400,8 @@ pub enum PropertyValue {
     ContainerType(ContainerType),
     /// container-name 值。
     ContainerName(Option<String>),
+    /// vertical-align 值。
+    VerticalAlign(VerticalAlignValue),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -528,6 +530,8 @@ pub struct ComputedStyle {
     pub white_space: WhiteSpaceValue,
     /// text-overflow 属性。
     pub text_overflow: TextOverflowValue,
+    /// vertical-align 属性。
+    pub vertical_align: VerticalAlignValue,
 
     // ── Flexbox ──
     /// flex-direction 属性。
@@ -744,6 +748,7 @@ impl Default for ComputedStyle {
             word_spacing: LengthValue::Px(0.0),
             white_space: WhiteSpaceValue::Normal,
             text_overflow: TextOverflowValue::Clip,
+            vertical_align: VerticalAlignValue::Baseline,
 
             // Flexbox
             flex_direction: FlexDirectionValue::Row,
@@ -895,6 +900,7 @@ impl PropertyRegistry {
             "letter-spacing" | "word-spacing" => Some(Length(LengthValue::Px(0.0))),
             "white-space" => Some(WhiteSpace(WhiteSpaceValue::Normal)),
             "text-overflow" => Some(TextOverflow(TextOverflowValue::Clip)),
+            "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
 
             // Flexbox
             "flex-direction" => Some(FlexDirection(FlexDirectionValue::Row)),
@@ -1047,6 +1053,7 @@ impl PropertyRegistry {
             "word-spacing",
             "white-space",
             "text-overflow",
+            "vertical-align",
             "flex-direction",
             "flex-wrap",
             "justify-content",
@@ -1764,6 +1771,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "text-overflow" => {
             if let Some(v) = parse_text_overflow(value) {
                 style.text_overflow = v;
+                return true;
+            }
+        }
+        "vertical-align" => {
+            if let Some(v) = values::parse_vertical_align(value) {
+                style.vertical_align = v;
                 return true;
             }
         }
@@ -2512,6 +2525,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-overflow" => {
             style.text_overflow = default_style.text_overflow;
+            true
+        }
+        "vertical-align" => {
+            style.vertical_align = default_style.vertical_align;
             true
         }
         // Flexbox

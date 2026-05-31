@@ -1297,6 +1297,42 @@ pub fn parse_container_type(value: &str) -> Option<ContainerTypeValue> {
     }
 }
 
+/// CSS vertical-align 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum VerticalAlignValue {
+    /// baseline（默认值）— 元素基线与父元素基线对齐。
+    Baseline,
+    /// top — 元素顶部与行盒顶部对齐。
+    Top,
+    /// middle — 元素中部与父元素基线 + 半 x-height 处对齐。
+    Middle,
+    /// bottom — 元素底部与行盒底部对齐。
+    Bottom,
+    /// text-top — 元素顶部与父元素字体的顶部对齐。
+    TextTop,
+    /// text-bottom — 元素底部与父元素字体的底部对齐。
+    TextBottom,
+    /// sub — 元素基线下移至适合下标的位置。
+    Sub,
+    /// super — 元素基线上移至适合上标的位置。
+    Super,
+}
+
+/// 解析 CSS vertical-align 属性值。
+pub fn parse_vertical_align(value: &str) -> Option<VerticalAlignValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "baseline" => Some(VerticalAlignValue::Baseline),
+        "top" => Some(VerticalAlignValue::Top),
+        "middle" => Some(VerticalAlignValue::Middle),
+        "bottom" => Some(VerticalAlignValue::Bottom),
+        "text-top" => Some(VerticalAlignValue::TextTop),
+        "text-bottom" => Some(VerticalAlignValue::TextBottom),
+        "sub" => Some(VerticalAlignValue::Sub),
+        "super" => Some(VerticalAlignValue::Super),
+        _ => None,
+    }
+}
+
 /// 解析 1-4 个长度值的简写属性（如 scroll-margin、scroll-padding）。
 ///
 /// 返回 [top, right, bottom, left]（按 CSS 简写规则展开）。

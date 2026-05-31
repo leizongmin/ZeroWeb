@@ -2,9 +2,11 @@
 
 pub mod cache;
 pub mod loader;
+pub mod shaper;
 
 pub use cache::GlyphCache;
 pub use loader::FontLoader;
+pub use shaper::{ShapedGlyph, ShapedLine, TextShaper, measure_text_width};
 
 /// 字体描述
 #[derive(Debug, Clone)]

@@ -4,8 +4,8 @@
 //! 这是布局引擎的关键适配层。
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue,
-    PositionValue,
+    AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
+    LengthValue, OverflowValue, PositionValue,
 };
 use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
 
@@ -127,13 +127,18 @@ fn convert_display(value: &DisplayValue) -> taffy::style::Display {
 }
 
 /// 转换 position 属性。
+///
+/// - `Fixed` 映射为 `Absolute`：使元素脱离正常流，inset 相对于初始包含块（视口）。
+///   后续由引擎后处理将坐标调整为视口相对。
+/// - `Sticky` 映射为 `Relative`：taffy 无原生 sticky 支持，正常流布局，
+///   由宿主层在滚动时动态调整偏移。
 fn convert_position(value: &PositionValue) -> taffy::style::Position {
     match value {
         PositionValue::Absolute => taffy::style::Position::Absolute,
-        // taffy 没有 Fixed/Sticky，映射为 Relative
-        PositionValue::Fixed | PositionValue::Sticky | PositionValue::Relative | PositionValue::Static => {
-            taffy::style::Position::Relative
-        }
+        // fixed 需要脱离正常流，使用 Absolute 让 taffy 应用 inset
+        PositionValue::Fixed => taffy::style::Position::Absolute,
+        // sticky 和 relative/static 一样参与正常流
+        PositionValue::Sticky | PositionValue::Relative | PositionValue::Static => taffy::style::Position::Relative,
     }
 }
 
@@ -153,6 +158,26 @@ fn convert_box_sizing(value: &BoxSizingValue) -> taffy::style::BoxSizing {
         BoxSizingValue::ContentBox => taffy::style::BoxSizing::ContentBox,
         BoxSizingValue::BorderBox => taffy::style::BoxSizing::BorderBox,
     }
+}
+
+/// 转换 float 属性。
+///
+/// Taffy 0.7 不直接支持 float 布局，此函数将 FloatValue 映射为布尔值
+/// 供布局引擎在构建布局树时判断元素是否需要浮动处理。
+/// - `None` → 不浮动
+/// - `Left` / `Right` / `InlineStart` / `InlineEnd` → 浮动
+pub fn convert_float(value: &FloatValue) -> bool {
+    !matches!(value, FloatValue::None)
+}
+
+/// 转换 clear 属性。
+///
+/// Taffy 0.7 不直接支持 clear 布局，此函数将 ClearValue 映射为布尔值
+/// 供布局引擎在构建布局树时判断元素是否需要清除浮动。
+/// - `None` → 不清除
+/// - `Left` / `Right` / `Both` / `InlineStart` / `InlineEnd` → 清除
+pub fn convert_clear(value: &ClearValue) -> bool {
+    !matches!(value, ClearValue::None)
 }
 
 /// 将 LengthValue 转换为 taffy 的 Dimension。
@@ -871,6 +896,38 @@ mod tests {
         assert_eq!(taffy_style.position, taffy::style::Position::Relative);
     }
 
+    /// 测试 position: fixed 映射为 taffy Absolute（脱离正常流）。
+    #[test]
+    fn test_convert_position_fixed() {
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Fixed;
+        style.top = LengthValue::Px(10.0);
+        style.left = LengthValue::Px(20.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(
+            taffy_style.position,
+            taffy::style::Position::Absolute,
+            "position:fixed should map to taffy Absolute"
+        );
+        // inset 应正确传递
+        assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
+        assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(20.0));
+    }
+
+    /// 测试 position: sticky 映射为 taffy Relative（保持正常流）。
+    #[test]
+    fn test_convert_position_sticky() {
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Sticky;
+        style.top = LengthValue::Px(5.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(
+            taffy_style.position,
+            taffy::style::Position::Relative,
+            "position:sticky should map to taffy Relative"
+        );
+    }
+
     /// 测试 size px 转换。
     #[test]
     fn test_convert_size_px() {
@@ -1232,5 +1289,83 @@ mod tests {
         // 非 Name 值不变
         let val = resolve_named_area(&GridLineValue::Line(2), Some(&areas), "row-start");
         assert_eq!(val, GridLineValue::Line(2));
+    }
+
+    // ── float/clear 转换测试 ──
+
+    /// 测试 float: none 不触发浮动。
+    #[test]
+    fn test_convert_float_none() {
+        assert!(!convert_float(&FloatValue::None));
+    }
+
+    /// 测试 float: left 触发浮动。
+    #[test]
+    fn test_convert_float_left() {
+        assert!(convert_float(&FloatValue::Left));
+    }
+
+    /// 测试 float: right 触发浮动。
+    #[test]
+    fn test_convert_float_right() {
+        assert!(convert_float(&FloatValue::Right));
+    }
+
+    /// 测试 float: inline-start 触发浮动。
+    #[test]
+    fn test_convert_float_inline_start() {
+        assert!(convert_float(&FloatValue::InlineStart));
+    }
+
+    /// 测试 float: inline-end 触发浮动。
+    #[test]
+    fn test_convert_float_inline_end() {
+        assert!(convert_float(&FloatValue::InlineEnd));
+    }
+
+    /// 测试 clear: none 不触发清除浮动。
+    #[test]
+    fn test_convert_clear_none() {
+        assert!(!convert_clear(&ClearValue::None));
+    }
+
+    /// 测试 clear: left 触发清除浮动。
+    #[test]
+    fn test_convert_clear_left() {
+        assert!(convert_clear(&ClearValue::Left));
+    }
+
+    /// 测试 clear: right 触发清除浮动。
+    #[test]
+    fn test_convert_clear_right() {
+        assert!(convert_clear(&ClearValue::Right));
+    }
+
+    /// 测试 clear: both 触发清除浮动。
+    #[test]
+    fn test_convert_clear_both() {
+        assert!(convert_clear(&ClearValue::Both));
+    }
+
+    /// 测试 clear: inline-start 触发清除浮动。
+    #[test]
+    fn test_convert_clear_inline_start() {
+        assert!(convert_clear(&ClearValue::InlineStart));
+    }
+
+    /// 测试 clear: inline-end 触发清除浮动。
+    #[test]
+    fn test_convert_clear_inline_end() {
+        assert!(convert_clear(&ClearValue::InlineEnd));
+    }
+
+    /// 测试 ComputedStyle 中 float/clear 默认值为 None。
+    #[test]
+    fn test_default_float_clear_in_computed_style() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.float, FloatValue::None);
+        assert_eq!(style.clear, ClearValue::None);
+        assert!(!convert_float(&style.float));
+        assert!(!convert_clear(&style.clear));
     }
 }

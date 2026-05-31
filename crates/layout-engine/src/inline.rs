@@ -2,8 +2,26 @@
 //!
 //! 处理行内级内容的布局：文本节点、inline 元素、行换行。
 //! Taffy 仅支持 Block/Flex/Grid，行内布局需要自行实现。
+//! 支持文本对齐方式：left、center、right、justify。
 
+use std::collections::HashMap;
+use zero_css_parser::values::{LengthValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
+use zero_style_system::{ComputedStyle, LineHeightValue};
+
+/// 文本对齐方式 — 控制行内内容在行盒中的水平排列。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    /// 左对齐（LTR 下的默认值）。
+    #[default]
+    Left,
+    /// 右对齐。
+    Right,
+    /// 居中对齐。
+    Center,
+    /// 两端对齐 — 非最后一行时在单词间均匀分配剩余空间。
+    Justify,
+}
 
 /// 文本运行 — 一段连续的、具有相同样式的文本。
 #[derive(Debug, Clone)]
@@ -16,6 +34,8 @@ pub struct TextRun {
     pub font_size: f32,
     /// 行高（px）。
     pub line_height: f32,
+    /// vertical-align 值。
+    pub vertical_align: VerticalAlignValue,
 }
 
 /// 行盒 — 一行中的所有行内内容。
@@ -46,6 +66,47 @@ pub struct TextFragment {
     pub node_id: NodeId,
     /// 字体大小。
     pub font_size: f32,
+    /// vertical-align 值。
+    pub vertical_align: VerticalAlignValue,
+}
+
+/// 默认字体大小（px）。
+const DEFAULT_FONT_SIZE: f32 = 16.0;
+
+/// 默认行高倍数（用于 line-height: normal）。
+const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.2;
+
+/// 从 ComputedStyle 中解析 font-size 和 line-height。
+///
+/// - `font_size` 从 `ComputedStyle::font_size` 中提取（已解析为 Px）。
+/// - `line_height` 根据 `LineHeightValue` 计算：
+///   - `Normal` → font_size × 1.2
+///   - `Number(n)` → font_size × n
+///   - `Length(Px(v))` → v
+///
+/// 当 style 为 None 时（节点没有样式），返回默认值 16.0 / 19.2。
+pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
+    let font_size = match style {
+        Some(s) => match &s.font_size {
+            LengthValue::Px(v) => *v as f32,
+            _ => DEFAULT_FONT_SIZE,
+        },
+        None => DEFAULT_FONT_SIZE,
+    };
+
+    let line_height = match style {
+        Some(s) => match &s.line_height {
+            LineHeightValue::Normal => font_size * NORMAL_LINE_HEIGHT_RATIO,
+            LineHeightValue::Number(n) => font_size * (*n as f32),
+            LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
+            // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，
+            // 这里做防御性回退
+            LineHeightValue::Length(_) => font_size * NORMAL_LINE_HEIGHT_RATIO,
+        },
+        None => DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO,
+    };
+
+    (font_size, line_height)
 }
 
 /// 行内格式化上下文 — 负责将行内内容排列成行盒。
@@ -53,6 +114,8 @@ pub struct TextFragment {
 pub struct InlineFormattingContext {
     /// 包含块的可用宽度。
     pub container_width: f32,
+    /// 文本对齐方式。
+    pub text_align: TextAlign,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -62,20 +125,40 @@ impl InlineFormattingContext {
     pub fn new(container_width: f32) -> Self {
         Self {
             container_width,
+            text_align: TextAlign::default(),
             lines: Vec::new(),
         }
     }
 
+    /// 设置文本对齐方式。
+    pub fn with_text_align(mut self, align: TextAlign) -> Self {
+        self.text_align = align;
+        self
+    }
+
     /// 对文档中指定节点的行内子内容执行布局。
     ///
-    /// 收集文本节点和 inline 元素，将它们排列成行盒。
-    pub fn layout(&mut self, doc: &Document, container: NodeId) {
-        let runs = self.collect_inline_runs(doc, container);
+    /// 收集文本节点和 inline 元素，从 ComputedStyle 读取 font-size 和 line-height，
+    /// 将它们排列成行盒。
+    ///
+    /// # 参数
+    ///
+    /// - `doc` — DOM 文档
+    /// - `container` — 行内格式化上下文的容器节点
+    /// - `styles` — 元素 NodeId → ComputedStyle 映射
+    pub fn layout(&mut self, doc: &Document, container: NodeId, styles: &HashMap<NodeId, ComputedStyle>) {
+        let runs = self.collect_inline_runs(doc, container, styles);
         self.break_into_lines(runs);
     }
 
-    /// 收集容器中所有行内级内容（文本节点 + inline 元素）。
-    fn collect_inline_runs(&self, doc: &Document, container: NodeId) -> Vec<TextRun> {
+    /// 收集容器中所有行内级内容（文本节点 + inline 元素），
+    /// 从 ComputedStyle 中读取 font-size 和 line-height。
+    fn collect_inline_runs(
+        &self,
+        doc: &Document,
+        container: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> Vec<TextRun> {
         let mut runs = Vec::new();
         let children = doc.child_nodes(container);
 
@@ -85,11 +168,18 @@ impl InlineFormattingContext {
                     NodeKind::Text(text_data) => {
                         let text = text_data.content.trim().to_string();
                         if !text.is_empty() {
+                            // 文本节点没有自己的 ComputedStyle，查找父元素
+                            let style = doc.parent_node(child_id).and_then(|pid| styles.get(&pid));
+                            let (font_size, line_height) = resolve_font_metrics(style);
+                            let vertical_align = style
+                                .map(|s| s.vertical_align.clone())
+                                .unwrap_or(VerticalAlignValue::Baseline);
                             runs.push(TextRun {
                                 text,
                                 node_id: child_id,
-                                font_size: 16.0,   // 默认字体大小
-                                line_height: 20.0, // 默认行高
+                                font_size,
+                                line_height,
+                                vertical_align,
                             });
                         }
                     }
@@ -98,11 +188,17 @@ impl InlineFormattingContext {
                         let text = doc.text_content(child_id).unwrap_or_default();
                         let trimmed = text.trim().to_string();
                         if !trimmed.is_empty() {
+                            let style = styles.get(&child_id);
+                            let (font_size, line_height) = resolve_font_metrics(style);
+                            let vertical_align = style
+                                .map(|s| s.vertical_align.clone())
+                                .unwrap_or(VerticalAlignValue::Baseline);
                             runs.push(TextRun {
                                 text: trimmed,
                                 node_id: child_id,
-                                font_size: 16.0,
-                                line_height: 20.0,
+                                font_size,
+                                line_height,
+                                vertical_align,
                             });
                         }
                     }
@@ -154,6 +250,7 @@ impl InlineFormattingContext {
                     text: word,
                     node_id: run.node_id,
                     font_size: run.font_size,
+                    vertical_align: run.vertical_align.clone(),
                 });
 
                 current_x += word_width;
@@ -171,6 +268,114 @@ impl InlineFormattingContext {
         for line in &mut self.lines {
             line.y = y;
             y += line.height;
+        }
+
+        // 应用文本对齐
+        self.apply_text_alignment();
+
+        // 应用 vertical-align 对齐
+        self.apply_vertical_alignment();
+    }
+
+    /// 根据当前 text_align 设置，调整每行中片段的 x 坐标。
+    ///
+    /// - Left: 不做调整（默认行为）。
+    /// - Center: 整行居中于 container_width。
+    /// - Right: 整行右对齐。
+    /// - Justify: 非最后一行在单词间均匀分配剩余空间。
+    fn apply_text_alignment(&mut self) {
+        if self.text_align == TextAlign::Left || self.lines.is_empty() {
+            return;
+        }
+
+        let last_idx = self.lines.len() - 1;
+        for (i, line) in self.lines.iter_mut().enumerate() {
+            if line.runs.is_empty() {
+                continue;
+            }
+
+            // 计算行内内容的总宽度（最后一个片段的右边界）
+            let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            let remaining = self.container_width - content_width;
+
+            match self.text_align {
+                TextAlign::Left => { /* 默认，无需调整 */ }
+                TextAlign::Center => {
+                    let offset = remaining / 2.0;
+                    for run in &mut line.runs {
+                        run.x += offset;
+                    }
+                }
+                TextAlign::Right => {
+                    let offset = remaining;
+                    for run in &mut line.runs {
+                        run.x += offset;
+                    }
+                }
+                TextAlign::Justify => {
+                    // 最后一行不 justify，保持左对齐
+                    if i == last_idx {
+                        continue;
+                    }
+                    // 只在有 2 个及以上片段时才能分配空间
+                    if line.runs.len() < 2 {
+                        continue;
+                    }
+                    // 在片段之间均匀分配剩余空间
+                    let gap_count = line.runs.len() - 1;
+                    let extra_per_gap = remaining / gap_count as f32;
+                    let mut accumulated = 0.0;
+                    for j in 0..line.runs.len() {
+                        line.runs[j].x += accumulated;
+                        if j < gap_count {
+                            accumulated += extra_per_gap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。
+    ///
+    /// 对齐规则（基于行盒高度 line_height 和片段高度 fragment_height）：
+    ///
+    /// - **baseline** — 片段底部对齐行盒基线。基线位置 = line_height × 0.8（近似）。
+    ///   y = baseline_y - fragment_height
+    /// - **top** — 片段顶部紧贴行盒顶部。y = 0.0
+    /// - **middle** — 片段垂直居中于行盒。y = (line_height - fragment_height) / 2
+    /// - **bottom** — 片段底部紧贴行盒底部。y = line_height - fragment_height
+    /// - **text-top** — 与 top 行为一致（简化：按字体度量等同于 top）。
+    /// - **text-bottom** — 与 bottom 行为一致（简化）。
+    /// - **sub** — 基线向下偏移 font_size × 0.3。
+    /// - **super** — 基线向上偏移 font_size × 0.3。
+    fn apply_vertical_alignment(&mut self) {
+        for line in &mut self.lines {
+            let line_height = line.height;
+            // 基线近似位置：行盒高度的 80% 处（对应大多数拉丁字体的基线位置）
+            let baseline_y = line_height * 0.8;
+
+            for run in &mut line.runs {
+                run.y = match run.vertical_align {
+                    VerticalAlignValue::Baseline => {
+                        // 片段底部对齐到基线
+                        baseline_y - run.height
+                    }
+                    VerticalAlignValue::Top | VerticalAlignValue::TextTop => 0.0,
+                    VerticalAlignValue::Middle => (line_height - run.height) / 2.0,
+                    VerticalAlignValue::Bottom | VerticalAlignValue::TextBottom => line_height - run.height,
+                    VerticalAlignValue::Sub => {
+                        // 下标：基线下移 font_size × 0.3
+                        let offset = run.font_size * 0.3;
+                        baseline_y - run.height + offset
+                    }
+                    VerticalAlignValue::Super => {
+                        // 上标：基线上移 font_size × 0.3
+                        let offset = run.font_size * 0.3;
+                        baseline_y - run.height - offset
+                    }
+                };
+            }
         }
     }
 
@@ -195,6 +400,7 @@ impl InlineFormattingContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zero_css_parser::values::VerticalAlignValue as VA;
 
     /// 测试文本分割为单词。
     #[test]
@@ -214,6 +420,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         let fragments: Vec<_> = ctx.all_fragments();
@@ -229,6 +436,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         assert_eq!(ctx.lines.len(), 1, "短文本应在单行中");
@@ -246,6 +454,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         assert!(ctx.lines.len() > 1, "长文本应产生多行，实际 {} 行", ctx.lines.len());
@@ -260,6 +469,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         for i in 1..ctx.lines.len() {
@@ -280,6 +490,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 24.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         let expected = ctx.lines.len() as f32 * 24.0;
@@ -300,6 +511,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         let fragments = ctx.all_fragments();
@@ -315,6 +527,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
         for line in &ctx.lines {
@@ -337,12 +550,14 @@ mod tests {
                 node_id: NodeId::default(),
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "World".to_string(),
                 node_id: NodeId::default(),
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
         ];
         ctx.break_into_lines(runs);
@@ -362,7 +577,7 @@ mod tests {
         let p = doc.first_child(body).unwrap();
 
         let mut ctx = InlineFormattingContext::new(800.0);
-        ctx.layout(&doc, p);
+        ctx.layout(&doc, p, &HashMap::new());
 
         let fragments = ctx.all_fragments();
         assert!(!fragments.is_empty(), "p 元素应包含文本片段");
@@ -388,7 +603,7 @@ mod tests {
         let p = doc.first_child(body).unwrap();
 
         let mut ctx = InlineFormattingContext::new(800.0);
-        ctx.layout(&doc, p);
+        ctx.layout(&doc, p, &HashMap::new());
 
         let fragments = ctx.all_fragments();
         assert!(
@@ -420,6 +635,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
 
@@ -461,7 +677,7 @@ mod tests {
         let p = doc.first_child(body).unwrap();
 
         let mut ctx = InlineFormattingContext::new(800.0);
-        ctx.layout(&doc, p);
+        ctx.layout(&doc, p, &HashMap::new());
 
         assert!(ctx.lines.is_empty(), "没有文本的空 p 元素不应产生行盒");
     }
@@ -476,6 +692,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 24.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx24.break_into_lines(runs_24);
 
@@ -486,6 +703,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 32.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx32.break_into_lines(runs_32);
 
@@ -510,6 +728,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 30.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
 
@@ -547,18 +766,21 @@ mod tests {
                 node_id: NodeId::default(),
                 font_size: 12.0,
                 line_height: 16.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "Large".to_string(),
                 node_id: NodeId::default(),
                 font_size: 24.0,
                 line_height: 30.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "Medium".to_string(),
                 node_id: NodeId::default(),
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
         ];
         ctx.break_into_lines(runs);
@@ -595,12 +817,14 @@ mod tests {
                 node_id: NodeId::default(),
                 font_size: 10.0,
                 line_height: 14.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "Word".to_string(),
                 node_id: NodeId::default(),
                 font_size: 20.0,
                 line_height: 24.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
         ];
         ctx.break_into_lines(runs);
@@ -623,12 +847,14 @@ mod tests {
                 node_id: NodeId::default(),
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "gamma delta".to_string(),
                 node_id: NodeId::default(),
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
         ];
         ctx.break_into_lines(runs);
@@ -661,12 +887,14 @@ mod tests {
                 node_id: id1,
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
             TextRun {
                 text: "Second".to_string(),
                 node_id: id2,
                 font_size: 16.0,
                 line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
             },
         ];
         ctx.break_into_lines(runs);
@@ -688,6 +916,7 @@ mod tests {
             node_id: NodeId::default(),
             font_size: 16.0,
             line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
         }];
         ctx.break_into_lines(runs);
 
@@ -695,5 +924,526 @@ mod tests {
         // 后续每个单词都换新行
         assert!(!ctx.lines.is_empty(), "即使容器宽度为 0，也应产生行盒");
         assert!(ctx.lines.len() >= 2, "零宽度容器中多个单词应产生多行");
+    }
+
+    // ── 文本对齐测试 ──
+
+    /// 测试默认对齐为 Left。
+    #[test]
+    fn test_default_text_align_is_left() {
+        let ctx = InlineFormattingContext::new(800.0);
+        assert_eq!(ctx.text_align, TextAlign::Left);
+    }
+
+    /// 测试 with_text_align builder 方法。
+    #[test]
+    fn test_with_text_align_builder() {
+        let ctx = InlineFormattingContext::new(800.0).with_text_align(TextAlign::Center);
+        assert_eq!(ctx.text_align, TextAlign::Center);
+    }
+
+    /// 测试 center 对齐 — 片段整体居中。
+    #[test]
+    fn test_text_align_center() {
+        let mut ctx = InlineFormattingContext::new(800.0).with_text_align(TextAlign::Center);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let line = &ctx.lines[0];
+        let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
+        // 第一个片段的 x 应约为 (800 - content_width) / 2
+        let expected_x = (800.0 - content_width) / 2.0;
+        assert!(
+            (line.runs[0].x - expected_x).abs() < 0.01,
+            "center: 第一个片段 x 应为 {}，实际 {}",
+            expected_x,
+            line.runs[0].x
+        );
+    }
+
+    /// 测试 right 对齐 — 片段整体靠右。
+    #[test]
+    fn test_text_align_right() {
+        let mut ctx = InlineFormattingContext::new(800.0).with_text_align(TextAlign::Right);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let line = &ctx.lines[0];
+        let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
+        // 第一个片段的 x 应约为 800 - content_width
+        let expected_x = 800.0 - content_width;
+        assert!(
+            (line.runs[0].x - expected_x).abs() < 0.01,
+            "right: 第一个片段 x 应为 {}，实际 {}",
+            expected_x,
+            line.runs[0].x
+        );
+    }
+
+    /// 测试 left 对齐（默认）— 片段从 x=0 开始。
+    #[test]
+    fn test_text_align_left_no_offset() {
+        let mut ctx = InlineFormattingContext::new(800.0).with_text_align(TextAlign::Left);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        // 第一个片段 x 应为 0
+        assert!(
+            ctx.lines[0].runs[0].x.abs() < 0.01,
+            "left: 第一个片段 x 应为 0，实际 {}",
+            ctx.lines[0].runs[0].x
+        );
+    }
+
+    /// 测试 justify 对齐 — 非最后一行时片段间均匀分配空间。
+    #[test]
+    fn test_text_align_justify_distributes_space() {
+        // 使用窄容器（60px）确保产生多行
+        let mut ctx = InlineFormattingContext::new(60.0).with_text_align(TextAlign::Justify);
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee ff gg hh".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "应产生多行用于 justify 测试");
+
+        // 非最后一行：最后一个片段的右边界应接近容器宽度
+        for (i, line) in ctx.lines.iter().enumerate() {
+            if i < ctx.lines.len() - 1 && line.runs.len() >= 2 {
+                let last_run = line.runs.last().unwrap();
+                let right_edge = last_run.x + last_run.width;
+                assert!(
+                    (right_edge - 60.0).abs() < 1.0,
+                    "justify 第 {} 行右边界应接近 60，实际 {}",
+                    i,
+                    right_edge
+                );
+            }
+        }
+    }
+
+    /// 测试 justify 最后一行不拉伸（保持左对齐）。
+    #[test]
+    fn test_text_align_justify_last_line_not_stretched() {
+        let mut ctx = InlineFormattingContext::new(60.0).with_text_align(TextAlign::Justify);
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee ff gg".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "应产生多行");
+        let last_line = ctx.lines.last().unwrap();
+        // 最后一行的第一个片段 x 应为 0（不 justify）
+        assert!(
+            last_line.runs[0].x.abs() < 0.01,
+            "justify 最后一行不应拉伸，x 应为 0，实际 {}",
+            last_line.runs[0].x
+        );
+    }
+
+    /// 测试 center 对齐在多行中每行都居中。
+    #[test]
+    fn test_text_align_center_multiline() {
+        let mut ctx = InlineFormattingContext::new(60.0).with_text_align(TextAlign::Center);
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee ff".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "应产生多行");
+        for (i, line) in ctx.lines.iter().enumerate() {
+            let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            let expected_x = (60.0 - content_width) / 2.0;
+            assert!(
+                (line.runs[0].x - expected_x).abs() < 1.0,
+                "center 第 {} 行: x 应约 {}，实际 {}",
+                i,
+                expected_x,
+                line.runs[0].x
+            );
+        }
+    }
+
+    /// 测试 right 对齐在多行中每行都靠右。
+    #[test]
+    fn test_text_align_right_multiline() {
+        let mut ctx = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Right);
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "应产生多行");
+        for (i, line) in ctx.lines.iter().enumerate() {
+            let last = line.runs.last().unwrap();
+            let right_edge = last.x + last.width;
+            assert!(
+                (right_edge - 100.0).abs() < 1.0,
+                "right 第 {} 行: 右边界应约 100，实际 {}",
+                i,
+                right_edge
+            );
+        }
+    }
+
+    /// 测试 justify 在只有 1 个片段的行不崩溃。
+    #[test]
+    fn test_text_align_justify_single_fragment_line() {
+        let mut ctx = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Justify);
+        // 超长单个单词，只会产生 1 个片段的行
+        let runs = vec![TextRun {
+            text: "aaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+        // 不应 panic
+        assert_eq!(ctx.lines.len(), 1);
+        assert!(ctx.lines[0].runs[0].x.abs() < 0.01, "单片段行 justify 不应调整 x");
+    }
+
+    /// 测试对齐不影响 total_height。
+    #[test]
+    fn test_text_align_does_not_affect_total_height() {
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee ff gg".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+
+        let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
+        ctx_left.break_into_lines(runs.clone());
+
+        let mut ctx_center = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Center);
+        ctx_center.break_into_lines(runs.clone());
+
+        let mut ctx_right = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Right);
+        ctx_right.break_into_lines(runs.clone());
+
+        let mut ctx_justify = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Justify);
+        ctx_justify.break_into_lines(runs);
+
+        let h = ctx_left.total_height();
+        assert!((ctx_center.total_height() - h).abs() < 0.01, "center 高度应相同");
+        assert!((ctx_right.total_height() - h).abs() < 0.01, "right 高度应相同");
+        assert!((ctx_justify.total_height() - h).abs() < 0.01, "justify 高度应相同");
+    }
+
+    /// 测试对齐不影响行数。
+    #[test]
+    fn test_text_align_does_not_change_line_count() {
+        let runs = vec![TextRun {
+            text: "aa bb cc dd ee ff".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+
+        let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
+        ctx_left.break_into_lines(runs.clone());
+
+        let mut ctx_justify = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Justify);
+        ctx_justify.break_into_lines(runs);
+
+        assert_eq!(ctx_left.lines.len(), ctx_justify.lines.len(), "对齐方式不应改变行数");
+    }
+
+    /// 测试空行盒在对齐时不会崩溃。
+    #[test]
+    fn test_text_align_empty_lines_no_panic() {
+        let mut ctx = InlineFormattingContext::new(800.0).with_text_align(TextAlign::Center);
+        let runs: Vec<TextRun> = vec![];
+        ctx.break_into_lines(runs);
+        assert!(ctx.lines.is_empty());
+    }
+
+    // ── resolve_font_metrics 测试 ──
+
+    /// 测试 resolve_font_metrics 在无样式时返回默认值。
+    #[test]
+    fn test_resolve_font_metrics_no_style() {
+        let (font_size, line_height) = resolve_font_metrics(None);
+        assert!(
+            (font_size - 16.0).abs() < 0.01,
+            "默认 font_size 应为 16.0，实际 {font_size}"
+        );
+        assert!(
+            (line_height - 19.2).abs() < 0.01,
+            "默认 line_height 应为 16.0 * 1.2 = 19.2，实际 {line_height}"
+        );
+    }
+
+    /// 测试 resolve_font_metrics 从 ComputedStyle 中读取 font-size。
+    #[test]
+    fn test_resolve_font_metrics_with_font_size() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(24.0);
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        assert!((font_size - 24.0).abs() < 0.01, "font_size 应为 24.0，实际 {font_size}");
+        // line-height: Normal → 24.0 * 1.2 = 28.8
+        assert!(
+            (line_height - 28.8).abs() < 0.01,
+            "line_height 应为 28.8，实际 {line_height}"
+        );
+    }
+
+    /// 测试 resolve_font_metrics 中 line-height: Number 使用倍数。
+    #[test]
+    fn test_resolve_font_metrics_line_height_number() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.line_height = LineHeightValue::Number(1.5);
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        assert!((font_size - 20.0).abs() < 0.01);
+        assert!(
+            (line_height - 30.0).abs() < 0.01,
+            "line_height 应为 20.0 * 1.5 = 30.0，实际 {line_height}"
+        );
+    }
+
+    /// 测试 resolve_font_metrics 中 line-height: Length 使用固定值。
+    #[test]
+    fn test_resolve_font_metrics_line_height_length() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.line_height = LineHeightValue::Length(LengthValue::Px(28.0));
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        assert!((font_size - 20.0).abs() < 0.01);
+        assert!(
+            (line_height - 28.0).abs() < 0.01,
+            "line_height 应为 28.0，实际 {line_height}"
+        );
+    }
+
+    /// 测试 resolve_font_metrics 中 line-height: Normal 使用 1.2 倍数。
+    #[test]
+    fn test_resolve_font_metrics_line_height_normal() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(32.0);
+        // 默认 line-height 就是 Normal
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        assert!((font_size - 32.0).abs() < 0.01);
+        assert!(
+            (line_height - 38.4).abs() < 0.01,
+            "line_height 应为 32.0 * 1.2 = 38.4，实际 {line_height}"
+        );
+    }
+
+    // ── 样式感知 layout 测试 ──
+
+    /// 测试从 Document 布局时使用 ComputedStyle 中的 font-size。
+    #[test]
+    fn test_layout_uses_style_font_size() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>Hello World</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        // 给 p 设置 font-size: 32px
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(32.0);
+        styles.insert(p, style);
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p, &styles);
+
+        let fragments = ctx.all_fragments();
+        assert!(!fragments.is_empty());
+
+        // 所有片段的 font_size 应为 32.0
+        for f in &fragments {
+            assert!(
+                (f.font_size - 32.0).abs() < 0.01,
+                "片段 font_size 应为 32.0，实际 {}",
+                f.font_size
+            );
+        }
+    }
+
+    /// 测试从 Document 布局时使用 ComputedStyle 中的 line-height。
+    #[test]
+    fn test_layout_uses_style_line_height() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>Hello World</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        // 给 p 设置 line-height: 2.0（无单位数值）
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.line_height = LineHeightValue::Number(2.0);
+        styles.insert(p, style);
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p, &styles);
+
+        // 行盒高度应为 16.0 * 2.0 = 32.0
+        for line in &ctx.lines {
+            assert!(
+                (line.height - 32.0).abs() < 0.01,
+                "行盒高度应为 32.0（16 * 2.0），实际 {}",
+                line.height
+            );
+        }
+    }
+
+    /// 测试从 Document 布局时 inline 元素使用自己的样式。
+    #[test]
+    fn test_layout_inline_element_own_style() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>Hello <b>World</b></p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        // 找到 <b> 元素（跳过文本节点，node_type 1 = Element）
+        let b = doc
+            .child_nodes(p)
+            .into_iter()
+            .find(|&id| doc.node_type(id) == Some(1))
+            .expect("应有 <b> 元素");
+
+        // p 使用默认 16px，b 使用 24px
+        let mut styles = HashMap::new();
+        let mut p_style = ComputedStyle::default();
+        p_style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, p_style);
+
+        let mut b_style = ComputedStyle::default();
+        b_style.font_size = LengthValue::Px(24.0);
+        styles.insert(b, b_style);
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p, &styles);
+
+        let fragments = ctx.all_fragments();
+
+        // 应有 font_size 为 16.0 的片段（来自 p 的文本节点）
+        let has_16 = fragments.iter().any(|f| (f.font_size - 16.0).abs() < 0.01);
+        assert!(has_16, "应有 16px 字体大小的片段");
+
+        // 应有 font_size 为 24.0 的片段（来自 b 元素）
+        let has_24 = fragments.iter().any(|f| (f.font_size - 24.0).abs() < 0.01);
+        assert!(has_24, "应有 24px 字体大小的片段");
+    }
+
+    /// 测试无样式时回退到默认值 16.0 / 19.2。
+    #[test]
+    fn test_layout_no_style_fallback() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>Hello</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p, &HashMap::new());
+
+        let fragments = ctx.all_fragments();
+        assert!(!fragments.is_empty());
+
+        for f in &fragments {
+            assert!(
+                (f.font_size - 16.0).abs() < 0.01,
+                "无样式时 font_size 应回退到 16.0，实际 {}",
+                f.font_size
+            );
+        }
+
+        // 行盒高度应为 16.0 * 1.2 = 19.2
+        for line in &ctx.lines {
+            assert!(
+                (line.height - 19.2).abs() < 0.01,
+                "无样式时行盒高度应为 19.2，实际 {}",
+                line.height
+            );
+        }
+    }
+
+    /// 测试 line-height: Length(24px) 覆盖默认行高。
+    #[test]
+    fn test_layout_fixed_line_height() {
+        use zero_dom::parse_html;
+
+        let doc = parse_html("<p>Text</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.line_height = LineHeightValue::Length(LengthValue::Px(24.0));
+        styles.insert(p, style);
+
+        let mut ctx = InlineFormattingContext::new(800.0);
+        ctx.layout(&doc, p, &styles);
+
+        for line in &ctx.lines {
+            assert!(
+                (line.height - 24.0).abs() < 0.01,
+                "行盒高度应为 24.0（固定 line-height），实际 {}",
+                line.height
+            );
+        }
     }
 }

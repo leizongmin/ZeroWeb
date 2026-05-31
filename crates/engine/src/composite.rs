@@ -198,7 +198,9 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         }
     }
@@ -246,7 +248,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -295,7 +299,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -342,7 +348,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -391,7 +399,9 @@ mod tests {
             children: vec![child1, child2, child3],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -448,7 +458,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -494,7 +506,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -541,7 +555,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -592,7 +608,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -653,7 +671,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -706,7 +726,9 @@ mod tests {
             children: vec![child_low, child_mid, child_high],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -772,7 +794,9 @@ mod tests {
             children: vec![child_neg, child_pos],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -828,7 +852,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -886,7 +912,9 @@ mod tests {
             children: vec![inner_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -942,7 +970,9 @@ mod tests {
             children: vec![child_auto, child_zero],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -999,7 +1029,9 @@ mod tests {
             children: vec![c1, c2, c3],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -1057,7 +1089,9 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -1123,7 +1157,9 @@ mod tests {
             children: vec![child_low, child_high],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -1190,7 +1226,9 @@ mod tests {
             children: vec![c_neg, c_zero, c_pos, c_high],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
+            z_index: 0,
             overflow_y: OverflowClip::Visible,
         };
 

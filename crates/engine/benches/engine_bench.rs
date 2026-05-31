@@ -63,6 +63,7 @@ fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         });
@@ -93,6 +94,7 @@ fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero
         children,
         is_absolute: false,
         is_fixed: false,
+        is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };

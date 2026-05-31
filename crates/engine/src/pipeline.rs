@@ -114,7 +114,7 @@ impl RenderPipeline {
         // 5. 生成绘制命令
         let paint_start = Instant::now();
         let mut painter = Painter::new();
-        painter.paint(&layout_result.root, &styles);
+        painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -160,7 +160,7 @@ impl RenderPipeline {
 
         // 生成绘制命令
         let mut painter = Painter::new();
-        painter.paint(&layout_result.root, &styles);
+        painter.paint(&layout_result.root, &styles, Some(doc));
         let primitives = painter.into_primitives();
 
         let layout = LayoutResult {
@@ -235,7 +235,7 @@ impl RenderPipeline {
 
         // 仅绘制脏区域内的节点
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }
 
@@ -395,6 +395,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: zero_layout_engine::types::OverflowClip::Visible,
             overflow_y: zero_layout_engine::types::OverflowClip::Visible,
         };
@@ -513,6 +515,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: zero_layout_engine::types::OverflowClip::Visible,
             overflow_y: zero_layout_engine::types::OverflowClip::Visible,
         };
@@ -555,6 +559,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: zero_layout_engine::types::OverflowClip::Visible,
             overflow_y: zero_layout_engine::types::OverflowClip::Visible,
         };
@@ -779,6 +785,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: zero_layout_engine::types::OverflowClip::Visible,
             overflow_y: zero_layout_engine::types::OverflowClip::Visible,
         };
