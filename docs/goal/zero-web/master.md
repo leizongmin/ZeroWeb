@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2310 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2359 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2310 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2359 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,9 +23,9 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 180 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot** |
+| dom | 226 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot**、**节点生命周期**、**错误路径** |
 | css-parser | 322 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、**选择器边角场景**、**错误恢复** |
-| style-system | 313 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**scroll-snap**、**container query**、所有属性初始值 |
+| style-system | 373 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**scroll-snap**、**container query 真实评估**、**var() 解析集成**、所有属性初始值 |
 | layout-engine | 131 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、**边角场景覆盖** |
 | engine | 137 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**paint 边角场景** |
 | render-foundation | 181 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色操作**、**图元覆盖** |
@@ -33,9 +33,9 @@
 | net | 171 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL 边角场景**、**重定向链**、**header 处理** |
 | security | 153 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、**COOP/COEP** |
 | protocol | 80 | ✅ | IPC 消息、bincode 序列化、**大负载**、**错误恢复** |
-| storage | 141 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务/游标**、**存储配额** |
-| canvas | 167 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、HSL/HSLA 颜色、gradient 解析 |
-| webview | 103 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**状态机**、**配置** |
+| storage | 151 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**存储配额** |
+| canvas | 176 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、HSL/HSLA 颜色、gradient 解析 |
+| webview | 107 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置** |
 | wasm-sandbox | 69 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**模块验证**、**内存操作** |
 
 ### 跨 crate 集成测试
@@ -63,7 +63,20 @@
 
 ## 最近完成的改进
 
-### 0. 全 crate 功能增强 + 测试覆盖率提升（本轮）
+### -1. 关键功能修复 + 测试覆盖率提升（本轮，2359 测试）
+
+通过工作流分析 14 个 crate 的高优先级功能缺口，并行修复并补充测试：
+
+| 模块 | 修复内容 | 新增测试 |
+|------|----------|----------|
+| style-system | **var() 解析集成到样式计算管线**：级联值中的 var() 引用现在在继承/计算前被解析，包括嵌套自定义属性引用 | 4 |
+| style-system | **@container 真实评估**：基于 ContainerContext 评估 min-width/max-width 等条件，无上下文时不应用 | 3 |
+| canvas | **roundRect 圆角扁平化**：路径扁平化正确生成圆角弧线顶点（8段/角），而非退化为直角矩形 | 9 |
+| storage | **IDB 事务缓冲/回滚**：事务操作缓冲到内存，commit 时应用，abort 时丢弃；tx_get 优先读缓冲区 | 10 |
+| webview | **CSS 缓存持久化**：render() 不再丢弃 CSS，cached_css 字段在 load_html/inject_css 间保留 | 4 |
+| dom | **节点生命周期测试**：移除后节点操作、重新挂载、错误路径 | 11 |
+
+### 0. 全 crate 功能增强 + 测试覆盖率提升（前轮）
 
 通过并行扫描 14 个 crate 识别出 158 个功能缺口和 133 个测试覆盖缺口，按优先级实现了 373 个新测试和对应功能：
 
