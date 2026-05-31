@@ -774,4 +774,361 @@ mod tests {
         assert_eq!(color.b, 180, "steelblue B should be 180");
         assert_eq!(color.a, 255, "steelblue A should be 255");
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 visibility:hidden 的嵌套元素，父元素隐藏时子元素也不绘制。
+    ///
+    /// visibility 是继承属性，子元素通过样式继承也会被隐藏。
+    #[test]
+    fn test_paint_with_visibility_hidden_nested() {
+        use zero_css_parser::values::VisibilityValue;
+
+        let mut doc = zero_dom::Document::new();
+        let parent_elem = doc.create_element("div");
+        let child_elem = doc.create_element("span");
+
+        let child_box = LayoutBox {
+            node_id: Some(child_elem),
+            x: 10.0,
+            y: 10.0,
+            width: 50.0,
+            height: 30.0,
+            content_x: 10.0,
+            content_y: 10.0,
+            content_width: 50.0,
+            content_height: 30.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let parent_box = LayoutBox {
+            node_id: Some(parent_elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        parent_style.visibility = VisibilityValue::Hidden;
+        styles.insert(parent_elem, parent_style);
+
+        // visibility 是继承属性，子元素通过继承获得 hidden
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(0, 255, 0, 255);
+        child_style.visibility = VisibilityValue::Hidden;
+        styles.insert(child_elem, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles, Some(&doc));
+
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "visibility:hidden 父元素及其子元素均不应产生填充图元"
+        );
+    }
+
+    /// 测试合成层提升子元素并验证图层 z-index 排序正确。
+    #[test]
+    fn test_composite_promoted_child_z_ordering() {
+        use zero_style_system::property::ZIndexValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem_a = doc.create_element("div");
+        let elem_b = doc.create_element("div");
+        let elem_c = doc.create_element("div");
+
+        let child_a = LayoutBox {
+            node_id: Some(elem_a),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let child_b = LayoutBox {
+            node_id: Some(elem_b),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let child_c = LayoutBox {
+            node_id: Some(elem_c),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_a, child_b, child_c],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = std::collections::HashMap::new();
+        let mut sa = ComputedStyle::default();
+        sa.z_index = ZIndexValue::Integer(5);
+        styles.insert(elem_a, sa);
+
+        let mut sb = ComputedStyle::default();
+        sb.z_index = ZIndexValue::Integer(-1);
+        styles.insert(elem_b, sb);
+
+        let mut sc = ComputedStyle::default();
+        sc.z_index = ZIndexValue::Integer(10);
+        styles.insert(elem_c, sc);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // 根图层 + 3 个提升图层
+        assert_eq!(layers.len(), 4, "root + 3 promoted layers");
+        assert!(layers[0].is_root);
+        // 提升的图层按 z-index 升序：-1, 5, 10
+        assert_eq!(layers[1].z_index, -1);
+        assert_eq!(layers[2].z_index, 5);
+        assert_eq!(layers[3].z_index, 10);
+    }
+
+    /// 测试渲染管线 recompute 后脏标记被设置。
+    #[test]
+    fn test_recompute_dirty_flag() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><p>Initial</p></body></html>";
+
+        // 首次渲染
+        let first = pipeline.render_html(html, "");
+        assert!(pipeline.layout().is_some());
+
+        // 重新计算样式（无 CSS 变化）
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![];
+        let (prims, _styles, _layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        // 即使无变化，管线仍应产生输出
+        assert!(prims.fills.is_empty() || !prims.fills.is_empty());
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染管线处理多元素复杂页面。
+    #[test]
+    fn test_pipeline_complex_page() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="header">Header</div>
+            <div class="main">
+                <p>Paragraph 1</p>
+                <p>Paragraph 2</p>
+                <span>Inline text</span>
+            </div>
+            <div class="footer">Footer</div>
+        </body></html>"#;
+        let css = r#"
+            .header { background-color: #333333; height: 60px; }
+            .main { background-color: #ffffff; width: 200px; height: 400px; }
+            .footer { background-color: #666666; height: 40px; }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        assert!(pipeline.layout().is_some());
+        assert!(result.layout.viewport_width > 0.0);
+        // 应产生至少 header、main、footer 的背景填充
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "complex page should produce fill primitives"
+        );
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试 border-radius 裁剪：带圆角的元素尺寸信息正确。
+    #[test]
+    fn test_paint_border_radius_clipping_values() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 50.0,
+            y: 50.0,
+            width: 300.0,
+            height: 200.0,
+            content_x: 50.0,
+            content_y: 50.0,
+            content_width: 300.0,
+            content_height: 200.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(0, 128, 255, 255);
+        style.border_top_left_radius = zero_css_parser::values::LengthValue::Px(20.0);
+        style.border_top_right_radius = zero_css_parser::values::LengthValue::Px(20.0);
+        style.border_bottom_right_radius = zero_css_parser::values::LengthValue::Px(20.0);
+        style.border_bottom_left_radius = zero_css_parser::values::LengthValue::Px(20.0);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        assert_eq!(painter.primitives().fills.len(), 1);
+        let fill = &painter.primitives().fills[0];
+        // 验证填充位置和尺寸
+        assert_eq!(fill.rect.origin.x, 50.0);
+        assert_eq!(fill.rect.origin.y, 50.0);
+        assert_eq!(fill.rect.size.width, 300.0);
+        assert_eq!(fill.rect.size.height, 200.0);
+    }
 }

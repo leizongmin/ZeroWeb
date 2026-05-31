@@ -5987,6 +5987,151 @@ fn test_node_contains() {
     );
 }
 
+/// 测试 set_attribute 对同一 key 设置两次，第二次值生效。
+#[test]
+fn test_element_set_attribute_same_key_overwrite() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    doc.set_attribute(elem, "data-key", "first");
+    assert_eq!(doc.get_attribute(elem, "data-key"), Some("first".to_string()));
+
+    doc.set_attribute(elem, "data-key", "second");
+    assert_eq!(doc.get_attribute(elem, "data-key"), Some("second".to_string()));
+
+    // 只有一个属性
+    assert_eq!(doc.attribute_names(elem).len(), 1);
+}
+
+/// 测试 set_text_content 在文本节点上直接更新内容。
+#[test]
+fn test_text_node_text_content_set() {
+    let mut doc = Document::new();
+    let text = doc.create_text_node("original");
+    assert_eq!(doc.text_content(text), Some("original".to_string()));
+
+    doc.set_text_content(text, "updated");
+    assert_eq!(doc.text_content(text), Some("updated".to_string()));
+
+    doc.set_text_content(text, "");
+    assert_eq!(doc.text_content(text), Some("".to_string()));
+}
+
+/// 测试从 3 个子节点中移除中间的子节点，剩余子节点顺序正确。
+#[test]
+fn test_element_remove_child_middle() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_element("p");
+    let c3 = doc.create_element("a");
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+    doc.append_child(parent, c3).unwrap();
+
+    // 移除中间的 c2
+    let removed = doc.remove_child(parent, c2).unwrap();
+    assert_eq!(removed, c2);
+    assert_eq!(doc.child_nodes(parent), vec![c1, c3]);
+    assert_eq!(doc.parent_node(c2), None);
+    // c1 和 c3 的兄弟关系正确
+    assert_eq!(doc.next_sibling(c1), Some(c3));
+    assert_eq!(doc.previous_sibling(c3), Some(c1));
+}
+
+/// 测试 create_document_fragment 创建的片段是空的。
+#[test]
+fn test_document_create_document_fragment_empty() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+
+    // 片段类型正确
+    assert!(matches!(
+        doc.get(frag).map(|n| &n.kind),
+        Some(NodeKind::DocumentFragment)
+    ));
+    // 初始无子节点
+    assert!(!doc.has_child_nodes(frag));
+    assert_eq!(doc.child_count(frag), 0);
+    assert_eq!(doc.child_nodes(frag), Vec::<NodeId>::new());
+    // 节点类型为 11 (DocumentFragment)
+    assert_eq!(doc.node_type(frag), Some(11));
+}
+
+/// 测试 get_elements_by_class_name 匹配多个具有不同 class 的元素。
+#[test]
+fn test_element_get_elements_by_class_name_multiple() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let elem1 = doc.create_element("div");
+    doc.set_attribute(elem1, "class", "item active");
+    doc.append_child(root, elem1).unwrap();
+
+    let elem2 = doc.create_element("span");
+    doc.set_attribute(elem2, "class", "item disabled");
+    doc.append_child(root, elem2).unwrap();
+
+    let elem3 = doc.create_element("p");
+    doc.set_attribute(elem3, "class", "item active highlight");
+    doc.append_child(root, elem3).unwrap();
+
+    // "item" 匹配全部 3 个
+    let items = doc.get_elements_by_class_name("item");
+    assert_eq!(items.len(), 3);
+
+    // "active" 匹配 elem1 和 elem3
+    let active = doc.get_elements_by_class_name("active");
+    assert_eq!(active.len(), 2);
+    assert!(active.contains(&elem1));
+    assert!(active.contains(&elem3));
+
+    // "highlight" 只匹配 elem3
+    let highlight = doc.get_elements_by_class_name("highlight");
+    assert_eq!(highlight.len(), 1);
+    assert_eq!(highlight[0], elem3);
+}
+
+/// 测试 owner_document 返回文档根节点。
+#[test]
+fn test_node_owner_document() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    let text = doc.create_text_node("hello");
+    doc.append_child(root, elem).unwrap();
+    doc.append_child(elem, text).unwrap();
+
+    assert_eq!(doc.owner_document(root), Some(root));
+    assert_eq!(doc.owner_document(elem), Some(root));
+    assert_eq!(doc.owner_document(text), Some(root));
+}
+
+/// 测试 insert_before 将新节点插入为第一个子节点。
+#[test]
+fn test_element_insert_before_first() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_element("p");
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+
+    // 在 c1 前插入 new_node，使其成为第一个子节点
+    let new_node = doc.create_element("a");
+    doc.insert_before(parent, new_node, c1).unwrap();
+
+    assert_eq!(doc.child_nodes(parent), vec![new_node, c1, c2]);
+    assert_eq!(doc.first_child(parent), Some(new_node));
+    assert_eq!(doc.parent_node(new_node), Some(parent));
+}
+
 /// 测试 input 元素的 disabled 属性（无值属性）解析正确。
 /// HTML 中 `<input disabled>` 的 disabled 属性值为空字符串。
 #[test]

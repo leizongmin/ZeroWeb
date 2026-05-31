@@ -304,4 +304,213 @@ mod tests {
         let strict = IframeSandbox::strict();
         assert!(!strict.allows_scripts(), "严格沙箱不应允许脚本执行");
     }
+
+    /// 测试 CSP default-src 'none' 阻止内联脚本。
+    ///
+    /// default-src 'none' 作为未指定资源类型的回退，
+    /// 内联脚本没有 script-src 指令时应回退到 default-src，
+    /// 由于 default-src 为 'none'，内联脚本应被阻止。
+    #[test]
+    fn test_csp_default_src_blocks_script() {
+        let csp = ContentSecurityPolicy::parse("default-src 'none'");
+        // 内联脚本回退到 default-src 'none' → 被阻止
+        assert!(
+            !csp.is_inline_script_allowed(None, None),
+            "default-src 'none' 应阻止内联脚本"
+        );
+        // 外部脚本也应被 default-src 'none' 阻止
+        assert!(
+            !csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None),
+            "default-src 'none' 应阻止外部脚本加载"
+        );
+        // 内联样式也应被阻止
+        assert!(
+            !csp.is_inline_style_allowed(None, None),
+            "default-src 'none' 应阻止内联样式"
+        );
+    }
+
+    /// 测试 CORS 预检请求 + credentials 组合场景。
+    ///
+    /// 验证：
+    /// 1. 带凭证的预检请求在源为通配符时被拒绝
+    /// 2. 带凭证的预检请求在具体源匹配时通过，且 allow_credentials 正确返回
+    #[test]
+    fn test_cors_preflight_with_credentials() {
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // 场景 1：具体源 + credentials → 预检通过
+        let policy_ok = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["DELETE".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: Some(3600),
+        };
+        let headers = generate_preflight_response(&policy_ok, &origin, "DELETE", &[]);
+        assert!(headers.allow_origin.is_some(), "具体源 + credentials 预检应通过");
+        assert_eq!(headers.allow_credentials, Some("true".to_string()));
+        assert_eq!(headers.max_age, Some("3600".to_string()));
+
+        // 场景 2：通配符源 + credentials → 预检被拒绝
+        let policy_bad = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["DELETE".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let headers = generate_preflight_response(&policy_bad, &origin, "DELETE", &[]);
+        assert!(headers.allow_origin.is_none(), "通配符源 + credentials 预检应被拒绝");
+
+        // 场景 3：check_cors 对具体源 + credentials 也应通过
+        let result = check_cors(&policy_ok, &origin, "DELETE", &[]);
+        assert!(result.allowed, "具体源 + credentials 的 CORS 检查应通过");
+    }
+
+    /// 测试完全相同的 URL 解析出的两个 Origin 是同源。
+    #[test]
+    fn test_same_origin_identical_urls() {
+        let a = Origin::parse("https://example.com/page").unwrap();
+        let b = Origin::parse("https://example.com/other").unwrap();
+        assert!(a.is_same_origin(&b), "相同 scheme+host+port 的 URL 应为同源");
+        assert!(check_same_origin(&a, &b), "check_same_origin 对相同源应返回 true");
+
+        // 完全相同字符串
+        let c = Origin::parse("https://example.com/page").unwrap();
+        assert!(a.is_same_origin(&c), "完全相同 URL 的 Origin 应为同源");
+        assert_eq!(a, c, "完全相同 URL 的 Origin 应相等");
+    }
+
+    /// 测试 HTTPS 页面加载 HTTP 资源被检测为混合内容（Blockable 类型）。
+    #[test]
+    fn test_mixed_content_http_on_https() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let http_script = "http://cdn.example.com/script.js";
+
+        // 检测为混合内容
+        assert!(
+            is_mixed_content(&page, http_script),
+            "HTTPS 页面加载 HTTP 资源应为混合内容"
+        );
+
+        // script 为 Blockable 类型
+        let status = check_mixed_content(&page, http_script, "script");
+        assert_eq!(
+            status,
+            MixedContentStatus::Blockable,
+            "HTTP script 在 HTTPS 页面为 Blockable"
+        );
+
+        // iframe 也是 Blockable
+        let http_iframe = "http://evil.com/embed";
+        assert!(is_mixed_content(&page, http_iframe));
+        assert_eq!(
+            check_mixed_content(&page, http_iframe, "iframe"),
+            MixedContentStatus::Blockable
+        );
+
+        // HTTPS 页面加载 HTTPS 资源不是混合内容
+        let https_script = "https://cdn.example.com/script.js";
+        assert!(!is_mixed_content(&page, https_script));
+        assert_eq!(
+            check_mixed_content(&page, https_script, "script"),
+            MixedContentStatus::NotMixedContent
+        );
+    }
+
+    /// 测试沙箱 allow-popups 标志允许弹窗但限制其他功能。
+    #[test]
+    fn test_sandbox_allow_popups() {
+        let sandbox = IframeSandbox::parse("allow-popups");
+
+        // allow-popups 应允许弹窗
+        assert!(sandbox.allows_popups(), "allow-popups 应允许弹窗");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPopups));
+        assert!(check_sandbox_popup(&sandbox), "check_sandbox_popup 应返回 true");
+
+        // 其他功能仍被禁止
+        assert!(!sandbox.allows_scripts(), "allow-popups 不应允许脚本");
+        assert!(!sandbox.allows_same_origin(), "allow-popups 不应允许同源");
+        assert!(!sandbox.allows_forms(), "allow-popups 不应允许表单");
+        assert!(!sandbox.allows_top_navigation(), "allow-popups 不应允许顶层导航");
+
+        // effective_origin 为不透明源
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(sandbox.effective_origin(&iframe_origin), SandboxOrigin::Opaque);
+
+        // 严格沙箱不允许弹窗
+        let strict = IframeSandbox::strict();
+        assert!(!strict.allows_popups());
+        assert!(!check_sandbox_popup(&strict));
+    }
+
+    /// 测试 CSP frame-src 阻止 iframe 加载。
+    #[test]
+    fn test_csp_frame_src_blocks() {
+        let csp = ContentSecurityPolicy::parse("frame-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+
+        // 同源 iframe 允许
+        assert!(csp.is_resource_allowed("frame", "https://example.com/embed", Some(&doc_origin)));
+
+        // 外部 iframe 被阻止
+        assert!(
+            !csp.is_resource_allowed("frame", "https://evil.com/embed", Some(&doc_origin)),
+            "frame-src 'self' 应阻止外部 iframe"
+        );
+
+        // is_child_allowed 也受影响（child-src 回退到 frame-src）
+        assert!(csp.is_child_allowed("https://example.com/widget", Some(&doc_origin)));
+        assert!(!csp.is_child_allowed("https://evil.com/widget", Some(&doc_origin)));
+
+        // frame-src 'none' 阻止所有
+        let csp_none = ContentSecurityPolicy::parse("frame-src 'none'");
+        assert!(!csp_none.is_resource_allowed("frame", "https://example.com/embed", Some(&doc_origin)));
+    }
+
+    /// 测试 CORS 简单请求的 Content-Type 检查。
+    #[test]
+    fn test_cors_simple_request_content_type() {
+        // 简单 Content-Type → 简单请求
+        assert!(is_simple_request("POST", Some("text/plain"), &[]));
+        assert!(is_simple_request(
+            "POST",
+            Some("application/x-www-form-urlencoded"),
+            &[]
+        ));
+        assert!(is_simple_request("POST", Some("multipart/form-data"), &[]));
+
+        // 非简单 Content-Type → 不是简单请求
+        assert!(!is_simple_request("POST", Some("application/json"), &[]));
+        assert!(!is_simple_request("POST", Some("text/xml"), &[]));
+
+        // 无 Content-Type 的 GET 是简单请求
+        assert!(is_simple_request("GET", None, &[]));
+
+        // Content-Type 带参数（charset）→ text/plain; charset=utf-8 仍为简单
+        assert!(is_simple_request("POST", Some("text/plain; charset=utf-8"), &[]));
+        assert!(is_simple_request(
+            "POST",
+            Some("application/x-www-form-urlencoded; charset=UTF-8"),
+            &[]
+        ));
+
+        // 非简单 Content-Type 在 CORS check_cors 中被阻止
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "POST",
+            &[("Content-Type".to_string(), "application/json".to_string())],
+        );
+        assert!(!result.allowed, "application/json 非简单 Content-Type 应被 CORS 阻止");
+    }
 }

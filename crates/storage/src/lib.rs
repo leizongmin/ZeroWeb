@@ -42,7 +42,7 @@ pub enum StorageError {
 #[cfg(test)]
 mod tests {
     use crate::cache_api::{CacheRequest, CacheResponse, CacheStorage};
-    use crate::indexed_db::{IdbDatabase, IdbKey};
+    use crate::indexed_db::{IdbDatabase, IdbKey, IdbTransactionMode};
     use crate::local_storage::{StorageType, WebStorage};
 
     /// 测试 IndexedDB 数据库名称存储是否正确。
@@ -228,5 +228,126 @@ mod tests {
         for url in &urls {
             assert!(keys.contains(url), "keys() 应包含 {url}");
         }
+    }
+
+    /// 测试 sessionStorage 与 localStorage 独立。
+    #[test]
+    fn test_session_storage_separate_from_local() {
+        let mut local = WebStorage::new(StorageType::Local, "https://example.com");
+        let mut session = WebStorage::new(StorageType::Session, "https://example.com");
+
+        local.set("key", "local-val").unwrap();
+        session.set("key", "session-val").unwrap();
+
+        assert_eq!(local.get("key"), Some("local-val"));
+        assert_eq!(session.get("key"), Some("session-val"));
+
+        // 互不影响
+        local.remove("key");
+        assert_eq!(local.get("key"), None);
+        assert_eq!(session.get("key"), Some("session-val"));
+    }
+
+    /// 测试 IndexedDB object store count 在添加/删除记录后正确更新。
+    #[test]
+    fn test_idb_object_store_count() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+
+        assert_eq!(db.count("items").unwrap(), 0);
+
+        db.add("items", serde_json::json!("a"), Some(IdbKey::String("k1".into())))
+            .unwrap();
+        assert_eq!(db.count("items").unwrap(), 1);
+
+        db.add("items", serde_json::json!("b"), Some(IdbKey::String("k2".into())))
+            .unwrap();
+        assert_eq!(db.count("items").unwrap(), 2);
+
+        db.delete("items", &IdbKey::String("k1".into())).unwrap();
+        assert_eq!(db.count("items").unwrap(), 1);
+    }
+
+    /// 测试 IDB 游标 continue_next 越过末尾后 is_finished 返回 true。
+    #[test]
+    fn test_idb_cursor_continue_past_end() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        db.add("items", serde_json::json!("a"), Some(IdbKey::String("k1".into())))
+            .unwrap();
+
+        let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+        // 第一条记录
+        assert!(!cursor.is_finished());
+        // 继续 → 只有一条记录，到达末尾
+        assert!(!cursor.continue_next());
+        assert!(cursor.is_finished());
+        // 再次 continue_next 仍返回 false
+        assert!(!cursor.continue_next());
+    }
+
+    /// 测试 Cache API keys() 返回所有已缓存的 URL。
+    #[test]
+    fn test_cache_api_keys_returns_all() {
+        let mut cache = crate::cache_api::CacheStorage::new();
+        let c = cache.open("test");
+
+        let urls = ["https://a.com/1", "https://b.com/2", "https://c.com/3"];
+        for url in &urls {
+            c.put(CacheRequest::new(url), CacheResponse::ok(vec![])).unwrap();
+        }
+
+        let keys = c.keys();
+        assert_eq!(keys.len(), 3);
+        for url in &urls {
+            assert!(keys.contains(url), "keys() 应包含 {}", url);
+        }
+
+        // 删除一个后 keys 更新
+        c.delete(&CacheRequest::new("https://b.com/2"));
+        let keys_after = c.keys();
+        assert_eq!(keys_after.len(), 2);
+        assert!(!keys_after.contains(&"https://b.com/2"));
+    }
+
+    /// 测试 IndexedDB 事务提交后变更生效。
+    #[test]
+    fn test_idb_transaction_auto_commit() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+
+        let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+        db.tx_add(
+            &tx,
+            "items",
+            serde_json::json!({"name": "first"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+
+        // 提交前 store 中还没有记录
+        assert_eq!(db.count("items").unwrap(), 0);
+
+        // 提交事务
+        db.commit_tx(&mut tx).unwrap();
+
+        // 提交后记录生效
+        assert_eq!(db.count("items").unwrap(), 1);
+        let record = db.get("items", &IdbKey::String("k1".into())).unwrap();
+        assert_eq!(record.value["name"], "first");
+    }
+
+    /// 测试 localStorage 移除不存在的键返回 None。
+    #[test]
+    fn test_local_storage_remove_nonexistent() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 移除从未设置过的键
+        assert_eq!(storage.remove("nonexistent"), None);
+
+        // 设置后移除，再移除一次
+        storage.set("temp", "value").unwrap();
+        assert_eq!(storage.remove("temp"), Some("value".to_string()));
+        assert_eq!(storage.remove("temp"), None, "重复移除应返回 None");
     }
 }
