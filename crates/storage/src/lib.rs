@@ -112,4 +112,121 @@ mod tests {
         assert!(cs.has("assets"));
         assert!(!cs.has("nonexistent"));
     }
+
+    /// 测试 IndexedDB add() 对重复主键的拒绝行为：
+    /// 第一次 add 成功，第二次 add 同一主键应返回错误，且原始数据不变。
+    #[test]
+    fn test_idb_add_duplicate_key_rejected() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        let key = IdbKey::String("unique_id".into());
+        let val1 = serde_json::json!({"name": "first"});
+        let val2 = serde_json::json!({"name": "second"});
+
+        // 第一次 add 应成功
+        db.add("items", val1.clone(), Some(key.clone())).unwrap();
+        assert_eq!(db.count("items").unwrap(), 1);
+
+        // 第二次 add 同一主键应报错
+        let result = db.add("items", val2, Some(key.clone()));
+        assert!(result.is_err(), "add() 对重复主键应返回错误");
+
+        // 原始数据应保持不变
+        let record = db.get("items", &key).unwrap();
+        assert_eq!(record.value["name"], "first", "重复 add 被拒绝后原始数据应不变");
+        assert_eq!(db.count("items").unwrap(), 1, "记录数应仍为 1");
+    }
+
+    /// 测试 IndexedDB put() 覆盖行为：
+    /// 对同一主键调用两次 put()，第二次应覆盖第一次的值。
+    #[test]
+    fn test_idb_put_overwrites() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("settings", None, false).unwrap();
+        let key = IdbKey::String("theme".into());
+
+        // 第一次 put
+        db.put("settings", serde_json::json!({"mode": "light"}), Some(key.clone()))
+            .unwrap();
+        let record = db.get("settings", &key).unwrap();
+        assert_eq!(record.value["mode"], "light");
+
+        // 第二次 put 同一主键 → 覆盖
+        db.put("settings", serde_json::json!({"mode": "dark"}), Some(key.clone()))
+            .unwrap();
+        let record = db.get("settings", &key).unwrap();
+        assert_eq!(record.value["mode"], "dark", "第二次 put 应覆盖第一次的值");
+
+        // 记录数应始终为 1
+        assert_eq!(db.count("settings").unwrap(), 1, "覆盖后记录数应仍为 1");
+    }
+
+    /// 测试 localStorage 键迭代：设置 3 个键，通过 key() 遍历，验证全部找到。
+    #[test]
+    fn test_local_storage_key_iteration() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("username", "alice").unwrap();
+        storage.set("email", "alice@example.com").unwrap();
+        storage.set("theme", "dark").unwrap();
+        assert_eq!(storage.len(), 3);
+
+        // 遍历所有键，收集到 Vec
+        let mut keys: Vec<String> = (0..storage.len())
+            .filter_map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        keys.sort();
+        assert_eq!(keys, vec!["email", "theme", "username"], "应遍历到全部 3 个键");
+
+        // 确认每个键的值可正确取出
+        assert_eq!(storage.get("username"), Some("alice"));
+        assert_eq!(storage.get("email"), Some("alice@example.com"));
+        assert_eq!(storage.get("theme"), Some("dark"));
+    }
+
+    /// 测试 sessionStorage 长度跟踪：设置 5 项、验证长度为 5，删除一项后验证长度为 4。
+    #[test]
+    fn test_session_storage_length() {
+        let mut storage = WebStorage::new(StorageType::Session, "https://example.com");
+        storage.set("k1", "v1").unwrap();
+        storage.set("k2", "v2").unwrap();
+        storage.set("k3", "v3").unwrap();
+        storage.set("k4", "v4").unwrap();
+        storage.set("k5", "v5").unwrap();
+        assert_eq!(storage.len(), 5, "设置 5 项后长度应为 5");
+
+        // 删除一项
+        storage.remove("k3");
+        assert_eq!(storage.len(), 4, "删除 1 项后长度应为 4");
+        assert_eq!(storage.get("k3"), None, "已删除的键应不可访问");
+
+        // 其余项仍存在
+        assert_eq!(storage.get("k1"), Some("v1"));
+        assert_eq!(storage.get("k2"), Some("v2"));
+        assert_eq!(storage.get("k4"), Some("v4"));
+        assert_eq!(storage.get("k5"), Some("v5"));
+    }
+
+    /// 测试 Cache API keys()：向缓存添加 3 个响应，调用 keys() 验证全部返回。
+    #[test]
+    fn test_cache_api_keys() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("resources");
+
+        let urls = [
+            "https://example.com/index.html",
+            "https://example.com/style.css",
+            "https://example.com/app.js",
+        ];
+        for url in &urls {
+            cache
+                .put(CacheRequest::new(url), CacheResponse::ok(b"content".to_vec()))
+                .unwrap();
+        }
+
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 3, "keys() 应返回 3 个条目");
+        for url in &urls {
+            assert!(keys.contains(url), "keys() 应包含 {url}");
+        }
+    }
 }

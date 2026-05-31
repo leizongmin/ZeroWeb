@@ -4816,4 +4816,253 @@ mod tests {
         assert_eq!(abs_box.width, 60.0, "abs 宽度应为 60");
         assert_eq!(abs_box.height, 40.0, "abs 高度应为 40");
     }
+
+    // ── 边缘场景补充测试（第五批）──
+
+    /// 测试 display:none 父元素隐藏其子元素。
+    ///
+    /// 父元素设置 display:none，子元素设置 display:block。
+    /// display:none 的父元素不构建子树，子元素不应出现在布局树中。
+    #[test]
+    fn test_layout_display_none_cascades() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(parent, child).unwrap();
+        // 在 parent 后再加一个可见元素，作为参照
+        let visible = doc.create_element("div");
+        doc.append_child(body, visible).unwrap();
+
+        let mut styles = HashMap::new();
+        // 父元素 display:none
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::None;
+        styles.insert(parent, parent_style);
+
+        // 子元素 display:block（但因为父元素 display:none 而被隐藏）
+        styles.insert(child, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+
+        // 可见参照元素
+        styles.insert(visible, make_style_with_display(DisplayValue::Block, 200.0, 80.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // display:none 的父元素不记录到 taffy_to_dom 映射中，
+        // 因此 find_child_by_node_id 无法找到 parent 和 child。
+        // 验证 parent 和 child 不在布局树中。
+        assert!(
+            find_child_by_node_id(&result.root, parent).is_none(),
+            "display:none 的父元素不应出现在布局树中"
+        );
+        assert!(
+            find_child_by_node_id(&result.root, child).is_none(),
+            "display:none 父元素的子元素不应出现在布局树中"
+        );
+
+        // 可见参照元素应正常出现
+        let vis_box = find_child_by_node_id(&result.root, visible).expect("visible 应找到");
+        assert_eq!(vis_box.width, 200.0, "可见参照元素宽度应为 200");
+        assert_eq!(vis_box.height, 80.0, "可见参照元素高度应为 80");
+    }
+
+    /// 测试百分比高度相对于父元素计算。
+    ///
+    /// 父元素高度 200px，子元素高度 50%。
+    /// 子元素实际高度应为 100px（200 * 50% = 100）。
+    #[test]
+    fn test_layout_percentage_height_with_parent() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(parent, child).unwrap();
+
+        let mut styles = HashMap::new();
+        // 父元素高度 200px
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.width = LengthValue::Px(300.0);
+        parent_style.height = LengthValue::Px(200.0);
+        styles.insert(parent, parent_style);
+
+        // 子元素高度 50%
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(100.0);
+        child_style.height = LengthValue::Percentage(50.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let child_box = find_child_by_node_id(&result.root, child).expect("child 应找到");
+        // 50% of 200px = 100px
+        assert!(
+            (child_box.height - 100.0).abs() < 1.0,
+            "子元素高度应为 100px（200 * 50%），实际 {}",
+            child_box.height
+        );
+        assert_eq!(child_box.width, 100.0, "子元素宽度应为 100");
+    }
+
+    /// 测试 flex 容器 align-items:center 使子元素垂直居中。
+    ///
+    /// 容器 200x200，子元素 60x40。
+    /// align-items:center 时子元素高度保持不变（不拉伸），
+    /// 验证子元素尺寸正确且在容器内布局合理。
+    #[test]
+    fn test_layout_flex_align_center() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.align_items = AlignmentValue::Center;
+        container_style.width = LengthValue::Px(200.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.width = LengthValue::Px(60.0);
+        child_style.height = LengthValue::Px(40.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let container_box = find_child_by_node_id(&result.root, container).expect("container 应找到");
+        let child_box = find_child_by_node_id(&result.root, child).expect("child 应找到");
+
+        // align-items:center 不拉伸子元素，子元素高度保持 40px
+        assert_eq!(child_box.width, 60.0, "子元素宽度应为 60");
+        assert_eq!(child_box.height, 40.0, "子元素高度应保持 40（不拉伸）");
+
+        // 子元素应在容器内（y 坐标不应超出容器范围）
+        assert!(
+            child_box.y >= container_box.y,
+            "子元素 y 应在容器内: child.y={} >= container.y={}",
+            child_box.y,
+            container_box.y
+        );
+        assert!(
+            child_box.y + child_box.height <= container_box.y + container_box.height,
+            "子元素不应超出容器底部"
+        );
+
+        // 与 align-items:stretch 对比：center 模式下子元素高度不应等于容器高度
+        // （如果等于，说明 stretch 被错误应用）
+        assert!(
+            child_box.height < container_box.height,
+            "center 模式下子元素高度应小于容器高度（不应拉伸）"
+        );
+    }
+
+    /// 测试 grid 显式列模板 grid-template-columns:100px 200px。
+    ///
+    /// 两个子元素自动放置，第一列宽度约 100px，第二列宽度约 200px。
+    #[test]
+    fn test_layout_grid_explicit_columns() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 200px".to_string());
+        grid_style.grid_template_rows = Some("100px".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        // 子元素不设置显式尺寸，由 grid cell 自动填充
+        for id in [item1, item2] {
+            styles.insert(id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 应找到");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 应找到");
+
+        // item1 在第一列，宽度应约 100px
+        assert!(
+            (b1.width - 100.0).abs() < 1.0,
+            "第一列宽度应约 100px，实际 {}",
+            b1.width
+        );
+        // item2 在第二列，宽度应约 200px
+        assert!(
+            (b2.width - 200.0).abs() < 1.0,
+            "第二列宽度应约 200px，实际 {}",
+            b2.width
+        );
+        // item2 应在 item1 右侧
+        assert!(b2.x > b1.x, "item2 应在 item1 右侧: x={} vs x={}", b2.x, b1.x);
+        // 两个元素应在同一行
+        assert!((b1.y - b2.y).abs() < 0.01, "两个元素应在同一行");
+    }
+
+    /// 测试 box-sizing:border-box 时，width 包含 padding。
+    ///
+    /// 元素 width:100px，padding:10px（四边），box-sizing:border-box。
+    /// 内容区域 = 100 - 10*2 = 80px。
+    #[test]
+    fn test_layout_border_box_sizing() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.display = DisplayValue::Block;
+        div_style.width = LengthValue::Px(100.0);
+        div_style.height = LengthValue::Px(100.0);
+        div_style.box_sizing = BoxSizingValue::BorderBox;
+        div_style.padding_top = LengthValue::Px(10.0);
+        div_style.padding_bottom = LengthValue::Px(10.0);
+        div_style.padding_left = LengthValue::Px(10.0);
+        div_style.padding_right = LengthValue::Px(10.0);
+        styles.insert(div, div_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let div_box = find_child_by_node_id(&result.root, div).expect("div 应找到");
+
+        // border-box: 总宽度 = 100px（包含 padding）
+        assert!(
+            (div_box.width - 100.0).abs() < 1.0,
+            "border-box 总宽度应为 100px，实际 {}",
+            div_box.width
+        );
+        // 内容宽度 = 100 - padding_left - padding_right = 100 - 10 - 10 = 80
+        assert!(
+            (div_box.content_width - 80.0).abs() < 1.0,
+            "border-box 内容宽度应为 80px（100 - 10 - 10），实际 {}",
+            div_box.content_width
+        );
+        // 内容高度 = 100 - padding_top - padding_bottom = 100 - 10 - 10 = 80
+        assert!(
+            (div_box.content_height - 80.0).abs() < 1.0,
+            "border-box 内容高度应为 80px（100 - 10 - 10），实际 {}",
+            div_box.content_height
+        );
+        // padding 值正确
+        assert_eq!(div_box.padding_top, 10.0);
+        assert_eq!(div_box.padding_bottom, 10.0);
+        assert_eq!(div_box.padding_left, 10.0);
+        assert_eq!(div_box.padding_right, 10.0);
+    }
 }

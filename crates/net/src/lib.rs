@@ -226,4 +226,89 @@ mod tests {
         ws.close();
         assert_eq!(ws.state(), &super::WebSocketState::Closed);
     }
+
+    /// 测试包含多个查询参数的 URL，验证每个参数都被正确解析。
+    #[test]
+    fn test_url_query_params_multi() {
+        let parsed = parse_url("http://example.com/search?q=hello&lang=en&page=3&sort=date").unwrap();
+        let query = parsed.query.as_deref().unwrap();
+        assert!(query.contains("q=hello"), "应包含参数 q=hello");
+        assert!(query.contains("lang=en"), "应包含参数 lang=en");
+        assert!(query.contains("page=3"), "应包含参数 page=3");
+        assert!(query.contains("sort=date"), "应包含参数 sort=date");
+        // 验证各部分完整
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(parsed.path, "/search");
+    }
+
+    /// 测试创建带 secure=true 的 Cookie，验证标志正确设置。
+    #[test]
+    fn test_cookie_secure_flag() {
+        let cookie = Cookie {
+            name: "session".to_string(),
+            value: "xyz789".to_string(),
+            domain: Some("example.com".to_string()),
+            path: Some("/".to_string()),
+            expires: None,
+            secure: true,
+            http_only: false,
+            same_site: SameSite::Lax,
+        };
+        assert!(cookie.secure, "secure 标志应为 true");
+        assert!(!cookie.http_only, "httpOnly 标志应为 false");
+        assert_eq!(cookie.same_site, SameSite::Lax);
+        // 验证 Secure cookie 在 HTTP 下被阻止
+        let mut store = crate::CookieStore::new();
+        store.add(cookie);
+        let http_url = parse_url("http://example.com/").unwrap();
+        assert!(
+            store.get_for_url(&http_url).is_empty(),
+            "Secure cookie 不应通过 HTTP 发送"
+        );
+        let https_url = parse_url("https://example.com/").unwrap();
+        assert_eq!(
+            store.get_for_url(&https_url).len(),
+            1,
+            "Secure cookie 应通过 HTTPS 发送"
+        );
+    }
+
+    /// 测试 WebSocket 在未连接（Connecting 状态）时发送消息应返回错误。
+    #[test]
+    fn test_websocket_send_before_connect() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        // 新建 WebSocket 状态为 Connecting，未调用 connect()
+        assert_eq!(ws.state(), &super::WebSocketState::Connecting);
+        let result = ws.send("hello");
+        assert!(result.is_err(), "Connecting 状态下发送应返回错误");
+        assert!(result.unwrap_err().contains("not open"));
+    }
+
+    /// 测试 WebSocket 连接后关闭再发送消息应返回错误。
+    #[test]
+    fn test_websocket_close_then_send() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        ws.connect();
+        assert_eq!(ws.state(), &super::WebSocketState::Open);
+        ws.close();
+        assert_eq!(ws.state(), &super::WebSocketState::Closed);
+        let result = ws.send("hello");
+        assert!(result.is_err(), "Closed 状态下发送应返回错误");
+        assert!(result.unwrap_err().contains("not open"));
+    }
+
+    /// 测试相对路径 URL 的解析：将 "../page.html" 解析到 base URL 上。
+    #[test]
+    fn test_url_relative_path() {
+        let base = url::Url::parse("https://example.com/docs/guides/intro").unwrap();
+        let resolved = base.join("../page.html").unwrap();
+        let parsed = parse_url(resolved.as_str()).unwrap();
+        assert_eq!(parsed.scheme, "https");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(
+            parsed.path, "/docs/page.html",
+            "相对路径 ../page.html 应从 base /docs/guides/intro 解析为 /docs/page.html"
+        );
+    }
 }

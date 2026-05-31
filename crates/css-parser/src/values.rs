@@ -2829,6 +2829,129 @@ pub fn parse_grid_area(input: &str) -> Option<(String, String, String, String)> 
     }
 }
 
+/// CSS text-shadow 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextShadowValue {
+    /// 水平偏移量。
+    pub offset_x: LengthValue,
+    /// 垂直偏移量。
+    pub offset_y: LengthValue,
+    /// 模糊半径。
+    pub blur_radius: LengthValue,
+    /// 阴影颜色。
+    pub color: ColorValue,
+}
+
+/// 解析 CSS text-shadow 值。
+///
+/// 格式：`"none"` | `"<offset-x> <offset-y> [<blur-radius>] [<color>]"`。
+pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(TextShadowValue {
+            offset_x: LengthValue::Px(0.0),
+            offset_y: LengthValue::Px(0.0),
+            blur_radius: LengthValue::Px(0.0),
+            color: ColorValue::Rgba(0, 0, 0, 255),
+        });
+    }
+    // 解析 "2px 2px 4px red" 或 "2px 2px" 或 "2px 2px red"
+    let parts: Vec<&str> = v.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let ox = parse_length(parts[0])?;
+    let oy = parse_length(parts[1])?;
+    let (blur, color) = if parts.len() >= 3 {
+        if let Some(c) = parse_color(parts[2]) {
+            (LengthValue::Px(0.0), c)
+        } else if let Some(b) = parse_length(parts[2]) {
+            let c = if parts.len() >= 4 {
+                parse_color(parts[3]).unwrap_or(ColorValue::Rgba(0, 0, 0, 255))
+            } else {
+                ColorValue::Rgba(0, 0, 0, 255)
+            };
+            (b, c)
+        } else {
+            (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+        }
+    } else {
+        (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+    };
+    Some(TextShadowValue {
+        offset_x: ox,
+        offset_y: oy,
+        blur_radius: blur,
+        color,
+    })
+}
+
+/// CSS box-shadow 单个阴影。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxShadowValue {
+    /// 水平偏移量。
+    pub offset_x: LengthValue,
+    /// 垂直偏移量。
+    pub offset_y: LengthValue,
+    /// 模糊半径。
+    pub blur_radius: LengthValue,
+    /// 扩展半径。
+    pub spread_radius: LengthValue,
+    /// 阴影颜色。
+    pub color: ColorValue,
+    /// 是否为内阴影。
+    pub inset: bool,
+}
+
+/// 解析 CSS box-shadow 值。
+///
+/// 格式：`"none"` | `"[inset] <offset-x> <offset-y> [<blur>] [<spread>] [<color>]"`。
+pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(BoxShadowValue {
+            offset_x: LengthValue::Px(0.0),
+            offset_y: LengthValue::Px(0.0),
+            blur_radius: LengthValue::Px(0.0),
+            spread_radius: LengthValue::Px(0.0),
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        });
+    }
+    let lower = v.to_ascii_lowercase();
+    let inset = lower.starts_with("inset");
+    let rest = if inset { v[5..].trim_start() } else { v };
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let ox = parse_length(parts[0])?;
+    let oy = parse_length(parts[1])?;
+    let blur = if parts.len() >= 3 {
+        parse_length(parts[2]).unwrap_or(LengthValue::Px(0.0))
+    } else {
+        LengthValue::Px(0.0)
+    };
+    let spread = if parts.len() >= 4 {
+        parse_length(parts[3]).unwrap_or(LengthValue::Px(0.0))
+    } else {
+        LengthValue::Px(0.0)
+    };
+    // 颜色在最后一个非长度 token 或默认黑色
+    let color = parts
+        .iter()
+        .find_map(|p| parse_color(p))
+        .unwrap_or(ColorValue::Rgba(0, 0, 0, 255));
+    Some(BoxShadowValue {
+        offset_x: ox,
+        offset_y: oy,
+        blur_radius: blur,
+        spread_radius: spread,
+        color,
+        inset,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
