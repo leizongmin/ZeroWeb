@@ -403,6 +403,10 @@ struct CanvasState {
     line_cap: LineCap,
     /// 图像平滑（抗锯齿）开关。
     image_smoothing_enabled: bool,
+    /// 文本对齐。
+    text_align: TextAlign,
+    /// 文本基线。
+    text_baseline: TextBaseline,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -453,6 +457,10 @@ pub struct CanvasContext {
     line_cap: LineCap,
     /// 图像平滑（抗锯齿）开关。
     image_smoothing_enabled: bool,
+    /// 文本对齐。
+    text_align: TextAlign,
+    /// 文本基线。
+    text_baseline: TextBaseline,
 }
 
 /// 文本度量。
@@ -505,6 +513,8 @@ impl CanvasContext {
             line_join: LineJoin::default(),
             line_cap: LineCap::default(),
             image_smoothing_enabled: true,
+            text_align: TextAlign::Start,
+            text_baseline: TextBaseline::Alphabetic,
         }
     }
 
@@ -849,6 +859,8 @@ impl CanvasContext {
             line_join: self.line_join,
             line_cap: self.line_cap,
             image_smoothing_enabled: self.image_smoothing_enabled,
+            text_align: self.text_align,
+            text_baseline: self.text_baseline,
         });
     }
 
@@ -871,6 +883,8 @@ impl CanvasContext {
             self.line_join = state.line_join;
             self.line_cap = state.line_cap;
             self.image_smoothing_enabled = state.image_smoothing_enabled;
+            self.text_align = state.text_align;
+            self.text_baseline = state.text_baseline;
         }
     }
 
@@ -974,6 +988,31 @@ impl CanvasContext {
     /// 返回当前图像平滑开关状态。
     pub fn image_smoothing_enabled(&self) -> bool {
         self.image_smoothing_enabled
+    }
+
+    /// 返回当前字体描述符。
+    pub fn font(&self) -> &FontDescriptor {
+        &self.font
+    }
+
+    /// 设置文本对齐。
+    pub fn set_text_align(&mut self, align: TextAlign) {
+        self.text_align = align;
+    }
+
+    /// 返回当前文本对齐。
+    pub fn text_align(&self) -> TextAlign {
+        self.text_align
+    }
+
+    /// 设置文本基线。
+    pub fn set_text_baseline(&mut self, baseline: TextBaseline) {
+        self.text_baseline = baseline;
+    }
+
+    /// 返回当前文本基线。
+    pub fn text_baseline(&self) -> TextBaseline {
+        self.text_baseline
     }
 
     /// 返回当前全局透明度。
@@ -6272,5 +6311,104 @@ mod tests {
         assert_eq!(sc.g, 0, "shadowColor.g 应为 0");
         assert_eq!(sc.b, 128, "shadowColor.b 应为 128");
         assert_eq!(sc.a, 200, "shadowColor.a 应为 200");
+    }
+
+    // ── 边界条件测试：putImageData/getImageData、createConicGradient、font、textAlign、textBaseline ──
+
+    /// 测试 put_image_data 后 get_image_data 返回完全一致的像素数据。
+    #[test]
+    fn test_canvas_put_image_data_and_get() {
+        let mut ctx = CanvasContext::new(10, 10);
+        // 构造 3x3 的彩虹色 ImageData
+        let pixels: Vec<u8> = vec![
+            255, 0, 0, 255, // 红
+            0, 255, 0, 255, // 绿
+            0, 0, 255, 255, // 蓝
+            255, 255, 0, 255, // 黄
+            255, 0, 255, 255, // 品红
+            0, 255, 255, 255, // 青
+            128, 128, 128, 255, // 灰
+            255, 128, 0, 255, // 橙
+            0, 128, 255, 255, // 天蓝
+        ];
+        let img = ImageData {
+            width: 3,
+            height: 3,
+            data: pixels.clone(),
+        };
+        ctx.put_image_data(&img, 2, 3);
+        // 读取写入区域并验证像素完全匹配
+        let result = ctx.get_image_data(2, 3, 3, 3);
+        assert_eq!(result.data, pixels, "put 后 get 的像素数据应完全一致");
+        // 验证写入区域外的像素仍为零
+        let outside = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(outside.data[0..4], [0, 0, 0, 0], "写入区域外应保持透明");
+    }
+
+    /// 测试 create_conic_gradient 指定起始角度后，渐变对象的 start_angle 与传入值精确匹配。
+    #[test]
+    fn test_canvas_create_conic_gradient() {
+        let ctx = CanvasContext::new(200, 200);
+        let angle = std::f32::consts::FRAC_PI_2; // 90 度
+        let grad = ctx.create_conic_gradient(angle, 75.0, 125.0);
+        assert!(
+            (grad.start_angle - angle).abs() < f32::EPSILON,
+            "start_angle 应为 {}",
+            angle
+        );
+        assert!((grad.cx - 75.0).abs() < f32::EPSILON, "cx 应为 75.0");
+        assert!((grad.cy - 125.0).abs() < f32::EPSILON, "cy 应为 125.0");
+    }
+
+    /// 测试 set_font 设置 "bold 16px Arial" 风格字体后，font() getter 返回正确的描述符。
+    #[test]
+    fn test_canvas_set_font_and_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let font = FontDescriptor {
+            family: "Arial".to_string(),
+            size: 16.0,
+            weight: FontWeight::Bold,
+            style: FontStyle::Normal,
+        };
+        ctx.set_font(font);
+        let f = ctx.font();
+        assert_eq!(f.family, "Arial");
+        assert!((f.size - 16.0).abs() < f32::EPSILON, "字体大小应为 16.0");
+        assert_eq!(f.weight, FontWeight::Bold, "字体粗细应为 Bold");
+        assert_eq!(f.style, FontStyle::Normal, "字体样式应为 Normal");
+    }
+
+    /// 测试 set_text_align 对各种值（left, center, right）的设置和获取。
+    #[test]
+    fn test_canvas_text_align_values() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 默认值应为 Start
+        assert_eq!(ctx.text_align(), TextAlign::Start);
+
+        ctx.set_text_align(TextAlign::Left);
+        assert_eq!(ctx.text_align(), TextAlign::Left);
+
+        ctx.set_text_align(TextAlign::Center);
+        assert_eq!(ctx.text_align(), TextAlign::Center);
+
+        ctx.set_text_align(TextAlign::Right);
+        assert_eq!(ctx.text_align(), TextAlign::Right);
+    }
+
+    /// 测试 set_text_baseline 对各种值（top, middle, bottom）的设置和获取。
+    #[test]
+    fn test_canvas_text_baseline_values() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 默认值应为 Alphabetic
+        assert_eq!(ctx.text_baseline(), TextBaseline::Alphabetic);
+
+        ctx.set_text_baseline(TextBaseline::Top);
+        assert_eq!(ctx.text_baseline(), TextBaseline::Top);
+
+        ctx.set_text_baseline(TextBaseline::Middle);
+        assert_eq!(ctx.text_baseline(), TextBaseline::Middle);
+
+        ctx.set_text_baseline(TextBaseline::Bottom);
+        assert_eq!(ctx.text_baseline(), TextBaseline::Bottom);
     }
 }

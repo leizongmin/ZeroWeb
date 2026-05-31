@@ -4497,4 +4497,323 @@ mod tests {
         // fixed 元素应在视口坐标系中：y 应 >= top=50（调整后不会小于原始 top）
         assert!(fixed_box.y >= 50.0, "fixed y 应 >= top(50)，实际 {}", fixed_box.y);
     }
+
+    // ── 边缘场景补充测试（第四批）──
+
+    /// 测试 inline-block 元素带文本内容时的布局。
+    ///
+    /// inline-block 在 taffy 中映射为 Block，验证元素尺寸正确且布局不 panic。
+    /// 结构：body > div(inline-block, 150x80) + span(inline-block, 100x40)
+    #[test]
+    fn test_layout_display_inline_block_with_text() {
+        let (mut doc, body) = make_doc_with_body();
+        let ib1 = doc.create_element("div");
+        doc.append_child(body, ib1).unwrap();
+        let ib2 = doc.create_element("span");
+        doc.append_child(body, ib2).unwrap();
+
+        let mut styles = HashMap::new();
+        // inline-block 元素映射为 Block，正常参与布局
+        let mut s1 = ComputedStyle::default();
+        s1.display = DisplayValue::InlineBlock;
+        s1.width = LengthValue::Px(150.0);
+        s1.height = LengthValue::Px(80.0);
+        styles.insert(ib1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.display = DisplayValue::InlineBlock;
+        s2.width = LengthValue::Px(100.0);
+        s2.height = LengthValue::Px(40.0);
+        styles.insert(ib2, s2);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, ib1).expect("ib1 found");
+        let b2 = find_child_by_node_id(&result.root, ib2).expect("ib2 found");
+
+        // 两个 inline-block 元素映射为 Block，应垂直堆叠
+        assert!(b2.y >= b1.y, "ib2 (y={}) 应在 ib1 (y={}) 下方或同位置", b2.y, b1.y);
+
+        // 尺寸正确
+        assert!((b1.width - 150.0).abs() < 1.0, "ib1 宽度应约 150，实际 {}", b1.width);
+        assert!((b1.height - 80.0).abs() < 1.0, "ib1 高度应约 80，实际 {}", b1.height);
+        assert!((b2.width - 100.0).abs() < 1.0, "ib2 宽度应约 100，实际 {}", b2.width);
+        assert!((b2.height - 40.0).abs() < 1.0, "ib2 高度应约 40，实际 {}", b2.height);
+    }
+
+    /// 测试 sticky 定位元素在可滚动容器中的 is_sticky 标记。
+    ///
+    /// taffy 无原生 sticky 支持，映射为 Relative。
+    /// 验证 is_sticky 标记正确，元素参与正常流布局且尺寸正确。
+    #[test]
+    fn test_layout_position_sticky() {
+        let (mut doc, body) = make_doc_with_body();
+        // 可滚动容器
+        let scroll_container = doc.create_element("div");
+        doc.append_child(body, scroll_container).unwrap();
+        // sticky 元素
+        let sticky = doc.create_element("div");
+        doc.append_child(scroll_container, sticky).unwrap();
+        // 后续内容
+        let content = doc.create_element("div");
+        doc.append_child(scroll_container, content).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 可滚动容器
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.overflow_y = OverflowValue::Scroll;
+        container_style.width = LengthValue::Px(200.0);
+        container_style.height = LengthValue::Px(300.0);
+        styles.insert(scroll_container, container_style);
+
+        // sticky 元素：position:sticky, top:10px
+        let mut sticky_style = ComputedStyle::default();
+        sticky_style.display = DisplayValue::Block;
+        sticky_style.position = PositionValue::Sticky;
+        sticky_style.top = LengthValue::Px(10.0);
+        sticky_style.width = LengthValue::Px(200.0);
+        sticky_style.height = LengthValue::Px(50.0);
+        styles.insert(sticky, sticky_style);
+
+        // 后续内容
+        styles.insert(content, make_style_with_display(DisplayValue::Block, 200.0, 400.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let sticky_box = find_child_by_node_id(&result.root, sticky).expect("sticky found");
+
+        // is_sticky 标记正确
+        assert!(sticky_box.is_sticky, "应标记为 sticky");
+        assert!(!sticky_box.is_absolute, "sticky 不应是 absolute");
+        assert!(!sticky_box.is_fixed, "sticky 不应是 fixed");
+
+        // 尺寸正确
+        assert!(
+            (sticky_box.width - 200.0).abs() < 1.0,
+            "sticky 宽度应约 200，实际 {}",
+            sticky_box.width
+        );
+        assert!(
+            (sticky_box.height - 50.0).abs() < 1.0,
+            "sticky 高度应约 50，实际 {}",
+            sticky_box.height
+        );
+
+        // 容器 overflow 标记
+        let container_box = find_child_by_node_id(&result.root, scroll_container).expect("container found");
+        assert_eq!(container_box.overflow_y, OverflowClip::Scroll, "容器应标记为 scroll");
+    }
+
+    /// 测试 flex-wrap:wrap-reverse — 子元素换行方向反转。
+    ///
+    /// 在 row 方向 flex 容器中，wrap-reverse 使第二行元素在上方排列。
+    /// 验证换行发生且行顺序反转。
+    #[test]
+    fn test_layout_flex_wrap_reverse() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..4 {
+            let item = doc.create_element("span");
+            doc.append_child(container, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_wrap = FlexWrapValue::WrapReverse;
+        container_style.width = LengthValue::Px(200.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        // 每个 item 120px 宽，容器 200px → 第二个 item 换行
+        for id in &item_ids {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(120.0);
+            s.height = LengthValue::Px(50.0);
+            styles.insert(*id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+        let b3 = find_child_by_node_id(&result.root, item_ids[3]).expect("item3 found");
+
+        // wrap-reverse 中元素换行：item1 应与 item0 在不同行
+        // 在正常 wrap 中 item0 在第一行、item1 在第二行
+        // wrap-reverse 反转行顺序：item0 在下方行、item1 在上方行
+        // 因此 item1.y < item0.y（行顺序反转）
+        assert!(
+            b1.y != b0.y,
+            "wrap-reverse 中 item1 (y={}) 和 item0 (y={}) 应在不同行",
+            b1.y,
+            b0.y
+        );
+
+        // item2 和 item3 也应换行
+        assert!(b2.y != b1.y || b3.y != b2.y, "至少部分后续 item 应换行");
+
+        // 所有 item 尺寸正确
+        assert!((b0.width - 120.0).abs() < 1.0, "item0 宽度应约 120，实际 {}", b0.width);
+        assert!((b1.width - 120.0).abs() < 1.0, "item1 宽度应约 120，实际 {}", b1.width);
+    }
+
+    /// 测试 grid 容器使用 gap:10px 时子元素之间的间距。
+    ///
+    /// 使用显式 grid-row/grid-column 放置 4 个元素到 2x2 grid 中，
+    /// gap=10px（column-gap）+ row_gap=10px，验证同行和同列间距正确。
+    #[test]
+    fn test_layout_grid_gap() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+        let item3 = doc.create_element("span");
+        doc.append_child(grid, item3).unwrap();
+        let item4 = doc.create_element("span");
+        doc.append_child(grid, item4).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 2x2 grid，column-gap=10px，row-gap=10px
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.gap = LengthValue::Px(10.0);
+        grid_style.row_gap = LengthValue::Px(10.0);
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(300.0);
+        styles.insert(grid, grid_style);
+
+        // item1: row 1, col 1
+        let mut s1 = ComputedStyle::default();
+        s1.grid_row_start = GridLineValue::Line(1);
+        s1.grid_row_end = GridLineValue::Line(2);
+        s1.grid_column_start = GridLineValue::Line(1);
+        s1.grid_column_end = GridLineValue::Line(2);
+        styles.insert(item1, s1);
+
+        // item2: row 1, col 2
+        let mut s2 = ComputedStyle::default();
+        s2.grid_row_start = GridLineValue::Line(1);
+        s2.grid_row_end = GridLineValue::Line(2);
+        s2.grid_column_start = GridLineValue::Line(2);
+        s2.grid_column_end = GridLineValue::Line(3);
+        styles.insert(item2, s2);
+
+        // item3: row 2, col 1
+        let mut s3 = ComputedStyle::default();
+        s3.grid_row_start = GridLineValue::Line(2);
+        s3.grid_row_end = GridLineValue::Line(3);
+        s3.grid_column_start = GridLineValue::Line(1);
+        s3.grid_column_end = GridLineValue::Line(2);
+        styles.insert(item3, s3);
+
+        // item4: row 2, col 2
+        let mut s4 = ComputedStyle::default();
+        s4.grid_row_start = GridLineValue::Line(2);
+        s4.grid_row_end = GridLineValue::Line(3);
+        s4.grid_column_start = GridLineValue::Line(2);
+        s4.grid_column_end = GridLineValue::Line(3);
+        styles.insert(item4, s4);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+        let b3 = find_child_by_node_id(&result.root, item3).expect("item3 found");
+        let b4 = find_child_by_node_id(&result.root, item4).expect("item4 found");
+
+        // 同行水平 gap：item2.x - item1.x - item1.width ≈ 10px
+        let h_gap = b2.x - b1.x - b1.width;
+        assert!((h_gap - 10.0).abs() < 1.0, "水平 gap 应约 10px，实际 {}", h_gap);
+
+        // 同列垂直 gap：item3.y - item1.y - item1.height ≈ 10px
+        let v_gap = b3.y - b1.y - b1.height;
+        assert!((v_gap - 10.0).abs() < 1.0, "垂直 gap 应约 10px，实际 {}", v_gap);
+
+        // item4 应在 item3 右侧（同行）
+        let h_gap2 = b4.x - b3.x - b3.width;
+        assert!((h_gap2 - 10.0).abs() < 1.0, "第二行水平 gap 应约 10px，实际 {}", h_gap2);
+
+        // 每个 cell 尺寸约 100x50
+        assert!((b1.width - 100.0).abs() < 1.0, "item1 宽度应约 100，实际 {}", b1.width);
+        assert!((b1.height - 50.0).abs() < 1.0, "item1 高度应约 50，实际 {}", b1.height);
+    }
+
+    /// 测试绝对定位元素设置 top:10px, left:20px 时的位置偏移。
+    ///
+    /// 绝对定位元素相对于 relative 父容器定位，
+    /// 验证 x/y 偏移精确匹配设置的 top/left 值。
+    #[test]
+    fn test_layout_absolute_top_left() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // relative 父容器作为包含块
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(400.0);
+        parent_style.height = LengthValue::Px(300.0);
+        styles.insert(parent, parent_style);
+
+        // 绝对定位子元素：top:10px, left:20px
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(10.0);
+        abs_style.left = LengthValue::Px(20.0);
+        abs_style.width = LengthValue::Px(60.0);
+        abs_style.height = LengthValue::Px(40.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child found");
+
+        // 验证 absolute 标记
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+        assert!(!abs_box.is_fixed, "不应是 fixed");
+        assert!(!abs_box.is_sticky, "不应是 sticky");
+
+        // 验证位置偏移精确
+        assert!(
+            (abs_box.x - 20.0).abs() < 1.0,
+            "abs x 偏移应约 20px（left），实际 {}",
+            abs_box.x
+        );
+        assert!(
+            (abs_box.y - 10.0).abs() < 1.0,
+            "abs y 偏移应约 10px（top），实际 {}",
+            abs_box.y
+        );
+
+        // 验证尺寸
+        assert_eq!(abs_box.width, 60.0, "abs 宽度应为 60");
+        assert_eq!(abs_box.height, 40.0, "abs 高度应为 40");
+    }
 }

@@ -6,11 +6,12 @@ use crate::selector;
 use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
     CalcContext, ContainerTypeValue, CursorValue, GradientDirection, GradientValue, LengthValue, RadialShape,
-    RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TransformFunction,
-    TransformValue, WritingModeValue, eval_calc, eval_calc_with_context, parse_animation_direction,
-    parse_animation_fill_mode, parse_animation_play_state, parse_calc, parse_container_type, parse_cursor,
-    parse_gradient, parse_length, parse_length_shorthand, parse_opacity, parse_scroll_snap_align,
-    parse_scroll_snap_stop, parse_scroll_snap_type, parse_transform, parse_writing_mode,
+    RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
+    TextDecorationLineValue, TextTransformValue, TransformFunction, TransformValue, WritingModeValue, eval_calc,
+    eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state,
+    parse_calc, parse_container_type, parse_cursor, parse_gradient, parse_length, parse_length_shorthand,
+    parse_opacity, parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type, parse_spacing,
+    parse_text_decoration_line, parse_text_transform, parse_transform, parse_writing_mode,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4503,4 +4504,98 @@ fn test_parse_writing_mode_invalid() {
     assert_eq!(parse_writing_mode("invalid"), None);
     assert_eq!(parse_writing_mode(""), None);
     assert_eq!(parse_writing_mode("sideways-rl"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-decoration-line / text-transform / spacing 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_text_decoration_line 所有 5 个有效值
+fn test_parse_text_decoration_line() {
+    assert_eq!(parse_text_decoration_line("none"), Some(TextDecorationLineValue::None));
+    assert_eq!(
+        parse_text_decoration_line("underline"),
+        Some(TextDecorationLineValue::Underline)
+    );
+    assert_eq!(
+        parse_text_decoration_line("overline"),
+        Some(TextDecorationLineValue::Overline)
+    );
+    assert_eq!(
+        parse_text_decoration_line("line-through"),
+        Some(TextDecorationLineValue::LineThrough)
+    );
+    assert_eq!(
+        parse_text_decoration_line("blink"),
+        Some(TextDecorationLineValue::Blink)
+    );
+}
+
+#[test]
+/// 测试 parse_text_decoration_line 无效输入
+fn test_parse_text_decoration_line_invalid() {
+    assert_eq!(parse_text_decoration_line("invalid"), None);
+    assert_eq!(parse_text_decoration_line(""), None);
+    assert_eq!(parse_text_decoration_line("double-underline"), None);
+}
+
+#[test]
+/// 测试 parse_text_transform 所有 4 个有效值
+fn test_parse_text_transform() {
+    assert_eq!(parse_text_transform("none"), Some(TextTransformValue::None));
+    assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
+    assert_eq!(parse_text_transform("lowercase"), Some(TextTransformValue::Lowercase));
+    assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
+}
+
+#[test]
+/// 测试 parse_text_transform 无效输入
+fn test_parse_text_transform_invalid() {
+    assert_eq!(parse_text_transform("invalid"), None);
+    assert_eq!(parse_text_transform(""), None);
+    assert_eq!(parse_text_transform("full-width"), None);
+}
+
+#[test]
+/// 测试 parse_spacing 的 px 值解析
+fn test_parse_letter_spacing_px() {
+    assert_eq!(parse_spacing("2px"), Some(LengthValue::Px(2.0)));
+    assert_eq!(parse_spacing("0px"), Some(LengthValue::Px(0.0)));
+    assert_eq!(parse_spacing("-1px"), Some(LengthValue::Px(-1.0)));
+}
+
+#[test]
+/// 测试 parse_spacing 的 em 值解析
+fn test_parse_letter_spacing_em() {
+    assert_eq!(parse_spacing("0.5em"), Some(LengthValue::Em(0.5)));
+    assert_eq!(parse_spacing("1em"), Some(LengthValue::Em(1.0)));
+}
+
+#[test]
+/// 测试 parse_spacing 的 "normal" 关键字映射为 Px(0.0)
+fn test_parse_letter_spacing_normal() {
+    assert_eq!(parse_spacing("normal"), Some(LengthValue::Px(0.0)));
+    assert_eq!(parse_spacing("Normal"), Some(LengthValue::Px(0.0)));
+    assert_eq!(parse_spacing("  normal  "), Some(LengthValue::Px(0.0)));
+}
+
+#[test]
+/// 测试 parse_spacing 无效输入
+fn test_parse_letter_spacing_invalid() {
+    assert_eq!(parse_spacing("abc"), None);
+    assert_eq!(parse_spacing(""), None);
+}
+
+#[test]
+/// 测试 parse_spacing 用于 word-spacing 的 px 值
+fn test_parse_word_spacing_px() {
+    assert_eq!(parse_spacing("4px"), Some(LengthValue::Px(4.0)));
+    assert_eq!(parse_spacing("0.25em"), Some(LengthValue::Em(0.25)));
+}
+
+#[test]
+/// 测试 parse_spacing 用于 word-spacing 的 "normal" 关键字
+fn test_parse_word_spacing_normal() {
+    assert_eq!(parse_spacing("normal"), Some(LengthValue::Px(0.0)));
 }

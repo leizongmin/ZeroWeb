@@ -436,6 +436,314 @@ mod tests {
         assert_eq!(fill.color.a, 255);
     }
 
+    /// 测试 outline-style:solid 但 outline-width:0 时，不绘制任何 outline 图元。
+    ///
+    /// outline-width 为 0 时 paint_outline 提前返回，不应产生填充图元。
+    #[test]
+    fn test_outline_render_no_width() {
+        use zero_css_parser::values::VisibilityValue;
+        use zero_style_system::property::OutlineStyleValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_width = zero_css_parser::values::LengthValue::Px(0.0);
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "outline-width:0 应不产生任何 outline 填充图元"
+        );
+    }
+
+    /// 测试 outline-offset:5px 时，outline 图元位置正确向外偏移。
+    ///
+    /// outline-offset 使 outline 向外偏移，验证生成的填充矩形坐标反映偏移量。
+    #[test]
+    fn test_outline_render_with_offset() {
+        use zero_style_system::property::OutlineStyleValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_width = zero_css_parser::values::LengthValue::Px(2.0);
+        style.outline_offset = zero_css_parser::values::LengthValue::Px(5.0);
+        style.outline_color = ColorValue::Rgba(0, 128, 255, 255);
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // outline 生成 4 个填充图元（上、下、左、右）
+        assert_eq!(painter.primitives().fills.len(), 4, "outline 应生成 4 个填充图元");
+
+        // 验证上 outline 偏移：total_offset = outline_width(2) + outline_offset(5) = 7
+        // 上 outline y = abs_y(20) - total_offset(7) = 13
+        let top = &painter.primitives().fills[0];
+        assert_eq!(top.rect.origin.y, 13.0, "上 outline 应向外偏移 5px");
+        // 上 outline x = abs_x(10) - total_offset(7) = 3
+        assert_eq!(top.rect.origin.x, 3.0, "上 outline x 起始位置应反映偏移");
+    }
+
+    /// 测试 visibility:hidden 的元素不产生任何渲染输出（背景、边框、文本均跳过）。
+    ///
+    /// paint_node 检测到 visibility 为 Hidden 或 Collapse 时跳过所有绘制。
+    #[test]
+    fn test_visibility_hidden_render() {
+        use zero_css_parser::values::VisibilityValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.visibility = VisibilityValue::Hidden;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // visibility:hidden 不绘制背景、边框、outline、文本
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "visibility:hidden 元素不应产生填充图元"
+        );
+        assert!(
+            painter.primitives().glyphs.is_empty(),
+            "visibility:hidden 元素不应产生文本图元"
+        );
+    }
+
+    /// 测试 opacity:0 的元素仍然生成渲染图元（渲染但完全透明）。
+    ///
+    /// 与 visibility:hidden 不同，opacity:0 不阻止 paint 生成图元，
+    /// 图元仍然存在但 alpha 通道为 0。
+    #[test]
+    fn test_opacity_zero_render() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.opacity = 0.0;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // opacity:0 不阻止绘制，图元仍然生成
+        assert!(
+            !painter.primitives().fills.is_empty(),
+            "opacity:0 元素仍应生成填充图元（由合成层处理透明度）"
+        );
+        // 背景填充的矩形尺寸正确
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.size.width, 200.0, "填充宽度应为元素宽度");
+        assert_eq!(fill.rect.size.height, 100.0, "填充高度应为元素高度");
+    }
+
+    /// 测试 border-style:none 时，即使有边框宽度也不绘制边框图元。
+    ///
+    /// paint_borders 检查 border-style 是否为 None 或 Hidden，若是则跳过该边。
+    #[test]
+    fn test_border_style_none() {
+        use zero_style_system::property::BorderStyleValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // 布局有边框宽度，但 border-style 为 none
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 104.0,
+            height: 104.0,
+            content_x: 2.0,
+            content_y: 2.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 2.0,
+            border_right: 2.0,
+            border_bottom: 2.0,
+            border_left: 2.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        // 所有边框 style 均为 none
+        style.border_top_style = BorderStyleValue::None;
+        style.border_right_style = BorderStyleValue::None;
+        style.border_bottom_style = BorderStyleValue::None;
+        style.border_left_style = BorderStyleValue::None;
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // border-style:none 即使有边框宽度也不绘制
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "border-style:none 不应产生任何边框填充图元"
+        );
+    }
+
     /// 测试 coral、tomato、steelblue 命名颜色转换为正确的 RGBA 渲染颜色。
     ///
     /// CSS 解析器将命名颜色在解析时转换为 Rgba 值，
