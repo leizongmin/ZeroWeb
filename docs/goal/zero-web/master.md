@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，3769 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3849 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -23,17 +23,17 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 391 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains**、**TreeWalker 深度优先遍历**、**get_elements_by_class_name/set_id/create_comment/insert_before/inner_text**、**NodeIterator 遍历** |
-| css-parser | 488 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字**、**word-break 属性**、**writing-mode 属性**、**text-decoration-line/text-transform/letter-spacing/word-spacing**、**3D transform 函数（rotateX/Y/Z、translate3d、scale3d、rotate3d、perspective、matrix）**、**媒体查询 only/逗号 OR/prefers-color-scheme/prefers-reduced-motion/pointer/resolution**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize** |
-| style-system | 585 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear**、**grid-area/grid-column/grid-row 简写**、**cursor/opacity 管线集成**、**specificity 竞争/!important/继承/shorthand 展开/var 回退/media 无视口**、**word-break 属性 + 继承**、**writing-mode 属性 + 不继承**、**text-decoration-line + text-transform + letter-spacing 管线集成**、**3D transform 函数 + transform-origin + perspective + perspective-origin + transform-style + backface-visibility**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**grid place-items/place-content/place-self/grid-template 简写** |
-| layout-engine | 321 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块**、**grid 3x3 区域/auto-fill minmax/命名区域解析/百分比 gap** |
-| engine | 252 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty**、**嵌套 overflow/hsla 极端值**、**inline style/script tag 渲染**、**paint 空文档/composite 单盒/recompute/hsla 命名颜色**、**管线 basic/dirty tracking/z-index 排序/border-radius/命名颜色转换**、**perspective/transform-origin 偏移/负坐标/深层 z-index** |
-| render-foundation | 252 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零** |
-| host-runtime | 149 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition** |
-| net | 219 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）** |
-| security | 226 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts** |
+| dom | 400 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains**、**TreeWalker 深度优先遍历**、**get_elements_by_class_name/set_id/create_comment/insert_before/inner_text**、**NodeIterator 遍历** |
+| css-parser | 511 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字**、**word-break 属性**、**writing-mode 属性**、**text-decoration-line/text-transform/letter-spacing/word-spacing**、**3D transform 函数（rotateX/Y/Z、translate3d、scale3d、rotate3d、perspective、matrix）**、**媒体查询 only/逗号 OR/prefers-color-scheme/prefers-reduced-motion/pointer/resolution**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**counter-reset/counter-increment/content/quotes** |
+| style-system | 599 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear**、**grid-area/grid-column/grid-row 简写**、**cursor/opacity 管线集成**、**specificity 竞争/!important/继承/shorthand 展开/var 回退/media 无视口**、**word-break 属性 + 继承**、**writing-mode 属性 + 不继承**、**text-decoration-line + text-transform + letter-spacing 管线集成**、**3D transform 函数 + transform-origin + perspective + perspective-origin + transform-style + backface-visibility**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**grid place-items/place-content/place-self/grid-template 简写**、**counter-reset/counter-increment/content/quotes** |
+| layout-engine | 331 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块**、**grid 3x3 区域/auto-fill minmax/命名区域解析/百分比 gap**、**grid dense/span/min-max 约束** |
+| engine | 257 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty**、**嵌套 overflow/hsla 极端值**、**inline style/script tag 渲染**、**paint 空文档/composite 单盒/recompute/hsla 命名颜色**、**管线 basic/dirty tracking/z-index 排序/border-radius/命名颜色转换**、**perspective/transform-origin 偏移/负坐标/深层 z-index**、**visibility hidden/复合子层/dirty flag/复杂页面** |
+| render-foundation | 258 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积** |
+| host-runtime | 152 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码** |
+| net | 224 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本** |
+| security | 233 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups** |
 | protocol | 104 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB** |
-| storage | 198 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has** |
+| storage | 204 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在** |
 | canvas | 295 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp**、**gradient 多 stop/radial gradient/fillRule/lineDash/measure_text/shadow 属性**、**createImageData/getTransform/transform() 乘法/miterLimit/textDirection** |
 | webview | 123 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**默认配置/data URI/多次导航/CSS 注入后加载/状态转换** |
 | wasm-sandbox | 99 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误** |
@@ -63,7 +63,25 @@
 
 ## 最近完成的改进
 
-### -21. CSS 属性扩展 + grid 简写 + CanvasStyle + 75 个测试（本轮，3769 测试）
+### -22. CSS counter/content/quotes + 10 crate 边界测试 + 80 个测试（本轮，3849 测试）
+
+新增 CSS counter-reset/counter-increment、content、quotes 属性，10 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **counter-reset/counter-increment**：CounterActionValue + 解析；**content**：ContentValue 枚举；**quotes**：QuotesValue 枚举 | 23 |
+| style-system | **counter-reset/counter-increment/content/quotes** 管线集成 | 14 |
+| dom | 属性覆盖/文本节点/子节点操作/文档工厂方法 | 7 |
+| security | CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups | 7 |
+| render-foundation | rect 交集/并集/alpha 混合/面积/damage tracker | 6 |
+| storage | update/会话隔离/count/cursor 越界/keys/事务提交 | 6 |
+| layout-engine | grid dense/span/min-max 约束 | 5 |
+| engine | visibility hidden/复合子层/dirty flag/复杂页面 | 5 |
+| net | URL hash/查询参数/请求链/状态文本 | 5 |
+| host-runtime | 多触点/按钮坐标/按键码 | 3 |
+Total: 3769 → 3849 (+80 tests)
+
+### -21. CSS 属性扩展 + grid 简写 + CanvasStyle + 75 个测试（前轮，3769 测试）
 
 新增 CSS 属性（text-overflow/text-indent/table-layout/caption-side/border-collapse/resize）、grid 简写展开、CanvasStyle 枚举支持渐变填充，以及多 crate 边界条件测试：
 
