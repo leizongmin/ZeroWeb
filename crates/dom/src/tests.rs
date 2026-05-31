@@ -6919,6 +6919,140 @@ fn test_set_text_content_comment() {
     assert_eq!(doc.text_content(comment), Some("a < b & c > d".to_string()));
 }
 
+/// 测试 Range::set_end 接受任意偏移量（当前实现不校验边界）。
+///
+/// 当前 set_end 不做越界检查，任何偏移量都被接受。
+/// 验证 set_end 返回 Ok 且 end_offset 被正确设置。
+#[test]
+fn test_range_set_end_any_offset() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    doc.append_child(root, c1).unwrap();
+
+    // root 有 1 个子节点，设置 offset=99 远超子节点数
+    let mut range = Range::at(root, 0);
+    let result = range.set_end(root, 99);
+    assert!(result.is_ok(), "当前 set_end 不校验偏移边界，应返回 Ok");
+    assert_eq!(range.end_offset(), 99, "end_offset 应被设置为传入值");
+}
+
+/// 测试 NodeIterator 在 done 后调用 previous_node 恢复遍历。
+///
+/// 当 next_node 返回 None 后 is_done() 为 true，
+/// 此时调用 previous_node 应重置 done 标志并从当前位置向后移动。
+#[test]
+fn test_node_iterator_previous_after_done() {
+    let mut doc = Document::new();
+    let root = doc.create_element("div");
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    doc.append_child(root, a).unwrap();
+    doc.append_child(root, b).unwrap();
+
+    let mut iter = NodeIterator::new(root, 0xFFFFFFFF);
+
+    // 遍历所有节点直到 done
+    iter.next_node(&doc); // → a
+    iter.next_node(&doc); // → b
+    let none = iter.next_node(&doc); // → None (done)
+    assert_eq!(none, None);
+    assert!(iter.is_done(), "next_node 返回 None 后应为 done");
+
+    // 从 done 状态调用 previous_node 应恢复
+    let prev = iter.previous_node(&doc);
+    assert!(!iter.is_done(), "previous_node 后 done 应被重置");
+    assert_eq!(prev, Some(a), "从 b 回退应到 a");
+}
+
+/// 测试 normalize 对 DocumentFragment 中相邻文本节点的合并。
+///
+/// DocumentFragment 也是一种容器节点，normalize 应递归处理其子节点，
+/// 将相邻文本节点合并为单个节点，并移除空文本节点。
+#[test]
+fn test_normalize_document_fragment() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+    let t1 = doc.create_text_node("hello");
+    let t_empty = doc.create_text_node("");
+    let t2 = doc.create_text_node(" world");
+    doc.append_child(frag, t1).unwrap();
+    doc.append_child(frag, t_empty).unwrap();
+    doc.append_child(frag, t2).unwrap();
+
+    assert_eq!(doc.child_count(frag), 3, "normalize 前应有 3 个子节点");
+
+    doc.normalize(frag);
+
+    let children = doc.child_nodes(frag);
+    assert_eq!(children.len(), 1, "normalize 后应合并为 1 个文本节点");
+    assert_eq!(
+        doc.text_content(frag),
+        Some("hello world".to_string()),
+        "normalize 后 fragment 的 textContent 应为合并结果"
+    );
+}
+
+/// 测试 clone_node 深拷贝 DocumentFragment。
+///
+/// DocumentFragment 的深拷贝应递归复制所有子节点，
+/// 产生新的独立 fragment，其 textContent 与原始一致。
+#[test]
+fn test_clone_node_document_fragment_deep() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("inside");
+    doc.append_child(frag, span).unwrap();
+    doc.append_child(frag, text).unwrap();
+
+    let cloned = doc.clone_node(frag, true);
+
+    // 克隆是新的 fragment
+    assert_ne!(cloned, frag);
+    assert!(matches!(
+        doc.get(cloned).map(|n| &n.kind),
+        Some(NodeKind::DocumentFragment)
+    ));
+    // 深拷贝保留子节点结构
+    assert_eq!(doc.child_count(cloned), 2);
+    assert_eq!(
+        doc.text_content(cloned),
+        Some("inside".to_string()),
+        "克隆的 fragment 应包含与原始相同的文本内容"
+    );
+    // 克隆的子节点是全新的 NodeId
+    let orig_children = doc.child_nodes(frag);
+    let cloned_children = doc.child_nodes(cloned);
+    assert_ne!(orig_children[0], cloned_children[0], "克隆子节点应是新节点");
+}
+
+/// 测试 Range::delete_contents 对折叠范围是空操作。
+///
+/// 当 range 起止点相同时（collapsed），delete_contents 不应删除任何节点，
+/// DOM 树结构应保持不变。
+#[test]
+fn test_range_delete_contents_collapsed_noop() {
+    let mut doc = parse_html("<div><p>A</p><p>B</p><p>C</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    let children_before = doc.child_nodes(div);
+    assert_eq!(children_before.len(), 3);
+
+    // 创建折叠范围
+    let mut range = Range::at(div, 1);
+    assert!(range.collapsed());
+
+    range.delete_contents(&mut doc).unwrap();
+
+    let children_after = doc.child_nodes(div);
+    assert_eq!(children_after.len(), 3, "折叠范围 delete_contents 不应删除任何节点");
+    assert_eq!(doc.text_content(children_after[0]), Some("A".to_string()));
+    assert_eq!(doc.text_content(children_after[1]), Some("B".to_string()));
+    assert_eq!(doc.text_content(children_after[2]), Some("C".to_string()));
+}
+
 /// 测试事件冒泡过程中 current_target 在每个阶段正确更新。
 ///
 /// 结构：root > div > span，在三个节点上注册冒泡监听器，

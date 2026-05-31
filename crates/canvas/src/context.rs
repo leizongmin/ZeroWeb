@@ -7622,4 +7622,139 @@ mod tests {
         assert!(matches!(p.commands()[4], PathCommand::Arc(0.0, 0.0, 10.0, 0.0, _)));
         assert!(matches!(p.commands()[5], PathCommand::ClosePath));
     }
+
+    // ── 边界条件测试（第十一批）──
+
+    /// 测试 miter_limit 设置/获取和 save/restore。
+    /// 默认值为 10.0，修改后 getter 应返回新值，restore 后恢复。
+    #[test]
+    fn test_miter_limit_set_get_and_save_restore() {
+        let ctx = CanvasContext::new(100, 100);
+        // 默认值为 10.0
+        assert!(
+            (ctx.miter_limit() - 10.0).abs() < f32::EPSILON,
+            "miter_limit 默认应为 10.0"
+        );
+
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_miter_limit(5.0);
+        assert!(
+            (ctx.miter_limit() - 5.0).abs() < f32::EPSILON,
+            "设置后 miter_limit 应为 5.0"
+        );
+
+        // save/restore 保存并恢复 miter_limit
+        ctx.save();
+        ctx.set_miter_limit(2.0);
+        assert!(
+            (ctx.miter_limit() - 2.0).abs() < f32::EPSILON,
+            "save 后修改 miter_limit 应为 2.0"
+        );
+        ctx.restore();
+        assert!(
+            (ctx.miter_limit() - 5.0).abs() < f32::EPSILON,
+            "restore 后 miter_limit 应恢复为 5.0"
+        );
+    }
+
+    /// 测试 direction（文本方向）设置/获取和 save/restore。
+    /// 默认值为 TextDirection::Inherit，修改后 getter 应返回新值，restore 后恢复。
+    #[test]
+    fn test_direction_set_get_and_save_restore() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.direction(), TextDirection::Inherit, "direction 默认应为 Inherit");
+
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_direction(TextDirection::Rtl);
+        assert_eq!(ctx.direction(), TextDirection::Rtl, "设置后 direction 应为 Rtl");
+
+        // save/restore
+        ctx.save();
+        ctx.set_direction(TextDirection::Ltr);
+        assert_eq!(ctx.direction(), TextDirection::Ltr, "save 后修改 direction 应为 Ltr");
+        ctx.restore();
+        assert_eq!(ctx.direction(), TextDirection::Rtl, "restore 后 direction 应恢复为 Rtl");
+    }
+
+    /// 测试 transform() 方法（矩阵后乘）与 set_transform 的区别。
+    /// transform() 是叠加乘法，set_transform() 是替换。
+    #[test]
+    fn test_transform_method_accumulates_vs_set_transform_replaces() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 使用 transform() 叠加两个平移
+        ctx.transform(1.0, 0.0, 0.0, 1.0, 10.0, 0.0); // 平移 x+10
+        ctx.transform(1.0, 0.0, 0.0, 1.0, 20.0, 0.0); // 平移 x+20（叠加）
+        let p1 = ctx.transform.transform_point(0.0, 0.0);
+        // 叠加后应平移 30.0
+        assert!((p1.0 - 30.0).abs() < 0.01, "叠加两次平移后 x 应为 30.0，实际 {}", p1.0);
+
+        // 使用 set_transform 替换（非叠加）
+        ctx.set_transform(1.0, 0.0, 0.0, 1.0, 5.0, 0.0);
+        let p2 = ctx.transform.transform_point(0.0, 0.0);
+        assert!(
+            (p2.0 - 5.0).abs() < 0.01,
+            "set_transform 替换后 x 应为 5.0，实际 {}",
+            p2.0
+        );
+    }
+
+    /// 测试 fill_text 在不同字体大小时 glyph x 坐标按字体大小正确递进。
+    /// 默认字体大小 10.0 时 em_width = 6.0；改为 20.0 时 em_width = 12.0。
+    #[test]
+    fn test_fill_text_glyph_offset_scales_with_font_size() {
+        // 字体大小 10.0（默认）
+        let mut ctx_small = CanvasContext::new(200, 200);
+        ctx_small.fill_text("AB", 0.0, 0.0);
+        let glyphs_small = &ctx_small.primitives().glyphs;
+        // 第二个字符的 x 应为 0.0 + 10.0 * 0.6 = 6.0
+        assert!(
+            (glyphs_small[1].x - 6.0).abs() < f32::EPSILON,
+            "字体大小 10.0 时第二个 glyph x 应为 6.0，实际 {}",
+            glyphs_small[1].x
+        );
+
+        // 字体大小 20.0
+        let mut ctx_large = CanvasContext::new(200, 200);
+        ctx_large.set_font(FontDescriptor {
+            family: "sans-serif".to_string(),
+            size: 20.0,
+            weight: FontWeight::Normal,
+            style: FontStyle::Normal,
+        });
+        ctx_large.fill_text("AB", 0.0, 0.0);
+        let glyphs_large = &ctx_large.primitives().glyphs;
+        // 第二个字符的 x 应为 0.0 + 20.0 * 0.6 = 12.0
+        assert!(
+            (glyphs_large[1].x - 12.0).abs() < f32::EPSILON,
+            "字体大小 20.0 时第二个 glyph x 应为 12.0，实际 {}",
+            glyphs_large[1].x
+        );
+    }
+
+    /// 测试扫描线光栅化对三角形路径填充写入正确的像素。
+    /// 在三角形重心附近的像素应被写入填充色，三角形外部的像素应保持透明。
+    #[test]
+    fn test_scanline_rasterization_triangle_fill_pixels() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        ctx.begin_path();
+        // 等腰三角形：顶点 (30,10), (50,50), (10,50)
+        ctx.move_to(30.0, 10.0);
+        ctx.line_to(50.0, 50.0);
+        ctx.line_to(10.0, 50.0);
+        ctx.close_path();
+        ctx.fill();
+
+        // 三角形重心 ≈ (30, 36.7) — 应为红色
+        let center = ctx.get_image_data(30, 36, 1, 1);
+        assert_eq!(center.data[0..4], [255, 0, 0, 255], "三角形重心处应为红色");
+
+        // 三角形外部 (80, 10) — 应为透明
+        let outside = ctx.get_image_data(80, 10, 1, 1);
+        assert_eq!(outside.data[0..4], [0, 0, 0, 0], "三角形外部应为透明");
+
+        // 三角形下方 (30, 80) — 应为透明（低于底边）
+        let below = ctx.get_image_data(30, 80, 1, 1);
+        assert_eq!(below.data[0..4], [0, 0, 0, 0], "三角形底边下方应为透明");
+    }
 }

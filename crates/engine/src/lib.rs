@@ -1969,4 +1969,218 @@ mod tests {
         // 根图层只包含根布局盒（子元素都被提升了）
         assert_eq!(layers[0].boxes.len(), 1, "根图层应只包含根布局盒自身");
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试仅包含 HTML 注释的文档渲染不 panic 且图元数最小。
+    ///
+    /// HTML 注释 <!-- ... --> 不产生可见 DOM 节点，渲染管线应安全跳过。
+    /// 验证渲染完成且不产生背景填充图元。
+    #[test]
+    fn test_pipeline_render_only_comments_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><!-- this is a comment --><body><!-- another comment --></body></html>"#;
+        let result = pipeline.render_html(html, "");
+
+        assert!(result.timings.total_ms >= 0.0, "注释 HTML 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // 注释不产生可见元素，不应有背景填充
+        assert!(result.primitives.fills.is_empty(), "纯注释 HTML 不应产生背景填充图元");
+    }
+
+    /// 测试使用相同 CSS 重新计算样式产生相同的填充图元数量（幂等性）。
+    ///
+    /// 首次渲染后，用完全相同的 CSS 调用 recompute_styles，
+    /// 验证填充图元数量不变，确保重算不会引入额外的图元。
+    #[test]
+    fn test_pipeline_recompute_same_styles_idempotent() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Content</div></body></html>"#;
+        let css = r#".box { background-color: #336699; width: 200px; height: 100px; }"#;
+
+        // 首次渲染
+        let first = pipeline.render_html(html, css);
+        let first_fill_count = first.primitives.fills.len();
+        assert!(first_fill_count > 0, "首次渲染应产生填充图元");
+
+        // 用相同 CSS 重新计算
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (prims, _, _) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        assert_eq!(
+            prims.fills.len(),
+            first_fill_count,
+            "相同 CSS 重算应产生相同数量的填充图元"
+        );
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+    }
+
+    /// 测试 opacity < 1.0 的元素被提升为独立合成层时 opacity 值正确传播。
+    ///
+    /// 创建一个 opacity=0.4 的子元素，验证其被提升为独立图层，
+    /// 且提升图层的 opacity 值精确匹配 0.4。
+    #[test]
+    fn test_composite_opacity_value_propagation() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = LayoutBox {
+            node_id: Some(elem),
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.4;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // 根图层 + 1 个提升图层
+        assert_eq!(layers.len(), 2, "应有根图层 + 1 个提升图层");
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+        assert!(!layers[1].is_root, "第二个图层应为提升图层");
+
+        // opacity 值应精确传播到提升图层
+        assert!(
+            (layers[1].opacity - 0.4).abs() < 0.001,
+            "提升图层 opacity 应为 0.4，实际 {}",
+            layers[1].opacity
+        );
+
+        // 提升图层的几何信息正确
+        assert_eq!(layers[1].offset_x, 10.0, "offset_x 应为子元素 x");
+        assert_eq!(layers[1].offset_y, 20.0, "offset_y 应为子元素 y");
+        assert_eq!(layers[1].width, 200.0, "width 应为子元素宽度");
+        assert_eq!(layers[1].height, 100.0, "height 应为子元素高度");
+    }
+
+    /// 测试深层嵌套空 div 元素的渲染管线不 panic 且布局有效。
+    ///
+    /// 10 层嵌套的空 div 元素，无 CSS 样式。
+    /// 验证管线能安全处理深层 DOM 结构，布局树非空且视口有效。
+    #[test]
+    fn test_pipeline_render_deeply_nested_empty_divs() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // 10 层嵌套空 div
+        let html = "<html><body><div><div><div><div><div><div><div><div><div><div>Deep</div></div></div></div></div></div></div></div></div></div></body></html>";
+        let result = pipeline.render_html(html, "");
+
+        assert!(result.timings.total_ms >= 0.0, "深层嵌套 HTML 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+        assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
+    }
+
+    /// 测试增量渲染完成后脏面积归零。
+    ///
+    /// 执行一次小区域的增量渲染后，验证脏区域追踪器完全清除：
+    /// dirty_rects 为空、is_full_redraw 为 false、dirty_area 为 0.0。
+    #[test]
+    fn test_pipeline_incremental_render_clears_dirty_area() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Hello</div></body></html>";
+
+        // 首次全量渲染
+        let _first = pipeline.render_html(html, "");
+        assert!(pipeline.layout().is_some());
+
+        // 创建一个中等大小的脏区域（不触发全量重绘）
+        let dirty_box = LayoutBox {
+            node_id: None,
+            x: 50.0,
+            y: 50.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 50.0,
+            content_y: 50.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let result = pipeline.incremental_render(html, "", &dirty_box);
+        assert!(result.timings.total_ms >= 0.0, "增量渲染应正常完成");
+
+        // 增量渲染后脏区域追踪器应完全清除
+        let tracker = pipeline.dirty_tracker();
+        assert!(tracker.dirty_rects().is_empty(), "增量渲染后 dirty_rects 应为空");
+        assert!(!tracker.is_full_redraw(), "小脏区域不应触发全量重绘");
+        assert_eq!(tracker.dirty_area(), 0.0, "增量渲染后 dirty_area 应为 0.0");
+    }
 }

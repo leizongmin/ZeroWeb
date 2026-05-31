@@ -4433,6 +4433,81 @@ pub fn parse_scrollbar_gutter(value: &str) -> Option<ScrollbarGutterValue> {
     }
 }
 
+// ── CSS Text Wrap 值类型 ──────────────────────────────────────────────
+
+/// CSS text-wrap 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextWrapValue {
+    /// wrap（默认值）— 允许自动换行。
+    Wrap,
+    /// nowrap — 禁止自动换行。
+    Nowrap,
+    /// balance — 均衡换行。
+    Balance,
+    /// pretty — 优先美观换行。
+    Pretty,
+    /// stable — 稳定换行。
+    Stable,
+}
+
+/// 解析 CSS text-wrap 属性值。
+pub fn parse_text_wrap(value: &str) -> Option<TextWrapValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "wrap" => Some(TextWrapValue::Wrap),
+        "nowrap" => Some(TextWrapValue::Nowrap),
+        "balance" => Some(TextWrapValue::Balance),
+        "pretty" => Some(TextWrapValue::Pretty),
+        "stable" => Some(TextWrapValue::Stable),
+        _ => None,
+    }
+}
+
+// ── CSS Hyphens 值类型 ──────────────────────────────────────────────
+
+/// CSS hyphens 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HyphensValue {
+    /// none（默认值）— 不使用连字符断词。
+    None,
+    /// manual — 手动断词（需使用软连字符）。
+    Manual,
+    /// auto — 自动断词。
+    Auto,
+}
+
+/// 解析 CSS hyphens 属性值。
+pub fn parse_hyphens(value: &str) -> Option<HyphensValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(HyphensValue::None),
+        "manual" => Some(HyphensValue::Manual),
+        "auto" => Some(HyphensValue::Auto),
+        _ => None,
+    }
+}
+
+// ── CSS Line Clamp 值类型 ──────────────────────────────────────────────
+
+/// CSS line-clamp 属性值（-webkit-line-clamp）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineClampValue {
+    /// none（默认值）— 不限制行数。
+    None,
+    /// 限制为指定行数。
+    Count(u32),
+}
+
+/// 解析 CSS line-clamp 属性值。
+///
+/// 支持格式如 `"none"`、`"3"`。
+pub fn parse_line_clamp(value: &str) -> Option<LineClampValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(LineClampValue::None);
+    }
+    let n: u32 = value.parse().ok()?;
+    if n > 0 { Some(LineClampValue::Count(n)) } else { None }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6267,5 +6342,106 @@ mod tests {
         assert_eq!(parse_scrollbar_gutter("both-edges"), None);
         assert_eq!(parse_scrollbar_gutter(""), None);
         assert_eq!(parse_scrollbar_gutter("invalid"), None);
+    }
+
+    // ── text-wrap 解析测试 ──
+
+    #[test]
+    fn test_parse_text_wrap_wrap() {
+        assert_eq!(parse_text_wrap("wrap"), Some(TextWrapValue::Wrap));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_nowrap() {
+        assert_eq!(parse_text_wrap("nowrap"), Some(TextWrapValue::Nowrap));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_balance() {
+        assert_eq!(parse_text_wrap("balance"), Some(TextWrapValue::Balance));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_pretty() {
+        assert_eq!(parse_text_wrap("pretty"), Some(TextWrapValue::Pretty));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_stable() {
+        assert_eq!(parse_text_wrap("stable"), Some(TextWrapValue::Stable));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_case_insensitive() {
+        assert_eq!(parse_text_wrap("Wrap"), Some(TextWrapValue::Wrap));
+        assert_eq!(parse_text_wrap("NOWRAP"), Some(TextWrapValue::Nowrap));
+        assert_eq!(parse_text_wrap("Balance"), Some(TextWrapValue::Balance));
+    }
+
+    #[test]
+    fn test_parse_text_wrap_invalid() {
+        assert_eq!(parse_text_wrap("invalid"), None);
+        assert_eq!(parse_text_wrap(""), None);
+        assert_eq!(parse_text_wrap("auto"), None);
+    }
+
+    // ── hyphens 解析测试 ──
+
+    #[test]
+    fn test_parse_hyphens_none() {
+        assert_eq!(parse_hyphens("none"), Some(HyphensValue::None));
+    }
+
+    #[test]
+    fn test_parse_hyphens_manual() {
+        assert_eq!(parse_hyphens("manual"), Some(HyphensValue::Manual));
+    }
+
+    #[test]
+    fn test_parse_hyphens_auto() {
+        assert_eq!(parse_hyphens("auto"), Some(HyphensValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_hyphens_case_insensitive() {
+        assert_eq!(parse_hyphens("None"), Some(HyphensValue::None));
+        assert_eq!(parse_hyphens("MANUAL"), Some(HyphensValue::Manual));
+        assert_eq!(parse_hyphens("Auto"), Some(HyphensValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_hyphens_invalid() {
+        assert_eq!(parse_hyphens("invalid"), None);
+        assert_eq!(parse_hyphens(""), None);
+        assert_eq!(parse_hyphens("all"), None);
+    }
+
+    // ── line-clamp 解析测试 ──
+
+    #[test]
+    fn test_parse_line_clamp_none() {
+        assert_eq!(parse_line_clamp("none"), Some(LineClampValue::None));
+    }
+
+    #[test]
+    fn test_parse_line_clamp_count() {
+        assert_eq!(parse_line_clamp("3"), Some(LineClampValue::Count(3)));
+        assert_eq!(parse_line_clamp("1"), Some(LineClampValue::Count(1)));
+        assert_eq!(parse_line_clamp("10"), Some(LineClampValue::Count(10)));
+    }
+
+    #[test]
+    fn test_parse_line_clamp_case_insensitive() {
+        assert_eq!(parse_line_clamp("None"), Some(LineClampValue::None));
+        assert_eq!(parse_line_clamp("NONE"), Some(LineClampValue::None));
+    }
+
+    #[test]
+    fn test_parse_line_clamp_invalid() {
+        assert_eq!(parse_line_clamp("0"), None);
+        assert_eq!(parse_line_clamp("-1"), None);
+        assert_eq!(parse_line_clamp("1.5"), None);
+        assert_eq!(parse_line_clamp("auto"), None);
+        assert_eq!(parse_line_clamp(""), None);
     }
 }

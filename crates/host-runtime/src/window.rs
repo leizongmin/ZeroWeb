@@ -1832,6 +1832,162 @@ mod tests {
         );
     }
 
+    /// 验证 WindowConfig::new 能正确存储包含 emoji 和特殊 Unicode 字符的窗口标题。
+    /// 测试标题中包含多字节 emoji 序列、零宽字符和混合中日韩字符，
+    /// 确保标题字段不会因编码问题而截断或乱码。
+    #[test]
+    fn test_window_config_title_emoji_and_special_unicode() {
+        // 包含 emoji 的标题
+        let config = WindowConfig::new("🌐 ZeroWeb 浏览器 🚀");
+        assert_eq!(config.title, "🌐 ZeroWeb 浏览器 🚀", "emoji 标题应完整保留");
+
+        // 包含零宽连接符的 emoji 序列（家庭 emoji）
+        let family_emoji = "👨‍👩‍👧‍👦";
+        let config2 = WindowConfig::new(family_emoji);
+        assert_eq!(config2.title, family_emoji, "ZWJ emoji 序列应完整保留");
+
+        // 混合中日韩字符
+        let mixed = "日本語テスト한글中文";
+        let config3 = WindowConfig::new(mixed);
+        assert_eq!(config3.title, mixed, "中日韩混合字符应完整保留");
+
+        // 验证 clone 后标题一致
+        let cloned = config.clone();
+        assert_eq!(cloned.title, config.title, "clone 后标题应一致");
+    }
+
+    /// 验证 ImeEvent::Preedit 在光标范围超出文本长度时的边界行为。
+    /// 某些输入法实现可能报告不一致的 cursor 范围（end > text.len()），
+    /// 此测试确保 Preedit 变体仍能正确存储和读取这些值。
+    #[test]
+    fn test_ime_preedit_cursor_beyond_text_length() {
+        use crate::event::ImeEvent;
+
+        // 光标范围 (0, 10) 但文本仅 3 字节
+        let preedit = ImeEvent::Preedit {
+            text: "abc".to_string(),
+            cursor: Some((0, 10)),
+        };
+        if let ImeEvent::Preedit { text, cursor } = &preedit {
+            assert_eq!(text, "abc", "文本应为 'abc'");
+            assert_eq!(*cursor, Some((0, 10)), "光标范围应保留原始值 (0, 10)");
+        } else {
+            panic!("Expected Preedit variant");
+        }
+
+        // 光标 start > end（逻辑错误值，但结构应能存储）
+        let inverted = ImeEvent::Preedit {
+            text: "测试".to_string(),
+            cursor: Some((5, 2)),
+        };
+        if let ImeEvent::Preedit { text, cursor } = &inverted {
+            assert_eq!(text, "测试");
+            assert_eq!(*cursor, Some((5, 2)), "反转的光标范围应原样存储");
+        } else {
+            panic!("Expected Preedit variant");
+        }
+
+        // 通过 winit 转换路径验证极端光标值不丢失
+        let converted = crate::event::convert_ime(winit::event::Ime::Preedit("x".to_string(), Some((0, 99))));
+        assert_eq!(
+            converted,
+            ImeEvent::Preedit {
+                text: "x".to_string(),
+                cursor: Some((0, 99)),
+            },
+            "通过 winit 转换后极端光标值应保留"
+        );
+    }
+
+    /// 验证 GpuApp 在分发多个 RedrawRequested 事件时，
+    /// 每次回调都能正确接收事件（无窗口时 window 引用始终为 None）。
+    /// 模拟连续重绘场景（如动画循环），确保回调不被吞没。
+    #[test]
+    fn test_gpu_app_consecutive_redraw_events_without_window() {
+        let mut received: Vec<(AppEvent, bool)> = Vec::new();
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| {
+            received.push((e, w.is_some()));
+        };
+        let mut app = make_gpu_app(&mut callback);
+
+        // 模拟动画循环中连续 10 次 redraw
+        for _ in 0..10 {
+            app.handle_window_event(winit::event::WindowEvent::RedrawRequested, None);
+        }
+
+        assert_eq!(received.len(), 10, "应收到 10 个 RedrawRequested 事件");
+        for (i, (event, has_window)) in received.iter().enumerate() {
+            assert!(
+                matches!(event, AppEvent::RedrawRequested),
+                "第 {} 个事件应为 RedrawRequested",
+                i + 1
+            );
+            assert!(!has_window, "第 {} 个事件：未创建窗口时引用应为 None", i + 1);
+        }
+    }
+
+    /// 验证 GpuApp 分发 MouseWheel 事件时 PixelDelta 极端值的正确传递。
+    /// 使用 (0.0, f64::MAX) 这种不对称极端组合，确保 x 和 y 独立传递无精度损失。
+    #[test]
+    fn test_gpu_app_mouse_wheel_pixel_delta_asymmetric_extreme() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+
+        app.handle_window_event(
+            winit::event::WindowEvent::MouseWheel {
+                device_id: winit::event::DeviceId::dummy(),
+                delta: winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(0.0, f64::MAX)),
+                phase: winit::event::TouchPhase::Moved,
+            },
+            None,
+        );
+
+        assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
+        match &received[0] {
+            AppEvent::MouseWheel { delta } => {
+                assert_eq!(
+                    *delta,
+                    MouseScrollDelta::PixelDelta(0.0, f64::MAX),
+                    "不对称极端 PixelDelta 应精确传递"
+                );
+            }
+            _ => panic!("应为 MouseWheel 事件"),
+        }
+    }
+
+    /// 验证 BasicApp 分发触摸事件时负数坐标的正确传递。
+    /// 虽然正常触摸坐标应为正值，但在某些平台坐标系统异常或窗口映射错误时，
+    /// 负坐标应能无损传递而非被裁剪为零。
+    #[test]
+    fn test_basic_app_touch_negative_coordinates_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        // 触摸点携带负坐标
+        app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            phase: winit::event::TouchPhase::Started,
+            location: winit::dpi::PhysicalPosition::new(-42.5, -99.75),
+            id: 3,
+            force: None,
+        }));
+
+        assert_eq!(received.len(), 1, "应收到 1 个 Touch 事件");
+        match &received[0] {
+            AppEvent::Touch(te) => {
+                assert_eq!(te.id, 3, "触摸点 id 应为 3");
+                assert_eq!(te.phase, TouchPhase::Started, "阶段应为 Started");
+                assert!((te.x - (-42.5)).abs() < f64::EPSILON, "x 坐标应为 -42.5，不应被裁剪");
+                assert!((te.y - (-99.75)).abs() < f64::EPSILON, "y 坐标应为 -99.75，不应被裁剪");
+            }
+            _ => panic!("应为 Touch 事件"),
+        }
+    }
+
     /// 验证 GpuApp 分发 Other(u16::MAX) 鼠标按钮事件时正确传递。
     /// Other 变体携带 u16 值，测试边界值 u16::MAX 确保不发生截断。
     #[test]

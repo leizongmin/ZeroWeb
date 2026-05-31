@@ -500,6 +500,41 @@ pub enum ScrollbarGutterComputedValue {
     StableBothEdges,
 }
 
+/// CSS text-wrap 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextWrapComputedValue {
+    /// wrap（默认值）— 允许自动换行。
+    Wrap,
+    /// nowrap — 禁止自动换行。
+    Nowrap,
+    /// balance — 均衡换行。
+    Balance,
+    /// pretty — 优先美观换行。
+    Pretty,
+    /// stable — 稳定换行。
+    Stable,
+}
+
+/// CSS hyphens 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HyphensComputedValue {
+    /// none（默认值）— 不使用连字符断词。
+    None,
+    /// manual — 手动断词。
+    Manual,
+    /// auto — 自动断词。
+    Auto,
+}
+
+/// CSS line-clamp 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineClampComputedValue {
+    /// none（默认值）— 不限制行数。
+    None,
+    /// 限制为指定行数。
+    Count(u32),
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1050,6 +1085,12 @@ pub enum PropertyValue {
     ScrollbarWidth(ScrollbarWidthComputedValue),
     /// scrollbar-gutter 值。
     ScrollbarGutter(ScrollbarGutterComputedValue),
+    /// text-wrap 值。
+    TextWrap(TextWrapComputedValue),
+    /// hyphens 值。
+    Hyphens(HyphensComputedValue),
+    /// line-clamp 值。
+    LineClamp(LineClampComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1538,6 +1579,14 @@ pub struct ComputedStyle {
     pub scrollbar_width: ScrollbarWidthComputedValue,
     /// scrollbar-gutter 属性。
     pub scrollbar_gutter: ScrollbarGutterComputedValue,
+
+    // ── Text Wrap / Hyphens / Line Clamp ──
+    /// text-wrap 属性。
+    pub text_wrap: TextWrapComputedValue,
+    /// hyphens 属性。
+    pub hyphens: HyphensComputedValue,
+    /// line-clamp 属性。
+    pub line_clamp: LineClampComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1780,6 +1829,11 @@ impl Default for ComputedStyle {
             mix_blend_mode: MixBlendModeComputedValue::Normal,
             scrollbar_width: ScrollbarWidthComputedValue::Auto,
             scrollbar_gutter: ScrollbarGutterComputedValue::Auto,
+
+            // Text Wrap / Hyphens / Line Clamp
+            text_wrap: TextWrapComputedValue::Wrap,
+            hyphens: HyphensComputedValue::None,
+            line_clamp: LineClampComputedValue::None,
         }
     }
 }
@@ -2009,6 +2063,11 @@ impl PropertyRegistry {
             "scrollbar-width" => Some(ScrollbarWidth(ScrollbarWidthComputedValue::Auto)),
             "scrollbar-gutter" => Some(ScrollbarGutter(ScrollbarGutterComputedValue::Auto)),
 
+            // Text Wrap / Hyphens / Line Clamp
+            "text-wrap" => Some(TextWrap(TextWrapComputedValue::Wrap)),
+            "hyphens" => Some(Hyphens(HyphensComputedValue::None)),
+            "line-clamp" => Some(LineClamp(LineClampComputedValue::None)),
+
             _ => None,
         }
     }
@@ -2045,6 +2104,8 @@ impl PropertyRegistry {
                 | "tab-size"
                 | "accent-color"
                 | "caret-color"
+                | "text-wrap"
+                | "hyphens"
         )
     }
 
@@ -2212,6 +2273,9 @@ impl PropertyRegistry {
             "mix-blend-mode",
             "scrollbar-width",
             "scrollbar-gutter",
+            "text-wrap",
+            "hyphens",
+            "line-clamp",
         ]
     }
 }
@@ -4158,6 +4222,37 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "text-wrap" => {
+            if let Some(v) = values::parse_text_wrap(value) {
+                style.text_wrap = match v {
+                    zero_css_parser::values::TextWrapValue::Wrap => TextWrapComputedValue::Wrap,
+                    zero_css_parser::values::TextWrapValue::Nowrap => TextWrapComputedValue::Nowrap,
+                    zero_css_parser::values::TextWrapValue::Balance => TextWrapComputedValue::Balance,
+                    zero_css_parser::values::TextWrapValue::Pretty => TextWrapComputedValue::Pretty,
+                    zero_css_parser::values::TextWrapValue::Stable => TextWrapComputedValue::Stable,
+                };
+                return true;
+            }
+        }
+        "hyphens" => {
+            if let Some(v) = values::parse_hyphens(value) {
+                style.hyphens = match v {
+                    zero_css_parser::values::HyphensValue::None => HyphensComputedValue::None,
+                    zero_css_parser::values::HyphensValue::Manual => HyphensComputedValue::Manual,
+                    zero_css_parser::values::HyphensValue::Auto => HyphensComputedValue::Auto,
+                };
+                return true;
+            }
+        }
+        "line-clamp" => {
+            if let Some(v) = values::parse_line_clamp(value) {
+                style.line_clamp = match v {
+                    zero_css_parser::values::LineClampValue::None => LineClampComputedValue::None,
+                    zero_css_parser::values::LineClampValue::Count(n) => LineClampComputedValue::Count(n),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -4270,6 +4365,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "caret-color" => {
             child.caret_color = parent.caret_color.clone();
+            true
+        }
+        "text-wrap" => {
+            child.text_wrap = parent.text_wrap.clone();
+            true
+        }
+        "hyphens" => {
+            child.hyphens = parent.hyphens.clone();
             true
         }
         _ => false,
@@ -4980,6 +5083,18 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "scrollbar-gutter" => {
             style.scrollbar_gutter = default_style.scrollbar_gutter;
+            true
+        }
+        "text-wrap" => {
+            style.text_wrap = default_style.text_wrap;
+            true
+        }
+        "hyphens" => {
+            style.hyphens = default_style.hyphens;
+            true
+        }
+        "line-clamp" => {
+            style.line_clamp = default_style.line_clamp;
             true
         }
         _ => false,
@@ -9382,5 +9497,189 @@ mod tests {
         style.scrollbar_gutter = ScrollbarGutterComputedValue::Stable;
         assert!(apply_initial_value(&mut style, "scrollbar-gutter"));
         assert_eq!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto);
+    }
+
+    // ── text-wrap 属性测试 ──
+
+    #[test]
+    fn test_apply_property_text_wrap_wrap() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-wrap", "wrap"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Wrap);
+    }
+
+    #[test]
+    fn test_apply_property_text_wrap_nowrap() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-wrap", "nowrap"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Nowrap);
+    }
+
+    #[test]
+    fn test_apply_property_text_wrap_balance() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-wrap", "balance"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Balance);
+    }
+
+    #[test]
+    fn test_apply_property_text_wrap_pretty() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-wrap", "pretty"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Pretty);
+    }
+
+    #[test]
+    fn test_apply_property_text_wrap_stable() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-wrap", "stable"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Stable);
+    }
+
+    #[test]
+    fn test_apply_property_text_wrap_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "text-wrap", "auto"));
+        assert!(!apply_property_value(&mut style, "text-wrap", "invalid"));
+    }
+
+    #[test]
+    fn test_text_wrap_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("text-wrap"));
+    }
+
+    #[test]
+    fn test_text_wrap_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"text-wrap"));
+    }
+
+    #[test]
+    fn test_text_wrap_initial_value() {
+        assert!(PropertyRegistry::initial_value("text-wrap").is_some());
+        let mut style = ComputedStyle::default();
+        style.text_wrap = TextWrapComputedValue::Nowrap;
+        assert!(apply_initial_value(&mut style, "text-wrap"));
+        assert_eq!(style.text_wrap, TextWrapComputedValue::Wrap);
+    }
+
+    #[test]
+    fn test_text_wrap_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.text_wrap = TextWrapComputedValue::Balance;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "text-wrap"));
+        assert_eq!(child.text_wrap, TextWrapComputedValue::Balance);
+    }
+
+    // ── hyphens 属性测试 ──
+
+    #[test]
+    fn test_apply_property_hyphens_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "hyphens", "none"));
+        assert_eq!(style.hyphens, HyphensComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_hyphens_manual() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "hyphens", "manual"));
+        assert_eq!(style.hyphens, HyphensComputedValue::Manual);
+    }
+
+    #[test]
+    fn test_apply_property_hyphens_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "hyphens", "auto"));
+        assert_eq!(style.hyphens, HyphensComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_hyphens_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "hyphens", "all"));
+        assert!(!apply_property_value(&mut style, "hyphens", "invalid"));
+    }
+
+    #[test]
+    fn test_hyphens_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("hyphens"));
+    }
+
+    #[test]
+    fn test_hyphens_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"hyphens"));
+    }
+
+    #[test]
+    fn test_hyphens_initial_value() {
+        assert!(PropertyRegistry::initial_value("hyphens").is_some());
+        let mut style = ComputedStyle::default();
+        style.hyphens = HyphensComputedValue::Auto;
+        assert!(apply_initial_value(&mut style, "hyphens"));
+        assert_eq!(style.hyphens, HyphensComputedValue::None);
+    }
+
+    #[test]
+    fn test_hyphens_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.hyphens = HyphensComputedValue::Auto;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "hyphens"));
+        assert_eq!(child.hyphens, HyphensComputedValue::Auto);
+    }
+
+    // ── line-clamp 属性测试 ──
+
+    #[test]
+    fn test_apply_property_line_clamp_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "line-clamp", "none"));
+        assert_eq!(style.line_clamp, LineClampComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_line_clamp_count() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "line-clamp", "3"));
+        assert_eq!(style.line_clamp, LineClampComputedValue::Count(3));
+    }
+
+    #[test]
+    fn test_apply_property_line_clamp_count_one() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "line-clamp", "1"));
+        assert_eq!(style.line_clamp, LineClampComputedValue::Count(1));
+    }
+
+    #[test]
+    fn test_apply_property_line_clamp_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "line-clamp", "0"));
+        assert!(!apply_property_value(&mut style, "line-clamp", "-1"));
+        assert!(!apply_property_value(&mut style, "line-clamp", "auto"));
+        assert!(!apply_property_value(&mut style, "line-clamp", "invalid"));
+    }
+
+    #[test]
+    fn test_line_clamp_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("line-clamp"));
+    }
+
+    #[test]
+    fn test_line_clamp_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"line-clamp"));
+    }
+
+    #[test]
+    fn test_line_clamp_initial_value() {
+        assert!(PropertyRegistry::initial_value("line-clamp").is_some());
+        let mut style = ComputedStyle::default();
+        style.line_clamp = LineClampComputedValue::Count(5);
+        assert!(apply_initial_value(&mut style, "line-clamp"));
+        assert_eq!(style.line_clamp, LineClampComputedValue::None);
     }
 }
