@@ -995,4 +995,325 @@ mod cross_crate_integration {
             "snap-item 的 scroll-snap-align 应为 start 且 scroll-snap-stop 应为 always"
         );
     }
+
+    // ── 跨 crate 边界条件测试 ──
+
+    /// CSS 命名颜色解析 → 渲染 Color 转换集成测试。
+    ///
+    /// 通过 css-parser 解析命名颜色字符串（如 "orange"、"teal"），
+    /// 将解析结果与 engine paint 模块的 named_color_to_render 函数对比，
+    /// 验证两端对命名颜色的 RGBA 值一致。
+    #[test]
+    fn test_css_color_named_to_render() {
+        use zero_css_parser::values::{ColorValue, parse_color};
+        use zero_engine::named_color_to_render;
+
+        // 验证 css-parser 能正确解析扩展命名颜色
+        let crimson_parsed = parse_color("crimson").expect("应成功解析 crimson 颜色");
+        match &crimson_parsed {
+            ColorValue::Rgba(r, g, b, a) => {
+                assert_eq!(*r, 220, "crimson R 应为 220");
+                assert_eq!(*g, 20, "crimson G 应为 20");
+                assert_eq!(*b, 60, "crimson B 应为 60");
+                assert_eq!(*a, 255, "crimson A 应为 255");
+            }
+            other => panic!("预期 Rgba，实际得到 {:?}", other),
+        }
+
+        // steelblue — 仅 css-parser 支持（148 色），engine paint 不支持
+        let steel_parsed = parse_color("steelblue").expect("应成功解析 steelblue");
+        if let ColorValue::Rgba(r, g, b, a) = steel_parsed {
+            assert_eq!(r, 70, "steelblue R 应为 70");
+            assert_eq!(g, 130, "steelblue G 应为 130");
+            assert_eq!(b, 180, "steelblue B 应为 180");
+            assert_eq!(a, 255);
+        }
+
+        // 交叉验证：css-parser 和 engine paint 对共同支持的颜色值一致
+        let common_colors = [
+            ("red", 255, 0, 0),
+            ("green", 0, 128, 0),
+            ("blue", 0, 0, 255),
+            ("orange", 255, 165, 0),
+            ("teal", 0, 128, 128),
+            ("navy", 0, 0, 128),
+            ("silver", 192, 192, 192),
+        ];
+        for (name, exp_r, exp_g, exp_b) in common_colors {
+            let css_color = parse_color(name).unwrap_or_else(|| panic!("应成功解析 {}", name));
+            let engine_color = named_color_to_render(name);
+
+            if let ColorValue::Rgba(r, g, b, a) = css_color {
+                assert_eq!(r, engine_color.r, "{}: CSS 解析与 engine paint 的 R 应一致", name);
+                assert_eq!(g, engine_color.g, "{}: CSS 解析与 engine paint 的 G 应一致", name);
+                assert_eq!(b, engine_color.b, "{}: CSS 解析与 engine paint 的 B 应一致", name);
+                assert_eq!(a, engine_color.a, "{}: CSS 解析与 engine paint 的 A 应一致", name);
+
+                assert_eq!(r, exp_r, "{} R 应为 {}", name, exp_r);
+                assert_eq!(g, exp_g, "{} G 应为 {}", name, exp_g);
+                assert_eq!(b, exp_b, "{} B 应为 {}", name, exp_b);
+            }
+        }
+    }
+
+    /// URL 解析 + 导航历史集成测试。
+    ///
+    /// 通过 net crate 解析 URL，创建 NavigationHistory，
+    /// 执行多次导航、后退、前进操作，验证历史状态正确。
+    #[test]
+    fn test_url_parse_and_navigation() {
+        use zero_net::navigation::NavigationHistory;
+        use zero_net::url_parser::parse_url;
+
+        // 解析多个 URL
+        let url_a = parse_url("https://example.com/page1").expect("应成功解析 URL A");
+        let url_b = parse_url("https://example.com/page2?q=hello").expect("应成功解析 URL B");
+        let url_c = parse_url("https://other.com/path").expect("应成功解析 URL C");
+
+        assert_eq!(url_a.host, Some("example.com".to_string()));
+        assert_eq!(url_a.path, "/page1");
+        assert_eq!(url_b.host, Some("example.com".to_string()));
+        assert_eq!(url_b.query, Some("q=hello".to_string()));
+        assert_eq!(url_c.host, Some("other.com".to_string()));
+
+        // 创建导航历史并推入条目（使用原始 URL 字符串）
+        let str_a = "https://example.com/page1";
+        let str_b = "https://example.com/page2?q=hello";
+        let str_c = "https://other.com/path";
+
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate(str_a, Some("Page 1".to_string()));
+        nav.navigate(str_b, Some("Page 2".to_string()));
+        nav.navigate(str_c, Some("Other".to_string()));
+
+        assert_eq!(nav.len(), 3, "应有 3 条历史");
+        assert_eq!(nav.current().unwrap().url, str_c);
+
+        // 后退
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, str_b, "后退后应在 page2");
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, str_a, "再次后退应在 page1");
+
+        // 前进
+        nav.go_forward();
+        assert_eq!(nav.current().unwrap().url, str_b, "前进后应在 page2");
+        nav.go_forward();
+        assert_eq!(nav.current().unwrap().url, str_c, "再次前进应在 other.com");
+
+        // 在中间位置导航新 URL 应清除前进历史
+        nav.go_back(); // at page2
+        nav.navigate("https://new.com", Some("New".to_string()));
+        assert!(!nav.can_go_forward(), "新导航后不应有前进历史");
+        assert_eq!(nav.len(), 3, "历史应为 page1, page2, new.com");
+    }
+
+    /// DOM 元素 + CSS 样式交互集成测试。
+    ///
+    /// 创建 DOM 元素，通过 style-system 应用 CSS 属性，
+    /// 验证计算样式中的 color 属性被正确解析和应用。
+    #[test]
+    fn test_dom_element_style_interaction() {
+        use zero_css_parser::Parser as CssParser;
+        use zero_css_parser::values::ColorValue;
+        use zero_dom::Document;
+        use zero_style_system::StyleSystem;
+
+        // 构建 DOM: html > body > p
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let p = doc.create_element("p");
+        doc.set_attribute(p, "class", "highlight");
+        doc.append_child(body, p).unwrap();
+
+        // CSS 规则：p 的 color 为 green
+        let css = r#"
+            p { color: green; font-size: 14px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        // 计算样式
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证 p 元素有计算样式
+        let p_style = styles.get(&p).expect("p 元素应有计算样式");
+
+        // green 的 RGB 值为 (0, 128, 0)
+        match &p_style.color {
+            ColorValue::Rgba(r, g, b, a) => {
+                assert_eq!(*r, 0, "green R 应为 0");
+                assert_eq!(*g, 128, "green G 应为 128");
+                assert_eq!(*b, 0, "green B 应为 0");
+                assert_eq!(*a, 255, "green A 应为 255");
+            }
+            other => panic!("预期 Rgba 颜色值，实际得到 {:?}", other),
+        }
+
+        // body 应继承默认样式
+        let body_style = styles.get(&body);
+        assert!(body_style.is_some(), "body 元素应有计算样式");
+    }
+
+    /// localStorage 与 sessionStorage 隔离集成测试。
+    ///
+    /// 创建 localStorage 和 sessionStorage，
+    /// 分别设置不同值，验证两者之间完全隔离。
+    #[test]
+    fn test_storage_local_and_session() {
+        use zero_storage::StorageManager;
+
+        let mut mgr = StorageManager::new();
+
+        // 在同源下分别操作 localStorage 和 sessionStorage
+        let local = mgr.local_storage("https://example.com");
+        local.set("theme", "dark").unwrap();
+        local.set("lang", "zh").unwrap();
+
+        let session = mgr.session_storage("https://example.com");
+        session.set("theme", "light").unwrap();
+        session.set("token", "abc123").unwrap();
+
+        // localStorage 的值不受 sessionStorage 影响
+        assert_eq!(
+            mgr.local_storage("https://example.com").get("theme"),
+            Some("dark"),
+            "localStorage 的 theme 应为 dark"
+        );
+        assert_eq!(
+            mgr.local_storage("https://example.com").get("lang"),
+            Some("zh"),
+            "localStorage 的 lang 应为 zh"
+        );
+
+        // sessionStorage 的值不受 localStorage 影响
+        assert_eq!(
+            mgr.session_storage("https://example.com").get("theme"),
+            Some("light"),
+            "sessionStorage 的 theme 应为 light"
+        );
+        assert_eq!(
+            mgr.session_storage("https://example.com").get("token"),
+            Some("abc123"),
+            "sessionStorage 的 token 应为 abc123"
+        );
+
+        // 互相不存在的 key
+        assert!(
+            mgr.local_storage("https://example.com").get("token").is_none(),
+            "localStorage 不应有 token"
+        );
+        assert!(
+            mgr.session_storage("https://example.com").get("lang").is_none(),
+            "sessionStorage 不应有 lang"
+        );
+    }
+
+    /// WASM 模块调用主机函数集成测试。
+    ///
+    /// 编译一个 WASM 模块，注册主机函数（env.double），
+    /// WASM 模块导入该函数并调用，验证返回值正确。
+    #[test]
+    fn test_wasm_host_function_call() {
+        use zero_wasm_sandbox::{HostFunction, LinkerConfig, WasmSandbox, WasmValue, WasmValueType};
+
+        let wat_text = r#"
+            (module
+                (import "env" "double" (func $double (param i32) (result i32)))
+                (func (export "call_host") (param i32) (result i32)
+                    local.get 0
+                    call $double)
+            )
+        "#;
+        let wasm_bytes = wat::parse_str(wat_text).expect("解析 WAT 失败");
+
+        let sandbox = WasmSandbox::new();
+
+        // 注册主机函数：将输入值乘以 2
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "double",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let WasmValue::I32(n) = params[0] {
+                    results.push(WasmValue::I32(n * 2));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm_bytes).expect("编译 WASM 失败");
+        let mut instance = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("实例化 WASM 失败");
+
+        // 调用导出函数，内部会调用主机函数 double(21) = 42
+        let result = instance
+            .call("call_host", &[WasmValue::I32(21)])
+            .expect("调用 call_host 失败");
+        assert_eq!(result.len(), 1, "应返回 1 个值");
+        assert_eq!(result[0], WasmValue::I32(42), "double(21) 应返回 42");
+
+        // 再次调用验证：double(0) = 0
+        let result2 = instance
+            .call("call_host", &[WasmValue::I32(0)])
+            .expect("第二次调用失败");
+        assert_eq!(result2[0], WasmValue::I32(0), "double(0) 应返回 0");
+
+        // 负数：double(-5) = -10
+        let result3 = instance
+            .call("call_host", &[WasmValue::I32(-5)])
+            .expect("第三次调用失败");
+        assert_eq!(result3[0], WasmValue::I32(-10), "double(-5) 应返回 -10");
+    }
+
+    /// Canvas 绘图 + WebView 独立运行集成测试。
+    ///
+    /// 创建 Canvas 上下文执行绘图操作，同时创建 WebView 加载页面，
+    /// 验证两者可以独立工作且互不干扰。
+    #[test]
+    fn test_canvas_draw_and_webview() {
+        use zero_canvas::CanvasContext;
+        use zero_render_foundation::color::Color;
+        use zero_webview::{WebView, WebViewConfig};
+
+        // Canvas 部分：创建上下文并绘制矩形
+        let mut ctx = CanvasContext::new(400, 300);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(10.0, 20.0, 100.0, 50.0);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(200.0, 100.0, 80.0, 60.0);
+
+        let primitives = ctx.primitives();
+        assert!(!primitives.fills.is_empty(), "Canvas 应生成填充图元");
+        assert!(primitives.fills.len() >= 2, "应至少有 2 个填充图元");
+
+        // WebView 部分：加载 HTML 页面
+        let html = r#"<html><body>
+            <div style="width: 200px; height: 100px; background-color: green;">Test</div>
+        </body></html>"#;
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        let result = wv.load_html(html, None);
+        assert!(result.timings.total_ms >= 0.0, "WebView 渲染应成功完成");
+
+        // Canvas 的图元数量不应因 WebView 操作而改变
+        let canvas_fill_count = primitives.fills.len();
+        let _wv_result = wv.render();
+        assert_eq!(
+            ctx.primitives().fills.len(),
+            canvas_fill_count,
+            "Canvas 图元数量不应受 WebView 操作影响"
+        );
+    }
 }

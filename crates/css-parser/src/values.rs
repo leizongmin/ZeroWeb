@@ -259,6 +259,17 @@ pub enum WordBreakValue {
     BreakWord,
 }
 
+/// CSS writing-mode 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WritingModeValue {
+    /// horizontal-tb。
+    HorizontalTb,
+    /// vertical-rl。
+    VerticalRl,
+    /// vertical-lr。
+    VerticalLr,
+}
+
 /// CSS font-weight 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontWeightValue {
@@ -1475,6 +1486,16 @@ pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
         "break-all" => Some(WordBreakValue::BreakAll),
         "keep-all" => Some(WordBreakValue::KeepAll),
         "break-word" => Some(WordBreakValue::BreakWord),
+        _ => None,
+    }
+}
+
+/// 解析 CSS writing-mode 属性值。
+pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "horizontal-tb" => Some(WritingModeValue::HorizontalTb),
+        "vertical-rl" => Some(WritingModeValue::VerticalRl),
+        "vertical-lr" => Some(WritingModeValue::VerticalLr),
         _ => None,
     }
 }

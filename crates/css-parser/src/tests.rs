@@ -7,10 +7,10 @@ use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
     CalcContext, ContainerTypeValue, CursorValue, GradientDirection, GradientValue, LengthValue, RadialShape,
     RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TransformFunction,
-    TransformValue, eval_calc, eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode,
-    parse_animation_play_state, parse_calc, parse_container_type, parse_cursor, parse_gradient, parse_length,
-    parse_length_shorthand, parse_opacity, parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type,
-    parse_transform,
+    TransformValue, WritingModeValue, eval_calc, eval_calc_with_context, parse_animation_direction,
+    parse_animation_fill_mode, parse_animation_play_state, parse_calc, parse_container_type, parse_cursor,
+    parse_gradient, parse_length, parse_length_shorthand, parse_opacity, parse_scroll_snap_align,
+    parse_scroll_snap_stop, parse_scroll_snap_type, parse_transform, parse_writing_mode,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4474,4 +4474,33 @@ fn test_parse_selector_is_where() {
     } else {
         panic!("Expected Style rule for :where()");
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// writing-mode 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_writing_mode_horizontal_tb() {
+    assert_eq!(
+        parse_writing_mode("horizontal-tb"),
+        Some(WritingModeValue::HorizontalTb)
+    );
+}
+
+#[test]
+fn test_parse_writing_mode_vertical_rl() {
+    assert_eq!(parse_writing_mode("vertical-rl"), Some(WritingModeValue::VerticalRl));
+}
+
+#[test]
+fn test_parse_writing_mode_vertical_lr() {
+    assert_eq!(parse_writing_mode("vertical-lr"), Some(WritingModeValue::VerticalLr));
+}
+
+#[test]
+fn test_parse_writing_mode_invalid() {
+    assert_eq!(parse_writing_mode("invalid"), None);
+    assert_eq!(parse_writing_mode(""), None);
+    assert_eq!(parse_writing_mode("sideways-rl"), None);
 }

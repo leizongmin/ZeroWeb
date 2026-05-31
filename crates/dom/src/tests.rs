@@ -3535,6 +3535,114 @@ fn test_replace_child_old_not_child() {
     assert!(result.is_err(), "replace_child with non-child old should fail");
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 26. 边界条件补充测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 get_elements_by_class_name 返回正确数量的匹配元素。
+#[test]
+fn test_element_get_elements_by_class_name() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let c1 = doc.create_element("span");
+    doc.set_attribute(c1, "class", "foo");
+    let c2 = doc.create_element("p");
+    doc.set_attribute(c2, "class", "foo");
+    let c3 = doc.create_element("a");
+    doc.set_attribute(c3, "class", "bar");
+
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+    doc.append_child(parent, c3).unwrap();
+
+    let results = doc.get_elements_by_class_name("foo");
+    assert_eq!(results.len(), 2, "应该找到 2 个 class 为 foo 的元素");
+    assert!(results.contains(&c1));
+    assert!(results.contains(&c2));
+}
+
+/// 测试 set_attribute 设置 id 后可通过 get_attribute 取回。
+#[test]
+fn test_element_set_id() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    doc.set_attribute(elem, "id", "my-element");
+    assert_eq!(
+        doc.get_attribute(elem, "id"),
+        Some("my-element".to_string()),
+        "get_attribute(\"id\") 应返回设置的值"
+    );
+}
+
+/// 测试 create_comment 创建的注释节点类型和文本内容。
+#[test]
+fn test_document_create_comment() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("这是一条注释");
+
+    assert_eq!(doc.node_type(comment), Some(8), "注释节点类型应为 8");
+    if let Some(NodeKind::Comment(data)) = doc.get(comment).map(|n| n.kind.clone()) {
+        assert_eq!(data.content, "这是一条注释");
+    } else {
+        panic!("应该创建 Comment 节点");
+    }
+}
+
+/// 测试 insert_before 在最后一个子节点之前插入等价于 append_child 的效果。
+///
+/// 由于当前 insert_before 不接受 Option<NodeId>，这里通过在最后一个子节点
+/// 之前插入来验证其行为与 append_child 语义一致（都是追加到末尾）。
+#[test]
+fn test_node_insert_before_at_end() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let c1 = doc.create_element("span");
+    let c2 = doc.create_element("p");
+    doc.append_child(parent, c1).unwrap();
+    doc.append_child(parent, c2).unwrap();
+
+    // 在 c2（最后一个子节点）之前插入 → 结果为 [c1, new_node, c2]
+    let new_node = doc.create_element("a");
+    doc.insert_before(parent, new_node, c2).unwrap();
+    assert_eq!(doc.child_nodes(parent), vec![c1, new_node, c2]);
+
+    // 现在用 append_child 追加另一个节点到末尾
+    let tail = doc.create_element("em");
+    doc.append_child(parent, tail).unwrap();
+    assert_eq!(doc.child_nodes(parent), vec![c1, new_node, c2, tail]);
+    assert_eq!(doc.last_child(parent), Some(tail));
+}
+
+/// 测试嵌套文本子节点的 text_content 递归拼接。
+#[test]
+fn test_element_inner_text() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+
+    let t1 = doc.create_text_node("Hello");
+    let child = doc.create_element("span");
+    let t2 = doc.create_text_node(" ");
+    let t3 = doc.create_text_node("World");
+
+    doc.append_child(parent, t1).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(child, t2).unwrap();
+    doc.append_child(child, t3).unwrap();
+
+    assert_eq!(
+        doc.text_content(parent),
+        Some("Hello World".to_string()),
+        "textContent 应递归拼接所有嵌套文本节点"
+    );
+}
+
 /// insert_before places new node before the reference child.
 #[test]
 fn test_insert_before_places_before_ref() {
