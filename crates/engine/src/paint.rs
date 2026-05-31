@@ -93,6 +93,7 @@ impl Painter {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
                 self.paint_outline(box_node, abs_x, abs_y, style);
+                self.paint_text(box_node, abs_x, abs_y, style);
             }
 
             hidden
@@ -166,6 +167,9 @@ impl Painter {
 
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
+
+                // 4. 文本内容绘制（生成 GlyphPrimitive）
+                self.paint_text(box_node, abs_x, abs_y, style);
             }
 
             hidden
@@ -795,6 +799,8 @@ mod tests {
         let mut styles = HashMap::new();
         let mut style = ComputedStyle::default();
         style.background_color = ColorValue::Transparent;
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -1347,6 +1353,8 @@ mod tests {
         style.outline_width = zero_css_parser::values::LengthValue::Px(3.0);
         style.outline_style = OutlineStyleValue::None;
         style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -1941,9 +1949,13 @@ mod tests {
         assert_eq!(painter.primitives().fills[0].rect.origin.x, 10.0);
         assert_eq!(painter.primitives().fills[0].rect.origin.y, 20.0);
 
-        // Glyph should have transform offset applied
-        assert_eq!(painter.primitives().glyphs.len(), 0);
-        // Note: paint() does not call paint_text() — glyph produced via separate call
+        // paint() 现在调用 paint_text()，应生成带 transform 偏移的 glyph
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+        let glyph = &painter.primitives().glyphs[0];
+        // text_x = abs_x(10), tx = 15 → glyph_x = 10 + 15 = 25
+        assert_eq!(glyph.x, 25.0);
+        // text_y = abs_y(20), ty = 25, + font_size(14) → glyph_y = 20 + 25 + 14 = 59
+        assert_eq!(glyph.y, 59.0);
     }
 
     /// 测试带 overflow:hidden 的页面正确裁剪子内容。
@@ -2096,6 +2108,8 @@ mod tests {
         style.border_right_style = BorderStyleValue::Solid;
         style.border_bottom_style = BorderStyleValue::Solid;
         style.border_left_style = BorderStyleValue::Solid;
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -2517,5 +2531,171 @@ mod tests {
         let fill = &painter.primitives().fills[0];
         assert_eq!(fill.rect.size.width, 40.0, "child clipped by inner overflow:hidden");
         assert_eq!(fill.rect.size.height, 40.0, "child clipped by inner overflow:hidden");
+    }
+
+    // ── 新增测试：Inline formatting context（内联格式化上下文）─────────
+
+    /// 测试块容器中的内联文本生成 glyph 图元。
+    ///
+    /// 场景：<div>Hello</div>，div 有明确的前景色和字体大小。
+    /// 验证 paint() 在遍历布局树时自动为内联文本内容生成 GlyphPrimitive。
+    #[test]
+    fn test_paint_inline_text_in_block() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 30.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+        style.color = ColorValue::Rgba(0, 0, 0, 255); // 前景色：黑色
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        let prims = painter.primitives();
+        // 应生成背景填充 + 文本 glyph
+        assert_eq!(prims.fills.len(), 1, "应生成 1 个背景填充");
+        assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph 图元");
+
+        let glyph = &prims.glyphs[0];
+        assert_eq!(glyph.font_size, 16.0);
+        assert_eq!(glyph.color, Color::rgb(0, 0, 0));
+        // glyph 位置：text_x = 0 (无 border/padding), y = 0 + font_size(16) = 16
+        assert_eq!(glyph.x, 0.0);
+        assert_eq!(glyph.y, 16.0);
+    }
+
+    /// 测试混合内联和块级元素的图元顺序。
+    ///
+    /// 场景：父 div（背景灰色）包含三个子元素：
+    /// - 子1（块级，红色背景）
+    /// - 子2（内联文本，蓝色前景色）
+    /// - 子3（块级，绿色背景）
+    ///
+    /// 验证：
+    /// 1. 父背景先绘制（fills[0]）
+    /// 2. 子元素按顺序绘制（子1 fill → 子2 glyph → 子3 fill）
+    /// 3. 总 fills = 3，glyphs = 1
+    #[test]
+    fn test_paint_mixed_inline_block() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let block1 = doc.create_element("p");
+        let inline_text = doc.create_element("span");
+        let block2 = doc.create_element("p");
+
+        let child1 = make_box(Some(block1), 0.0, 0.0, 200.0, 30.0);
+        let child2 = make_box(Some(inline_text), 0.0, 30.0, 200.0, 20.0);
+        let child3 = make_box(Some(block2), 0.0, 50.0, 200.0, 30.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child1, child2, child3],
+            is_absolute: false,
+            is_fixed: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+
+        // 父：灰色背景，color=CurrentColor（不生成 glyph）
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        parent_style.color = ColorValue::CurrentColor;
+        styles.insert(parent, parent_style);
+
+        // 子1（块级）：红色背景，不生成 glyph
+        let mut block1_style = ComputedStyle::default();
+        block1_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        block1_style.color = ColorValue::CurrentColor;
+        styles.insert(block1, block1_style);
+
+        // 子2（内联文本）：无背景，蓝色前景色 → 只生成 glyph
+        let mut inline_style = ComputedStyle::default();
+        inline_style.background_color = ColorValue::Transparent;
+        inline_style.color = ColorValue::Rgba(0, 0, 255, 255); // 蓝色
+        inline_style.font_size = LengthValue::Px(14.0);
+        styles.insert(inline_text, inline_style);
+
+        // 子3（块级）：绿色背景，不生成 glyph
+        let mut block2_style = ComputedStyle::default();
+        block2_style.background_color = ColorValue::Rgba(0, 255, 0, 255);
+        block2_style.color = ColorValue::CurrentColor;
+        styles.insert(block2, block2_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles);
+
+        let prims = painter.primitives();
+
+        // 父背景 + 子1 背景 + 子3 背景 = 3 个 fills
+        assert_eq!(prims.fills.len(), 3, "应生成 3 个填充（父 + 子1 + 子3）");
+        // 子2 只生成 1 个 glyph
+        assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph（子2 内联文本）");
+
+        // 验证绘制顺序：父背景先绘制
+        assert_eq!(prims.fills[0].color, Color::rgb(200, 200, 200), "第一个 fill 应为父背景");
+        assert_eq!(prims.fills[1].color, Color::rgb(255, 0, 0), "第二个 fill 应为子1 背景");
+        assert_eq!(prims.fills[2].color, Color::rgb(0, 255, 0), "第三个 fill 应为子3 背景");
+
+        // glyph 颜色为蓝色
+        assert_eq!(prims.glyphs[0].color, Color::rgb(0, 0, 255), "glyph 颜色应为蓝色");
+        assert_eq!(prims.glyphs[0].font_size, 14.0);
+        // glyph 位置：abs_y=30, text_y=30, baseline=30+14=44
+        assert_eq!(prims.glyphs[0].y, 44.0);
+    }
+
+    /// 测试带颜色样式的内联文本正确应用到 glyph 图元。
+    ///
+    /// 场景：<span style="color: red; font-size: 20px;">Colored</span>
+    /// 验证 glyph 的 color 字段匹配 CSS color 属性值。
+    #[test]
+    fn test_paint_text_with_color() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("span");
+        let layout = make_box(Some(elem), 10.0, 20.0, 150.0, 25.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(255, 0, 0, 255); // 红色
+        style.font_size = LengthValue::Px(20.0);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph");
+
+        let glyph = &prims.glyphs[0];
+        // 颜色正确应用
+        assert_eq!(glyph.color, Color::rgb(255, 0, 0), "glyph 颜色应为红色");
+        assert_eq!(glyph.font_size, 20.0, "glyph font_size 应为 20");
+        // 位置：abs_x=10, abs_y=20, text_x=10, baseline=20+20=40
+        assert_eq!(glyph.x, 10.0);
+        assert_eq!(glyph.y, 40.0);
     }
 }
