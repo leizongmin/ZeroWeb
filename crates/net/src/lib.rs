@@ -728,4 +728,113 @@ mod tests {
         assert!(text.is_ok(), "空 body 的 text() 不应返回错误");
         assert_eq!(text.unwrap(), "", "空 body 应解析为空字符串");
     }
+
+    // ── 第三批边界条件补充测试（5 个） ──
+
+    /// 测试 NavigationHistory 在只有 1 个条目时 go_back_n(1) 返回 None。
+    /// 此时 current_index == 0，n == current_index 的边界应恰好允许后退，
+    /// 但 n > current_index 时应返回 None。
+    #[test]
+    fn test_navigation_go_back_n_one_at_single_entry() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://only.com", Some("Only".into()));
+        assert_eq!(nav.current().unwrap().url, "http://only.com");
+
+        // go_back_n(1) 在 current_index=0 时：1 > 0，应返回 None
+        assert!(nav.go_back_n(1).is_none(), "单条目时 go_back_n(1) 应返回 None");
+        assert_eq!(nav.current().unwrap().url, "http://only.com", "状态不应改变");
+
+        // go_back_n(0) 应返回当前条目
+        let entry = nav.go_back_n(0).unwrap();
+        assert_eq!(entry.url, "http://only.com");
+    }
+
+    /// 测试 CookieStore::parse_set_cookie 对全小写属性名也能正确解析。
+    /// 属性名 domain=、path=、secure、httponly、samesite= 等均应不区分大小写。
+    #[test]
+    fn test_cookie_parse_lowercase_attributes() {
+        let cookie = crate::cookie::CookieStore::parse_set_cookie(
+            "sid=abc123; domain=example.com; path=/app; secure; httponly; samesite=strict",
+        )
+        .unwrap();
+        assert_eq!(cookie.name, "sid");
+        assert_eq!(cookie.value, "abc123");
+        assert_eq!(cookie.domain.as_deref(), Some("example.com"), "小写 domain= 应被解析");
+        assert_eq!(cookie.path.as_deref(), Some("/app"), "小写 path= 应被解析");
+        assert!(cookie.secure, "小写 secure 应被识别");
+        assert!(cookie.http_only, "小写 httponly 应被识别");
+        assert_eq!(
+            cookie.same_site,
+            crate::cookie::SameSite::Strict,
+            "小写 samesite=strict 应被解析"
+        );
+    }
+
+    /// 测试 WebSocket 在 connect → close → connect → close 交替操作后状态正确。
+    /// 验证多次状态切换不会产生无效状态或 panic。
+    #[test]
+    fn test_websocket_alternating_connect_close() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+
+        // 第一次连接和关闭
+        ws.connect();
+        assert_eq!(ws.state(), &WebSocketState::Open);
+        ws.close();
+        assert_eq!(ws.state(), &WebSocketState::Closed);
+
+        // 第二次连接（从 Closed 重新连接）
+        ws.connect();
+        assert_eq!(ws.state(), &WebSocketState::Open, "重新连接后应为 Open");
+        ws.send("after-reconnect").unwrap();
+        assert_eq!(ws.receive(), Some("after-reconnect".to_string()));
+
+        // 第二次关闭
+        ws.close();
+        assert_eq!(ws.state(), &WebSocketState::Closed);
+        assert!(ws.send("should-fail").is_err(), "关闭后发送应返回错误");
+    }
+
+    /// 测试 HttpResponse::content_type_mime 对含双分号的 Content-Type 正确提取。
+    /// "text/html;;charset=utf-8" 应返回 "text/html"（取第一个分号前的部分），
+    /// 验证解析器不会因非标准格式而 panic 或返回错误结果。
+    #[test]
+    fn test_http_response_content_type_mime_double_semicolon() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "text/html;;charset=utf-8".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        // content_type_mime 取第一个分号之前的部分并 trim
+        assert_eq!(resp.content_type_mime(), Some("text/html"));
+        // 完整 Content-Type 保留原值
+        assert_eq!(resp.content_type(), Some("text/html;;charset=utf-8"));
+    }
+
+    /// 测试无 domain 属性的 Cookie 在 get_for_url 时匹配所有 host。
+    /// 当 cookie.domain 为 None 时，cookie_matches_url 不检查域名，
+    /// 因此任何 host 的 URL 都能匹配到该 cookie。
+    #[test]
+    fn test_cookie_no_domain_matches_any_host() {
+        let mut store = crate::CookieStore::new();
+        // 不设 Domain，cookie.domain 为 None
+        store.add(crate::cookie::CookieStore::parse_set_cookie("global=yes").unwrap());
+        assert_eq!(store.len(), 1);
+
+        // 各种 host 的 URL 都应匹配
+        let url_a = parse_url("http://a.com/").unwrap();
+        let url_b = parse_url("http://b.com/").unwrap();
+        let url_sub = parse_url("http://deep.sub.c.com/").unwrap();
+        assert_eq!(store.get_for_url(&url_a).len(), 1, "无 domain cookie 应匹配 a.com");
+        assert_eq!(store.get_for_url(&url_b).len(), 1, "无 domain cookie 应匹配 b.com");
+        assert_eq!(
+            store.get_for_url(&url_sub).len(),
+            1,
+            "无 domain cookie 应匹配 deep.sub.c.com"
+        );
+
+        // 验证 cookie 值
+        assert_eq!(store.get_for_url(&url_a)[0].value, "yes");
+    }
 }

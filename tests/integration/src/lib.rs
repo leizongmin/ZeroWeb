@@ -2354,4 +2354,212 @@ mod cross_crate_pipeline {
             "div 的 contain 应为 Layout"
         );
     }
+
+    /// CSS filter 管线集成测试。
+    ///
+    /// 解析含 filter: blur(5px) 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.filter 为 Blur(5.0)。
+    #[test]
+    fn test_filter_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "blurred");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .blurred { filter: blur(5px); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.filter,
+            zero_style_system::property::FilterComputedValue::Blur(5.0),
+            "div 的 filter 应为 Blur(5.0)"
+        );
+    }
+
+    /// CSS mix-blend-mode 管线集成测试。
+    ///
+    /// 解析含 mix-blend-mode: multiply 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.mix_blend_mode 为 Multiply。
+    #[test]
+    fn test_mix_blend_mode_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "blended");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .blended { mix-blend-mode: multiply; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.mix_blend_mode,
+            zero_style_system::property::MixBlendModeComputedValue::Multiply,
+            "div 的 mix-blend-mode 应为 Multiply"
+        );
+    }
+
+    /// CSS scrollbar-width 管线集成测试。
+    ///
+    /// 解析含 scrollbar-width: thin 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.scrollbar_width 为 Thin。
+    #[test]
+    fn test_scrollbar_width_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "thin-scroll");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .thin-scroll { scrollbar-width: thin; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.scrollbar_width,
+            zero_style_system::property::ScrollbarWidthComputedValue::Thin,
+            "div 的 scrollbar-width 应为 Thin"
+        );
+    }
+
+    /// CSS contain 多值组合管线集成测试。
+    ///
+    /// 解析含 contain: layout style paint 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.contain 为包含 layout + style + paint 标志位的 Custom 组合值。
+    #[test]
+    fn test_contain_multi_value_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "multi-contain");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .multi-contain { contain: layout style paint; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        // layout=0x02 + style=0x04 + paint=0x08 = 0x0E
+        let expected_flags = zero_style_system::property::ContainComputedValue::FLAG_LAYOUT
+            | zero_style_system::property::ContainComputedValue::FLAG_STYLE
+            | zero_style_system::property::ContainComputedValue::FLAG_PAINT;
+        assert_eq!(
+            div_style.contain,
+            zero_style_system::property::ContainComputedValue::Custom(expected_flags),
+            "div 的 contain 应为 Custom(layout|style|paint) = 0x{:02X}",
+            expected_flags
+        );
+    }
+
+    /// CSS appearance 管线集成测试。
+    ///
+    /// 解析含 appearance: none 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.appearance 为 None。
+    #[test]
+    fn test_appearance_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let input = doc.create_element("input");
+        doc.set_attribute(input, "class", "custom-input");
+        doc.append_child(body, input).unwrap();
+
+        let css = r#"
+            .custom-input { appearance: none; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let input_style = styles.get(&input).expect("input 应有计算样式");
+        assert_eq!(
+            input_style.appearance,
+            zero_style_system::property::AppearanceComputedValue::None,
+            "input 的 appearance 应为 None"
+        );
+    }
+
+    /// CSS columns 简写管线集成测试。
+    ///
+    /// 解析含 columns: 3 200px 的 CSS，通过 style-system 计算样式，
+    /// 验证 column-count 解析为 Number(3)，column-width 解析为 Length(200px)。
+    #[test]
+    fn test_columns_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "multi-col");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .multi-col { columns: 3 200px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.column_count,
+            zero_style_system::property::ColumnCountComputedValue::Number(3),
+            "div 的 column-count 应为 Number(3)"
+        );
+        assert_eq!(
+            div_style.column_width,
+            zero_style_system::property::ColumnWidthComputedValue::Length(LengthValue::Px(200.0)),
+            "div 的 column-width 应为 Length(Px(200.0))"
+        );
+    }
 }

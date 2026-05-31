@@ -3499,4 +3499,275 @@ mod tests {
         // 同为 !important 时，ID 选择器特异性 (1,0,0) 高于标签 (0,0,1)，blue 胜出
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增边界条件端到端测试（round 12）
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 仅含文本节点的父元素不产生计算样式，但相邻元素节点各自独立计算样式。
+    /// 验证非元素节点（文本节点）不参与样式系统，元素节点正确获得默认样式。
+    fn test_text_nodes_get_no_style_but_siblings_do() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        // 添加一个文本节点
+        let text = doc.create_text_node("Hello");
+        doc.append_child(body, text).unwrap();
+        // 添加一个元素节点
+        let span = doc.create_element("span");
+        doc.append_child(body, span).unwrap();
+
+        let mut sys = StyleSystem::new();
+        let stylesheets = vec![];
+        let styles = sys.compute_styles(&doc, &stylesheets);
+
+        // span 应有样式（默认值）
+        assert!(styles.get(&span).is_some(), "span 应该有计算样式");
+        // body 应有样式
+        assert!(styles.get(&body).is_some(), "body 应该有计算样式");
+        // 文本节点不在 styles 中（NodeId 无法直接查，但总样式数应只含元素节点）
+        // html, body, span 三个元素节点有样式
+        assert!(styles.len() >= 3, "至少 3 个元素节点有样式");
+    }
+
+    #[test]
+    /// 多层嵌套继承：grandparent 设置 color: red，parent 未设置，
+    /// child 也未设置，验证继承链在三代之间正确传递。
+    /// 同时验证非继承属性（margin-top）不在代际之间传递。
+    fn test_deep_nesting_inheritance_chain() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let grandparent = doc.create_element("div");
+        doc.set_attribute(grandparent, "id", "gp");
+        doc.append_child(body, grandparent).unwrap();
+        let parent = doc.create_element("section");
+        doc.append_child(grandparent, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let mut sys = StyleSystem::new();
+
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("gp".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        // #gp { color: red; margin-top: 20px }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![id_sel],
+                declarations: vec![
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "margin-top".to_string(),
+                        value: "20px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+
+        // grandparent 的 color = red, margin-top = 20px
+        let gp_style = styles.get(&grandparent).expect("grandparent 应有样式");
+        assert_eq!(gp_style.color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(gp_style.margin_top, LengthValue::Px(20.0));
+
+        // parent 继承 color = red，但 margin-top 不继承
+        let parent_style = styles.get(&parent).expect("parent 应有样式");
+        assert_eq!(parent_style.color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(parent_style.margin_top, LengthValue::Px(0.0));
+
+        // child 继承 color = red（经过两代传递），margin-top 不继承
+        let child_style = styles.get(&child).expect("child 应有样式");
+        assert_eq!(child_style.color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(child_style.margin_top, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    /// 简写与 longhand 混合应用后，后声明的 longhand 覆盖简写中对应子属性。
+    /// 验证 margin 简写 + 单独的 margin-top 覆盖在端到端管线中正确工作。
+    fn test_shorthand_then_longhand_override_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // div { margin: 10px; margin-top: 30px; padding: 5px 15px; padding-left: 25px }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "margin".to_string(),
+                        value: "10px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "margin-top".to_string(),
+                        value: "30px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "padding".to_string(),
+                        value: "5px 15px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "padding-left".to_string(),
+                        value: "25px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+
+        // margin-top 被 longhand 覆盖为 30px
+        assert_eq!(div_style.margin_top, LengthValue::Px(30.0));
+        // 其余 margin 边保持简写值 10px
+        assert_eq!(div_style.margin_right, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_bottom, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_left, LengthValue::Px(10.0));
+
+        // padding-left 被 longhand 覆盖为 25px
+        assert_eq!(div_style.padding_left, LengthValue::Px(25.0));
+        // 其余 padding 保持简写值
+        assert_eq!(div_style.padding_top, LengthValue::Px(5.0));
+        assert_eq!(div_style.padding_right, LengthValue::Px(15.0));
+        assert_eq!(div_style.padding_bottom, LengthValue::Px(5.0));
+    }
+
+    #[test]
+    /// 自定义属性与 var() 三层嵌套解析：
+    /// --base → --mid → --top，color 使用 var(--top)，
+    /// 验证系统正确展开三层间接引用。
+    fn test_custom_property_triple_indirection() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--base".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "--mid".to_string(),
+                        value: "var(--base)".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "--top".to_string(),
+                        value: "var(--mid)".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "var(--top)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // var(--top) → var(--mid) → var(--base) → green
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255));
+    }
+
+    #[test]
+    /// @layer 内的 @media 规则同时生效：
+    /// @layer base { @media (min-width: 600px) { div { color: red } } }
+    /// 设置视口 800px，验证分层内的媒体查询条件正确评估。
+    fn test_layer_with_media_inside() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // @layer base { @media (min-width: 600px) { div { color: red } } }
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                        name: "media".to_string(),
+                        prelude: "(min-width: 600px)".to_string(),
+                        body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                            selectors: vec![make_tag_selector("div")],
+                            declarations: vec![Declaration {
+                                property: "color".to_string(),
+                                value: "red".to_string(),
+                                important: false,
+                            }],
+                        })]),
+                    })],
+                }),
+                // 未分层规则 — div { color: blue }
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 未分层声明胜过分层声明，即使 @media 条件满足
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
+
+        // 额外验证：去掉未分层规则后，@layer 内的 @media 样式应生效
+        let stylesheets_layer_only = vec![Stylesheet {
+            rules: vec![Rule::Layer(zero_css_parser::ast::LayerRule {
+                name: "base".to_string(),
+                rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                    name: "media".to_string(),
+                    prelude: "(min-width: 600px)".to_string(),
+                    body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "red".to_string(),
+                            important: false,
+                        }],
+                    })]),
+                })],
+            })],
+        }];
+
+        let mut sys2 = StyleSystem::new();
+        sys2.set_viewport(800.0, 600.0);
+        let styles2 = sys2.compute_styles(&doc, &stylesheets_layer_only);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        // @layer 内 @media 条件满足，color 应为红色
+        assert_eq!(div_style2.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
 }

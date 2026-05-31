@@ -3919,4 +3919,251 @@ mod tests {
         // try_recv 应返回 Ok(None)
         assert!(ch.try_recv().expect("try_recv").is_none());
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  新增边界条件测试（第 3 批）
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 FetchRequest 中 headers 包含重复键名时的序列化/反序列化。
+    /// HTTP 协议允许多个同名 header（如 Set-Cookie、Accept），
+    /// 验证 IPC 序列化不会去重或合并同名键。
+    #[test]
+    fn test_headers_duplicate_keys_preserved() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![
+                    ("Accept".into(), "text/html".into()),
+                    ("Accept".into(), "application/json".into()),
+                    ("Accept".into(), "*/*".into()),
+                    ("Set-Cookie".into(), "a=1".into()),
+                    ("Set-Cookie".into(), "b=2; Path=/".into()),
+                ],
+                body: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(5, p.headers.len(), "重复键名的 header 不应被去重");
+            // 验证所有 Accept header 都独立保留
+            let accept_values: Vec<&str> = p
+                .headers
+                .iter()
+                .filter(|(k, _)| k == "Accept")
+                .map(|(_, v)| v.as_str())
+                .collect();
+            assert_eq!(
+                vec!["text/html", "application/json", "*/*"],
+                accept_values,
+                "重复的 Accept 键应各自独立保留"
+            );
+            // 验证 Set-Cookie header 也独立保留
+            let cookie_values: Vec<&str> = p
+                .headers
+                .iter()
+                .filter(|(k, _)| k == "Set-Cookie")
+                .map(|(_, v)| v.as_str())
+                .collect();
+            assert_eq!(vec!["a=1", "b=2; Path=/"], cookie_values);
+        } else {
+            panic!("期望 FetchRequest");
+        }
+    }
+
+    /// 测试 IpcMessage 克隆后两条消息独立序列化产生完全相同的字节。
+    /// 验证 Clone derive 生成的克隆体在语义上与原始消息完全一致，
+    /// 且修改克隆体不影响原始消息的序列化结果。
+    #[test]
+    fn test_message_clone_independence() {
+        let original = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some("https://ref.com".into()),
+            }),
+        };
+
+        // 克隆后两条消息序列化应产生完全相同的字节
+        let cloned = original.clone();
+        let bytes_original = serialize(&original).expect("序列化原始消息应成功");
+        let bytes_cloned = serialize(&cloned).expect("序列化克隆消息应成功");
+        assert_eq!(bytes_original, bytes_cloned, "克隆消息的序列化结果应与原始消息完全一致");
+
+        // 修改克隆体后，原始消息的序列化结果应保持不变
+        let mut modified = original.clone();
+        modified.id = 99;
+        let bytes_original_after = serialize(&original).expect("序列化原始消息应成功");
+        assert_eq!(
+            bytes_original, bytes_original_after,
+            "修改克隆体后原始消息的序列化结果不应改变"
+        );
+        // 修改后的消息序列化结果应与原始不同
+        let bytes_modified = serialize(&modified).expect("序列化修改后消息应成功");
+        assert_ne!(bytes_original, bytes_modified, "修改后的消息序列化结果应与原始不同");
+    }
+
+    /// 测试 LoadFailed 和 CrashNotification 中包含多行错误信息的序列化/反序列化。
+    /// 实际运行时错误通常包含堆栈跟踪等多行文本，验证换行符在 IPC 传输中完整保留。
+    #[test]
+    fn test_multiline_error_messages_roundtrip() {
+        let multiline_error = "line 1: connection refused\nline 2: retrying...\nline 3: timeout\nline 4: giving up";
+
+        // LoadFailed 含多行错误
+        let msg1 = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::LoadFailed(multiline_error.into()),
+        };
+        let out1 = roundtrip(msg1);
+        if let IpcMessageKind::LoadFailed(e) = out1.kind {
+            assert_eq!(multiline_error, e, "LoadFailed 多行错误信息往返应完全一致");
+            assert_eq!(4, e.lines().count(), "多行错误应保持 4 行");
+        } else {
+            panic!("期望 LoadFailed");
+        }
+
+        // CrashNotification 含多行堆栈跟踪
+        let stack_trace = "Segmentation fault\n  at main.rs:42\n  at lib.rs:108\n  caused by: null pointer dereference";
+        let msg2 = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CrashNotification(stack_trace.into()),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::CrashNotification(r) = out2.kind {
+            assert_eq!(stack_trace, r, "CrashNotification 多行信息往返应完全一致");
+            assert_eq!(4, r.lines().count());
+        } else {
+            panic!("期望 CrashNotification");
+        }
+
+        // Error 响应含多行错误
+        let msg3 = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::Error("error:\n  detail 1\n  detail 2\n  detail 3".into()),
+        };
+        let out3 = roundtrip(msg3);
+        if let IpcMessageKind::Error(e) = out3.kind {
+            assert_eq!(4, e.lines().count(), "Error 多行信息行数应保持一致");
+        } else {
+            panic!("期望 Error");
+        }
+    }
+
+    /// 测试 MouseEvent 和 KeyboardEvent 中所有事件类型（Down/Up/Move/Click/DblClick 和 Down/Up/Press）
+    /// 与零值/极端值坐标和修饰键的组合，确保每种事件类型在边界条件下序列化不丢失字段。
+    #[test]
+    fn test_input_events_all_types_with_boundary_values() {
+        // 鼠标事件：每种类型均使用负坐标和最大 button 值
+        let mouse_types = vec![
+            MouseEventType::Down,
+            MouseEventType::Up,
+            MouseEventType::Move,
+            MouseEventType::Click,
+            MouseEventType::DblClick,
+        ];
+        for (i, etype) in mouse_types.into_iter().enumerate() {
+            let msg = IpcMessage {
+                id: i as u64,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: -999.99,
+                    y: -0.001,
+                    button: u8::MAX,
+                    event_type: etype.clone(),
+                }),
+            };
+            let out = roundtrip(msg);
+            if let IpcMessageKind::MouseEvent(p) = out.kind {
+                assert_eq!(-999.99, p.x, "MouseEvent x 往返失败，类型 {:?}", etype);
+                assert_eq!(-0.001, p.y, "MouseEvent y 往返失败，类型 {:?}", etype);
+                assert_eq!(u8::MAX, p.button);
+                assert_eq!(etype, p.event_type, "MouseEvent event_type 往返失败");
+            } else {
+                panic!("期望 MouseEvent，索引 {i}");
+            }
+        }
+
+        // 键盘事件：每种类型均使用空 key 和所有修饰键按下
+        let kb_types = vec![KeyboardEventType::Down, KeyboardEventType::Up, KeyboardEventType::Press];
+        for (i, etype) in kb_types.into_iter().enumerate() {
+            let msg = IpcMessage {
+                id: (i + 10) as u64,
+                kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key: String::new(),
+                    code: "Space".into(),
+                    ctrl: true,
+                    shift: true,
+                    alt: true,
+                    meta: true,
+                    event_type: etype.clone(),
+                }),
+            };
+            let out = roundtrip(msg);
+            if let IpcMessageKind::KeyboardEvent(p) = out.kind {
+                assert!(p.key.is_empty(), "key 应为空字符串");
+                assert_eq!("Space", p.code);
+                assert!(p.ctrl && p.shift && p.alt && p.meta, "所有修饰键应为 true");
+                assert_eq!(etype, p.event_type, "KeyboardEvent event_type 往返失败");
+            } else {
+                panic!("期望 KeyboardEvent，索引 {i}");
+            }
+        }
+    }
+
+    /// 测试相同 id 但不同 IpcMessageKind 的消息序列化结果必须不同。
+    /// 验证 bincode 编码中枚举变体标签确实影响了输出字节，
+    /// 防止不同变体因编码缺陷产生相同的二进制表示。
+    #[test]
+    fn test_different_kinds_produce_different_bytes() {
+        let id = 42u64;
+        let msg_ok = IpcMessage {
+            id,
+            kind: IpcMessageKind::Ok,
+        };
+        let msg_heartbeat = IpcMessage {
+            id,
+            kind: IpcMessageKind::Heartbeat,
+        };
+        let msg_load_complete = IpcMessage {
+            id,
+            kind: IpcMessageKind::LoadComplete,
+        };
+        let msg_go_back = IpcMessage {
+            id,
+            kind: IpcMessageKind::GoBack,
+        };
+        let msg_go_forward = IpcMessage {
+            id,
+            kind: IpcMessageKind::GoForward,
+        };
+        let msg_reload = IpcMessage {
+            id,
+            kind: IpcMessageKind::Reload,
+        };
+        let msg_stop = IpcMessage {
+            id,
+            kind: IpcMessageKind::StopLoading,
+        };
+
+        let bytes = vec![
+            serialize(&msg_ok).expect("s"),
+            serialize(&msg_heartbeat).expect("s"),
+            serialize(&msg_load_complete).expect("s"),
+            serialize(&msg_go_back).expect("s"),
+            serialize(&msg_go_forward).expect("s"),
+            serialize(&msg_reload).expect("s"),
+            serialize(&msg_stop).expect("s"),
+        ];
+
+        // 任意两条不同变体的序列化结果应不同
+        for i in 0..bytes.len() {
+            for j in (i + 1)..bytes.len() {
+                assert_ne!(
+                    bytes[i], bytes[j],
+                    "不同 IpcMessageKind 变体（索引 {i} vs {j}）的序列化结果必须不同"
+                );
+            }
+        }
+    }
 }
