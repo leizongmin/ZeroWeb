@@ -896,6 +896,106 @@ impl Document {
         result
     }
 
+    // ── 规范化 ──────────────────────────────────────────────────
+
+    /// 规范化指定节点的子树。
+    ///
+    /// 遵循 WHATWG DOM 规范中 `Node.normalize()` 的语义：
+    /// - 合并相邻的 Text 节点（将后续文本内容追加到第一个文本节点，然后移除后续节点）
+    /// - 移除空的 Text 节点（内容为 `""` 的文本节点）
+    /// - 递归处理 Element 类型的子节点
+    pub fn normalize(&mut self, node_id: NodeId) {
+        if !self.contains(node_id) {
+            return;
+        }
+
+        let children = self.child_nodes(node_id);
+
+        // 第一遍：递归处理 Element 子节点（先处理深层，再处理浅层）
+        for &child in &children {
+            let is_element = self
+                .nodes
+                .get(child)
+                .map(|n| matches!(n.kind, NodeKind::Element(_)))
+                .unwrap_or(false);
+            if is_element {
+                self.normalize(child);
+            }
+        }
+
+        // 第二遍：收集需要移除和合并的文本节点信息
+        // 遍历子节点列表，合并相邻文本节点，移除空文本节点
+        let mut to_remove: Vec<NodeId> = Vec::new();
+        let mut i = 0;
+        let len = children.len();
+
+        while i < len {
+            let child = children[i];
+            let is_text = self
+                .nodes
+                .get(child)
+                .map(|n| matches!(n.kind, NodeKind::Text(_)))
+                .unwrap_or(false);
+
+            if is_text {
+                let is_empty = self
+                    .nodes
+                    .get(child)
+                    .and_then(|n| match &n.kind {
+                        NodeKind::Text(d) => Some(d.content.is_empty()),
+                        _ => None,
+                    })
+                    .unwrap_or(false);
+
+                if is_empty {
+                    // 空文本节点，标记移除
+                    to_remove.push(child);
+                } else {
+                    // 收集后续相邻的文本节点，合并到当前节点
+                    let mut j = i + 1;
+                    while j < len {
+                        let next = children[j];
+                        let next_is_text = self
+                            .nodes
+                            .get(next)
+                            .map(|n| matches!(n.kind, NodeKind::Text(_)))
+                            .unwrap_or(false);
+                        if !next_is_text {
+                            break;
+                        }
+                        // 追加文本内容到当前节点
+                        let next_content = self
+                            .nodes
+                            .get(next)
+                            .and_then(|n| match &n.kind {
+                                NodeKind::Text(d) => Some(d.content.clone()),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+                        if let Some(NodeKind::Text(data)) = self.nodes.get_mut(child).map(|n| &mut n.kind) {
+                            data.content.push_str(&next_content);
+                        }
+                        to_remove.push(next);
+                        j += 1;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        // 第三遍：从父节点子列表中移除标记的节点，清除父引用
+        for &id in &to_remove {
+            if let Some(parent_data) = self.nodes.get_mut(node_id) {
+                parent_data.children.retain(|&c| c != id);
+            }
+            if let Some(child_data) = self.nodes.get_mut(id) {
+                child_data.parent = None;
+            }
+        }
+    }
+
     // ── quirks mode ─────────────────────────────────────────────
 
     /// 获取文档的 quirks mode。
@@ -1504,5 +1604,119 @@ mod tests {
         let mut doc = Document::new();
         let text = doc.create_text_node("hello");
         assert!(doc.attribute_names(text).is_empty());
+    }
+
+    // ── normalize 测试 ───────────────────────────────────────────
+
+    /// 测试合并两个相邻文本节点。
+    #[test]
+    fn test_normalize_merges_adjacent_text_nodes() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let t1 = doc.create_text_node("hello");
+        let t2 = doc.create_text_node(" ");
+        let t3 = doc.create_text_node("world");
+
+        doc.append_child(parent, t1).unwrap();
+        doc.append_child(parent, t2).unwrap();
+        doc.append_child(parent, t3).unwrap();
+
+        // 规格化前：3 个子节点
+        assert_eq!(doc.child_count(parent), 3);
+
+        doc.normalize(parent);
+
+        // 规格化后：合并为 1 个文本节点，内容为 "hello world"
+        assert_eq!(doc.child_count(parent), 1);
+        assert_eq!(doc.text_content(parent), Some("hello world".to_string()));
+    }
+
+    /// 测试移除元素之间的空文本节点。
+    #[test]
+    fn test_normalize_removes_empty_text_nodes() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let span1 = doc.create_element("span");
+        let empty_text = doc.create_text_node("");
+        let span2 = doc.create_element("span");
+
+        doc.append_child(parent, span1).unwrap();
+        doc.append_child(parent, empty_text).unwrap();
+        doc.append_child(parent, span2).unwrap();
+
+        // 规格化前：3 个子节点
+        assert_eq!(doc.child_count(parent), 3);
+
+        doc.normalize(parent);
+
+        // 空文本节点被移除，只剩 2 个元素
+        assert_eq!(doc.child_count(parent), 2);
+        let children = doc.child_nodes(parent);
+        assert_eq!(doc.node_type(children[0]), Some(1)); // Element
+        assert_eq!(doc.node_type(children[1]), Some(1)); // Element
+    }
+
+    /// 测试规格化包含混合内容的子树（相邻文本 + 空文本 + 嵌套元素）。
+    #[test]
+    fn test_normalize_mixed_subtree() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+
+        // root 的子节点：text("a") + text("b") + empty_text + span + text("c") + text("d")
+        let t1 = doc.create_text_node("a");
+        let t2 = doc.create_text_node("b");
+        let empty = doc.create_text_node("");
+        let span = doc.create_element("span");
+        let t3 = doc.create_text_node("c");
+        let t4 = doc.create_text_node("d");
+
+        doc.append_child(root, t1).unwrap();
+        doc.append_child(root, t2).unwrap();
+        doc.append_child(root, empty).unwrap();
+        doc.append_child(root, span).unwrap();
+        doc.append_child(root, t3).unwrap();
+        doc.append_child(root, t4).unwrap();
+
+        // span 内部也有相邻文本
+        let s1 = doc.create_text_node("x");
+        let s2 = doc.create_text_node("y");
+        doc.append_child(span, s1).unwrap();
+        doc.append_child(span, s2).unwrap();
+
+        doc.normalize(root);
+
+        // root 层：text("ab") + span + text("cd") = 3 个子节点
+        assert_eq!(doc.child_count(root), 3);
+        let children = doc.child_nodes(root);
+        assert_eq!(doc.text_content(children[0]), Some("ab".to_string()));
+        assert_eq!(doc.node_type(children[1]), Some(1)); // span 元素
+        assert_eq!(doc.text_content(children[2]), Some("cd".to_string()));
+
+        // span 内部：text("xy") = 1 个子节点
+        assert_eq!(doc.child_count(children[1]), 1);
+        assert_eq!(doc.text_content(children[1]), Some("xy".to_string()));
+    }
+
+    /// 测试对已规格化的树调用 normalize 无变化。
+    #[test]
+    fn test_normalize_already_normalized_is_noop() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("p");
+        let t1 = doc.create_text_node("hello");
+        let elem = doc.create_element("br");
+        let t2 = doc.create_text_node("world");
+
+        doc.append_child(parent, t1).unwrap();
+        doc.append_child(parent, elem).unwrap();
+        doc.append_child(parent, t2).unwrap();
+
+        // 已经是规格化的状态
+        assert_eq!(doc.child_count(parent), 3);
+
+        doc.normalize(parent);
+
+        // 无变化
+        assert_eq!(doc.child_count(parent), 3);
+        assert_eq!(doc.text_content(parent), Some("helloworld".to_string()));
     }
 }

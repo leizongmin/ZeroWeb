@@ -1378,6 +1378,111 @@ pub enum VerticalAlignValue {
     Super,
 }
 
+/// CSS cursor 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CursorValue {
+    /// auto。
+    Auto,
+    /// default。
+    Default,
+    /// pointer。
+    Pointer,
+    /// move。
+    Move,
+    /// text。
+    Text,
+    /// wait。
+    Wait,
+    /// crosshair。
+    Crosshair,
+    /// not-allowed。
+    NotAllowed,
+    /// grab。
+    Grab,
+    /// grabbing。
+    Grabbing,
+    /// help。
+    Help,
+    /// progress。
+    Progress,
+    /// n-resize。
+    NResize,
+    /// s-resize。
+    SResize,
+    /// e-resize。
+    EResize,
+    /// w-resize。
+    WResize,
+    /// ne-resize。
+    NeResize,
+    /// nw-resize。
+    NwResize,
+    /// se-resize。
+    SeResize,
+    /// sw-resize。
+    SwResize,
+    /// col-resize。
+    ColResize,
+    /// row-resize。
+    RowResize,
+    /// all-scroll。
+    AllScroll,
+    /// zoom-in。
+    ZoomIn,
+    /// zoom-out。
+    ZoomOut,
+    /// none。
+    None,
+}
+
+/// 解析 CSS cursor 属性值。
+pub fn parse_cursor(value: &str) -> Option<CursorValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(CursorValue::Auto),
+        "default" => Some(CursorValue::Default),
+        "pointer" => Some(CursorValue::Pointer),
+        "move" => Some(CursorValue::Move),
+        "text" => Some(CursorValue::Text),
+        "wait" => Some(CursorValue::Wait),
+        "crosshair" => Some(CursorValue::Crosshair),
+        "not-allowed" => Some(CursorValue::NotAllowed),
+        "grab" => Some(CursorValue::Grab),
+        "grabbing" => Some(CursorValue::Grabbing),
+        "help" => Some(CursorValue::Help),
+        "progress" => Some(CursorValue::Progress),
+        "n-resize" => Some(CursorValue::NResize),
+        "s-resize" => Some(CursorValue::SResize),
+        "e-resize" => Some(CursorValue::EResize),
+        "w-resize" => Some(CursorValue::WResize),
+        "ne-resize" => Some(CursorValue::NeResize),
+        "nw-resize" => Some(CursorValue::NwResize),
+        "se-resize" => Some(CursorValue::SeResize),
+        "sw-resize" => Some(CursorValue::SwResize),
+        "col-resize" => Some(CursorValue::ColResize),
+        "row-resize" => Some(CursorValue::RowResize),
+        "all-scroll" => Some(CursorValue::AllScroll),
+        "zoom-in" => Some(CursorValue::ZoomIn),
+        "zoom-out" => Some(CursorValue::ZoomOut),
+        "none" => Some(CursorValue::None),
+        _ => None,
+    }
+}
+
+/// 解析 CSS opacity 属性值。
+///
+/// 支持数值（0.0-1.0）和百分比（如 `50%` → 0.5）。
+/// 结果限制在 [0.0, 1.0] 范围内。
+pub fn parse_opacity(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.ends_with('%') {
+        let pct: f64 = value.trim_end_matches('%').parse().ok()?;
+        Some((pct / 100.0).clamp(0.0, 1.0))
+    } else {
+        let num: f64 = value.parse().ok()?;
+        Some(num.clamp(0.0, 1.0))
+    }
+}
+
 /// 解析 CSS vertical-align 属性值。
 pub fn parse_vertical_align(value: &str) -> Option<VerticalAlignValue> {
     match value.trim().to_ascii_lowercase().as_str() {

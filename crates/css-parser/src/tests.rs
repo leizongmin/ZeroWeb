@@ -5,11 +5,12 @@ use crate::parser::Parser;
 use crate::selector;
 use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
-    CalcContext, ContainerTypeValue, GradientDirection, GradientValue, LengthValue, RadialShape, RadialSize,
-    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TransformFunction, TransformValue,
-    eval_calc, eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode,
-    parse_animation_play_state, parse_calc, parse_container_type, parse_gradient, parse_length, parse_length_shorthand,
-    parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type, parse_transform,
+    CalcContext, ContainerTypeValue, CursorValue, GradientDirection, GradientValue, LengthValue, RadialShape,
+    RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TransformFunction,
+    TransformValue, eval_calc, eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode,
+    parse_animation_play_state, parse_calc, parse_container_type, parse_cursor, parse_gradient, parse_length,
+    parse_length_shorthand, parse_opacity, parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type,
+    parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3866,4 +3867,102 @@ fn test_eval_calc_with_context_viewport() {
     let ctx_empty = CalcContext::default();
     let result = eval_calc_with_context(&expr_vw, &ctx_empty);
     assert_eq!(result, None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 26. parse_cursor / parse_opacity 测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_cursor 常见关键字
+fn test_parse_cursor_common_keywords() {
+    assert_eq!(parse_cursor("pointer"), Some(CursorValue::Pointer));
+    assert_eq!(parse_cursor("default"), Some(CursorValue::Default));
+    assert_eq!(parse_cursor("text"), Some(CursorValue::Text));
+    assert_eq!(parse_cursor("move"), Some(CursorValue::Move));
+    assert_eq!(parse_cursor("wait"), Some(CursorValue::Wait));
+    assert_eq!(parse_cursor("crosshair"), Some(CursorValue::Crosshair));
+    assert_eq!(parse_cursor("not-allowed"), Some(CursorValue::NotAllowed));
+    assert_eq!(parse_cursor("grab"), Some(CursorValue::Grab));
+    assert_eq!(parse_cursor("grabbing"), Some(CursorValue::Grabbing));
+    assert_eq!(parse_cursor("help"), Some(CursorValue::Help));
+    assert_eq!(parse_cursor("progress"), Some(CursorValue::Progress));
+}
+
+#[test]
+/// 测试 parse_cursor 方向调整关键字
+fn test_parse_cursor_resize_keywords() {
+    assert_eq!(parse_cursor("n-resize"), Some(CursorValue::NResize));
+    assert_eq!(parse_cursor("s-resize"), Some(CursorValue::SResize));
+    assert_eq!(parse_cursor("e-resize"), Some(CursorValue::EResize));
+    assert_eq!(parse_cursor("w-resize"), Some(CursorValue::WResize));
+    assert_eq!(parse_cursor("ne-resize"), Some(CursorValue::NeResize));
+    assert_eq!(parse_cursor("nw-resize"), Some(CursorValue::NwResize));
+    assert_eq!(parse_cursor("se-resize"), Some(CursorValue::SeResize));
+    assert_eq!(parse_cursor("sw-resize"), Some(CursorValue::SwResize));
+    assert_eq!(parse_cursor("col-resize"), Some(CursorValue::ColResize));
+    assert_eq!(parse_cursor("row-resize"), Some(CursorValue::RowResize));
+    assert_eq!(parse_cursor("all-scroll"), Some(CursorValue::AllScroll));
+}
+
+#[test]
+/// 测试 parse_cursor 其他关键字
+fn test_parse_cursor_other_keywords() {
+    assert_eq!(parse_cursor("auto"), Some(CursorValue::Auto));
+    assert_eq!(parse_cursor("zoom-in"), Some(CursorValue::ZoomIn));
+    assert_eq!(parse_cursor("zoom-out"), Some(CursorValue::ZoomOut));
+    assert_eq!(parse_cursor("none"), Some(CursorValue::None));
+}
+
+#[test]
+/// 测试 parse_cursor 大小写不敏感
+fn test_parse_cursor_case_insensitive() {
+    assert_eq!(parse_cursor("POINTER"), Some(CursorValue::Pointer));
+    assert_eq!(parse_cursor("Pointer"), Some(CursorValue::Pointer));
+    assert_eq!(parse_cursor("DEFAULT"), Some(CursorValue::Default));
+    assert_eq!(parse_cursor("NOT-ALLOWED"), Some(CursorValue::NotAllowed));
+    assert_eq!(parse_cursor("  pointer  "), Some(CursorValue::Pointer));
+}
+
+#[test]
+/// 测试 parse_cursor 未知值返回 None
+fn test_parse_cursor_unknown() {
+    assert_eq!(parse_cursor("invalid"), None);
+    assert_eq!(parse_cursor(""), None);
+    assert_eq!(parse_cursor("cursor"), None);
+}
+
+#[test]
+/// 测试 parse_opacity 基本数值
+fn test_parse_opacity_basic() {
+    assert_eq!(parse_opacity("0"), Some(0.0));
+    assert_eq!(parse_opacity("1"), Some(1.0));
+    assert_eq!(parse_opacity("0.5"), Some(0.5));
+}
+
+#[test]
+/// 测试 parse_opacity 值钳制到 [0.0, 1.0]
+fn test_parse_opacity_clamping() {
+    assert_eq!(parse_opacity("-0.1"), Some(0.0));
+    assert_eq!(parse_opacity("1.5"), Some(1.0));
+    assert_eq!(parse_opacity("-10"), Some(0.0));
+    assert_eq!(parse_opacity("100"), Some(1.0));
+}
+
+#[test]
+/// 测试 parse_opacity 百分比值
+fn test_parse_opacity_percentage() {
+    assert_eq!(parse_opacity("50%"), Some(0.5));
+    assert_eq!(parse_opacity("0%"), Some(0.0));
+    assert_eq!(parse_opacity("100%"), Some(1.0));
+    assert_eq!(parse_opacity("25%"), Some(0.25));
+    assert_eq!(parse_opacity("150%"), Some(1.0));
+    assert_eq!(parse_opacity("-10%"), Some(0.0));
+}
+
+#[test]
+/// 测试 parse_opacity 无效输入返回 None
+fn test_parse_opacity_invalid() {
+    assert_eq!(parse_opacity("abc"), None);
+    assert_eq!(parse_opacity(""), None);
 }

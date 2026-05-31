@@ -299,6 +299,36 @@ impl RadialGradient {
     }
 }
 
+/// 锥形渐变 — 围绕中心点按角度过渡颜色。
+#[derive(Debug, Clone)]
+pub struct ConicGradient {
+    /// 起始角度（弧度）。
+    pub start_angle: f32,
+    /// 中心 X 坐标。
+    pub cx: f32,
+    /// 中心 Y 坐标。
+    pub cy: f32,
+    /// 颜色停止点列表。
+    pub stops: Vec<GradientStop>,
+}
+
+impl ConicGradient {
+    /// 创建锥形渐变。
+    pub fn new(start_angle: f32, cx: f32, cy: f32) -> Self {
+        Self {
+            start_angle,
+            cx,
+            cy,
+            stops: Vec::new(),
+        }
+    }
+
+    /// 添加颜色停止点。
+    pub fn add_color_stop(&mut self, offset: f32, color: Color) {
+        self.stops.push(GradientStop { offset, color });
+    }
+}
+
 /// 图案重复模式。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum PatternRepetition {
@@ -582,6 +612,23 @@ impl CanvasContext {
     pub fn arc(&mut self, x: f32, y: f32, radius: f32, start_angle: f32, end_angle: f32) {
         let (tx, ty) = self.transform.transform_point(x, y);
         self.current_path.arc(tx, ty, radius, start_angle, end_angle);
+    }
+
+    /// 画椭圆弧。
+    #[allow(clippy::too_many_arguments)]
+    pub fn ellipse(
+        &mut self,
+        x: f32,
+        y: f32,
+        radius_x: f32,
+        radius_y: f32,
+        rotation: f32,
+        start_angle: f32,
+        end_angle: f32,
+    ) {
+        let (tx, ty) = self.transform.transform_point(x, y);
+        self.current_path
+            .ellipse(tx, ty, radius_x, radius_y, rotation, start_angle, end_angle);
     }
 
     /// 画二次贝塞尔曲线。
@@ -940,6 +987,11 @@ impl CanvasContext {
     /// 创建径向渐变。
     pub fn create_radial_gradient(&self, x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> RadialGradient {
         RadialGradient::new(x0, y0, r0, x1, y1, r1)
+    }
+
+    /// 创建锥形渐变。
+    pub fn create_conic_gradient(&self, start_angle: f32, cx: f32, cy: f32) -> ConicGradient {
+        ConicGradient::new(start_angle, cx, cy)
     }
 
     // ── Pattern ──
@@ -4196,6 +4248,64 @@ mod tests {
         assert_eq!(result.data[out_idx..out_idx + 4], [0, 0, 0, 0], "越界像素应为零");
     }
 
+    // ── CanvasContext ellipse 测试 ──
+
+    /// 测试 ellipse 通过 context API 生成 path_fills。
+    #[test]
+    fn test_ellipse_via_context_generates_path_fills() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+        ctx.fill();
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        let pf = &ctx.primitives().path_fills[0];
+        // 16 段细分 × 4 floats = 64
+        assert_eq!(pf.vertices.len(), 64);
+    }
+
+    /// 测试 ellipse 使用单位旋转（rotation=0）时顶点与预期一致。
+    #[test]
+    fn test_ellipse_identity_rotation() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU);
+        ctx.fill();
+        assert!(!ctx.primitives().path_fills.is_empty());
+        let pf = &ctx.primitives().path_fills[0];
+        // 验证第一个顶点在椭圆起始位置（角度 0）附近：(cx + rx, cy)
+        let first_x = pf.vertices[0];
+        let first_y = pf.vertices[1];
+        assert!((first_x - 140.0).abs() < 1.0, "first x ~140, got {}", first_x);
+        assert!((first_y - 100.0).abs() < 1.0, "first y ~100, got {}", first_y);
+    }
+
+    /// 测试 ellipse 使用 90 度旋转时产生与无旋转不同的顶点。
+    #[test]
+    fn test_ellipse_rotated_90_produces_different_vertices() {
+        let mut ctx1 = CanvasContext::new(200, 200);
+        ctx1.begin_path();
+        ctx1.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU);
+        ctx1.fill();
+        let v1 = ctx1.primitives().path_fills[0].vertices.clone();
+
+        let mut ctx2 = CanvasContext::new(200, 200);
+        ctx2.begin_path();
+        ctx2.ellipse(
+            100.0,
+            100.0,
+            40.0,
+            20.0,
+            std::f32::consts::FRAC_PI_2,
+            0.0,
+            std::f32::consts::TAU,
+        );
+        ctx2.fill();
+        let v2 = ctx2.primitives().path_fills[0].vertices.clone();
+
+        // 两种旋转应产生不同的顶点
+        assert_ne!(v1, v2, "90 度旋转的椭圆应产生与无旋转不同的顶点");
+    }
+
     /// 测试 TextAlign 和 TextBaseline 枚举值可构造且互相不等。
     #[test]
     fn test_text_align_and_baseline_enums() {
@@ -4233,5 +4343,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ── createConicGradient 测试 ──
+
+    /// 测试创建锥形渐变：起始角度和中心坐标正确，初始无停止点。
+    #[test]
+    fn test_create_conic_gradient() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_conic_gradient(std::f32::consts::FRAC_PI_4, 100.0, 100.0);
+        assert!((grad.start_angle - std::f32::consts::FRAC_PI_4).abs() < f32::EPSILON);
+        assert!((grad.cx - 100.0).abs() < f32::EPSILON);
+        assert!((grad.cy - 100.0).abs() < f32::EPSILON);
+        assert!(grad.stops.is_empty());
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        assert_eq!(grad.stops.len(), 2);
+        assert_eq!(grad.stops[0].color, Color::RED);
+        assert_eq!(grad.stops[1].color, Color::BLUE);
+    }
+
+    /// 测试锥形渐变添加多个颜色停止点。
+    #[test]
+    fn test_conic_gradient_multiple_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_conic_gradient(0.0, 50.0, 50.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.25, Color::GREEN);
+        grad.add_color_stop(0.5, Color::BLUE);
+        grad.add_color_stop(0.75, Color::WHITE);
+        grad.add_color_stop(1.0, Color::RED);
+        assert_eq!(grad.stops.len(), 5);
+        assert!((grad.stops[1].offset - 0.25).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[1].color, Color::GREEN);
+    }
+
+    /// 测试锥形渐变无停止点的退化情况（不 panic）。
+    #[test]
+    fn test_conic_gradient_no_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let grad = ctx.create_conic_gradient(0.0, 50.0, 50.0);
+        assert!(grad.stops.is_empty());
     }
 }
