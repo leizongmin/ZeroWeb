@@ -575,6 +575,81 @@ mod tests {
         assert_eq!(cs.open("v1").len(), 1);
     }
 
+    /// 测试 CacheStorage::delete — 打开缓存，添加多条目，删除整个缓存后条目不可达
+    #[test]
+    fn test_cache_storage_delete_entries() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("temp-cache");
+        cache
+            .put(
+                CacheRequest::new("https://example.com/a"),
+                CacheResponse::ok(b"a".to_vec()),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::new("https://example.com/b"),
+                CacheResponse::ok(b"b".to_vec()),
+            )
+            .unwrap();
+
+        assert!(cs.has("temp-cache"));
+        assert!(cs.delete("temp-cache"));
+        assert!(!cs.has("temp-cache"));
+        // 删除后全局匹配也不应找到
+        let req = CacheRequest::new("https://example.com/a");
+        assert!(cs.match_request(&req).is_none());
+        // 重复删除返回 false
+        assert!(!cs.delete("temp-cache"));
+    }
+
+    /// 测试 CacheStorage::has — 多个缓存时 has 对已存在和不存在名称的判断
+    #[test]
+    fn test_cache_storage_has_multiple() {
+        let mut cs = CacheStorage::new();
+        assert!(!cs.has("v1"), "未创建的缓存应返回 false");
+        assert!(!cs.has("v2"), "未创建的缓存应返回 false");
+
+        cs.open("v1");
+        assert!(cs.has("v1"), "已创建的缓存应返回 true");
+        assert!(!cs.has("v2"), "未创建的缓存仍应返回 false");
+    }
+
+    /// 测试 CacheStorage::keys — 打开多个缓存后 keys() 返回全部名称，删除后更新
+    #[test]
+    fn test_cache_storage_keys_after_delete() {
+        let mut cs = CacheStorage::new();
+        cs.open("cache-alpha");
+        cs.open("cache-beta");
+        cs.open("cache-gamma");
+
+        let mut keys = cs.keys();
+        keys.sort();
+        assert_eq!(keys, vec!["cache-alpha", "cache-beta", "cache-gamma"]);
+
+        // 删除一个后 keys 更新
+        cs.delete("cache-beta");
+        let mut keys_after = cs.keys();
+        keys_after.sort();
+        assert_eq!(keys_after, vec!["cache-alpha", "cache-gamma"]);
+    }
+
+    /// 测试 Cache::match_request 方法不匹配 — 缓存 GET 请求后用 POST 匹配应返回 None
+    #[test]
+    fn test_cache_match_request_method_mismatch() {
+        let mut cache = Cache::new("v1");
+        let get_req = CacheRequest::new("https://example.com/api");
+        let resp = CacheResponse::ok(b"get-response".to_vec());
+        cache.put(get_req.clone(), resp).unwrap();
+
+        // GET 请求应能匹配
+        assert!(cache.match_request(&get_req).is_some());
+
+        // POST 请求不应匹配
+        let post_req = CacheRequest::with_method("https://example.com/api", "POST");
+        assert!(cache.match_request(&post_req).is_none(), "方法不匹配时不应返回缓存");
+    }
+
     /// 测试 Cache API keys()：存入多个条目，验证 keys() 返回所有 URL。
     #[test]
     fn test_cache_api_keys() {

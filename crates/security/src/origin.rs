@@ -206,4 +206,32 @@ mod tests {
         let b = Origin::parse("http://example.com:8080").unwrap();
         assert!(!check_same_origin(&a, &b), "不同端口不是同源");
     }
+
+    /// Origin::parse("null") 应返回错误（opaque origin），而非 panic
+    #[test]
+    fn test_origin_parse_null_opaque() {
+        let result = Origin::parse("null");
+        // "null" 不是合法 URL，解析应失败
+        assert!(result.is_err(), "parse(\"null\") 应返回错误（opaque origin）");
+    }
+
+    /// Origin::parse("not-a-url") 应返回错误
+    #[test]
+    fn test_origin_parse_invalid_url() {
+        let result = Origin::parse("not-a-url");
+        assert!(result.is_err(), "无效 URL 字符串应解析失败");
+        let msg = result.unwrap_err().to_string();
+        // 错误信息应包含有意义的内容
+        assert!(!msg.is_empty(), "错误信息不应为空");
+    }
+
+    /// 同域名不同端口不应视为同源
+    #[test]
+    fn test_origin_equality_different_ports() {
+        let a = Origin::parse("https://example.com:3000").unwrap();
+        let b = Origin::parse("https://example.com:4000").unwrap();
+        assert_ne!(a, b, "不同端口的 Origin 不应相等");
+        assert!(!a.is_same_origin(&b), "不同端口不应为同源");
+        assert!(!check_same_origin(&a, &b), "check_same_origin 对不同端口应返回 false");
+    }
 }
