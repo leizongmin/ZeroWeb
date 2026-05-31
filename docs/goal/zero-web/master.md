@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4247 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4325 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4247 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4325 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -73,7 +73,23 @@
 
 ## 最近完成的改进
 
-### -29. CSS appearance/accent-color/caret-color + 6 crate 边界测试 + 71 个测试（本轮，4247 测试）
+### -30. CSS mix-blend-mode/scrollbar-width/scrollbar-gutter + 6 crate 边界测试 + 78 个测试（本轮，4325 测试）
+
+新增 3 个 CSS 属性、6 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **mix-blend-mode**：17 种混合模式；**scrollbar-width**：auto/thin/none；**scrollbar-gutter**：auto/stable/stable-both-edges | 15 |
+| style-system | **3 属性管线集成**（全部非继承） | 33 |
+| dom | 属性/遍历/序列化边界 | 5 |
+| engine | 渲染/合成/dirty 边界 | 5 |
+| layout-engine | 布局/转换器边界 | 5 |
+| host-runtime | 窗口/事件边界 | 5 |
+| render-foundation | 渲染/图像缓存/字体边界 | 5 |
+| webview | 状态/渲染/导航边界 | 5 |
+Total: 4247 → 4325 (+78 tests)
+
+### -29. CSS appearance/accent-color/caret-color + 6 crate 边界测试 + 71 个测试（前轮，4247 测试）
 
 新增 3 个 CSS 属性、6 个 crate 边界条件测试：
 
