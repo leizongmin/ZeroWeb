@@ -154,6 +154,8 @@ pub enum WhiteSpaceValue {
     PreWrap,
     /// pre-line。
     PreLine,
+    /// break-spaces。
+    BreakSpaces,
 }
 
 /// CSS text-overflow 值。
@@ -163,6 +165,8 @@ pub enum TextOverflowValue {
     Clip,
     /// ellipsis。
     Ellipsis,
+    /// 自定义字符串。
+    String(String),
 }
 
 /// CSS word-break 值。
@@ -187,6 +191,50 @@ pub enum WritingModeValue {
     VerticalRl,
     /// vertical-lr。
     VerticalLr,
+}
+
+/// CSS table-layout 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableLayoutValue {
+    /// auto（默认值）— 自动表格布局。
+    Auto,
+    /// fixed — 固定表格布局。
+    Fixed,
+}
+
+/// CSS caption-side 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaptionSideValue {
+    /// top（默认值）— 标题在表格上方。
+    Top,
+    /// bottom — 标题在表格下方。
+    Bottom,
+}
+
+/// CSS border-collapse 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderCollapseValue {
+    /// separate（默认值）— 分离边框模型。
+    Separate,
+    /// collapse — 合并边框模型。
+    Collapse,
+}
+
+/// CSS resize 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResizeValue {
+    /// none（默认值）— 不可调整大小。
+    None,
+    /// both — 水平和垂直均可调整。
+    Both,
+    /// horizontal — 仅水平。
+    Horizontal,
+    /// vertical — 仅垂直。
+    Vertical,
+    /// block — 块方向。
+    Block,
+    /// inline — 行内方向。
+    Inline,
 }
 
 /// CSS flex-basis 值。
@@ -455,6 +503,16 @@ pub enum PropertyValue {
     WordBreak(WordBreakValue),
     /// writing-mode 值。
     WritingMode(WritingModeValue),
+    /// text-indent 值。
+    TextIndent(LengthValue),
+    /// table-layout 值。
+    TableLayout(TableLayoutValue),
+    /// caption-side 值。
+    CaptionSide(CaptionSideValue),
+    /// border-collapse 值。
+    BorderCollapse(BorderCollapseValue),
+    /// resize 值。
+    Resize(ResizeValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -615,6 +673,18 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlignValue,
     /// word-break 属性。
     pub word_break: WordBreakValue,
+    /// text-indent 属性。
+    pub text_indent: LengthValue,
+    /// resize 属性。
+    pub resize: ResizeValue,
+
+    // ── 表格 ──
+    /// table-layout 属性。
+    pub table_layout: TableLayoutValue,
+    /// caption-side 属性。
+    pub caption_side: CaptionSideValue,
+    /// border-collapse 属性。
+    pub border_collapse: BorderCollapseValue,
 
     // ── Flexbox ──
     /// flex-direction 属性。
@@ -851,6 +921,13 @@ impl Default for ComputedStyle {
             text_overflow: TextOverflowValue::Clip,
             vertical_align: VerticalAlignValue::Baseline,
             word_break: WordBreakValue::Normal,
+            text_indent: LengthValue::Px(0.0),
+            resize: ResizeValue::None,
+
+            // 表格
+            table_layout: TableLayoutValue::Auto,
+            caption_side: CaptionSideValue::Top,
+            border_collapse: BorderCollapseValue::Separate,
 
             // Flexbox
             flex_direction: FlexDirectionValue::Row,
@@ -1016,6 +1093,11 @@ impl PropertyRegistry {
             "text-overflow" => Some(TextOverflow(TextOverflowValue::Clip)),
             "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
             "word-break" => Some(WordBreak(WordBreakValue::Normal)),
+            "text-indent" => Some(TextIndent(LengthValue::Px(0.0))),
+            "table-layout" => Some(TableLayout(TableLayoutValue::Auto)),
+            "caption-side" => Some(CaptionSide(CaptionSideValue::Top)),
+            "border-collapse" => Some(BorderCollapse(BorderCollapseValue::Separate)),
+            "resize" => Some(Resize(ResizeValue::None)),
 
             // Writing Mode
             "writing-mode" => Some(WritingMode(WritingModeValue::HorizontalTb)),
@@ -1120,6 +1202,9 @@ impl PropertyRegistry {
                 | "word-break"
                 | "visibility"
                 | "cursor"
+                | "text-indent"
+                | "caption-side"
+                | "border-collapse"
         )
     }
 
@@ -1237,6 +1322,11 @@ impl PropertyRegistry {
             "container-type",
             "container-name",
             "writing-mode",
+            "text-indent",
+            "table-layout",
+            "caption-side",
+            "border-collapse",
+            "resize",
             "transform-origin",
             "perspective",
             "perspective-origin",
@@ -1468,6 +1558,7 @@ pub fn parse_white_space(value: &str) -> Option<WhiteSpaceValue> {
         "nowrap" => Some(WhiteSpaceValue::Nowrap),
         "pre-wrap" => Some(WhiteSpaceValue::PreWrap),
         "pre-line" => Some(WhiteSpaceValue::PreLine),
+        "break-spaces" => Some(WhiteSpaceValue::BreakSpaces),
         _ => None,
     }
 }
@@ -1495,11 +1586,15 @@ pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
 
 /// 解析 CSS text-overflow 值。
 pub fn parse_text_overflow(value: &str) -> Option<TextOverflowValue> {
-    match value.trim() {
-        "clip" => Some(TextOverflowValue::Clip),
-        "ellipsis" => Some(TextOverflowValue::Ellipsis),
-        _ => None,
+    let v = value.trim();
+    if let Some(parsed) = values::parse_text_overflow(v) {
+        return match parsed {
+            zero_css_parser::values::TextOverflowValue::Clip => Some(TextOverflowValue::Clip),
+            zero_css_parser::values::TextOverflowValue::Ellipsis => Some(TextOverflowValue::Ellipsis),
+            zero_css_parser::values::TextOverflowValue::String(s) => Some(TextOverflowValue::String(s)),
+        };
     }
+    None
 }
 
 /// 解析 CSS flex-basis 值。
@@ -2029,6 +2124,52 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;
+                return true;
+            }
+        }
+        "text-indent" => {
+            if let Some(v) = parse_length_or_math(value) {
+                style.text_indent = v;
+                return true;
+            }
+        }
+        "table-layout" => {
+            if let Some(v) = values::parse_table_layout(value) {
+                style.table_layout = match v {
+                    zero_css_parser::values::TableLayoutValue::Auto => TableLayoutValue::Auto,
+                    zero_css_parser::values::TableLayoutValue::Fixed => TableLayoutValue::Fixed,
+                };
+                return true;
+            }
+        }
+        "caption-side" => {
+            if let Some(v) = values::parse_caption_side(value) {
+                style.caption_side = match v {
+                    zero_css_parser::values::CaptionSideValue::Top => CaptionSideValue::Top,
+                    zero_css_parser::values::CaptionSideValue::Bottom => CaptionSideValue::Bottom,
+                };
+                return true;
+            }
+        }
+        "border-collapse" => {
+            if let Some(v) = values::parse_border_collapse(value) {
+                style.border_collapse = match v {
+                    zero_css_parser::values::BorderCollapseValue::Separate => BorderCollapseValue::Separate,
+                    zero_css_parser::values::BorderCollapseValue::Collapse => BorderCollapseValue::Collapse,
+                };
+                return true;
+            }
+        }
+        "resize" => {
+            if let Some(v) = values::parse_resize(value) {
+                style.resize = match v {
+                    zero_css_parser::values::ResizeValue::None => ResizeValue::None,
+                    zero_css_parser::values::ResizeValue::Both => ResizeValue::Both,
+                    zero_css_parser::values::ResizeValue::Horizontal => ResizeValue::Horizontal,
+                    zero_css_parser::values::ResizeValue::Vertical => ResizeValue::Vertical,
+                    zero_css_parser::values::ResizeValue::Block => ResizeValue::Block,
+                    zero_css_parser::values::ResizeValue::Inline => ResizeValue::Inline,
+                };
                 return true;
             }
         }
@@ -2650,6 +2791,18 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.cursor = parent.cursor.clone();
             true
         }
+        "text-indent" => {
+            child.text_indent = parent.text_indent.clone();
+            true
+        }
+        "caption-side" => {
+            child.caption_side = parent.caption_side.clone();
+            true
+        }
+        "border-collapse" => {
+            child.border_collapse = parent.border_collapse.clone();
+            true
+        }
         _ => false,
     }
 }
@@ -2898,8 +3051,28 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.word_break = default_style.word_break;
             true
         }
+        "text-indent" => {
+            style.text_indent = default_style.text_indent;
+            true
+        }
         "text-overflow" => {
             style.text_overflow = default_style.text_overflow;
+            true
+        }
+        "table-layout" => {
+            style.table_layout = default_style.table_layout;
+            true
+        }
+        "caption-side" => {
+            style.caption_side = default_style.caption_side;
+            true
+        }
+        "border-collapse" => {
+            style.border_collapse = default_style.border_collapse;
+            true
+        }
+        "resize" => {
+            style.resize = default_style.resize;
             true
         }
         "vertical-align" => {
@@ -5977,5 +6150,185 @@ mod tests {
         assert!(apply_property_value(&mut style3, "perspective-origin", "100px"));
         assert_eq!(style3.perspective_origin_x, LengthValue::Px(100.0));
         assert_eq!(style3.perspective_origin_y, LengthValue::Percentage(50.0));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增属性测试 — text-indent, table-layout, caption-side,
+    //                border-collapse, resize, white-space break-spaces
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 text-indent 默认值为 Px(0.0)
+    fn test_text_indent_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.text_indent, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 text-indent: 2em
+    fn test_apply_text_indent_em() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-indent", "2em"));
+        assert_eq!(style.text_indent, LengthValue::Em(2.0));
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 text-indent: 10%
+    fn test_apply_text_indent_percentage() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-indent", "10%"));
+        assert_eq!(style.text_indent, LengthValue::Percentage(10.0));
+    }
+
+    #[test]
+    /// 测试 table-layout 默认值为 Auto
+    fn test_table_layout_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.table_layout, TableLayoutValue::Auto);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 table-layout: fixed
+    fn test_apply_table_layout_fixed() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "table-layout", "fixed"));
+        assert_eq!(style.table_layout, TableLayoutValue::Fixed);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 table-layout 无效值
+    fn test_apply_table_layout_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "table-layout", "invalid"));
+    }
+
+    #[test]
+    /// 测试 caption-side 默认值为 Top
+    fn test_caption_side_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.caption_side, CaptionSideValue::Top);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 caption-side: bottom
+    fn test_apply_caption_side_bottom() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "caption-side", "bottom"));
+        assert_eq!(style.caption_side, CaptionSideValue::Bottom);
+    }
+
+    #[test]
+    /// 测试 border-collapse 默认值为 Separate
+    fn test_border_collapse_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.border_collapse, BorderCollapseValue::Separate);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 border-collapse: collapse
+    fn test_apply_border_collapse_collapse() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-collapse", "collapse"));
+        assert_eq!(style.border_collapse, BorderCollapseValue::Collapse);
+    }
+
+    #[test]
+    /// 测试 resize 默认值为 None
+    fn test_resize_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.resize, ResizeValue::None);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 resize: both
+    fn test_apply_resize_both() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "resize", "both"));
+        assert_eq!(style.resize, ResizeValue::Both);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 resize: horizontal / vertical / block / inline
+    fn test_apply_resize_variants() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "resize", "horizontal"));
+        assert_eq!(style.resize, ResizeValue::Horizontal);
+        assert!(apply_property_value(&mut style, "resize", "vertical"));
+        assert_eq!(style.resize, ResizeValue::Vertical);
+        assert!(apply_property_value(&mut style, "resize", "block"));
+        assert_eq!(style.resize, ResizeValue::Block);
+        assert!(apply_property_value(&mut style, "resize", "inline"));
+        assert_eq!(style.resize, ResizeValue::Inline);
+    }
+
+    #[test]
+    /// 测试 white-space: break-spaces
+    fn test_parse_white_space_break_spaces() {
+        assert_eq!(parse_white_space("break-spaces"), Some(WhiteSpaceValue::BreakSpaces));
+        // 验证 apply_property_value 也能应用
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "white-space", "break-spaces"));
+        assert_eq!(style.white_space, WhiteSpaceValue::BreakSpaces);
+    }
+
+    #[test]
+    /// 测试 text-overflow 自定义字符串
+    fn test_apply_text_overflow_string() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-overflow", "\"...\""));
+        assert_eq!(style.text_overflow, TextOverflowValue::String("...".to_string()));
+    }
+
+    #[test]
+    /// 测试 text-indent 继承
+    fn test_inherit_text_indent() {
+        let mut parent = ComputedStyle::default();
+        parent.text_indent = LengthValue::Em(2.0);
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "text-indent"));
+        assert_eq!(child.text_indent, LengthValue::Em(2.0));
+    }
+
+    #[test]
+    /// 测试 caption-side 继承
+    fn test_inherit_caption_side() {
+        let mut parent = ComputedStyle::default();
+        parent.caption_side = CaptionSideValue::Bottom;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "caption-side"));
+        assert_eq!(child.caption_side, CaptionSideValue::Bottom);
+    }
+
+    #[test]
+    /// 测试 border-collapse 继承
+    fn test_inherit_border_collapse() {
+        let mut parent = ComputedStyle::default();
+        parent.border_collapse = BorderCollapseValue::Collapse;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "border-collapse"));
+        assert_eq!(child.border_collapse, BorderCollapseValue::Collapse);
+    }
+
+    #[test]
+    /// 测试 resize 不继承
+    fn test_resize_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("resize"));
+    }
+
+    #[test]
+    /// 测试 table-layout 不继承
+    fn test_table_layout_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("table-layout"));
+    }
+
+    #[test]
+    /// 测试新增属性在 known_properties 中
+    fn test_new_properties_in_known_list() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"text-indent"));
+        assert!(props.contains(&"table-layout"));
+        assert!(props.contains(&"caption-side"));
+        assert!(props.contains(&"border-collapse"));
+        assert!(props.contains(&"resize"));
     }
 }

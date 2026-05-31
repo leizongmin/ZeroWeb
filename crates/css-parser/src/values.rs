@@ -1551,6 +1551,18 @@ pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
     }
 }
 
+/// 解析 CSS text-indent 属性值。
+///
+/// 支持长度值（如 `2em`、`20px`）和百分比值（如 `10%`）。
+/// 不支持 `auto` 关键字。
+pub fn parse_text_indent(value: &str) -> Option<LengthValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return None;
+    }
+    parse_length(v)
+}
+
 /// 解析 CSS letter-spacing / word-spacing 值。
 /// "normal" 映射为 LengthValue::Px(0.0)。
 pub fn parse_spacing(value: &str) -> Option<LengthValue> {
@@ -3025,6 +3037,128 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
         color,
         inset,
     })
+}
+
+// ── CSS text-overflow / table / caption / border-collapse / resize 值类型 ──
+
+/// CSS text-overflow 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextOverflowValue {
+    /// clip（默认值）— 裁剪溢出内容。
+    Clip,
+    /// ellipsis — 显示省略号。
+    Ellipsis,
+    /// 自定义字符串。
+    String(String),
+}
+
+/// 解析 CSS text-overflow 属性值。
+///
+/// 支持 `clip`、`ellipsis` 和自定义字符串（带引号）。
+pub fn parse_text_overflow(value: &str) -> Option<TextOverflowValue> {
+    let v = value.trim();
+    match v {
+        "clip" => Some(TextOverflowValue::Clip),
+        "ellipsis" => Some(TextOverflowValue::Ellipsis),
+        s => {
+            // 支持引号包裹的自定义字符串，如 `"…"` 或 `'...'`
+            if (s.starts_with('"') && s.ends_with('"') && s.len() >= 2)
+                || (s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2)
+            {
+                let inner = &s[1..s.len() - 1];
+                if inner.is_empty() {
+                    return None;
+                }
+                Some(TextOverflowValue::String(inner.to_string()))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// CSS table-layout 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableLayoutValue {
+    /// auto（默认值）— 自动表格布局。
+    Auto,
+    /// fixed — 固定表格布局。
+    Fixed,
+}
+
+/// 解析 CSS table-layout 属性值。
+pub fn parse_table_layout(value: &str) -> Option<TableLayoutValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(TableLayoutValue::Auto),
+        "fixed" => Some(TableLayoutValue::Fixed),
+        _ => None,
+    }
+}
+
+/// CSS caption-side 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaptionSideValue {
+    /// top（默认值）— 标题在表格上方。
+    Top,
+    /// bottom — 标题在表格下方。
+    Bottom,
+}
+
+/// 解析 CSS caption-side 属性值。
+pub fn parse_caption_side(value: &str) -> Option<CaptionSideValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "top" => Some(CaptionSideValue::Top),
+        "bottom" => Some(CaptionSideValue::Bottom),
+        _ => None,
+    }
+}
+
+/// CSS border-collapse 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderCollapseValue {
+    /// separate（默认值）— 分离边框模型。
+    Separate,
+    /// collapse — 合并边框模型。
+    Collapse,
+}
+
+/// 解析 CSS border-collapse 属性值。
+pub fn parse_border_collapse(value: &str) -> Option<BorderCollapseValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "separate" => Some(BorderCollapseValue::Separate),
+        "collapse" => Some(BorderCollapseValue::Collapse),
+        _ => None,
+    }
+}
+
+/// CSS resize 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResizeValue {
+    /// none（默认值）— 不可调整大小。
+    None,
+    /// both — 水平和垂直均可调整。
+    Both,
+    /// horizontal — 仅水平。
+    Horizontal,
+    /// vertical — 仅垂直。
+    Vertical,
+    /// block — 块方向。
+    Block,
+    /// inline — 行内方向。
+    Inline,
+}
+
+/// 解析 CSS resize 属性值。
+pub fn parse_resize(value: &str) -> Option<ResizeValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(ResizeValue::None),
+        "both" => Some(ResizeValue::Both),
+        "horizontal" => Some(ResizeValue::Horizontal),
+        "vertical" => Some(ResizeValue::Vertical),
+        "block" => Some(ResizeValue::Block),
+        "inline" => Some(ResizeValue::Inline),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

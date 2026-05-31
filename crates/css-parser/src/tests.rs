@@ -5,14 +5,15 @@ use crate::parser::Parser;
 use crate::selector;
 use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
-    BoxShadowValue, CalcContext, ColorValue, ContainerTypeValue, CursorValue, GradientDirection, GradientValue,
-    LengthValue, RadialShape, RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
-    ScrollSnapTypeValue, TextDecorationLineValue, TextShadowValue, TextTransformValue, TransformFunction,
-    TransformValue, WritingModeValue, eval_calc, eval_calc_with_context, parse_animation_direction,
-    parse_animation_fill_mode, parse_animation_play_state, parse_box_shadow, parse_calc, parse_container_type,
-    parse_cursor, parse_gradient, parse_length, parse_length_shorthand, parse_opacity, parse_scroll_snap_align,
-    parse_scroll_snap_stop, parse_scroll_snap_type, parse_spacing, parse_text_decoration_line, parse_text_shadow,
-    parse_text_transform, parse_transform, parse_writing_mode,
+    BorderCollapseValue, CalcContext, CaptionSideValue, ColorValue, ContainerTypeValue, CursorValue, GradientDirection,
+    GradientValue, LengthValue, RadialShape, RadialSize, ResizeValue, ScrollSnapAlignValue, ScrollSnapAxis,
+    ScrollSnapStopValue, ScrollSnapTypeValue, TableLayoutValue, TextDecorationLineValue, TextOverflowValue,
+    TextTransformValue, TransformFunction, TransformValue, WritingModeValue, eval_calc, eval_calc_with_context,
+    parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state, parse_border_collapse,
+    parse_box_shadow, parse_calc, parse_caption_side, parse_container_type, parse_cursor, parse_gradient, parse_length,
+    parse_length_shorthand, parse_opacity, parse_resize, parse_scroll_snap_align, parse_scroll_snap_stop,
+    parse_scroll_snap_type, parse_spacing, parse_table_layout, parse_text_decoration_line, parse_text_indent,
+    parse_text_overflow, parse_text_shadow, parse_text_transform, parse_transform, parse_writing_mode,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4748,4 +4749,152 @@ fn test_parse_box_shadow_inset() {
     assert_eq!(result.blur_radius, LengthValue::Px(4.0));
     assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.inset);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-overflow 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_text_overflow_clip() {
+    assert_eq!(parse_text_overflow("clip"), Some(TextOverflowValue::Clip));
+}
+
+#[test]
+fn test_parse_text_overflow_ellipsis() {
+    assert_eq!(parse_text_overflow("ellipsis"), Some(TextOverflowValue::Ellipsis));
+}
+
+#[test]
+fn test_parse_text_overflow_custom_string() {
+    assert_eq!(
+        parse_text_overflow("\"...\""),
+        Some(TextOverflowValue::String("...".to_string()))
+    );
+    assert_eq!(
+        parse_text_overflow("'…'"),
+        Some(TextOverflowValue::String("…".to_string()))
+    );
+}
+
+#[test]
+fn test_parse_text_overflow_invalid() {
+    assert_eq!(parse_text_overflow("fade"), None);
+    assert_eq!(parse_text_overflow("\"\""), None); // 空字符串不合法
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-indent 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_text_indent_px() {
+    assert_eq!(parse_text_indent("20px"), Some(LengthValue::Px(20.0)));
+}
+
+#[test]
+fn test_parse_text_indent_em() {
+    assert_eq!(parse_text_indent("2em"), Some(LengthValue::Em(2.0)));
+}
+
+#[test]
+fn test_parse_text_indent_percentage() {
+    assert_eq!(parse_text_indent("10%"), Some(LengthValue::Percentage(10.0)));
+}
+
+#[test]
+fn test_parse_text_indent_invalid() {
+    assert_eq!(parse_text_indent("auto"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// table-layout 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_table_layout_auto() {
+    assert_eq!(parse_table_layout("auto"), Some(TableLayoutValue::Auto));
+}
+
+#[test]
+fn test_parse_table_layout_fixed() {
+    assert_eq!(parse_table_layout("fixed"), Some(TableLayoutValue::Fixed));
+}
+
+#[test]
+fn test_parse_table_layout_invalid() {
+    assert_eq!(parse_table_layout("inherit"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// caption-side 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_caption_side_top() {
+    assert_eq!(parse_caption_side("top"), Some(CaptionSideValue::Top));
+}
+
+#[test]
+fn test_parse_caption_side_bottom() {
+    assert_eq!(parse_caption_side("bottom"), Some(CaptionSideValue::Bottom));
+}
+
+#[test]
+fn test_parse_caption_side_invalid() {
+    assert_eq!(parse_caption_side("left"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// border-collapse 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_border_collapse_separate() {
+    assert_eq!(parse_border_collapse("separate"), Some(BorderCollapseValue::Separate));
+}
+
+#[test]
+fn test_parse_border_collapse_collapse() {
+    assert_eq!(parse_border_collapse("collapse"), Some(BorderCollapseValue::Collapse));
+}
+
+#[test]
+fn test_parse_border_collapse_invalid() {
+    assert_eq!(parse_border_collapse("auto"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// resize 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_resize_none() {
+    assert_eq!(parse_resize("none"), Some(ResizeValue::None));
+}
+
+#[test]
+fn test_parse_resize_both() {
+    assert_eq!(parse_resize("both"), Some(ResizeValue::Both));
+}
+
+#[test]
+fn test_parse_resize_horizontal() {
+    assert_eq!(parse_resize("horizontal"), Some(ResizeValue::Horizontal));
+}
+
+#[test]
+fn test_parse_resize_vertical() {
+    assert_eq!(parse_resize("vertical"), Some(ResizeValue::Vertical));
+}
+
+#[test]
+fn test_parse_resize_block_inline() {
+    assert_eq!(parse_resize("block"), Some(ResizeValue::Block));
+    assert_eq!(parse_resize("inline"), Some(ResizeValue::Inline));
+}
+
+#[test]
+fn test_parse_resize_invalid() {
+    assert_eq!(parse_resize("auto"), None);
 }
