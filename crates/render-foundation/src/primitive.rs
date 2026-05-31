@@ -951,4 +951,31 @@ mod tests {
         assert_eq!(bb.right(), 10.0);
         assert_eq!(bb.bottom(), 10.0);
     }
+
+    /// 测试 bounding_box 在 GlyphPrimitive 含 bitmap_width/bitmap_height 时
+    /// 仍基于 font_size 计算包围盒（不使用 bitmap 尺寸）。
+    ///
+    /// 当 glyph 有预缓存位图时，bounding_box 应忽略 bitmap_width/bitmap_height，
+    /// 而使用 (x, y) 到 (x + font_size, y + font_size) 的矩形。
+    #[test]
+    fn test_bounding_box_glyph_with_bitmap_dims() {
+        let mut p = RenderPrimitives::new();
+        p.add_glyph(GlyphPrimitive {
+            x: 100.0,
+            y: 200.0,
+            font_size: 24.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: Some(12),
+            bitmap_height: Some(16),
+        });
+
+        let bb = p.bounding_box().expect("glyph 应产生包围盒");
+        // bounding_box 使用 font_size，不使用 bitmap 尺寸
+        assert_eq!(bb.left(), 100.0, "left 应为 glyph.x");
+        assert_eq!(bb.top(), 200.0, "top 应为 glyph.y");
+        assert_eq!(bb.right(), 124.0, "right 应为 x + font_size = 124");
+        assert_eq!(bb.bottom(), 224.0, "bottom 应为 y + font_size = 224");
+    }
 }

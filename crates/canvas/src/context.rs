@@ -7757,4 +7757,100 @@ mod tests {
         let below = ctx.get_image_data(30, 80, 1, 1);
         assert_eq!(below.data[0..4], [0, 0, 0, 0], "三角形底边下方应为透明");
     }
+
+    // ── 边界条件测试（第十二批）──
+
+    /// 测试 Transform2D 旋转 2π（360°）后应近似回到单位矩阵。
+    /// 由于浮点精度，各元素与单位矩阵之差应极小（< 0.001）。
+    #[test]
+    fn test_transform_rotate_full_circle() {
+        let rot = Transform2D::rotate(std::f32::consts::TAU); // 2π
+        assert!((rot.a - 1.0).abs() < 0.001, "旋转 2π 后 a 应近似 1.0");
+        assert!(rot.b.abs() < 0.001, "旋转 2π 后 b 应近似 0.0");
+        assert!(rot.c.abs() < 0.001, "旋转 2π 后 c 应近似 0.0");
+        assert!((rot.d - 1.0).abs() < 0.001, "旋转 2π 后 d 应近似 1.0");
+        assert!(rot.e.abs() < f32::EPSILON, "旋转 2π 后 e 应为 0.0");
+        assert!(rot.f.abs() < f32::EPSILON, "旋转 2π 后 f 应为 0.0");
+    }
+
+    /// 测试 ImageData clone 后修改克隆副本不影响原始数据。
+    /// 克隆一份包含非零像素的 ImageData，修改克隆副本的数据，验证原始数据不变。
+    #[test]
+    fn test_image_data_clone_independence() {
+        let original = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        let mut cloned = original.clone();
+        // 修改克隆副本的第一个像素为黑色
+        cloned.data[0] = 0;
+        cloned.data[1] = 0;
+        cloned.data[2] = 0;
+        cloned.data[3] = 0;
+        // 原始数据的第一个像素应保持不变（红色）
+        assert_eq!(original.data[0..4], [255, 0, 0, 255], "原始数据应不受克隆修改的影响");
+        assert_eq!(cloned.data[0..4], [0, 0, 0, 0], "克隆副本应反映修改");
+    }
+
+    /// 测试连续两次 begin_path 调用后当前路径被正确清空。
+    /// 第一次 begin_path 前添加路径命令，第一次 begin_path 清空，
+    /// 再添加新命令，第二次 begin_path 再次清空，fill 应不产生图元。
+    #[test]
+    fn test_double_begin_path_clears() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(50.0, 50.0);
+        // 第二次 begin_path 应清空当前路径
+        ctx.begin_path();
+        // 空路径 fill 应不产生填充图元
+        ctx.fill();
+        assert!(
+            ctx.primitives().fills.is_empty(),
+            "第二次 begin_path 后 fill 空路径不应产生填充图元"
+        );
+    }
+
+    /// 测试 save/restore 对多次连续 save 的后进先出（LIFO）行为。
+    /// 依次 save 红色、绿色、蓝色，restore 后应按蓝色→绿色→红色顺序恢复。
+    #[test]
+    fn test_save_restore_lifo_order() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 层级 0：红色
+        ctx.set_fill_color(Color::RED);
+        ctx.save();
+        // 层级 1：绿色
+        ctx.set_fill_color(Color::GREEN);
+        ctx.save();
+        // 层级 2：蓝色
+        ctx.set_fill_color(Color::BLUE);
+        assert_eq!(ctx.fill_color(), Color::BLUE, "当前应为蓝色");
+
+        // 第一次 restore：恢复到绿色
+        ctx.restore();
+        assert_eq!(ctx.fill_color(), Color::GREEN, "LIFO 第一次 restore 应恢复到绿色");
+
+        // 第二次 restore：恢复到红色
+        ctx.restore();
+        assert_eq!(ctx.fill_color(), Color::RED, "LIFO 第二次 restore 应恢复到红色");
+    }
+
+    /// 测试设置负的 line_width 不 panic，且后续操作正常。
+    /// 虽然负线宽在 Canvas 规范中被忽略，但不应导致 panic。
+    #[test]
+    fn test_negative_line_width_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_width(-5.0);
+        // 负线宽设置后 getter 应返回设置的值
+        assert!(
+            (ctx.line_width() - (-5.0)).abs() < f32::EPSILON,
+            "line_width getter 应返回设置值 -5.0"
+        );
+        // 描边矩形不应 panic
+        ctx.set_stroke_color(Color::RED);
+        ctx.stroke_rect(10.0, 10.0, 30.0, 30.0);
+        // 验证描边图元已生成（即使线宽为负）
+        assert!(!ctx.primitives().fills.is_empty(), "负线宽描边矩形仍应生成图元");
+    }
 }

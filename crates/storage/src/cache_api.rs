@@ -695,4 +695,31 @@ mod tests {
             assert!(keys.contains(url), "keys() 应包含 {}", url);
         }
     }
+
+    /// 测试 Cache::delete 只删除匹配方法和 URL 的条目，同 URL 不同方法不受影响。
+    #[test]
+    fn test_cache_delete_preserves_different_method() {
+        let mut cache = Cache::new("v1");
+        let url = "https://example.com/api";
+        let get_req = CacheRequest::new(url);
+        let post_req = CacheRequest::with_method(url, "POST");
+        let put_req = CacheRequest::with_method(url, "PUT");
+
+        cache.put(get_req.clone(), CacheResponse::ok(b"get".to_vec())).unwrap();
+        cache
+            .put(post_req.clone(), CacheResponse::ok(b"post".to_vec()))
+            .unwrap();
+        cache.put(put_req.clone(), CacheResponse::ok(b"put".to_vec())).unwrap();
+        assert_eq!(cache.len(), 3);
+
+        // 删除 POST 条目
+        assert!(cache.delete(&post_req));
+        assert_eq!(cache.len(), 2);
+
+        // GET 和 PUT 仍可匹配
+        assert_eq!(cache.match_request(&get_req).unwrap().body, b"get".to_vec());
+        assert_eq!(cache.match_request(&put_req).unwrap().body, b"put".to_vec());
+        // POST 已无法匹配
+        assert!(cache.match_request(&post_req).is_none());
+    }
 }

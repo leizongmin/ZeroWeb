@@ -755,4 +755,72 @@ mod tests {
         let r2 = db.get("auto_store", &k2).unwrap();
         assert_eq!(r2.value["name"], "second");
     }
+
+    /// 测试 IndexedDB delete_object_store 后可以重新创建同名 store 并正常操作。
+    #[test]
+    fn test_idb_recreate_store_after_delete() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("data", None, false).unwrap();
+        db.add("data", serde_json::json!("old"), Some(IdbKey::String("k1".into())))
+            .unwrap();
+        assert_eq!(db.count("data").unwrap(), 1);
+
+        // 删除 store
+        db.delete_object_store("data").unwrap();
+        assert!(!db.has_store("data"));
+
+        // 重新创建同名 store
+        db.create_object_store("data", None, true).unwrap();
+        assert!(db.has_store("data"));
+        assert_eq!(db.count("data").unwrap(), 0, "重新创建的 store 应为空");
+
+        // 在新 store 上正常操作
+        let key = db.add("data", serde_json::json!("new"), None).unwrap();
+        assert!(matches!(key, IdbKey::Number(1.0)), "自增键应从 1 重新开始");
+        assert_eq!(db.count("data").unwrap(), 1);
+        let record = db.get("data", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("new"));
+    }
+
+    /// 测试 CacheStorage 在三个缓存中存储相同 URL 的不同响应，match_request 返回其中一个。
+    #[test]
+    fn test_cache_storage_match_across_multiple_caches() {
+        let mut cs = CacheStorage::new();
+        let url = "https://example.com/app.js";
+        let req = CacheRequest::new(url);
+
+        // 三个缓存各存一份响应
+        cs.open("v1")
+            .put(req.clone(), CacheResponse::new(200, b"v1".to_vec()))
+            .unwrap();
+        cs.open("v2")
+            .put(req.clone(), CacheResponse::new(200, b"v2".to_vec()))
+            .unwrap();
+        cs.open("v3")
+            .put(req.clone(), CacheResponse::new(200, b"v3".to_vec()))
+            .unwrap();
+
+        // match_request 应找到其中一个
+        let matched = cs.match_request(&req).unwrap();
+        assert_eq!(matched.status, 200);
+        let body = matched.body.clone();
+        assert!(
+            body == b"v1".to_vec() || body == b"v2".to_vec() || body == b"v3".to_vec(),
+            "应匹配三个缓存中的某个响应"
+        );
+
+        // 删除一个后仍能匹配
+        cs.delete("v2");
+        let matched2 = cs.match_request(&req).unwrap();
+        let body2 = matched2.body.clone();
+        assert!(
+            body2 == b"v1".to_vec() || body2 == b"v3".to_vec(),
+            "删除 v2 后应从剩余缓存中匹配"
+        );
+
+        // 删除全部后无法匹配
+        cs.delete("v1");
+        cs.delete("v3");
+        assert!(cs.match_request(&req).is_none());
+    }
 }

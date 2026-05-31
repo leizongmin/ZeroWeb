@@ -535,6 +535,56 @@ pub enum LineClampComputedValue {
     Count(u32),
 }
 
+/// CSS background-image 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundImageComputedValue {
+    /// none（默认值）— 无背景图片。
+    None,
+    /// url(<string>) — 指定背景图片 URL。
+    Url(String),
+}
+
+/// CSS background-position 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundPositionComputedValue {
+    /// center。
+    Center,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// top。
+    Top,
+    /// bottom。
+    Bottom,
+    /// 长度值（如 10px）。
+    Length(f32),
+    /// 百分比值（如 50%）。
+    Percent(f32),
+    /// 两个值组合（水平 垂直）。
+    TwoValue(
+        Box<BackgroundPositionComputedValue>,
+        Box<BackgroundPositionComputedValue>,
+    ),
+}
+
+/// CSS background-repeat 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundRepeatComputedValue {
+    /// repeat — 水平和垂直方向都重复。
+    Repeat,
+    /// repeat-x — 仅水平方向重复。
+    RepeatX,
+    /// repeat-y — 仅垂直方向重复。
+    RepeatY,
+    /// no-repeat — 不重复。
+    NoRepeat,
+    /// space — 均匀分布。
+    Space,
+    /// round — 缩放后重复。
+    Round,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1091,6 +1141,12 @@ pub enum PropertyValue {
     Hyphens(HyphensComputedValue),
     /// line-clamp 值。
     LineClamp(LineClampComputedValue),
+    /// background-image 值。
+    BackgroundImage(BackgroundImageComputedValue),
+    /// background-position 值。
+    BackgroundPosition(BackgroundPositionComputedValue),
+    /// background-repeat 值。
+    BackgroundRepeat(BackgroundRepeatComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1587,6 +1643,14 @@ pub struct ComputedStyle {
     pub hyphens: HyphensComputedValue,
     /// line-clamp 属性。
     pub line_clamp: LineClampComputedValue,
+
+    // ── Background Image / Position / Repeat ──
+    /// background-image 属性。
+    pub background_image: BackgroundImageComputedValue,
+    /// background-position 属性。
+    pub background_position: BackgroundPositionComputedValue,
+    /// background-repeat 属性。
+    pub background_repeat: BackgroundRepeatComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1834,6 +1898,11 @@ impl Default for ComputedStyle {
             text_wrap: TextWrapComputedValue::Wrap,
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
+
+            // Background Image / Position / Repeat
+            background_image: BackgroundImageComputedValue::None,
+            background_position: BackgroundPositionComputedValue::Percent(0.0),
+            background_repeat: BackgroundRepeatComputedValue::Repeat,
         }
     }
 }
@@ -2068,6 +2137,11 @@ impl PropertyRegistry {
             "hyphens" => Some(Hyphens(HyphensComputedValue::None)),
             "line-clamp" => Some(LineClamp(LineClampComputedValue::None)),
 
+            // Background Image / Position / Repeat
+            "background-image" => Some(BackgroundImage(BackgroundImageComputedValue::None)),
+            "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Percent(0.0))),
+            "background-repeat" => Some(BackgroundRepeat(BackgroundRepeatComputedValue::Repeat)),
+
             _ => None,
         }
     }
@@ -2276,6 +2350,9 @@ impl PropertyRegistry {
             "text-wrap",
             "hyphens",
             "line-clamp",
+            "background-image",
+            "background-position",
+            "background-repeat",
         ]
     }
 }
@@ -4253,6 +4330,97 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "background-image" => {
+            if let Some(v) = values::parse_background_image(value) {
+                style.background_image = match v {
+                    zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
+                    zero_css_parser::values::BackgroundImageValue::Url(url) => BackgroundImageComputedValue::Url(url),
+                };
+                return true;
+            }
+        }
+        "background-position" => {
+            if let Some(v) = values::parse_background_position(value) {
+                style.background_position = match v {
+                    zero_css_parser::values::BackgroundPositionValue::Center => BackgroundPositionComputedValue::Center,
+                    zero_css_parser::values::BackgroundPositionValue::Left => BackgroundPositionComputedValue::Left,
+                    zero_css_parser::values::BackgroundPositionValue::Right => BackgroundPositionComputedValue::Right,
+                    zero_css_parser::values::BackgroundPositionValue::Top => BackgroundPositionComputedValue::Top,
+                    zero_css_parser::values::BackgroundPositionValue::Bottom => BackgroundPositionComputedValue::Bottom,
+                    zero_css_parser::values::BackgroundPositionValue::Length(px) => {
+                        BackgroundPositionComputedValue::Length(px)
+                    }
+                    zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
+                        BackgroundPositionComputedValue::Percent(pct)
+                    }
+                    zero_css_parser::values::BackgroundPositionValue::TwoValue(h, v) => {
+                        let hc = match *h {
+                            zero_css_parser::values::BackgroundPositionValue::Center => {
+                                BackgroundPositionComputedValue::Center
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Left => {
+                                BackgroundPositionComputedValue::Left
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Right => {
+                                BackgroundPositionComputedValue::Right
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Top => {
+                                BackgroundPositionComputedValue::Top
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Bottom => {
+                                BackgroundPositionComputedValue::Bottom
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Length(px) => {
+                                BackgroundPositionComputedValue::Length(px)
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
+                                BackgroundPositionComputedValue::Percent(pct)
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::TwoValue(_, _) => return false,
+                        };
+                        let vc = match *v {
+                            zero_css_parser::values::BackgroundPositionValue::Center => {
+                                BackgroundPositionComputedValue::Center
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Left => {
+                                BackgroundPositionComputedValue::Left
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Right => {
+                                BackgroundPositionComputedValue::Right
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Top => {
+                                BackgroundPositionComputedValue::Top
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Bottom => {
+                                BackgroundPositionComputedValue::Bottom
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Length(px) => {
+                                BackgroundPositionComputedValue::Length(px)
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
+                                BackgroundPositionComputedValue::Percent(pct)
+                            }
+                            zero_css_parser::values::BackgroundPositionValue::TwoValue(_, _) => return false,
+                        };
+                        BackgroundPositionComputedValue::TwoValue(Box::new(hc), Box::new(vc))
+                    }
+                };
+                return true;
+            }
+        }
+        "background-repeat" => {
+            if let Some(v) = values::parse_background_repeat(value) {
+                style.background_repeat = match v {
+                    zero_css_parser::values::BackgroundRepeatValue::Repeat => BackgroundRepeatComputedValue::Repeat,
+                    zero_css_parser::values::BackgroundRepeatValue::RepeatX => BackgroundRepeatComputedValue::RepeatX,
+                    zero_css_parser::values::BackgroundRepeatValue::RepeatY => BackgroundRepeatComputedValue::RepeatY,
+                    zero_css_parser::values::BackgroundRepeatValue::NoRepeat => BackgroundRepeatComputedValue::NoRepeat,
+                    zero_css_parser::values::BackgroundRepeatValue::Space => BackgroundRepeatComputedValue::Space,
+                    zero_css_parser::values::BackgroundRepeatValue::Round => BackgroundRepeatComputedValue::Round,
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -5095,6 +5263,18 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "line-clamp" => {
             style.line_clamp = default_style.line_clamp;
+            true
+        }
+        "background-image" => {
+            style.background_image = default_style.background_image;
+            true
+        }
+        "background-position" => {
+            style.background_position = default_style.background_position;
+            true
+        }
+        "background-repeat" => {
+            style.background_repeat = default_style.background_repeat;
             true
         }
         _ => false,
@@ -9681,5 +9861,202 @@ mod tests {
         style.line_clamp = LineClampComputedValue::Count(5);
         assert!(apply_initial_value(&mut style, "line-clamp"));
         assert_eq!(style.line_clamp, LineClampComputedValue::None);
+    }
+
+    // ── background-image 属性测试 ──
+
+    #[test]
+    fn test_apply_property_background_image_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-image", "none"));
+        assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_background_image_url() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-image", "url(bg.png)"));
+        assert_eq!(
+            style.background_image,
+            BackgroundImageComputedValue::Url("bg.png".to_string())
+        );
+    }
+
+    #[test]
+    fn test_apply_property_background_image_url_quoted() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-image", "url(\"bg.png\")"));
+        assert_eq!(
+            style.background_image,
+            BackgroundImageComputedValue::Url("bg.png".to_string())
+        );
+    }
+
+    #[test]
+    fn test_apply_property_background_image_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-image", "invalid"));
+    }
+
+    #[test]
+    fn test_background_image_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-image"));
+    }
+
+    #[test]
+    fn test_background_image_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-image"));
+    }
+
+    #[test]
+    fn test_background_image_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-image").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+        assert!(apply_initial_value(&mut style, "background-image"));
+        assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    }
+
+    // ── background-position 属性测试 ──
+
+    #[test]
+    fn test_apply_property_background_position_center() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-position", "center"));
+        assert_eq!(style.background_position, BackgroundPositionComputedValue::Center);
+    }
+
+    #[test]
+    fn test_apply_property_background_position_left() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-position", "left"));
+        assert_eq!(style.background_position, BackgroundPositionComputedValue::Left);
+    }
+
+    #[test]
+    fn test_apply_property_background_position_percent() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-position", "50%"));
+        assert_eq!(
+            style.background_position,
+            BackgroundPositionComputedValue::Percent(50.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_background_position_length() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-position", "10px"));
+        assert_eq!(style.background_position, BackgroundPositionComputedValue::Length(10.0));
+    }
+
+    #[test]
+    fn test_apply_property_background_position_two_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-position", "left top"));
+        match style.background_position {
+            BackgroundPositionComputedValue::TwoValue(ref h, ref v) => {
+                assert_eq!(**h, BackgroundPositionComputedValue::Left);
+                assert_eq!(**v, BackgroundPositionComputedValue::Top);
+            }
+            ref other => panic!("Expected TwoValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_apply_property_background_position_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-position", "invalid"));
+    }
+
+    #[test]
+    fn test_background_position_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-position"));
+    }
+
+    #[test]
+    fn test_background_position_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-position"));
+    }
+
+    #[test]
+    fn test_background_position_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-position").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_position = BackgroundPositionComputedValue::Center;
+        assert!(apply_initial_value(&mut style, "background-position"));
+        assert_eq!(style.background_position, BackgroundPositionComputedValue::Percent(0.0));
+    }
+
+    // ── background-repeat 属性测试 ──
+
+    #[test]
+    fn test_apply_property_background_repeat_repeat() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "repeat"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Repeat);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_no_repeat() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "no-repeat"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::NoRepeat);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_repeat_x() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "repeat-x"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::RepeatX);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_repeat_y() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "repeat-y"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::RepeatY);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_space() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "space"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Space);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_round() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-repeat", "round"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Round);
+    }
+
+    #[test]
+    fn test_apply_property_background_repeat_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-repeat", "invalid"));
+    }
+
+    #[test]
+    fn test_background_repeat_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-repeat"));
+    }
+
+    #[test]
+    fn test_background_repeat_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-repeat"));
+    }
+
+    #[test]
+    fn test_background_repeat_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-repeat").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+        assert!(apply_initial_value(&mut style, "background-repeat"));
+        assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Repeat);
     }
 }
