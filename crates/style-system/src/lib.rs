@@ -3042,4 +3042,248 @@ mod tests {
         let div_style2 = styles2.get(&div).expect("div 应该有样式");
         assert_eq!(div_style2.scroll_snap_stop, property::ScrollSnapStop::Always);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边界条件端到端测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试级联特异性：ID 选择器与 class 选择器冲突时，ID 选择器胜出。
+    #[test]
+    fn test_cascade_specificity_id_vs_class() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "id", "myid");
+        doc.set_attribute(div, "class", "myclass");
+        doc.append_child(body, div).unwrap();
+
+        let mut sys = StyleSystem::new();
+
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("myid".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+        let class_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Class("myclass".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        // #myid { color: red } vs .myclass { color: blue }
+        // ID 选择器特异性 (1,0,0) > class 选择器 (0,1,0)，red 胜出
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Style(StyleRule {
+                    selectors: vec![class_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![id_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
+
+    /// 测试 !important 声明即使特异性更低也能覆盖 normal 声明。
+    #[test]
+    fn test_cascade_important_override() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let tag_sel = make_tag_selector("div");
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("main".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        // div { color: red !important } vs #main { color: blue }
+        // 标签选择器 + !important 应胜过 ID 选择器 + normal
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Style(StyleRule {
+                    selectors: vec![id_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![tag_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: true,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // !important 胜过更高特异性的 normal 声明
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
+
+    /// 测试 color 属性继承：父元素设置 color 后，子元素应继承该值。
+    #[test]
+    fn test_inherit_color_from_parent() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let mut sys = StyleSystem::new();
+
+        // div { color: green } — span 未设置 color，应继承
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "green".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let child_style = styles.get(&child).expect("span should have style");
+        // span 应从 div 继承 green
+        assert_eq!(child_style.color, ColorValue::Rgba(0, 128, 0, 255));
+    }
+
+    /// 测试无样式元素的计算 display 默认值。
+    #[test]
+    fn test_computed_default_display() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // 不设置任何 CSS 规则
+        let stylesheets = vec![];
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // div 的默认 display 为 Inline（样式系统不区分 HTML 元素语义默认值）
+        assert_eq!(div_style.display, DisplayValue::Inline);
+    }
+
+    /// 测试简写 margin: 10px 展开后四个边均为 10px。
+    #[test]
+    fn test_shorthand_margin_expansion() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "margin".to_string(),
+                    value: "10px".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.margin_top, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_right, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_bottom, LengthValue::Px(10.0));
+        assert_eq!(div_style.margin_left, LengthValue::Px(10.0));
+    }
+
+    /// 测试 var() 回退值：var(--unknown, blue) 在 --unknown 未定义时使用 blue。
+    #[test]
+    fn test_custom_property_fallback() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // color: var(--unknown, blue) — --unknown 不存在，应使用 blue
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "var(--unknown, blue)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    }
+
+    /// 测试无视口时 @media 规则不应用。
+    #[test]
+    fn test_media_query_no_viewport() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        // 不设置视口
+
+        // @media (min-width: 500px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "(min-width: 500px)".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })]),
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 无视口信息，@media 不应用，color 保持默认黑色
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
 }

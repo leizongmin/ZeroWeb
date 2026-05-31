@@ -2716,6 +2716,103 @@ mod tests {
         }
     }
 
+    /// 测试 IPC 消息空字符串载荷的序列化/反序列化往返。
+    #[test]
+    fn test_ipc_message_empty_payload() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::TitleChanged(String::new()),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(1, out.id);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!("", t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+    }
+
+    /// 测试 IPC 消息 Unicode 载荷（含中文和 emoji）的序列化/反序列化往返。
+    #[test]
+    fn test_ipc_message_unicode_payload() {
+        let payload = "你好世界🌍";
+        let msg = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::TitleChanged(payload.into()),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(2, out.id);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!(payload, t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+    }
+
+    /// 测试连续序列化 3 条消息后逐个反序列化，验证消息顺序保持不变。
+    #[test]
+    fn test_ipc_message_order_preserved() {
+        let msgs = vec![
+            IpcMessage {
+                id: 10,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://a.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 20,
+                kind: IpcMessageKind::TitleChanged("second".into()),
+            },
+            IpcMessage {
+                id: 30,
+                kind: IpcMessageKind::Heartbeat,
+            },
+        ];
+        let serialized: Vec<Vec<u8>> = msgs.iter().map(|m| serialize(m).expect("serialize")).collect();
+        let deserialized: Vec<IpcMessage> = serialized
+            .iter()
+            .map(|b| deserialize(b).expect("deserialize"))
+            .collect();
+        assert_eq!(3, deserialized.len());
+        assert_eq!(10, deserialized[0].id);
+        assert_eq!(20, deserialized[1].id);
+        assert_eq!(30, deserialized[2].id);
+    }
+
+    /// 测试同一消息序列化两次产生完全相同的二进制输出。
+    #[test]
+    fn test_ipc_deterministic_encoding() {
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some("https://ref.com".into()),
+            }),
+        };
+        let bytes1 = serialize(&msg).expect("first serialize");
+        let bytes2 = serialize(&msg).expect("second serialize");
+        assert_eq!(bytes1, bytes2, "same message must produce identical byte output");
+    }
+
+    /// 测试 10KB 载荷消息的序列化/反序列化往返。
+    #[test]
+    fn test_ipc_large_payload() {
+        let payload: String = "X".repeat(10_240); // 10KB
+        let msg = IpcMessage {
+            id: 99,
+            kind: IpcMessageKind::TitleChanged(payload.clone()),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(99, out.id);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!(10_240, t.len());
+            assert_eq!(payload, t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+    }
+
     /// 测试同一消息多次序列化产生完全相同的二进制输出（bincode 确定性）。
     /// 对于 IPC 协议的可靠性和幂等性至关重要。
     #[test]
