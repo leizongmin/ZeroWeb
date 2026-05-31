@@ -198,6 +198,14 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "grid-row" => expand_grid_axis(value, "grid-row-start", "grid-row-end", important, specificity),
         "grid-area" => expand_grid_area(value, important, specificity),
 
+        // ── Grid 对齐简写 ──
+        "place-items" => expand_place(value, "align-items", "justify-items", important, specificity),
+        "place-content" => expand_place(value, "align-content", "justify-content", important, specificity),
+        "place-self" => expand_place(value, "align-self", "justify-self", important, specificity),
+
+        // ── Grid template 简写 ──
+        "grid-template" => expand_grid_template(value, important, specificity),
+
         // ── outline 简写 ──
         "outline" => expand_outline(value, important, specificity),
 
@@ -757,6 +765,125 @@ fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) 
         ],
         _ => vec![],
     }
+}
+
+/// 展开 place-items / place-content / place-self 简写。
+///
+/// `place-items: center` → align-items: center; justify-items: center
+/// `place-items: start end` → align-items: start; justify-items: end
+///
+/// 单值时两个子属性获得相同值，双值时分别对应 align 和 justify。
+fn expand_place(
+    value: &str,
+    align_prop: &str,
+    justify_prop: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => vec![mk(align_prop, parts[0]), mk(justify_prop, parts[0])],
+        2 => vec![mk(align_prop, parts[0]), mk(justify_prop, parts[1])],
+        _ => vec![],
+    }
+}
+
+/// 展开 grid-template 简写。
+///
+/// 简单形式：`grid-template: <rows> / <columns>`
+/// - 按 `/` 分割，第一部分为 grid-template-rows，第二部分为 grid-template-columns
+/// - 若 rows 部分含引号字符串，提取为 grid-template-areas
+///
+/// 示例：
+/// - `grid-template: 100px 200px / 1fr 1fr 1fr`
+///   → grid-template-rows: 100px 200px; grid-template-columns: 1fr 1fr 1fr
+/// - `grid-template: "header header" 50px "main main" 1fr / 1fr 1fr`
+///   → grid-template-areas + grid-template-rows + grid-template-columns
+fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    let value = value.trim();
+
+    // 按 `/` 分割为 rows 部分和 columns 部分
+    if let Some(slash_pos) = value.find('/') {
+        let rows_part = value[..slash_pos].trim();
+        let cols_part = value[slash_pos + 1..].trim();
+
+        // 从 rows 部分提取引号字符串作为 grid-template-areas
+        let (areas_str, rows_only) = extract_quoted_areas(rows_part);
+
+        let mut result = Vec::with_capacity(3);
+        if !areas_str.is_empty() {
+            result.push(mk("grid-template-areas", &areas_str));
+        }
+        if !rows_only.is_empty() {
+            result.push(mk("grid-template-rows", rows_only.trim()));
+        }
+        result.push(mk("grid-template-columns", cols_part));
+        result
+    } else {
+        // 无 `/`：整个值作为 rows
+        let (areas_str, rows_only) = extract_quoted_areas(value);
+        let mut result = Vec::with_capacity(2);
+        if !areas_str.is_empty() {
+            result.push(mk("grid-template-areas", &areas_str));
+        }
+        if !rows_only.is_empty() {
+            result.push(mk("grid-template-rows", rows_only.trim()));
+        }
+        result
+    }
+}
+
+/// 从 grid-template 的 rows 部分提取引号区域字符串和纯行尺寸。
+///
+/// `"header header" 50px "main main" 1fr` →
+///   areas: `"header header" "main main"`, rows_only: `50px 1fr`
+fn extract_quoted_areas(rows_part: &str) -> (String, String) {
+    let mut areas = String::new();
+    let mut rows_tokens: Vec<String> = Vec::new();
+    let mut in_quotes = false;
+    let mut current_area = String::new();
+    let mut current_row_token = String::new();
+
+    let flush_row_token = |token: &mut String, tokens: &mut Vec<String>| {
+        let trimmed = token.trim().to_string();
+        if !trimmed.is_empty() {
+            tokens.push(trimmed);
+        }
+        token.clear();
+    };
+
+    for ch in rows_part.chars() {
+        if ch == '"' {
+            if in_quotes {
+                // 闭引号
+                current_area.push(ch);
+                if !areas.is_empty() {
+                    areas.push(' ');
+                }
+                areas.push_str(&current_area);
+                current_area.clear();
+                in_quotes = false;
+            } else {
+                // 开引号 — 先 flush 任何正在累积的 row token
+                flush_row_token(&mut current_row_token, &mut rows_tokens);
+                current_area.clear();
+                current_area.push(ch);
+                in_quotes = true;
+            }
+        } else if in_quotes {
+            current_area.push(ch);
+        } else {
+            // 不在引号内，属于行尺寸
+            current_row_token.push(ch);
+        }
+    }
+
+    // flush 最后一个 row token
+    flush_row_token(&mut current_row_token, &mut rows_tokens);
+
+    (areas, rows_tokens.join(" "))
 }
 
 /// 展开 outline 简写。
@@ -1732,5 +1859,129 @@ mod tests {
         assert_eq!(result[0].1, "visible");
         assert_eq!(result[1].0, "overflow-y");
         assert_eq!(result[1].1, "hidden");
+    }
+
+    // ── place-items / place-content / place-self 简写测试 ──
+
+    #[test]
+    /// place-items 单值：两个子属性相同
+    fn test_place_items_single_value() {
+        let result = expand_one("place-items", "center", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-items");
+        assert_eq!(result[0].1, "center");
+        assert_eq!(result[1].0, "justify-items");
+        assert_eq!(result[1].1, "center");
+    }
+
+    #[test]
+    /// place-items 双值：align 和 justify 分别对应
+    fn test_place_items_two_values() {
+        let result = expand_one("place-items", "start end", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-items");
+        assert_eq!(result[0].1, "start");
+        assert_eq!(result[1].0, "justify-items");
+        assert_eq!(result[1].1, "end");
+    }
+
+    #[test]
+    /// place-content 单值：space-between
+    fn test_place_content_single_value() {
+        let result = expand_one("place-content", "space-between", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-content");
+        assert_eq!(result[0].1, "space-between");
+        assert_eq!(result[1].0, "justify-content");
+        assert_eq!(result[1].1, "space-between");
+    }
+
+    #[test]
+    /// place-content 双值：space-around 和 space-evenly
+    fn test_place_content_two_values() {
+        let result = expand_one("place-content", "space-around space-evenly", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-content");
+        assert_eq!(result[0].1, "space-around");
+        assert_eq!(result[1].0, "justify-content");
+        assert_eq!(result[1].1, "space-evenly");
+    }
+
+    #[test]
+    /// place-self 单值：stretch
+    fn test_place_self_single_value() {
+        let result = expand_one("place-self", "stretch", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-self");
+        assert_eq!(result[0].1, "stretch");
+        assert_eq!(result[1].0, "justify-self");
+        assert_eq!(result[1].1, "stretch");
+    }
+
+    #[test]
+    /// place-self 双值：auto 和 center
+    fn test_place_self_two_values() {
+        let result = expand_one("place-self", "auto center", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "align-self");
+        assert_eq!(result[0].1, "auto");
+        assert_eq!(result[1].0, "justify-self");
+        assert_eq!(result[1].1, "center");
+    }
+
+    // ── grid-template 简写测试 ──
+
+    #[test]
+    /// grid-template 简单形式：rows / columns
+    fn test_grid_template_simple() {
+        let result = expand_one("grid-template", "100px 200px / 1fr 1fr 1fr", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "grid-template-rows");
+        assert_eq!(result[0].1, "100px 200px");
+        assert_eq!(result[1].0, "grid-template-columns");
+        assert_eq!(result[1].1, "1fr 1fr 1fr");
+    }
+
+    #[test]
+    /// grid-template 含引号区域字符串
+    fn test_grid_template_with_areas() {
+        let result = expand_one(
+            "grid-template",
+            "\"header header\" 50px \"main main\" 1fr / 1fr 1fr",
+            false,
+            (0, 0, 1),
+        );
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "grid-template-areas");
+        assert_eq!(result[0].1, "\"header header\" \"main main\"");
+        assert_eq!(result[1].0, "grid-template-rows");
+        assert_eq!(result[1].1, "50px 1fr");
+        assert_eq!(result[2].0, "grid-template-columns");
+        assert_eq!(result[2].1, "1fr 1fr");
+    }
+
+    #[test]
+    /// grid-template 无斜杠：只有 rows
+    fn test_grid_template_no_slash() {
+        let result = expand_one("grid-template", "100px 200px", false, (0, 0, 1));
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "grid-template-rows");
+        assert_eq!(result[0].1, "100px 200px");
+    }
+
+    #[test]
+    /// place-items 保留 important 标记
+    fn test_place_items_preserves_important() {
+        let result = expand_one("place-items", "center", true, (0, 1, 0));
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|(_, _, imp, _)| *imp));
+        assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
+    }
+
+    #[test]
+    /// place-* 超过两个值返回空
+    fn test_place_too_many_values() {
+        let result = expand_one("place-items", "start end center", false, (0, 0, 1));
+        assert!(result.is_empty());
     }
 }
