@@ -238,6 +238,54 @@ pub enum ResizeValue {
     Inline,
 }
 
+/// CSS page-break 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PageBreakValue {
+    /// auto（默认值）。
+    Auto,
+    /// always。
+    Always,
+    /// avoid。
+    Avoid,
+    /// left。
+    Left,
+    /// right。
+    Right,
+}
+
+/// CSS box-decoration-break 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoxDecorationBreakValue {
+    /// slice（默认值）。
+    Slice,
+    /// clone。
+    Clone,
+}
+
+/// CSS image-rendering 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageRenderingValue {
+    /// auto（默认值）。
+    Auto,
+    /// smooth。
+    Smooth,
+    /// high-quality。
+    HighQuality,
+    /// pixelated。
+    Pixelated,
+    /// crisp-edges。
+    CrispEdges,
+}
+
+/// CSS isolation 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum IsolationValue {
+    /// auto（默认值）。
+    Auto,
+    /// isolate。
+    Isolate,
+}
+
 /// CSS flex-basis 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlexBasisValue {
@@ -553,6 +601,14 @@ pub enum PropertyValue {
     Content(ContentComputedValue),
     /// quotes 值。
     Quotes(QuotesComputedValue),
+    /// page-break 值。
+    PageBreak(PageBreakValue),
+    /// box-decoration-break 值。
+    BoxDecorationBreak(BoxDecorationBreakValue),
+    /// image-rendering 值。
+    ImageRendering(ImageRenderingValue),
+    /// isolation 值。
+    Isolation(IsolationValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -889,6 +945,22 @@ pub struct ComputedStyle {
     pub content: ContentComputedValue,
     /// quotes 属性。
     pub quotes: QuotesComputedValue,
+
+    // ── Page Break ──
+    /// page-break-before 属性。
+    pub page_break_before: PageBreakValue,
+    /// page-break-after 属性。
+    pub page_break_after: PageBreakValue,
+    /// page-break-inside 属性。
+    pub page_break_inside: PageBreakValue,
+
+    // ── 其他 ──
+    /// box-decoration-break 属性。
+    pub box_decoration_break: BoxDecorationBreakValue,
+    /// image-rendering 属性。
+    pub image_rendering: ImageRenderingValue,
+    /// isolation 属性。
+    pub isolation: IsolationValue,
 }
 
 impl Default for ComputedStyle {
@@ -1072,6 +1144,16 @@ impl Default for ComputedStyle {
             counter_increment: vec![],
             content: ContentComputedValue::Normal,
             quotes: QuotesComputedValue::Auto,
+
+            // Page Break
+            page_break_before: PageBreakValue::Auto,
+            page_break_after: PageBreakValue::Auto,
+            page_break_inside: PageBreakValue::Auto,
+
+            // 其他
+            box_decoration_break: BoxDecorationBreakValue::Slice,
+            image_rendering: ImageRenderingValue::Auto,
+            isolation: IsolationValue::Auto,
         }
     }
 }
@@ -1240,6 +1322,14 @@ impl PropertyRegistry {
             "content" => Some(Content(ContentComputedValue::Normal)),
             "quotes" => Some(Quotes(QuotesComputedValue::Auto)),
 
+            // Page Break
+            "page-break-before" | "page-break-after" | "page-break-inside" => Some(PageBreak(PageBreakValue::Auto)),
+
+            // 其他
+            "box-decoration-break" => Some(BoxDecorationBreak(BoxDecorationBreakValue::Slice)),
+            "image-rendering" => Some(ImageRendering(ImageRenderingValue::Auto)),
+            "isolation" => Some(Isolation(IsolationValue::Auto)),
+
             _ => None,
         }
     }
@@ -1399,6 +1489,12 @@ impl PropertyRegistry {
             "counter-increment",
             "content",
             "quotes",
+            "page-break-before",
+            "page-break-after",
+            "page-break-inside",
+            "box-decoration-break",
+            "image-rendering",
+            "isolation",
         ]
     }
 }
@@ -2829,6 +2925,74 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Page Break 属性 ──
+        "page-break-before" => {
+            if let Some(v) = values::parse_page_break(value) {
+                style.page_break_before = match v {
+                    zero_css_parser::values::PageBreakValue::Auto => PageBreakValue::Auto,
+                    zero_css_parser::values::PageBreakValue::Always => PageBreakValue::Always,
+                    zero_css_parser::values::PageBreakValue::Avoid => PageBreakValue::Avoid,
+                    zero_css_parser::values::PageBreakValue::Left => PageBreakValue::Left,
+                    zero_css_parser::values::PageBreakValue::Right => PageBreakValue::Right,
+                };
+                return true;
+            }
+        }
+        "page-break-after" => {
+            if let Some(v) = values::parse_page_break(value) {
+                style.page_break_after = match v {
+                    zero_css_parser::values::PageBreakValue::Auto => PageBreakValue::Auto,
+                    zero_css_parser::values::PageBreakValue::Always => PageBreakValue::Always,
+                    zero_css_parser::values::PageBreakValue::Avoid => PageBreakValue::Avoid,
+                    zero_css_parser::values::PageBreakValue::Left => PageBreakValue::Left,
+                    zero_css_parser::values::PageBreakValue::Right => PageBreakValue::Right,
+                };
+                return true;
+            }
+        }
+        "page-break-inside" => {
+            if let Some(v) = values::parse_page_break(value) {
+                style.page_break_inside = match v {
+                    zero_css_parser::values::PageBreakValue::Auto => PageBreakValue::Auto,
+                    zero_css_parser::values::PageBreakValue::Avoid => PageBreakValue::Avoid,
+                    _ => return false,
+                };
+                return true;
+            }
+        }
+        // ── BoxDecorationBreak 属性 ──
+        "box-decoration-break" => {
+            if let Some(v) = values::parse_box_decoration_break(value) {
+                style.box_decoration_break = match v {
+                    zero_css_parser::values::BoxDecorationBreakValue::Slice => BoxDecorationBreakValue::Slice,
+                    zero_css_parser::values::BoxDecorationBreakValue::Clone => BoxDecorationBreakValue::Clone,
+                };
+                return true;
+            }
+        }
+        // ── ImageRendering 属性 ──
+        "image-rendering" => {
+            if let Some(v) = values::parse_image_rendering(value) {
+                style.image_rendering = match v {
+                    zero_css_parser::values::ImageRenderingValue::Auto => ImageRenderingValue::Auto,
+                    zero_css_parser::values::ImageRenderingValue::Smooth => ImageRenderingValue::Smooth,
+                    zero_css_parser::values::ImageRenderingValue::HighQuality => ImageRenderingValue::HighQuality,
+                    zero_css_parser::values::ImageRenderingValue::Pixelated => ImageRenderingValue::Pixelated,
+                    zero_css_parser::values::ImageRenderingValue::CrispEdges => ImageRenderingValue::CrispEdges,
+                };
+                return true;
+            }
+        }
+        // ── Isolation 属性 ──
+        "isolation" => {
+            if let Some(v) = values::parse_isolation(value) {
+                style.isolation = match v {
+                    zero_css_parser::values::IsolationValue::Auto => IsolationValue::Auto,
+                    zero_css_parser::values::IsolationValue::Isolate => IsolationValue::Isolate,
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -3464,6 +3628,32 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "quotes" => {
             style.quotes = default_style.quotes;
+            true
+        }
+        // Page Break
+        "page-break-before" => {
+            style.page_break_before = default_style.page_break_before;
+            true
+        }
+        "page-break-after" => {
+            style.page_break_after = default_style.page_break_after;
+            true
+        }
+        "page-break-inside" => {
+            style.page_break_inside = default_style.page_break_inside;
+            true
+        }
+        // 其他
+        "box-decoration-break" => {
+            style.box_decoration_break = default_style.box_decoration_break;
+            true
+        }
+        "image-rendering" => {
+            style.image_rendering = default_style.image_rendering;
+            true
+        }
+        "isolation" => {
+            style.isolation = default_style.isolation;
             true
         }
         _ => false,
@@ -6614,5 +6804,200 @@ mod tests {
 
         assert!(apply_initial_value(&mut style, "quotes"));
         assert_eq!(style.quotes, QuotesComputedValue::Auto);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增属性测试：page-break, box-decoration-break, image-rendering, isolation
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// page-break-before 默认值为 Auto
+    fn test_page_break_before_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.page_break_before, PageBreakValue::Auto);
+    }
+
+    #[test]
+    /// page-break-after 默认值为 Auto
+    fn test_page_break_after_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.page_break_after, PageBreakValue::Auto);
+    }
+
+    #[test]
+    /// page-break-inside 默认值为 Auto
+    fn test_page_break_inside_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.page_break_inside, PageBreakValue::Auto);
+    }
+
+    #[test]
+    /// box-decoration-break 默认值为 Slice
+    fn test_box_decoration_break_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.box_decoration_break, BoxDecorationBreakValue::Slice);
+    }
+
+    #[test]
+    /// image-rendering 默认值为 Auto
+    fn test_image_rendering_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.image_rendering, ImageRenderingValue::Auto);
+    }
+
+    #[test]
+    /// isolation 默认值为 Auto
+    fn test_isolation_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.isolation, IsolationValue::Auto);
+    }
+
+    #[test]
+    /// page-break-before 应用各值
+    fn test_apply_page_break_before() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "page-break-before", "always"));
+        assert_eq!(style.page_break_before, PageBreakValue::Always);
+
+        assert!(apply_property_value(&mut style, "page-break-before", "avoid"));
+        assert_eq!(style.page_break_before, PageBreakValue::Avoid);
+
+        assert!(apply_property_value(&mut style, "page-break-before", "left"));
+        assert_eq!(style.page_break_before, PageBreakValue::Left);
+
+        assert!(apply_property_value(&mut style, "page-break-before", "right"));
+        assert_eq!(style.page_break_before, PageBreakValue::Right);
+
+        assert!(apply_property_value(&mut style, "page-break-before", "auto"));
+        assert_eq!(style.page_break_before, PageBreakValue::Auto);
+
+        assert!(!apply_property_value(&mut style, "page-break-before", "invalid"));
+    }
+
+    #[test]
+    /// page-break-after 应用各值
+    fn test_apply_page_break_after() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "page-break-after", "always"));
+        assert_eq!(style.page_break_after, PageBreakValue::Always);
+    }
+
+    #[test]
+    /// page-break-inside 仅接受 auto/avoid
+    fn test_apply_page_break_inside() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "page-break-inside", "avoid"));
+        assert_eq!(style.page_break_inside, PageBreakValue::Avoid);
+
+        assert!(apply_property_value(&mut style, "page-break-inside", "auto"));
+        assert_eq!(style.page_break_inside, PageBreakValue::Auto);
+
+        // always/left/right 对 page-break-inside 无效
+        assert!(!apply_property_value(&mut style, "page-break-inside", "always"));
+    }
+
+    #[test]
+    /// box-decoration-break 应用 slice/clone
+    fn test_apply_box_decoration_break() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "box-decoration-break", "clone"));
+        assert_eq!(style.box_decoration_break, BoxDecorationBreakValue::Clone);
+
+        assert!(apply_property_value(&mut style, "box-decoration-break", "slice"));
+        assert_eq!(style.box_decoration_break, BoxDecorationBreakValue::Slice);
+
+        assert!(!apply_property_value(&mut style, "box-decoration-break", "invalid"));
+    }
+
+    #[test]
+    /// image-rendering 应用各值
+    fn test_apply_image_rendering() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "image-rendering", "pixelated"));
+        assert_eq!(style.image_rendering, ImageRenderingValue::Pixelated);
+
+        assert!(apply_property_value(&mut style, "image-rendering", "crisp-edges"));
+        assert_eq!(style.image_rendering, ImageRenderingValue::CrispEdges);
+
+        assert!(apply_property_value(&mut style, "image-rendering", "smooth"));
+        assert_eq!(style.image_rendering, ImageRenderingValue::Smooth);
+
+        assert!(apply_property_value(&mut style, "image-rendering", "high-quality"));
+        assert_eq!(style.image_rendering, ImageRenderingValue::HighQuality);
+
+        assert!(!apply_property_value(&mut style, "image-rendering", "invalid"));
+    }
+
+    #[test]
+    /// isolation 应用 auto/isolate
+    fn test_apply_isolation() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "isolation", "isolate"));
+        assert_eq!(style.isolation, IsolationValue::Isolate);
+
+        assert!(apply_property_value(&mut style, "isolation", "auto"));
+        assert_eq!(style.isolation, IsolationValue::Auto);
+
+        assert!(!apply_property_value(&mut style, "isolation", "invalid"));
+    }
+
+    #[test]
+    /// 新属性不在继承列表中
+    fn test_new_properties_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("page-break-before"));
+        assert!(!PropertyRegistry::is_inherited("page-break-after"));
+        assert!(!PropertyRegistry::is_inherited("page-break-inside"));
+        assert!(!PropertyRegistry::is_inherited("box-decoration-break"));
+        assert!(!PropertyRegistry::is_inherited("image-rendering"));
+        assert!(!PropertyRegistry::is_inherited("isolation"));
+    }
+
+    #[test]
+    /// 新属性在 known_properties 中注册
+    fn test_new_properties_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"page-break-before"));
+        assert!(props.contains(&"page-break-after"));
+        assert!(props.contains(&"page-break-inside"));
+        assert!(props.contains(&"box-decoration-break"));
+        assert!(props.contains(&"image-rendering"));
+        assert!(props.contains(&"isolation"));
+    }
+
+    #[test]
+    /// 新属性的 initial_value 存在
+    fn test_new_properties_initial_values() {
+        assert!(PropertyRegistry::initial_value("page-break-before").is_some());
+        assert!(PropertyRegistry::initial_value("page-break-after").is_some());
+        assert!(PropertyRegistry::initial_value("page-break-inside").is_some());
+        assert!(PropertyRegistry::initial_value("box-decoration-break").is_some());
+        assert!(PropertyRegistry::initial_value("image-rendering").is_some());
+        assert!(PropertyRegistry::initial_value("isolation").is_some());
+    }
+
+    #[test]
+    /// apply_initial_value 对新属性
+    fn test_apply_initial_value_new_round5_properties() {
+        let mut style = ComputedStyle::default();
+        apply_property_value(&mut style, "page-break-before", "always");
+        apply_property_value(&mut style, "page-break-after", "avoid");
+        apply_property_value(&mut style, "box-decoration-break", "clone");
+        apply_property_value(&mut style, "image-rendering", "pixelated");
+        apply_property_value(&mut style, "isolation", "isolate");
+
+        assert!(apply_initial_value(&mut style, "page-break-before"));
+        assert_eq!(style.page_break_before, PageBreakValue::Auto);
+
+        assert!(apply_initial_value(&mut style, "page-break-after"));
+        assert_eq!(style.page_break_after, PageBreakValue::Auto);
+
+        assert!(apply_initial_value(&mut style, "box-decoration-break"));
+        assert_eq!(style.box_decoration_break, BoxDecorationBreakValue::Slice);
+
+        assert!(apply_initial_value(&mut style, "image-rendering"));
+        assert_eq!(style.image_rendering, ImageRenderingValue::Auto);
+
+        assert!(apply_initial_value(&mut style, "isolation"));
+        assert_eq!(style.isolation, IsolationValue::Auto);
     }
 }
