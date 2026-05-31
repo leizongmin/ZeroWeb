@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3330 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3366 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3330 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3366 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -63,7 +63,23 @@
 
 ## 最近完成的改进
 
-### -10. Shadow DOM 布局扁平化 + OffscreenCanvas + @layer 级联验证 + 44 个新测试（本轮，3330 测试）
+### -11. CSS hwb color + inline-block 布局 + MutationObserver 集成 + container queries + 36 个新测试（本轮，3366 测试）
+
+实现 CSS hwb() 颜色解析、inline-block 行内布局、MutationObserver 完整集成测试、
+container query 评估改进，以及跨 crate 集成测试和错误恢复测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **hwb() 颜色解析**：HWB→RGBA 转换、whiteness/blackness 钳位、alpha 支持；错误恢复：malformed selector/unclosed bracket/empty value | 8 |
+| layout-engine | **inline-block 布局**：InlineItem 枚举、InlineBlockBox 结构体、原子性行内级盒子参与换行 | 4 |
+| dom | **MutationObserver 集成**：child list 观察、属性变更、subtree 模式、disconnect、多 observer、take_records、clear_observers；错误恢复：malformed HTML、无效元素名 | 9 |
+| style-system | **container query 评估改进**：min-width/max-width、range syntax、无 context 不应用 | 5 |
+| integration | **跨 crate 集成测试**：Shadow DOM→layout、container query style、canvas ellipse render、grid-area named placement | 4 |
+| protocol | **全字段类型消息**、**向后兼容性**测试 | 2 |
+| render-foundation | **累积 dirty area**、**hex 颜色格式** (#RGB/#RRGGBB/#RRGGBBAA) | 2 |
+| engine | **多层 composite 排序**、**@media 渲染** | 2 |
+
+### -10. Shadow DOM 布局扁平化 + OffscreenCanvas + @layer 级联验证 + 44 个新测试（前轮，3330 测试）
 
 实现 Shadow DOM slot 分配到布局树的扁平化连接、OffscreenCanvas API 桩、
 @layer 级联排序验证，同时在 12 个 crate 添加 44 个边界条件测试：
