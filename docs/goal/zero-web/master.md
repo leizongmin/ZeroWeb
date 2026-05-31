@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4090 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4133 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4090 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4133 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -73,7 +73,22 @@
 
 ## 最近完成的改进
 
-### -26. CSS column-count/column-width/object-fit/filter + 6 crate 边界测试 + 31 个测试（本轮，4090 测试）
+### -27. CSS break-inside/before/after + column-rule + columns/column-rule 简写 + 5 crate 边界测试 + 43 个测试（本轮，4133 测试）
+
+新增 5 个 CSS 属性、2 个简写展开、5 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **break-inside**：auto/avoid/avoid-page/avoid-column；**break-before/after**：auto/avoid/column/page 等；**column-rule-width**：medium/thin/thick/length；**column-rule-style**：10 种边框样式 | 12 |
+| style-system | **5 个属性管线集成** + **columns/column-rule 简写展开** | 18 |
+| net | URL/请求/Cookie 边界 | 5 |
+| protocol | IPC 序列化/大消息边界 | 5 |
+| canvas | 路径/变换/像素操作边界 | 5 |
+| host-runtime | 窗口/事件边界 | 5 |
+| wasm-sandbox | 内存/函数/模块边界 | 5 |
+Total: 4090 → 4133 (+43 tests)
+
+### -26. CSS column-count/column-width/object-fit/filter + 6 crate 边界测试 + 31 个测试（前轮，4090 测试）
 
 新增 4 个 CSS 属性、6 个 crate 边界条件测试：
 
