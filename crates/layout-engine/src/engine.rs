@@ -5518,4 +5518,209 @@ mod tests {
         assert_eq!(div_box.padding_left, 10.0);
         assert_eq!(div_box.padding_right, 10.0);
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 grid auto-flow: dense 自动放置。
+    #[test]
+    fn test_grid_auto_placement_dense() {
+        use zero_style_system::GridAutoFlowValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+        let item3 = doc.create_element("span");
+        doc.append_child(grid, item3).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(200.0);
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_auto_flow = GridAutoFlowValue::RowDense;
+        styles.insert(grid, grid_style);
+
+        for id in [item1, item2, item3] {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(100.0);
+            s.height = LengthValue::Px(50.0);
+            styles.insert(id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let grid_box = find_child_by_node_id(&result.root, grid).expect("grid 应找到");
+        assert!((grid_box.width - 300.0).abs() < 1.0, "grid 宽度应为 300px");
+        assert_eq!(grid_box.children.len(), 3, "grid 应有 3 个子元素");
+    }
+
+    /// 测试嵌套 flex column 布局。
+    #[test]
+    fn test_layout_nested_flex_column() {
+        let (mut doc, body) = make_doc_with_body();
+        let outer = doc.create_element("div");
+        doc.append_child(body, outer).unwrap();
+        let inner = doc.create_element("div");
+        doc.append_child(outer, inner).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(inner, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(inner, item2).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut outer_style = ComputedStyle::default();
+        outer_style.display = DisplayValue::Flex;
+        outer_style.flex_direction = FlexDirectionValue::Column;
+        outer_style.width = LengthValue::Px(300.0);
+        outer_style.height = LengthValue::Px(400.0);
+        styles.insert(outer, outer_style);
+
+        let mut inner_style = ComputedStyle::default();
+        inner_style.display = DisplayValue::Flex;
+        inner_style.flex_direction = FlexDirectionValue::Column;
+        inner_style.width = LengthValue::Px(300.0);
+        inner_style.height = LengthValue::Px(200.0);
+        styles.insert(inner, inner_style);
+
+        for id in [item1, item2] {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(100.0);
+            s.height = LengthValue::Px(50.0);
+            styles.insert(id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let outer_box = find_child_by_node_id(&result.root, outer).expect("outer 应找到");
+        assert!((outer_box.width - 300.0).abs() < 1.0);
+        assert_eq!(outer_box.children.len(), 1, "outer 应有 1 个子元素（inner）");
+        let inner_box = &outer_box.children[0];
+        assert!((inner_box.height - 200.0).abs() < 1.0);
+        assert_eq!(inner_box.children.len(), 2, "inner 应有 2 个子元素");
+    }
+
+    /// 测试 flex 容器中的绝对定位子元素。
+    #[test]
+    fn test_layout_absolute_in_flex() {
+        let (mut doc, body) = make_doc_with_body();
+        let flex_container = doc.create_element("div");
+        doc.append_child(body, flex_container).unwrap();
+        let normal_item = doc.create_element("span");
+        doc.append_child(flex_container, normal_item).unwrap();
+        let abs_item = doc.create_element("span");
+        doc.append_child(flex_container, abs_item).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.width = LengthValue::Px(300.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(flex_container, container_style);
+
+        let mut normal_style = ComputedStyle::default();
+        normal_style.width = LengthValue::Px(100.0);
+        normal_style.height = LengthValue::Px(50.0);
+        styles.insert(normal_item, normal_style);
+
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(10.0);
+        abs_style.left = LengthValue::Px(20.0);
+        abs_style.width = LengthValue::Px(80.0);
+        abs_style.height = LengthValue::Px(40.0);
+        styles.insert(abs_item, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let container_box = find_child_by_node_id(&result.root, flex_container).expect("container 应找到");
+        // 绝对定位的子元素仍然存在于 children 中
+        assert_eq!(container_box.children.len(), 2);
+        let abs_box = find_child_by_node_id(&result.root, abs_item).expect("abs_item 应找到");
+        assert!(abs_box.is_absolute, "绝对定位元素应标记 is_absolute");
+    }
+
+    /// 测试 grid-column: span 2 跨列布局。
+    #[test]
+    fn test_grid_with_span() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let wide_item = doc.create_element("span");
+        doc.append_child(grid, wide_item).unwrap();
+        let normal_item = doc.create_element("span");
+        doc.append_child(grid, normal_item).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(200.0);
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_template_rows = Some("100px 100px".to_string());
+        styles.insert(grid, grid_style);
+
+        let mut wide_style = ComputedStyle::default();
+        wide_style.grid_column_start = GridLineValue::Line(1);
+        wide_style.grid_column_end = GridLineValue::Span(2);
+        wide_style.width = LengthValue::Px(200.0);
+        wide_style.height = LengthValue::Px(100.0);
+        styles.insert(wide_item, wide_style);
+
+        let mut normal_style = ComputedStyle::default();
+        normal_style.width = LengthValue::Px(100.0);
+        normal_style.height = LengthValue::Px(100.0);
+        styles.insert(normal_item, normal_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let grid_box = find_child_by_node_id(&result.root, grid).expect("grid 应找到");
+        assert!((grid_box.width - 300.0).abs() < 1.0);
+        assert_eq!(grid_box.children.len(), 2);
+    }
+
+    /// 测试 min-width/max-width 约束布局。
+    #[test]
+    fn test_layout_min_max_constraints() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let constrained = doc.create_element("span");
+        doc.append_child(container, constrained).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.width = LengthValue::Px(500.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        // 元素宽度设为 80%，但 min-width: 100px, max-width: 300px
+        let mut constrained_style = ComputedStyle::default();
+        constrained_style.width = LengthValue::Percentage(80.0);
+        constrained_style.min_width = LengthValue::Px(100.0);
+        constrained_style.max_width = LengthValue::Px(300.0);
+        constrained_style.height = LengthValue::Px(50.0);
+        styles.insert(constrained, constrained_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let constrained_box = find_child_by_node_id(&result.root, constrained).expect("constrained 应找到");
+        // 80% of 500 = 400，但 max-width 限制为 300
+        assert!(
+            constrained_box.width <= 301.0,
+            "max-width 应限制宽度为 300px，实际 {}",
+            constrained_box.width
+        );
+        assert!(
+            constrained_box.width >= 99.0,
+            "min-width 应确保宽度至少 100px，实际 {}",
+            constrained_box.width
+        );
+    }
 }

@@ -3161,6 +3161,214 @@ pub fn parse_resize(value: &str) -> Option<ResizeValue> {
     }
 }
 
+// ── CSS Counter 值类型 ──────────────────────────────────────────────
+
+/// CSS counter-increment / counter-reset 单个计数器操作值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CounterActionValue {
+    /// 计数器名称。
+    pub name: String,
+    /// 增量或重置值，None 表示默认（increment=1, reset=0）。
+    pub value: Option<i32>,
+}
+
+/// 解析单个计数器操作值。
+///
+/// 格式：`"counter-name"` 或 `"counter-name 5"`。
+pub fn parse_counter_action(input: &str) -> Option<CounterActionValue> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    let name = parts.first()?.to_string();
+    // 计数器名称不能是 none
+    if name.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    let value = if parts.len() > 1 {
+        Some(parts[1].parse::<i32>().ok()?)
+    } else {
+        None
+    };
+    Some(CounterActionValue { name, value })
+}
+
+/// 解析计数器操作列表。
+///
+/// 格式：`"section 1 subsection"` → `[CounterActionValue { name: "section", value: Some(1) }, CounterActionValue { name: "subsection", value: None }]`。
+/// 特殊值 `"none"` 返回空列表。
+pub fn parse_counter_list(input: &str) -> Option<Vec<CounterActionValue>> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("none") {
+        return Some(vec![]);
+    }
+    let mut result = Vec::new();
+    let mut tokens = input.split_whitespace().peekable();
+    while let Some(name) = tokens.next() {
+        if name.eq_ignore_ascii_case("none") {
+            return None;
+        }
+        // 检查下一个 token 是否为整数
+        let value = if tokens.peek().is_some_and(|t| t.parse::<i32>().is_ok()) {
+            tokens.next().and_then(|t| t.parse::<i32>().ok())
+        } else {
+            None
+        };
+        result.push(CounterActionValue {
+            name: name.to_string(),
+            value,
+        });
+    }
+    if result.is_empty() {
+        return None;
+    }
+    Some(result)
+}
+
+// ── CSS Content 值类型 ──────────────────────────────────────────────
+
+/// CSS content 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentValue {
+    /// normal（默认值）。
+    Normal,
+    /// none。
+    None,
+    /// 字符串内容。
+    String(String),
+    /// attr() 函数引用。
+    Attr(String),
+    /// counter() 函数引用。
+    Counter {
+        /// 计数器名称。
+        name: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
+}
+
+/// 解析 CSS content 属性值。
+///
+/// 支持格式：`normal`、`none`、字符串、`attr(name)`、`counter(name)` 或 `counter(name, style)`。
+pub fn parse_content(input: &str) -> Option<ContentValue> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("normal") {
+        return Some(ContentValue::Normal);
+    }
+    if input.eq_ignore_ascii_case("none") {
+        return Some(ContentValue::None);
+    }
+    // 字符串：引号包裹
+    if (input.starts_with('"') && input.ends_with('"')) || (input.starts_with('\'') && input.ends_with('\'')) {
+        if input.len() < 2 {
+            return None;
+        }
+        return Some(ContentValue::String(input[1..input.len() - 1].to_string()));
+    }
+    // attr(name)
+    if input.starts_with("attr(") && input.ends_with(')') {
+        let inner = input[5..input.len() - 1].trim();
+        if inner.is_empty() {
+            return None;
+        }
+        return Some(ContentValue::Attr(inner.to_string()));
+    }
+    // counter(name) 或 counter(name, style)
+    if input.starts_with("counter(") && input.ends_with(')') {
+        let inner = input[8..input.len() - 1].trim();
+        if inner.is_empty() {
+            return None;
+        }
+        let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+        let name = parts.first()?.to_string();
+        let style = if parts.len() > 1 {
+            Some(parts[1].to_string())
+        } else {
+            None
+        };
+        return Some(ContentValue::Counter { name, style });
+    }
+    None
+}
+
+// ── CSS Quotes 值类型 ──────────────────────────────────────────────
+
+/// CSS quotes 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuotesValue {
+    /// none — 不使用引号。
+    None,
+    /// auto — 使用基于内容语言的引号。
+    Auto,
+    /// 引号对列表，每对为 (open, close)。
+    Pairs(Vec<(String, String)>),
+}
+
+/// 解析 CSS quotes 属性值。
+///
+/// 支持格式：
+/// - `none`
+/// - `auto`
+/// - 引号对列表：`"«" "»" "‹" "›"`（开引号和闭引号交替出现）
+pub fn parse_quotes(input: &str) -> Option<QuotesValue> {
+    let input = input.trim();
+    if input.eq_ignore_ascii_case("none") {
+        return Some(QuotesValue::None);
+    }
+    if input.eq_ignore_ascii_case("auto") {
+        return Some(QuotesValue::Auto);
+    }
+    // 解析引号对：交替出现的引号字符串
+    let mut pairs = Vec::new();
+    let mut chars = input.chars().peekable();
+    loop {
+        // 跳过空白
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        if chars.peek().is_none() {
+            break;
+        }
+        // 读取开引号
+        let open = parse_quoted_string_chars(&mut chars)?;
+        // 跳过空白
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        // 读取闭引号
+        let close = parse_quoted_string_chars(&mut chars)?;
+        pairs.push((open, close));
+    }
+    if pairs.is_empty() {
+        return None;
+    }
+    Some(QuotesValue::Pairs(pairs))
+}
+
+/// 从字符流中解析引号包裹的字符串内容。
+fn parse_quoted_string_chars(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+    let quote = chars.peek()?;
+    if *quote != '"' && *quote != '\'' {
+        return None;
+    }
+    let q = chars.next()?; // 消费开头引号
+    let mut result = String::new();
+    while let Some(c) = chars.next() {
+        if c == q {
+            return Some(result);
+        }
+        if c == '\\' {
+            if let Some(escaped) = chars.next() {
+                result.push(escaped);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3958,5 +4166,182 @@ mod tests {
     fn test_parse_transform_invalid() {
         assert!(parse_transform("").is_none());
         assert!(parse_transform("unknown(10px)").is_none());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Counter / Content / Quotes 解析测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_parse_counter_action_name_only() {
+        let result = parse_counter_action("section").unwrap();
+        assert_eq!(result.name, "section");
+        assert_eq!(result.value, None);
+    }
+
+    #[test]
+    fn test_parse_counter_action_with_value() {
+        let result = parse_counter_action("section 5").unwrap();
+        assert_eq!(result.name, "section");
+        assert_eq!(result.value, Some(5));
+    }
+
+    #[test]
+    fn test_parse_counter_action_negative() {
+        let result = parse_counter_action("counter -3").unwrap();
+        assert_eq!(result.name, "counter");
+        assert_eq!(result.value, Some(-3));
+    }
+
+    #[test]
+    fn test_parse_counter_action_none_rejected() {
+        assert_eq!(parse_counter_action("none"), None);
+        assert_eq!(parse_counter_action(""), None);
+    }
+
+    #[test]
+    fn test_parse_counter_list_none() {
+        let result = parse_counter_list("none").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_counter_list_single() {
+        let result = parse_counter_list("section").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "section");
+        assert_eq!(result[0].value, None);
+    }
+
+    #[test]
+    fn test_parse_counter_list_multiple() {
+        let result = parse_counter_list("section 1 subsection").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "section");
+        assert_eq!(result[0].value, Some(1));
+        assert_eq!(result[1].name, "subsection");
+        assert_eq!(result[1].value, None);
+    }
+
+    #[test]
+    fn test_parse_counter_list_invalid() {
+        assert_eq!(parse_counter_list(""), None);
+    }
+
+    #[test]
+    fn test_parse_content_normal() {
+        assert_eq!(parse_content("normal"), Some(ContentValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_content_none() {
+        assert_eq!(parse_content("none"), Some(ContentValue::None));
+    }
+
+    #[test]
+    fn test_parse_content_string_double_quotes() {
+        assert_eq!(
+            parse_content("\"Hello\""),
+            Some(ContentValue::String("Hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_content_string_single_quotes() {
+        assert_eq!(
+            parse_content("'World'"),
+            Some(ContentValue::String("World".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_content_attr() {
+        assert_eq!(
+            parse_content("attr(data-label)"),
+            Some(ContentValue::Attr("data-label".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_content_counter_no_style() {
+        let result = parse_content("counter(section)").unwrap();
+        match result {
+            ContentValue::Counter { name, style } => {
+                assert_eq!(name, "section");
+                assert_eq!(style, None);
+            }
+            _ => panic!("expected Counter variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_content_counter_with_style() {
+        let result = parse_content("counter(section, upper-roman)").unwrap();
+        match result {
+            ContentValue::Counter { name, style } => {
+                assert_eq!(name, "section");
+                assert_eq!(style, Some("upper-roman".to_string()));
+            }
+            _ => panic!("expected Counter variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_content_invalid() {
+        assert_eq!(parse_content("unknown-value"), None);
+        assert_eq!(parse_content(""), None);
+    }
+
+    #[test]
+    fn test_parse_quotes_none() {
+        assert_eq!(parse_quotes("none"), Some(QuotesValue::None));
+    }
+
+    #[test]
+    fn test_parse_quotes_auto() {
+        assert_eq!(parse_quotes("auto"), Some(QuotesValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_quotes_single_pair() {
+        let result = parse_quotes(r#""«" "»""#).unwrap();
+        match result {
+            QuotesValue::Pairs(pairs) => {
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0], ("«".to_string(), "»".to_string()));
+            }
+            _ => panic!("expected Pairs"),
+        }
+    }
+
+    #[test]
+    fn test_parse_quotes_two_pairs() {
+        let result = parse_quotes(r#""«" "»" "‹" "›""#).unwrap();
+        match result {
+            QuotesValue::Pairs(pairs) => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0], ("«".to_string(), "»".to_string()));
+                assert_eq!(pairs[1], ("‹".to_string(), "›".to_string()));
+            }
+            _ => panic!("expected Pairs"),
+        }
+    }
+
+    #[test]
+    fn test_parse_quotes_single_quotes() {
+        let result = parse_quotes("'\"' '\"'").unwrap();
+        match result {
+            QuotesValue::Pairs(pairs) => {
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0], ("\"".to_string(), "\"".to_string()));
+            }
+            _ => panic!("expected Pairs"),
+        }
+    }
+
+    #[test]
+    fn test_parse_quotes_invalid() {
+        assert_eq!(parse_quotes(""), None);
+        assert_eq!(parse_quotes("random"), None);
     }
 }

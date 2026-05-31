@@ -122,9 +122,10 @@ impl From<url::ParseError> for NetError {
 
 #[cfg(test)]
 mod tests {
-    use crate::cookie::{Cookie, SameSite};
+    use super::{HttpMethod, WebSocket, WebSocketState};
+    use crate::cookie::{Cookie, CookieStore, SameSite};
     use crate::navigation::NavigationHistory;
-    use crate::request::HttpResponse;
+    use crate::request::{HttpRequest, HttpResponse};
     use crate::url_parser::parse_url;
 
     /// 测试仅含片段标识符的 URL，验证 fragment 正确提取。
@@ -310,5 +311,120 @@ mod tests {
             parsed.path, "/docs/page.html",
             "相对路径 ../page.html 应从 base /docs/guides/intro 解析为 /docs/page.html"
         );
+    }
+
+    /// 测试 HttpRequest builder 链式调用。
+    #[test]
+    fn test_request_builder_chain() {
+        let req = HttpRequest::get("http://example.com/api")
+            .header("Accept", "application/json")
+            .header("Authorization", "Bearer token123")
+            .with_method(HttpMethod::Post);
+
+        assert_eq!(req.method, HttpMethod::Post);
+        assert_eq!(req.url, "http://example.com/api");
+        assert_eq!(req.headers.len(), 2);
+        assert_eq!(req.headers[0], ("Accept".into(), "application/json".into()));
+        assert_eq!(req.headers[1], ("Authorization".into(), "Bearer token123".into()));
+    }
+
+    /// 测试常见 HTTP 状态码的分类。
+    #[test]
+    fn test_response_status_code_variants() {
+        let r200 = HttpResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r201 = HttpResponse {
+            status_code: 201,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r301 = HttpResponse {
+            status_code: 301,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r404 = HttpResponse {
+            status_code: 404,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r500 = HttpResponse {
+            status_code: 500,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+
+        assert!(r200.is_success());
+        assert!(r201.is_success());
+        assert!(r301.is_redirect());
+        assert!(r404.is_client_error());
+        assert!(r500.is_server_error());
+
+        assert!(!r200.is_redirect());
+        assert!(!r404.is_success());
+        assert!(!r500.is_client_error());
+    }
+
+    /// 测试导航历史最大条目数限制。
+    #[test]
+    fn test_navigation_length_max_entries() {
+        let mut nav = NavigationHistory::new(5);
+        for i in 0..10 {
+            nav.navigate(&format!("http://{}.com", i), None);
+        }
+        assert_eq!(nav.len(), 5);
+        assert_eq!(nav.current().unwrap().url, "http://9.com");
+    }
+
+    /// 测试 cookie 域名匹配：精确匹配和子域名匹配。
+    #[test]
+    fn test_cookie_domain_matching_variants() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("id=1; Domain=example.com").unwrap());
+
+        let exact = parse_url("http://example.com/").unwrap();
+        assert_eq!(store.get_for_url(&exact).len(), 1);
+
+        let sub = parse_url("http://sub.example.com/").unwrap();
+        assert_eq!(store.get_for_url(&sub).len(), 1, "子域名应匹配");
+
+        let other = parse_url("http://other.com/").unwrap();
+        assert!(store.get_for_url(&other).is_empty(), "不相关域名不应匹配");
+
+        let mut store2 = CookieStore::new();
+        store2.add(CookieStore::parse_set_cookie("id=2; Domain=.example.com").unwrap());
+        let sub2 = parse_url("http://deep.sub.example.com/").unwrap();
+        assert_eq!(store2.get_for_url(&sub2).len(), 1, "深层子域名也应匹配");
+    }
+
+    /// 测试相对 URL 解析：绝对路径、相对路径、父级路径。
+    #[test]
+    fn test_url_relative_resolution() {
+        let base = url::Url::parse("https://example.com/docs/guides/intro").unwrap();
+
+        let resolved = base.join("/about").unwrap();
+        assert_eq!(resolved.as_str(), "https://example.com/about");
+
+        let resolved = base.join("page2").unwrap();
+        assert_eq!(resolved.as_str(), "https://example.com/docs/guides/page2");
+
+        let resolved = base.join("../other").unwrap();
+        assert_eq!(resolved.as_str(), "https://example.com/docs/other");
+
+        let resolved = base.join("http://other.com/").unwrap();
+        assert_eq!(resolved.as_str(), "http://other.com/");
     }
 }

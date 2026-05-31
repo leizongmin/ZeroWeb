@@ -4,9 +4,10 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, DisplayValue, FlexDirectionValue,
-    FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue, ScrollSnapAlignValue,
-    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue, VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, ContentValue, CounterActionValue,
+    DisplayValue, FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue,
+    PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
+    VerticalAlignValue, VisibilityValue,
 };
 
 /// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
@@ -321,6 +322,37 @@ pub enum GridAutoFlowValue {
     ColumnDense,
 }
 
+/// CSS quotes 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuotesComputedValue {
+    /// none。
+    None,
+    /// auto。
+    Auto,
+    /// 引号对列表。
+    Pairs(Vec<(String, String)>),
+}
+
+/// CSS content 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentComputedValue {
+    /// normal（默认值）。
+    Normal,
+    /// none。
+    None,
+    /// 字符串内容。
+    String(String),
+    /// attr() 函数引用。
+    Attr(String),
+    /// counter() 函数引用。
+    Counter {
+        /// 计数器名称。
+        name: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
+}
+
 /// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum GridLineValue {
@@ -513,6 +545,14 @@ pub enum PropertyValue {
     BorderCollapse(BorderCollapseValue),
     /// resize 值。
     Resize(ResizeValue),
+    /// counter-reset 值。
+    CounterReset(Vec<CounterActionValue>),
+    /// counter-increment 值。
+    CounterIncrement(Vec<CounterActionValue>),
+    /// content 值。
+    Content(ContentComputedValue),
+    /// quotes 值。
+    Quotes(QuotesComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -839,6 +879,16 @@ pub struct ComputedStyle {
     pub container_type: ContainerType,
     /// container-name 属性。
     pub container_name: Option<String>,
+
+    // ── Counters / Content / Quotes ──
+    /// counter-reset 属性。
+    pub counter_reset: Vec<CounterActionValue>,
+    /// counter-increment 属性。
+    pub counter_increment: Vec<CounterActionValue>,
+    /// content 属性。
+    pub content: ContentComputedValue,
+    /// quotes 属性。
+    pub quotes: QuotesComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1016,6 +1066,12 @@ impl Default for ComputedStyle {
             // Container Query
             container_type: ContainerType::Normal,
             container_name: None,
+
+            // Counters / Content / Quotes
+            counter_reset: vec![],
+            counter_increment: vec![],
+            content: ContentComputedValue::Normal,
+            quotes: QuotesComputedValue::Auto,
         }
     }
 }
@@ -1178,6 +1234,12 @@ impl PropertyRegistry {
             "container-type" => Some(ContainerType(crate::property::ContainerType::Normal)),
             "container-name" => Some(ContainerName(None)),
 
+            // Counters / Content / Quotes
+            "counter-reset" => Some(CounterReset(vec![])),
+            "counter-increment" => Some(CounterIncrement(vec![])),
+            "content" => Some(Content(ContentComputedValue::Normal)),
+            "quotes" => Some(Quotes(QuotesComputedValue::Auto)),
+
             _ => None,
         }
     }
@@ -1205,6 +1267,7 @@ impl PropertyRegistry {
                 | "text-indent"
                 | "caption-side"
                 | "border-collapse"
+                | "quotes"
         )
     }
 
@@ -1332,6 +1395,10 @@ impl PropertyRegistry {
             "perspective-origin",
             "transform-style",
             "backface-visibility",
+            "counter-reset",
+            "counter-increment",
+            "content",
+            "quotes",
         ]
     }
 }
@@ -2725,6 +2792,43 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
             return true;
         }
+        // ── Counters 属性 ──
+        "counter-reset" => {
+            if let Some(v) = values::parse_counter_list(value) {
+                style.counter_reset = v;
+                return true;
+            }
+        }
+        "counter-increment" => {
+            if let Some(v) = values::parse_counter_list(value) {
+                style.counter_increment = v;
+                return true;
+            }
+        }
+        // ── Content 属性 ──
+        "content" => {
+            if let Some(v) = values::parse_content(value) {
+                style.content = match v {
+                    ContentValue::Normal => ContentComputedValue::Normal,
+                    ContentValue::None => ContentComputedValue::None,
+                    ContentValue::String(s) => ContentComputedValue::String(s),
+                    ContentValue::Attr(a) => ContentComputedValue::Attr(a),
+                    ContentValue::Counter { name, style } => ContentComputedValue::Counter { name, style },
+                };
+                return true;
+            }
+        }
+        // ── Quotes 属性 ──
+        "quotes" => {
+            if let Some(v) = values::parse_quotes(value) {
+                style.quotes = match v {
+                    QuotesValue::None => QuotesComputedValue::None,
+                    QuotesValue::Auto => QuotesComputedValue::Auto,
+                    QuotesValue::Pairs(p) => QuotesComputedValue::Pairs(p),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -2801,6 +2905,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "border-collapse" => {
             child.border_collapse = parent.border_collapse.clone();
+            true
+        }
+        "quotes" => {
+            child.quotes = parent.quotes.clone();
             true
         }
         _ => false,
@@ -3339,6 +3447,23 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         // Writing Mode
         "writing-mode" => {
             style.writing_mode = default_style.writing_mode;
+            true
+        }
+        // Counters / Content / Quotes
+        "counter-reset" => {
+            style.counter_reset = default_style.counter_reset;
+            true
+        }
+        "counter-increment" => {
+            style.counter_increment = default_style.counter_increment;
+            true
+        }
+        "content" => {
+            style.content = default_style.content;
+            true
+        }
+        "quotes" => {
+            style.quotes = default_style.quotes;
             true
         }
         _ => false,
@@ -6330,5 +6455,164 @@ mod tests {
         assert!(props.contains(&"caption-side"));
         assert!(props.contains(&"border-collapse"));
         assert!(props.contains(&"resize"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Counter / Content / Quotes 测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 counter-reset 属性解析
+    fn test_apply_counter_reset() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "counter-reset",
+            "section 1 subsection"
+        ));
+        assert_eq!(style.counter_reset.len(), 2);
+        assert_eq!(style.counter_reset[0].name, "section");
+        assert_eq!(style.counter_reset[0].value, Some(1));
+        assert_eq!(style.counter_reset[1].name, "subsection");
+        assert_eq!(style.counter_reset[1].value, None);
+    }
+
+    #[test]
+    /// 测试 counter-reset: none 清空列表
+    fn test_apply_counter_reset_none() {
+        let mut style = ComputedStyle::default();
+        apply_property_value(&mut style, "counter-reset", "section 5");
+        assert!(!style.counter_reset.is_empty());
+        assert!(apply_property_value(&mut style, "counter-reset", "none"));
+        assert!(style.counter_reset.is_empty());
+    }
+
+    #[test]
+    /// 测试 counter-increment 属性解析
+    fn test_apply_counter_increment() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "counter-increment", "section 2"));
+        assert_eq!(style.counter_increment.len(), 1);
+        assert_eq!(style.counter_increment[0].name, "section");
+        assert_eq!(style.counter_increment[0].value, Some(2));
+    }
+
+    #[test]
+    /// 测试 content: normal 默认值
+    fn test_apply_content_normal() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "content", "normal"));
+        assert_eq!(style.content, ContentComputedValue::Normal);
+    }
+
+    #[test]
+    /// 测试 content: string 值
+    fn test_apply_content_string() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "content", "\"Prefix: \""));
+        assert_eq!(style.content, ContentComputedValue::String("Prefix: ".to_string()));
+    }
+
+    #[test]
+    /// 测试 content: none 值
+    fn test_apply_content_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "content", "none"));
+        assert_eq!(style.content, ContentComputedValue::None);
+    }
+
+    #[test]
+    /// 测试 content: attr() 值
+    fn test_apply_content_attr() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "content", "attr(data-label)"));
+        assert_eq!(style.content, ContentComputedValue::Attr("data-label".to_string()));
+    }
+
+    #[test]
+    /// 测试 content: counter() 值
+    fn test_apply_content_counter() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "content",
+            "counter(section, upper-roman)"
+        ));
+        match &style.content {
+            ContentComputedValue::Counter { name, style } => {
+                assert_eq!(name, "section");
+                assert_eq!(style, &Some("upper-roman".to_string()));
+            }
+            _ => panic!("expected Counter variant"),
+        }
+    }
+
+    #[test]
+    /// 测试 quotes: none 值
+    fn test_apply_quotes_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "quotes", "none"));
+        assert_eq!(style.quotes, QuotesComputedValue::None);
+    }
+
+    #[test]
+    /// 测试 quotes: 引号对值
+    fn test_apply_quotes_pairs() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "quotes", r#""«" "»" "‹" "›""#));
+        match &style.quotes {
+            QuotesComputedValue::Pairs(pairs) => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0], ("«".to_string(), "»".to_string()));
+            }
+            _ => panic!("expected Pairs"),
+        }
+    }
+
+    #[test]
+    /// 测试 quotes 继承
+    fn test_quotes_inherited() {
+        assert!(PropertyRegistry::is_inherited("quotes"));
+        let mut parent = ComputedStyle::default();
+        apply_property_value(&mut parent, "quotes", "none");
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "quotes"));
+        assert_eq!(child.quotes, QuotesComputedValue::None);
+    }
+
+    #[test]
+    /// 测试 counter-reset 不继承
+    fn test_counter_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("counter-reset"));
+        assert!(!PropertyRegistry::is_inherited("counter-increment"));
+        assert!(!PropertyRegistry::is_inherited("content"));
+    }
+
+    #[test]
+    /// 测试新增属性在 known_properties 中
+    fn test_counter_content_quotes_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"counter-reset"));
+        assert!(props.contains(&"counter-increment"));
+        assert!(props.contains(&"content"));
+        assert!(props.contains(&"quotes"));
+    }
+
+    #[test]
+    /// 测试 apply_initial_value 对新属性
+    fn test_apply_initial_value_new_properties() {
+        let mut style = ComputedStyle::default();
+        apply_property_value(&mut style, "counter-reset", "section 5");
+        apply_property_value(&mut style, "content", "\"Hello\"");
+        apply_property_value(&mut style, "quotes", "none");
+
+        assert!(apply_initial_value(&mut style, "counter-reset"));
+        assert!(style.counter_reset.is_empty());
+
+        assert!(apply_initial_value(&mut style, "content"));
+        assert_eq!(style.content, ContentComputedValue::Normal);
+
+        assert!(apply_initial_value(&mut style, "quotes"));
+        assert_eq!(style.quotes, QuotesComputedValue::Auto);
     }
 }
