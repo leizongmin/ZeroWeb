@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4133 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4176 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4133 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4176 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -73,7 +73,23 @@
 
 ## 最近完成的改进
 
-### -27. CSS break-inside/before/after + column-rule + columns/column-rule 简写 + 5 crate 边界测试 + 43 个测试（本轮，4133 测试）
+### -28. CSS contain + column-rule-color + 5 集成测试 + 5 crate 边界测试 + 43 个测试（本轮，4176 测试）
+
+新增 CSS contain 属性（含多值位标记）、column-rule-color、5 个跨 crate 集成测试、5 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **contain**：none/strict/content/size/layout/style/paint + 多值位标记组合 | 5 |
+| style-system | **contain + column-rule-color 管线集成** | 11 |
+| integration | **break-inside/column-count/object-fit/direction 继承链/contain 管线集成** | 5 |
+| dom | 属性/遍历/序列化边界 | 5 |
+| css-parser | 选择器/媒体查询边界 | 5 |
+| style-system | 级联/简写/继承边界 | 5 |
+| layout-engine | Grid/Flex/转换器边界 | 5 |
+| engine | 渲染/合成/dirty 边界 | 5 |
+Total: 4133 → 4176 (+43 tests)
+
+### -27. CSS break-inside/before/after + column-rule + columns/column-rule 简写 + 5 crate 边界测试 + 43 个测试（前轮，4133 测试）
 
 新增 5 个 CSS 属性、2 个简写展开、5 个 crate 边界条件测试：
 
