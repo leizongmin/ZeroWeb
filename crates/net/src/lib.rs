@@ -924,4 +924,100 @@ mod tests {
         // 无端口号（http 默认端口 80 被省略）
         assert!(!url_str.contains("@example.com:"), "默认端口不应出现");
     }
+
+    // ── 第五批边界条件补充测试（5 个） ──
+
+    /// 测试 NavigationHistory 中 title 为 None 时，经过 navigate → go_back → go_forward
+    /// 完整周期后 title 仍为 None（不被意外替换为空字符串等）。
+    #[test]
+    fn test_navigation_none_title_preserved_through_back_forward_cycle() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("A".into()));
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", Some("C".into()));
+
+        // 后退到 b（title=None）
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        assert_eq!(nav.current().unwrap().title, None, "title 为 None 时后退应保持 None");
+
+        // 再后退到 a
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
+        assert_eq!(nav.current().unwrap().title, Some("A".into()));
+
+        // 前进到 b
+        nav.go_forward();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        assert_eq!(nav.current().unwrap().title, None, "前进后 title 为 None 应保持 None");
+
+        // 再前进到 c
+        nav.go_forward();
+        assert_eq!(nav.current().unwrap().url, "http://c.com");
+        assert_eq!(nav.current().unwrap().title, Some("C".into()));
+    }
+
+    /// 测试 CookieStore::parse_set_cookie 对值中含分号的 Cookie 解析。
+    /// "a=b;c" 中分号是属性分隔符，因此值为 "b"，"c" 被视为未知属性并被忽略。
+    #[test]
+    fn test_cookie_parse_value_with_semicolon_treated_as_attribute_separator() {
+        let cookie = crate::cookie::CookieStore::parse_set_cookie("a=b;c").unwrap();
+        assert_eq!(cookie.name, "a");
+        assert_eq!(cookie.value, "b", "分号后的内容应被分割为属性而非值的一部分");
+        // "c" 不是已知属性，应被静默忽略
+        assert!(!cookie.secure, "未知属性 'c' 不应被误认为 secure");
+        assert!(!cookie.http_only, "未知属性 'c' 不应被误认为 httponly");
+    }
+
+    /// 测试 WebSocket 队列的空→非空→空→非空循环复用。
+    /// 验证在队列清空后重新填充仍可正常工作，且不会残留旧消息。
+    #[test]
+    fn test_websocket_queue_drain_refill_cycle() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+        ws.connect();
+
+        // 第一轮：发送两条，接收两条
+        ws.send("msg1").unwrap();
+        ws.send("msg2").unwrap();
+        assert_eq!(ws.receive(), Some("msg1".to_string()));
+        assert_eq!(ws.receive(), Some("msg2".to_string()));
+        assert_eq!(ws.receive(), None, "第一轮队列应已清空");
+
+        // 第二轮：发送新消息，不应有旧消息残留
+        ws.send("msg3").unwrap();
+        assert_eq!(ws.receive(), Some("msg3".to_string()), "第二轮应只包含新消息");
+        assert_eq!(ws.receive(), None, "第二轮队列应已清空");
+    }
+
+    /// 测试 HttpResponse 在状态码为 0（非标准值）时所有分类方法均返回 false 且不 panic。
+    /// 状态码 0 不是有效 HTTP 状态码，但 API 不应因非法输入而崩溃。
+    #[test]
+    fn test_http_response_status_code_zero_classified_as_none() {
+        let resp = HttpResponse {
+            status_code: 0,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        assert!(!resp.is_success(), "状态码 0 不应是 success");
+        assert!(!resp.is_redirect(), "状态码 0 不应是 redirect");
+        assert!(!resp.is_client_error(), "状态码 0 不应是 client_error");
+        assert!(!resp.is_server_error(), "状态码 0 不应是 server_error");
+    }
+
+    /// 测试 ParsedUrl::origin() 对非 http/https 协议（如 ftp）带端口时的输出。
+    /// ftp 协议没有内置的默认端口判断逻辑，因此显式端口应始终出现在 origin 中。
+    #[test]
+    fn test_url_origin_non_http_scheme_with_port() {
+        let parsed = parse_url("ftp://files.example.com:2121/pub").unwrap();
+        assert_eq!(parsed.scheme, "ftp");
+        assert_eq!(parsed.port, Some(2121));
+        // ftp 不在默认端口判断逻辑中，端口应出现在 origin
+        assert_eq!(
+            parsed.origin(),
+            "ftp://files.example.com:2121",
+            "非 http/https 协议的显式端口应保留在 origin 中"
+        );
+    }
 }

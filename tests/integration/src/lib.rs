@@ -2743,4 +2743,174 @@ mod cross_crate_pipeline {
             "div 的 background-repeat 应为 NoRepeat"
         );
     }
+
+    /// CSS background-size 管线集成测试。
+    ///
+    /// 解析含 background-size: cover 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_size 为 Cover。
+    #[test]
+    fn test_background_size_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "cover-bg");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .cover-bg { background-size: cover; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_size,
+            zero_style_system::property::BackgroundSizeComputedValue::Cover,
+            "div 的 background-size 应为 Cover"
+        );
+    }
+
+    /// CSS background-attachment 管线集成测试。
+    ///
+    /// 解析含 background-attachment: fixed 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_attachment 为 Fixed。
+    #[test]
+    fn test_background_attachment_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "fixed-bg");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .fixed-bg { background-attachment: fixed; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_attachment,
+            zero_style_system::property::BackgroundAttachmentComputedValue::Fixed,
+            "div 的 background-attachment 应为 Fixed"
+        );
+    }
+
+    /// CSS background-clip 管线集成测试。
+    ///
+    /// 解析含 background-clip: content-box 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_clip 为 ContentBox。
+    #[test]
+    fn test_background_clip_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "clip-bg");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .clip-bg { background-clip: content-box; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_clip,
+            zero_style_system::property::BackgroundClipComputedValue::ContentBox,
+            "div 的 background-clip 应为 ContentBox"
+        );
+    }
+
+    /// CSS background-origin 管线集成测试。
+    ///
+    /// 解析含 background-origin: padding-box 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_origin 为 PaddingBox。
+    #[test]
+    fn test_background_origin_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "origin-bg");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .origin-bg { background-origin: padding-box; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_origin,
+            zero_style_system::property::BackgroundOriginComputedValue::PaddingBox,
+            "div 的 background-origin 应为 PaddingBox"
+        );
+    }
+
+    /// CSS accent-color 管线集成测试。
+    ///
+    /// 解析含 accent-color: #ff0000 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.accent_color 为红色 (255, 0, 0) 的计算值。
+    #[test]
+    fn test_accent_color_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let input = doc.create_element("input");
+        doc.set_attribute(input, "class", "accented");
+        doc.append_child(body, input).unwrap();
+
+        let css = r#"
+            .accented { accent-color: #ff0000; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let input_style = styles.get(&input).expect("input 应有计算样式");
+        match &input_style.accent_color {
+            zero_style_system::property::AccentColorComputedValue::Color(color) => {
+                assert_eq!(
+                    color,
+                    &zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+                    "accent-color 应为红色 (255, 0, 0, 255)"
+                );
+            }
+            other => panic!("accent-color 应为 Color 变体，实际为 {:?}", other),
+        }
+    }
 }

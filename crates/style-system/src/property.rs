@@ -611,6 +611,30 @@ pub enum BackgroundAttachmentComputedValue {
     Local,
 }
 
+/// CSS background-clip 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundClipComputedValue {
+    /// border-box（默认值）— 背景绘制到边框区域外边界。
+    BorderBox,
+    /// padding-box — 背景绘制到内边距区域外边界。
+    PaddingBox,
+    /// content-box — 背景绘制到内容区域外边界。
+    ContentBox,
+    /// text — 背景绘制到文本区域内。
+    Text,
+}
+
+/// CSS background-origin 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundOriginComputedValue {
+    /// padding-box（默认值）— 背景定位从内边距区域开始。
+    PaddingBox,
+    /// border-box — 背景定位从边框区域开始。
+    BorderBox,
+    /// content-box — 背景定位从内容区域开始。
+    ContentBox,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1177,6 +1201,10 @@ pub enum PropertyValue {
     BackgroundSize(BackgroundSizeComputedValue),
     /// background-attachment 值。
     BackgroundAttachment(BackgroundAttachmentComputedValue),
+    /// background-clip 值。
+    BackgroundClip(BackgroundClipComputedValue),
+    /// background-origin 值。
+    BackgroundOrigin(BackgroundOriginComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1685,6 +1713,10 @@ pub struct ComputedStyle {
     pub background_size: BackgroundSizeComputedValue,
     /// background-attachment 属性。
     pub background_attachment: BackgroundAttachmentComputedValue,
+    /// background-clip 属性。
+    pub background_clip: BackgroundClipComputedValue,
+    /// background-origin 属性。
+    pub background_origin: BackgroundOriginComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1933,12 +1965,14 @@ impl Default for ComputedStyle {
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
 
-            // Background Image / Position / Repeat / Size / Attachment
+            // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             background_image: BackgroundImageComputedValue::None,
             background_position: BackgroundPositionComputedValue::Percent(0.0),
             background_repeat: BackgroundRepeatComputedValue::Repeat,
             background_size: BackgroundSizeComputedValue::Auto,
             background_attachment: BackgroundAttachmentComputedValue::Scroll,
+            background_clip: BackgroundClipComputedValue::BorderBox,
+            background_origin: BackgroundOriginComputedValue::PaddingBox,
         }
     }
 }
@@ -2173,12 +2207,14 @@ impl PropertyRegistry {
             "hyphens" => Some(Hyphens(HyphensComputedValue::None)),
             "line-clamp" => Some(LineClamp(LineClampComputedValue::None)),
 
-            // Background Image / Position / Repeat / Size / Attachment
+            // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             "background-image" => Some(BackgroundImage(BackgroundImageComputedValue::None)),
             "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Percent(0.0))),
             "background-repeat" => Some(BackgroundRepeat(BackgroundRepeatComputedValue::Repeat)),
             "background-size" => Some(BackgroundSize(BackgroundSizeComputedValue::Auto)),
             "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),
+            "background-clip" => Some(BackgroundClip(BackgroundClipComputedValue::BorderBox)),
+            "background-origin" => Some(BackgroundOrigin(BackgroundOriginComputedValue::PaddingBox)),
 
             _ => None,
         }
@@ -2393,6 +2429,8 @@ impl PropertyRegistry {
             "background-repeat",
             "background-size",
             "background-attachment",
+            "background-clip",
+            "background-origin",
         ]
     }
 }
@@ -4489,6 +4527,33 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "background-clip" => {
+            if let Some(v) = values::parse_background_clip(value) {
+                style.background_clip = match v {
+                    zero_css_parser::values::BackgroundClipValue::BorderBox => BackgroundClipComputedValue::BorderBox,
+                    zero_css_parser::values::BackgroundClipValue::PaddingBox => BackgroundClipComputedValue::PaddingBox,
+                    zero_css_parser::values::BackgroundClipValue::ContentBox => BackgroundClipComputedValue::ContentBox,
+                    zero_css_parser::values::BackgroundClipValue::Text => BackgroundClipComputedValue::Text,
+                };
+                return true;
+            }
+        }
+        "background-origin" => {
+            if let Some(v) = values::parse_background_origin(value) {
+                style.background_origin = match v {
+                    zero_css_parser::values::BackgroundOriginValue::PaddingBox => {
+                        BackgroundOriginComputedValue::PaddingBox
+                    }
+                    zero_css_parser::values::BackgroundOriginValue::BorderBox => {
+                        BackgroundOriginComputedValue::BorderBox
+                    }
+                    zero_css_parser::values::BackgroundOriginValue::ContentBox => {
+                        BackgroundOriginComputedValue::ContentBox
+                    }
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -5351,6 +5416,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "background-attachment" => {
             style.background_attachment = default_style.background_attachment;
+            true
+        }
+        "background-clip" => {
+            style.background_clip = default_style.background_clip;
+            true
+        }
+        "background-origin" => {
+            style.background_origin = default_style.background_origin;
             true
         }
         _ => false,
@@ -10246,5 +10319,112 @@ mod tests {
         style.background_attachment = BackgroundAttachmentComputedValue::Fixed;
         assert!(apply_initial_value(&mut style, "background-attachment"));
         assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Scroll);
+    }
+
+    // ── background-clip ──
+
+    #[test]
+    fn test_apply_property_background_clip_border_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-clip", "border-box"));
+        assert_eq!(style.background_clip, BackgroundClipComputedValue::BorderBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_clip_padding_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-clip", "padding-box"));
+        assert_eq!(style.background_clip, BackgroundClipComputedValue::PaddingBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_clip_content_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-clip", "content-box"));
+        assert_eq!(style.background_clip, BackgroundClipComputedValue::ContentBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_clip_text() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-clip", "text"));
+        assert_eq!(style.background_clip, BackgroundClipComputedValue::Text);
+    }
+
+    #[test]
+    fn test_apply_property_background_clip_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-clip", "invalid"));
+    }
+
+    #[test]
+    fn test_background_clip_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-clip"));
+    }
+
+    #[test]
+    fn test_background_clip_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-clip"));
+    }
+
+    #[test]
+    fn test_background_clip_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-clip").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_clip = BackgroundClipComputedValue::Text;
+        assert!(apply_initial_value(&mut style, "background-clip"));
+        assert_eq!(style.background_clip, BackgroundClipComputedValue::BorderBox);
+    }
+
+    // ── background-origin ──
+
+    #[test]
+    fn test_apply_property_background_origin_padding_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-origin", "padding-box"));
+        assert_eq!(style.background_origin, BackgroundOriginComputedValue::PaddingBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_origin_border_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-origin", "border-box"));
+        assert_eq!(style.background_origin, BackgroundOriginComputedValue::BorderBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_origin_content_box() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-origin", "content-box"));
+        assert_eq!(style.background_origin, BackgroundOriginComputedValue::ContentBox);
+    }
+
+    #[test]
+    fn test_apply_property_background_origin_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-origin", "invalid"));
+        // text 不是有效的 background-origin 值
+        assert!(!apply_property_value(&mut style, "background-origin", "text"));
+    }
+
+    #[test]
+    fn test_background_origin_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-origin"));
+    }
+
+    #[test]
+    fn test_background_origin_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-origin"));
+    }
+
+    #[test]
+    fn test_background_origin_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-origin").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_origin = BackgroundOriginComputedValue::ContentBox;
+        assert!(apply_initial_value(&mut style, "background-origin"));
+        assert_eq!(style.background_origin, BackgroundOriginComputedValue::PaddingBox);
     }
 }

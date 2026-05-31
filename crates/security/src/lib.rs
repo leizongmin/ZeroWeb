@@ -1336,6 +1336,191 @@ mod tests {
         );
     }
 
+    /// 测试 CSP img-src 不存在时回退到 default-src 'self'，
+    /// 且无 document_origin 时绝对 URL 被 'self' 拒绝但相对 URL 仍通过。
+    ///
+    /// 当资源类型没有对应指令时回退到 default-src。如果 default-src 为 'self'，
+    /// 相对 URL（不以 http:// 或 https:// 开头）通过 is_self_match 判定为同源，
+    /// 而绝对 URL 在无 document_origin 时无法匹配 'self'，应被阻止。
+    #[test]
+    fn test_csp_img_src_fallback_to_default_self_without_origin() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'");
+        // 相对 URL → is_self_match 判定为同源（不以 http/https 开头）
+        assert!(
+            csp.is_resource_allowed("img", "photo.jpg", None),
+            "相对 URL 在 default-src 'self' 下应允许"
+        );
+        // 绝对 URL 无 document_origin → 无法匹配 'self' → 被阻止
+        assert!(
+            !csp.is_resource_allowed("img", "https://cdn.example.com/photo.jpg", None),
+            "绝对 URL 无 document_origin 时 default-src 'self' 应阻止"
+        );
+        // 有 document_origin 后同源绝对 URL 可通过
+        let doc_origin = Origin::parse("https://cdn.example.com").unwrap();
+        assert!(
+            csp.is_resource_allowed("img", "https://cdn.example.com/photo.jpg", Some(&doc_origin)),
+            "同源绝对 URL 有 document_origin 时应允许"
+        );
+        // 跨源绝对 URL 仍被阻止
+        assert!(
+            !csp.is_resource_allowed("img", "https://evil.com/photo.jpg", Some(&doc_origin)),
+            "跨源绝对 URL 在 default-src 'self' 下应被阻止"
+        );
+    }
+
+    /// 测试 CORS check_cors 对多个自定义头部分允许时的严格拒绝。
+    ///
+    /// 当请求携带两个自定义头（X-Allowed 和 X-Forbidden），
+    /// 但策略仅允许 X-Allowed 时，整个请求应被拒绝。
+    /// CORS 的头部检查是"全部允许才算通过"，而非部分通过。
+    #[test]
+    fn test_cors_partial_custom_header_rejection() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec!["X-Allowed".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // 两个自定义头，仅一个在 allow_headers 中 → 拒绝
+        let result = check_cors(
+            &policy,
+            &origin,
+            "GET",
+            &[
+                ("X-Allowed".to_string(), "ok".to_string()),
+                ("X-Forbidden".to_string(), "bad".to_string()),
+            ],
+        );
+        assert!(!result.allowed, "部分自定义头未允许时应拒绝整个请求");
+        assert!(result.reason.contains("X-Forbidden"), "拒绝原因应包含未允许的头名");
+
+        // 仅发送已允许的头 → 通过
+        let result_ok = check_cors(&policy, &origin, "GET", &[("X-Allowed".to_string(), "ok".to_string())]);
+        assert!(result_ok.allowed, "所有自定义头均在 allow_headers 中时应通过");
+
+        // 无自定义头 → 通过
+        let result_no_headers = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result_no_headers.allowed, "无自定义头时应通过");
+    }
+
+    /// 测试混合内容对所有 OptionallyBlockable 资源类型的完整分类覆盖。
+    ///
+    /// classify_resource_type 将 img、audio、video、media 归为 OptionallyBlockable，
+    /// 其他所有类型归为 Blockable。验证四种可选阻塞类型均正确分类，
+    /// 以及空字符串资源类型的边界处理。
+    #[test]
+    fn test_mixed_content_all_optionally_blockable_types() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let http_url = "http://cdn.example.com/resource";
+
+        // 四种 OptionallyBlockable 类型均应返回 OptionallyBlockable
+        for resource_type in &["img", "audio", "video", "media"] {
+            assert_eq!(
+                check_mixed_content(&page, http_url, resource_type),
+                MixedContentStatus::OptionallyBlockable,
+                "资源类型 '{resource_type}' 应为 OptionallyBlockable"
+            );
+        }
+
+        // 空字符串资源类型不在可选阻塞列表中 → Blockable
+        assert_eq!(
+            check_mixed_content(&page, http_url, ""),
+            MixedContentStatus::Blockable,
+            "空字符串资源类型应为 Blockable"
+        );
+
+        // 所有四种类型均可通过 upgrade_to_https 升级
+        let upgraded = upgrade_to_https(http_url);
+        assert!(upgraded.is_some(), "HTTP URL 应可升级");
+        let upgraded_url = upgraded.unwrap();
+        for resource_type in &["img", "audio", "video", "media"] {
+            assert_eq!(
+                check_mixed_content(&page, &upgraded_url, resource_type),
+                MixedContentStatus::NotMixedContent,
+                "升级后资源类型 '{resource_type}' 不再是混合内容"
+            );
+        }
+    }
+
+    /// 测试沙箱 IframeSandbox::parse 对前导/尾随空格和多连续空格分隔符的容错。
+    ///
+    /// parse 使用 split_whitespace 分割标志，因此应正确处理：
+    /// - 前导和尾随空格
+    /// - 多个连续空格（包括 tab 和换行符）
+    /// - 混合空白符分隔
+    /// 无效标志在空格处理后仍被过滤。
+    #[test]
+    fn test_sandbox_parse_whitespace_tolerance() {
+        // 前导和尾随空格
+        let sandbox = IframeSandbox::parse("  allow-scripts allow-forms  ");
+        assert!(sandbox.allows_scripts(), "前导/尾随空格不应影响标志解析");
+        assert!(sandbox.allows_forms());
+        assert!(!sandbox.allows_same_origin());
+
+        // 多个连续空格 + tab + 换行符分隔
+        let sandbox_mixed = IframeSandbox::parse("allow-scripts\t\tallow-popups\nallow-forms");
+        assert!(sandbox_mixed.allows_scripts(), "tab 分隔应被正确处理");
+        assert!(sandbox_mixed.allows_popups(), "换行分隔应被正确处理");
+        assert!(sandbox_mixed.allows_forms(), "多空白符分隔应被正确处理");
+
+        // 仅空格字符串等同于严格沙箱
+        let sandbox_blank = IframeSandbox::parse("   \t  \n  ");
+        assert!(!sandbox_blank.allows_scripts(), "仅空白字符串应等同于严格沙箱");
+        assert!(!sandbox_blank.allows_forms());
+        assert!(!sandbox_blank.allows_popups());
+        assert!(!sandbox_blank.allows_same_origin());
+
+        // 空字符串也等同于严格沙箱
+        let sandbox_empty = IframeSandbox::parse("");
+        assert!(!sandbox_empty.allows_scripts(), "空字符串应等同于严格沙箱");
+    }
+
+    /// 测试 COEP Credentialless 模式下不同 CORP 状态的差异化处理。
+    ///
+    /// Credentialless 模式的核心语义：
+    /// - NoPolicy → 允许（无凭证加载，不发送 cookies）
+    /// - SameOrigin → 允许（CORP 头明确允许同源）
+    /// - CrossOrigin → 阻止（CORP 头明确拒绝）
+    /// 验证三种 CORP 状态在跨源 + 无 CORS 场景下的完整行为矩阵。
+    #[test]
+    fn test_coep_credentialless_corp_status_differentiation() {
+        // 跨源 + 无 CORS 场景
+        let result_nopolicy = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::NoPolicy, false, false);
+        assert_eq!(
+            result_nopolicy,
+            CoepResult::Allowed,
+            "Credentialless + NoPolicy → 允许（无凭证加载）"
+        );
+
+        let result_sameorigin = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::SameOrigin, false, false);
+        assert_eq!(
+            result_sameorigin,
+            CoepResult::Allowed,
+            "Credentialless + SameOrigin CORP → 允许"
+        );
+
+        let result_crossorigin = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::CrossOrigin, false, false);
+        assert_eq!(
+            result_crossorigin,
+            CoepResult::Blocked,
+            "Credentialless + CrossOrigin CORP → 阻止"
+        );
+
+        // 对比 RequireCorp：NoPolicy 和 CrossOrigin 都被阻止
+        let require_nopolicy = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, false, false);
+        assert_eq!(
+            require_nopolicy,
+            CoepResult::Blocked,
+            "RequireCorp + NoPolicy → 阻止（与 Credentialless 不同）"
+        );
+
+        // parse_corp None → NoPolicy
+        assert_eq!(parse_corp(None), CorpStatus::NoPolicy);
+    }
+
     /// 测试混合内容 upgrade_to_https 对带查询参数和片段的 URL 的处理。
     ///
     /// HTTP URL 包含查询字符串（?key=value）或片段（#section）时，

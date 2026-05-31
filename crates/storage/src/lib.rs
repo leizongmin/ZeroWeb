@@ -823,4 +823,186 @@ mod tests {
         cs.delete("v3");
         assert!(cs.match_request(&req).is_none());
     }
+
+    /// 测试 WebStorage 在精确配额边界上使用多字节字符时的行为。
+    ///
+    /// 验证 used_size 以字节为单位计算 UTF-8 编码长度，
+    /// 并且配额检查基于字节数而非字符数。
+    #[test]
+    fn test_web_storage_quota_with_multibyte_chars() {
+        let mut storage = WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 30);
+        // 中文字符各占 3 字节 UTF-8："键" = 3 字节，"值" = 3 字节
+        // "abc" = 3 字节 + "你好" = 6 字节 = 9 字节
+        storage.set("abc", "你好").unwrap();
+        assert_eq!(storage.used_size(), 9);
+
+        // 再添加 12 字节（"xyz" + "世界好"），总计 21 字节，在配额内
+        storage.set("xyz", "世界好").unwrap();
+        assert_eq!(storage.used_size(), 21);
+
+        // 再添加 10 字节会超出 30 字节配额
+        let result = storage.set("key", "abcdefghi"); // 3 + 9 = 12, 21 + 12 = 33 > 30
+        assert!(result.is_err(), "总字节数超出配额应失败");
+
+        // 用更短的值恰好填满配额：9 + 12 = 21，剩余 9 字节
+        storage.set("k", "abcdefgh").unwrap(); // 1 + 8 = 9, 总计 30
+        assert_eq!(storage.used_size(), 30);
+    }
+
+    /// 测试 CacheResponse 完整往返：存入带自定义状态码、状态文本和多响应头的响应，
+    /// 通过 match_request 取回后，所有字段（status、status_text、headers、body）保持不变。
+    #[test]
+    fn test_cache_response_full_roundtrip_preserves_all_fields() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("api");
+        let req = CacheRequest::with_method("https://example.com/api/login", "POST");
+
+        let resp = CacheResponse::new(201, b"created".to_vec())
+            .with_header("Content-Type", "application/json")
+            .with_header("X-Request-Id", "abc-123")
+            .with_header("Cache-Control", "no-store");
+        cache.put(req.clone(), resp).unwrap();
+
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.status, 201);
+        assert_eq!(matched.body, b"created".to_vec());
+        assert_eq!(matched.headers.len(), 3);
+        assert_eq!(
+            matched.headers.get("Content-Type"),
+            Some(&"application/json".to_string())
+        );
+        assert_eq!(matched.headers.get("X-Request-Id"), Some(&"abc-123".to_string()));
+        assert_eq!(matched.headers.get("Cache-Control"), Some(&"no-store".to_string()));
+
+        // 覆盖后头信息应被替换而非追加
+        let new_resp = CacheResponse::new(200, b"ok".to_vec()).with_header("Content-Type", "text/plain");
+        cache.put(req.clone(), new_resp).unwrap();
+        let updated = cache.match_request(&req).unwrap();
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.headers.len(), 1, "覆盖后应只有新的头信息");
+        assert_eq!(updated.headers.get("Content-Type"), Some(&"text/plain".to_string()));
+    }
+
+    /// 测试 IndexedDB get_all_with_range 在开区间边界上的行为。
+    ///
+    /// 验证开区间 (lower_open=true) 排除下界、(upper_open=true) 排除上界。
+    #[test]
+    fn test_idb_get_all_with_range_open_boundaries() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        for i in 1..=5 {
+            db.add("items", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+                .unwrap();
+        }
+
+        // 闭区间 [2, 4] → 包含 2, 3, 4
+        let closed = IdbKeyRange::bound(IdbKey::Number(2.0), IdbKey::Number(4.0), false, false);
+        let results = db.get_all_with_range("items", &closed).unwrap();
+        assert_eq!(results.len(), 3);
+
+        // 开区间 (2, 4) → 排除 2 和 4，只包含 3
+        let open = IdbKeyRange::bound(IdbKey::Number(2.0), IdbKey::Number(4.0), true, true);
+        let results = db.get_all_with_range("items", &open).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].value, serde_json::json!(3));
+
+        // 左开右闭 (2, 4] → 排除 2，包含 3, 4
+        let left_open = IdbKeyRange::bound(IdbKey::Number(2.0), IdbKey::Number(4.0), true, false);
+        let results = db.get_all_with_range("items", &left_open).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].value, serde_json::json!(3));
+        assert_eq!(results[1].value, serde_json::json!(4));
+
+        // 左闭右开 [2, 4) → 包含 2, 3，排除 4
+        let right_open = IdbKeyRange::bound(IdbKey::Number(2.0), IdbKey::Number(4.0), false, true);
+        let results = db.get_all_with_range("items", &right_open).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].value, serde_json::json!(2));
+        assert_eq!(results[1].value, serde_json::json!(3));
+    }
+
+    /// 测试 StorageManager 对同一源同时操作 localStorage 和 sessionStorage：
+    /// 设置同名键但不同值，验证两者互不干扰，各自返回正确的值。
+    #[test]
+    fn test_storage_manager_same_key_different_storage_types() {
+        let mut manager = StorageManager::new();
+        let origin = "https://app.example.com";
+
+        // localStorage 和 sessionStorage 设置同名键但不同值
+        manager.local_storage(origin).set("session-token", "local-abc").unwrap();
+        manager
+            .session_storage(origin)
+            .set("session-token", "session-xyz")
+            .unwrap();
+
+        // 各自返回各自的值
+        assert_eq!(
+            manager.local_storage(origin).get("session-token"),
+            Some("local-abc"),
+            "localStorage 应返回自己的值"
+        );
+        assert_eq!(
+            manager.session_storage(origin).get("session-token"),
+            Some("session-xyz"),
+            "sessionStorage 应返回自己的值"
+        );
+
+        // 删除 localStorage 的键不影响 sessionStorage
+        manager.local_storage(origin).remove("session-token");
+        assert_eq!(manager.local_storage(origin).get("session-token"), None);
+        assert_eq!(
+            manager.session_storage(origin).get("session-token"),
+            Some("session-xyz"),
+            "删除 localStorage 的键不应影响 sessionStorage"
+        );
+
+        // 反之亦然
+        manager
+            .local_storage(origin)
+            .set("session-token", "local-restored")
+            .unwrap();
+        manager.session_storage(origin).remove("session-token");
+        assert_eq!(
+            manager.local_storage(origin).get("session-token"),
+            Some("local-restored"),
+            "删除 sessionStorage 的键不应影响 localStorage"
+        );
+        assert_eq!(manager.session_storage(origin).get("session-token"), None);
+    }
+
+    /// 测试 IndexedDB 事务中 tx_get 能看到最新的缓冲变更：
+    /// 先 tx_add 一条记录，再 tx_put 覆盖，tx_get 应返回 put 后的值。
+    #[test]
+    fn test_idb_tx_get_sees_latest_buffered_mutation() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("data", None, false).unwrap();
+
+        let tx = db.transaction(&["data"], IdbTransactionMode::ReadWrite).unwrap();
+        let key = IdbKey::String("k1".into());
+
+        // 先 add
+        db.tx_add(&tx, "data", serde_json::json!({"step": 1}), Some(key.clone()))
+            .unwrap();
+
+        // tx_get 应返回 add 的值
+        let rec = db.tx_get(&tx, "data", &key).unwrap().unwrap();
+        assert_eq!(rec.value["step"], 1);
+
+        // 再 put 覆盖
+        db.tx_put(&tx, "data", serde_json::json!({"step": 2}), Some(key.clone()))
+            .unwrap();
+
+        // tx_get 应返回 put 后的最新值
+        let rec = db.tx_get(&tx, "data", &key).unwrap().unwrap();
+        assert_eq!(rec.value["step"], 2, "tx_get 应返回缓冲区中最新的变更");
+
+        // 提交前 store 中没有数据
+        assert!(db.get("data", &key).is_none(), "提交前 store 中不应有数据");
+
+        // 提交后 store 中应有最终值
+        let mut tx = tx;
+        db.commit_tx(&mut tx).unwrap();
+        let record = db.get("data", &key).unwrap();
+        assert_eq!(record.value["step"], 2, "提交后应为 put 后的值");
+    }
 }
