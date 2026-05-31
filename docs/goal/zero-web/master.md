@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2473 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2499 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2473 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2499 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,13 +23,13 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 226 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot**、**节点生命周期**、**错误路径** |
+| dom | 229 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot**、**节点生命周期**、**id_map 一致性** |
 | css-parser | 322 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、**选择器边角场景**、**错误恢复** |
-| style-system | 373 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**scroll-snap**、**container query 真实评估**、**var() 解析集成**、所有属性初始值 |
-| layout-engine | 131 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、**边角场景覆盖** |
+| style-system | 378 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**var() 解析集成**、**container query 真实评估**、**overflow 双值语法**、**font-size em 父级解析** |
+| layout-engine | 135 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、repeat()/auto-rows/cols、**零尺寸容器**、**深层嵌套**、**绝对定位** |
 | engine | 144 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**overflow 嵌套裁剪**、**z-index 排序** |
-| render-foundation | 181 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色操作**、**图元覆盖** |
-| host-runtime | 126 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**事件类型覆盖**、**窗口配置** |
+| render-foundation | 190 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色 RGBA clamping**、**image cache eviction**、**surface resize** |
+| host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
 | security | 155 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、**COOP/COEP** |
 | protocol | 87 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化** |
