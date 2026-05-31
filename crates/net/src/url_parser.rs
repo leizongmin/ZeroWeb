@@ -491,4 +491,40 @@ mod tests {
         assert!(url_str.contains("/api?key=val"));
         assert!(!url_str.contains('#'), "fragment 不应出现在 to_url_string");
     }
+
+    // ── 新增边界条件测试 ──
+
+    /// 测试 ParsedUrl::origin 对显式非默认端口的正确输出。
+    /// http://example.com:8080 的 origin 应为 http://example.com:8080。
+    #[test]
+    fn test_parsed_url_origin_non_default_port() {
+        let parsed = parse_url("http://example.com:8080/path").unwrap();
+        assert_eq!(
+            parsed.origin(),
+            "http://example.com:8080",
+            "非默认端口应出现在 origin 中"
+        );
+    }
+
+    /// 测试 to_url_string 对包含用户名和密码的 URL 正确输出 userinfo 部分。
+    #[test]
+    fn test_parsed_url_to_url_string_with_credentials() {
+        let parsed = parse_url("http://alice:secret@example.com:9090/data").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(url_str.starts_with("http://alice:secret@"), "应包含 userinfo");
+        assert!(url_str.contains(":9090"), "应包含非默认端口");
+        assert!(url_str.contains("/data"), "应包含路径");
+    }
+
+    /// 测试 URL 同时包含 fragment 和 query string 时两者均正确解析。
+    #[test]
+    fn test_parsed_url_fragment_and_query_combined() {
+        let parsed = parse_url("http://example.com/search?q=hello#results").unwrap();
+        assert_eq!(parsed.query.as_deref(), Some("q=hello"), "query 应正确解析");
+        assert_eq!(parsed.fragment.as_deref(), Some("results"), "fragment 应正确解析");
+        // to_url_string 应包含 query 但不包含 fragment
+        let url_str = parsed.to_url_string();
+        assert!(url_str.contains("q=hello"), "to_url_string 应包含 query");
+        assert!(!url_str.contains("#results"), "to_url_string 不应包含 fragment");
+    }
 }

@@ -3676,3 +3676,194 @@ fn test_media_query_multiple_conditions_eval() {
     let ctx_portrait = MediaContext::new(1024.0, 1200.0);
     assert!(!evaluate_media_query(&q, &ctx_portrait));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 27. vertical-align / list-style / float / clear / calc viewport 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_vertical_align 所有关键字：baseline、sub、super、top、text-top、
+/// middle、bottom、text-bottom，以及大小写不敏感和无效输入
+fn test_parse_vertical_align() {
+    use crate::values::{VerticalAlignValue, parse_vertical_align};
+    assert_eq!(parse_vertical_align("baseline"), Some(VerticalAlignValue::Baseline));
+    assert_eq!(parse_vertical_align("sub"), Some(VerticalAlignValue::Sub));
+    assert_eq!(parse_vertical_align("super"), Some(VerticalAlignValue::Super));
+    assert_eq!(parse_vertical_align("top"), Some(VerticalAlignValue::Top));
+    assert_eq!(parse_vertical_align("text-top"), Some(VerticalAlignValue::TextTop));
+    assert_eq!(parse_vertical_align("middle"), Some(VerticalAlignValue::Middle));
+    assert_eq!(parse_vertical_align("bottom"), Some(VerticalAlignValue::Bottom));
+    assert_eq!(
+        parse_vertical_align("text-bottom"),
+        Some(VerticalAlignValue::TextBottom)
+    );
+    // 大小写不敏感
+    assert_eq!(parse_vertical_align("BASELINE"), Some(VerticalAlignValue::Baseline));
+    assert_eq!(parse_vertical_align("  Middle  "), Some(VerticalAlignValue::Middle));
+    assert_eq!(
+        parse_vertical_align("TEXT-BOTTOM"),
+        Some(VerticalAlignValue::TextBottom)
+    );
+    // 无效值
+    assert_eq!(parse_vertical_align("center"), None);
+    assert_eq!(parse_vertical_align("10px"), None);
+    assert_eq!(parse_vertical_align(""), None);
+}
+
+#[test]
+/// 测试 parse_list_style_type 所有关键字：disc、circle、square、decimal、
+/// decimal-leading-zero、lower-roman、upper-roman、lower-alpha、upper-alpha、
+/// lower-latin（别名）、upper-latin（别名）、none，
+/// 以及未映射关键字（lower-greek、armenian、georgian）返回 None
+fn test_parse_list_style_type() {
+    assert_eq!(parse_list_style_type("disc"), Some(ListStyleTypeValue::Disc));
+    assert_eq!(parse_list_style_type("circle"), Some(ListStyleTypeValue::Circle));
+    assert_eq!(parse_list_style_type("square"), Some(ListStyleTypeValue::Square));
+    assert_eq!(parse_list_style_type("decimal"), Some(ListStyleTypeValue::Decimal));
+    assert_eq!(
+        parse_list_style_type("decimal-leading-zero"),
+        Some(ListStyleTypeValue::DecimalLeadingZero)
+    );
+    assert_eq!(
+        parse_list_style_type("lower-roman"),
+        Some(ListStyleTypeValue::LowerRoman)
+    );
+    assert_eq!(
+        parse_list_style_type("upper-roman"),
+        Some(ListStyleTypeValue::UpperRoman)
+    );
+    assert_eq!(
+        parse_list_style_type("lower-alpha"),
+        Some(ListStyleTypeValue::LowerAlpha)
+    );
+    assert_eq!(
+        parse_list_style_type("upper-alpha"),
+        Some(ListStyleTypeValue::UpperAlpha)
+    );
+    assert_eq!(
+        parse_list_style_type("lower-latin"),
+        Some(ListStyleTypeValue::LowerAlpha)
+    );
+    assert_eq!(
+        parse_list_style_type("upper-latin"),
+        Some(ListStyleTypeValue::UpperAlpha)
+    );
+    assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
+    // 当前不支持的关键字应返回 None
+    assert_eq!(parse_list_style_type("lower-greek"), None);
+    assert_eq!(parse_list_style_type("armenian"), None);
+    assert_eq!(parse_list_style_type("georgian"), None);
+    // 大小写不敏感
+    assert_eq!(parse_list_style_type("DISC"), Some(ListStyleTypeValue::Disc));
+    assert_eq!(parse_list_style_type("  Circle  "), Some(ListStyleTypeValue::Circle));
+    // 无效输入
+    assert_eq!(parse_list_style_type("invalid"), None);
+    assert_eq!(parse_list_style_type(""), None);
+}
+
+#[test]
+/// 测试 parse_list_style_position 的 inside 和 outside 关键字，
+/// 以及大小写不敏感和无效输入
+fn test_parse_list_style_position() {
+    assert_eq!(
+        parse_list_style_position("inside"),
+        Some(ListStylePositionValue::Inside)
+    );
+    assert_eq!(
+        parse_list_style_position("outside"),
+        Some(ListStylePositionValue::Outside)
+    );
+    // 大小写不敏感
+    assert_eq!(
+        parse_list_style_position("INSIDE"),
+        Some(ListStylePositionValue::Inside)
+    );
+    assert_eq!(
+        parse_list_style_position("  Outside  "),
+        Some(ListStylePositionValue::Outside)
+    );
+    // 无效输入
+    assert_eq!(parse_list_style_position("center"), None);
+    assert_eq!(parse_list_style_position(""), None);
+}
+
+#[test]
+/// 测试 parse_float 所有关键字：left、right、none、inline-start、inline-end，
+/// 以及大小写不敏感、前后空白、无效输入
+fn test_parse_float() {
+    assert_eq!(parse_float("left"), Some(FloatValue::Left));
+    assert_eq!(parse_float("right"), Some(FloatValue::Right));
+    assert_eq!(parse_float("none"), Some(FloatValue::None));
+    assert_eq!(parse_float("inline-start"), Some(FloatValue::InlineStart));
+    assert_eq!(parse_float("inline-end"), Some(FloatValue::InlineEnd));
+    // 大小写不敏感
+    assert_eq!(parse_float("LEFT"), Some(FloatValue::Left));
+    assert_eq!(parse_float("  Right  "), Some(FloatValue::Right));
+    assert_eq!(parse_float("INLINE-START"), Some(FloatValue::InlineStart));
+    // 无效输入
+    assert_eq!(parse_float("center"), None);
+    assert_eq!(parse_float(""), None);
+    assert_eq!(parse_float("inherit"), None);
+}
+
+#[test]
+/// 测试 parse_clear 所有关键字：left、right、both、none、inline-start、inline-end，
+/// 以及大小写不敏感、前后空白、无效输入
+fn test_parse_clear() {
+    assert_eq!(parse_clear("left"), Some(ClearValue::Left));
+    assert_eq!(parse_clear("right"), Some(ClearValue::Right));
+    assert_eq!(parse_clear("both"), Some(ClearValue::Both));
+    assert_eq!(parse_clear("none"), Some(ClearValue::None));
+    assert_eq!(parse_clear("inline-start"), Some(ClearValue::InlineStart));
+    assert_eq!(parse_clear("inline-end"), Some(ClearValue::InlineEnd));
+    // 大小写不敏感
+    assert_eq!(parse_clear("BOTH"), Some(ClearValue::Both));
+    assert_eq!(parse_clear("  None  "), Some(ClearValue::None));
+    assert_eq!(parse_clear("INLINE-END"), Some(ClearValue::InlineEnd));
+    // 无效输入
+    assert_eq!(parse_clear("all"), None);
+    assert_eq!(parse_clear(""), None);
+    assert_eq!(parse_clear("inherit"), None);
+}
+
+#[test]
+/// 测试 eval_calc_with_context 在包含视口尺寸的 CalcContext 中，
+/// 验证 vw/vh/vmin/vmax 均能正确解析为像素值
+fn test_eval_calc_with_context_viewport() {
+    // 视口尺寸：1920 x 1080
+    let ctx = CalcContext {
+        viewport_width: Some(1920.0),
+        viewport_height: Some(1080.0),
+        ..Default::default()
+    };
+
+    // vw: 25vw = 25 * 1920 / 100 = 480.0
+    let expr_vw = parse_calc("calc(25vw)").unwrap();
+    let result = eval_calc_with_context(&expr_vw, &ctx);
+    assert_eq!(result, Some(480.0));
+
+    // vh: 50vh = 50 * 1080 / 100 = 540.0
+    let expr_vh = parse_calc("calc(50vh)").unwrap();
+    let result = eval_calc_with_context(&expr_vh, &ctx);
+    assert_eq!(result, Some(540.0));
+
+    // vmin: 10vmin = 10 * min(1920, 1080) / 100 = 10 * 1080 / 100 = 108.0
+    let expr_vmin = parse_calc("calc(10vmin)").unwrap();
+    let result = eval_calc_with_context(&expr_vmin, &ctx);
+    assert_eq!(result, Some(108.0));
+
+    // vmax: 10vmax = 10 * max(1920, 1080) / 100 = 10 * 1920 / 100 = 192.0
+    let expr_vmax = parse_calc("calc(10vmax)").unwrap();
+    let result = eval_calc_with_context(&expr_vmax, &ctx);
+    assert_eq!(result, Some(192.0));
+
+    // 混合视口单位：calc(50vw - 10vh) = 960 - 108 = 852.0
+    let expr_mixed = parse_calc("calc(50vw - 10vh)").unwrap();
+    let result = eval_calc_with_context(&expr_mixed, &ctx);
+    assert_eq!(result, Some(852.0));
+
+    // 缺少视口上下文时返回 None
+    let ctx_empty = CalcContext::default();
+    let result = eval_calc_with_context(&expr_vw, &ctx_empty);
+    assert_eq!(result, None);
+}

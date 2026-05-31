@@ -489,4 +489,240 @@ mod tests {
         assert_eq!(range.start_container(), children[0]);
         assert_eq!(range.end_container(), children[1]);
     }
+
+    // ── 边界用例测试 ────────────────────────────────────────────────────
+
+    /// 测试 Range::select_node 选中整个元素节点（非其内容）。
+    ///
+    /// select_node 应将范围设置为父容器中包含目标节点的 [index, index+1) 区间，
+    /// 而非选中节点的子节点。
+    #[test]
+    fn test_range_select_node() {
+        let doc = parse_html("<div><span>first</span><em>second</em><b>third</b></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let children = doc.child_nodes(div);
+        assert_eq!(children.len(), 3, "div should have 3 children");
+
+        // 选中第二个子节点 <em>
+        let em = children[1];
+        let mut range = Range::new(div, div);
+        range.select_node(&doc, em).unwrap();
+
+        // start_container 和 end_container 应该是父节点 div，而非 em 自身
+        assert_eq!(range.start_container(), div, "start_container should be parent div");
+        assert_eq!(range.end_container(), div, "end_container should be parent div");
+        // 偏移量应该包围目标节点：[1, 2)
+        assert_eq!(range.start_offset(), 1, "start_offset should be index of em in div");
+        assert_eq!(range.end_offset(), 2, "end_offset should be index+1");
+
+        // 选中第一个子节点 <span> → [0, 1)
+        let span = children[0];
+        let mut range2 = Range::new(div, div);
+        range2.select_node(&doc, span).unwrap();
+        assert_eq!(range2.start_offset(), 0);
+        assert_eq!(range2.end_offset(), 1);
+
+        // 选中最后一个子节点 <b> → [2, 3)
+        let b = children[2];
+        let mut range3 = Range::new(div, div);
+        range3.select_node(&doc, b).unwrap();
+        assert_eq!(range3.start_offset(), 2);
+        assert_eq!(range3.end_offset(), 3);
+    }
+
+    /// 测试 Range::select_node 对 Document 节点应返回错误。
+    ///
+    /// Document 节点没有父节点，select_node 调用 parent_node 时返回 None，
+    /// 应当产生 RangeError::Detached。
+    #[test]
+    fn test_range_select_node_invalid() {
+        let doc = parse_html("<p>text</p>");
+        let root = doc.root();
+
+        let mut range = Range::at(root, 0);
+        let result = range.select_node(&doc, root);
+        assert!(
+            matches!(result, Err(RangeError::Detached)),
+            "select_node on Document root should return Detached error, got {:?}",
+            result
+        );
+    }
+
+    /// 测试 Range::text_content 提取跨节点的部分文本内容。
+    ///
+    /// 当范围跨越多个子节点时，text_content 应收集所有被覆盖节点的文本；
+    /// 使用偏移量可以只提取部分子节点的文本。
+    #[test]
+    fn test_range_text_content_partial() {
+        // 测试跨多个子节点提取文本
+        let doc = parse_html("<p>Hello <b>World</b>!</p>");
+        let body = body_of(&doc);
+        let p = doc.first_child(body).unwrap();
+        let children = doc.child_nodes(p);
+
+        // 范围覆盖 p 的所有子节点
+        let mut range = Range::new(p, p);
+        range.set_end(p, children.len()).unwrap();
+        let text = range.text_content(&doc);
+        assert!(text.contains("Hello"), "text should contain 'Hello', got: {text}");
+        assert!(text.contains("World"), "text should contain 'World', got: {text}");
+        assert!(text.contains("!"), "text should contain '!', got: {text}");
+
+        // 范围只覆盖前半部分（offset 0..1），仅第一个文本节点
+        let mut range2 = Range::new(p, p);
+        range2.set_end(p, 1).unwrap();
+        let text2 = range2.text_content(&doc);
+        assert!(
+            text2.contains("Hello") && !text2.contains("World"),
+            "partial range should only have 'Hello', got: {text2}"
+        );
+
+        // 范围只覆盖后半部分（offset 1..end），不含第一个文本节点
+        let mut range3 = Range::new(p, p);
+        range3.set_start(p, 1).unwrap();
+        range3.set_end(p, children.len()).unwrap();
+        let text3 = range3.text_content(&doc);
+        assert!(
+            !text3.contains("Hello") && text3.contains("World"),
+            "latter range should have 'World' not 'Hello', got: {text3}"
+        );
+    }
+
+    /// 测试 Range::to_debug_string 生成预期的调试格式字符串。
+    #[test]
+    fn test_range_to_debug_string() {
+        let doc = parse_html("<div><p>Hello</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let p = doc.first_child(div).unwrap();
+
+        let range = Range::new(div, p);
+        let debug = range.to_debug_string(&doc);
+
+        // 应包含 <div> 和 <p> 标签名
+        assert!(
+            debug.contains("<div>"),
+            "debug string should contain '<div>', got: {debug}"
+        );
+        assert!(debug.contains("<p>"), "debug string should contain '<p>', got: {debug}");
+        assert!(
+            debug.contains("offset=0"),
+            "debug string should contain 'offset=0', got: {debug}"
+        );
+        assert!(
+            debug.starts_with("Range ["),
+            "debug string should start with 'Range [', got: {debug}"
+        );
+
+        // 折叠范围的调试字符串
+        let collapsed = Range::at(p, 3);
+        let debug2 = collapsed.to_debug_string(&doc);
+        assert!(
+            debug2.contains("offset=3"),
+            "collapsed debug string should contain 'offset=3', got: {debug2}"
+        );
+    }
+
+    /// 测试 set_start / set_end 对越界偏移量的行为。
+    ///
+    /// 当前实现不验证偏移量是否在合法范围内，始终返回 Ok(())。
+    /// 此测试记录该行为，确保 API 调用不会 panic。
+    #[test]
+    fn test_range_set_start_end_invalid_offset() {
+        let doc = parse_html("<p>Hi</p>");
+        let body = body_of(&doc);
+        let p = doc.first_child(body).unwrap();
+
+        // 超大偏移量不应导致 panic
+        let mut range = Range::new(p, p);
+        let result = range.set_start(p, usize::MAX);
+        assert!(result.is_ok(), "set_start with large offset should not error");
+
+        let result2 = range.set_end(p, 999_999);
+        assert!(result2.is_ok(), "set_end with large offset should not error");
+
+        assert_eq!(range.start_offset(), usize::MAX);
+        assert_eq!(range.end_offset(), 999_999);
+    }
+
+    /// 测试 clone_contents 在范围分割子节点列表时的行为。
+    ///
+    /// 当范围从 offset != 0 开始，或 end_offset != 子节点总数时，
+    /// clone_contents 应只克隆范围内的子节点子集。
+    #[test]
+    fn test_range_clone_contents_partial_text() {
+        let mut doc = parse_html("<div><p>A</p><p>B</p><p>C</p><p>D</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let children = doc.child_nodes(div);
+        assert_eq!(children.len(), 4, "div should have 4 children");
+
+        // 只克隆中间两个 <p>（offset 1..3）
+        let mut range = Range::new(div, div);
+        range.set_start(div, 1).unwrap();
+        range.set_end(div, 3).unwrap();
+
+        let fragment = range.clone_contents(&mut doc).unwrap();
+
+        // fragment 应包含 2 个克隆节点
+        let frag_children = doc.child_nodes(fragment);
+        assert_eq!(frag_children.len(), 2, "fragment should have 2 cloned children");
+
+        // 原始 div 应保持不变（4 个子节点）
+        assert_eq!(
+            doc.child_nodes(div).len(),
+            4,
+            "original div should still have 4 children"
+        );
+
+        // 验证克隆节点的文本内容 — 范围 [1,3) 对应原始 B 和 C
+        let first_clone = frag_children[0];
+        let second_clone = frag_children[1];
+        assert_eq!(
+            doc.text_content(first_clone).as_deref(),
+            Some("B"),
+            "first cloned child should have text 'B' (original index 1)"
+        );
+        assert_eq!(
+            doc.text_content(second_clone).as_deref(),
+            Some("C"),
+            "second cloned child should have text 'C' (original index 2)"
+        );
+    }
+
+    /// 测试 insert_node 在偏移量指向容器子节点中间位置时的行为。
+    ///
+    /// 当 start_offset 对应容器中已有子节点的索引时，
+    /// insert_node 应在该子节点之前插入新节点。
+    #[test]
+    fn test_range_insert_node_mid_text() {
+        let mut doc = parse_html("<div><p>first</p><p>last</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let original_children = doc.child_nodes(div);
+        assert_eq!(original_children.len(), 2);
+
+        // 在 div 的 offset 1 处（即两个 <p> 之间）插入新节点
+        let new_node = doc.create_element("span");
+        doc.set_text_content(new_node, "middle");
+
+        let mut range = Range::at(div, 1);
+        range.insert_node(&mut doc, new_node).unwrap();
+
+        let children = doc.child_nodes(div);
+        assert_eq!(children.len(), 3, "div should have 3 children after insert");
+
+        // 新节点应在中间位置
+        assert_eq!(children[0], original_children[0], "first child unchanged");
+        assert_eq!(children[1], new_node, "inserted node at index 1");
+        assert_eq!(children[2], original_children[1], "last child shifted to index 2");
+
+        // 验证文本内容
+        assert_eq!(
+            doc.text_content(children[1]).as_deref(),
+            Some("middle"),
+            "inserted span should contain 'middle'"
+        );
+    }
 }

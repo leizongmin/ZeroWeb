@@ -3237,4 +3237,318 @@ mod tests {
         assert_eq!(dx, 0.0);
         assert_eq!(dy, 0.0);
     }
+
+    // ── 边界条件测试：clip_fills / clip_glyphs / color ──────
+
+    /// clip_fills 部分重叠：fill 矩形与 clip 矩形部分重叠时，缩小到交集。
+    #[test]
+    fn test_clip_fills_partial_overlap() {
+        use zero_render_foundation::primitive::FillPrimitive;
+
+        // clip rect: (0, 0, 100, 100)
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // fill rect: (50, 50, 100, 100) → 与 clip 交集为 (50, 50, 50, 50)
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(50.0, 50.0, 100.0, 100.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.origin.x, 50.0);
+        assert_eq!(fills[0].rect.origin.y, 50.0);
+        assert_eq!(fills[0].rect.size.width, 50.0);
+        assert_eq!(fills[0].rect.size.height, 50.0);
+    }
+
+    /// clip_fills 完全在外侧：左/右/上/下四个方向均被清零。
+    #[test]
+    fn test_clip_fills_outside_each_side() {
+        use zero_render_foundation::primitive::FillPrimitive;
+
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        // 左侧完全在 clip 外
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(-150.0, 0.0, 100.0, 100.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.size.width, 0.0);
+        assert_eq!(fills[0].rect.size.height, 0.0);
+
+        // 右侧完全在 clip 外
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(200.0, 0.0, 100.0, 100.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.size.width, 0.0);
+        assert_eq!(fills[0].rect.size.height, 0.0);
+
+        // 上侧完全在 clip 外
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, -200.0, 100.0, 100.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.size.width, 0.0);
+        assert_eq!(fills[0].rect.size.height, 0.0);
+
+        // 下侧完全在 clip 外
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 200.0, 100.0, 100.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.size.width, 0.0);
+        assert_eq!(fills[0].rect.size.height, 0.0);
+    }
+
+    /// clip_fills start index > 0：只有 start 之后的 fill 被裁剪。
+    #[test]
+    fn test_clip_fills_start_index() {
+        use zero_render_foundation::primitive::FillPrimitive;
+
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // 第一个 fill 在 clip 内（不受影响），第二个完全在 clip 外
+        let mut fills = vec![
+            FillPrimitive {
+                rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+                color: Color::BLACK,
+            },
+            FillPrimitive {
+                rect: Rect::new(200.0, 200.0, 50.0, 50.0),
+                color: Color::BLACK,
+            },
+        ];
+        clip_fills(&mut fills, 1, &clip);
+        // 第一个 fill 不应被裁剪
+        assert_eq!(fills[0].rect.size.width, 50.0);
+        assert_eq!(fills[0].rect.size.height, 50.0);
+        // 第二个 fill 应被清零
+        assert_eq!(fills[1].rect.size.width, 0.0);
+        assert_eq!(fills[1].rect.size.height, 0.0);
+    }
+
+    /// clip_fills 空 slice 不 panic。
+    #[test]
+    fn test_clip_fills_empty_slice() {
+        use zero_render_foundation::primitive::FillPrimitive;
+
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut fills: Vec<FillPrimitive> = vec![];
+        clip_fills(&mut fills, 0, &clip);
+        // 应正常返回，不 panic
+    }
+
+    /// clip_fills fill rect 完全匹配 clip rect → 不变。
+    #[test]
+    fn test_clip_fills_exact_match() {
+        use zero_render_foundation::primitive::FillPrimitive;
+
+        let clip = Rect::new(10.0, 20.0, 80.0, 60.0);
+        let mut fills = vec![FillPrimitive {
+            rect: Rect::new(10.0, 20.0, 80.0, 60.0),
+            color: Color::BLACK,
+        }];
+        clip_fills(&mut fills, 0, &clip);
+        assert_eq!(fills[0].rect.origin.x, 10.0);
+        assert_eq!(fills[0].rect.origin.y, 20.0);
+        assert_eq!(fills[0].rect.size.width, 80.0);
+        assert_eq!(fills[0].rect.size.height, 60.0);
+    }
+
+    /// clip_glyphs 字形在 clip 外侧（左/右/上/下）→ glyph_id 设为 0。
+    #[test]
+    fn test_clip_glyphs_outside_rejection() {
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        // 左侧：glyph 在 (-50, 10)，font_size=16 → right = -34，在 clip 左侧
+        let mut glyphs = vec![GlyphPrimitive {
+            x: -50.0,
+            y: 10.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 42,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        assert_eq!(glyphs[0].glyph_id, 0);
+
+        // 右侧：glyph 在 (150, 10)，x >= clip right (100)
+        let mut glyphs = vec![GlyphPrimitive {
+            x: 150.0,
+            y: 10.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 42,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        assert_eq!(glyphs[0].glyph_id, 0);
+
+        // 上侧：glyph 在 (10, -50)，font_size=16 → bottom = -34
+        let mut glyphs = vec![GlyphPrimitive {
+            x: 10.0,
+            y: -50.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 42,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        assert_eq!(glyphs[0].glyph_id, 0);
+
+        // 下侧：glyph 在 (10, 150)，y >= clip bottom (100)
+        let mut glyphs = vec![GlyphPrimitive {
+            x: 10.0,
+            y: 150.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 42,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        assert_eq!(glyphs[0].glyph_id, 0);
+    }
+
+    /// clip_glyphs start > 0：只有 start 之后的 glyph 被裁剪。
+    #[test]
+    fn test_clip_glyphs_start_index() {
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut glyphs = vec![
+            // glyph[0] 在 clip 外（不应被裁剪，因为 start=1）
+            GlyphPrimitive {
+                x: 200.0,
+                y: 200.0,
+                font_size: 16.0,
+                color: Color::BLACK,
+                glyph_id: 10,
+                font_id: FontId(0),
+                bitmap_width: None,
+                bitmap_height: None,
+            },
+            // glyph[1] 在 clip 外（应被裁剪）
+            GlyphPrimitive {
+                x: 200.0,
+                y: 200.0,
+                font_size: 16.0,
+                color: Color::BLACK,
+                glyph_id: 20,
+                font_id: FontId(0),
+                bitmap_width: None,
+                bitmap_height: None,
+            },
+        ];
+        clip_glyphs(&mut glyphs, 1, &clip);
+        // 第一个 glyph 不受影响
+        assert_eq!(glyphs[0].glyph_id, 10);
+        // 第二个 glyph 被清零
+        assert_eq!(glyphs[1].glyph_id, 0);
+    }
+
+    /// clip_glyphs 字形在 clip 内 → 不被裁剪。
+    #[test]
+    fn test_clip_glyphs_inside_not_clipped() {
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut glyphs = vec![GlyphPrimitive {
+            x: 10.0,
+            y: 10.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        assert_eq!(glyphs[0].glyph_id, 65);
+        assert_eq!(glyphs[0].font_size, 16.0);
+    }
+
+    /// clip_glyphs 空 slice 不 panic。
+    #[test]
+    fn test_clip_glyphs_empty_slice() {
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut glyphs: Vec<GlyphPrimitive> = vec![];
+        clip_glyphs(&mut glyphs, 0, &clip);
+        // 应正常返回，不 panic
+    }
+
+    /// color_value_to_render CurrentColor → rgba(0,0,0,255)。
+    #[test]
+    fn test_color_value_to_render_current_color() {
+        let color = color_value_to_render(&ColorValue::CurrentColor);
+        assert_eq!(color, Color::rgba(0, 0, 0, 255));
+    }
+
+    /// hsla_to_rgba(300, 100, 50, 1.0) → 品红区域，验证 RGB 值。
+    /// hue 300: h'=5.0, 进入 _ => (c, 0.0, x) 分支
+    /// c=1.0, x=1.0*(1.0-|5.0%2-1.0|)=1.0*(1.0-0.0)=1.0, m=0.0
+    /// r=255, g=0, b=255
+    #[test]
+    fn test_hsla_hue_300_magenta_region() {
+        let color = hsla_to_rgba(300.0, 100.0, 50.0, 1.0);
+        let Color { r, g, b, a } = color;
+        assert_eq!(r, 255);
+        assert_eq!(g, 0);
+        assert_eq!(b, 255);
+        assert_eq!(a, 255);
+    }
+
+    /// hsla_to_rgba(330, 100, 50, 1.0) → 验证结果。
+    /// hue 330: h'=5.5, 进入 _ => (c, 0.0, x)
+    /// c=1.0, x=1.0*(1.0-|5.5%2-1.0|)=1.0*(1.0-|1.5-1.0|)=1.0*(1.0-0.5)=0.5, m=0.0
+    /// r=255, g=0, b=128
+    #[test]
+    fn test_hsla_hue_330_region() {
+        let color = hsla_to_rgba(330.0, 100.0, 50.0, 1.0);
+        let Color { r, g, b, a } = color;
+        assert_eq!(r, 255);
+        assert_eq!(g, 0);
+        assert_eq!(b, 128);
+        assert_eq!(a, 255);
+    }
+
+    /// length_to_f32 对非 Px 单位返回 0.0。
+    #[test]
+    fn test_length_to_f32_non_px() {
+        assert_eq!(length_to_f32(&LengthValue::Em(2.0)), 0.0);
+        assert_eq!(length_to_f32(&LengthValue::Percentage(50.0)), 0.0);
+        assert_eq!(length_to_f32(&LengthValue::Rem(1.5)), 0.0);
+    }
+
+    /// named_color_to_render 扩展颜色测试。
+    #[test]
+    fn test_named_color_extended() {
+        assert_eq!(named_color_to_render("cyan"), Color::rgb(0, 255, 255));
+        assert_eq!(named_color_to_render("aqua"), Color::rgb(0, 255, 255));
+        assert_eq!(named_color_to_render("magenta"), Color::rgb(255, 0, 255));
+        assert_eq!(named_color_to_render("fuchsia"), Color::rgb(255, 0, 255));
+        assert_eq!(named_color_to_render("silver"), Color::rgb(192, 192, 192));
+        assert_eq!(named_color_to_render("maroon"), Color::rgb(128, 0, 0));
+        assert_eq!(named_color_to_render("olive"), Color::rgb(128, 128, 0));
+        assert_eq!(named_color_to_render("lime"), Color::rgb(0, 255, 0));
+        assert_eq!(named_color_to_render("purple"), Color::rgb(128, 0, 128));
+        assert_eq!(named_color_to_render("teal"), Color::rgb(0, 128, 128));
+        assert_eq!(named_color_to_render("navy"), Color::rgb(0, 0, 128));
+        assert_eq!(named_color_to_render("orange"), Color::rgb(255, 165, 0));
+        assert_eq!(named_color_to_render("pink"), Color::rgb(255, 192, 203));
+        assert_eq!(named_color_to_render("brown"), Color::rgb(165, 42, 42));
+    }
+
+    /// named_color_to_render 未知颜色名 → 回退为 rgb(0,0,0)。
+    #[test]
+    fn test_named_color_unknown() {
+        assert_eq!(named_color_to_render("nonexistent"), Color::rgb(0, 0, 0));
+        assert_eq!(named_color_to_render("chartreuse"), Color::rgb(0, 0, 0));
+        assert_eq!(named_color_to_render(""), Color::rgb(0, 0, 0));
+    }
 }

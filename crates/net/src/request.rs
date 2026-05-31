@@ -457,4 +457,31 @@ mod tests {
         assert!(auth.is_some());
         assert_eq!(auth.unwrap().1, "Bearer token123");
     }
+
+    // ── 新增边界条件测试 ──
+
+    /// 测试 HttpResponse::text() 对无效 UTF-8 字节序列返回错误。
+    #[test]
+    fn test_http_response_text_non_utf8() {
+        // 0xFF 0xFE 不是合法 UTF-8 序列
+        let resp = test_response(200, vec![0xFF, 0xFE, 0xFD], "http://example.com");
+        let result = resp.text();
+        assert!(result.is_err(), "无效 UTF-8 body 应返回错误");
+    }
+
+    /// 测试 HttpRequest 通过 builder 链式调用添加多个 header，保持顺序和内容正确。
+    #[test]
+    fn test_http_request_header_chaining() {
+        let req = HttpRequest::get("http://example.com/api")
+            .header("Content-Type", "application/json")
+            .header("X-Request-Id", "abc-123")
+            .header("Cache-Control", "no-cache")
+            .header("Authorization", "Bearer tok");
+        assert_eq!(req.headers.len(), 4, "应通过链式调用添加 4 个 header");
+        // 验证顺序与内容
+        assert_eq!(req.headers[0], ("Content-Type".into(), "application/json".into()));
+        assert_eq!(req.headers[1], ("X-Request-Id".into(), "abc-123".into()));
+        assert_eq!(req.headers[2], ("Cache-Control".into(), "no-cache".into()));
+        assert_eq!(req.headers[3], ("Authorization".into(), "Bearer tok".into()));
+    }
 }

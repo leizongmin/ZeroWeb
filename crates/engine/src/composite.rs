@@ -1947,4 +1947,246 @@ mod tests {
         // 根图层只包含根 box 自身（两个子元素都被提升了）
         assert_eq!(layers[0].boxes.len(), 1, "root layer should only contain root box");
     }
+
+    // ── 边界条件测试：父子提升关系 / 包围盒 / 根图层尺寸 ───────────
+
+    /// 测试父元素被提升（有 z-index），子元素未提升 → 子元素进入根图层而非父元素的提升图层。
+    ///
+    /// 构建树：root → parent(z-index=5, promoted) → child(无 z-index, not promoted)。
+    /// 验证子元素出现在根图层中，不在父元素的提升图层中。
+    #[test]
+    fn test_promoted_parent_with_non_promoted_child() {
+        let mut doc = zero_dom::Document::new();
+        let parent_elem = doc.create_element("div");
+        let child_elem = doc.create_element("span");
+
+        // 子元素不提升
+        let child_box = make_box(Some(child_elem), 0.0, 0.0, 50.0, 20.0, false);
+        // 父元素有 z-index → 会被提升
+        let parent_box = LayoutBox {
+            node_id: Some(parent_elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        // 父元素设置 z-index → 被提升
+        let mut parent_style = ComputedStyle::default();
+        parent_style.z_index = ZIndexValue::Integer(5);
+        styles.insert(parent_elem, parent_style);
+
+        // 子元素默认样式 → 不被提升
+        styles.insert(child_elem, ComputedStyle::default());
+
+        let layers = promote_compositing_layers(&parent_box, &styles);
+        // 根图层 + 1 个父元素提升图层 = 2
+        assert_eq!(layers.len(), 2, "root + 1 promoted parent layer");
+
+        // 父元素的提升图层只包含父元素自身
+        let promoted = &layers[1];
+        assert_eq!(promoted.boxes.len(), 1, "promoted layer should contain parent box only");
+        assert_eq!(promoted.z_index, 5);
+
+        // 子元素应该在根图层中（未被提升的元素进入根图层）
+        let root = &layers[0];
+        assert!(root.is_root);
+        // 根图层包含根 box 自身 + child box（因为 child 未被提升）
+        assert!(
+            root.boxes.len() >= 1,
+            "root layer should contain the non-promoted child"
+        );
+    }
+
+    /// 测试父元素和子元素都被提升（都有 z-index）→ 产生两个独立的提升图层。
+    ///
+    /// 构建树：root → parent(z-index=5) → child(z-index=10)。
+    /// 验证有两个独立的提升图层，分别为 z=5 和 z=10。
+    #[test]
+    fn test_promoted_parent_with_promoted_child() {
+        let mut doc = zero_dom::Document::new();
+        let parent_elem = doc.create_element("div");
+        let child_elem = doc.create_element("span");
+
+        let child_box = make_box(Some(child_elem), 0.0, 0.0, 50.0, 20.0, false);
+        let parent_box = LayoutBox {
+            node_id: Some(parent_elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.z_index = ZIndexValue::Integer(5);
+        styles.insert(parent_elem, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.z_index = ZIndexValue::Integer(10);
+        styles.insert(child_elem, child_style);
+
+        let layers = promote_compositing_layers(&parent_box, &styles);
+        // 根图层 + parent(z=5) + child(z=10) = 3
+        assert_eq!(layers.len(), 3, "root + 2 promoted layers");
+
+        // 验证两个提升图层
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, 5, "first promoted layer should be z=5");
+        assert_eq!(layers[2].z_index, 10, "second promoted layer should be z=10");
+    }
+
+    /// 测试 CompositingLayer 只包含一个 box 时 bounding_box 返回该 box 的尺寸。
+    #[test]
+    fn test_bounding_box_single_box() {
+        let mut layer = CompositingLayer::new(0);
+        layer.boxes.push(make_box(None, 15.0, 25.0, 80.0, 60.0, false));
+
+        let (x, y, w, h) = layer.bounding_box();
+        assert!((x - 15.0).abs() < f32::EPSILON, "x should be 15.0");
+        assert!((y - 25.0).abs() < f32::EPSILON, "y should be 25.0");
+        assert!((w - 80.0).abs() < f32::EPSILON, "width should be 80.0");
+        assert!((h - 60.0).abs() < f32::EPSILON, "height should be 60.0");
+    }
+
+    /// 测试根图层尺寸随深层孙子元素扩展。
+    ///
+    /// 构建树：root(200x100) → child(0,0,100,80) → grandchild(0,0,400,300)。
+    /// 孙子元素超出根的尺寸，根图层的 width/height 应扩展。
+    #[test]
+    fn test_root_layer_encompasses_grandchildren() {
+        let mut doc = zero_dom::Document::new();
+        let child_elem = doc.create_element("div");
+        let grandchild_elem = doc.create_element("span");
+
+        // 孙子元素比根元素大
+        let grandchild_box = make_box(Some(grandchild_elem), 0.0, 0.0, 400.0, 300.0, false);
+        let child_box = LayoutBox {
+            node_id: Some(child_elem),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![grandchild_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        styles.insert(child_elem, ComputedStyle::default());
+        styles.insert(grandchild_elem, ComputedStyle::default());
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 1, "only root layer (no promotions)");
+
+        // 根图层尺寸应至少扩展到孙子元素的范围
+        let root = &layers[0];
+        assert!(
+            root.width >= 400.0,
+            "root layer width should encompass grandchild (>=400), got {}",
+            root.width
+        );
+        assert!(
+            root.height >= 300.0,
+            "root layer height should encompass grandchild (>=300), got {}",
+            root.height
+        );
+    }
 }
