@@ -329,7 +329,7 @@ fn convert_alignment_to_align_content(
 /// - `50%` — 百分比
 /// - `minmax(100px, 1fr)` — 最小最大
 /// - `repeat(3, 100px)` — 重复
-/// - `repeat(auto-fill, 200px)` — 自动填充（展开为单个值）
+/// - `repeat(auto-fill, 200px)` — 自动填充（传递给 taffy 原生 auto-fill）
 fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
     let Some(value) = value else {
         return vec![];
@@ -343,7 +343,7 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFun
             .strip_prefix("repeat(")
             .and_then(|s| s.strip_suffix(')'))
         {
-            result.extend(expand_repeat(inner));
+            result.extend(parse_repeat(inner));
         } else {
             result.push(parse_single_track(&token));
         }
@@ -389,10 +389,16 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
     tokens
 }
 
-/// 展开 repeat() 函数内部内容为多个 track sizing function。
+/// 解析 repeat() 函数内部内容为 track sizing function 列表。
 ///
 /// 格式：`3, 100px` 或 `auto-fill, 200px` 或 `2, 1fr auto`。
-fn expand_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
+///
+/// 对于 auto-fill/auto-fit，生成 `TrackSizingFunction::Repeat` 变体，
+/// 利用 taffy 原生的 auto-fill 支持，根据容器宽度自动计算轨道数量。
+/// 对于固定次数，直接展开为对应数量的轨道。
+fn parse_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
+    use taffy::style::GridTrackRepetition;
+
     // 找到第一个不在括号内的逗号
     let comma_pos = find_top_level_comma(inner);
     let Some(comma_pos) = comma_pos else {
@@ -402,29 +408,82 @@ fn expand_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
     let count_str = inner[..comma_pos].trim();
     let track_list_str = inner[comma_pos + 1..].trim();
 
-    // 解析重复次数：auto-fill/auto-fit → 1（taffy 不原生支持）
-    let count: usize = if count_str.eq_ignore_ascii_case("auto-fill")
-        || count_str.eq_ignore_ascii_case("auto-fit")
-    {
-        1
-    } else if let Ok(n) = count_str.parse::<usize>() {
-        n
-    } else {
+    // 解析内部 track 列表为 NonRepeatedTrackSizingFunction
+    let inner_tokens = tokenize_track_list(track_list_str);
+    let inner_tracks: Vec<taffy::style::NonRepeatedTrackSizingFunction> = inner_tokens
+        .iter()
+        .map(|t| parse_single_track_as_non_repeated(t))
+        .collect();
+
+    if count_str.eq_ignore_ascii_case("auto-fill") {
+        // 传递给 taffy 原生 auto-fill，自动根据容器宽度计算轨道数量
+        return vec![taffy::style::TrackSizingFunction::Repeat(
+            GridTrackRepetition::AutoFill,
+            inner_tracks,
+        )];
+    }
+
+    if count_str.eq_ignore_ascii_case("auto-fit") {
+        // 传递给 taffy 原生 auto-fit
+        return vec![taffy::style::TrackSizingFunction::Repeat(
+            GridTrackRepetition::AutoFit,
+            inner_tracks,
+        )];
+    }
+
+    // 固定次数：展开为对应数量的轨道
+    let Ok(count) = count_str.parse::<usize>() else {
         return vec![taffy::style::TrackSizingFunction::AUTO];
     };
 
-    // 解析内部 track 列表
-    let inner_tokens = tokenize_track_list(track_list_str);
-    let inner_tracks: Vec<taffy::style::TrackSizingFunction> =
-        inner_tokens.iter().map(|t| parse_single_track(t)).collect();
-
-    // 重复 count 次
     let mut result = Vec::with_capacity(count * inner_tracks.len());
     for _ in 0..count {
-        result.extend(inner_tracks.iter().cloned());
+        result.extend(
+            inner_tracks
+                .iter()
+                .map(|t| taffy::style::TrackSizingFunction::Single(*t)),
+        );
     }
 
     result
+}
+
+/// 将单个 track 值解析为 NonRepeatedTrackSizingFunction。
+///
+/// 用于 repeat() 内部轨道列表的解析。
+fn parse_single_track_as_non_repeated(
+    s: &str,
+) -> taffy::style::NonRepeatedTrackSizingFunction {
+    use taffy::style::NonRepeatedTrackSizingFunction;
+
+    let s = s.trim();
+
+    if s.eq_ignore_ascii_case("auto") {
+        return NonRepeatedTrackSizingFunction::AUTO;
+    }
+    if s.ends_with("fr")
+        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
+    {
+        return NonRepeatedTrackSizingFunction::from_flex(flex);
+    }
+    if s.ends_with('%')
+        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
+    {
+        return NonRepeatedTrackSizingFunction::from_percent(pct / 100.0);
+    }
+    if s.starts_with("minmax(") && s.ends_with(')') {
+        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
+    }
+    if s.ends_with("px")
+        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
+    {
+        return NonRepeatedTrackSizingFunction::from_length(px);
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return NonRepeatedTrackSizingFunction::from_length(px);
+    }
+
+    NonRepeatedTrackSizingFunction::AUTO
 }
 
 /// 找到字符串中第一个不在括号内的逗号位置。
@@ -556,11 +615,20 @@ fn parse_minmax(inner: &str) -> taffy::style::TrackSizingFunction {
 }
 
 /// 解析 minmax 的最小值。
+///
+/// 支持 auto、px、百分比（%）和纯数字。
 fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     use taffy::style::MinTrackSizingFunction;
 
     if s.eq_ignore_ascii_case("auto") {
         return MinTrackSizingFunction::Auto;
+    }
+    if s.ends_with('%')
+        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
+    {
+        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(
+            pct / 100.0,
+        ));
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
@@ -575,6 +643,8 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
 }
 
 /// 解析 minmax 的最大值。
+///
+/// 支持 auto、fr、px、百分比（%）和纯数字。
 fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
     use taffy::style::MaxTrackSizingFunction;
 
@@ -585,6 +655,13 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
         && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
     {
         return MaxTrackSizingFunction::Fraction(flex);
+    }
+    if s.ends_with('%')
+        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
+    {
+        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(
+            pct / 100.0,
+        ));
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
@@ -987,14 +1064,24 @@ mod tests {
         assert_eq!(tracks.len(), 4);
     }
 
-    /// 测试 repeat() auto-fill/auto-fit 降级为单次展开。
+    /// 测试 repeat() auto-fill/auto-fit 生成 Repeat 变体（非展开）。
     #[test]
     fn test_parse_grid_tracks_repeat_auto_fill() {
+        use taffy::style::GridTrackRepetition;
+
         let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
         assert_eq!(tracks.len(), 1);
+        assert!(
+            matches!(&tracks[0], taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)),
+            "auto-fill 应生成 Repeat 变体"
+        );
 
         let tracks = parse_grid_tracks(&Some("repeat(auto-fit, minmax(100px, 1fr))".to_string()));
         assert_eq!(tracks.len(), 1);
+        assert!(
+            matches!(&tracks[0], taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFit, _)),
+            "auto-fit 应生成 Repeat 变体"
+        );
     }
 
     /// 测试 repeat() 与普通 track 值混用。
