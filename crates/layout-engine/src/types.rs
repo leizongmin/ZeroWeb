@@ -69,10 +69,16 @@ pub struct LayoutBox {
     pub is_absolute: bool,
     /// 是否为 fixed 定位（需宿主层处理）。
     pub is_fixed: bool,
+    /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
+    pub is_sticky: bool,
     /// 溢出处理。
     pub overflow_x: OverflowClip,
     /// 溢出处理。
     pub overflow_y: OverflowClip,
+    /// z-index 值（用于堆叠上下文排序）。
+    /// 仅对 positioned 元素（absolute/relative/fixed/sticky）生效。
+    /// 默认为 0，对应 z-index: auto。
+    pub z_index: i32,
 }
 
 impl LayoutBox {
@@ -145,8 +151,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         assert_eq!(box0.width, 0.0);
         assert_eq!(box0.height, 0.0);
@@ -183,8 +191,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         let (abs_x, abs_y) = box0.absolute_position();
         assert_eq!(abs_x, 10.0);
@@ -219,8 +229,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         // 总宽度 = 10 + 100 + 10 = 120, 总高度 = 10 + 50 + 10 = 70
         let area = box0.outer_area();
@@ -255,8 +267,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         // content = 100 - 2*2 - 2*3 = 100 - 10 = 90
         assert!((box0.content_width - 90.0).abs() < 0.001);
@@ -302,8 +316,10 @@ mod tests {
                 children: vec![],
                 is_absolute: false,
                 is_fixed: false,
+                is_sticky: false,
                 overflow_x: OverflowClip::Visible,
                 overflow_y: OverflowClip::Visible,
+                z_index: 0,
             },
             viewport_width: 800.0,
             viewport_height: 600.0,
@@ -340,8 +356,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         let parent = LayoutBox {
             node_id: None,
@@ -368,8 +386,10 @@ mod tests {
             children: vec![child],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         assert_eq!(parent.children.len(), 1);
         assert!((parent.children[0].x - 10.0).abs() < 0.001);
@@ -403,8 +423,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         let (abs_x, abs_y) = child.absolute_position_with_parent(10.0, 20.0);
         assert!((abs_x - 30.0).abs() < 0.001);
@@ -439,8 +461,10 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            z_index: 0,
         };
         assert!((box0.outer_area()).abs() < 0.001);
     }
@@ -473,13 +497,222 @@ mod tests {
             children: vec![],
             is_absolute: true,
             is_fixed: false,
+            is_sticky: false,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Scroll,
+            z_index: 10,
         };
         let cloned = box0.clone();
         assert!((cloned.x - 5.0).abs() < 0.001);
         assert!(cloned.is_absolute);
         assert_eq!(cloned.overflow_x, OverflowClip::Hidden);
         assert_eq!(cloned.overflow_y, OverflowClip::Scroll);
+        assert_eq!(cloned.z_index, 10);
+    }
+
+    /// 测试 LayoutBox 的 z_index 字段。
+    #[test]
+    fn test_layout_box_z_index() {
+        // 默认 z_index 为 0（对应 auto）
+        let box_default = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert_eq!(box_default.z_index, 0);
+
+        // 正 z-index
+        let box_positive = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: true,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 999,
+        };
+        assert_eq!(box_positive.z_index, 999);
+
+        // 负 z-index
+        let box_negative = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: true,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: -1,
+        };
+        assert_eq!(box_negative.z_index, -1);
+    }
+
+    /// 测试 z-index 排序：多个 LayoutBox 按 z_index 排序后顺序正确。
+    #[test]
+    fn test_layout_box_z_index_sorting() {
+        let boxes = vec![
+            LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 50.0,
+                height: 50.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 50.0,
+                content_height: 50.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: true,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 10,
+            },
+            LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 50.0,
+                height: 50.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 50.0,
+                content_height: 50.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: true,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: -1,
+            },
+            LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 50.0,
+                height: 50.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 50.0,
+                content_height: 50.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: true,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 5,
+            },
+        ];
+
+        let mut sorted = boxes;
+        sorted.sort_by_key(|b| b.z_index);
+        assert_eq!(sorted[0].z_index, -1);
+        assert_eq!(sorted[1].z_index, 5);
+        assert_eq!(sorted[2].z_index, 10);
     }
 }

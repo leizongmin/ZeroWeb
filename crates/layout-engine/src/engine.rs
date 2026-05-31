@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use taffy::prelude::*;
 use zero_css_parser::values::{OverflowValue, PositionValue};
 use zero_dom::{Document, NodeId};
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, ZIndexValue};
 
 use crate::tree::build_layout_tree;
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
@@ -61,7 +61,12 @@ impl LayoutEngine {
         let _ = taffy_tree.compute_layout(root_id, available_space);
 
         // 3. 提取 LayoutBox 树
-        let root_box = Self::extract_layout(&taffy_tree, root_id, &taffy_to_dom, styles);
+        let mut root_box = Self::extract_layout(&taffy_tree, root_id, &taffy_to_dom, styles);
+
+        // 4. 后处理：将 fixed 元素的坐标调整为视口相对
+        //    taffy 将 fixed 当作 absolute 处理，坐标是相对于 taffy 的包含块，
+        //    需要转换为相对于视口的绝对坐标。
+        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
 
         LayoutResult {
             root: root_box,
@@ -85,8 +90,13 @@ impl LayoutEngine {
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
+        let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        let z_index = computed.map_or(0, |s| match s.z_index {
+            ZIndexValue::Auto => 0,
+            ZIndexValue::Integer(z) => z,
+        });
 
         // 计算内容区域
         let content_x = layout.location.x + layout.border.left + layout.padding.left;
@@ -133,8 +143,10 @@ impl LayoutEngine {
             children: children_boxes,
             is_absolute,
             is_fixed,
+            is_sticky,
             overflow_x,
             overflow_y,
+            z_index,
         }
     }
 }
@@ -146,6 +158,34 @@ fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
         OverflowValue::Hidden => OverflowClip::Hidden,
         OverflowValue::Clip => OverflowClip::Clip,
         OverflowValue::Scroll | OverflowValue::Auto => OverflowClip::Scroll,
+    }
+}
+
+/// 递归调整 fixed 定位元素的坐标为视口相对。
+///
+/// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
+/// 此函数在布局完成后遍历布局树，将 fixed 元素的坐标加上祖先累积偏移，
+/// 使其变为相对于视口的绝对坐标。
+fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, parent_offset_y: f32) {
+    if box_node.is_fixed {
+        // fixed 元素：加上祖先偏移使其成为视口相对坐标
+        box_node.x += parent_offset_x;
+        box_node.y += parent_offset_y;
+    }
+
+    let offset_x = if box_node.is_fixed {
+        0.0
+    } else {
+        parent_offset_x + box_node.x
+    };
+    let offset_y = if box_node.is_fixed {
+        0.0
+    } else {
+        parent_offset_y + box_node.y
+    };
+
+    for child in &mut box_node.children {
+        adjust_fixed_to_viewport(child, offset_x, offset_y);
     }
 }
 

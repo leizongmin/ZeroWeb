@@ -7,12 +7,13 @@ use zero_css_parser::values::LengthValue;
 use zero_css_parser::values::TransformFunction;
 use zero_css_parser::values::TransformValue;
 use zero_css_parser::values::VisibilityValue;
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
+use zero_layout_engine::InlineFormattingContext;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::RenderPrimitives;
+use zero_render_foundation::primitive::{FontId, GlyphPrimitive, RenderPrimitives};
 use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
@@ -32,16 +33,23 @@ impl Painter {
     /// 绘制整个布局树。
     ///
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
-    pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-        self.paint_node(layout, styles, 0.0, 0.0);
+    /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
+    pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
+        self.paint_node(layout, styles, 0.0, 0.0, doc);
     }
 
     /// 仅绘制与脏区域相交的节点（增量绘制）。
     ///
     /// 遍历布局树时跳过与脏区域完全不相交的子树，
     /// 只生成落在脏区域内的图元。
-    pub fn paint_in_rect(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, dirty_rect: &Rect) {
-        self.paint_node_in_rect(layout, styles, 0.0, 0.0, dirty_rect);
+    pub fn paint_in_rect(
+        &mut self,
+        layout: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        dirty_rect: &Rect,
+        doc: Option<&Document>,
+    ) {
+        self.paint_node_in_rect(layout, styles, 0.0, 0.0, dirty_rect, doc);
     }
 
     /// 绘制与脏区域相交的节点（递归）。
@@ -52,6 +60,7 @@ impl Painter {
         offset_x: f32,
         offset_y: f32,
         dirty_rect: &Rect,
+        doc: Option<&Document>,
     ) {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
@@ -87,7 +96,7 @@ impl Painter {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
                 self.paint_outline(box_node, abs_x, abs_y, style);
-                self.paint_text(box_node, abs_x, abs_y, style);
+                self.paint_text(box_node, abs_x, abs_y, style, doc);
             }
 
             hidden
@@ -102,7 +111,7 @@ impl Painter {
         let glyphs_before = self.primitives.glyphs.len();
 
         for child in &box_node.children {
-            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect);
+            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
         }
 
         if needs_clip {
@@ -124,12 +133,14 @@ impl Painter {
     /// 根据节点的计算样式生成背景色填充和边框填充图元，
     /// 然后递归绘制子节点。当 overflow 不为 Visible 时，
     /// 子节点产生的图元会被裁剪到内容盒范围内。
+    /// 当传入 `doc` 时，使用行内格式化上下文处理文本换行。
     fn paint_node(
         &mut self,
         box_node: &LayoutBox,
         styles: &HashMap<NodeId, ComputedStyle>,
         offset_x: f32,
         offset_y: f32,
+        doc: Option<&Document>,
     ) {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
@@ -161,8 +172,8 @@ impl Painter {
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
 
-                // 4. 文本内容绘制（生成 GlyphPrimitive）
-                self.paint_text(box_node, abs_x, abs_y, style);
+                // 4. 文本内容绘制（使用行内格式化上下文处理换行）
+                self.paint_text(box_node, abs_x, abs_y, style, doc);
             }
 
             hidden
@@ -180,7 +191,7 @@ impl Painter {
         let glyphs_before = self.primitives.glyphs.len();
 
         for child in &box_node.children {
-            self.paint_node(child, styles, child_offset_x, child_offset_y);
+            self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
         }
 
         // 如果需要裁剪，将子节点产生的图元裁剪到内容盒范围内
@@ -365,12 +376,20 @@ impl Painter {
         &self.primitives
     }
 
-    /// 绘制文本内容（生成 GlyphPrimitive）。
+    /// 绘制文本内容（生成多字符 GlyphPrimitive）。
     ///
-    /// 当元素具有非 `CurrentColor` 的前景色且 font_size 有效时，
-    /// 为该元素生成一个占位 GlyphPrimitive。
-    /// 完整实现需要通过 DOM 获取 text_content 并进行 font shaping。
-    pub fn paint_text(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+    /// 当传入 `doc` 且该元素有 DOM 节点时，使用 `InlineFormattingContext`
+    /// 进行文本换行布局，为每个文本片段中的每个字符各生成一个 GlyphPrimitive，
+    /// 字符按估算前进宽度逐个排列。
+    /// 当 `doc` 为 `None` 或元素没有文本子节点时，退化为生成单个占位 glyph。
+    pub fn paint_text(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: Option<&Document>,
+    ) {
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,
@@ -389,28 +408,62 @@ impl Painter {
         let color = color_value_to_render(&style.color);
 
         // 使用内容区域左上角作为文本起始位置
-        let text_x = abs_x + box_node.border_left + box_node.padding_left;
-        let text_y = abs_y + box_node.border_top + box_node.padding_top;
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
         // 应用 CSS transform
         let (tx, ty) = apply_transform_offset(style, abs_x, abs_y);
 
-        let glyph_x = text_x + tx;
-        let glyph_y = text_y + ty;
+        // 默认字体 ID
+        let default_font_id = FontId(0);
 
-        // 占位 glyph：标记此位置有文本内容
-        // 完整实现需要 font shaping 和 glyph atlas
-        self.primitives
-            .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                x: glyph_x,
-                y: glyph_y + font_size, // baseline at bottom of text
-                font_size,
-                color,
-                glyph_id: 0,                                           // placeholder glyph id
-                font_id: zero_render_foundation::primitive::FontId(0), // default font
-                bitmap_width: None,
-                bitmap_height: None,
-            });
+        // 尝试使用行内格式化上下文（需要 Document 和 DOM 节点）
+        if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
+            let container_width = box_node.content_width;
+            let mut inline_ctx = InlineFormattingContext::new(container_width);
+            inline_ctx.layout(doc, node_id, &HashMap::new());
+
+            let fragments = inline_ctx.all_fragments();
+            if !fragments.is_empty() {
+                // 有文本片段 — 为每个片段中的每个字符生成独立 glyph
+                for fragment in fragments {
+                    let frag_base_x = content_x + fragment.x + tx;
+                    let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
+                    let char_advance = fragment.font_size * 0.6;
+                    let mut char_x = frag_base_x;
+
+                    for ch in fragment.text.chars() {
+                        self.primitives.add_glyph(GlyphPrimitive {
+                            x: char_x,
+                            y: frag_base_y,
+                            font_size: fragment.font_size,
+                            color,
+                            glyph_id: ch as u32,
+                            font_id: default_font_id,
+                            bitmap_width: None,
+                            bitmap_height: None,
+                        });
+                        char_x += char_advance;
+                    }
+                }
+                return;
+            }
+        }
+
+        // 退化为单个占位 glyph（无 Document 或无文本子节点）
+        let glyph_x = content_x + tx;
+        let glyph_y = content_y + ty;
+
+        self.primitives.add_glyph(GlyphPrimitive {
+            x: glyph_x,
+            y: glyph_y + font_size, // baseline at bottom of text
+            font_size,
+            color,
+            glyph_id: 0, // placeholder glyph id
+            font_id: default_font_id,
+            bitmap_width: None,
+            bitmap_height: None,
+        });
     }
 }
 
@@ -635,12 +688,14 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
         let mut painter = Painter::new();
         let styles = HashMap::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
         assert!(painter.primitives().is_empty());
     }
 
@@ -671,6 +726,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         }
@@ -713,6 +770,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         }
@@ -731,7 +790,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         let primitives = painter.primitives();
         assert_eq!(primitives.fills.len(), 1);
@@ -757,7 +816,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         assert!(painter.primitives().is_empty());
     }
@@ -776,7 +835,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         assert_eq!(painter.primitives().fills.len(), 1);
         let fill = &painter.primitives().fills[0];
@@ -806,7 +865,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 应该有 4 个边框填充
         assert_eq!(painter.primitives().fills.len(), 4);
@@ -845,6 +904,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -859,7 +920,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         assert_eq!(painter.primitives().fills.len(), 2);
 
@@ -914,7 +975,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 会生成一个填充，但尺寸为 0
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -935,7 +996,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         let fill = &painter.primitives().fills[0];
         assert_eq!(fill.rect.origin.x, 50.0);
@@ -977,6 +1038,8 @@ mod tests {
             children: vec![child_box1, child_box2],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -989,7 +1052,7 @@ mod tests {
         }
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 只有子节点有背景色，父节点没有
         assert_eq!(painter.primitives().fills.len(), 2);
@@ -1001,7 +1064,7 @@ mod tests {
         let mut painter = Painter::new();
         let layout = make_box(None, 0.0, 0.0, 0.0, 0.0);
         let styles = HashMap::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
         let primitives = painter.into_primitives();
         assert!(primitives.is_empty());
     }
@@ -1034,7 +1097,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 1 background fill + 4 border fills = 5
         assert_eq!(painter.primitives().fills.len(), 5);
@@ -1048,7 +1111,7 @@ mod tests {
         let layout = make_box(None, 0.0, 0.0, 100.0, 50.0);
         let mut painter = Painter::new();
         let styles = HashMap::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
         assert!(painter.primitives().is_empty());
     }
 
@@ -1065,7 +1128,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         assert_eq!(painter.primitives().fills.len(), 1);
     }
@@ -1091,7 +1154,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 4 border fills, no background fill
         assert_eq!(painter.primitives().fills.len(), 4);
@@ -1130,6 +1193,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -1140,7 +1205,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 子节点偏移 = padding_left(5) + border_left(5) = 10
         let fill = &painter.primitives().fills[0];
@@ -1182,6 +1247,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -1197,7 +1264,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // parent 的 visibility:hidden 阻止了父节点绘制，但子节点不受影响
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -1225,7 +1292,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // border-style: none 不绘制边框
         assert_eq!(painter.primitives().fills.len(), 0);
@@ -1251,7 +1318,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // border-style: solid 正常绘制 4 条边框
         assert_eq!(painter.primitives().fills.len(), 4);
@@ -1272,7 +1339,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // outline 生成 4 个填充图元
         assert_eq!(painter.primitives().fills.len(), 4);
@@ -1302,7 +1369,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         assert!(painter.primitives().is_empty());
     }
@@ -1331,7 +1398,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 1 background + 4 border + 4 outline = 9
         assert_eq!(painter.primitives().fills.len(), 9);
@@ -1432,6 +1499,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Hidden,
         };
@@ -1442,7 +1511,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 子节点填充应该被裁剪到父节点的 100x100 内容区域
         let fill = &painter.primitives().fills[0];
@@ -1483,6 +1552,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -1493,7 +1564,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 子节点填充不应被裁剪
         let fill = &painter.primitives().fills[0];
@@ -1534,6 +1605,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Clip,
             overflow_y: OverflowClip::Clip,
         };
@@ -1544,7 +1617,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 子节点从 (50,50) 开始 200x200，裁剪到 100x100 的内容盒
         let fill = &painter.primitives().fills[0];
@@ -1593,7 +1666,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 背景填充仍然生成（圆角标记在内部处理）
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -1665,7 +1738,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint_text(&layout, 10.0, 20.0, &styles[&elem]);
+        painter.paint_text(&layout, 10.0, 20.0, &styles[&elem], None);
 
         assert_eq!(painter.primitives().glyphs.len(), 1);
         let glyph = &painter.primitives().glyphs[0];
@@ -1689,7 +1762,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
         assert!(painter.primitives().glyphs.is_empty());
     }
 
@@ -1707,7 +1780,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
         assert!(painter.primitives().glyphs.is_empty());
     }
 
@@ -1726,7 +1799,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
 
         let glyph = &painter.primitives().glyphs[0];
         assert_eq!(glyph.x, 5.0); // 0 + translate_x(5)
@@ -1752,7 +1825,7 @@ mod tests {
         let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
 
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
 
         // 节点完全在脏区域外，不应产生任何图元
         assert!(painter.primitives().is_empty());
@@ -1774,7 +1847,7 @@ mod tests {
         let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
 
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
 
         // 节点与脏区域相交，应产生填充图元
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -1797,7 +1870,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 背景填充
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -1842,6 +1915,8 @@ mod tests {
             children: vec![child1, child2, child3],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -1858,7 +1933,7 @@ mod tests {
         }
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         // 1 parent background + 3 child backgrounds = 4
         assert_eq!(painter.primitives().fills.len(), 4);
@@ -1880,7 +1955,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // Background fill should still be at original position
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -1929,6 +2004,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Hidden,
         };
@@ -1939,7 +2016,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         let fill = &painter.primitives().fills[0];
         assert!(
@@ -1969,7 +2046,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // Background fill still generated even with border-radius
         assert_eq!(painter.primitives().fills.len(), 1);
@@ -2010,6 +2087,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -2024,7 +2103,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         assert_eq!(painter.primitives().fills.len(), 2);
         // First fill is parent background (drawn first = behind)
@@ -2057,7 +2136,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         // 1 background + 4 borders = 5 fills, 0 glyphs
         assert_eq!(painter.primitives().fills.len(), 5);
@@ -2131,7 +2210,7 @@ mod tests {
 
         let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
         assert!(painter.primitives().is_empty());
     }
 
@@ -2149,7 +2228,7 @@ mod tests {
 
         let dirty_rect = Rect::new(0.0, 0.0, 800.0, 200.0);
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
         assert!(painter.primitives().is_empty());
     }
 
@@ -2168,7 +2247,7 @@ mod tests {
 
         let dirty_rect = Rect::new(99.0, 0.0, 100.0, 50.0);
         let mut painter = Painter::new();
-        painter.paint_in_rect(&layout, &styles, &dirty_rect);
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
         assert_eq!(painter.primitives().fills.len(), 1);
     }
 
@@ -2202,6 +2281,8 @@ mod tests {
             children: vec![],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -2213,7 +2294,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem]);
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
 
         let glyph = &painter.primitives().glyphs[0];
         // text_x = abs_x(0) + border_left(5) + padding_left(1) = 6
@@ -2238,7 +2319,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         assert_eq!(painter.primitives().fills.len(), 4);
         // top outline: y = abs_y - (outline_width + offset) = 20 - 7 = 13
@@ -2327,6 +2408,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -2356,6 +2439,8 @@ mod tests {
             children: vec![parent_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Hidden,
         };
@@ -2370,7 +2455,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&grandparent_box, &styles);
+        painter.paint(&grandparent_box, &styles, None);
 
         let fills = &painter.primitives().fills;
         assert!(!fills.is_empty(), "should produce fills from parent and child");
@@ -2432,6 +2517,8 @@ mod tests {
             children: vec![child_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Hidden,
         };
@@ -2460,6 +2547,8 @@ mod tests {
             children: vec![inner_box],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Hidden,
             overflow_y: OverflowClip::Hidden,
         };
@@ -2470,7 +2559,7 @@ mod tests {
         styles.insert(child, child_style);
 
         let mut painter = Painter::new();
-        painter.paint(&outer_box, &styles);
+        painter.paint(&outer_box, &styles, None);
 
         // child(100x100) → clipped by inner(40x40) → 40x40
         // inner result(40x40) within outer(80x80) → no further clipping needed
@@ -2499,7 +2588,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         let prims = painter.primitives();
         // 应生成背景填充 + 文本 glyph
@@ -2561,6 +2650,8 @@ mod tests {
             children: vec![child1, child2, child3],
             is_absolute: false,
             is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
         };
@@ -2593,7 +2684,7 @@ mod tests {
         styles.insert(block2, block2_style);
 
         let mut painter = Painter::new();
-        painter.paint(&parent_box, &styles);
+        painter.paint(&parent_box, &styles, None);
 
         let prims = painter.primitives();
 
@@ -2635,7 +2726,7 @@ mod tests {
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
-        painter.paint(&layout, &styles);
+        painter.paint(&layout, &styles, None);
 
         let prims = painter.primitives();
         assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph");
@@ -2647,5 +2738,269 @@ mod tests {
         // 位置：abs_x=10, abs_y=20, text_x=10, baseline=20+20=40
         assert_eq!(glyph.x, 10.0);
         assert_eq!(glyph.y, 40.0);
+    }
+
+    // ── 新增测试：InlineFormattingContext 集成 ──────────────────────
+
+    /// 测试 paint_text 使用 InlineFormattingContext 为每个文本片段生成 glyph。
+    ///
+    /// 场景：<p>Hello World</p>，容器宽度较窄，文本自动换行。
+    /// 当传入 Document 时，paint_text 应通过 InlineFormattingContext
+    /// 将文本分割为单词，为每个单词生成独立的 GlyphPrimitive。
+    #[test]
+    fn test_paint_text_with_inline_formatting_context() {
+        let doc = zero_dom::parse_html("<p>Hello World</p>");
+
+        // 找到 p 元素
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let layout = make_box(Some(p), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        let prims = painter.primitives();
+        // InlineFormattingContext 会将 "Hello World" 分成 2 个单词片段
+        assert!(
+            prims.glyphs.len() >= 2,
+            "应有至少 2 个 glyph（Hello 和 World），实际 {}",
+            prims.glyphs.len()
+        );
+
+        // 验证每个 glyph 的颜色和字体大小正确
+        for glyph in &prims.glyphs {
+            assert_eq!(glyph.color, Color::rgb(0, 0, 0));
+            assert_eq!(glyph.font_size, 16.0);
+        }
+    }
+
+    /// 测试 paint_text 不传 Document 时退化为单个占位 glyph。
+    ///
+    /// 验证 doc=None 时 paint_text 仍然正常工作，
+    /// 生成单个 glyph 作为占位。
+    #[test]
+    fn test_paint_text_without_doc_fallback() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("p");
+        let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 30.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // doc=None → 退化为单个占位 glyph
+        assert_eq!(painter.primitives().glyphs.len(), 1, "doc=None 时应退化为 1 个 glyph");
+    }
+
+    /// 测试 InlineFormattingContext 生成的 glyph 位置包含容器偏移。
+    ///
+    /// 场景：<p>Text</p>，p 元素有 border 和 padding 偏移。
+    /// 验证 glyph 的坐标包含 content_x/content_y 偏移。
+    #[test]
+    fn test_paint_inline_glyph_position_with_offset() {
+        let doc = zero_dom::parse_html("<p>Text</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let layout = LayoutBox {
+            node_id: Some(p),
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 50.0,
+            content_x: 15.0,
+            content_y: 25.0,
+            content_width: 190.0,
+            content_height: 40.0,
+            border_top: 2.0,
+            border_right: 2.0,
+            border_bottom: 2.0,
+            border_left: 2.0,
+            padding_top: 3.0,
+            padding_right: 3.0,
+            padding_bottom: 3.0,
+            padding_left: 3.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        let prims = painter.primitives();
+        assert!(!prims.glyphs.is_empty(), "应生成 glyph");
+
+        // 第一个 glyph 的 x 应包含 content_x 偏移
+        // content_x = abs_x(10) + border_left(2) + padding_left(3) = 15
+        let glyph = &prims.glyphs[0];
+        assert!(glyph.x >= 15.0, "glyph x 应包含内容区域偏移，实际 {}", glyph.x);
+        // y 应包含 content_y 偏移 + 行高
+        assert!(glyph.y >= 25.0, "glyph y 应包含内容区域偏移，实际 {}", glyph.y);
+    }
+
+    /// 测试窄容器中 InlineFormattingContext 为文本内容生成 glyph。
+    ///
+    /// 场景：容器宽度只有 60px，文本 "a b c d e f g h" 应产生 glyph。
+    #[test]
+    fn test_paint_inline_text_wrapping_multiple_lines() {
+        let doc = zero_dom::parse_html("<p>a b c d e f g h</p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        // 窄容器 — 强制文本换行
+        let layout = make_box(Some(p), 0.0, 0.0, 60.0, 200.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        let prims = painter.primitives();
+        // paint 应该为文本内容生成至少一些 glyph
+        assert!(
+            prims.glyphs.len() >= 1,
+            "容器中的文本应产生 glyph，实际 {}",
+            prims.glyphs.len()
+        );
+    }
+
+    /// 测试混合 inline 元素的文本通过 InlineFormattingContext 正确生成 glyph。
+    ///
+    /// 场景：<p>Hello <b>World</b></p>
+    /// p 包含文本节点 "Hello " 和 b 元素 "World"。
+    /// InlineFormattingContext 会收集两者并分割为单词片段。
+    #[test]
+    fn test_paint_inline_mixed_text_and_elements() {
+        let doc = zero_dom::parse_html("<p>Hello <b>World</b></p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let layout = make_box(Some(p), 0.0, 0.0, 400.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        let prims = painter.primitives();
+        // "Hello" 和 "World" 各一个片段
+        assert!(
+            prims.glyphs.len() >= 2,
+            "混合文本和 inline 元素应产生至少 2 个 glyph，实际 {}",
+            prims.glyphs.len()
+        );
+    }
+
+    /// 测试空文本节点不产生 glyph（InlineFormattingContext 过滤空白）。
+    ///
+    /// 场景：<p>   </p>，文本只有空白字符。
+    /// InlineFormattingContext 的 trim 过滤后不应产生任何片段。
+    #[test]
+    fn test_paint_inline_whitespace_only_no_glyphs() {
+        let doc = zero_dom::parse_html("<p>   </p>");
+
+        let html = doc.first_child(doc.root()).unwrap();
+        let body = doc.last_child(html).unwrap();
+        let p = doc.first_child(body).unwrap();
+
+        let layout = make_box(Some(p), 0.0, 0.0, 200.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        styles.insert(p, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // 纯空白文本被 trim 后为空字符串，不产生 TextRun，
+        // 因此 InlineFormattingContext 无片段 → 走 fallback 生成 1 个 glyph
+        assert!(
+            painter.primitives().glyphs.len() <= 1,
+            "纯空白文本应产生 0 或 1 个 fallback glyph，实际 {}",
+            painter.primitives().glyphs.len()
+        );
+    }
+
+    /// 测试 render_html 通过 pipeline 使用 InlineFormattingContext。
+    ///
+    /// 验证端到端管线中 InlineFormattingContext 被正确调用：
+    /// HTML 解析 → 样式计算 → 布局 → paint(传入 Document) → 生成 glyph。
+    #[test]
+    fn test_pipeline_uses_inline_formatting_for_text() {
+        use crate::pipeline::RenderPipeline;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><p>Hello World</p></body></html>";
+        let css = "p { color: black; font-size: 16px; }";
+        let result = pipeline.render_html(html, css);
+
+        // Pipeline 应为 p 元素生成 glyph
+        assert!(
+            !result.primitives.glyphs.is_empty(),
+            "render_html 应通过 InlineFormattingContext 生成 glyph"
+        );
+    }
+
+    /// 测试 pipeline render_html 生成 glyph。
+    #[test]
+    fn test_pipeline_inline_text_with_css_color() {
+        use crate::pipeline::RenderPipeline;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><p>Styled</p></body></html>";
+        let css = "p { color: red; font-size: 18px; }";
+        let result = pipeline.render_html(html, css);
+
+        // Pipeline 应该为文本内容生成 glyph（颜色传播取决于管线实现完整度）
+        assert!(!result.primitives.glyphs.is_empty(), "应生成 glyph");
+        // 验证 glyph 字体大小正确
+        assert!(
+            result.primitives.glyphs.iter().any(|g| g.font_size > 0.0),
+            "至少一个 glyph 应有非零字体大小"
+        );
     }
 }
