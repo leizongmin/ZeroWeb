@@ -326,6 +326,10 @@ pub enum PropertyValue {
     Float(zero_css_parser::values::FloatValue),
     /// clear 值。
     Clear(zero_css_parser::values::ClearValue),
+    /// list-style-type 值。
+    ListStyleType(zero_css_parser::values::ListStyleTypeValue),
+    /// list-style-position 值。
+    ListStylePosition(zero_css_parser::values::ListStylePositionValue),
     /// overflow 值。
     Overflow(OverflowValue),
     /// flex-direction 值。
@@ -418,6 +422,10 @@ pub struct ComputedStyle {
     pub float: zero_css_parser::values::FloatValue,
     /// clear 属性。
     pub clear: zero_css_parser::values::ClearValue,
+    /// list-style-type 属性。
+    pub list_style_type: zero_css_parser::values::ListStyleTypeValue,
+    /// list-style-position 属性。
+    pub list_style_position: zero_css_parser::values::ListStylePositionValue,
     /// width 属性。
     pub width: LengthValue,
     /// height 属性。
@@ -687,6 +695,8 @@ impl Default for ComputedStyle {
             position: PositionValue::Static,
             float: zero_css_parser::values::FloatValue::None,
             clear: zero_css_parser::values::ClearValue::None,
+            list_style_type: zero_css_parser::values::ListStyleTypeValue::Disc,
+            list_style_position: zero_css_parser::values::ListStylePositionValue::Outside,
             width: auto_length.clone(),
             height: auto_length.clone(),
             min_width: LengthValue::Px(0.0),
@@ -853,6 +863,10 @@ impl PropertyRegistry {
             "position" => Some(Position(PositionValue::Static)),
             "float" => Some(Float(zero_css_parser::values::FloatValue::None)),
             "clear" => Some(Clear(zero_css_parser::values::ClearValue::None)),
+            "list-style-type" => Some(ListStyleType(zero_css_parser::values::ListStyleTypeValue::Disc)),
+            "list-style-position" => Some(ListStylePosition(
+                zero_css_parser::values::ListStylePositionValue::Outside,
+            )),
             "width" | "height" => Some(Length(LengthValue::Px(0.0))),
             "min-width" | "min-height" => Some(Length(LengthValue::Px(0.0))),
             "max-width" | "max-height" => Some(Length(LengthValue::Px(f64::INFINITY))),
@@ -1006,6 +1020,8 @@ impl PropertyRegistry {
             "position",
             "float",
             "clear",
+            "list-style-type",
+            "list-style-position",
             "width",
             "height",
             "min-width",
@@ -1458,6 +1474,18 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "clear" => {
             if let Some(v) = values::parse_clear(value) {
                 style.clear = v;
+                return true;
+            }
+        }
+        "list-style-type" => {
+            if let Some(v) = values::parse_list_style_type(value) {
+                style.list_style_type = v;
+                return true;
+            }
+        }
+        "list-style-position" => {
+            if let Some(v) = values::parse_list_style_position(value) {
+                style.list_style_position = v;
                 return true;
             }
         }
@@ -2316,6 +2344,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "clear" => {
             style.clear = default_style.clear;
+            true
+        }
+        "list-style-type" => {
+            style.list_style_type = default_style.list_style_type;
+            true
+        }
+        "list-style-position" => {
+            style.list_style_position = default_style.list_style_position;
             true
         }
         "width" => {
@@ -4351,5 +4387,62 @@ mod tests {
         apply_property_value(&mut style, "scroll-padding-top", "10px");
         assert!(apply_initial_value(&mut style, "scroll-padding-top"));
         assert_eq!(style.scroll_padding_top, ScrollPadding::Auto);
+    }
+
+    // ── list-style 属性测试 ──
+
+    #[test]
+    fn test_apply_property_list_style_type() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.list_style_type, zero_css_parser::values::ListStyleTypeValue::Disc);
+
+        assert!(apply_property_value(&mut style, "list-style-type", "circle"));
+        assert_eq!(
+            style.list_style_type,
+            zero_css_parser::values::ListStyleTypeValue::Circle
+        );
+
+        assert!(apply_property_value(&mut style, "list-style-type", "decimal"));
+        assert_eq!(
+            style.list_style_type,
+            zero_css_parser::values::ListStyleTypeValue::Decimal
+        );
+
+        assert!(apply_property_value(&mut style, "list-style-type", "none"));
+        assert_eq!(style.list_style_type, zero_css_parser::values::ListStyleTypeValue::None);
+
+        assert!(!apply_property_value(&mut style, "list-style-type", "invalid"));
+    }
+
+    #[test]
+    fn test_apply_property_list_style_position() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(
+            style.list_style_position,
+            zero_css_parser::values::ListStylePositionValue::Outside
+        );
+
+        assert!(apply_property_value(&mut style, "list-style-position", "inside"));
+        assert_eq!(
+            style.list_style_position,
+            zero_css_parser::values::ListStylePositionValue::Inside
+        );
+
+        assert!(!apply_property_value(&mut style, "list-style-position", "invalid"));
+    }
+
+    #[test]
+    fn test_list_style_property_registry() {
+        assert!(PropertyRegistry::initial_value("list-style-type").is_some());
+        assert!(PropertyRegistry::initial_value("list-style-position").is_some());
+        assert!(!PropertyRegistry::is_inherited("list-style-type"));
+        assert!(!PropertyRegistry::is_inherited("list-style-position"));
+    }
+
+    #[test]
+    fn test_list_style_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"list-style-type"));
+        assert!(props.contains(&"list-style-position"));
     }
 }
