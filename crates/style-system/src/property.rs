@@ -4,10 +4,9 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, DisplayValue,
-    FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue,
-    OverflowValue, PositionValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
-    ScrollSnapTypeValue, VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, DisplayValue, FlexDirectionValue,
+    FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue, PositionValue, ScrollSnapAlignValue,
+    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VisibilityValue,
 };
 
 // ── 额外枚举类型 ─────────────────────────────────────────────────────
@@ -821,27 +820,20 @@ impl PropertyRegistry {
             "width" | "height" => Some(Length(LengthValue::Px(0.0))),
             "min-width" | "min-height" => Some(Length(LengthValue::Px(0.0))),
             "max-width" | "max-height" => Some(Length(LengthValue::Px(f64::INFINITY))),
-            "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
-                Some(Length(LengthValue::Px(0.0)))
-            }
-            "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => {
-                Some(Length(LengthValue::Px(0.0)))
-            }
+            "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => Some(Length(LengthValue::Px(0.0))),
+            "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => Some(Length(LengthValue::Px(0.0))),
             "box-sizing" => Some(BoxSizing(BoxSizingValue::ContentBox)),
 
             // 边框
-            "border-top-width"
-            | "border-right-width"
-            | "border-bottom-width"
-            | "border-left-width" => Some(Length(LengthValue::Px(0.0))),
-            "border-top-color"
-            | "border-right-color"
-            | "border-bottom-color"
-            | "border-left-color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
-            "border-top-style"
-            | "border-right-style"
-            | "border-bottom-style"
-            | "border-left-style" => Some(BorderStyle(BorderStyleValue::None)),
+            "border-top-width" | "border-right-width" | "border-bottom-width" | "border-left-width" => {
+                Some(Length(LengthValue::Px(0.0)))
+            }
+            "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+                Some(Color(ColorValue::Rgba(0, 0, 0, 255)))
+            }
+            "border-top-style" | "border-right-style" | "border-bottom-style" | "border-left-style" => {
+                Some(BorderStyle(BorderStyleValue::None))
+            }
             "border-top-left-radius"
             | "border-top-right-radius"
             | "border-bottom-right-radius"
@@ -930,10 +922,12 @@ impl PropertyRegistry {
             }
             "scroll-snap-align" => Some(ScrollSnapAlign(crate::property::ScrollSnapAlign::None)),
             "scroll-snap-stop" => Some(ScrollSnapStop(crate::property::ScrollSnapStop::Normal)),
-            "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom"
-            | "scroll-margin-left" => Some(Number(0.0)),
-            "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom"
-            | "scroll-padding-left" => Some(ScrollPadding(crate::property::ScrollPadding::Auto)),
+            "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom" | "scroll-margin-left" => {
+                Some(Number(0.0))
+            }
+            "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom" | "scroll-padding-left" => {
+                Some(ScrollPadding(crate::property::ScrollPadding::Auto))
+            }
 
             // Container Query
             "container-type" => Some(ContainerType(crate::property::ContainerType::Normal)),
@@ -1143,10 +1137,7 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     }
     // 非数字值视为命名区域（如 "header"、"sidebar"）
     // 合法的命名区域标识符：非空，不含 / 和数字开头
-    if !value.is_empty()
-        && !value.starts_with(|c: char| c.is_ascii_digit())
-        && !value.contains('/')
-    {
+    if !value.is_empty() && !value.starts_with(|c: char| c.is_ascii_digit()) && !value.contains('/') {
         return Some(GridLineValue::Name(value.to_string()));
     }
     None
@@ -1155,9 +1146,7 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
 /// 解析逗号分隔的 transition-timing-function 列表。
 ///
 /// 需要处理 cubic-bezier() 和 steps() 内部的逗号。
-fn parse_comma_separated_timing_functions(
-    value: &str,
-) -> Vec<zero_css_parser::values::TimingFunctionValue> {
+fn parse_comma_separated_timing_functions(value: &str) -> Vec<zero_css_parser::values::TimingFunctionValue> {
     let mut result = Vec::new();
     let mut depth = 0i32;
     let mut start = 0;
@@ -1908,10 +1897,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             return true;
         }
         "transition-duration" => {
-            let durations = value
-                .split(',')
-                .filter_map(|s| values::parse_time(s.trim()))
-                .collect();
+            let durations = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
             style.transition_duration = durations;
             return true;
         }
@@ -1924,10 +1910,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "transition-delay" => {
-            let delays = value
-                .split(',')
-                .filter_map(|s| values::parse_time(s.trim()))
-                .collect();
+            let delays = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
             style.transition_delay = delays;
             return true;
         }
@@ -2013,10 +1996,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             return true;
         }
         "animation-duration" => {
-            style.animation_duration = value
-                .split(',')
-                .filter_map(|s| values::parse_time(s.trim()))
-                .collect();
+            style.animation_duration = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
             return true;
         }
         "animation-timing-function" => {
@@ -2027,10 +2007,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "animation-delay" => {
-            style.animation_delay = value
-                .split(',')
-                .filter_map(|s| values::parse_time(s.trim()))
-                .collect();
+            style.animation_delay = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
             return true;
         }
         "animation-iteration-count" => {
@@ -2234,129 +2211,453 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
     let default_style = ComputedStyle::default();
     match property {
         // 盒模型
-        "display" => { style.display = default_style.display; true }
-        "position" => { style.position = default_style.position; true }
-        "width" => { style.width = default_style.width; true }
-        "height" => { style.height = default_style.height; true }
-        "min-width" => { style.min_width = default_style.min_width; true }
-        "min-height" => { style.min_height = default_style.min_height; true }
-        "max-width" => { style.max_width = default_style.max_width; true }
-        "max-height" => { style.max_height = default_style.max_height; true }
-        "margin-top" => { style.margin_top = default_style.margin_top; true }
-        "margin-right" => { style.margin_right = default_style.margin_right; true }
-        "margin-bottom" => { style.margin_bottom = default_style.margin_bottom; true }
-        "margin-left" => { style.margin_left = default_style.margin_left; true }
-        "padding-top" => { style.padding_top = default_style.padding_top; true }
-        "padding-right" => { style.padding_right = default_style.padding_right; true }
-        "padding-bottom" => { style.padding_bottom = default_style.padding_bottom; true }
-        "padding-left" => { style.padding_left = default_style.padding_left; true }
-        "box-sizing" => { style.box_sizing = default_style.box_sizing; true }
+        "display" => {
+            style.display = default_style.display;
+            true
+        }
+        "position" => {
+            style.position = default_style.position;
+            true
+        }
+        "width" => {
+            style.width = default_style.width;
+            true
+        }
+        "height" => {
+            style.height = default_style.height;
+            true
+        }
+        "min-width" => {
+            style.min_width = default_style.min_width;
+            true
+        }
+        "min-height" => {
+            style.min_height = default_style.min_height;
+            true
+        }
+        "max-width" => {
+            style.max_width = default_style.max_width;
+            true
+        }
+        "max-height" => {
+            style.max_height = default_style.max_height;
+            true
+        }
+        "margin-top" => {
+            style.margin_top = default_style.margin_top;
+            true
+        }
+        "margin-right" => {
+            style.margin_right = default_style.margin_right;
+            true
+        }
+        "margin-bottom" => {
+            style.margin_bottom = default_style.margin_bottom;
+            true
+        }
+        "margin-left" => {
+            style.margin_left = default_style.margin_left;
+            true
+        }
+        "padding-top" => {
+            style.padding_top = default_style.padding_top;
+            true
+        }
+        "padding-right" => {
+            style.padding_right = default_style.padding_right;
+            true
+        }
+        "padding-bottom" => {
+            style.padding_bottom = default_style.padding_bottom;
+            true
+        }
+        "padding-left" => {
+            style.padding_left = default_style.padding_left;
+            true
+        }
+        "box-sizing" => {
+            style.box_sizing = default_style.box_sizing;
+            true
+        }
         // 边框
-        "border-top-width" => { style.border_top_width = default_style.border_top_width; true }
-        "border-right-width" => { style.border_right_width = default_style.border_right_width; true }
-        "border-bottom-width" => { style.border_bottom_width = default_style.border_bottom_width; true }
-        "border-left-width" => { style.border_left_width = default_style.border_left_width; true }
-        "border-top-color" => { style.border_top_color = default_style.border_top_color; true }
-        "border-right-color" => { style.border_right_color = default_style.border_right_color; true }
-        "border-bottom-color" => { style.border_bottom_color = default_style.border_bottom_color; true }
-        "border-left-color" => { style.border_left_color = default_style.border_left_color; true }
-        "border-top-style" => { style.border_top_style = default_style.border_top_style; true }
-        "border-right-style" => { style.border_right_style = default_style.border_right_style; true }
-        "border-bottom-style" => { style.border_bottom_style = default_style.border_bottom_style; true }
-        "border-left-style" => { style.border_left_style = default_style.border_left_style; true }
-        "border-top-left-radius" => { style.border_top_left_radius = default_style.border_top_left_radius; true }
-        "border-top-right-radius" => { style.border_top_right_radius = default_style.border_top_right_radius; true }
-        "border-bottom-right-radius" => { style.border_bottom_right_radius = default_style.border_bottom_right_radius; true }
-        "border-bottom-left-radius" => { style.border_bottom_left_radius = default_style.border_bottom_left_radius; true }
+        "border-top-width" => {
+            style.border_top_width = default_style.border_top_width;
+            true
+        }
+        "border-right-width" => {
+            style.border_right_width = default_style.border_right_width;
+            true
+        }
+        "border-bottom-width" => {
+            style.border_bottom_width = default_style.border_bottom_width;
+            true
+        }
+        "border-left-width" => {
+            style.border_left_width = default_style.border_left_width;
+            true
+        }
+        "border-top-color" => {
+            style.border_top_color = default_style.border_top_color;
+            true
+        }
+        "border-right-color" => {
+            style.border_right_color = default_style.border_right_color;
+            true
+        }
+        "border-bottom-color" => {
+            style.border_bottom_color = default_style.border_bottom_color;
+            true
+        }
+        "border-left-color" => {
+            style.border_left_color = default_style.border_left_color;
+            true
+        }
+        "border-top-style" => {
+            style.border_top_style = default_style.border_top_style;
+            true
+        }
+        "border-right-style" => {
+            style.border_right_style = default_style.border_right_style;
+            true
+        }
+        "border-bottom-style" => {
+            style.border_bottom_style = default_style.border_bottom_style;
+            true
+        }
+        "border-left-style" => {
+            style.border_left_style = default_style.border_left_style;
+            true
+        }
+        "border-top-left-radius" => {
+            style.border_top_left_radius = default_style.border_top_left_radius;
+            true
+        }
+        "border-top-right-radius" => {
+            style.border_top_right_radius = default_style.border_top_right_radius;
+            true
+        }
+        "border-bottom-right-radius" => {
+            style.border_bottom_right_radius = default_style.border_bottom_right_radius;
+            true
+        }
+        "border-bottom-left-radius" => {
+            style.border_bottom_left_radius = default_style.border_bottom_left_radius;
+            true
+        }
         // Outline
-        "outline-width" => { style.outline_width = default_style.outline_width; true }
-        "outline-style" => { style.outline_style = default_style.outline_style; true }
-        "outline-color" => { style.outline_color = default_style.outline_color; true }
-        "outline-offset" => { style.outline_offset = default_style.outline_offset; true }
+        "outline-width" => {
+            style.outline_width = default_style.outline_width;
+            true
+        }
+        "outline-style" => {
+            style.outline_style = default_style.outline_style;
+            true
+        }
+        "outline-color" => {
+            style.outline_color = default_style.outline_color;
+            true
+        }
+        "outline-offset" => {
+            style.outline_offset = default_style.outline_offset;
+            true
+        }
         // 颜色和背景
-        "color" => { style.color = default_style.color; true }
-        "background-color" => { style.background_color = default_style.background_color; true }
-        "opacity" => { style.opacity = default_style.opacity; true }
-        "visibility" => { style.visibility = default_style.visibility; true }
+        "color" => {
+            style.color = default_style.color;
+            true
+        }
+        "background-color" => {
+            style.background_color = default_style.background_color;
+            true
+        }
+        "opacity" => {
+            style.opacity = default_style.opacity;
+            true
+        }
+        "visibility" => {
+            style.visibility = default_style.visibility;
+            true
+        }
         // 字体
-        "font-family" => { style.font_family = default_style.font_family; true }
-        "font-size" => { style.font_size = default_style.font_size; true }
-        "font-weight" => { style.font_weight = default_style.font_weight; true }
-        "font-style" => { style.font_style = default_style.font_style; true }
-        "line-height" => { style.line_height = default_style.line_height; true }
+        "font-family" => {
+            style.font_family = default_style.font_family;
+            true
+        }
+        "font-size" => {
+            style.font_size = default_style.font_size;
+            true
+        }
+        "font-weight" => {
+            style.font_weight = default_style.font_weight;
+            true
+        }
+        "font-style" => {
+            style.font_style = default_style.font_style;
+            true
+        }
+        "line-height" => {
+            style.line_height = default_style.line_height;
+            true
+        }
         // 文本
-        "text-align" => { style.text_align = default_style.text_align; true }
-        "text-decoration" => { style.text_decoration = default_style.text_decoration; true }
-        "text-transform" => { style.text_transform = default_style.text_transform; true }
-        "letter-spacing" => { style.letter_spacing = default_style.letter_spacing; true }
-        "word-spacing" => { style.word_spacing = default_style.word_spacing; true }
-        "white-space" => { style.white_space = default_style.white_space; true }
-        "text-overflow" => { style.text_overflow = default_style.text_overflow; true }
+        "text-align" => {
+            style.text_align = default_style.text_align;
+            true
+        }
+        "text-decoration" => {
+            style.text_decoration = default_style.text_decoration;
+            true
+        }
+        "text-transform" => {
+            style.text_transform = default_style.text_transform;
+            true
+        }
+        "letter-spacing" => {
+            style.letter_spacing = default_style.letter_spacing;
+            true
+        }
+        "word-spacing" => {
+            style.word_spacing = default_style.word_spacing;
+            true
+        }
+        "white-space" => {
+            style.white_space = default_style.white_space;
+            true
+        }
+        "text-overflow" => {
+            style.text_overflow = default_style.text_overflow;
+            true
+        }
         // Flexbox
-        "flex-direction" => { style.flex_direction = default_style.flex_direction; true }
-        "flex-wrap" => { style.flex_wrap = default_style.flex_wrap; true }
-        "justify-content" => { style.justify_content = default_style.justify_content; true }
-        "align-items" => { style.align_items = default_style.align_items; true }
-        "align-self" => { style.align_self = default_style.align_self; true }
-        "flex-grow" => { style.flex_grow = default_style.flex_grow; true }
-        "flex-shrink" => { style.flex_shrink = default_style.flex_shrink; true }
-        "flex-basis" => { style.flex_basis = default_style.flex_basis; true }
-        "gap" => { style.gap = default_style.gap; true }
-        "row-gap" => { style.row_gap = default_style.row_gap; true }
-        "order" => { style.order = default_style.order; true }
+        "flex-direction" => {
+            style.flex_direction = default_style.flex_direction;
+            true
+        }
+        "flex-wrap" => {
+            style.flex_wrap = default_style.flex_wrap;
+            true
+        }
+        "justify-content" => {
+            style.justify_content = default_style.justify_content;
+            true
+        }
+        "align-items" => {
+            style.align_items = default_style.align_items;
+            true
+        }
+        "align-self" => {
+            style.align_self = default_style.align_self;
+            true
+        }
+        "flex-grow" => {
+            style.flex_grow = default_style.flex_grow;
+            true
+        }
+        "flex-shrink" => {
+            style.flex_shrink = default_style.flex_shrink;
+            true
+        }
+        "flex-basis" => {
+            style.flex_basis = default_style.flex_basis;
+            true
+        }
+        "gap" => {
+            style.gap = default_style.gap;
+            true
+        }
+        "row-gap" => {
+            style.row_gap = default_style.row_gap;
+            true
+        }
+        "order" => {
+            style.order = default_style.order;
+            true
+        }
         // Grid
-        "grid-template-columns" => { style.grid_template_columns = default_style.grid_template_columns; true }
-        "grid-template-rows" => { style.grid_template_rows = default_style.grid_template_rows; true }
-        "grid-auto-flow" => { style.grid_auto_flow = default_style.grid_auto_flow; true }
-        "grid-column-start" => { style.grid_column_start = default_style.grid_column_start; true }
-        "grid-column-end" => { style.grid_column_end = default_style.grid_column_end; true }
-        "grid-row-start" => { style.grid_row_start = default_style.grid_row_start; true }
-        "grid-row-end" => { style.grid_row_end = default_style.grid_row_end; true }
-        "grid-auto-rows" => { style.grid_auto_rows = default_style.grid_auto_rows; true }
-        "grid-auto-columns" => { style.grid_auto_columns = default_style.grid_auto_columns; true }
-        "grid-template-areas" => { style.grid_template_areas = default_style.grid_template_areas; true }
+        "grid-template-columns" => {
+            style.grid_template_columns = default_style.grid_template_columns;
+            true
+        }
+        "grid-template-rows" => {
+            style.grid_template_rows = default_style.grid_template_rows;
+            true
+        }
+        "grid-auto-flow" => {
+            style.grid_auto_flow = default_style.grid_auto_flow;
+            true
+        }
+        "grid-column-start" => {
+            style.grid_column_start = default_style.grid_column_start;
+            true
+        }
+        "grid-column-end" => {
+            style.grid_column_end = default_style.grid_column_end;
+            true
+        }
+        "grid-row-start" => {
+            style.grid_row_start = default_style.grid_row_start;
+            true
+        }
+        "grid-row-end" => {
+            style.grid_row_end = default_style.grid_row_end;
+            true
+        }
+        "grid-auto-rows" => {
+            style.grid_auto_rows = default_style.grid_auto_rows;
+            true
+        }
+        "grid-auto-columns" => {
+            style.grid_auto_columns = default_style.grid_auto_columns;
+            true
+        }
+        "grid-template-areas" => {
+            style.grid_template_areas = default_style.grid_template_areas;
+            true
+        }
         // 定位
-        "top" => { style.top = default_style.top; true }
-        "right" => { style.right = default_style.right; true }
-        "bottom" => { style.bottom = default_style.bottom; true }
-        "left" => { style.left = default_style.left; true }
-        "z-index" => { style.z_index = default_style.z_index; true }
+        "top" => {
+            style.top = default_style.top;
+            true
+        }
+        "right" => {
+            style.right = default_style.right;
+            true
+        }
+        "bottom" => {
+            style.bottom = default_style.bottom;
+            true
+        }
+        "left" => {
+            style.left = default_style.left;
+            true
+        }
+        "z-index" => {
+            style.z_index = default_style.z_index;
+            true
+        }
         // Overflow
-        "overflow-x" => { style.overflow_x = default_style.overflow_x; true }
-        "overflow-y" => { style.overflow_y = default_style.overflow_y; true }
+        "overflow-x" => {
+            style.overflow_x = default_style.overflow_x;
+            true
+        }
+        "overflow-y" => {
+            style.overflow_y = default_style.overflow_y;
+            true
+        }
         // Cursor
-        "cursor" => { style.cursor = default_style.cursor; true }
+        "cursor" => {
+            style.cursor = default_style.cursor;
+            true
+        }
         // Transform
-        "transform" => { style.transform = default_style.transform; true }
+        "transform" => {
+            style.transform = default_style.transform;
+            true
+        }
         // Transitions
-        "transition-property" => { style.transition_property = default_style.transition_property; true }
-        "transition-duration" => { style.transition_duration = default_style.transition_duration; true }
-        "transition-timing-function" => { style.transition_timing_function = default_style.transition_timing_function; true }
-        "transition-delay" => { style.transition_delay = default_style.transition_delay; true }
+        "transition-property" => {
+            style.transition_property = default_style.transition_property;
+            true
+        }
+        "transition-duration" => {
+            style.transition_duration = default_style.transition_duration;
+            true
+        }
+        "transition-timing-function" => {
+            style.transition_timing_function = default_style.transition_timing_function;
+            true
+        }
+        "transition-delay" => {
+            style.transition_delay = default_style.transition_delay;
+            true
+        }
         // Animations
-        "animation-name" => { style.animation_name = default_style.animation_name; true }
-        "animation-duration" => { style.animation_duration = default_style.animation_duration; true }
-        "animation-timing-function" => { style.animation_timing_function = default_style.animation_timing_function; true }
-        "animation-delay" => { style.animation_delay = default_style.animation_delay; true }
-        "animation-iteration-count" => { style.animation_iteration_count = default_style.animation_iteration_count; true }
-        "animation-direction" => { style.animation_direction = default_style.animation_direction; true }
-        "animation-fill-mode" => { style.animation_fill_mode = default_style.animation_fill_mode; true }
-        "animation-play-state" => { style.animation_play_state = default_style.animation_play_state; true }
+        "animation-name" => {
+            style.animation_name = default_style.animation_name;
+            true
+        }
+        "animation-duration" => {
+            style.animation_duration = default_style.animation_duration;
+            true
+        }
+        "animation-timing-function" => {
+            style.animation_timing_function = default_style.animation_timing_function;
+            true
+        }
+        "animation-delay" => {
+            style.animation_delay = default_style.animation_delay;
+            true
+        }
+        "animation-iteration-count" => {
+            style.animation_iteration_count = default_style.animation_iteration_count;
+            true
+        }
+        "animation-direction" => {
+            style.animation_direction = default_style.animation_direction;
+            true
+        }
+        "animation-fill-mode" => {
+            style.animation_fill_mode = default_style.animation_fill_mode;
+            true
+        }
+        "animation-play-state" => {
+            style.animation_play_state = default_style.animation_play_state;
+            true
+        }
         // Scroll Snap
-        "scroll-snap-type" => { style.scroll_snap_type = default_style.scroll_snap_type; true }
-        "scroll-snap-align" => { style.scroll_snap_align = default_style.scroll_snap_align; true }
-        "scroll-snap-stop" => { style.scroll_snap_stop = default_style.scroll_snap_stop; true }
-        "scroll-margin-top" => { style.scroll_margin_top = default_style.scroll_margin_top; true }
-        "scroll-margin-right" => { style.scroll_margin_right = default_style.scroll_margin_right; true }
-        "scroll-margin-bottom" => { style.scroll_margin_bottom = default_style.scroll_margin_bottom; true }
-        "scroll-margin-left" => { style.scroll_margin_left = default_style.scroll_margin_left; true }
-        "scroll-padding-top" => { style.scroll_padding_top = default_style.scroll_padding_top; true }
-        "scroll-padding-right" => { style.scroll_padding_right = default_style.scroll_padding_right; true }
-        "scroll-padding-bottom" => { style.scroll_padding_bottom = default_style.scroll_padding_bottom; true }
-        "scroll-padding-left" => { style.scroll_padding_left = default_style.scroll_padding_left; true }
+        "scroll-snap-type" => {
+            style.scroll_snap_type = default_style.scroll_snap_type;
+            true
+        }
+        "scroll-snap-align" => {
+            style.scroll_snap_align = default_style.scroll_snap_align;
+            true
+        }
+        "scroll-snap-stop" => {
+            style.scroll_snap_stop = default_style.scroll_snap_stop;
+            true
+        }
+        "scroll-margin-top" => {
+            style.scroll_margin_top = default_style.scroll_margin_top;
+            true
+        }
+        "scroll-margin-right" => {
+            style.scroll_margin_right = default_style.scroll_margin_right;
+            true
+        }
+        "scroll-margin-bottom" => {
+            style.scroll_margin_bottom = default_style.scroll_margin_bottom;
+            true
+        }
+        "scroll-margin-left" => {
+            style.scroll_margin_left = default_style.scroll_margin_left;
+            true
+        }
+        "scroll-padding-top" => {
+            style.scroll_padding_top = default_style.scroll_padding_top;
+            true
+        }
+        "scroll-padding-right" => {
+            style.scroll_padding_right = default_style.scroll_padding_right;
+            true
+        }
+        "scroll-padding-bottom" => {
+            style.scroll_padding_bottom = default_style.scroll_padding_bottom;
+            true
+        }
+        "scroll-padding-left" => {
+            style.scroll_padding_left = default_style.scroll_padding_left;
+            true
+        }
         // Container Query
-        "container-type" => { style.container_type = default_style.container_type; true }
-        "container-name" => { style.container_name = default_style.container_name; true }
+        "container-type" => {
+            style.container_type = default_style.container_type;
+            true
+        }
+        "container-name" => {
+            style.container_name = default_style.container_name;
+            true
+        }
         _ => false,
     }
 }
@@ -2431,35 +2732,20 @@ mod tests {
 
     #[test]
     fn test_parse_text_decoration() {
-        assert_eq!(
-            parse_text_decoration("underline"),
-            Some(TextDecorationValue::Underline)
-        );
-        assert_eq!(
-            parse_text_decoration("none"),
-            Some(TextDecorationValue::None)
-        );
+        assert_eq!(parse_text_decoration("underline"), Some(TextDecorationValue::Underline));
+        assert_eq!(parse_text_decoration("none"), Some(TextDecorationValue::None));
     }
 
     #[test]
     fn test_parse_text_transform() {
-        assert_eq!(
-            parse_text_transform("uppercase"),
-            Some(TextTransformValue::Uppercase)
-        );
-        assert_eq!(
-            parse_text_transform("capitalize"),
-            Some(TextTransformValue::Capitalize)
-        );
+        assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
+        assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
     }
 
     #[test]
     fn test_parse_white_space() {
         assert_eq!(parse_white_space("nowrap"), Some(WhiteSpaceValue::Nowrap));
-        assert_eq!(
-            parse_white_space("pre-wrap"),
-            Some(WhiteSpaceValue::PreWrap)
-        );
+        assert_eq!(parse_white_space("pre-wrap"), Some(WhiteSpaceValue::PreWrap));
     }
 
     #[test]
@@ -2509,18 +2795,10 @@ mod tests {
         assert!(apply_property_value(&mut style, "border-top-width", "2px"));
         assert_eq!(style.border_top_width, LengthValue::Px(2.0));
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-top-style",
-            "solid"
-        ));
+        assert!(apply_property_value(&mut style, "border-top-style", "solid"));
         assert_eq!(style.border_top_style, BorderStyleValue::Solid);
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-top-color",
-            "#ff0000"
-        ));
+        assert!(apply_property_value(&mut style, "border-top-color", "#ff0000"));
         assert_eq!(style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
     }
 
@@ -2581,10 +2859,7 @@ mod tests {
 
     #[test]
     fn test_parse_text_overflow() {
-        assert_eq!(
-            parse_text_overflow("ellipsis"),
-            Some(TextOverflowValue::Ellipsis)
-        );
+        assert_eq!(parse_text_overflow("ellipsis"), Some(TextOverflowValue::Ellipsis));
         assert_eq!(parse_text_overflow("clip"), Some(TextOverflowValue::Clip));
     }
 
@@ -2690,40 +2965,20 @@ mod tests {
     fn test_apply_property_border_style() {
         let mut style = ComputedStyle::default();
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-top-style",
-            "dashed"
-        ));
+        assert!(apply_property_value(&mut style, "border-top-style", "dashed"));
         assert_eq!(style.border_top_style, BorderStyleValue::Dashed);
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-right-style",
-            "dotted"
-        ));
+        assert!(apply_property_value(&mut style, "border-right-style", "dotted"));
         assert_eq!(style.border_right_style, BorderStyleValue::Dotted);
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-bottom-style",
-            "solid"
-        ));
+        assert!(apply_property_value(&mut style, "border-bottom-style", "solid"));
         assert_eq!(style.border_bottom_style, BorderStyleValue::Solid);
 
-        assert!(apply_property_value(
-            &mut style,
-            "border-left-style",
-            "double"
-        ));
+        assert!(apply_property_value(&mut style, "border-left-style", "double"));
         assert_eq!(style.border_left_style, BorderStyleValue::Double);
 
         // 无效值应返回 false
-        assert!(!apply_property_value(
-            &mut style,
-            "border-top-style",
-            "invalid"
-        ));
+        assert!(!apply_property_value(&mut style, "border-top-style", "invalid"));
     }
 
     #[test]
@@ -2777,70 +3032,30 @@ mod tests {
 
         // 边框颜色各边
         assert!(apply_property_value(&mut style, "border-top-color", "red"));
-        assert!(apply_property_value(
-            &mut style,
-            "border-right-color",
-            "#00ff00"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-bottom-color",
-            "blue"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-left-color",
-            "transparent"
-        ));
+        assert!(apply_property_value(&mut style, "border-right-color", "#00ff00"));
+        assert!(apply_property_value(&mut style, "border-bottom-color", "blue"));
+        assert!(apply_property_value(&mut style, "border-left-color", "transparent"));
         assert_eq!(style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
         assert_eq!(style.border_left_color, ColorValue::Transparent);
 
         // 边框宽度各边
         assert!(apply_property_value(&mut style, "border-top-width", "1px"));
-        assert!(apply_property_value(
-            &mut style,
-            "border-right-width",
-            "2px"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-bottom-width",
-            "3px"
-        ));
+        assert!(apply_property_value(&mut style, "border-right-width", "2px"));
+        assert!(apply_property_value(&mut style, "border-bottom-width", "3px"));
         assert!(apply_property_value(&mut style, "border-left-width", "4px"));
         assert_eq!(style.border_top_width, LengthValue::Px(1.0));
         assert_eq!(style.border_left_width, LengthValue::Px(4.0));
 
         // 圆角各角
-        assert!(apply_property_value(
-            &mut style,
-            "border-top-left-radius",
-            "8px"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-top-right-radius",
-            "4px"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-bottom-right-radius",
-            "8px"
-        ));
-        assert!(apply_property_value(
-            &mut style,
-            "border-bottom-left-radius",
-            "4px"
-        ));
+        assert!(apply_property_value(&mut style, "border-top-left-radius", "8px"));
+        assert!(apply_property_value(&mut style, "border-top-right-radius", "4px"));
+        assert!(apply_property_value(&mut style, "border-bottom-right-radius", "8px"));
+        assert!(apply_property_value(&mut style, "border-bottom-left-radius", "4px"));
         assert_eq!(style.border_top_left_radius, LengthValue::Px(8.0));
         assert_eq!(style.border_bottom_left_radius, LengthValue::Px(4.0));
 
         // background-color
-        assert!(apply_property_value(
-            &mut style,
-            "background-color",
-            "#0000ff"
-        ));
+        assert!(apply_property_value(&mut style, "background-color", "#0000ff"));
         assert_eq!(style.background_color, ColorValue::Rgba(0, 0, 255, 255));
 
         // visibility
@@ -2857,25 +3072,14 @@ mod tests {
 
         // line-height
         assert!(apply_property_value(&mut style, "line-height", "24px"));
-        assert_eq!(
-            style.line_height,
-            LineHeightValue::Length(LengthValue::Px(24.0))
-        );
+        assert_eq!(style.line_height, LineHeightValue::Length(LengthValue::Px(24.0)));
 
         // text-decoration
-        assert!(apply_property_value(
-            &mut style,
-            "text-decoration",
-            "underline"
-        ));
+        assert!(apply_property_value(&mut style, "text-decoration", "underline"));
         assert_eq!(style.text_decoration, TextDecorationValue::Underline);
 
         // text-transform
-        assert!(apply_property_value(
-            &mut style,
-            "text-transform",
-            "uppercase"
-        ));
+        assert!(apply_property_value(&mut style, "text-transform", "uppercase"));
         assert_eq!(style.text_transform, TextTransformValue::Uppercase);
 
         // letter-spacing, word-spacing
@@ -2889,11 +3093,7 @@ mod tests {
         assert_eq!(style.white_space, WhiteSpaceValue::Nowrap);
 
         // text-overflow
-        assert!(apply_property_value(
-            &mut style,
-            "text-overflow",
-            "ellipsis"
-        ));
+        assert!(apply_property_value(&mut style, "text-overflow", "ellipsis"));
         assert_eq!(style.text_overflow, TextOverflowValue::Ellipsis);
 
         // flex-wrap
@@ -2901,11 +3101,7 @@ mod tests {
         assert_eq!(style.flex_wrap, FlexWrapValue::Wrap);
 
         // justify-content
-        assert!(apply_property_value(
-            &mut style,
-            "justify-content",
-            "center"
-        ));
+        assert!(apply_property_value(&mut style, "justify-content", "center"));
         assert_eq!(style.justify_content, AlignmentValue::Center);
 
         // align-items
@@ -2948,11 +3144,7 @@ mod tests {
         assert!(!apply_property_value(&mut style, "unknown-prop", "value"));
 
         // 无效值应返回 false
-        assert!(!apply_property_value(
-            &mut style,
-            "display",
-            "invalid-display"
-        ));
+        assert!(!apply_property_value(&mut style, "display", "invalid-display"));
     }
 
     #[test]
@@ -3044,20 +3236,13 @@ mod tests {
             "grid-template-columns",
             "100px 1fr auto"
         ));
-        assert_eq!(
-            style.grid_template_columns,
-            Some("100px 1fr auto".to_string())
-        );
+        assert_eq!(style.grid_template_columns, Some("100px 1fr auto".to_string()));
     }
 
     #[test]
     fn test_apply_property_grid_template_rows() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "grid-template-rows",
-            "50px 1fr"
-        ));
+        assert!(apply_property_value(&mut style, "grid-template-rows", "50px 1fr"));
         assert_eq!(style.grid_template_rows, Some("50px 1fr".to_string()));
     }
 
@@ -3067,26 +3252,14 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-auto-flow", "column"));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::Column);
 
-        assert!(apply_property_value(
-            &mut style,
-            "grid-auto-flow",
-            "row dense"
-        ));
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "row dense"));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::RowDense);
 
-        assert!(apply_property_value(
-            &mut style,
-            "grid-auto-flow",
-            "column dense"
-        ));
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "column dense"));
         assert_eq!(style.grid_auto_flow, GridAutoFlowValue::ColumnDense);
 
         // 无效值应返回 false
-        assert!(!apply_property_value(
-            &mut style,
-            "grid-auto-flow",
-            "invalid"
-        ));
+        assert!(!apply_property_value(&mut style, "grid-auto-flow", "invalid"));
     }
 
     #[test]
@@ -3099,18 +3272,9 @@ mod tests {
     #[test]
     fn test_parse_grid_auto_flow() {
         assert_eq!(parse_grid_auto_flow("row"), Some(GridAutoFlowValue::Row));
-        assert_eq!(
-            parse_grid_auto_flow("column"),
-            Some(GridAutoFlowValue::Column)
-        );
-        assert_eq!(
-            parse_grid_auto_flow("dense"),
-            Some(GridAutoFlowValue::RowDense)
-        );
-        assert_eq!(
-            parse_grid_auto_flow("row dense"),
-            Some(GridAutoFlowValue::RowDense)
-        );
+        assert_eq!(parse_grid_auto_flow("column"), Some(GridAutoFlowValue::Column));
+        assert_eq!(parse_grid_auto_flow("dense"), Some(GridAutoFlowValue::RowDense));
+        assert_eq!(parse_grid_auto_flow("row dense"), Some(GridAutoFlowValue::RowDense));
         assert_eq!(
             parse_grid_auto_flow("column dense"),
             Some(GridAutoFlowValue::ColumnDense)
@@ -3142,8 +3306,14 @@ mod tests {
         assert_eq!(parse_grid_line("span 2"), Some(GridLineValue::Span(2)));
         assert_eq!(parse_grid_line("span 3"), Some(GridLineValue::Span(3)));
         assert_eq!(parse_grid_line("0"), None); // 0 is invalid
-        assert_eq!(parse_grid_line("invalid"), Some(GridLineValue::Name("invalid".to_string())));
-        assert_eq!(parse_grid_line("header"), Some(GridLineValue::Name("header".to_string())));
+        assert_eq!(
+            parse_grid_line("invalid"),
+            Some(GridLineValue::Name("invalid".to_string()))
+        );
+        assert_eq!(
+            parse_grid_line("header"),
+            Some(GridLineValue::Name("header".to_string()))
+        );
     }
 
     #[test]
@@ -3155,18 +3325,10 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-column-start", "-1"));
         assert_eq!(style.grid_column_start, GridLineValue::Line(-1));
 
-        assert!(apply_property_value(
-            &mut style,
-            "grid-column-start",
-            "span 2"
-        ));
+        assert!(apply_property_value(&mut style, "grid-column-start", "span 2"));
         assert_eq!(style.grid_column_start, GridLineValue::Span(2));
 
-        assert!(apply_property_value(
-            &mut style,
-            "grid-column-start",
-            "auto"
-        ));
+        assert!(apply_property_value(&mut style, "grid-column-start", "auto"));
         assert_eq!(style.grid_column_start, GridLineValue::Auto);
     }
 
@@ -3194,11 +3356,7 @@ mod tests {
     #[test]
     fn test_apply_transition_property() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "transition-property",
-            "opacity"
-        ));
+        assert!(apply_property_value(&mut style, "transition-property", "opacity"));
         assert_eq!(style.transition_property, vec!["opacity"]);
 
         assert!(apply_property_value(
@@ -3208,47 +3366,27 @@ mod tests {
         ));
         assert_eq!(style.transition_property, vec!["opacity", "transform"]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "transition-property",
-            "all"
-        ));
+        assert!(apply_property_value(&mut style, "transition-property", "all"));
         assert_eq!(style.transition_property, vec!["all"]);
     }
 
     #[test]
     fn test_apply_transition_duration() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "transition-duration",
-            "0.3s"
-        ));
+        assert!(apply_property_value(&mut style, "transition-duration", "0.3s"));
         assert_eq!(style.transition_duration, vec![0.3]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "transition-duration",
-            "0.3s, 0.5s"
-        ));
+        assert!(apply_property_value(&mut style, "transition-duration", "0.3s, 0.5s"));
         assert_eq!(style.transition_duration, vec![0.3, 0.5]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "transition-duration",
-            "200ms"
-        ));
+        assert!(apply_property_value(&mut style, "transition-duration", "200ms"));
         assert_eq!(style.transition_duration, vec![0.2]);
     }
 
     #[test]
     fn test_apply_transition_timing_function() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "transition-timing-function",
-            "ease"
-        ));
+        assert!(apply_property_value(&mut style, "transition-timing-function", "ease"));
         assert_eq!(style.transition_timing_function.len(), 1);
         assert_eq!(
             style.transition_timing_function[0],
@@ -3276,11 +3414,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "transition-delay", "0.1s"));
         assert_eq!(style.transition_delay, vec![0.1]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "transition-delay",
-            "0.1s, 0.2s"
-        ));
+        assert!(apply_property_value(&mut style, "transition-delay", "0.1s, 0.2s"));
         assert_eq!(style.transition_delay, vec![0.1, 0.2]);
 
         assert!(apply_property_value(&mut style, "transition-delay", "50ms"));
@@ -3314,9 +3448,7 @@ mod tests {
         let result = parse_comma_separated_timing_functions("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
         assert_eq!(result.len(), 1);
 
-        let result = parse_comma_separated_timing_functions(
-            "ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)",
-        );
+        let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
         assert_eq!(result.len(), 3);
     }
 
@@ -3325,11 +3457,7 @@ mod tests {
     #[test]
     fn test_margin_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "margin-block-start",
-            "10px"
-        ));
+        assert!(apply_property_value(&mut style, "margin-block-start", "10px"));
         assert_eq!(style.margin_top, LengthValue::Px(10.0));
     }
 
@@ -3343,77 +3471,49 @@ mod tests {
     #[test]
     fn test_margin_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "margin-inline-start",
-            "5px"
-        ));
+        assert!(apply_property_value(&mut style, "margin-inline-start", "5px"));
         assert_eq!(style.margin_left, LengthValue::Px(5.0));
     }
 
     #[test]
     fn test_margin_inline_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "margin-inline-end",
-            "15px"
-        ));
+        assert!(apply_property_value(&mut style, "margin-inline-end", "15px"));
         assert_eq!(style.margin_right, LengthValue::Px(15.0));
     }
 
     #[test]
     fn test_padding_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "padding-block-start",
-            "8px"
-        ));
+        assert!(apply_property_value(&mut style, "padding-block-start", "8px"));
         assert_eq!(style.padding_top, LengthValue::Px(8.0));
     }
 
     #[test]
     fn test_padding_block_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "padding-block-end",
-            "12px"
-        ));
+        assert!(apply_property_value(&mut style, "padding-block-end", "12px"));
         assert_eq!(style.padding_bottom, LengthValue::Px(12.0));
     }
 
     #[test]
     fn test_padding_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "padding-inline-start",
-            "3px"
-        ));
+        assert!(apply_property_value(&mut style, "padding-inline-start", "3px"));
         assert_eq!(style.padding_left, LengthValue::Px(3.0));
     }
 
     #[test]
     fn test_padding_inline_end() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "padding-inline-end",
-            "7px"
-        ));
+        assert!(apply_property_value(&mut style, "padding-inline-end", "7px"));
         assert_eq!(style.padding_right, LengthValue::Px(7.0));
     }
 
     #[test]
     fn test_inset_block_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "inset-block-start",
-            "100px"
-        ));
+        assert!(apply_property_value(&mut style, "inset-block-start", "100px"));
         assert_eq!(style.top, LengthValue::Px(100.0));
     }
 
@@ -3427,11 +3527,7 @@ mod tests {
     #[test]
     fn test_inset_inline_start() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "inset-inline-start",
-            "50px"
-        ));
+        assert!(apply_property_value(&mut style, "inset-inline-start", "50px"));
         assert_eq!(style.left, LengthValue::Px(50.0));
     }
 
@@ -3445,11 +3541,7 @@ mod tests {
     #[test]
     fn test_logical_properties_with_percentage() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "margin-block-start",
-            "10%"
-        ));
+        assert!(apply_property_value(&mut style, "margin-block-start", "10%"));
         assert_eq!(style.margin_top, LengthValue::Percentage(10.0));
 
         assert!(apply_property_value(&mut style, "padding-inline-end", "5%"));
@@ -3459,11 +3551,7 @@ mod tests {
     #[test]
     fn test_logical_properties_with_auto() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "margin-block-start",
-            "auto"
-        ));
+        assert!(apply_property_value(&mut style, "margin-block-start", "auto"));
         assert_eq!(style.margin_top, LengthValue::Auto);
     }
 
@@ -3488,47 +3576,27 @@ mod tests {
         assert!(apply_property_value(&mut style, "animation-name", "fadeIn"));
         assert_eq!(style.animation_name, vec!["fadeIn"]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "animation-name",
-            "fadeIn, slideIn"
-        ));
+        assert!(apply_property_value(&mut style, "animation-name", "fadeIn, slideIn"));
         assert_eq!(style.animation_name, vec!["fadeIn", "slideIn"]);
     }
 
     #[test]
     fn test_apply_animation_duration() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-duration",
-            "0.5s"
-        ));
+        assert!(apply_property_value(&mut style, "animation-duration", "0.5s"));
         assert_eq!(style.animation_duration, vec![0.5]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "animation-duration",
-            "0.3s, 0.6s"
-        ));
+        assert!(apply_property_value(&mut style, "animation-duration", "0.3s, 0.6s"));
         assert_eq!(style.animation_duration, vec![0.3, 0.6]);
 
-        assert!(apply_property_value(
-            &mut style,
-            "animation-duration",
-            "200ms"
-        ));
+        assert!(apply_property_value(&mut style, "animation-duration", "200ms"));
         assert_eq!(style.animation_duration, vec![0.2]);
     }
 
     #[test]
     fn test_apply_animation_timing_function() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-timing-function",
-            "ease-in"
-        ));
+        assert!(apply_property_value(&mut style, "animation-timing-function", "ease-in"));
         assert_eq!(style.animation_timing_function.len(), 1);
 
         assert!(apply_property_value(
@@ -3549,11 +3617,7 @@ mod tests {
     #[test]
     fn test_apply_animation_iteration_count() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-iteration-count",
-            "3"
-        ));
+        assert!(apply_property_value(&mut style, "animation-iteration-count", "3"));
         assert_eq!(style.animation_iteration_count, vec![Some(3.0)]);
 
         assert!(apply_property_value(
@@ -3574,11 +3638,7 @@ mod tests {
     #[test]
     fn test_apply_animation_direction() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-direction",
-            "alternate"
-        ));
+        assert!(apply_property_value(&mut style, "animation-direction", "alternate"));
         assert_eq!(style.animation_direction.len(), 1);
 
         assert!(apply_property_value(
@@ -3592,29 +3652,17 @@ mod tests {
     #[test]
     fn test_apply_animation_fill_mode() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-fill-mode",
-            "forwards"
-        ));
+        assert!(apply_property_value(&mut style, "animation-fill-mode", "forwards"));
         assert_eq!(style.animation_fill_mode.len(), 1);
 
-        assert!(apply_property_value(
-            &mut style,
-            "animation-fill-mode",
-            "both"
-        ));
+        assert!(apply_property_value(&mut style, "animation-fill-mode", "both"));
         assert_eq!(style.animation_fill_mode.len(), 1);
     }
 
     #[test]
     fn test_apply_animation_play_state() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "animation-play-state",
-            "paused"
-        ));
+        assert!(apply_property_value(&mut style, "animation-play-state", "paused"));
         assert_eq!(style.animation_play_state.len(), 1);
 
         assert!(apply_property_value(
@@ -3646,11 +3694,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "grid-auto-rows", "100px"));
         assert_eq!(style.grid_auto_rows, Some("100px".to_string()));
 
-        assert!(apply_property_value(
-            &mut style,
-            "grid-auto-rows",
-            "minmax(100px, 1fr)"
-        ));
+        assert!(apply_property_value(&mut style, "grid-auto-rows", "minmax(100px, 1fr)"));
         assert_eq!(style.grid_auto_rows, Some("minmax(100px, 1fr)".to_string()));
 
         // default is None
@@ -3661,11 +3705,7 @@ mod tests {
     #[test]
     fn test_apply_property_grid_auto_columns() {
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "grid-auto-columns",
-            "1fr auto"
-        ));
+        assert!(apply_property_value(&mut style, "grid-auto-columns", "1fr auto"));
         assert_eq!(style.grid_auto_columns, Some("1fr auto".to_string()));
 
         // default is None
@@ -3700,11 +3740,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-width", "0.5em"));
         assert_eq!(style.outline_width, LengthValue::Em(0.5));
 
-        assert!(!apply_property_value(
-            &mut style,
-            "outline-width",
-            "invalid"
-        ));
+        assert!(!apply_property_value(&mut style, "outline-width", "invalid"));
     }
 
     #[test]
@@ -3725,11 +3761,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-style", "none"));
         assert_eq!(style.outline_style, OutlineStyleValue::None);
 
-        assert!(!apply_property_value(
-            &mut style,
-            "outline-style",
-            "invalid"
-        ));
+        assert!(!apply_property_value(&mut style, "outline-style", "invalid"));
     }
 
     #[test]
@@ -3741,11 +3773,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-color", "#00ff00"));
         assert_eq!(style.outline_color, ColorValue::Rgba(0, 255, 0, 255));
 
-        assert!(apply_property_value(
-            &mut style,
-            "outline-color",
-            "transparent"
-        ));
+        assert!(apply_property_value(&mut style, "outline-color", "transparent"));
         assert_eq!(style.outline_color, ColorValue::Transparent);
     }
 
@@ -3758,11 +3786,7 @@ mod tests {
         assert!(apply_property_value(&mut style, "outline-offset", "-2px"));
         assert_eq!(style.outline_offset, LengthValue::Px(-2.0));
 
-        assert!(!apply_property_value(
-            &mut style,
-            "outline-offset",
-            "invalid"
-        ));
+        assert!(!apply_property_value(&mut style, "outline-offset", "invalid"));
     }
 
     #[test]
@@ -3788,28 +3812,13 @@ mod tests {
     fn test_parse_outline_style() {
         assert_eq!(parse_outline_style("solid"), Some(OutlineStyleValue::Solid));
         assert_eq!(parse_outline_style("none"), Some(OutlineStyleValue::None));
-        assert_eq!(
-            parse_outline_style("dashed"),
-            Some(OutlineStyleValue::Dashed)
-        );
-        assert_eq!(
-            parse_outline_style("dotted"),
-            Some(OutlineStyleValue::Dotted)
-        );
-        assert_eq!(
-            parse_outline_style("double"),
-            Some(OutlineStyleValue::Double)
-        );
-        assert_eq!(
-            parse_outline_style("groove"),
-            Some(OutlineStyleValue::Groove)
-        );
+        assert_eq!(parse_outline_style("dashed"), Some(OutlineStyleValue::Dashed));
+        assert_eq!(parse_outline_style("dotted"), Some(OutlineStyleValue::Dotted));
+        assert_eq!(parse_outline_style("double"), Some(OutlineStyleValue::Double));
+        assert_eq!(parse_outline_style("groove"), Some(OutlineStyleValue::Groove));
         assert_eq!(parse_outline_style("ridge"), Some(OutlineStyleValue::Ridge));
         assert_eq!(parse_outline_style("inset"), Some(OutlineStyleValue::Inset));
-        assert_eq!(
-            parse_outline_style("outset"),
-            Some(OutlineStyleValue::Outset)
-        );
+        assert_eq!(parse_outline_style("outset"), Some(OutlineStyleValue::Outset));
         assert_eq!(parse_outline_style("invalid"), None);
     }
 

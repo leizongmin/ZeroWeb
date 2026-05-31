@@ -50,12 +50,7 @@ impl GlyphCache {
         if self.cache.len() >= self.max_entries && !self.cache.contains_key(&key) {
             // 简单淘汰策略：当缓存满时清空一半
             // TODO: 后续实现 LRU 淘汰
-            let keys_to_remove: Vec<_> = self
-                .cache
-                .keys()
-                .take(self.max_entries / 2)
-                .cloned()
-                .collect();
+            let keys_to_remove: Vec<_> = self.cache.keys().take(self.max_entries / 2).cloned().collect();
             for k in keys_to_remove {
                 self.cache.remove(&k);
             }
@@ -247,8 +242,7 @@ mod tests {
     fn test_cache_get_or_insert_error_propagation() {
         let mut cache = GlyphCache::new(100);
         let key = GlyphKey::new(0, 65, 16.0);
-        let result =
-            cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
+        let result = cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
         assert!(result.is_err());
         // Failed insert should not add to cache
         assert!(cache.get(&key).is_none());

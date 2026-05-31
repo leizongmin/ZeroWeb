@@ -156,9 +156,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             let attr_sel = if let Some(eq_pos) = attr_content.find("~=") {
                 AttributeSelector {
                     name: attr_content[..eq_pos].trim().to_string(),
-                    matcher: AttributeMatcher::Includes(
-                        attr_content[eq_pos + 2..].trim().to_string(),
-                    ),
+                    matcher: AttributeMatcher::Includes(attr_content[eq_pos + 2..].trim().to_string()),
                 }
             } else if let Some(eq_pos) = attr_content.find('=') {
                 AttributeSelector {

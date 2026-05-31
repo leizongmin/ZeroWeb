@@ -326,10 +326,7 @@ mod tests {
     fn test_header_multiple_same_name() {
         let resp = HttpResponse {
             status_code: 200,
-            headers: vec![
-                ("Set-Cookie".into(), "a=1".into()),
-                ("Set-Cookie".into(), "b=2".into()),
-            ],
+            headers: vec![("Set-Cookie".into(), "a=1".into()), ("Set-Cookie".into(), "b=2".into())],
             body: vec![],
             url: String::new(),
             redirect_count: 0,
@@ -344,9 +341,7 @@ mod tests {
     fn test_header_case_insensitive() {
         let resp = HttpResponse {
             status_code: 200,
-            headers: vec![
-                ("Content-Type".into(), "text/html".into()),
-            ],
+            headers: vec![("Content-Type".into(), "text/html".into())],
             body: vec![],
             url: String::new(),
             redirect_count: 0,

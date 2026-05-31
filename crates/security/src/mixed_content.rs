@@ -42,11 +42,7 @@ pub fn is_mixed_content(page_origin: &Origin, resource_url: &str) -> bool {
 /// `page_origin` 为页面源。
 /// `resource_url` 为资源 URL。
 /// `resource_type` 为资源类型（如 "script", "img", "style", "connect", "font", "media", "object"）。
-pub fn check_mixed_content(
-    page_origin: &Origin,
-    resource_url: &str,
-    resource_type: &str,
-) -> MixedContentStatus {
+pub fn check_mixed_content(page_origin: &Origin, resource_url: &str, resource_type: &str) -> MixedContentStatus {
     if !is_mixed_content(page_origin, resource_url) {
         return MixedContentStatus::NotMixedContent;
     }

@@ -47,18 +47,11 @@ impl FontLoader {
 
     /// 根据字体描述查找最佳匹配字体 ID
     pub fn find(&self, desc: &FontDesc) -> Option<u32> {
-        self.family_map
-            .get(&desc.family)
-            .and_then(|ids| ids.first().copied())
+        self.family_map.get(&desc.family).and_then(|ids| ids.first().copied())
     }
 
     /// 渲染指定字符的 glyph
-    pub fn rasterize_glyph(
-        &self,
-        font_id: u32,
-        code_point: char,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
+    pub fn rasterize_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         let font = self
             .fonts
             .get(&font_id)
@@ -196,16 +189,8 @@ mod tests {
 
         let bitmap = result.unwrap();
         // Verify bitmap dimensions are reasonable
-        assert!(
-            bitmap.width > 0,
-            "width should be > 0, got {}",
-            bitmap.width
-        );
-        assert!(
-            bitmap.height > 0,
-            "height should be > 0, got {}",
-            bitmap.height
-        );
+        assert!(bitmap.width > 0, "width should be > 0, got {}", bitmap.width);
+        assert!(bitmap.height > 0, "height should be > 0, got {}", bitmap.height);
         // Verify bitmap data size matches dimensions
         assert_eq!(
             bitmap.data.len(),
@@ -221,10 +206,7 @@ mod tests {
 
         // Verify bitmap contains non-zero pixels (the glyph is actually rendered)
         let non_zero_count = bitmap.data.iter().filter(|&&b| b > 0).count();
-        assert!(
-            non_zero_count > 0,
-            "bitmap should contain non-zero pixels for 'A'"
-        );
+        assert!(non_zero_count > 0, "bitmap should contain non-zero pixels for 'A'");
     }
 
     /// 测试不同大小的光栅化产生不同尺寸的 glyph

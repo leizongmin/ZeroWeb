@@ -10,7 +10,8 @@ mod dom_css {
     /// 验证 HTML 解析后 DOM 树包含预期的元素节点
     #[test]
     fn test_html_parse_produces_dom_tree() {
-        let html = r#"<html><head><title>Test</title></head><body><div id="main" class="container">Hello</div></body></html>"#;
+        let html =
+            r#"<html><head><title>Test</title></head><body><div id="main" class="container">Hello</div></body></html>"#;
         let doc = parse_html(html);
         assert!(doc.node_count() > 0, "DOM 应包含节点");
 
@@ -228,8 +229,7 @@ mod net_security {
 #[cfg(test)]
 mod storage {
     use zero_protocol::{
-        IpcMessage, IpcMessageKind, StorageOpParams, StorageOperation, StorageType, deserialize,
-        serialize,
+        IpcMessage, IpcMessageKind, StorageOpParams, StorageOperation, StorageType, deserialize, serialize,
     };
     use zero_storage::StorageManager;
 
@@ -302,14 +302,8 @@ mod storage {
         let store_b = mgr.local_storage("https://b.com");
         store_b.set("key", "value_b").unwrap();
 
-        assert_eq!(
-            mgr.local_storage("https://a.com").get("key"),
-            Some("value_a")
-        );
-        assert_eq!(
-            mgr.local_storage("https://b.com").get("key"),
-            Some("value_b")
-        );
+        assert_eq!(mgr.local_storage("https://a.com").get("key"), Some("value_a"));
+        assert_eq!(mgr.local_storage("https://b.com").get("key"), Some("value_b"));
     }
 }
 

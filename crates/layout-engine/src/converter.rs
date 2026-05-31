@@ -4,8 +4,8 @@
 //! 这是布局引擎的关键适配层。
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue,
-    OverflowValue, PositionValue,
+    AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue,
+    PositionValue,
 };
 use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
 
@@ -22,10 +22,7 @@ pub type GridAreaMap = std::collections::HashMap<String, (i16, i16, i16, i16)>;
 /// 处理所有 CSS 属性到 taffy 布局属性的映射。
 /// `parent_areas` 为父级 grid 容器的 grid-template-areas 区域映射，
 /// 用于将子元素的 GridLineValue::Name 解析为行号。
-pub fn computed_style_to_taffy(
-    style: &ComputedStyle,
-    parent_areas: Option<&GridAreaMap>,
-) -> taffy::Style {
+pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&GridAreaMap>) -> taffy::Style {
     taffy::Style {
         display: convert_display(&style.display),
         box_sizing: convert_box_sizing(&style.box_sizing),
@@ -134,10 +131,9 @@ fn convert_position(value: &PositionValue) -> taffy::style::Position {
     match value {
         PositionValue::Absolute => taffy::style::Position::Absolute,
         // taffy 没有 Fixed/Sticky，映射为 Relative
-        PositionValue::Fixed
-        | PositionValue::Sticky
-        | PositionValue::Relative
-        | PositionValue::Static => taffy::style::Position::Relative,
+        PositionValue::Fixed | PositionValue::Sticky | PositionValue::Relative | PositionValue::Static => {
+            taffy::style::Position::Relative
+        }
     }
 }
 
@@ -234,9 +230,7 @@ fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageA
         LengthValue::Vmin(v) => length(*v as f32),
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
-        LengthValue::Percentage(v) => {
-            taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32)
-        }
+        LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::LengthPercentageAuto::Auto,
     }
 }
@@ -280,9 +274,7 @@ fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::sty
         AlignmentValue::Start => Some(taffy::style::AlignItems::Start),
         AlignmentValue::End => Some(taffy::style::AlignItems::End),
         // space-between, space-around, space-evenly 不适用于 align-items
-        AlignmentValue::SpaceBetween
-        | AlignmentValue::SpaceAround
-        | AlignmentValue::SpaceEvenly => None,
+        AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
 }
 
@@ -297,16 +289,12 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
         AlignmentValue::Baseline => Some(taffy::style::AlignSelf::Baseline),
         AlignmentValue::Start => Some(taffy::style::AlignSelf::Start),
         AlignmentValue::End => Some(taffy::style::AlignSelf::End),
-        AlignmentValue::SpaceBetween
-        | AlignmentValue::SpaceAround
-        | AlignmentValue::SpaceEvenly => None,
+        AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
 }
 
 /// 转换 AlignmentValue 到 taffy JustifyContent。
-fn convert_alignment_to_justify_content(
-    value: &AlignmentValue,
-) -> Option<taffy::style::JustifyContent> {
+fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy::style::JustifyContent> {
     match value {
         AlignmentValue::FlexStart => Some(taffy::style::JustifyContent::FlexStart),
         AlignmentValue::FlexEnd => Some(taffy::style::JustifyContent::FlexEnd),
@@ -322,9 +310,7 @@ fn convert_alignment_to_justify_content(
 }
 
 /// 转换 AlignmentValue 到 taffy AlignContent。
-fn convert_alignment_to_align_content(
-    value: &AlignmentValue,
-) -> Option<taffy::style::AlignContent> {
+fn convert_alignment_to_align_content(value: &AlignmentValue) -> Option<taffy::style::AlignContent> {
     match value {
         AlignmentValue::FlexStart => Some(taffy::style::AlignContent::FlexStart),
         AlignmentValue::FlexEnd => Some(taffy::style::AlignContent::FlexEnd),
@@ -358,10 +344,7 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFun
     let mut result = Vec::new();
 
     for token in tokens {
-        if let Some(inner) = token
-            .strip_prefix("repeat(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
+        if let Some(inner) = token.strip_prefix("repeat(").and_then(|s| s.strip_suffix(')')) {
             result.extend(parse_repeat(inner));
         } else {
             result.push(parse_single_track(&token));
@@ -470,9 +453,7 @@ fn parse_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
 /// 将单个 track 值解析为 NonRepeatedTrackSizingFunction。
 ///
 /// 用于 repeat() 内部轨道列表的解析。
-fn parse_single_track_as_non_repeated(
-    s: &str,
-) -> taffy::style::NonRepeatedTrackSizingFunction {
+fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
     use taffy::style::NonRepeatedTrackSizingFunction;
 
     let s = s.trim();
@@ -523,9 +504,7 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
 ///
 /// 与 parse_grid_tracks 类似，但返回 NonRepeatedTrackSizingFunction
 /// （不包含 repeat 变体），用于 taffy 的 grid_auto_rows/grid_auto_columns 字段。
-fn parse_grid_auto_tracks(
-    value: &Option<String>,
-) -> Vec<taffy::style::NonRepeatedTrackSizingFunction> {
+fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::NonRepeatedTrackSizingFunction> {
     let Some(value) = value else {
         return vec![];
     };
@@ -645,9 +624,7 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(
-            pct / 100.0,
-        ));
+        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(pct / 100.0));
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
@@ -678,9 +655,7 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(
-            pct / 100.0,
-        ));
+        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(pct / 100.0));
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
@@ -724,9 +699,7 @@ fn convert_grid_line(value: &GridLineValue) -> taffy::style::GridPlacement {
 ///
 /// 行号和列号均为 1-based。区域占据的行/列为 [start, end)，
 /// 即 row_end = row_start + span_rows。
-pub fn parse_grid_template_areas(
-    value: &str,
-) -> GridAreaMap {
+pub fn parse_grid_template_areas(value: &str) -> GridAreaMap {
     let mut areas = std::collections::HashMap::new();
     let mut row = 1i16;
 
@@ -778,11 +751,7 @@ pub fn parse_grid_template_areas(
 /// 当子元素的 grid-row-start/end 或 grid-column-start/end 为 Name 时，
 /// 查找父级区域映射，将 Name 替换为 Line（区域边界）。
 /// `which` 为 "row-start"、"row-end"、"col-start"、"col-end" 之一。
-fn resolve_named_area(
-    value: &GridLineValue,
-    parent_areas: Option<&GridAreaMap>,
-    which: &str,
-) -> GridLineValue {
+fn resolve_named_area(value: &GridLineValue, parent_areas: Option<&GridAreaMap>, which: &str) -> GridLineValue {
     match value {
         GridLineValue::Name(name) => {
             if let Some(areas) = parent_areas {
@@ -904,14 +873,8 @@ mod tests {
         style.width = LengthValue::Px(200.0);
         style.height = LengthValue::Px(100.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.size.width,
-            taffy::style::Dimension::Length(200.0)
-        );
-        assert_eq!(
-            taffy_style.size.height,
-            taffy::style::Dimension::Length(100.0)
-        );
+        assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(200.0));
+        assert_eq!(taffy_style.size.height, taffy::style::Dimension::Length(100.0));
     }
 
     /// 测试 size auto 转换（Px(0.0) 表示 auto）。
@@ -940,22 +903,13 @@ mod tests {
         style.border_bottom_width = LengthValue::Px(1.0);
         style.border_left_width = LengthValue::Px(2.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.margin.top,
-            taffy::style::LengthPercentageAuto::Length(10.0)
-        );
+        assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(10.0));
         assert_eq!(
             taffy_style.margin.left,
             taffy::style::LengthPercentageAuto::Length(20.0)
         );
-        assert_eq!(
-            taffy_style.padding.top,
-            taffy::style::LengthPercentage::Length(5.0)
-        );
-        assert_eq!(
-            taffy_style.border.top,
-            taffy::style::LengthPercentage::Length(1.0)
-        );
+        assert_eq!(taffy_style.padding.top, taffy::style::LengthPercentage::Length(5.0));
+        assert_eq!(taffy_style.border.top, taffy::style::LengthPercentage::Length(1.0));
     }
 
     /// 测试 flex 相关属性转换。
@@ -969,17 +923,11 @@ mod tests {
         style.flex_shrink = 0.5;
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(100.0));
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.flex_direction,
-            taffy::style::FlexDirection::Column
-        );
+        assert_eq!(taffy_style.flex_direction, taffy::style::FlexDirection::Column);
         assert_eq!(taffy_style.flex_wrap, taffy::style::FlexWrap::Wrap);
         assert!((taffy_style.flex_grow - 2.0).abs() < 0.001);
         assert!((taffy_style.flex_shrink - 0.5).abs() < 0.001);
-        assert_eq!(
-            taffy_style.flex_basis,
-            taffy::style::Dimension::Length(100.0)
-        );
+        assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(100.0));
     }
 
     /// 测试对齐属性转换。
@@ -990,18 +938,9 @@ mod tests {
         style.align_items = AlignmentValue::FlexEnd;
         style.align_self = AlignmentValue::Baseline;
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.justify_content,
-            Some(taffy::style::JustifyContent::Center)
-        );
-        assert_eq!(
-            taffy_style.align_items,
-            Some(taffy::style::AlignItems::FlexEnd)
-        );
-        assert_eq!(
-            taffy_style.align_self,
-            Some(taffy::style::AlignSelf::Baseline)
-        );
+        assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::Center));
+        assert_eq!(taffy_style.align_items, Some(taffy::style::AlignItems::FlexEnd));
+        assert_eq!(taffy_style.align_self, Some(taffy::style::AlignSelf::Baseline));
     }
 
     /// 测试 gap 转换（column-gap 和 row-gap 独立）。
@@ -1010,27 +949,15 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.gap = LengthValue::Px(10.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.gap.width,
-            taffy::style::LengthPercentage::Length(10.0)
-        );
+        assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
         // row_gap 默认 Px(0.0)
-        assert_eq!(
-            taffy_style.gap.height,
-            taffy::style::LengthPercentage::Length(0.0)
-        );
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(0.0));
 
         // 设置不同的 row-gap
         style.row_gap = LengthValue::Px(20.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.gap.width,
-            taffy::style::LengthPercentage::Length(10.0)
-        );
-        assert_eq!(
-            taffy_style.gap.height,
-            taffy::style::LengthPercentage::Length(20.0)
-        );
+        assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
     }
 
     /// 测试 overflow 转换。
@@ -1054,10 +981,7 @@ mod tests {
         style.bottom = LengthValue::Px(30.0);
         style.left = LengthValue::Px(40.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.inset.top,
-            taffy::style::LengthPercentageAuto::Length(10.0)
-        );
+        assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
         assert_eq!(
             taffy_style.inset.right,
             taffy::style::LengthPercentageAuto::Length(20.0)
@@ -1066,10 +990,7 @@ mod tests {
             taffy_style.inset.bottom,
             taffy::style::LengthPercentageAuto::Length(30.0)
         );
-        assert_eq!(
-            taffy_style.inset.left,
-            taffy::style::LengthPercentageAuto::Length(40.0)
-        );
+        assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(40.0));
     }
 
     /// 测试 box-sizing 转换。
@@ -1105,17 +1026,11 @@ mod tests {
         style.display = DisplayValue::Grid;
         style.grid_auto_flow = GridAutoFlowValue::Column;
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.grid_auto_flow,
-            taffy::style::GridAutoFlow::Column
-        );
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::Column);
 
         style.grid_auto_flow = GridAutoFlowValue::RowDense;
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.grid_auto_flow,
-            taffy::style::GridAutoFlow::RowDense
-        );
+        assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::RowDense);
     }
 
     /// 测试 row-gap 转换。
@@ -1125,14 +1040,8 @@ mod tests {
         style.gap = LengthValue::Px(10.0);
         style.row_gap = LengthValue::Px(20.0);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.gap.width,
-            taffy::style::LengthPercentage::Length(10.0)
-        );
-        assert_eq!(
-            taffy_style.gap.height,
-            taffy::style::LengthPercentage::Length(20.0)
-        );
+        assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
     }
 
     /// 测试 grid-column/row 转换。
@@ -1169,10 +1078,7 @@ mod tests {
         style.grid_column_start = GridLineValue::Span(2);
         style.grid_row_start = GridLineValue::Line(-1);
         let taffy_style = computed_style_to_taffy(&style, None);
-        assert_eq!(
-            taffy_style.grid_column.start,
-            taffy::style::GridPlacement::from_span(2)
-        );
+        assert_eq!(taffy_style.grid_column.start, taffy::style::GridPlacement::from_span(2));
         assert_eq!(
             taffy_style.grid_row.start,
             taffy::style::GridPlacement::from_line_index(-1)
@@ -1197,14 +1103,20 @@ mod tests {
         let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
         assert_eq!(tracks.len(), 1);
         assert!(
-            matches!(&tracks[0], taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)),
+            matches!(
+                &tracks[0],
+                taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)
+            ),
             "auto-fill 应生成 Repeat 变体"
         );
 
         let tracks = parse_grid_tracks(&Some("repeat(auto-fit, minmax(100px, 1fr))".to_string()));
         assert_eq!(tracks.len(), 1);
         assert!(
-            matches!(&tracks[0], taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFit, _)),
+            matches!(
+                &tracks[0],
+                taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFit, _)
+            ),
             "auto-fit 应生成 Repeat 变体"
         );
     }
@@ -1260,9 +1172,8 @@ mod tests {
     /// 测试 parse_grid_template_areas 解析 3x3 区域。
     #[test]
     fn test_parse_grid_template_areas_3x3() {
-        let areas = parse_grid_template_areas(
-            "\"header header header\" \"sidebar main main\" \"sidebar footer footer\"",
-        );
+        let areas =
+            parse_grid_template_areas("\"header header header\" \"sidebar main main\" \"sidebar footer footer\"");
         assert_eq!(areas.len(), 4);
 
         // header: row 1-2, col 1-4（跨三列）
@@ -1295,18 +1206,10 @@ mod tests {
         areas.insert("sidebar".to_string(), (2, 3, 1, 2));
 
         // Name 被解析
-        let val = resolve_named_area(
-            &GridLineValue::Name("header".to_string()),
-            Some(&areas),
-            "row-start",
-        );
+        let val = resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "row-start");
         assert_eq!(val, GridLineValue::Line(1));
 
-        let val = resolve_named_area(
-            &GridLineValue::Name("header".to_string()),
-            Some(&areas),
-            "col-end",
-        );
+        let val = resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "col-end");
         assert_eq!(val, GridLineValue::Line(3));
 
         // 不存在的名称 → Auto
@@ -1318,11 +1221,7 @@ mod tests {
         assert_eq!(val, GridLineValue::Auto);
 
         // 没有 area map → Auto
-        let val = resolve_named_area(
-            &GridLineValue::Name("header".to_string()),
-            None,
-            "row-start",
-        );
+        let val = resolve_named_area(&GridLineValue::Name("header".to_string()), None, "row-start");
         assert_eq!(val, GridLineValue::Auto);
 
         // 非 Name 值不变

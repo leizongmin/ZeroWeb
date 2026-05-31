@@ -117,8 +117,7 @@ fn split_top_level<'a>(input: &'a str, keyword: &str) -> Vec<&'a str> {
             depth += 1;
         } else if bytes[i] == b')' {
             depth = depth.saturating_sub(1);
-        } else if depth == 0 && i + keyword_len <= bytes.len() && &lower[i..i + keyword_len] == keyword
-        {
+        } else if depth == 0 && i + keyword_len <= bytes.len() && &lower[i..i + keyword_len] == keyword {
             parts.push(&input[start..i]);
             start = i + keyword_len;
             i += keyword_len;

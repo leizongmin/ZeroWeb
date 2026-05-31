@@ -91,11 +91,7 @@ impl LayoutBox {
     }
 
     /// 递归计算绝对位置（传入父级绝对位置）。
-    pub fn absolute_position_with_parent(
-        &self,
-        parent_abs_x: f32,
-        parent_abs_y: f32,
-    ) -> (f32, f32) {
+    pub fn absolute_position_with_parent(&self, parent_abs_x: f32, parent_abs_y: f32) -> (f32, f32) {
         (parent_abs_x + self.x, parent_abs_y + self.y)
     }
 

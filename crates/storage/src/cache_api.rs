@@ -119,11 +119,7 @@ impl Cache {
     }
 
     /// 缓存一对 Request/Response（如已存在则覆盖）。
-    pub fn put(
-        &mut self,
-        request: CacheRequest,
-        response: CacheResponse,
-    ) -> Result<(), StorageError> {
+    pub fn put(&mut self, request: CacheRequest, response: CacheResponse) -> Result<(), StorageError> {
         if let Some(entry) = self
             .entries
             .iter_mut()
@@ -139,9 +135,8 @@ impl Cache {
     /// 删除匹配请求的缓存条目，返回是否删除成功。
     pub fn delete(&mut self, request: &CacheRequest) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|e| {
-            !(e.request.url == request.url && e.request.method == request.method)
-        });
+        self.entries
+            .retain(|e| !(e.request.url == request.url && e.request.method == request.method));
         self.entries.len() < before
     }
 
@@ -170,9 +165,7 @@ pub struct CacheStorage {
 impl CacheStorage {
     /// 创建新的 CacheStorage。
     pub fn new() -> Self {
-        Self {
-            caches: HashMap::new(),
-        }
+        Self { caches: HashMap::new() }
     }
 
     /// 查找匹配请求的响应（在所有缓存中搜索第一个匹配）。
@@ -187,9 +180,7 @@ impl CacheStorage {
 
     /// 打开指定名称的缓存（如不存在则创建）。
     pub fn open(&mut self, name: &str) -> &mut Cache {
-        self.caches
-            .entry(name.to_string())
-            .or_insert_with(|| Cache::new(name))
+        self.caches.entry(name.to_string()).or_insert_with(|| Cache::new(name))
     }
 
     /// 是否包含指定名称的缓存。
@@ -299,8 +290,12 @@ mod tests {
     #[test]
     fn test_cache_keys() {
         let mut cache = Cache::new("v1");
-        cache.put(CacheRequest::new("https://a.com"), CacheResponse::ok(vec![])).unwrap();
-        cache.put(CacheRequest::new("https://b.com"), CacheResponse::ok(vec![])).unwrap();
+        cache
+            .put(CacheRequest::new("https://a.com"), CacheResponse::ok(vec![]))
+            .unwrap();
+        cache
+            .put(CacheRequest::new("https://b.com"), CacheResponse::ok(vec![]))
+            .unwrap();
 
         let keys = cache.keys();
         assert_eq!(keys.len(), 2);
@@ -333,8 +328,12 @@ mod tests {
     #[test]
     fn test_cache_storage_open_existing() {
         let mut cs = CacheStorage::new();
-        cs.open("v1").put(CacheRequest::new("https://a.com"), CacheResponse::ok(b"x".to_vec())).unwrap();
-        cs.open("v1").put(CacheRequest::new("https://b.com"), CacheResponse::ok(b"y".to_vec())).unwrap();
+        cs.open("v1")
+            .put(CacheRequest::new("https://a.com"), CacheResponse::ok(b"x".to_vec()))
+            .unwrap();
+        cs.open("v1")
+            .put(CacheRequest::new("https://b.com"), CacheResponse::ok(b"y".to_vec()))
+            .unwrap();
 
         let cache = cs.open("v1");
         assert_eq!(cache.len(), 2);
@@ -416,9 +415,18 @@ mod tests {
     #[test]
     fn test_cache_put_multiple_urls() {
         let mut cache = Cache::new("v1");
-        cache.put(CacheRequest::new("https://a.com/1"), CacheResponse::ok(b"one".to_vec())).unwrap();
-        cache.put(CacheRequest::new("https://a.com/2"), CacheResponse::ok(b"two".to_vec())).unwrap();
-        cache.put(CacheRequest::new("https://a.com/3"), CacheResponse::ok(b"three".to_vec())).unwrap();
+        cache
+            .put(CacheRequest::new("https://a.com/1"), CacheResponse::ok(b"one".to_vec()))
+            .unwrap();
+        cache
+            .put(CacheRequest::new("https://a.com/2"), CacheResponse::ok(b"two".to_vec()))
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::new("https://a.com/3"),
+                CacheResponse::ok(b"three".to_vec()),
+            )
+            .unwrap();
         assert_eq!(cache.len(), 3);
 
         let req1 = CacheRequest::new("https://a.com/1");
@@ -437,9 +445,15 @@ mod tests {
     #[test]
     fn test_cache_keys_after_delete() {
         let mut cache = Cache::new("v1");
-        cache.put(CacheRequest::new("https://a.com"), CacheResponse::ok(vec![])).unwrap();
-        cache.put(CacheRequest::new("https://b.com"), CacheResponse::ok(vec![])).unwrap();
-        cache.put(CacheRequest::new("https://c.com"), CacheResponse::ok(vec![])).unwrap();
+        cache
+            .put(CacheRequest::new("https://a.com"), CacheResponse::ok(vec![]))
+            .unwrap();
+        cache
+            .put(CacheRequest::new("https://b.com"), CacheResponse::ok(vec![]))
+            .unwrap();
+        cache
+            .put(CacheRequest::new("https://c.com"), CacheResponse::ok(vec![]))
+            .unwrap();
         assert_eq!(cache.keys().len(), 3);
         cache.delete(&CacheRequest::new("https://b.com"));
         let keys = cache.keys();
@@ -452,8 +466,12 @@ mod tests {
         let mut cache = Cache::new("v1");
         let get_req = CacheRequest::new("https://example.com/api");
         let post_req = CacheRequest::with_method("https://example.com/api", "POST");
-        cache.put(get_req.clone(), CacheResponse::ok(b"get_resp".to_vec())).unwrap();
-        cache.put(post_req.clone(), CacheResponse::ok(b"post_resp".to_vec())).unwrap();
+        cache
+            .put(get_req.clone(), CacheResponse::ok(b"get_resp".to_vec()))
+            .unwrap();
+        cache
+            .put(post_req.clone(), CacheResponse::ok(b"post_resp".to_vec()))
+            .unwrap();
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.match_request(&get_req).unwrap().body, b"get_resp".to_vec());
         assert_eq!(cache.match_request(&post_req).unwrap().body, b"post_resp".to_vec());

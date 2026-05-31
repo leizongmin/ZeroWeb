@@ -374,10 +374,7 @@ fn flip_op(op: MediaFeatureOp) -> MediaFeatureOp {
 /// 从字符串开头解析数值（如 `600px`），返回数值和剩余字符串。
 fn parse_leading_value(s: &str) -> Option<(f64, &str)> {
     let s = s.trim();
-    let end = s
-        .as_bytes()
-        .iter()
-        .position(|&b| !b.is_ascii_digit() && b != b'.')?;
+    let end = s.as_bytes().iter().position(|&b| !b.is_ascii_digit() && b != b'.')?;
     let num_str = &s[..end];
     let num = num_str.parse::<f64>().ok()?;
     let rest = s[end..].trim_start();
@@ -440,9 +437,7 @@ fn parse_simple_range(s: &str) -> Option<MediaCondition> {
 
 /// 找到字符串中第一个范围运算符的位置。
 fn find_range_op_pos(s: &str) -> Option<usize> {
-    s.as_bytes()
-        .iter()
-        .position(|&b| b == b'<' || b == b'>')
+    s.as_bytes().iter().position(|&b| b == b'<' || b == b'>')
 }
 
 /// 从 CSS 值字符串解析像素数值。
@@ -550,10 +545,7 @@ mod tests {
     #[test]
     fn test_parse_just_parentheses() {
         let q = parse_media_query("(width: 800px)").unwrap();
-        assert_eq!(
-            q.conditions[0],
-            MediaCondition::Width(MediaFeatureOp::Exact, 800.0)
-        );
+        assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::Exact, 800.0));
     }
 
     // ── Level 4 范围语法测试 ──
@@ -580,10 +572,7 @@ mod tests {
         // (width < 1000px) — 小于，不含 1000
         let q = parse_media_query("(width < 1000px)").unwrap();
         assert_eq!(q.conditions.len(), 1);
-        assert_eq!(
-            q.conditions[0],
-            MediaCondition::Width(MediaFeatureOp::LessThan, 1000.0)
-        );
+        assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::LessThan, 1000.0));
 
         // 评估：999 通过，1000 不通过（严格小于）
         let ctx_pass = MediaContext::new(999.0, 400.0);

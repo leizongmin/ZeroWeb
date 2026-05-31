@@ -56,11 +56,7 @@ impl WebStorage {
         }
 
         let new_entry_size = key.len() + value.len();
-        let old_size = self
-            .data
-            .get(key)
-            .map(|old| key.len() + old.len())
-            .unwrap_or(0);
+        let old_size = self.data.get(key).map(|old| key.len() + old.len()).unwrap_or(0);
         let used_after = self.used_size() - old_size + new_entry_size;
 
         if used_after > self.max_size {
@@ -150,10 +146,7 @@ mod tests {
     fn test_storage_set_returns_old() {
         let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
         assert_eq!(storage.set("key1", "value1").unwrap(), None);
-        assert_eq!(
-            storage.set("key1", "value2").unwrap(),
-            Some("value1".to_string())
-        );
+        assert_eq!(storage.set("key1", "value2").unwrap(), Some("value1".to_string()));
         assert_eq!(storage.get("key1"), Some("value2"));
     }
 
@@ -222,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_storage_quota_exceeded() {
-        let mut storage =
-            WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 100);
+        let mut storage = WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 100);
         // Each entry costs key.len() + value.len()
         storage.set("a", &"x".repeat(49)).unwrap(); // 1 + 49 = 50
         storage.set("b", &"y".repeat(49)).unwrap(); // 1 + 49 = 50, total = 100
@@ -297,8 +289,7 @@ mod tests {
         let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
         let obj = serde_json::json!({"name": "Alice", "age": 30, "tags": [1, 2, 3]});
         storage.set("user", &obj.to_string()).unwrap();
-        let retrieved: serde_json::Value =
-            serde_json::from_str(storage.get("user").unwrap()).unwrap();
+        let retrieved: serde_json::Value = serde_json::from_str(storage.get("user").unwrap()).unwrap();
         assert_eq!(retrieved, obj);
     }
 
@@ -313,8 +304,7 @@ mod tests {
 
     #[test]
     fn test_storage_quota_with_update() {
-        let mut storage =
-            WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 50);
+        let mut storage = WebStorage::new_with_max_size(StorageType::Local, "https://example.com", 50);
         storage.set("k", &"a".repeat(48)).unwrap(); // 1 + 48 = 49
         // Updating same key to larger value that exceeds quota
         let result = storage.set("k", &"b".repeat(50));

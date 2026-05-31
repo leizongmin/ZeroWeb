@@ -121,11 +121,7 @@ impl Range {
     }
 
     /// 选中节点本身（含前后的边界偏移）。
-    pub fn select_node(
-        &mut self,
-        doc: &Document,
-        node: NodeId,
-    ) -> Result<(), RangeError> {
+    pub fn select_node(&mut self, doc: &Document, node: NodeId) -> Result<(), RangeError> {
         let parent = doc.parent_node(node).ok_or(RangeError::Detached)?;
         let siblings = doc.child_nodes(parent);
         let index = siblings
@@ -426,9 +422,17 @@ mod tests {
         let fragment = range.clone_contents(&mut doc).unwrap();
 
         // 原始 div 不变
-        assert_eq!(doc.child_nodes(div).len(), 2, "original div should still have 2 children");
+        assert_eq!(
+            doc.child_nodes(div).len(),
+            2,
+            "original div should still have 2 children"
+        );
         // fragment 是克隆
-        assert_eq!(doc.child_nodes(fragment).len(), 2, "cloned fragment should have 2 children");
+        assert_eq!(
+            doc.child_nodes(fragment).len(),
+            2,
+            "cloned fragment should have 2 children"
+        );
     }
 
     /// 测试 insert_node。

@@ -407,8 +407,7 @@ impl Tokenizer {
                     self.consume();
                 }
                 let codepoint = u32::from_str_radix(&hex, 16).unwrap_or(0);
-                if codepoint == 0 || codepoint > 0x10FFFF || (0xD800..=0xDFFF).contains(&codepoint)
-                {
+                if codepoint == 0 || codepoint > 0x10FFFF || (0xD800..=0xDFFF).contains(&codepoint) {
                     Some('\u{FFFD}') // 替换字符
                 } else {
                     Some(char::from_u32(codepoint).unwrap_or('\u{FFFD}'))
@@ -901,7 +900,9 @@ impl Tokenizer {
                 return Token::Dimension(number, unit);
             }
             // 检查 \ 转义开始的单位
-            if next == '\\' && let Some(_escaped) = self.peek_at(1) {
+            if next == '\\'
+                && let Some(_escaped) = self.peek_at(1)
+            {
                 let unit = self.consume_ident();
                 return Token::Dimension(number, unit);
             }

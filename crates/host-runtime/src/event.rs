@@ -143,9 +143,7 @@ pub(crate) fn convert_mouse_button(btn: winit::event::MouseButton) -> MouseButto
 /// 将 winit 的 MouseScrollDelta 转换为自定义 MouseScrollDelta
 pub(crate) fn convert_scroll_delta(delta: winit::event::MouseScrollDelta) -> MouseScrollDelta {
     match delta {
-        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-            MouseScrollDelta::PixelDelta(pos.x, pos.y)
-        }
+        winit::event::MouseScrollDelta::PixelDelta(pos) => MouseScrollDelta::PixelDelta(pos.x, pos.y),
         winit::event::MouseScrollDelta::LineDelta(x, y) => MouseScrollDelta::LineDelta(x, y),
     }
 }
@@ -356,10 +354,7 @@ mod tests {
     fn test_ime_event_equality() {
         assert_eq!(ImeEvent::Enabled, ImeEvent::Enabled);
         assert_ne!(ImeEvent::Enabled, ImeEvent::Disabled);
-        assert_eq!(
-            ImeEvent::Commit("a".to_string()),
-            ImeEvent::Commit("a".to_string())
-        );
+        assert_eq!(ImeEvent::Commit("a".to_string()), ImeEvent::Commit("a".to_string()));
     }
 
     #[test]
@@ -449,10 +444,7 @@ mod tests {
 
     #[test]
     fn test_convert_mouse_button_all_variants() {
-        assert_eq!(
-            convert_mouse_button(winit::event::MouseButton::Left),
-            MouseButton::Left
-        );
+        assert_eq!(convert_mouse_button(winit::event::MouseButton::Left), MouseButton::Left);
         assert_eq!(
             convert_mouse_button(winit::event::MouseButton::Right),
             MouseButton::Right
@@ -461,10 +453,7 @@ mod tests {
             convert_mouse_button(winit::event::MouseButton::Middle),
             MouseButton::Middle
         );
-        assert_eq!(
-            convert_mouse_button(winit::event::MouseButton::Back),
-            MouseButton::Back
-        );
+        assert_eq!(convert_mouse_button(winit::event::MouseButton::Back), MouseButton::Back);
         assert_eq!(
             convert_mouse_button(winit::event::MouseButton::Forward),
             MouseButton::Forward
@@ -538,14 +527,8 @@ mod tests {
             convert_touch_phase(winit::event::TouchPhase::Started),
             TouchPhase::Started
         );
-        assert_eq!(
-            convert_touch_phase(winit::event::TouchPhase::Moved),
-            TouchPhase::Moved
-        );
-        assert_eq!(
-            convert_touch_phase(winit::event::TouchPhase::Ended),
-            TouchPhase::Ended
-        );
+        assert_eq!(convert_touch_phase(winit::event::TouchPhase::Moved), TouchPhase::Moved);
+        assert_eq!(convert_touch_phase(winit::event::TouchPhase::Ended), TouchPhase::Ended);
         assert_eq!(
             convert_touch_phase(winit::event::TouchPhase::Cancelled),
             TouchPhase::Cancelled
@@ -634,7 +617,12 @@ mod tests {
 
     #[test]
     fn test_touch_phase_all_variants_distinct() {
-        let phases = [TouchPhase::Started, TouchPhase::Moved, TouchPhase::Ended, TouchPhase::Cancelled];
+        let phases = [
+            TouchPhase::Started,
+            TouchPhase::Moved,
+            TouchPhase::Ended,
+            TouchPhase::Cancelled,
+        ];
         for i in 0..phases.len() {
             for j in 0..phases.len() {
                 if i == j {
@@ -897,8 +885,8 @@ mod tests {
     fn test_mouse_move_coordinates_precision() {
         let cases: Vec<(f64, f64)> = vec![
             (0.0, 0.0),
-            (1920.5, 1080.25),   // 分数坐标
-            (-100.0, -200.0),    // 窗口外
+            (1920.5, 1080.25), // 分数坐标
+            (-100.0, -200.0),  // 窗口外
         ];
         for (x, y) in cases {
             let event = AppEvent::MouseMoved { x, y };

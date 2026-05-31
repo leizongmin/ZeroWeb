@@ -7,8 +7,8 @@
 type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector,
-    Selector, SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector, Selector, SubclassSelector,
+    TypeSelector,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -301,11 +301,7 @@ fn is_empty_element(doc: &Document, element: NodeId) -> bool {
 }
 
 /// 检查元素是否匹配 nth-child 模式。
-fn matches_nth_child(
-    doc: &Document,
-    element: NodeId,
-    pattern: &zero_css_parser::ast::NthPattern,
-) -> bool {
+fn matches_nth_child(doc: &Document, element: NodeId, pattern: &zero_css_parser::ast::NthPattern) -> bool {
     let parent = match doc.parent_node(element) {
         Some(p) => p,
         None => return false,
@@ -326,11 +322,7 @@ fn matches_nth_child(
 }
 
 /// 检查元素是否匹配 nth-last-child 模式（从末尾计数）。
-fn matches_nth_last_child(
-    doc: &Document,
-    element: NodeId,
-    pattern: &zero_css_parser::ast::NthPattern,
-) -> bool {
+fn matches_nth_last_child(doc: &Document, element: NodeId, pattern: &zero_css_parser::ast::NthPattern) -> bool {
     let parent = match doc.parent_node(element) {
         Some(p) => p,
         None => return false,
@@ -338,8 +330,7 @@ fn matches_nth_last_child(
     let children = doc.child_nodes(parent);
 
     // 收集所有元素子节点
-    let element_children: Vec<NodeId> =
-        children.iter().copied().filter(|&c| is_element(doc, c)).collect();
+    let element_children: Vec<NodeId> = children.iter().copied().filter(|&c| is_element(doc, c)).collect();
 
     // 从末尾计数（1-indexed）
     for (i, &child) in element_children.iter().rev().enumerate() {
@@ -408,11 +399,7 @@ fn is_last_of_type(doc: &Document, element: NodeId) -> bool {
 }
 
 /// 检查元素是否匹配 nth-of-type 模式。
-fn matches_nth_of_type(
-    doc: &Document,
-    element: NodeId,
-    pattern: &zero_css_parser::ast::NthPattern,
-) -> bool {
+fn matches_nth_of_type(doc: &Document, element: NodeId, pattern: &zero_css_parser::ast::NthPattern) -> bool {
     let tag = match element_tag_name(doc, element) {
         Some(t) => t,
         None => return false,
@@ -440,11 +427,7 @@ fn matches_nth_of_type(
 }
 
 /// 检查元素是否匹配 nth-last-of-type 模式（从末尾计数）。
-fn matches_nth_last_of_type(
-    doc: &Document,
-    element: NodeId,
-    pattern: &zero_css_parser::ast::NthPattern,
-) -> bool {
+fn matches_nth_last_of_type(doc: &Document, element: NodeId, pattern: &zero_css_parser::ast::NthPattern) -> bool {
     let tag = match element_tag_name(doc, element) {
         Some(t) => t,
         None => return false,
@@ -459,9 +442,7 @@ fn matches_nth_last_of_type(
     let same_type: Vec<NodeId> = children
         .iter()
         .copied()
-        .filter(|&c| {
-            is_element(doc, c) && element_tag_name(doc, c).as_deref() == Some(tag.as_str())
-        })
+        .filter(|&c| is_element(doc, c) && element_tag_name(doc, c).as_deref() == Some(tag.as_str()))
         .collect();
 
     // 从末尾计数（1-indexed）
@@ -674,8 +655,9 @@ fn evaluate_container_condition(
 
     let condition = &container_rule.condition;
     let size_cond = match condition {
-        zero_css_parser::ast::ContainerCondition::Size(s)
-        | zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+        zero_css_parser::ast::ContainerCondition::Size(s) | zero_css_parser::ast::ContainerCondition::InlineSize(s) => {
+            s
+        }
     };
 
     let feature = size_cond.feature.to_ascii_lowercase();
@@ -703,15 +685,9 @@ fn evaluate_container_condition(
             // width: 容器宽度 == 条件值（精确匹配极少使用，按相等判断）
             ctx.container_width.map(|w| (w - cond_px).abs() < f64::EPSILON)
         }
-        "min-height" | "min-block-size" => {
-            ctx.container_height.map(|h| h >= cond_px)
-        }
-        "max-height" | "max-block-size" => {
-            ctx.container_height.map(|h| h <= cond_px)
-        }
-        "height" | "block-size" => {
-            ctx.container_height.map(|h| (h - cond_px).abs() < f64::EPSILON)
-        }
+        "min-height" | "min-block-size" => ctx.container_height.map(|h| h >= cond_px),
+        "max-height" | "max-block-size" => ctx.container_height.map(|h| h <= cond_px),
+        "height" | "block-size" => ctx.container_height.map(|h| (h - cond_px).abs() < f64::EPSILON),
         _ => None,
     };
 
@@ -727,27 +703,16 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
     use zero_css_parser::ast::SupportsCondition;
 
     match condition {
-        SupportsCondition::Property(property, value) => {
-            is_property_supported(property, value)
-        }
+        SupportsCondition::Property(property, value) => is_property_supported(property, value),
         SupportsCondition::Selector(selector_text) => {
             // 尝试解析选择器，能解析即为支持
             let css = format!("{selector_text} {{ }}");
             let stylesheet = zero_css_parser::Parser::parse_stylesheet(&css);
-            matches!(
-                stylesheet.rules.first(),
-                Some(zero_css_parser::ast::Rule::Style(_))
-            )
+            matches!(stylesheet.rules.first(), Some(zero_css_parser::ast::Rule::Style(_)))
         }
-        SupportsCondition::And(conditions) => {
-            conditions.iter().all(evaluate_supports_condition)
-        }
-        SupportsCondition::Or(conditions) => {
-            conditions.iter().any(evaluate_supports_condition)
-        }
-        SupportsCondition::Not(inner) => {
-            !evaluate_supports_condition(inner)
-        }
+        SupportsCondition::And(conditions) => conditions.iter().all(evaluate_supports_condition),
+        SupportsCondition::Or(conditions) => conditions.iter().any(evaluate_supports_condition),
+        SupportsCondition::Not(inner) => !evaluate_supports_condition(inner),
     }
 }
 
@@ -769,30 +734,55 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "box-sizing" => parse_box_sizing(trimmed).is_some(),
         "flex-direction" => parse_flex_direction(trimmed).is_some(),
         "flex-wrap" => parse_flex_wrap(trimmed).is_some(),
-        "justify-content" | "align-items" | "align-content" | "align-self"
-        | "justify-self" => parse_alignment(trimmed).is_some(),
+        "justify-content" | "align-items" | "align-content" | "align-self" | "justify-self" => {
+            parse_alignment(trimmed).is_some()
+        }
         "font-weight" => parse_font_weight(trimmed).is_some(),
         "font-style" => parse_font_style(trimmed).is_some(),
-        "color" | "background-color" | "border-color" | "border-top-color"
-        | "border-right-color" | "border-bottom-color" | "border-left-color" => {
-            parse_color(trimmed).is_some()
-        }
-        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height"
-        | "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left"
-        | "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
-        | "gap" | "top" | "right" | "bottom" | "left"
-        | "border-top-width" | "border-right-width" | "border-bottom-width"
+        "color"
+        | "background-color"
+        | "border-color"
+        | "border-top-color"
+        | "border-right-color"
+        | "border-bottom-color"
+        | "border-left-color" => parse_color(trimmed).is_some(),
+        "width"
+        | "height"
+        | "min-width"
+        | "max-width"
+        | "min-height"
+        | "max-height"
+        | "margin"
+        | "margin-top"
+        | "margin-right"
+        | "margin-bottom"
+        | "margin-left"
+        | "padding"
+        | "padding-top"
+        | "padding-right"
+        | "padding-bottom"
+        | "padding-left"
+        | "gap"
+        | "top"
+        | "right"
+        | "bottom"
+        | "left"
+        | "border-top-width"
+        | "border-right-width"
+        | "border-bottom-width"
         | "border-left-width"
-        | "border-top-left-radius" | "border-top-right-radius"
-        | "border-bottom-right-radius" | "border-bottom-left-radius" => {
-            parse_length(trimmed).is_some()
-        }
+        | "border-top-left-radius"
+        | "border-top-right-radius"
+        | "border-bottom-right-radius"
+        | "border-bottom-left-radius" => parse_length(trimmed).is_some(),
         "transform" => parse_transform(trimmed).is_some(),
         "background" | "background-image" => parse_gradient(trimmed).is_some() || parse_color(trimmed).is_some(),
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
         "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),
         "scroll-snap-stop" => parse_scroll_snap_stop(trimmed).is_some(),
-        "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom" | "scroll-margin-left" => parse_length(trimmed).is_some(),
+        "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom" | "scroll-margin-left" => {
+            parse_length(trimmed).is_some()
+        }
         "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom" | "scroll-padding-left" => {
             trimmed.eq_ignore_ascii_case("auto") || parse_length(trimmed).is_some()
         }
@@ -889,8 +879,7 @@ fn collect_from_rules(
                     if at_rule.name.eq_ignore_ascii_case("media") {
                         // @media 规则：需要评估媒体条件
                         if let Some(ctx) = media_ctx
-                            && let Some(query) =
-                                zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            && let Some(query) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
                             && zero_css_parser::media_query::evaluate_media_query(&query, ctx)
                         {
                             collect_from_rules(
@@ -979,8 +968,8 @@ fn collect_from_rules(
 mod tests {
     use super::*;
     use zero_css_parser::ast::{
-        AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
-        PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
+        AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector,
+        Selector, SubclassSelector, TypeSelector,
     };
     use zero_dom::Document;
 
@@ -1224,9 +1213,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("first-child".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "first-child".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1245,9 +1234,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("root".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "root".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1269,9 +1258,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("empty".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "empty".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1294,9 +1283,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Not(vec![make_id_selector("main")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Not(vec![
+                            make_id_selector("main"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1317,12 +1306,10 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Is(vec![
-                                make_tag_selector("div"),
-                                make_tag_selector("span"),
-                            ]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Is(vec![
+                            make_tag_selector("div"),
+                            make_tag_selector("span"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1420,19 +1407,10 @@ mod tests {
                 ],
             },
         };
-        assert!(
-            matches_selector(&doc, span1, &sel),
-            "span1 should match div ~ span"
-        );
-        assert!(
-            matches_selector(&doc, span2, &sel),
-            "span2 should match div ~ span"
-        );
+        assert!(matches_selector(&doc, span1, &sel), "span1 should match div ~ span");
+        assert!(matches_selector(&doc, span2, &sel), "span2 should match div ~ span");
         // div 本身不应匹配
-        assert!(
-            !matches_selector(&doc, div, &sel),
-            "div should not match div ~ span"
-        );
+        assert!(!matches_selector(&doc, div, &sel), "div should not match div ~ span");
     }
 
     /// 测试 :last-child 伪类。
@@ -1448,9 +1426,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("last-child".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "last-child".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1488,34 +1466,19 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthChild(zero_css_parser::ast::NthPattern {
-                                a: 2,
-                                b: 0,
-                            }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(
+                            zero_css_parser::ast::NthPattern { a: 2, b: 0 },
+                        ))],
                     },
                     None,
                 )],
             },
         };
 
-        assert!(
-            !matches_selector(&doc, items[0], &sel),
-            "1st child should not match 2n"
-        );
-        assert!(
-            matches_selector(&doc, items[1], &sel),
-            "2nd child should match 2n"
-        );
-        assert!(
-            !matches_selector(&doc, items[2], &sel),
-            "3rd child should not match 2n"
-        );
-        assert!(
-            matches_selector(&doc, items[3], &sel),
-            "4th child should match 2n"
-        );
+        assert!(!matches_selector(&doc, items[0], &sel), "1st child should not match 2n");
+        assert!(matches_selector(&doc, items[1], &sel), "2nd child should match 2n");
+        assert!(!matches_selector(&doc, items[2], &sel), "3rd child should not match 2n");
+        assert!(matches_selector(&doc, items[3], &sel), "4th child should match 2n");
     }
 
     /// 测试 :where() 伪类匹配。
@@ -1528,12 +1491,10 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Where(vec![
-                                make_class_selector("container"),
-                                make_class_selector("other"),
-                            ]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Where(vec![
+                            make_class_selector("container"),
+                            make_class_selector("other"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1679,10 +1640,7 @@ mod tests {
         let sel = Selector {
             complex: ComplexSelector { parts: vec![] },
         };
-        assert!(
-            !matches_selector(&doc, div, &sel),
-            "empty selector should not match"
-        );
+        assert!(!matches_selector(&doc, div, &sel), "empty selector should not match");
     }
 
     /// 测试 :not() 排除匹配。
@@ -1696,9 +1654,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("p".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Not(vec![make_class_selector("container")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Not(vec![
+                            make_class_selector("container"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1715,9 +1673,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("p".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Not(vec![make_class_selector("text")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Not(vec![
+                            make_class_selector("text"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1739,9 +1697,7 @@ mod tests {
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("div".to_string())),
                         subclass_selectors: vec![SubclassSelector::PseudoElement(
-                            zero_css_parser::ast::PseudoElementSelector::Standard(
-                                "before".to_string(),
-                            ),
+                            zero_css_parser::ast::PseudoElementSelector::Standard("before".to_string()),
                         )],
                     },
                     None,
@@ -1773,9 +1729,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("div".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Has(vec![make_class_selector("child")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                            make_class_selector("child"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1824,9 +1780,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("div".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Has(vec![inner_sel]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                            inner_sel,
+                        ]))],
                     },
                     None,
                 )],
@@ -1855,9 +1811,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("div".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Has(vec![make_class_selector("absent")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                            make_class_selector("absent"),
+                        ]))],
                     },
                     None,
                 )],
@@ -1886,9 +1842,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("only-child".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "only-child".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1919,9 +1875,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("first-of-type".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "first-of-type".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1948,9 +1904,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("last-of-type".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "last-of-type".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -1975,9 +1931,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("p".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Simple("only-of-type".to_string()),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                            "only-of-type".to_string(),
+                        ))],
                     },
                     None,
                 )],
@@ -2010,12 +1966,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthLastChild(NthPattern {
-                                a: 0,
-                                b: 1,
-                            }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthLastChild(
+                            NthPattern { a: 0, b: 1 },
+                        ))],
                     },
                     None,
                 )],
@@ -2031,12 +1984,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthLastChild(NthPattern {
-                                a: 0,
-                                b: 2,
-                            }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthLastChild(
+                            NthPattern { a: 0, b: 2 },
+                        ))],
                     },
                     None,
                 )],
@@ -2068,9 +2018,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 2 }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(
+                            NthPattern { a: 0, b: 2 },
+                        ))],
                     },
                     None,
                 )],
@@ -2085,9 +2035,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("p".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 1 }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(
+                            NthPattern { a: 0, b: 1 },
+                        ))],
                     },
                     None,
                 )],
@@ -2116,9 +2066,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthLastOfType(NthPattern { a: 0, b: 1 }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthLastOfType(
+                            NthPattern { a: 0, b: 1 },
+                        ))],
                     },
                     None,
                 )],
@@ -2149,17 +2099,17 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("span".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthOfType(NthPattern { a: 2, b: 1 }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(
+                            NthPattern { a: 2, b: 1 },
+                        ))],
                     },
                     None,
                 )],
             },
         };
-        assert!(matches_selector(&doc, s1, &sel));  // 1st
+        assert!(matches_selector(&doc, s1, &sel)); // 1st
         assert!(!matches_selector(&doc, s2, &sel)); // 2nd
-        assert!(matches_selector(&doc, s3, &sel));  // 3rd
+        assert!(matches_selector(&doc, s3, &sel)); // 3rd
         assert!(!matches_selector(&doc, s4, &sel)); // 4th
     }
 
@@ -2217,18 +2167,14 @@ mod tests {
 
         // 容器宽度 >= 400px 时，规则应用
         let ctx = ContainerContext::with_size(500.0, 600.0);
-        let results = collect_matching_declarations_with_media(
-            &doc, p, &stylesheets, None, Some(&ctx),
-        );
+        let results = collect_matching_declarations_with_media(&doc, p, &stylesheets, None, Some(&ctx));
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "color");
         assert_eq!(results[0].1, "red");
 
         // 容器宽度 < 400px 时，规则不应用
         let ctx_small = ContainerContext::with_size(300.0, 600.0);
-        let results = collect_matching_declarations_with_media(
-            &doc, p, &stylesheets, None, Some(&ctx_small),
-        );
+        let results = collect_matching_declarations_with_media(&doc, p, &stylesheets, None, Some(&ctx_small));
         assert_eq!(results.len(), 0, "@container min-width:400px should not apply at 300px");
     }
 
@@ -2275,9 +2221,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("section".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Has(vec![inner_sel]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                            inner_sel,
+                        ]))],
                     },
                     None,
                 )],
@@ -2300,12 +2246,10 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Not(vec![
-                                make_tag_selector("div"),
-                                make_tag_selector("span"),
-                            ]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Not(vec![
+                            make_tag_selector("div"),
+                            make_tag_selector("span"),
+                        ]))],
                     },
                     None,
                 )],
@@ -2326,12 +2270,10 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Is(vec![
-                                make_tag_selector("div"),
-                                make_tag_selector("span"),
-                            ]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Is(vec![
+                            make_tag_selector("div"),
+                            make_tag_selector("span"),
+                        ]))],
                     },
                     None,
                 )],
@@ -2343,12 +2285,10 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Where(vec![
-                                make_tag_selector("div"),
-                                make_tag_selector("span"),
-                            ]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Where(vec![
+                            make_tag_selector("div"),
+                            make_tag_selector("span"),
+                        ]))],
                     },
                     None,
                 )],
@@ -2420,12 +2360,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: Some(TypeSelector::Tag("li".to_string())),
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::NthChild(zero_css_parser::ast::NthPattern {
-                                a: 0,
-                                b: 1,
-                            }),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthChild(
+                            zero_css_parser::ast::NthPattern { a: 0, b: 1 },
+                        ))],
                     },
                     None,
                 )],

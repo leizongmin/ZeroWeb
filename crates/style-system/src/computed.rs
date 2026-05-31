@@ -167,12 +167,7 @@ pub fn resolve_computed_style(
 ) -> ComputedStyle {
     // font-size 属性本身：em 相对于父元素的 font-size
     let font_size_context = parent_font_size.unwrap_or(ROOT_FONT_SIZE);
-    let font_size_px = resolve_length(
-        &style.font_size,
-        font_size_context,
-        viewport_width,
-        viewport_height,
-    );
+    let font_size_px = resolve_length(&style.font_size, font_size_context, viewport_width, viewport_height);
 
     let mut resolved = style.clone();
 
@@ -180,49 +175,14 @@ pub fn resolve_computed_style(
     resolved.font_size = LengthValue::Px(font_size_px);
 
     // 解析所有长度属性（使用元素自身的 font-size）
-    resolve_length_field(
-        &mut resolved.width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.height,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.min_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.min_height,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.max_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.max_height,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_length_field(&mut resolved.width, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.height, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.min_width, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.min_height, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.max_width, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.max_height, font_size_px, viewport_width, viewport_height);
 
-    resolve_length_field(
-        &mut resolved.margin_top,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_length_field(&mut resolved.margin_top, font_size_px, viewport_width, viewport_height);
     resolve_length_field(
         &mut resolved.margin_right,
         font_size_px,
@@ -235,19 +195,9 @@ pub fn resolve_computed_style(
         viewport_width,
         viewport_height,
     );
-    resolve_length_field(
-        &mut resolved.margin_left,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_length_field(&mut resolved.margin_left, font_size_px, viewport_width, viewport_height);
 
-    resolve_length_field(
-        &mut resolved.padding_top,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_length_field(&mut resolved.padding_top, font_size_px, viewport_width, viewport_height);
     resolve_length_field(
         &mut resolved.padding_right,
         font_size_px,
@@ -317,42 +267,12 @@ pub fn resolve_computed_style(
         viewport_height,
     );
 
-    resolve_length_field(
-        &mut resolved.top,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.right,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.bottom,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.left,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.gap,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.row_gap,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_length_field(&mut resolved.top, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.right, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.bottom, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.left, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.gap, font_size_px, viewport_width, viewport_height);
+    resolve_length_field(&mut resolved.row_gap, font_size_px, viewport_width, viewport_height);
     resolve_length_field(
         &mut resolved.letter_spacing,
         font_size_px,
@@ -391,17 +311,9 @@ fn resolve_length_field(
 /// 解析可能包含 var() 的属性值。
 ///
 /// 先解析 var() 引用，再尝试解析为长度值。
-pub fn compute_value(
-    value: &str,
-    custom_properties: &HashMap<String, String>,
-    _font_size: f64,
-) -> Option<String> {
+pub fn compute_value(value: &str, custom_properties: &HashMap<String, String>, _font_size: f64) -> Option<String> {
     let resolved = resolve_var(value, custom_properties);
-    if resolved != value {
-        Some(resolved)
-    } else {
-        None
-    }
+    if resolved != value { Some(resolved) } else { None }
 }
 
 /// 从自定义属性中收集所有 -- 开头的属性。

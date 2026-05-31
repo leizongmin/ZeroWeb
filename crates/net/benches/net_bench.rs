@@ -23,17 +23,10 @@ fn bench_navigation(c: &mut Criterion) {
 fn bench_cookie_parse(c: &mut Criterion) {
     c.bench_function("cookie_parse", |b| {
         b.iter(|| {
-            CookieStore::parse_set_cookie(
-                "session=abc123; Path=/; Domain=example.com; Secure; HttpOnly; SameSite=Lax",
-            )
+            CookieStore::parse_set_cookie("session=abc123; Path=/; Domain=example.com; Secure; HttpOnly; SameSite=Lax")
         })
     });
 }
 
-criterion_group!(
-    benches,
-    bench_parse_url,
-    bench_navigation,
-    bench_cookie_parse
-);
+criterion_group!(benches, bench_parse_url, bench_navigation, bench_cookie_parse);
 criterion_main!(benches);

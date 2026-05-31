@@ -50,28 +50,16 @@ impl FrameBuffer {
     /// 创建新的帧缓冲（全黑不透明）
     pub fn new(width: u32, height: u32) -> Self {
         let data = vec![0u8; (width * height * 4) as usize];
-        Self {
-            data,
-            width,
-            height,
-        }
+        Self { data, width, height }
     }
 
     /// 从 RGBA 数据创建帧缓冲
     pub fn from_rgba(data: Vec<u8>, width: u32, height: u32) -> Result<Self, String> {
         let expected = (width * height * 4) as usize;
         if data.len() != expected {
-            return Err(format!(
-                "数据大小不匹配: 期望 {}, 实际 {}",
-                expected,
-                data.len()
-            ));
+            return Err(format!("数据大小不匹配: 期望 {}, 实际 {}", expected, data.len()));
         }
-        Ok(Self {
-            data,
-            width,
-            height,
-        })
+        Ok(Self { data, width, height })
     }
 
     /// 获取指定位置的像素（RGBA）
@@ -239,10 +227,10 @@ mod tests {
     #[test]
     fn test_gpu_cpu_rendering_consistency_solid_fill() {
         use crate::color::Color;
-        use crate::gpu::renderer::GpuRenderer;
-        use crate::primitive::FillPrimitive;
         use crate::font::cache::GlyphCache;
         use crate::font::loader::FontLoader;
+        use crate::gpu::renderer::GpuRenderer;
+        use crate::primitive::FillPrimitive;
 
         let width = 16u32;
         let height = 16u32;

@@ -32,15 +32,8 @@ pub fn expand_shorthands(declarations: &[MatchingDecl]) -> Vec<MatchingDecl> {
 }
 
 /// 展开单个声明。
-fn expand_one(
-    property: &str,
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     match property {
         // ── 4 边简写 ──
@@ -171,13 +164,7 @@ fn expand_one(
         "transition" => expand_transition(value, important, specificity),
 
         // ── 逻辑属性简写 ──
-        "margin-block" => expand_axis_logical(
-            value,
-            "margin-block-start",
-            "margin-block-end",
-            important,
-            specificity,
-        ),
+        "margin-block" => expand_axis_logical(value, "margin-block-start", "margin-block-end", important, specificity),
         "margin-inline" => expand_axis_logical(
             value,
             "margin-inline-start",
@@ -199,40 +186,16 @@ fn expand_one(
             important,
             specificity,
         ),
-        "inset-block" => expand_axis_logical(
-            value,
-            "inset-block-start",
-            "inset-block-end",
-            important,
-            specificity,
-        ),
-        "inset-inline" => expand_axis_logical(
-            value,
-            "inset-inline-start",
-            "inset-inline-end",
-            important,
-            specificity,
-        ),
+        "inset-block" => expand_axis_logical(value, "inset-block-start", "inset-block-end", important, specificity),
+        "inset-inline" => expand_axis_logical(value, "inset-inline-start", "inset-inline-end", important, specificity),
 
         // ── animation 简写 ──
         // animation: name duration timing-function delay iteration-count direction fill-mode play-state
         "animation" => expand_animation(value, important, specificity),
 
         // ── Grid placement 简写 ──
-        "grid-column" => expand_grid_axis(
-            value,
-            "grid-column-start",
-            "grid-column-end",
-            important,
-            specificity,
-        ),
-        "grid-row" => expand_grid_axis(
-            value,
-            "grid-row-start",
-            "grid-row-end",
-            important,
-            specificity,
-        ),
+        "grid-column" => expand_grid_axis(value, "grid-column-start", "grid-column-end", important, specificity),
+        "grid-row" => expand_grid_axis(value, "grid-row-start", "grid-row-end", important, specificity),
         "grid-area" => expand_grid_area(value, important, specificity),
 
         // ── outline 简写 ──
@@ -266,15 +229,9 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
 /// 展开 border 全写（如 `border: 1px solid red`）。
 ///
 /// 将 `border` 展开为 12 个长属性（4 边 × width/style/color）。
-fn expand_border_all(
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
+fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let parsed = parse_border_shorthand(value);
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     let mut result = Vec::with_capacity(12);
     for side in &["top", "right", "bottom", "left"] {
@@ -295,9 +252,7 @@ fn expand_border_side(
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
     let parsed = parse_border_shorthand(value);
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     vec![
         mk(width_prop, &parsed.width),
         mk(style_prop, &parsed.style),
@@ -332,27 +287,14 @@ fn parse_border_shorthand(value: &str) -> BorderShorthand {
         }
     }
 
-    BorderShorthand {
-        width,
-        style,
-        color,
-    }
+    BorderShorthand { width, style, color }
 }
 
 /// 检查字符串是否为 border-style 关键字。
 fn is_border_style_keyword(s: &str) -> bool {
     matches!(
         s,
-        "none"
-            | "hidden"
-            | "dotted"
-            | "dashed"
-            | "solid"
-            | "double"
-            | "groove"
-            | "ridge"
-            | "inset"
-            | "outset"
+        "none" | "hidden" | "dotted" | "dashed" | "solid" | "double" | "groove" | "ridge" | "inset" | "outset"
     )
 }
 
@@ -483,17 +425,11 @@ fn looks_like_color(s: &str) -> bool {
 /// 展开 border-radius 简写。
 ///
 /// 支持 1-4 值模式，与 4 边简写相同。
-fn expand_border_radius(
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
+fn expand_border_radius(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let Some((tl, tr, br, bl)) = parse_rect_values(value) else {
         return vec![];
     };
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     vec![
         mk("border-top-left-radius", tl),
         mk("border-top-right-radius", tr),
@@ -511,39 +447,21 @@ fn expand_border_radius(
 /// - 三值：grow, shrink, basis
 fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     if value == "none" {
-        return vec![
-            mk("flex-grow", "0"),
-            mk("flex-shrink", "0"),
-            mk("flex-basis", "auto"),
-        ];
+        return vec![mk("flex-grow", "0"), mk("flex-shrink", "0"), mk("flex-basis", "auto")];
     }
     if value == "auto" {
-        return vec![
-            mk("flex-grow", "1"),
-            mk("flex-shrink", "1"),
-            mk("flex-basis", "auto"),
-        ];
+        return vec![mk("flex-grow", "1"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
     }
     if value == "initial" {
-        return vec![
-            mk("flex-grow", "0"),
-            mk("flex-shrink", "1"),
-            mk("flex-basis", "auto"),
-        ];
+        return vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
     }
 
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
-        1 => vec![
-            mk("flex-grow", parts[0]),
-            mk("flex-shrink", "1"),
-            mk("flex-basis", "0"),
-        ],
+        1 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", "1"), mk("flex-basis", "0")],
         2 => vec![
             mk("flex-grow", parts[0]),
             mk("flex-shrink", parts[1]),
@@ -567,15 +485,9 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 /// - 时间值（带 s/ms 后缀）→ duration 或 delay
 /// - timing-function 关键字 → timing-function
 /// - 其他 → property
-fn expand_transition(
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
+fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     if value == "none" {
         return vec![
@@ -607,10 +519,7 @@ fn expand_transition(
             } else {
                 delay = t;
             }
-        } else if is_timing_function_keyword(t)
-            || t.starts_with("cubic-bezier(")
-            || t.starts_with("steps(")
-        {
+        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
             timing = t;
         } else {
             property = t;
@@ -629,10 +538,7 @@ fn expand_transition(
 fn is_time_value(s: &str) -> bool {
     s.ends_with("ms")
         || (s.ends_with('s') && !s.ends_with("ease"))
-            && s.trim_end_matches("ms")
-                .trim_end_matches('s')
-                .parse::<f64>()
-                .is_ok()
+            && s.trim_end_matches("ms").trim_end_matches('s').parse::<f64>().is_ok()
 }
 
 /// 检查字符串是否为 timing-function 关键字。
@@ -683,15 +589,9 @@ fn split_outside_parens(s: &str) -> Vec<String> {
 /// `animation: [name] [duration] [timing-function] [delay] [iteration-count] [direction] [fill-mode] [play-state]`
 ///
 /// 简化实现：按空格分割，根据值的类型推断对应的子属性。
-fn expand_animation(
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
+fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     // 特殊值 "none" 表示无动画
     if value == "none" {
@@ -732,10 +632,7 @@ fn expand_animation(
             } else if found_time_count == 2 {
                 delay = t;
             }
-        } else if is_timing_function_keyword(t)
-            || t.starts_with("cubic-bezier(")
-            || t.starts_with("steps(")
-        {
+        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
             timing = t;
         } else if t == "infinite" {
             iteration_count = "infinite";
@@ -793,9 +690,7 @@ fn expand_axis_logical(
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
     let parts: Vec<&str> = value.split_whitespace().collect();
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     match parts.len() {
         1 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
         2 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
@@ -815,9 +710,7 @@ fn expand_grid_axis(
     important: bool,
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     if let Some(slash_pos) = value.find('/') {
         let start = value[..slash_pos].trim();
         let end = value[slash_pos + 1..].trim();
@@ -833,14 +726,8 @@ fn expand_grid_axis(
 /// `grid-area: 1 / 2` → row-start: 1, col-start: 2
 /// `grid-area: 1 / 2 / 3` → row-start: 1, col-start: 2, row-end: 3
 /// `grid-area: 1 / 2 / 3 / 4` → row-start: 1, col-start: 2, row-end: 3, col-end: 4
-fn expand_grid_area(
-    value: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     // 用 `/` 分割，但 span 内部可能有空格
     let parts: Vec<&str> = value.split('/').map(|s| s.trim()).collect();
     match parts.len() {
@@ -880,9 +767,7 @@ fn expand_grid_area(
 /// 各部分顺序无关，未指定的部分使用初始值。
 fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
-    let mk = |prop: &str, val: &str| -> MatchingDecl {
-        (prop.to_string(), val.to_string(), important, specificity)
-    };
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     // "none" 或 "0" → 全部重置
     if value == "none" {
@@ -947,64 +832,28 @@ mod tests {
     fn test_margin_2_values() {
         let result = expand_one("margin", "10px 20px", false, (0, 0, 1));
         assert_eq!(result.len(), 4);
-        assert_eq!(
-            result[0],
-            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[1],
-            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[2],
-            ("margin-bottom".into(), "10px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[3],
-            ("margin-left".into(), "20px".into(), false, (0, 0, 1))
-        );
+        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
+        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
+        assert_eq!(result[2], ("margin-bottom".into(), "10px".into(), false, (0, 0, 1)));
+        assert_eq!(result[3], ("margin-left".into(), "20px".into(), false, (0, 0, 1)));
     }
 
     #[test]
     fn test_margin_3_values() {
         let result = expand_one("margin", "10px 20px 30px", false, (0, 0, 1));
-        assert_eq!(
-            result[0],
-            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[1],
-            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[2],
-            ("margin-bottom".into(), "30px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[3],
-            ("margin-left".into(), "20px".into(), false, (0, 0, 1))
-        );
+        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
+        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
+        assert_eq!(result[2], ("margin-bottom".into(), "30px".into(), false, (0, 0, 1)));
+        assert_eq!(result[3], ("margin-left".into(), "20px".into(), false, (0, 0, 1)));
     }
 
     #[test]
     fn test_margin_4_values() {
         let result = expand_one("margin", "10px 20px 30px 40px", false, (0, 0, 1));
-        assert_eq!(
-            result[0],
-            ("margin-top".into(), "10px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[1],
-            ("margin-right".into(), "20px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[2],
-            ("margin-bottom".into(), "30px".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[3],
-            ("margin-left".into(), "40px".into(), false, (0, 0, 1))
-        );
+        assert_eq!(result[0], ("margin-top".into(), "10px".into(), false, (0, 0, 1)));
+        assert_eq!(result[1], ("margin-right".into(), "20px".into(), false, (0, 0, 1)));
+        assert_eq!(result[2], ("margin-bottom".into(), "30px".into(), false, (0, 0, 1)));
+        assert_eq!(result[3], ("margin-left".into(), "40px".into(), false, (0, 0, 1)));
     }
 
     // ── padding 简写测试 ──
@@ -1183,18 +1032,9 @@ mod tests {
     fn test_flex_none() {
         let result = expand_one("flex", "none", false, (0, 0, 1));
         assert_eq!(result.len(), 3);
-        assert_eq!(
-            result[0],
-            ("flex-grow".into(), "0".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[1],
-            ("flex-shrink".into(), "0".into(), false, (0, 0, 1))
-        );
-        assert_eq!(
-            result[2],
-            ("flex-basis".into(), "auto".into(), false, (0, 0, 1))
-        );
+        assert_eq!(result[0], ("flex-grow".into(), "0".into(), false, (0, 0, 1)));
+        assert_eq!(result[1], ("flex-shrink".into(), "0".into(), false, (0, 0, 1)));
+        assert_eq!(result[2], ("flex-basis".into(), "auto".into(), false, (0, 0, 1)));
     }
 
     #[test]
@@ -1791,12 +1631,7 @@ mod tests {
     #[test]
     /// animation 简写含 steps() timing function
     fn test_animation_shorthand_with_steps() {
-        let result = expand_one(
-            "animation",
-            "bounce 0.5s steps(4) infinite",
-            false,
-            (0, 0, 1),
-        );
+        let result = expand_one("animation", "bounce 0.5s steps(4) infinite", false, (0, 0, 1));
         assert_eq!(result.len(), 8);
         assert_eq!(result[0].1, "bounce");
         assert_eq!(result[2].1, "steps(4)");

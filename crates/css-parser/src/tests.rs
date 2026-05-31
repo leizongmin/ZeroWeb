@@ -3,16 +3,13 @@
 use crate::ast::*;
 use crate::parser::Parser;
 use crate::selector;
-use crate::tokenizer::{Token, Tokenizer, Spanned, line_column_from_offset};
+use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
-    CalcContext, ContainerTypeValue, GradientDirection, GradientValue, LengthValue,
-    RadialShape, RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
-    ScrollSnapTypeValue, TransformFunction, TransformValue,
-    eval_calc, eval_calc_with_context, parse_animation_direction,
-    parse_animation_fill_mode, parse_animation_play_state, parse_calc,
-    parse_container_type, parse_gradient, parse_length, parse_length_shorthand,
-    parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type,
-    parse_transform,
+    CalcContext, ContainerTypeValue, GradientDirection, GradientValue, LengthValue, RadialShape, RadialSize,
+    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TransformFunction, TransformValue,
+    eval_calc, eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode,
+    parse_animation_play_state, parse_calc, parse_container_type, parse_gradient, parse_length, parse_length_shorthand,
+    parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type, parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -611,10 +608,7 @@ fn test_parse_universal() {
     if let Rule::Style(sr) = &stylesheet.rules[0] {
         assert_eq!(sr.selectors.len(), 1);
         let compound = &sr.selectors[0].complex.parts[0].0;
-        assert!(matches!(
-            compound.type_selector,
-            Some(TypeSelector::Universal)
-        ));
+        assert!(matches!(compound.type_selector, Some(TypeSelector::Universal)));
     } else {
         panic!("Expected Style rule");
     }
@@ -862,10 +856,7 @@ fn test_parse_length_rem() {
 fn test_parse_display_values() {
     assert_eq!(parse_display("block"), Some(DisplayValue::Block));
     assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
-    assert_eq!(
-        parse_display("inline-block"),
-        Some(DisplayValue::InlineBlock)
-    );
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
     assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
     assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
@@ -949,10 +940,7 @@ fn test_parse_color_rgba() {
 fn test_parse_color_hsl() {
     let result = parse_color("hsl(120, 50%, 50%)");
     assert!(result.is_some());
-    assert!(matches!(
-        result,
-        Some(ColorValue::Hsla(120.0, 50.0, 50.0, 1.0))
-    ));
+    assert!(matches!(result, Some(ColorValue::Hsla(120.0, 50.0, 50.0, 1.0))));
 }
 
 #[test]
@@ -960,10 +948,7 @@ fn test_parse_color_hsl() {
 fn test_parse_color_hsla() {
     let result = parse_color("hsla(240, 100%, 50%, 0.5)");
     assert!(result.is_some());
-    assert!(matches!(
-        result,
-        Some(ColorValue::Hsla(240.0, 100.0, 50.0, 0.5))
-    ));
+    assert!(matches!(result, Some(ColorValue::Hsla(240.0, 100.0, 50.0, 0.5))));
 }
 
 #[test]
@@ -979,75 +964,30 @@ fn test_parse_color_invalid() {
 /// 测试所有 16 种基本命名颜色
 fn test_parse_color_named_all() {
     assert_eq!(parse_color("black"), Some(ColorValue::Rgba(0, 0, 0, 255)));
-    assert_eq!(
-        parse_color("white"),
-        Some(ColorValue::Rgba(255, 255, 255, 255))
-    );
+    assert_eq!(parse_color("white"), Some(ColorValue::Rgba(255, 255, 255, 255)));
     assert_eq!(parse_color("green"), Some(ColorValue::Rgba(0, 128, 0, 255)));
     assert_eq!(parse_color("blue"), Some(ColorValue::Rgba(0, 0, 255, 255)));
-    assert_eq!(
-        parse_color("yellow"),
-        Some(ColorValue::Rgba(255, 255, 0, 255))
-    );
-    assert_eq!(
-        parse_color("cyan"),
-        Some(ColorValue::Rgba(0, 255, 255, 255))
-    );
-    assert_eq!(
-        parse_color("magenta"),
-        Some(ColorValue::Rgba(255, 0, 255, 255))
-    );
-    assert_eq!(
-        parse_color("silver"),
-        Some(ColorValue::Rgba(192, 192, 192, 255))
-    );
-    assert_eq!(
-        parse_color("gray"),
-        Some(ColorValue::Rgba(128, 128, 128, 255))
-    );
-    assert_eq!(
-        parse_color("maroon"),
-        Some(ColorValue::Rgba(128, 0, 0, 255))
-    );
-    assert_eq!(
-        parse_color("olive"),
-        Some(ColorValue::Rgba(128, 128, 0, 255))
-    );
+    assert_eq!(parse_color("yellow"), Some(ColorValue::Rgba(255, 255, 0, 255)));
+    assert_eq!(parse_color("cyan"), Some(ColorValue::Rgba(0, 255, 255, 255)));
+    assert_eq!(parse_color("magenta"), Some(ColorValue::Rgba(255, 0, 255, 255)));
+    assert_eq!(parse_color("silver"), Some(ColorValue::Rgba(192, 192, 192, 255)));
+    assert_eq!(parse_color("gray"), Some(ColorValue::Rgba(128, 128, 128, 255)));
+    assert_eq!(parse_color("maroon"), Some(ColorValue::Rgba(128, 0, 0, 255)));
+    assert_eq!(parse_color("olive"), Some(ColorValue::Rgba(128, 128, 0, 255)));
     assert_eq!(parse_color("lime"), Some(ColorValue::Rgba(0, 255, 0, 255)));
-    assert_eq!(
-        parse_color("teal"),
-        Some(ColorValue::Rgba(0, 128, 128, 255))
-    );
+    assert_eq!(parse_color("teal"), Some(ColorValue::Rgba(0, 128, 128, 255)));
     assert_eq!(parse_color("navy"), Some(ColorValue::Rgba(0, 0, 128, 255)));
-    assert_eq!(
-        parse_color("purple"),
-        Some(ColorValue::Rgba(128, 0, 128, 255))
-    );
+    assert_eq!(parse_color("purple"), Some(ColorValue::Rgba(128, 0, 128, 255)));
     // grey 别名
-    assert_eq!(
-        parse_color("grey"),
-        Some(ColorValue::Rgba(128, 128, 128, 255))
-    );
+    assert_eq!(parse_color("grey"), Some(ColorValue::Rgba(128, 128, 128, 255)));
     // aqua 别名
-    assert_eq!(
-        parse_color("aqua"),
-        Some(ColorValue::Rgba(0, 255, 255, 255))
-    );
+    assert_eq!(parse_color("aqua"), Some(ColorValue::Rgba(0, 255, 255, 255)));
     // fuchsia 别名
-    assert_eq!(
-        parse_color("fuchsia"),
-        Some(ColorValue::Rgba(255, 0, 255, 255))
-    );
+    assert_eq!(parse_color("fuchsia"), Some(ColorValue::Rgba(255, 0, 255, 255)));
     // orange
-    assert_eq!(
-        parse_color("orange"),
-        Some(ColorValue::Rgba(255, 165, 0, 255))
-    );
+    assert_eq!(parse_color("orange"), Some(ColorValue::Rgba(255, 165, 0, 255)));
     // 未知命名颜色应返回 Named
-    assert!(matches!(
-        parse_color("customcolor"),
-        Some(ColorValue::Named(_))
-    ));
+    assert!(matches!(parse_color("customcolor"), Some(ColorValue::Named(_))));
 }
 
 #[test]
@@ -1089,10 +1029,7 @@ fn test_parse_length_vmax() {
 fn test_parse_display_all() {
     assert_eq!(parse_display("block"), Some(DisplayValue::Block));
     assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
-    assert_eq!(
-        parse_display("inline-block"),
-        Some(DisplayValue::InlineBlock)
-    );
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
     assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
     assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
@@ -1135,10 +1072,7 @@ fn test_parse_flex_direction_all() {
         parse_flex_direction("row-reverse"),
         Some(FlexDirectionValue::RowReverse)
     );
-    assert_eq!(
-        parse_flex_direction("column"),
-        Some(FlexDirectionValue::Column)
-    );
+    assert_eq!(parse_flex_direction("column"), Some(FlexDirectionValue::Column));
     assert_eq!(
         parse_flex_direction("column-reverse"),
         Some(FlexDirectionValue::ColumnReverse)
@@ -1151,34 +1085,19 @@ fn test_parse_flex_direction_all() {
 fn test_parse_flex_wrap_all() {
     assert_eq!(parse_flex_wrap("nowrap"), Some(FlexWrapValue::Nowrap));
     assert_eq!(parse_flex_wrap("wrap"), Some(FlexWrapValue::Wrap));
-    assert_eq!(
-        parse_flex_wrap("wrap-reverse"),
-        Some(FlexWrapValue::WrapReverse)
-    );
+    assert_eq!(parse_flex_wrap("wrap-reverse"), Some(FlexWrapValue::WrapReverse));
     assert_eq!(parse_flex_wrap("unknown"), None);
 }
 
 #[test]
 /// 测试所有 AlignmentValue 变体
 fn test_parse_alignment_all() {
-    assert_eq!(
-        parse_alignment("flex-start"),
-        Some(AlignmentValue::FlexStart)
-    );
+    assert_eq!(parse_alignment("flex-start"), Some(AlignmentValue::FlexStart));
     assert_eq!(parse_alignment("flex-end"), Some(AlignmentValue::FlexEnd));
     assert_eq!(parse_alignment("center"), Some(AlignmentValue::Center));
-    assert_eq!(
-        parse_alignment("space-between"),
-        Some(AlignmentValue::SpaceBetween)
-    );
-    assert_eq!(
-        parse_alignment("space-around"),
-        Some(AlignmentValue::SpaceAround)
-    );
-    assert_eq!(
-        parse_alignment("space-evenly"),
-        Some(AlignmentValue::SpaceEvenly)
-    );
+    assert_eq!(parse_alignment("space-between"), Some(AlignmentValue::SpaceBetween));
+    assert_eq!(parse_alignment("space-around"), Some(AlignmentValue::SpaceAround));
+    assert_eq!(parse_alignment("space-evenly"), Some(AlignmentValue::SpaceEvenly));
     assert_eq!(parse_alignment("stretch"), Some(AlignmentValue::Stretch));
     assert_eq!(parse_alignment("start"), Some(AlignmentValue::Start));
     assert_eq!(parse_alignment("end"), Some(AlignmentValue::End));
@@ -1189,14 +1108,8 @@ fn test_parse_alignment_all() {
 #[test]
 /// 测试所有 BoxSizingValue 变体
 fn test_parse_box_sizing_all() {
-    assert_eq!(
-        parse_box_sizing("content-box"),
-        Some(BoxSizingValue::ContentBox)
-    );
-    assert_eq!(
-        parse_box_sizing("border-box"),
-        Some(BoxSizingValue::BorderBox)
-    );
+    assert_eq!(parse_box_sizing("content-box"), Some(BoxSizingValue::ContentBox));
+    assert_eq!(parse_box_sizing("border-box"), Some(BoxSizingValue::BorderBox));
     assert_eq!(parse_box_sizing("unknown"), None);
 }
 
@@ -1205,52 +1118,22 @@ fn test_parse_box_sizing_all() {
 fn test_parse_visibility_all() {
     assert_eq!(parse_visibility("visible"), Some(VisibilityValue::Visible));
     assert_eq!(parse_visibility("hidden"), Some(VisibilityValue::Hidden));
-    assert_eq!(
-        parse_visibility("collapse"),
-        Some(VisibilityValue::Collapse)
-    );
+    assert_eq!(parse_visibility("collapse"), Some(VisibilityValue::Collapse));
     assert_eq!(parse_visibility("unknown"), None);
 }
 
 #[test]
 /// 测试所有 FontWeightValue 变体（100-900、bold、normal、bolder、lighter）
 fn test_parse_font_weight_all() {
-    assert_eq!(
-        parse_font_weight("100"),
-        Some(FontWeightValue::Absolute(100))
-    );
-    assert_eq!(
-        parse_font_weight("200"),
-        Some(FontWeightValue::Absolute(200))
-    );
-    assert_eq!(
-        parse_font_weight("300"),
-        Some(FontWeightValue::Absolute(300))
-    );
-    assert_eq!(
-        parse_font_weight("400"),
-        Some(FontWeightValue::Absolute(400))
-    );
-    assert_eq!(
-        parse_font_weight("500"),
-        Some(FontWeightValue::Absolute(500))
-    );
-    assert_eq!(
-        parse_font_weight("600"),
-        Some(FontWeightValue::Absolute(600))
-    );
-    assert_eq!(
-        parse_font_weight("700"),
-        Some(FontWeightValue::Absolute(700))
-    );
-    assert_eq!(
-        parse_font_weight("800"),
-        Some(FontWeightValue::Absolute(800))
-    );
-    assert_eq!(
-        parse_font_weight("900"),
-        Some(FontWeightValue::Absolute(900))
-    );
+    assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
+    assert_eq!(parse_font_weight("200"), Some(FontWeightValue::Absolute(200)));
+    assert_eq!(parse_font_weight("300"), Some(FontWeightValue::Absolute(300)));
+    assert_eq!(parse_font_weight("400"), Some(FontWeightValue::Absolute(400)));
+    assert_eq!(parse_font_weight("500"), Some(FontWeightValue::Absolute(500)));
+    assert_eq!(parse_font_weight("600"), Some(FontWeightValue::Absolute(600)));
+    assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
+    assert_eq!(parse_font_weight("800"), Some(FontWeightValue::Absolute(800)));
+    assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
     assert_eq!(parse_font_weight("bold"), Some(FontWeightValue::Bold));
     assert_eq!(parse_font_weight("normal"), Some(FontWeightValue::Normal));
     assert_eq!(parse_font_weight("bolder"), Some(FontWeightValue::Bolder));
@@ -1266,10 +1149,7 @@ fn test_parse_font_weight_all() {
 fn test_parse_font_style_all() {
     assert_eq!(parse_font_style("normal"), Some(FontStyleValue::Normal));
     assert_eq!(parse_font_style("italic"), Some(FontStyleValue::Italic));
-    assert_eq!(
-        parse_font_style("oblique"),
-        Some(FontStyleValue::Oblique(None))
-    );
+    assert_eq!(parse_font_style("oblique"), Some(FontStyleValue::Oblique(None)));
     assert_eq!(
         parse_font_style("oblique(15deg)"),
         Some(FontStyleValue::Oblique(Some(15.0)))
@@ -1334,10 +1214,7 @@ fn test_parse_display_contents() {
 #[test]
 /// 测试 display: inline-block
 fn test_parse_display_inline_block() {
-    assert_eq!(
-        parse_display("inline-block"),
-        Some(DisplayValue::InlineBlock)
-    );
+    assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
 }
 
 #[test]
@@ -1413,10 +1290,7 @@ fn test_parse_nth_of_type() {
         let compound = &sr.selectors[0].complex.parts[0].0;
         assert!(compound.subclass_selectors.iter().any(|s| matches!(
             s,
-            SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(NthPattern {
-                a: 0,
-                b: 3
-            }))
+            SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(NthPattern { a: 0, b: 3 }))
         )));
     } else {
         panic!("Expected Style rule");
@@ -1430,10 +1304,12 @@ fn test_parse_not_selector() {
     assert_eq!(stylesheet.rules.len(), 1);
     if let Rule::Style(sr) = &stylesheet.rules[0] {
         let compound = &sr.selectors[0].complex.parts[0].0;
-        assert!(compound.subclass_selectors.iter().any(|s| matches!(
-            s,
-            SubclassSelector::PseudoClass(PseudoClassSelector::Not(_))
-        )));
+        assert!(
+            compound
+                .subclass_selectors
+                .iter()
+                .any(|s| matches!(s, SubclassSelector::PseudoClass(PseudoClassSelector::Not(_))))
+        );
         // 验证声明
         assert!(sr.declarations.iter().any(|d| d.property == "display"));
     } else {
@@ -1571,8 +1447,7 @@ fn test_parse_attribute_dash() {
 #[test]
 /// 测试多选择器多声明的复杂规则
 fn test_parse_multiple_selectors_and_declarations() {
-    let css =
-        "div.container > p.text, span.highlight { color: red; font-size: 16px; display: block; }";
+    let css = "div.container > p.text, span.highlight { color: red; font-size: 16px; display: block; }";
     let stylesheet = Parser::parse_stylesheet(css);
     assert_eq!(stylesheet.rules.len(), 1);
     if let Rule::Style(sr) = &stylesheet.rules[0] {
@@ -1970,18 +1845,9 @@ fn test_parse_keyframes_percentage() {
         Rule::Keyframes(kf) => {
             assert_eq!(kf.name, "slide");
             assert_eq!(kf.keyframes.len(), 3);
-            assert_eq!(
-                kf.keyframes[0].selectors,
-                vec![KeyframeSelector::Percentage(0.0)]
-            );
-            assert_eq!(
-                kf.keyframes[1].selectors,
-                vec![KeyframeSelector::Percentage(50.0)]
-            );
-            assert_eq!(
-                kf.keyframes[2].selectors,
-                vec![KeyframeSelector::Percentage(100.0)]
-            );
+            assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::Percentage(0.0)]);
+            assert_eq!(kf.keyframes[1].selectors, vec![KeyframeSelector::Percentage(50.0)]);
+            assert_eq!(kf.keyframes[2].selectors, vec![KeyframeSelector::Percentage(100.0)]);
         }
         _ => panic!("Expected Keyframes rule"),
     }
@@ -1997,10 +1863,7 @@ fn test_parse_keyframes_comma_selectors() {
             assert_eq!(kf.keyframes.len(), 2);
             assert_eq!(
                 kf.keyframes[0].selectors,
-                vec![
-                    KeyframeSelector::Percentage(0.0),
-                    KeyframeSelector::Percentage(100.0)
-                ]
+                vec![KeyframeSelector::Percentage(0.0), KeyframeSelector::Percentage(100.0)]
             );
         }
         _ => panic!("Expected Keyframes rule"),
@@ -2691,15 +2554,13 @@ fn test_parse_container_min_width() {
     let css = "@container (min-width: 400px) { div { display: block; } }";
     let stylesheet = Parser::parse_stylesheet(css);
     match &stylesheet.rules[0] {
-        Rule::Container(cr) => {
-            match &cr.condition {
-                ContainerCondition::Size(sc) => {
-                    assert_eq!(sc.feature, "min-width");
-                    assert_eq!(sc.value, "400px");
-                }
-                _ => panic!("Expected Size condition"),
+        Rule::Container(cr) => match &cr.condition {
+            ContainerCondition::Size(sc) => {
+                assert_eq!(sc.feature, "min-width");
+                assert_eq!(sc.value, "400px");
             }
-        }
+            _ => panic!("Expected Size condition"),
+        },
         _ => panic!("Expected Container rule"),
     }
 }
@@ -2724,15 +2585,13 @@ fn test_parse_container_max_width() {
     let css = "@container (max-width: 800px) { .layout { flex-direction: column; } }";
     let stylesheet = Parser::parse_stylesheet(css);
     match &stylesheet.rules[0] {
-        Rule::Container(cr) => {
-            match &cr.condition {
-                ContainerCondition::Size(sc) => {
-                    assert_eq!(sc.feature, "max-width");
-                    assert_eq!(sc.value, "800px");
-                }
-                _ => panic!("Expected Size condition"),
+        Rule::Container(cr) => match &cr.condition {
+            ContainerCondition::Size(sc) => {
+                assert_eq!(sc.feature, "max-width");
+                assert_eq!(sc.value, "800px");
             }
-        }
+            _ => panic!("Expected Size condition"),
+        },
         _ => panic!("Expected Container rule"),
     }
 }
@@ -2775,10 +2634,7 @@ fn test_parse_container_nested_in_media() {
 #[test]
 /// 测试 scroll-snap-type 值解析
 fn test_parse_scroll_snap_type_values() {
-    assert_eq!(
-        parse_scroll_snap_type("none"),
-        Some((ScrollSnapTypeValue::None, None))
-    );
+    assert_eq!(parse_scroll_snap_type("none"), Some((ScrollSnapTypeValue::None, None)));
     assert_eq!(
         parse_scroll_snap_type("x mandatory"),
         Some((ScrollSnapTypeValue::Mandatory, Some(ScrollSnapAxis::X)))
@@ -2801,36 +2657,18 @@ fn test_parse_scroll_snap_type_values() {
 #[test]
 /// 测试 scroll-snap-align 值解析
 fn test_parse_scroll_snap_align_values() {
-    assert_eq!(
-        parse_scroll_snap_align("none"),
-        Some(ScrollSnapAlignValue::None)
-    );
-    assert_eq!(
-        parse_scroll_snap_align("start"),
-        Some(ScrollSnapAlignValue::Start)
-    );
-    assert_eq!(
-        parse_scroll_snap_align("end"),
-        Some(ScrollSnapAlignValue::End)
-    );
-    assert_eq!(
-        parse_scroll_snap_align("center"),
-        Some(ScrollSnapAlignValue::Center)
-    );
+    assert_eq!(parse_scroll_snap_align("none"), Some(ScrollSnapAlignValue::None));
+    assert_eq!(parse_scroll_snap_align("start"), Some(ScrollSnapAlignValue::Start));
+    assert_eq!(parse_scroll_snap_align("end"), Some(ScrollSnapAlignValue::End));
+    assert_eq!(parse_scroll_snap_align("center"), Some(ScrollSnapAlignValue::Center));
     assert_eq!(parse_scroll_snap_align("invalid"), None);
 }
 
 #[test]
 /// 测试 scroll-snap-stop 值解析
 fn test_parse_scroll_snap_stop_values() {
-    assert_eq!(
-        parse_scroll_snap_stop("normal"),
-        Some(ScrollSnapStopValue::Normal)
-    );
-    assert_eq!(
-        parse_scroll_snap_stop("always"),
-        Some(ScrollSnapStopValue::Always)
-    );
+    assert_eq!(parse_scroll_snap_stop("normal"), Some(ScrollSnapStopValue::Normal));
+    assert_eq!(parse_scroll_snap_stop("always"), Some(ScrollSnapStopValue::Always));
     assert_eq!(parse_scroll_snap_stop("invalid"), None);
 }
 
@@ -2920,14 +2758,8 @@ fn test_parse_scroll_padding_longhands() {
 #[test]
 /// 测试 container-type 值解析
 fn test_parse_container_type_values() {
-    assert_eq!(
-        parse_container_type("normal"),
-        Some(ContainerTypeValue::Normal)
-    );
-    assert_eq!(
-        parse_container_type("size"),
-        Some(ContainerTypeValue::Size)
-    );
+    assert_eq!(parse_container_type("normal"), Some(ContainerTypeValue::Normal));
+    assert_eq!(parse_container_type("size"), Some(ContainerTypeValue::Size));
     assert_eq!(
         parse_container_type("inline-size"),
         Some(ContainerTypeValue::InlineSize)
@@ -2942,10 +2774,7 @@ fn test_parse_container_type_case_insensitive() {
         parse_container_type("INLINE-SIZE"),
         Some(ContainerTypeValue::InlineSize)
     );
-    assert_eq!(
-        parse_container_type("Size"),
-        Some(ContainerTypeValue::Size)
-    );
+    assert_eq!(parse_container_type("Size"), Some(ContainerTypeValue::Size));
 }
 
 #[test]
@@ -2956,9 +2785,11 @@ fn test_parse_container_type_in_stylesheet() {
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
         Rule::Style(sr) => {
-            assert!(sr.declarations.iter().any(|d| {
-                d.property == "container-type" && d.value == "inline-size"
-            }));
+            assert!(
+                sr.declarations
+                    .iter()
+                    .any(|d| { d.property == "container-type" && d.value == "inline-size" })
+            );
         }
         _ => panic!("Expected Style rule"),
     }
@@ -2972,9 +2803,11 @@ fn test_parse_scroll_snap_type_in_stylesheet() {
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
         Rule::Style(sr) => {
-            assert!(sr.declarations.iter().any(|d| {
-                d.property == "scroll-snap-type" && d.value == "x mandatory"
-            }));
+            assert!(
+                sr.declarations
+                    .iter()
+                    .any(|d| { d.property == "scroll-snap-type" && d.value == "x mandatory" })
+            );
         }
         _ => panic!("Expected Style rule"),
     }
@@ -2988,9 +2821,11 @@ fn test_parse_scroll_snap_align_in_stylesheet() {
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
         Rule::Style(sr) => {
-            assert!(sr.declarations.iter().any(|d| {
-                d.property == "scroll-snap-align" && d.value == "start"
-            }));
+            assert!(
+                sr.declarations
+                    .iter()
+                    .any(|d| { d.property == "scroll-snap-align" && d.value == "start" })
+            );
         }
         _ => panic!("Expected Style rule"),
     }
@@ -3194,7 +3029,7 @@ fn test_parse_timing_function_cubic_bezier_values() {
 #[test]
 /// 测试 timing-function steps 带不同位置参数
 fn test_parse_timing_function_steps_variants() {
-    use crate::values::{parse_timing_function, StepPosition, TimingFunctionValue};
+    use crate::values::{StepPosition, TimingFunctionValue, parse_timing_function};
     assert_eq!(
         parse_timing_function("steps(3, jump-none)"),
         Some(TimingFunctionValue::Steps(3, Some(StepPosition::None)))
@@ -3240,10 +3075,14 @@ fn test_parse_layer_ordering() {
     let css = "@layer reset { * { margin: 0; } } @layer base { body { font-size: 16px; } } @layer components { .btn { padding: 10px; } }";
     let stylesheet = Parser::parse_stylesheet(css);
     assert_eq!(stylesheet.rules.len(), 3);
-    let names: Vec<&str> = stylesheet.rules.iter().map(|r| match r {
-        Rule::Layer(lr) => lr.name.as_str(),
-        _ => "unknown",
-    }).collect();
+    let names: Vec<&str> = stylesheet
+        .rules
+        .iter()
+        .map(|r| match r {
+            Rule::Layer(lr) => lr.name.as_str(),
+            _ => "unknown",
+        })
+        .collect();
     assert_eq!(names, vec!["reset", "base", "components"]);
 }
 
@@ -3265,7 +3104,8 @@ fn test_parse_import_print_media() {
 #[test]
 /// 测试 @keyframes 带 from/to 混合百分比
 fn test_parse_keyframes_mixed_from_to_percentage() {
-    let css = "@keyframes anim { from { opacity: 0; } 25% { opacity: 0.25; } 50% { opacity: 0.5; } to { opacity: 1; } }";
+    let css =
+        "@keyframes anim { from { opacity: 0; } 25% { opacity: 0.25; } 50% { opacity: 0.5; } to { opacity: 1; } }";
     let stylesheet = Parser::parse_stylesheet(css);
     assert_eq!(stylesheet.rules.len(), 1);
     match &stylesheet.rules[0] {
@@ -3543,7 +3383,11 @@ fn test_parse_invalid_at_rule_recovery() {
     let has_p = stylesheet.rules.iter().any(|r| {
         if let Rule::Style(sr) = r {
             sr.selectors.iter().any(|s| {
-                s.complex.parts[0].0.type_selector.as_ref().map_or(false, |ts| matches!(ts, TypeSelector::Tag(t) if t == "p"))
+                s.complex.parts[0]
+                    .0
+                    .type_selector
+                    .as_ref()
+                    .map_or(false, |ts| matches!(ts, TypeSelector::Tag(t) if t == "p"))
             })
         } else {
             false
@@ -3678,9 +3522,9 @@ fn test_specificity_where_zero() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: None,
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(
-                        PseudoClassSelector::Where(vec![class_sel("active")]),
-                    )],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Where(vec![
+                        class_sel("active"),
+                    ]))],
                 },
                 None,
             )],
@@ -3697,9 +3541,10 @@ fn test_specificity_is_takes_max() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: None,
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(
-                        PseudoClassSelector::Is(vec![id_sel("main"), tag_sel("div")]),
-                    )],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Is(vec![
+                        id_sel("main"),
+                        tag_sel("div"),
+                    ]))],
                 },
                 None,
             )],
@@ -3717,9 +3562,10 @@ fn test_specificity_not_takes_max() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("p".to_string())),
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(
-                        PseudoClassSelector::Not(vec![class_sel("hidden"), id_sel("special")]),
-                    )],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Not(vec![
+                        class_sel("hidden"),
+                        id_sel("special"),
+                    ]))],
                 },
                 None,
             )],
@@ -3814,7 +3660,7 @@ fn test_parse_conic_gradient_at_position() {
 #[test]
 /// 测试媒体查询 "all" 类型解析
 fn test_media_query_all_type() {
-    use crate::media_query::{parse_media_query, MediaType};
+    use crate::media_query::{MediaType, parse_media_query};
     let q = parse_media_query("all").unwrap();
     assert_eq!(q.media_type, Some(MediaType::All));
     assert!(q.conditions.is_empty());
@@ -3823,7 +3669,7 @@ fn test_media_query_all_type() {
 #[test]
 /// 测试媒体查询多重条件评估
 fn test_media_query_multiple_conditions_eval() {
-    use crate::media_query::{evaluate_media_query, parse_media_query, MediaContext};
+    use crate::media_query::{MediaContext, evaluate_media_query, parse_media_query};
     let q = parse_media_query("screen and (min-width: 600px) and (orientation: landscape)").unwrap();
     let ctx = MediaContext::new(1024.0, 768.0);
     assert!(evaluate_media_query(&q, &ctx));

@@ -97,10 +97,7 @@ impl Rect {
 
     /// 是否包含指定点
     pub fn contains(&self, point: Point) -> bool {
-        point.x >= self.left()
-            && point.x < self.right()
-            && point.y >= self.top()
-            && point.y < self.bottom()
+        point.x >= self.left() && point.x < self.right() && point.y >= self.top() && point.y < self.bottom()
     }
 
     /// 与另一个矩形的交集
@@ -156,8 +153,7 @@ impl DamageTracker {
     /// 标记整个区域为脏
     pub fn damage_all(&mut self, size: Size) {
         self.dirty_rects.clear();
-        self.dirty_rects
-            .push(Rect::new(0.0, 0.0, size.width, size.height));
+        self.dirty_rects.push(Rect::new(0.0, 0.0, size.width, size.height));
     }
 
     /// 获取所有脏矩形

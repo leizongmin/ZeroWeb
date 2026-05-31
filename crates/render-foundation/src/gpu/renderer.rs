@@ -7,11 +7,9 @@
 use crate::color::Color;
 use crate::font::cache::GlyphCache;
 use crate::font::loader::FontLoader;
-use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
-use crate::gpu::pipeline::{
-    create_atlas_bind_group_layout, create_render_pipeline, create_uniform_bind_group_layout,
-};
 use crate::geometry::Rect;
+use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
+use crate::gpu::pipeline::{create_atlas_bind_group_layout, create_render_pipeline, create_uniform_bind_group_layout};
 use crate::primitive::FillPrimitive;
 
 /// 渲染场景中的 glyph 文本参数
@@ -81,8 +79,7 @@ impl GpuRenderer {
             &wgpu::DeviceDescriptor {
                 label: Some("ZeroWeb GPU Device (headless)"),
                 required_features: wgpu::Features::empty(),
-                required_limits:
-                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -120,8 +117,7 @@ impl GpuRenderer {
             &wgpu::DeviceDescriptor {
                 label: Some("ZeroWeb GPU Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits:
-                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -133,12 +129,7 @@ impl GpuRenderer {
         let format = caps
             .formats
             .iter()
-            .find(|f| {
-                matches!(
-                    f,
-                    wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm
-                )
-            })
+            .find(|f| matches!(f, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm))
             .copied()
             .unwrap_or(caps.formats[0]);
 
@@ -208,12 +199,7 @@ impl GpuRenderer {
 
         // 更新无头纹理尺寸
         if self.headless_texture.is_some() {
-            self.headless_texture = Some(create_headless_texture(
-                &self.device,
-                w,
-                h,
-                self.surface_format,
-            ));
+            self.headless_texture = Some(create_headless_texture(&self.device, w, h, self.surface_format));
         }
     }
 
@@ -335,8 +321,7 @@ impl GpuRenderer {
         let glyph_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = glyphs
             .iter()
             .filter_map(|gd| {
-                let cache_key =
-                    crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, gd.font_size);
+                let cache_key = crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, gd.font_size);
                 glyph_cache
                     .get_or_insert_with(cache_key, || {
                         font_loader.rasterize_glyph(gd.font_id, gd.ch, gd.font_size)
@@ -395,19 +380,12 @@ impl GpuRenderer {
         let (width, height) = self.surface_size;
 
         // Uniform 缓冲区
-        let uniform_data: [f32; 4] = [
-            width as f32,
-            height as f32,
-            GlyphAtlas::atlas_size() as f32,
-            0.0,
-        ];
-        let uniform_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Uniform Buffer"),
-                contents: bytemuck::cast_slice(&uniform_data),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+        let uniform_data: [f32; 4] = [width as f32, height as f32, GlyphAtlas::atlas_size() as f32, 0.0];
+        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&uniform_data),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Uniform Bind Group"),
@@ -420,14 +398,11 @@ impl GpuRenderer {
 
         // 顶点缓冲区
         let vertex_buffer = if !vertices.is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: bytemuck::cast_slice(vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
+            Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }))
         } else {
             None
         };
@@ -442,15 +417,11 @@ impl GpuRenderer {
                     Ok(tex) => tex,
                     Err(_) => return,
                 };
-                let view = output
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        });
+                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
                 self.run_render_pass(
                     &mut encoder,
@@ -467,11 +438,9 @@ impl GpuRenderer {
             (None, Some(tex)) => {
                 // 无头模式
                 let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder (headless)"),
-                        });
+                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder (headless)"),
+                });
 
                 self.run_render_pass(
                     &mut encoder,
@@ -513,11 +482,9 @@ impl GpuRenderer {
         });
 
         // 复制纹理到缓冲区
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Pixel Readback Encoder"),
-            });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Pixel Readback Encoder"),
+        });
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -555,20 +522,17 @@ impl GpuRenderer {
 
         // 等待映射完成
         self.device.poll(wgpu::Maintain::Wait);
-        rx.recv()
-            .ok()
-            .and_then(|r| r.ok())
-            .map(|_| {
-                let data = buffer_slice.get_mapped_range();
-                // 去除每行填充字节
-                let mut result = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
-                for row in data.chunks(padded_bytes_per_row as usize) {
-                    result.extend_from_slice(&row[..unpadded_bytes_per_row as usize]);
-                }
-                drop(data);
-                output_buffer.unmap();
-                result
-            })
+        rx.recv().ok().and_then(|r| r.ok()).map(|_| {
+            let data = buffer_slice.get_mapped_range();
+            // 去除每行填充字节
+            let mut result = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
+            for row in data.chunks(padded_bytes_per_row as usize) {
+                result.extend_from_slice(&row[..unpadded_bytes_per_row as usize]);
+            }
+            drop(data);
+            output_buffer.unmap();
+            result
+        })
     }
 
     /// 执行渲染 pass
@@ -675,12 +639,7 @@ fn create_headless_texture(
 fn create_atlas_resources(
     device: &wgpu::Device,
     atlas_bgl: &wgpu::BindGroupLayout,
-) -> (
-    wgpu::Texture,
-    wgpu::TextureView,
-    wgpu::Sampler,
-    wgpu::BindGroup,
-) {
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler, wgpu::BindGroup) {
     let texture = device.create_texture(&GlyphAtlas::texture_descriptor());
     let view = texture.create_view(&GlyphAtlas::view_descriptor());
 
@@ -714,14 +673,7 @@ fn create_atlas_resources(
 }
 
 /// 推入一个填充矩形的 6 个顶点（2 个三角形）
-fn push_fill_quad(
-    vertices: &mut Vec<f32>,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    color: Color,
-) {
+fn push_fill_quad(vertices: &mut Vec<f32>, left: f32, top: f32, right: f32, bottom: f32, color: Color) {
     let (r, g, b) = color_to_f32(color);
     let (u, v) = (-1.0f32, -1.0f32);
 
@@ -737,11 +689,7 @@ fn push_fill_quad(
 
 /// Color → (f32, f32, f32) 归一化到 [0, 1]
 fn color_to_f32(color: Color) -> (f32, f32, f32) {
-    (
-        color.r as f32 / 255.0,
-        color.g as f32 / 255.0,
-        color.b as f32 / 255.0,
-    )
+    (color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0)
 }
 
 #[cfg(test)]
@@ -751,14 +699,7 @@ mod tests {
     #[test]
     fn test_push_fill_quad() {
         let mut vertices = Vec::new();
-        push_fill_quad(
-            &mut vertices,
-            0.0,
-            0.0,
-            100.0,
-            50.0,
-            Color::rgba(255, 0, 0, 255),
-        );
+        push_fill_quad(&mut vertices, 0.0, 0.0, 100.0, 50.0, Color::rgba(255, 0, 0, 255));
         // 6 个顶点 × 7 个 float = 42
         assert_eq!(vertices.len(), 42);
         assert_eq!(vertices[2], -1.0); // u
@@ -798,10 +739,7 @@ mod tests {
         let renderer = renderer.unwrap();
         assert!(!renderer.is_window_mode());
         assert_eq!(renderer.surface_size(), (64, 64));
-        assert_eq!(
-            renderer.surface_format(),
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        );
+        assert_eq!(renderer.surface_format(), wgpu::TextureFormat::Rgba8UnormSrgb);
     }
 
     /// 测试渲染红色填充并回读像素验证
@@ -902,13 +840,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let clip = Rect::new(0.0, 0.0, 8.0, 8.0);
 
-        renderer.render_scene_with_clip(
-            &fills,
-            &font_loader,
-            &mut glyph_cache,
-            &[],
-            Some(clip),
-        );
+        renderer.render_scene_with_clip(&fills, &font_loader, &mut glyph_cache, &[], Some(clip));
 
         let pixels = renderer.read_pixels().expect("read_pixels");
 

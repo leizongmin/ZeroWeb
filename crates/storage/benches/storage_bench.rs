@@ -22,9 +22,7 @@ fn bench_local_storage_read(c: &mut Criterion) {
         let mut mgr = StorageManager::new();
         let store = mgr.local_storage("https://example.com");
         for i in 0..1000u32 {
-            store
-                .set(&format!("key_{i}"), &format!("value_{i}"))
-                .unwrap();
+            store.set(&format!("key_{i}"), &format!("value_{i}")).unwrap();
         }
         b.iter(|| {
             for i in 0..1000u32 {

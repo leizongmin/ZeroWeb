@@ -50,14 +50,12 @@ impl Path2D {
 
     /// 添加圆弧。
     pub fn arc(&mut self, x: f32, y: f32, radius: f32, start: f32, end: f32) {
-        self.commands
-            .push(PathCommand::Arc(x, y, radius, start, end));
+        self.commands.push(PathCommand::Arc(x, y, radius, start, end));
     }
 
     /// 添加二次贝塞尔曲线。
     pub fn quadratic_curve_to(&mut self, cpx: f32, cpy: f32, x: f32, y: f32) {
-        self.commands
-            .push(PathCommand::QuadraticCurveTo(cpx, cpy, x, y));
+        self.commands.push(PathCommand::QuadraticCurveTo(cpx, cpy, x, y));
     }
 
     /// 添加三次贝塞尔曲线。
@@ -78,8 +76,15 @@ impl Path2D {
         start_angle: f32,
         end_angle: f32,
     ) {
-        self.commands
-            .push(PathCommand::Ellipse(cx, cy, radius_x, radius_y, rotation, start_angle, end_angle));
+        self.commands.push(PathCommand::Ellipse(
+            cx,
+            cy,
+            radius_x,
+            radius_y,
+            rotation,
+            start_angle,
+            end_angle,
+        ));
     }
 
     /// 添加矩形子路径（四个 line_to + close）。
@@ -93,8 +98,7 @@ impl Path2D {
 
     /// 添加圆角矩形子路径。
     pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<f32>) {
-        self.commands
-            .push(PathCommand::RoundRect(x, y, w, h, radii));
+        self.commands.push(PathCommand::RoundRect(x, y, w, h, radii));
     }
 
     /// 返回路径命令数量。
@@ -165,10 +169,7 @@ mod tests {
         let mut p = Path2D::new();
         p.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
         assert_eq!(p.commands().len(), 1);
-        assert!(matches!(
-            p.commands()[0],
-            PathCommand::Arc(50.0, 50.0, 25.0, 0.0, _)
-        ));
+        assert!(matches!(p.commands()[0], PathCommand::Arc(50.0, 50.0, 25.0, 0.0, _)));
     }
 
     #[test]

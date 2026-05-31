@@ -146,9 +146,7 @@ impl Document {
         attrs: Vec<markup5ever::Attribute>,
     ) -> NodeId {
         let elem_data = ElementData::new(name, attrs);
-        let node_id = self
-            .nodes
-            .insert(NodeData::new(NodeKind::Element(elem_data)));
+        let node_id = self.nodes.insert(NodeData::new(NodeKind::Element(elem_data)));
 
         // 注册 id 映射
         if let Some(NodeKind::Element(elem)) = self.nodes.get(node_id).map(|n| &n.kind)
@@ -162,8 +160,7 @@ impl Document {
 
     /// 创建一个新的文本节点。
     pub fn create_text_node(&mut self, text: &str) -> NodeId {
-        self.nodes
-            .insert(NodeData::new(NodeKind::Text(TextData::new(text))))
+        self.nodes.insert(NodeData::new(NodeKind::Text(TextData::new(text))))
     }
 
     /// 创建一个新的注释节点。
@@ -178,12 +175,7 @@ impl Document {
     }
 
     /// 创建一个文档类型声明节点。
-    pub fn create_document_type(
-        &mut self,
-        name: &str,
-        public_id: Option<String>,
-        system_id: Option<String>,
-    ) -> NodeId {
+    pub fn create_document_type(&mut self, name: &str, public_id: Option<String>, system_id: Option<String>) -> NodeId {
         self.nodes
             .insert(NodeData::new(NodeKind::DocumentType(DocumentTypeData {
                 name: name.to_string(),
@@ -194,13 +186,12 @@ impl Document {
 
     /// 创建一个处理指令节点。
     pub fn create_processing_instruction(&mut self, target: &str, data: &str) -> NodeId {
-        self.nodes
-            .insert(NodeData::new(NodeKind::ProcessingInstruction(
-                ProcessingInstructionData {
-                    target: target.to_string(),
-                    data: data.to_string(),
-                },
-            )))
+        self.nodes.insert(NodeData::new(NodeKind::ProcessingInstruction(
+            ProcessingInstructionData {
+                target: target.to_string(),
+                data: data.to_string(),
+            },
+        )))
     }
 
     // ── 树操作 ──────────────────────────────────────────────────
@@ -319,12 +310,7 @@ impl Document {
     /// - 父节点、新节点或参考节点不存在
     /// - 参考节点不是父节点的子节点
     /// - 循环检测
-    pub fn insert_before(
-        &mut self,
-        parent: NodeId,
-        new_node: NodeId,
-        ref_node: NodeId,
-    ) -> Result<(), DomError> {
+    pub fn insert_before(&mut self, parent: NodeId, new_node: NodeId, ref_node: NodeId) -> Result<(), DomError> {
         if !self.contains(parent) || !self.contains(new_node) || !self.contains(ref_node) {
             return Err(DomError::NodeNotFound(parent));
         }
@@ -378,12 +364,7 @@ impl Document {
     /// 用新节点替换旧节点。
     ///
     /// 返回被替换的旧节点 ID。
-    pub fn replace_child(
-        &mut self,
-        parent: NodeId,
-        new_child: NodeId,
-        old_child: NodeId,
-    ) -> Result<NodeId, DomError> {
+    pub fn replace_child(&mut self, parent: NodeId, new_child: NodeId, old_child: NodeId) -> Result<NodeId, DomError> {
         if !self.contains(parent) || !self.contains(new_child) || !self.contains(old_child) {
             return Err(DomError::NodeNotFound(parent));
         }
@@ -493,27 +474,17 @@ impl Document {
         let parent = self.nodes.get(id).and_then(|n| n.parent)?;
         let siblings = &self.nodes.get(parent)?.children;
         let idx = siblings.iter().position(|&s| s == id)?;
-        if idx > 0 {
-            Some(siblings[idx - 1])
-        } else {
-            None
-        }
+        if idx > 0 { Some(siblings[idx - 1]) } else { None }
     }
 
     /// 获取所有子节点 ID 列表（按文档顺序）。
     pub fn child_nodes(&self, id: NodeId) -> Vec<NodeId> {
-        self.nodes
-            .get(id)
-            .map(|n| n.children.clone())
-            .unwrap_or_default()
+        self.nodes.get(id).map(|n| n.children.clone()).unwrap_or_default()
     }
 
     /// 检查节点是否有子节点。
     pub fn has_child_nodes(&self, id: NodeId) -> bool {
-        self.nodes
-            .get(id)
-            .map(|n| n.has_children())
-            .unwrap_or(false)
+        self.nodes.get(id).map(|n| n.has_children()).unwrap_or(false)
     }
 
     // ── 遍历扩展 ──────────────────────────────────────────────
@@ -530,11 +501,7 @@ impl Document {
     ///
     /// 遵循 WHATWG DOM 规范 `Node.compareDocumentPosition()` 语义。
     /// 如果任一节点不存在，返回 `None`。
-    pub fn compare_document_position(
-        &self,
-        node1: NodeId,
-        node2: NodeId,
-    ) -> Option<DocumentPosition> {
+    pub fn compare_document_position(&self, node1: NodeId, node2: NodeId) -> Option<DocumentPosition> {
         if !self.contains(node1) || !self.contains(node2) {
             return None;
         }
@@ -587,10 +554,7 @@ impl Document {
 
     /// 获取节点的直接子节点数量。
     pub fn child_count(&self, node: NodeId) -> usize {
-        self.nodes
-            .get(node)
-            .map(|n| n.children.len())
-            .unwrap_or(0)
+        self.nodes.get(node).map(|n| n.children.len()).unwrap_or(0)
     }
 
     /// 获取 WHATWG 节点类型编号。
@@ -652,25 +616,18 @@ impl Document {
         if let Some(node_data) = self.nodes.get(id) {
             match &node_data.kind {
                 NodeKind::Text(_) => {
-                    if let Some(NodeKind::Text(data)) = self.nodes.get_mut(id).map(|n| &mut n.kind)
-                    {
+                    if let Some(NodeKind::Text(data)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
                         data.content = text.to_string();
                     }
                 }
                 NodeKind::Comment(_) => {
-                    if let Some(NodeKind::Comment(data)) =
-                        self.nodes.get_mut(id).map(|n| &mut n.kind)
-                    {
+                    if let Some(NodeKind::Comment(data)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
                         data.content = text.to_string();
                     }
                 }
                 NodeKind::Element(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
                     // 清除所有子节点
-                    let children: Vec<NodeId> = self
-                        .nodes
-                        .get(id)
-                        .map(|n| n.children.clone())
-                        .unwrap_or_default();
+                    let children: Vec<NodeId> = self.nodes.get(id).map(|n| n.children.clone()).unwrap_or_default();
 
                     for child in &children {
                         if let Some(child_data) = self.nodes.get_mut(*child) {
@@ -839,11 +796,7 @@ impl Document {
     ///
     /// 创建一个新的 ShadowRoot 节点并附加到指定的宿主元素上。
     /// 返回错误如果：宿主不是元素节点，或宿主已有 ShadowRoot。
-    pub fn attach_shadow(
-        &mut self,
-        host: NodeId,
-        mode: ShadowRootMode,
-    ) -> Result<NodeId, DomError> {
+    pub fn attach_shadow(&mut self, host: NodeId, mode: ShadowRootMode) -> Result<NodeId, DomError> {
         // 验证宿主是元素节点
         let is_element = self
             .nodes
@@ -861,14 +814,10 @@ impl Document {
 
         // 创建 ShadowRoot 节点
         let shadow_data = ShadowRootData::new(mode);
-        let shadow_id = self
-            .nodes
-            .insert(NodeData::new(NodeKind::ShadowRoot(shadow_data)));
+        let shadow_id = self.nodes.insert(NodeData::new(NodeKind::ShadowRoot(shadow_data)));
 
         // 设置宿主引用
-        if let Some(NodeKind::ShadowRoot(data)) =
-            self.nodes.get_mut(shadow_id).map(|n| &mut n.kind)
-        {
+        if let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(shadow_id).map(|n| &mut n.kind) {
             data.host = Some(host);
         }
 
@@ -928,11 +877,7 @@ impl Document {
     ///
     /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
-    pub fn query_selector_shadow(
-        &self,
-        shadow_root: NodeId,
-        selector: &str,
-    ) -> Option<NodeId> {
+    pub fn query_selector_shadow(&self, shadow_root: NodeId, selector: &str) -> Option<NodeId> {
         let parsed = crate::query::parse_simple_selector(selector)?;
         self.find_first_matching_shadow(shadow_root, &parsed)
     }
@@ -941,11 +886,7 @@ impl Document {
     ///
     /// 类似 `query_selector_all`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
-    pub fn query_selector_all_shadow(
-        &self,
-        shadow_root: NodeId,
-        selector: &str,
-    ) -> Vec<NodeId> {
+    pub fn query_selector_all_shadow(&self, shadow_root: NodeId, selector: &str) -> Vec<NodeId> {
         let parsed = match crate::query::parse_simple_selector(selector) {
             Some(s) => s,
             None => return vec![],
@@ -999,13 +940,7 @@ impl Document {
     /// `event_type` 是事件类型名（如 "click"、"input"）。
     /// `callback` 是事件触发时的回调函数。
     /// `capture` 为 true 时监听器在捕获阶段触发，否则在冒泡阶段触发。
-    pub fn add_event_listener(
-        &mut self,
-        node: NodeId,
-        event_type: &str,
-        callback: EventListenerFn,
-        capture: bool,
-    ) {
+    pub fn add_event_listener(&mut self, node: NodeId, event_type: &str, callback: EventListenerFn, capture: bool) {
         let key = (node, event_type.to_string());
         self.event_listeners
             .entry(key)
@@ -1141,11 +1076,7 @@ impl Document {
             self.id_map.remove(id_val);
         }
         // 递归处理子节点
-        let children = self
-            .nodes
-            .get(id)
-            .map(|n| n.children.clone())
-            .unwrap_or_default();
+        let children = self.nodes.get(id).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
             self.remove_id_map_recursive(child);
         }
@@ -1164,11 +1095,7 @@ impl Document {
             self.id_map.insert(id_val.clone(), node_id);
         }
         // 递归处理子节点
-        let children = self
-            .nodes
-            .get(node_id)
-            .map(|n| n.children.clone())
-            .unwrap_or_default();
+        let children = self.nodes.get(node_id).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
             self.register_id_map_recursive(child);
         }
@@ -1288,11 +1215,7 @@ impl Document {
     }
 
     /// 查找第一个匹配的节点。
-    fn find_first_matching(
-        &self,
-        id: NodeId,
-        selector: &crate::query::SimpleSelector,
-    ) -> Option<NodeId> {
+    fn find_first_matching(&self, id: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(elem) = &node_data.kind
             && selector.matches(elem)
@@ -1308,12 +1231,7 @@ impl Document {
     }
 
     /// 收集所有匹配的节点。
-    fn collect_matching(
-        &self,
-        id: NodeId,
-        selector: &crate::query::SimpleSelector,
-        result: &mut Vec<NodeId>,
-    ) {
+    fn collect_matching(&self, id: NodeId, selector: &crate::query::SimpleSelector, result: &mut Vec<NodeId>) {
         let node_data = match self.nodes.get(id) {
             Some(n) => n,
             None => return,
@@ -1331,11 +1249,7 @@ impl Document {
     }
 
     /// 在 shadow DOM 内查找第一个匹配的元素，不穿透嵌套的 ShadowRoot 边界。
-    fn find_first_matching_shadow(
-        &self,
-        id: NodeId,
-        selector: &crate::query::SimpleSelector,
-    ) -> Option<NodeId> {
+    fn find_first_matching_shadow(&self, id: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(elem) = &node_data.kind
             && selector.matches(elem)
@@ -1357,12 +1271,7 @@ impl Document {
     }
 
     /// 在 shadow DOM 内收集所有匹配的元素，不穿透嵌套的 ShadowRoot 边界。
-    fn collect_matching_shadow(
-        &self,
-        id: NodeId,
-        selector: &crate::query::SimpleSelector,
-        result: &mut Vec<NodeId>,
-    ) {
+    fn collect_matching_shadow(&self, id: NodeId, selector: &crate::query::SimpleSelector, result: &mut Vec<NodeId>) {
         let node_data = match self.nodes.get(id) {
             Some(n) => n,
             None => return,

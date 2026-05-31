@@ -38,9 +38,7 @@ fn bench_many_configs(c: &mut Criterion) {
     c.bench_function("create_100_window_configs", |b| {
         b.iter(|| {
             let configs: Vec<WindowConfig> = (0..100)
-                .map(|i| {
-                    WindowConfig::new(format!("Tab {i}")).with_size(800 + (i as u32 % 5) * 100, 600)
-                })
+                .map(|i| WindowConfig::new(format!("Tab {i}")).with_size(800 + (i as u32 % 5) * 100, 600))
                 .collect();
             black_box(configs);
         })

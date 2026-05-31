@@ -43,21 +43,13 @@ impl ImageData {
                 pixels.len()
             ));
         }
-        Ok(Self {
-            pixels,
-            width,
-            height,
-        })
+        Ok(Self { pixels, width, height })
     }
 
     /// 创建指定尺寸的空（全透明）图片
     pub fn new_empty(width: u32, height: u32) -> Self {
         let pixels = vec![0u8; (width as usize) * (height as usize) * 4];
-        Self {
-            pixels,
-            width,
-            height,
-        }
+        Self { pixels, width, height }
     }
 
     /// 获取指定位置的像素 (R, G, B, A)
@@ -506,8 +498,7 @@ mod tests {
         // key3 最新（gen=1），一定保留
         assert!(cache.ref_count(&key3).is_some(), "最新的 key3 应保留");
         // key1 和 key2 同为 gen=0，淘汰其中一个即可
-        let remaining = cache.ref_count(&key1).is_some() as usize
-            + cache.ref_count(&key2).is_some() as usize;
+        let remaining = cache.ref_count(&key1).is_some() as usize + cache.ref_count(&key2).is_some() as usize;
         assert_eq!(remaining, 1, "key1 和 key2 中应恰好保留一个");
     }
 
@@ -574,9 +565,6 @@ mod tests {
         // GC 应不断淘汰最旧条目直到总字节数 ≤ max_bytes
         // 即使淘汰所有旧条目后只剩 key_big (64 > 16)，也会继续淘汰
         // 最终 key_big 也会被淘汰（因为 64 > 16）
-        assert!(
-            cache.total_bytes() <= 16,
-            "GC 后总字节数应不超过 max_bytes"
-        );
+        assert!(cache.total_bytes() <= 16, "GC 后总字节数应不超过 max_bytes");
     }
 }

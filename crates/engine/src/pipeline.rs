@@ -149,11 +149,7 @@ impl RenderPipeline {
         &mut self,
         doc: &Document,
         stylesheets: &[Stylesheet],
-    ) -> (
-        RenderPrimitives,
-        HashMap<NodeId, ComputedStyle>,
-        LayoutResult,
-    ) {
+    ) -> (RenderPrimitives, HashMap<NodeId, ComputedStyle>, LayoutResult) {
         // 计算样式
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
@@ -188,8 +184,7 @@ impl RenderPipeline {
         dirty_node_layout: &zero_layout_engine::LayoutBox,
     ) -> RenderResult {
         // 标记脏区域
-        self.dirty_tracker
-            .mark_node_dirty(dirty_node_layout, 0.0, 0.0);
+        self.dirty_tracker.mark_node_dirty(dirty_node_layout, 0.0, 0.0);
 
         // 合并重叠脏区域以优化重绘
         self.dirty_tracker.merge_overlapping();
@@ -612,7 +607,10 @@ mod tests {
         let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
 
         let inc_count = inc_primitives.map(|p| p.len()).unwrap_or(0);
-        assert!(inc_count <= full_count, "incremental paint should produce <= primitives of full paint");
+        assert!(
+            inc_count <= full_count,
+            "incremental paint should produce <= primitives of full paint"
+        );
     }
 
     /// 测试 DOM 修改后 recompute_styles 生成不同的图元。
@@ -714,8 +712,10 @@ mod tests {
         let (prims_red, _, layout_red) = pipeline.recompute_styles(&doc, &ss_red);
 
         assert!(!prims_red.fills.is_empty(), "style change should produce fills");
-        assert!(prims_red.fills.len() > first_fill_count,
-            "adding background-color should produce more fills");
+        assert!(
+            prims_red.fills.len() > first_fill_count,
+            "adding background-color should produce more fills"
+        );
         assert!(layout_red.viewport_width > 0.0);
 
         // 再次样式变化：改为蓝色背景
@@ -723,7 +723,10 @@ mod tests {
         let ss_blue = vec![zero_css_parser::Parser::parse_stylesheet(css_blue)];
         let (prims_blue, _, _) = pipeline.recompute_styles(&doc, &ss_blue);
 
-        assert!(!prims_blue.fills.is_empty(), "second style change should still produce fills");
+        assert!(
+            !prims_blue.fills.is_empty(),
+            "second style change should still produce fills"
+        );
     }
 
     /// 测试标记脏区域后 incremental_render 正确完成渲染。
@@ -740,8 +743,14 @@ mod tests {
         assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
 
         // 通过 dirty_tracker_mut 手动标记一个脏区域
-        pipeline.dirty_tracker_mut().mark_dirty(Rect::new(0.0, 0.0, 200.0, 100.0));
-        assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 1, "should have 1 dirty rect after marking");
+        pipeline
+            .dirty_tracker_mut()
+            .mark_dirty(Rect::new(0.0, 0.0, 200.0, 100.0));
+        assert_eq!(
+            pipeline.dirty_tracker().dirty_rects().len(),
+            1,
+            "should have 1 dirty rect after marking"
+        );
         assert!(pipeline.dirty_tracker().dirty_area() > 0.0, "dirty area should be > 0");
 
         // 创建脏节点 LayoutBox 并执行增量渲染
@@ -778,10 +787,14 @@ mod tests {
         assert!(result.timings.total_ms >= 0.0, "incremental render should succeed");
 
         // 增量渲染后脏追踪器应被清除
-        assert!(pipeline.dirty_tracker().dirty_rects().is_empty(),
-            "dirty rects should be cleared after incremental render");
-        assert!(!pipeline.dirty_tracker().is_full_redraw(),
-            "small dirty area should not trigger full redraw");
+        assert!(
+            pipeline.dirty_tracker().dirty_rects().is_empty(),
+            "dirty rects should be cleared after incremental render"
+        );
+        assert!(
+            !pipeline.dirty_tracker().is_full_redraw(),
+            "small dirty area should not trigger full redraw"
+        );
     }
 
     /// 测试连续样式变化 + 脏标记多次迭代后仍能正确渲染。
