@@ -2133,6 +2133,22 @@ pub enum TransformFunction {
     ScaleY(f64),
     /// skew(ax, ay) — 角度（度数）。
     Skew(f64, Option<f64>),
+    /// rotateX(angle) — 绕 X 轴旋转（度数）。
+    RotateX(f64),
+    /// rotateY(angle) — 绕 Y 轴旋转（度数）。
+    RotateY(f64),
+    /// rotateZ(angle) — 绕 Z 轴旋转（度数）。
+    RotateZ(f64),
+    /// translate3d(tx, ty, tz) — 三维平移。
+    Translate3d(f64, f64, f64),
+    /// scale3d(sx, sy, sz) — 三维缩放。
+    Scale3d(f64, f64, f64),
+    /// rotate3d(x, y, z, angle) — 绕任意轴旋转。
+    Rotate3d(f64, f64, f64, f64),
+    /// perspective(length) — 透视距离。
+    Perspective(f64),
+    /// matrix(a, b, c, d, e, f) — 二维矩阵变换。
+    Matrix(f64, f64, f64, f64, f64, f64),
 }
 
 /// 解析 CSS transform 属性值。
@@ -2158,9 +2174,9 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
             break;
         }
 
-        // 读取函数名
+        // 读取函数名（允许字母和数字，如 translate3d、scale3d、rotate3d）
         let name_start = pos;
-        while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
+        while pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos].is_ascii_digit()) {
             pos += 1;
         }
         let name = &value[name_start..pos];
@@ -2246,6 +2262,65 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let ax = vals.first().copied()?;
             let ay = vals.get(1).copied();
             Some(TransformFunction::Skew(ax, ay))
+        }
+        "rotateX" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateX(angle))
+        }
+        "rotateY" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateY(angle))
+        }
+        "rotateZ" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateZ(angle))
+        }
+        "translate3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let tx = parse_css_number(parts[0])?;
+            let ty = parse_css_number(parts[1])?;
+            let tz = parse_css_number(parts[2])?;
+            Some(TransformFunction::Translate3d(tx, ty, tz))
+        }
+        "scale3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let sx = parse_css_number(parts[0])?;
+            let sy = parse_css_number(parts[1])?;
+            let sz = parse_css_number(parts[2])?;
+            Some(TransformFunction::Scale3d(sx, sy, sz))
+        }
+        "rotate3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 4 {
+                return None;
+            }
+            let x = parse_css_number(parts[0])?;
+            let y = parse_css_number(parts[1])?;
+            let z = parse_css_number(parts[2])?;
+            let angle = parse_angle(parts[3])?;
+            Some(TransformFunction::Rotate3d(x, y, z, angle))
+        }
+        "perspective" => {
+            let val = parse_css_number(args)?;
+            if val <= 0.0 {
+                return None;
+            }
+            Some(TransformFunction::Perspective(val))
+        }
+        "matrix" => {
+            let vals = parse_transform_args(args)?;
+            if vals.len() != 6 {
+                return None;
+            }
+            Some(TransformFunction::Matrix(
+                vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
+            ))
         }
         _ => None,
     }
@@ -3600,5 +3675,154 @@ mod tests {
     #[test]
     fn test_parse_word_break_invalid() {
         assert_eq!(parse_word_break("invalid"), None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 3D Transform 函数解析测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 rotateX(45deg) 解析
+    fn test_parse_rotate_x() {
+        let result = parse_transform("rotateX(45deg)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::RotateX(45.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 rotateY(-90deg) 使用 rad 单位
+    fn test_parse_rotate_y() {
+        // -π/2 rad ≈ -90°
+        let result = parse_transform("rotateY(-1.5708rad)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                let angle = match &fns[0] {
+                    TransformFunction::RotateY(a) => *a,
+                    other => panic!("expected RotateY, got {other:?}"),
+                };
+                assert!((angle - (-90.0)).abs() < 1.0, "angle should be near -90, got {angle}");
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 rotateZ(0.5turn) 解析（0.5 圈 = 180°）
+    fn test_parse_rotate_z() {
+        let result = parse_transform("rotateZ(0.5turn)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::RotateZ(180.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 translate3d(10px, 20px, 30px) 解析
+    fn test_parse_translate_3d() {
+        let result = parse_transform("translate3d(10px, 20px, 30px)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::Translate3d(10.0, 20.0, 30.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 scale3d(1, 2, 3) 解析
+    fn test_parse_scale_3d() {
+        let result = parse_transform("scale3d(1, 2, 3)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::Scale3d(1.0, 2.0, 3.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 rotate3d(1, 0, 0, 45deg) 解析
+    fn test_parse_rotate_3d() {
+        let result = parse_transform("rotate3d(1, 0, 0, 45deg)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::Rotate3d(1.0, 0.0, 0.0, 45.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 perspective(500px) 解析
+    fn test_parse_perspective_func() {
+        let result = parse_transform("perspective(500px)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::Perspective(500.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+
+        // perspective(0) 应返回 None（必须为正数）
+        assert!(parse_transform("perspective(0)").is_none());
+        // perspective(-100) 应返回 None（必须为正数）
+        assert!(parse_transform("perspective(-100)").is_none());
+    }
+
+    #[test]
+    /// 测试 matrix(1, 0, 0, 1, 10, 20) 解析
+    fn test_parse_matrix() {
+        let result = parse_transform("matrix(1, 0, 0, 1, 10, 20)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 1);
+                assert_eq!(fns[0], TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 10.0, 20.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+
+        // matrix 需要 6 个参数
+        assert!(parse_transform("matrix(1, 0, 0)").is_none());
+    }
+
+    #[test]
+    /// 测试组合 3D 变换：translate3d(10px, 0, 0) rotateY(45deg)
+    fn test_parse_combined_3d_transforms() {
+        let result = parse_transform("translate3d(10px, 0, 0) rotateY(45deg)").unwrap();
+        match result {
+            TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 2);
+                assert_eq!(fns[0], TransformFunction::Translate3d(10.0, 0.0, 0.0));
+                assert_eq!(fns[1], TransformFunction::RotateY(45.0));
+            }
+            _ => panic!("expected TransformValue::List, got {result:?}"),
+        }
+    }
+
+    #[test]
+    /// 测试 transform: none 返回 None 变体
+    fn test_parse_transform_none() {
+        let result = parse_transform("none").unwrap();
+        assert_eq!(result, TransformValue::None);
+    }
+
+    #[test]
+    /// 测试 transform 无效输入
+    fn test_parse_transform_invalid() {
+        assert!(parse_transform("").is_none());
+        assert!(parse_transform("unknown(10px)").is_none());
     }
 }

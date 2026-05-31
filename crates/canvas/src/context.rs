@@ -162,6 +162,18 @@ pub enum TextBaseline {
     Bottom,
 }
 
+/// 文本方向。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum TextDirection {
+    /// 从左到右。
+    Ltr,
+    /// 从右到左。
+    Rtl,
+    /// 继承（默认）。
+    #[default]
+    Inherit,
+}
+
 /// 线段连接样式。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LineJoin {
@@ -407,6 +419,10 @@ struct CanvasState {
     text_align: TextAlign,
     /// 文本基线。
     text_baseline: TextBaseline,
+    /// 斜接限制。
+    miter_limit: f32,
+    /// 文本方向。
+    direction: TextDirection,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -461,6 +477,10 @@ pub struct CanvasContext {
     text_align: TextAlign,
     /// 文本基线。
     text_baseline: TextBaseline,
+    /// 斜接限制。
+    miter_limit: f32,
+    /// 文本方向。
+    direction: TextDirection,
 }
 
 /// 文本度量。
@@ -515,6 +535,8 @@ impl CanvasContext {
             image_smoothing_enabled: true,
             text_align: TextAlign::Start,
             text_baseline: TextBaseline::Alphabetic,
+            miter_limit: 10.0,
+            direction: TextDirection::Inherit,
         }
     }
 
@@ -861,6 +883,8 @@ impl CanvasContext {
             image_smoothing_enabled: self.image_smoothing_enabled,
             text_align: self.text_align,
             text_baseline: self.text_baseline,
+            miter_limit: self.miter_limit,
+            direction: self.direction,
         });
     }
 
@@ -885,6 +909,8 @@ impl CanvasContext {
             self.image_smoothing_enabled = state.image_smoothing_enabled;
             self.text_align = state.text_align;
             self.text_baseline = state.text_baseline;
+            self.miter_limit = state.miter_limit;
+            self.direction = state.direction;
         }
     }
 
@@ -916,6 +942,18 @@ impl CanvasContext {
     /// 重置变换矩阵为单位矩阵。
     pub fn reset_transform(&mut self) {
         self.transform = Transform2D::identity();
+    }
+
+    /// 返回当前变换矩阵的副本。
+    pub fn get_transform(&self) -> Transform2D {
+        self.transform
+    }
+
+    /// 将给定矩阵乘以当前变换矩阵（后乘）。
+    /// 按照规范：self.transform = self.transform.multiply(&argument)。
+    pub fn transform(&mut self, a: f32, b: f32, c: f32, d: f32, e: f32, f: f32) {
+        let other = Transform2D { a, b, c, d, e, f };
+        self.transform = self.transform.multiply(&other);
     }
 
     // ── Properties ──
@@ -1013,6 +1051,26 @@ impl CanvasContext {
     /// 返回当前文本基线。
     pub fn text_baseline(&self) -> TextBaseline {
         self.text_baseline
+    }
+
+    /// 设置斜接限制。
+    pub fn set_miter_limit(&mut self, limit: f32) {
+        self.miter_limit = limit;
+    }
+
+    /// 返回当前斜接限制。
+    pub fn miter_limit(&self) -> f32 {
+        self.miter_limit
+    }
+
+    /// 设置文本方向。
+    pub fn set_direction(&mut self, dir: TextDirection) {
+        self.direction = dir;
+    }
+
+    /// 返回当前文本方向。
+    pub fn direction(&self) -> TextDirection {
+        self.direction
     }
 
     /// 返回当前全局透明度。
@@ -1197,6 +1255,16 @@ impl CanvasContext {
             }
         }
         ImageData { width, height, data }
+    }
+
+    /// 创建指定尺寸的 ImageData，填充透明黑色（rgba 0,0,0,0）。
+    pub fn create_image_data(&self, width: u32, height: u32) -> ImageData {
+        let size = (width * height * 4) as usize;
+        ImageData {
+            width,
+            height,
+            data: vec![0u8; size],
+        }
     }
 
     /// 放置像素数据。将 ImageData 写入画布像素缓冲区的指定偏移位置。
@@ -6460,5 +6528,372 @@ mod tests {
         assert!(p.is_point_in_path(50.0, 40.0), "三角形内部点应命中");
         // 远离三角形的外部点不应命中
         assert!(!p.is_point_in_path(200.0, 200.0), "外部点不应命中");
+    }
+
+    // ── create_image_data 测试 ──
+
+    /// 测试 create_image_data 创建指定尺寸的 ImageData，数据全为零。
+    #[test]
+    fn test_create_image_data() {
+        let ctx = CanvasContext::new(100, 100);
+        let img = ctx.create_image_data(10, 20);
+        assert_eq!(img.width, 10);
+        assert_eq!(img.height, 20);
+        assert_eq!(img.data.len(), 800); // 10 * 20 * 4
+        // 所有像素应为透明黑色
+        for chunk in img.data.chunks_exact(4) {
+            assert_eq!(chunk, &[0, 0, 0, 0]);
+        }
+    }
+
+    /// 测试 create_image_data 零尺寸不 panic。
+    #[test]
+    fn test_create_image_data_zero_size() {
+        let ctx = CanvasContext::new(100, 100);
+        let img = ctx.create_image_data(0, 0);
+        assert_eq!(img.width, 0);
+        assert_eq!(img.height, 0);
+        assert!(img.data.is_empty());
+    }
+
+    /// 测试 create_image_data 与 get_image_data 的区别：
+    /// create_image_data 返回全零，get_image_data 从画布读取实际像素。
+    #[test]
+    fn test_create_image_data_vs_get_image_data() {
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let created = ctx.create_image_data(5, 5);
+        let fetched = ctx.get_image_data(0, 0, 5, 5);
+        // created 应全为零（透明黑）
+        assert_eq!(created.data[0..4], [0, 0, 0, 0]);
+        // fetched 应为红色（从画布读取）
+        assert_eq!(fetched.data[0..4], [255, 0, 0, 255]);
+    }
+
+    // ── get_transform 测试 ──
+
+    /// 测试 get_transform 返回单位矩阵（初始状态）。
+    #[test]
+    fn test_get_transform_identity() {
+        let ctx = CanvasContext::new(100, 100);
+        let t = ctx.get_transform();
+        assert!((t.a - 1.0).abs() < f32::EPSILON);
+        assert!((t.b).abs() < f32::EPSILON);
+        assert!((t.c).abs() < f32::EPSILON);
+        assert!((t.d - 1.0).abs() < f32::EPSILON);
+        assert!((t.e).abs() < f32::EPSILON);
+        assert!((t.f).abs() < f32::EPSILON);
+    }
+
+    /// 测试 get_transform 在 translate 后返回正确的矩阵。
+    #[test]
+    fn test_get_transform_after_translate() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.translate(10.0, 20.0);
+        let t = ctx.get_transform();
+        assert!((t.a - 1.0).abs() < f32::EPSILON);
+        assert!((t.d - 1.0).abs() < f32::EPSILON);
+        assert!((t.e - 10.0).abs() < f32::EPSILON);
+        assert!((t.f - 20.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 get_transform 在 set_transform 后返回设置的矩阵。
+    #[test]
+    fn test_get_transform_after_set() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_transform(2.0, 0.5, -0.5, 2.0, 10.0, 20.0);
+        let t = ctx.get_transform();
+        assert!((t.a - 2.0).abs() < f32::EPSILON);
+        assert!((t.b - 0.5).abs() < f32::EPSILON);
+        assert!((t.c - (-0.5)).abs() < f32::EPSILON);
+        assert!((t.d - 2.0).abs() < f32::EPSILON);
+        assert!((t.e - 10.0).abs() < f32::EPSILON);
+        assert!((t.f - 20.0).abs() < f32::EPSILON);
+    }
+
+    // ── transform(a,b,c,d,e,f) 乘法方法测试 ──
+
+    /// 测试 transform() 方法将参数矩阵乘到当前变换上。
+    #[test]
+    fn test_transform_multiply_basic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0);
+        let t = ctx.get_transform();
+        // 单位矩阵 * scale(2,2) = scale(2,2)
+        assert!((t.a - 2.0).abs() < f32::EPSILON);
+        assert!((t.d - 2.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 transform() 后乘顺序：先 scale 后 translate。
+    #[test]
+    fn test_transform_post_multiply_order() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.scale(2.0, 1.0);
+        ctx.transform(1.0, 0.0, 0.0, 1.0, 10.0, 20.0);
+        let (x, y) = ctx.get_transform().transform_point(5.0, 5.0);
+        // scale(2,1) * translate(10,20)：矩阵乘法结果 e = 2*10 = 20, f = 1*20 = 20
+        // transform_point(5,5) = (2*5 + 20, 1*5 + 20) = (30, 25)
+        assert!((x - 30.0).abs() < 0.01);
+        assert!((y - 25.0).abs() < 0.01);
+    }
+
+    /// 测试 transform() 不会替换而是叠加（与 set_transform 的区别）。
+    #[test]
+    fn test_transform_accumulates_vs_set_transform_replaces() {
+        let mut ctx1 = CanvasContext::new(100, 100);
+        ctx1.translate(10.0, 0.0);
+        ctx1.transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0);
+        let t1 = ctx1.get_transform();
+
+        let mut ctx2 = CanvasContext::new(100, 100);
+        ctx2.translate(10.0, 0.0);
+        ctx2.set_transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0);
+        let t2 = ctx2.get_transform();
+
+        // transform() 叠加：translate(10,0) * scale(2,2)
+        assert!((t1.a - 2.0).abs() < f32::EPSILON, "transform should accumulate");
+        assert!((t1.e - 10.0).abs() < f32::EPSILON, "translate should remain");
+
+        // set_transform() 替换
+        assert!((t2.a - 2.0).abs() < f32::EPSILON, "set_transform replaces");
+        assert!((t2.e).abs() < f32::EPSILON, "set_transform clears translate");
+    }
+
+    /// 测试连续多次 transform() 调用累积。
+    #[test]
+    fn test_transform_multiple_calls() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.transform(2.0, 0.0, 0.0, 1.0, 0.0, 0.0); // scale x2
+        ctx.transform(1.0, 0.0, 0.0, 3.0, 0.0, 0.0); // scale y3
+        let (x, y) = ctx.get_transform().transform_point(5.0, 5.0);
+        // identity * scaleX(2) * scaleY(3) applied to (5,5):
+        // first scaleX: (10, 5), then scaleY: (10, 15)
+        assert!((x - 10.0).abs() < 0.01);
+        assert!((y - 15.0).abs() < 0.01);
+    }
+
+    // ── miter_limit 测试 ──
+
+    /// 测试 miter_limit 默认值为 10.0。
+    #[test]
+    fn test_miter_limit_default() {
+        let ctx = CanvasContext::new(100, 100);
+        assert!((ctx.miter_limit() - 10.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试设置和获取 miter_limit。
+    #[test]
+    fn test_miter_limit_set_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_miter_limit(5.0);
+        assert!((ctx.miter_limit() - 5.0).abs() < f32::EPSILON);
+        ctx.set_miter_limit(20.0);
+        assert!((ctx.miter_limit() - 20.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 miter_limit 在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_miter_limit_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_miter_limit(5.0);
+        ctx.save();
+        ctx.set_miter_limit(15.0);
+        assert!((ctx.miter_limit() - 15.0).abs() < f32::EPSILON);
+        ctx.restore();
+        assert!((ctx.miter_limit() - 5.0).abs() < f32::EPSILON);
+    }
+
+    // ── direction 测试 ──
+
+    /// 测试 direction 默认值为 Inherit。
+    #[test]
+    fn test_direction_default() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.direction(), TextDirection::Inherit);
+    }
+
+    /// 测试 TextDirection 枚举 Default trait。
+    #[test]
+    fn test_text_direction_default_trait() {
+        assert_eq!(TextDirection::default(), TextDirection::Inherit);
+    }
+
+    /// 测试设置和获取 direction。
+    #[test]
+    fn test_direction_set_get() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_direction(TextDirection::Ltr);
+        assert_eq!(ctx.direction(), TextDirection::Ltr);
+        ctx.set_direction(TextDirection::Rtl);
+        assert_eq!(ctx.direction(), TextDirection::Rtl);
+        ctx.set_direction(TextDirection::Inherit);
+        assert_eq!(ctx.direction(), TextDirection::Inherit);
+    }
+
+    /// 测试 direction 在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_direction_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_direction(TextDirection::Rtl);
+        ctx.save();
+        ctx.set_direction(TextDirection::Ltr);
+        assert_eq!(ctx.direction(), TextDirection::Ltr);
+        ctx.restore();
+        assert_eq!(ctx.direction(), TextDirection::Rtl);
+    }
+
+    /// 测试 TextDirection 枚举各变体互不相等。
+    #[test]
+    fn test_text_direction_variants_distinct() {
+        let variants = [TextDirection::Ltr, TextDirection::Rtl, TextDirection::Inherit];
+        for (i, a) in variants.iter().enumerate() {
+            for (j, b) in variants.iter().enumerate() {
+                if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert_ne!(a, b, "TextDirection variants {} and {} should differ", i, j);
+                }
+            }
+        }
+    }
+
+    // ── 边缘场景补充测试（第七批）──
+
+    /// 测试 create_image_data 创建空白 ImageData，验证尺寸和透明像素。
+    ///
+    /// 创建 10x8 的 ImageData，所有像素应为 rgba(0,0,0,0)。
+    #[test]
+    fn test_create_image_data_blank() {
+        let ctx = CanvasContext::new(100, 100);
+        let img = ctx.create_image_data(10, 8);
+        assert_eq!(img.width, 10, "width should be 10");
+        assert_eq!(img.height, 8, "height should be 8");
+        assert_eq!(img.data.len(), 10 * 8 * 4, "data length should be 10*8*4 = 320");
+        // 所有像素应为透明黑色
+        for chunk in img.data.chunks_exact(4) {
+            assert_eq!(chunk, &[0, 0, 0, 0], "pixel should be transparent black (rgba 0,0,0,0)");
+        }
+    }
+
+    /// 测试默认变换矩阵为单位矩阵。
+    ///
+    /// 新创建的 CanvasContext 的 get_transform() 应返回单位矩阵。
+    #[test]
+    fn test_get_transform_default_identity() {
+        let ctx = CanvasContext::new(100, 100);
+        let t = ctx.get_transform();
+        assert!((t.a - 1.0).abs() < f32::EPSILON, "a should be 1.0");
+        assert!((t.b).abs() < f32::EPSILON, "b should be 0.0");
+        assert!((t.c).abs() < f32::EPSILON, "c should be 0.0");
+        assert!((t.d - 1.0).abs() < f32::EPSILON, "d should be 1.0");
+        assert!((t.e).abs() < f32::EPSILON, "e should be 0.0");
+        assert!((t.f).abs() < f32::EPSILON, "f should be 0.0");
+    }
+
+    /// 测试执行 translate+rotate+scale 后 get_transform 返回正确矩阵。
+    ///
+    /// 依次执行 translate(10,20)、rotate(π/2)、scale(2,3)，
+    /// 验证 get_transform() 返回的矩阵不等于单位矩阵，且为有限值。
+    #[test]
+    fn test_get_transform_after_ops() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.translate(10.0, 20.0);
+        ctx.rotate(std::f32::consts::FRAC_PI_2);
+        ctx.scale(2.0, 3.0);
+
+        let t = ctx.get_transform();
+        // 不应为单位矩阵
+        assert!(
+            (t.a - 1.0).abs() > 0.01 || (t.d - 1.0).abs() > 0.01 || (t.e).abs() > 0.01 || (t.f).abs() > 0.01,
+            "transform after ops should not be identity"
+        );
+        // 所有元素应为有限值
+        assert!(t.a.is_finite(), "a should be finite");
+        assert!(t.b.is_finite(), "b should be finite");
+        assert!(t.c.is_finite(), "c should be finite");
+        assert!(t.d.is_finite(), "d should be finite");
+        assert!(t.e.is_finite(), "e should be finite");
+        assert!(t.f.is_finite(), "f should be finite");
+    }
+
+    /// 测试 transform() 方法是乘法叠加而非替换。
+    ///
+    /// 先 scale(2,1) 再 transform(1,0,0,1,10,0)（即 translate(10,0)），
+    /// 验证 transform 是后乘叠加，结果不同于 set_transform 直接替换。
+    #[test]
+    fn test_transform_multiply_vs_set() {
+        let mut ctx1 = CanvasContext::new(100, 100);
+        ctx1.scale(2.0, 1.0);
+        ctx1.transform(1.0, 0.0, 0.0, 1.0, 10.0, 0.0); // translate via transform()
+        let t1 = ctx1.get_transform();
+
+        // scale(2,1) * translate(10,0) 后乘：
+        // [2 0 0]   [1 0 10]   [2 0 20]
+        // [0 1 0] * [0 1  0] = [0 1  0]
+        // [0 0 1]   [0 0  1]   [0 0  1]
+        // 所以 a=2, d=1, e=20
+        assert!((t1.a - 2.0).abs() < f32::EPSILON, "a should be 2.0");
+        assert!((t1.d - 1.0).abs() < f32::EPSILON, "d should be 1.0");
+        assert!((t1.e - 20.0).abs() < f32::EPSILON, "e should be 20.0 (2*10)");
+
+        // 使用 set_transform 直接设置 a=2, d=1, e=10
+        let mut ctx2 = CanvasContext::new(100, 100);
+        ctx2.set_transform(2.0, 0.0, 0.0, 1.0, 10.0, 0.0);
+        let t2 = ctx2.get_transform();
+
+        // transform 叠加 vs set_transform 替换，结果应不同
+        assert!(
+            (t1.e - t2.e).abs() > 0.01,
+            "transform multiply (e={}) should differ from set_transform (e={})",
+            t1.e,
+            t2.e
+        );
+    }
+
+    /// 测试 miter_limit 默认值为 10.0。
+    ///
+    /// 新创建的 CanvasContext 的 miter_limit() 应返回 10.0。
+    #[test]
+    fn test_miter_limit_default_value() {
+        let ctx = CanvasContext::new(100, 100);
+        assert!(
+            (ctx.miter_limit() - 10.0).abs() < f32::EPSILON,
+            "default miter_limit should be 10.0, got {}",
+            ctx.miter_limit()
+        );
+    }
+
+    /// 测试 miter_limit 在 save/restore 中正确保存和恢复。
+    ///
+    /// 设置 miter_limit 为 5.0，save 后改为 15.0，restore 后应恢复 5.0。
+    #[test]
+    fn test_miter_limit_save_restore_value() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_miter_limit(5.0);
+        ctx.save();
+        ctx.set_miter_limit(15.0);
+        assert!(
+            (ctx.miter_limit() - 15.0).abs() < f32::EPSILON,
+            "after save+set, miter_limit should be 15.0"
+        );
+        ctx.restore();
+        assert!(
+            (ctx.miter_limit() - 5.0).abs() < f32::EPSILON,
+            "after restore, miter_limit should be back to 5.0"
+        );
+    }
+
+    /// 测试 direction 默认值为 Inherit。
+    ///
+    /// 新创建的 CanvasContext 的 direction() 应返回 TextDirection::Inherit。
+    #[test]
+    fn test_text_direction_default_value() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(
+            ctx.direction(),
+            TextDirection::Inherit,
+            "default direction should be Inherit"
+        );
     }
 }

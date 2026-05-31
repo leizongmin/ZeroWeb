@@ -972,9 +972,12 @@ fn collect_from_rules(
                 if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
                     if at_rule.name.eq_ignore_ascii_case("media") {
                         // @media 规则：需要评估媒体条件
+                        // 逗号分隔的查询表示 OR 关系——任一匹配即通过
                         if let Some(ctx) = media_ctx
-                            && let Some(query) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
-                            && zero_css_parser::media_query::evaluate_media_query(&query, ctx)
+                            && let Some(queries) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            && queries
+                                .iter()
+                                .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
                         {
                             collect_from_rules(
                                 doc,
