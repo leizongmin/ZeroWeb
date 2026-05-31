@@ -12,6 +12,7 @@ zero-style-system = { workspace = true }
 zero-css-parser = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -4532,6 +4532,7 @@ dependencies = [
  "serde",
  "taffy",
  "thiserror 2.0.18",
+ "tracing",
  "zero-css-parser",
  "zero-dom",
  "zero-style-system",

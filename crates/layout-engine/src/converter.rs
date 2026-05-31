@@ -739,9 +739,15 @@ fn convert_grid_line(value: &GridLineValue) -> taffy::style::GridPlacement {
 ///
 /// 行号和列号均为 1-based。区域占据的行/列为 [start, end)，
 /// 即 row_end = row_start + span_rows。
+///
+/// 验证规则：
+/// 1. 所有行的列数必须相同（矩形检查）
+/// 2. 每个命名区域必须构成一个矩形（非矩形区域会记录警告并忽略）
 pub fn parse_grid_template_areas(value: &str) -> GridAreaMap {
     let mut areas = std::collections::HashMap::new();
     let mut row = 1i16;
+    // 收集每行的 token 列表，用于后续矩形校验
+    let mut rows_tokens: Vec<Vec<String>> = Vec::new();
 
     // 按引号对分割出每行
     let mut chars = value.chars().peekable();
@@ -760,6 +766,8 @@ pub fn parse_grid_template_areas(value: &str) -> GridAreaMap {
 
             // 解析行内 token
             let tokens: Vec<&str> = line.split_whitespace().collect();
+            rows_tokens.push(tokens.iter().map(|s| s.to_string()).collect());
+
             for (col_idx, &token) in tokens.iter().enumerate() {
                 let col = (col_idx + 1) as i16;
 
@@ -780,6 +788,69 @@ pub fn parse_grid_template_areas(value: &str) -> GridAreaMap {
             row += 1;
         } else {
             chars.next();
+        }
+    }
+
+    // ── 矩形校验 ──
+
+    // 1. 检查所有行的列数是否一致
+    if rows_tokens.len() > 1 {
+        let expected_cols = rows_tokens[0].len();
+        for (i, tokens) in rows_tokens.iter().enumerate() {
+            if tokens.len() != expected_cols {
+                tracing::warn!(
+                    "grid-template-areas: row {} has {} columns but expected {}, area map may be incorrect",
+                    i + 1,
+                    tokens.len(),
+                    expected_cols
+                );
+                return areas;
+            }
+        }
+    }
+
+    // 2. 检查每个命名区域是否构成矩形
+    //    对每个区域名，记录它在 grid 中出现的所有 (row, col)，
+    //    然后验证这些位置是否构成一个完整的矩形。
+    if !rows_tokens.is_empty() {
+        let num_rows = rows_tokens.len() as i16;
+        let num_cols = rows_tokens[0].len() as i16;
+
+        for (name, &(rs, re, cs, ce)) in &areas {
+            // 计算预期占据的单元格数
+            let expected_count = ((re - rs) * (ce - cs)) as usize;
+            // 统计实际出现次数
+            let mut actual_count = 0usize;
+            for (r, tokens) in rows_tokens.iter().enumerate() {
+                let r1 = (r + 1) as i16;
+                if r1 < rs || r1 >= re {
+                    continue;
+                }
+                for (c, token) in tokens.iter().enumerate() {
+                    let c1 = (c + 1) as i16;
+                    if c1 < cs || c1 >= ce {
+                        continue;
+                    }
+                    if token == name {
+                        actual_count += 1;
+                    }
+                }
+            }
+            if actual_count != expected_count {
+                tracing::warn!(
+                    "grid-template-areas: area '{}' does not form a rectangle (expected {} cells, found {}), \
+                     bounds=({},{},{},{}), grid_size={}x{}",
+                    name,
+                    expected_count,
+                    actual_count,
+                    rs,
+                    re,
+                    cs,
+                    ce,
+                    num_rows,
+                    num_cols
+                );
+            }
         }
     }
 
@@ -1923,5 +1994,63 @@ mod tests {
         style.overflow_y = OverflowValue::Clip;
         let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.overflow.y, taffy::style::Overflow::Clip);
+    }
+
+    // ── grid-template-areas 校验测试 ──
+
+    /// 测试非矩形列数不一致时仍返回结果（行数不匹配）。
+    #[test]
+    fn test_grid_template_areas_uneven_rows() {
+        // 第二行只有 1 列，第一行有 2 列
+        let areas = parse_grid_template_areas("\"a a\" \"b\"");
+        // 仍然返回 areas，但会有 warn 日志
+        assert!(!areas.is_empty());
+        assert_eq!(areas.get("a"), Some(&(1, 2, 1, 3)));
+        assert_eq!(areas.get("b"), Some(&(2, 3, 1, 2)));
+    }
+
+    /// 测试非矩形区域（L 形区域触发警告）。
+    #[test]
+    fn test_grid_template_areas_non_rectangular() {
+        // "a" 出现在 (1,1) (1,2) (2,2) — 不构成矩形（缺少 (2,1)）
+        let areas = parse_grid_template_areas("\"a a\" \"b a\"");
+        // 仍然返回结果（兼容性），但会有 warn 日志
+        assert!(!areas.is_empty());
+        // a: row 1-3, col 1-3（基于 expand 逻辑）
+        assert!(areas.contains_key("a"));
+        assert!(areas.contains_key("b"));
+    }
+
+    /// 测试矩形区域不触发警告。
+    #[test]
+    fn test_grid_template_areas_rectangular_valid() {
+        let areas = parse_grid_template_areas("\"a a\" \"a b\"");
+        assert_eq!(areas.len(), 2);
+        // a: row 1-3, col 1-3 — 出现在 (1,1) (1,2) (2,1) 构成 2x2 矩形
+        assert_eq!(areas.get("a"), Some(&(1, 3, 1, 3)));
+        // b: row 2-3, col 2-3（col_idx=1 → col=2, entry=(2,3,2,3)）
+        assert_eq!(areas.get("b"), Some(&(2, 3, 2, 3)));
+    }
+
+    /// 测试 dot 占位符（CSS 规范中用 . 表示空单元格）。
+    #[test]
+    fn test_grid_template_areas_with_dot() {
+        let areas = parse_grid_template_areas("\"header header\" \". sidebar\" \"footer footer\"");
+        // "." 也被视为一个 token 名称，所以共有 4 个区域
+        assert_eq!(areas.len(), 4);
+        assert_eq!(areas.get("header"), Some(&(1, 2, 1, 3)));
+        assert_eq!(areas.get("sidebar"), Some(&(2, 3, 2, 3)));
+        assert_eq!(areas.get("footer"), Some(&(3, 4, 1, 3)));
+        assert!(areas.contains_key("."));
+    }
+
+    /// 测试单行区域正确解析。
+    #[test]
+    fn test_grid_template_areas_single_row() {
+        let areas = parse_grid_template_areas("\"a b c\"");
+        assert_eq!(areas.len(), 3);
+        assert_eq!(areas.get("a"), Some(&(1, 2, 1, 2)));
+        assert_eq!(areas.get("b"), Some(&(1, 2, 2, 3)));
+        assert_eq!(areas.get("c"), Some(&(1, 2, 3, 4)));
     }
 }

@@ -294,6 +294,11 @@ impl LinearGradient {
     pub fn add_color_stop(&mut self, offset: f32, color: Color) {
         self.stops.push(GradientStop { offset, color });
     }
+
+    /// 在指定偏移量处采样颜色（线性插值）。
+    pub fn sample_color(&self, offset: f32) -> Color {
+        sample_gradient_stops(&self.stops, offset)
+    }
 }
 
 /// 径向渐变 — 从内圆到外圆的颜色过渡。
@@ -333,6 +338,11 @@ impl RadialGradient {
     pub fn add_color_stop(&mut self, offset: f32, color: Color) {
         self.stops.push(GradientStop { offset, color });
     }
+
+    /// 在指定偏移量处采样颜色（线性插值）。
+    pub fn sample_color(&self, offset: f32) -> Color {
+        sample_gradient_stops(&self.stops, offset)
+    }
 }
 
 /// 锥形渐变 — 围绕中心点按角度过渡颜色。
@@ -362,6 +372,11 @@ impl ConicGradient {
     /// 添加颜色停止点。
     pub fn add_color_stop(&mut self, offset: f32, color: Color) {
         self.stops.push(GradientStop { offset, color });
+    }
+
+    /// 在指定偏移量处采样颜色（线性插值）。
+    pub fn sample_color(&self, offset: f32) -> Color {
+        sample_gradient_stops(&self.stops, offset)
     }
 }
 
@@ -395,11 +410,93 @@ impl CanvasPattern {
     }
 }
 
+/// Canvas 填充/描边样式。
+#[derive(Debug, Clone)]
+pub enum CanvasStyle {
+    /// 纯色。
+    Color(Color),
+    /// 线性渐变。
+    LinearGradient(LinearGradient),
+    /// 径向渐变。
+    RadialGradient(RadialGradient),
+    /// 锥形渐变。
+    ConicGradient(ConicGradient),
+    /// 图案。
+    Pattern(CanvasPattern),
+}
+
+impl CanvasStyle {
+    /// 默认样式：不透明黑色。
+    pub fn default_black() -> Self {
+        CanvasStyle::Color(Color::BLACK)
+    }
+
+    /// 解析为有效颜色。
+    ///
+    /// 对于 Color 变体直接使用；
+    /// 对于渐变变体在指定偏移量处采样近似颜色；
+    /// 对于 Pattern 返回黑色作为回退。
+    pub fn resolve_color(&self) -> Color {
+        match self {
+            CanvasStyle::Color(c) => *c,
+            CanvasStyle::LinearGradient(g) => g.sample_color(0.5),
+            CanvasStyle::RadialGradient(g) => g.sample_color(0.5),
+            CanvasStyle::ConicGradient(g) => g.sample_color(0.0),
+            CanvasStyle::Pattern(_) => Color::BLACK,
+        }
+    }
+}
+
+/// 渐变停止点颜色采样辅助函数。
+///
+/// 将偏移量限制在 [0.0, 1.0]，找到包围偏移量的两个停止点并线性插值。
+fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
+    if stops.is_empty() {
+        return Color::BLACK;
+    }
+    if stops.len() == 1 {
+        return stops[0].color;
+    }
+    let t = offset.clamp(0.0, 1.0);
+    // 偏移量在第一个停止点之前
+    if t <= stops[0].offset {
+        return stops[0].color;
+    }
+    // 偏移量在最后一个停止点之后
+    if t >= stops[stops.len() - 1].offset {
+        return stops[stops.len() - 1].color;
+    }
+    // 找到包围 t 的两个停止点
+    for i in 0..stops.len() - 1 {
+        if t >= stops[i].offset && t <= stops[i + 1].offset {
+            let span = stops[i + 1].offset - stops[i].offset;
+            if span < f32::EPSILON {
+                return stops[i].color;
+            }
+            let frac = (t - stops[i].offset) / span;
+            let c0 = stops[i].color;
+            let c1 = stops[i + 1].color;
+            return Color::rgba(
+                lerp_u8(c0.r, c1.r, frac),
+                lerp_u8(c0.g, c1.g, frac),
+                lerp_u8(c0.b, c1.b, frac),
+                lerp_u8(c0.a, c1.a, frac),
+            );
+        }
+    }
+    stops[stops.len() - 1].color
+}
+
+/// 线性插值两个 u8 值。
+fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8
+}
+
 /// Canvas 状态（用于 save/restore）。
 #[derive(Debug, Clone)]
 struct CanvasState {
-    fill_color: Color,
-    stroke_color: Color,
+    fill_style: CanvasStyle,
+    stroke_style: CanvasStyle,
     line_width: f32,
     font: FontDescriptor,
     global_alpha: f32,
@@ -431,10 +528,10 @@ pub struct CanvasContext {
     width: u32,
     /// 画布高度。
     height: u32,
-    /// 当前填充颜色。
-    fill_color: Color,
-    /// 当前描边颜色。
-    stroke_color: Color,
+    /// 当前填充样式。
+    fill_style: CanvasStyle,
+    /// 当前描边样式。
+    stroke_style: CanvasStyle,
     /// 当前线宽。
     line_width: f32,
     /// 当前字体。
@@ -512,8 +609,8 @@ impl CanvasContext {
         Self {
             width,
             height,
-            fill_color: Color::BLACK,
-            stroke_color: Color::BLACK,
+            fill_style: CanvasStyle::default_black(),
+            stroke_style: CanvasStyle::default_black(),
             line_width: 1.0,
             font: FontDescriptor::default(),
             global_alpha: 1.0,
@@ -572,7 +669,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_rect(&rect);
         }
-        let color = self.apply_alpha(self.fill_color);
+        let color = self.apply_alpha(self.fill_style.resolve_color());
         self.primitives.add_fill(rect, color);
         self.blit_rect_to_pixels(&rect, color);
     }
@@ -581,7 +678,7 @@ impl CanvasContext {
     pub fn stroke_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
         // 简化实现：用描边颜色填充一个薄矩形表示描边
         let lw = self.line_width;
-        let color = self.apply_alpha(self.stroke_color);
+        let color = self.apply_alpha(self.stroke_style.resolve_color());
 
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
@@ -611,7 +708,7 @@ impl CanvasContext {
 
     /// 填充文本。为每个字符生成独立的 GlyphPrimitive，glyph_id 取字符的 Unicode 码点。
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32) {
-        let color = self.apply_alpha(self.fill_color);
+        let color = self.apply_alpha(self.fill_style.resolve_color());
         let font_size = self.font.size;
         let (tx, ty) = self.transform.transform_point(x, y);
         let em_width = font_size * 0.6;
@@ -635,7 +732,7 @@ impl CanvasContext {
 
     /// 描边文本。与 fill_text 相同逻辑，使用描边颜色。
     pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) {
-        let color = self.apply_alpha(self.stroke_color);
+        let color = self.apply_alpha(self.stroke_style.resolve_color());
         let font_size = self.font.size;
         let (tx, ty) = self.transform.transform_point(x, y);
         let em_width = font_size * 0.6;
@@ -752,7 +849,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.fill_color);
+        let color = self.apply_alpha(self.fill_style.resolve_color());
         self.primitives.add_path_fill(vertices.clone(), color);
         self.blit_path_to_pixels(&vertices, color);
     }
@@ -767,7 +864,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.stroke_color);
+        let color = self.apply_alpha(self.stroke_style.resolve_color());
         let closed = self
             .current_path
             .commands()
@@ -787,7 +884,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.fill_color);
+        let color = self.apply_alpha(self.fill_style.resolve_color());
         self.primitives.add_path_fill(vertices.clone(), color);
         self.blit_path_to_pixels(&vertices, color);
     }
@@ -801,7 +898,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.stroke_color);
+        let color = self.apply_alpha(self.stroke_style.resolve_color());
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
         self.primitives
             .add_path_stroke(vertices.clone(), color, self.line_width, closed);
@@ -865,8 +962,8 @@ impl CanvasContext {
     /// 保存当前状态到栈。
     pub fn save(&mut self) {
         self.state_stack.push(CanvasState {
-            fill_color: self.fill_color,
-            stroke_color: self.stroke_color,
+            fill_style: self.fill_style.clone(),
+            stroke_style: self.stroke_style.clone(),
             line_width: self.line_width,
             font: self.font.clone(),
             global_alpha: self.global_alpha,
@@ -891,8 +988,8 @@ impl CanvasContext {
     /// 从栈恢复状态。
     pub fn restore(&mut self) {
         if let Some(state) = self.state_stack.pop() {
-            self.fill_color = state.fill_color;
-            self.stroke_color = state.stroke_color;
+            self.fill_style = state.fill_style;
+            self.stroke_style = state.stroke_style;
             self.line_width = state.line_width;
             self.font = state.font;
             self.global_alpha = state.global_alpha;
@@ -958,14 +1055,24 @@ impl CanvasContext {
 
     // ── Properties ──
 
-    /// 设置填充颜色。
-    pub fn set_fill_color(&mut self, color: Color) {
-        self.fill_color = color;
+    /// 设置填充样式。
+    pub fn set_fill_style(&mut self, style: CanvasStyle) {
+        self.fill_style = style;
     }
 
-    /// 设置描边颜色。
+    /// 设置描边样式。
+    pub fn set_stroke_style(&mut self, style: CanvasStyle) {
+        self.stroke_style = style;
+    }
+
+    /// 设置填充颜色（便捷方法）。
+    pub fn set_fill_color(&mut self, color: Color) {
+        self.fill_style = CanvasStyle::Color(color);
+    }
+
+    /// 设置描边颜色（便捷方法）。
     pub fn set_stroke_color(&mut self, color: Color) {
-        self.stroke_color = color;
+        self.stroke_style = CanvasStyle::Color(color);
     }
 
     /// 设置线宽。
@@ -993,14 +1100,24 @@ impl CanvasContext {
         self.global_alpha = alpha.clamp(0.0, 1.0);
     }
 
-    /// 返回当前填充颜色。
-    pub fn fill_color(&self) -> &Color {
-        &self.fill_color
+    /// 返回当前填充样式的有效颜色。
+    pub fn fill_color(&self) -> Color {
+        self.fill_style.resolve_color()
     }
 
-    /// 返回当前描边颜色。
-    pub fn stroke_color(&self) -> &Color {
-        &self.stroke_color
+    /// 返回当前描边样式的有效颜色。
+    pub fn stroke_color(&self) -> Color {
+        self.stroke_style.resolve_color()
+    }
+
+    /// 返回当前填充样式的引用。
+    pub fn fill_style(&self) -> &CanvasStyle {
+        &self.fill_style
+    }
+
+    /// 返回当前描边样式的引用。
+    pub fn stroke_style(&self) -> &CanvasStyle {
+        &self.stroke_style
     }
 
     /// 返回当前线宽。
@@ -2682,16 +2799,16 @@ mod tests {
         ctx.set_fill_color(Color::RED);
         ctx.save();
         ctx.set_fill_color(Color::BLUE);
-        assert_eq!(*ctx.fill_color(), Color::BLUE);
+        assert_eq!(ctx.fill_color(), Color::BLUE);
         ctx.restore();
-        assert_eq!(*ctx.fill_color(), Color::RED);
+        assert_eq!(ctx.fill_color(), Color::RED);
     }
 
     #[test]
     fn test_canvas_set_fill_color() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.set_fill_color(Color::GREEN);
-        assert_eq!(*ctx.fill_color(), Color::GREEN);
+        assert_eq!(ctx.fill_color(), Color::GREEN);
     }
 
     #[test]
@@ -2778,11 +2895,11 @@ mod tests {
         ctx.set_fill_color(Color::GREEN);
         ctx.save();
         ctx.set_fill_color(Color::BLUE);
-        assert_eq!(*ctx.fill_color(), Color::BLUE);
+        assert_eq!(ctx.fill_color(), Color::BLUE);
         ctx.restore();
-        assert_eq!(*ctx.fill_color(), Color::GREEN);
+        assert_eq!(ctx.fill_color(), Color::GREEN);
         ctx.restore();
-        assert_eq!(*ctx.fill_color(), Color::RED);
+        assert_eq!(ctx.fill_color(), Color::RED);
     }
 
     #[test]
@@ -2877,7 +2994,7 @@ mod tests {
     fn test_canvas_set_stroke_color() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.set_stroke_color(Color::BLUE);
-        assert_eq!(*ctx.stroke_color(), Color::BLUE);
+        assert_eq!(ctx.stroke_color(), Color::BLUE);
     }
 
     #[test]
@@ -3007,7 +3124,7 @@ mod tests {
     fn test_canvas_restore_empty_stack() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.restore(); // 不应 panic
-        assert_eq!(*ctx.fill_color(), Color::BLACK);
+        assert_eq!(ctx.fill_color(), Color::BLACK);
     }
 
     #[test]
@@ -3033,9 +3150,9 @@ mod tests {
         ctx.set_stroke_color(Color::RED);
         ctx.save();
         ctx.set_stroke_color(Color::BLUE);
-        assert_eq!(*ctx.stroke_color(), Color::BLUE);
+        assert_eq!(ctx.stroke_color(), Color::BLUE);
         ctx.restore();
-        assert_eq!(*ctx.stroke_color(), Color::RED);
+        assert_eq!(ctx.stroke_color(), Color::RED);
     }
 
     #[test]
@@ -6239,7 +6356,7 @@ mod tests {
     fn test_canvas_restore_without_save() {
         let mut ctx = CanvasContext::new(100, 100);
         ctx.restore(); // 不应 panic
-        assert_eq!(*ctx.fill_color(), Color::BLACK);
+        assert_eq!(ctx.fill_color(), Color::BLACK);
         assert!((ctx.global_alpha() - 1.0).abs() < f32::EPSILON);
         assert!((ctx.line_width() - 1.0).abs() < f32::EPSILON);
     }
@@ -6895,5 +7012,225 @@ mod tests {
             TextDirection::Inherit,
             "default direction should be Inherit"
         );
+    }
+
+    // ── CanvasStyle 测试 ──
+
+    /// 测试 CanvasStyle 默认为不透明黑色。
+    #[test]
+    fn test_canvas_style_default() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.fill_color(), Color::BLACK);
+        assert_eq!(ctx.stroke_color(), Color::BLACK);
+        // 验证 fill_style/stroke_style 是 Color 变体
+        assert!(matches!(ctx.fill_style(), CanvasStyle::Color(Color::BLACK)));
+        assert!(matches!(ctx.stroke_style(), CanvasStyle::Color(Color::BLACK)));
+    }
+
+    /// 测试设置 fill 为线性渐变后 resolve_color 返回插值颜色。
+    #[test]
+    fn test_fill_style_gradient() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 200.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+        // resolve_color 在 offset=0.5 处采样，应为红色和蓝色的中间值
+        let resolved = ctx.fill_color();
+        // 中间色：(128, 0, 128, 255)
+        assert_eq!(resolved.r, 128);
+        assert_eq!(resolved.g, 0);
+        assert_eq!(resolved.b, 128);
+        assert_eq!(resolved.a, 255);
+    }
+
+    /// 测试设置 stroke 为线性渐变后 resolve_color 返回插值颜色。
+    #[test]
+    fn test_stroke_style_gradient() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 200.0, 0.0);
+        grad.add_color_stop(0.0, Color::BLACK);
+        grad.add_color_stop(1.0, Color::WHITE);
+        ctx.set_stroke_style(CanvasStyle::LinearGradient(grad));
+        let resolved = ctx.stroke_color();
+        // 中间色：(128, 128, 128, 255)
+        assert_eq!(resolved.r, 128);
+        assert_eq!(resolved.g, 128);
+        assert_eq!(resolved.b, 128);
+        assert_eq!(resolved.a, 255);
+    }
+
+    /// 测试渐变只有一个停止点时 sample_color 返回该停止点的颜色。
+    #[test]
+    fn test_gradient_sample_single_stop() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.5, Color::GREEN);
+        assert_eq!(grad.sample_color(0.0), Color::GREEN);
+        assert_eq!(grad.sample_color(0.5), Color::GREEN);
+        assert_eq!(grad.sample_color(1.0), Color::GREEN);
+    }
+
+    /// 测试渐变两个停止点时 sample_color 在各位置返回正确的插值颜色。
+    #[test]
+    fn test_gradient_sample_two_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::BLACK);
+        grad.add_color_stop(1.0, Color::WHITE);
+        // offset=0.0: 黑色
+        assert_eq!(grad.sample_color(0.0), Color::BLACK);
+        // offset=1.0: 白色
+        assert_eq!(grad.sample_color(1.0), Color::WHITE);
+        // offset=0.5: 中间灰
+        let mid = grad.sample_color(0.5);
+        assert_eq!(mid.r, 128);
+        assert_eq!(mid.g, 128);
+        assert_eq!(mid.b, 128);
+        assert_eq!(mid.a, 255);
+    }
+
+    /// 测试渐变 sample_color 在偏移量超出 [0,1] 范围时 clamp 到边界停止点颜色。
+    #[test]
+    fn test_gradient_sample_out_of_range() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // 负偏移量 → clamp 到 0.0 → 红色
+        assert_eq!(grad.sample_color(-1.0), Color::RED);
+        // 超过 1.0 → clamp 到 1.0 → 蓝色
+        assert_eq!(grad.sample_color(2.0), Color::BLUE);
+    }
+
+    /// 测试 set_fill_color 便捷方法仍然正常工作。
+    #[test]
+    fn test_set_fill_color_convenience() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        assert_eq!(ctx.fill_color(), Color::RED);
+        assert!(matches!(ctx.fill_style(), CanvasStyle::Color(Color::RED)));
+        // 填充矩形应使用红色
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0..4], [255, 0, 0, 255]);
+    }
+
+    /// 测试 set_stroke_color 便捷方法仍然正常工作。
+    #[test]
+    fn test_set_stroke_color_convenience() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::BLUE);
+        assert_eq!(ctx.stroke_color(), Color::BLUE);
+        assert!(matches!(ctx.stroke_style(), CanvasStyle::Color(Color::BLUE)));
+        // 描边矩形应使用蓝色
+        ctx.stroke_rect(10.0, 10.0, 20.0, 20.0);
+        let pixel = ctx.get_image_data(10, 10, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 255, 255]);
+    }
+
+    /// 测试径向渐变 sample_color。
+    #[test]
+    fn test_radial_gradient_sample_color() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_radial_gradient(50.0, 50.0, 10.0, 50.0, 50.0, 100.0);
+        grad.add_color_stop(0.0, Color::WHITE);
+        grad.add_color_stop(1.0, Color::BLACK);
+        // offset=0: 白色
+        assert_eq!(grad.sample_color(0.0), Color::WHITE);
+        // offset=1: 黑色
+        assert_eq!(grad.sample_color(1.0), Color::BLACK);
+        // offset=0.5: 中间灰
+        let mid = grad.sample_color(0.5);
+        assert_eq!(mid.r, 128);
+    }
+
+    /// 测试锥形渐变 sample_color。
+    #[test]
+    fn test_conic_gradient_sample_color() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_conic_gradient(0.0, 50.0, 50.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.5, Color::GREEN);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // offset=0: 红色
+        assert_eq!(grad.sample_color(0.0), Color::RED);
+        // offset=0.25: 红绿中间
+        let c = grad.sample_color(0.25);
+        assert_eq!(c.r, 128);
+        assert_eq!(c.g, 128);
+    }
+
+    /// 测试 CanvasStyle Pattern 变体 resolve_color 返回黑色。
+    #[test]
+    fn test_canvas_style_pattern_resolve() {
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        let pattern = CanvasPattern::new(img, PatternRepetition::Repeat);
+        let style = CanvasStyle::Pattern(pattern);
+        assert_eq!(style.resolve_color(), Color::BLACK);
+    }
+
+    /// 测试 save/restore 正确保存和恢复 CanvasStyle（渐变）。
+    #[test]
+    fn test_save_restore_gradient_style() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 200.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+        ctx.save();
+        ctx.set_fill_style(CanvasStyle::Color(Color::GREEN));
+        assert_eq!(ctx.fill_color(), Color::GREEN);
+        ctx.restore();
+        // 恢复后应回到渐变样式
+        let resolved = ctx.fill_color();
+        assert_eq!(resolved.r, 128);
+        assert_eq!(resolved.b, 128);
+    }
+
+    /// 测试无停止点的渐变 sample_color 返回黑色。
+    #[test]
+    fn test_gradient_sample_empty_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        assert_eq!(grad.sample_color(0.5), Color::BLACK);
+    }
+
+    /// 测试使用渐变 fill_style 绘制 fill_rect。
+    #[test]
+    fn test_fill_rect_with_gradient_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        // 像素应使用 offset=0.5 处的采样色 (128, 0, 128)
+        let pixel = ctx.get_image_data(10, 10, 1, 1);
+        assert_eq!(pixel.data[0], 128);
+        assert_eq!(pixel.data[1], 0);
+        assert_eq!(pixel.data[2], 128);
+        assert_eq!(pixel.data[3], 255);
+    }
+
+    /// 测试使用渐变 stroke_style 绘制 stroke_rect。
+    #[test]
+    fn test_stroke_rect_with_gradient_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::BLACK);
+        grad.add_color_stop(1.0, Color::WHITE);
+        ctx.set_stroke_style(CanvasStyle::LinearGradient(grad));
+        ctx.stroke_rect(5.0, 5.0, 20.0, 20.0);
+        // 描边像素应使用 offset=0.5 处的采样色 (128, 128, 128)
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0], 128);
+        assert_eq!(pixel.data[1], 128);
+        assert_eq!(pixel.data[2], 128);
+        assert_eq!(pixel.data[3], 255);
     }
 }
