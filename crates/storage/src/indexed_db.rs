@@ -1,5 +1,6 @@
 //! IndexedDB 基础实现。
 
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -325,6 +326,36 @@ pub struct IdbObjectStore {
     next_key: u64,
     /// 索引集合。
     indexes: HashMap<String, IdbIndex>,
+}
+
+/// 事务中缓冲的变更操作。
+#[derive(Debug, Clone)]
+enum TxMutation {
+    /// 添加记录（主键已存在则报错）。
+    Add {
+        /// 目标 store 名称。
+        store: String,
+        /// JSON 值。
+        value: serde_json::Value,
+        /// 主键。
+        key: IdbKey,
+    },
+    /// 放入记录（覆盖已有）。
+    Put {
+        /// 目标 store 名称。
+        store: String,
+        /// JSON 值。
+        value: serde_json::Value,
+        /// 主键。
+        key: IdbKey,
+    },
+    /// 删除记录。
+    Delete {
+        /// 目标 store 名称。
+        store: String,
+        /// 主键。
+        key: IdbKey,
+    },
 }
 
 /// 事务模式。
@@ -896,10 +927,11 @@ impl IdbDatabase {
             db_version: self.version,
             aborted: false,
             committed: false,
+            mutations: RefCell::new(Vec::new()),
         })
     }
 
-    /// 在事务范围内添加记录。
+    /// 在事务范围内添加记录（缓冲，提交时生效）。
     pub fn tx_add(
         &mut self,
         tx: &IdbTransaction,
@@ -908,10 +940,57 @@ impl IdbDatabase {
         key: Option<IdbKey>,
     ) -> Result<IdbKey, StorageError> {
         tx.check_active(store_name)?;
-        self.add(store_name, value, key)
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        // 解析主键（自增逻辑）
+        let key = match key {
+            Some(k) => k,
+            None if store.auto_increment => IdbKey::Number(store.next_key as f64),
+            None => {
+                return Err(StorageError::Database(
+                    "No key provided and auto_increment is false".to_string(),
+                ));
+            }
+        };
+        // 检查 store 中是否已存在相同主键
+        if store.records.iter().any(|r| r.key == key) {
+            return Err(StorageError::Database(format!(
+                "Key already exists in store '{}'",
+                store_name
+            )));
+        }
+        // 检查缓冲区中是否已有相同主键的 Add 操作
+        let mutations = tx.mutations.borrow();
+        if mutations.iter().any(|m| match m {
+            TxMutation::Add { store: s, key: k, .. } | TxMutation::Put { store: s, key: k, .. } => {
+                s == store_name && k == &key
+            }
+            _ => false,
+        }) {
+            return Err(StorageError::Database(format!(
+                "Key already exists in store '{}'",
+                store_name
+            )));
+        }
+        drop(mutations);
+        // 自增计数器立即推进（与浏览器 IndexedDB 行为一致）
+        if store.auto_increment && matches!(key, IdbKey::Number(n) if n == store.next_key as f64) {
+            let _ = store;
+            let store = self.stores.get_mut(store_name).unwrap();
+            store.next_key += 1;
+        }
+
+        tx.mutations.borrow_mut().push(TxMutation::Add {
+            store: store_name.to_string(),
+            value,
+            key: key.clone(),
+        });
+        Ok(key)
     }
 
-    /// 在事务范围内放入记录。
+    /// 在事务范围内放入记录（缓冲，提交时生效）。
     pub fn tx_put(
         &mut self,
         tx: &IdbTransaction,
@@ -920,10 +999,32 @@ impl IdbDatabase {
         key: Option<IdbKey>,
     ) -> Result<IdbKey, StorageError> {
         tx.check_active(store_name)?;
-        self.put(store_name, value, key)
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        let key = match key {
+            Some(k) => k,
+            None if store.auto_increment => {
+                let k = IdbKey::Number(store.next_key as f64);
+                store.next_key += 1;
+                k
+            }
+            None => {
+                return Err(StorageError::Database(
+                    "No key provided and auto_increment is false".to_string(),
+                ));
+            }
+        };
+        tx.mutations.borrow_mut().push(TxMutation::Put {
+            store: store_name.to_string(),
+            value,
+            key: key.clone(),
+        });
+        Ok(key)
     }
 
-    /// 在事务范围内删除记录。
+    /// 在事务范围内删除记录（缓冲，提交时生效）。
     pub fn tx_delete(
         &mut self,
         tx: &IdbTransaction,
@@ -931,18 +1032,74 @@ impl IdbDatabase {
         key: &IdbKey,
     ) -> Result<bool, StorageError> {
         tx.check_active(store_name)?;
-        self.delete(store_name, key)
+        let exists_in_store = self
+            .stores
+            .get(store_name)
+            .map(|s| s.records.iter().any(|r| r.key == *key))
+            .unwrap_or(false);
+        let exists_in_buffer = tx.mutations.borrow().iter().any(|m| match m {
+            TxMutation::Add { store: s, key: k, .. } | TxMutation::Put { store: s, key: k, .. } => {
+                s == store_name && k == key
+            }
+            _ => false,
+        });
+        let found = exists_in_store || exists_in_buffer;
+        tx.mutations.borrow_mut().push(TxMutation::Delete {
+            store: store_name.to_string(),
+            key: key.clone(),
+        });
+        Ok(found)
     }
 
-    /// 在事务范围内获取记录。
+    /// 在事务范围内获取记录（包含缓冲区的未提交变更）。
     pub fn tx_get(
         &self,
         tx: &IdbTransaction,
         store_name: &str,
         key: &IdbKey,
-    ) -> Result<Option<&IdbRecord>, StorageError> {
+    ) -> Result<Option<IdbRecord>, StorageError> {
         tx.check_active(store_name)?;
-        Ok(self.get(store_name, key))
+        // 从缓冲区逆序查找最新的变更
+        let mutations = tx.mutations.borrow();
+        for m in mutations.iter().rev() {
+            match m {
+                TxMutation::Delete { store, key: k } if store == store_name && k == key => {
+                    return Ok(None);
+                }
+                TxMutation::Put { store, key: k, value, .. }
+                | TxMutation::Add { store, key: k, value, .. }
+                    if store == store_name && k == key =>
+                {
+                    return Ok(Some(IdbRecord {
+                        key: key.clone(),
+                        value: value.clone(),
+                    }));
+                }
+                _ => {}
+            }
+        }
+        // 缓冲区没有相关变更，从 store 读取
+        Ok(self.get(store_name, key).cloned())
+    }
+
+    /// 提交事务，将缓冲的变更应用到 store。
+    pub fn commit_tx(&mut self, tx: &mut IdbTransaction) -> Result<(), StorageError> {
+        tx.commit()?;
+        let mutations = tx.mutations.borrow_mut().drain(..).collect::<Vec<_>>();
+        for m in mutations {
+            match m {
+                TxMutation::Add { store, value, key } => {
+                    self.add(&store, value, Some(key))?;
+                }
+                TxMutation::Put { store, value, key } => {
+                    self.put(&store, value, Some(key))?;
+                }
+                TxMutation::Delete { store, key } => {
+                    self.delete(&store, &key)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1070,6 +1227,8 @@ pub struct IdbTransaction {
     aborted: bool,
     /// 是否已提交。
     committed: bool,
+    /// 缓冲的变更操作。
+    mutations: RefCell<Vec<TxMutation>>,
 }
 
 impl IdbTransaction {
@@ -1102,7 +1261,7 @@ impl IdbTransaction {
         Ok(())
     }
 
-    /// 中止事务。
+    /// 中止事务，丢弃缓冲的变更。
     pub fn abort(&mut self) -> Result<(), StorageError> {
         if self.aborted {
             return Err(StorageError::Database("Transaction already aborted".to_string()));
@@ -1110,6 +1269,7 @@ impl IdbTransaction {
         if self.committed {
             return Err(StorageError::Database("Transaction already committed, cannot abort".to_string()));
         }
+        self.mutations.borrow_mut().clear();
         self.aborted = true;
         Ok(())
     }
@@ -2446,5 +2606,233 @@ mod tests {
         let c = IdbKey::Array(vec![IdbKey::Number(2.0)]);
         assert!(a < b);
         assert!(b < c);
+    }
+
+    // ── 事务缓冲与中止测试 ──
+
+    /// tx_add 后 abort，数据不应存在于 store 中。
+    #[test]
+    fn test_tx_add_then_abort_data_not_in_store() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Alice"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        tx.abort().unwrap();
+        // 中止后数据不应在 store 中
+        assert!(db.get("store", &IdbKey::String("k1".into())).is_none());
+        assert_eq!(db.count("store").unwrap(), 0);
+    }
+
+    /// tx_put 后 abort，原始数据应保留。
+    #[test]
+    fn test_tx_put_then_abort_original_preserved() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add(
+            "store",
+            serde_json::json!({"name": "Alice"}),
+            Some(key.clone()),
+        )
+        .unwrap();
+
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_put(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Bob"}),
+            Some(key.clone()),
+        )
+        .unwrap();
+        tx.abort().unwrap();
+
+        // 原始数据应保留
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value["name"], "Alice");
+    }
+
+    /// tx_delete 后 abort，被删除的数据应保留。
+    #[test]
+    fn test_tx_delete_then_abort_data_preserved() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add(
+            "store",
+            serde_json::json!("original"),
+            Some(key.clone()),
+        )
+        .unwrap();
+
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_delete(&tx, "store", &key).unwrap();
+        tx.abort().unwrap();
+
+        // 数据应保留
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("original"));
+    }
+
+    /// tx_add 后 commit_tx，数据应存在于 store 中。
+    #[test]
+    fn test_tx_add_then_commit_data_in_store() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!({"name": "Alice"}),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+        db.commit_tx(&mut tx).unwrap();
+
+        let record = db.get("store", &IdbKey::String("k1".into())).unwrap();
+        assert_eq!(record.value["name"], "Alice");
+        assert_eq!(db.count("store").unwrap(), 1);
+    }
+
+    /// tx_put 后 commit_tx，数据应被更新。
+    #[test]
+    fn test_tx_put_then_commit_data_updated() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add(
+            "store",
+            serde_json::json!("original"),
+            Some(key.clone()),
+        )
+        .unwrap();
+
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_put(
+            &tx,
+            "store",
+            serde_json::json!("updated"),
+            Some(key.clone()),
+        )
+        .unwrap();
+        db.commit_tx(&mut tx).unwrap();
+
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("updated"));
+        assert_eq!(db.count("store").unwrap(), 1);
+    }
+
+    /// tx_delete 后 commit_tx，数据应被删除。
+    #[test]
+    fn test_tx_delete_then_commit_data_removed() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add("store", serde_json::json!("val"), Some(key.clone())).unwrap();
+
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_delete(&tx, "store", &key).unwrap();
+        db.commit_tx(&mut tx).unwrap();
+
+        assert!(db.get("store", &key).is_none());
+    }
+
+    /// 事务内 tx_get 应能看到缓冲区的未提交变更。
+    #[test]
+    fn test_tx_get_sees_buffered_add() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_add(
+            &tx,
+            "store",
+            serde_json::json!("buffered"),
+            Some(IdbKey::String("k1".into())),
+        )
+        .unwrap();
+
+        let rec = db.tx_get(&tx, "store", &IdbKey::String("k1".into())).unwrap();
+        assert_eq!(rec.unwrap().value, serde_json::json!("buffered"));
+        // 尚未提交，store 中不应有数据
+        assert!(db.get("store", &IdbKey::String("k1".into())).is_none());
+    }
+
+    /// 事务内 tx_get 对被缓冲删除的键返回 None。
+    #[test]
+    fn test_tx_get_sees_buffered_delete() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add("store", serde_json::json!("original"), Some(key.clone())).unwrap();
+
+        let tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_delete(&tx, "store", &key).unwrap();
+        assert!(db.tx_get(&tx, "store", &key).unwrap().is_none());
+    }
+
+    /// 事务内 tx_get 对缓冲 put 返回更新后的值。
+    #[test]
+    fn test_tx_get_sees_buffered_put() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("k1".into());
+        db.add("store", serde_json::json!("old"), Some(key.clone())).unwrap();
+
+        let tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_put(&tx, "store", serde_json::json!("new"), Some(key.clone())).unwrap();
+
+        let rec = db.tx_get(&tx, "store", &key).unwrap().unwrap();
+        assert_eq!(rec.value, serde_json::json!("new"));
+    }
+
+    /// 混合操作：add + put + delete + abort，store 不受影响。
+    #[test]
+    fn test_tx_mixed_operations_abort() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        let key = IdbKey::String("existing".into());
+        db.add("store", serde_json::json!("v1"), Some(key.clone())).unwrap();
+
+        let mut tx = db
+            .transaction(&["store"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        // add new
+        db.tx_add(&tx, "store", serde_json::json!("new"), Some(IdbKey::String("new_key".into())))
+            .unwrap();
+        // put existing
+        db.tx_put(&tx, "store", serde_json::json!("updated"), Some(key.clone()))
+            .unwrap();
+        // delete
+        db.tx_delete(&tx, "store", &key).unwrap();
+        tx.abort().unwrap();
+
+        // 所有变更都应被丢弃
+        let record = db.get("store", &key).unwrap();
+        assert_eq!(record.value, serde_json::json!("v1"));
+        assert!(db.get("store", &IdbKey::String("new_key".into())).is_none());
+        assert_eq!(db.count("store").unwrap(), 1);
     }
 }
