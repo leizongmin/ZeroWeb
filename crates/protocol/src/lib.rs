@@ -2499,6 +2499,223 @@ mod tests {
         }
     }
 
+    /// 测试使用每种支持的字段类型的 IPC 消息的序列化/反序列化。
+    ///
+    /// 构造一条消息，使用 u64、String、Option、Vec、enum variants、
+    /// bool、u8、f32 以及嵌套结构体——验证完整的往返行程。
+    #[test]
+    fn test_ipc_message_with_all_field_types() {
+        // 消息，该消息使用了每一种支持的字段类型
+        let msg = IpcMessage {
+            id: u64::MAX, // u64
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 42,                                           // u64
+                url: "https://example.com/api?v=1&lang=中文#frag".into(), // 带有 unicode 的 String
+                method: "POST".into(),                                    // String
+                headers: vec![
+                    // Vec<(String, String)>
+                    ("Content-Type".into(), "application/json".into()),
+                    ("X-Empty".into(), String::new()), // 空字符串
+                    ("X-Unicode".into(), "Ñoño café ☕".into()),
+                ],
+                body: Some(vec![0u8, 127, 255, 0xDE, 0xAD]), // Option<Vec<u8>>
+            }),
+        };
+        let bytes = serialize(&msg).expect("serialize");
+        let out = deserialize(&bytes).expect("deserialize");
+
+        assert_eq!(u64::MAX, out.id);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(42, p.request_id);
+            assert_eq!("https://example.com/api?v=1&lang=中文#frag", p.url);
+            assert_eq!("POST", p.method);
+            assert_eq!(3, p.headers.len());
+            assert_eq!("application/json", p.headers[0].1);
+            assert!(p.headers[1].1.is_empty());
+            assert_eq!("Ñoño café ☕", p.headers[2].1);
+            assert_eq!(Some(vec![0u8, 127, 255, 0xDE, 0xAD]), p.body);
+        } else {
+            panic!("expected FetchRequest");
+        }
+
+        // 测试鼠标事件字段：f32 x/y, u8 按钮, 枚举 event_type
+        let mouse_msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: -100.5,
+                y: 0.0,
+                button: u8::MAX,
+                event_type: MouseEventType::Move,
+            }),
+        };
+        let out2 = roundtrip(mouse_msg);
+        if let IpcMessageKind::MouseEvent(p) = out2.kind {
+            assert_eq!(-100.5, p.x);
+            assert_eq!(0.0, p.y);
+            assert_eq!(u8::MAX, p.button);
+            assert_eq!(MouseEventType::Move, p.event_type);
+        } else {
+            panic!("expected MouseEvent");
+        }
+
+        // 测试键盘事件字段：bool 修饰键
+        let kb_msg = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: String::new(),
+                code: String::new(),
+                ctrl: true,
+                shift: true,
+                alt: true,
+                meta: true,
+                event_type: KeyboardEventType::Up,
+            }),
+        };
+        let out3 = roundtrip(kb_msg);
+        if let IpcMessageKind::KeyboardEvent(p) = out3.kind {
+            assert!(p.ctrl && p.shift && p.alt && p.meta);
+            assert!(p.key.is_empty() && p.code.is_empty());
+        } else {
+            panic!("expected KeyboardEvent");
+        }
+
+        // 测试存储操作字段：枚举存储类型 + 操作
+        let store_msg = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Remove,
+                key: "k".into(),
+                value: None,
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out4 = roundtrip(store_msg);
+        if let IpcMessageKind::StorageOp(p) = out4.kind {
+            assert_eq!(StorageType::Session, p.storage_type);
+            assert_eq!(StorageOperation::Remove, p.operation);
+            assert!(p.value.is_none());
+        } else {
+            panic!("expected StorageOp");
+        }
+
+        // 测试滚动事件字段：f32 增量
+        let scroll_msg = IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x: f32::MAX,
+                delta_y: f32::MIN,
+            }),
+        };
+        let out5 = roundtrip(scroll_msg);
+        if let IpcMessageKind::ScrollEvent(p) = out5.kind {
+            assert_eq!(f32::MAX, p.delta_x);
+            assert_eq!(f32::MIN, p.delta_y);
+        } else {
+            panic!("expected ScrollEvent");
+        }
+
+        // 测试 FetchResponse 字段：u16 状态码, Vec<u8> 主体
+        let resp_msg = IpcMessage {
+            id: 5,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 0,
+                status_code: 418,
+                headers: vec![],
+                body: vec![],
+            }),
+        };
+        let out6 = roundtrip(resp_msg);
+        if let IpcMessageKind::FetchResponse(p) = out6.kind {
+            assert_eq!(418, p.status_code);
+            assert!(p.body.is_empty() && p.headers.is_empty());
+        } else {
+            panic!("expected FetchResponse");
+        }
+    }
+
+    /// 测试 IPC 向后兼容性：添加新变体不会破坏旧的反序列化。
+    ///
+    /// 在 `IpcMessageKind` 中添加新变体不会改变现有变体的序列化形式。
+    /// 序列化一条旧样式的消息，验证它仍然能正确反序列化。
+    #[test]
+    fn test_ipc_backward_compatibility() {
+        // 序列化一条包含所有当前变体的消息
+        let old_kinds: Vec<IpcMessageKind> = vec![
+            IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: None,
+            }),
+            IpcMessageKind::GoBack,
+            IpcMessageKind::GoForward,
+            IpcMessageKind::StopLoading,
+            IpcMessageKind::Reload,
+            IpcMessageKind::TitleChanged("Test".into()),
+            IpcMessageKind::UrlChanged("https://example.com".into()),
+            IpcMessageKind::LoadComplete,
+            IpcMessageKind::LoadFailed("timeout".into()),
+            IpcMessageKind::Heartbeat,
+            IpcMessageKind::CrashNotification("segfault".into()),
+            IpcMessageKind::Ok,
+            IpcMessageKind::Error("failure".into()),
+        ];
+
+        // 序列化所有旧的消息并存储字节
+        let serialized: Vec<(u64, Vec<u8>, IpcMessageKind)> = old_kinds
+            .into_iter()
+            .enumerate()
+            .map(|(i, kind)| {
+                let msg = IpcMessage {
+                    id: i as u64,
+                    kind: kind.clone(),
+                };
+                let bytes = serialize(&msg).expect("serialize");
+                (i as u64, bytes, kind)
+            })
+            .collect();
+
+        // 反序列化每个消息并验证所有字段完好无损
+        for (id, bytes, original_kind) in &serialized {
+            let out: IpcMessage = deserialize(bytes).expect("deserialize");
+            assert_eq!(*id, out.id, "id mismatch for message {id}");
+
+            // 按类型验证原始内容与往返行程完全匹配
+            match (original_kind, &out.kind) {
+                (IpcMessageKind::Navigate(a), IpcMessageKind::Navigate(b)) => {
+                    assert_eq!(a.url, b.url);
+                    assert_eq!(a.referrer, b.referrer);
+                }
+                (IpcMessageKind::TitleChanged(a), IpcMessageKind::TitleChanged(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::UrlChanged(a), IpcMessageKind::UrlChanged(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::LoadFailed(a), IpcMessageKind::LoadFailed(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::CrashNotification(a), IpcMessageKind::CrashNotification(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::Error(a), IpcMessageKind::Error(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::GoBack, IpcMessageKind::GoBack)
+                | (IpcMessageKind::GoForward, IpcMessageKind::GoForward)
+                | (IpcMessageKind::StopLoading, IpcMessageKind::StopLoading)
+                | (IpcMessageKind::Reload, IpcMessageKind::Reload)
+                | (IpcMessageKind::LoadComplete, IpcMessageKind::LoadComplete)
+                | (IpcMessageKind::Heartbeat, IpcMessageKind::Heartbeat)
+                | (IpcMessageKind::Ok, IpcMessageKind::Ok) => {}
+                _ => panic!("kind mismatch for message {id}"),
+            }
+
+            // 重新序列化并验证字节是相同的（往返行程的确定性）
+            let re_bytes = serialize(&out).expect("re-serialize");
+            assert_eq!(bytes, &re_bytes, "byte mismatch for message {id}");
+        }
+    }
+
     /// 测试同一消息多次序列化产生完全相同的二进制输出（bincode 确定性）。
     /// 对于 IPC 协议的可靠性和幂等性至关重要。
     #[test]

@@ -3972,26 +3972,55 @@ fn test_parse_opacity_invalid() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-/// 测试 hwb() 颜色记法：当前不支持 hwb()，验证不崩溃并返回合理结果。
-/// hwb(0 0% 0%) 和 hwb(120 50% 25% / 0.5) 不应导致 panic。
-fn test_parse_color_hwb() {
-    // 当前 parse_color 不识别 hwb() 函数，应作为 Named 颜色或 None 返回
+/// 测试 hwb() 颜色记法：hwb(0 0% 0%) 应为纯红色 (255, 0, 0)
+fn test_parse_color_hwb_red() {
     let result = parse_color("hwb(0 0% 0%)");
-    // 不是 crash 即为通过——当前返回 Named 或 None 均可接受
-    assert!(result.is_some() || result.is_none());
+    assert_eq!(result, Some(ColorValue::Rgba(255, 0, 0, 255)));
+}
 
-    let result_with_alpha = parse_color("hwb(120 50% 25% / 0.5)");
-    assert!(result_with_alpha.is_some() || result_with_alpha.is_none());
+#[test]
+/// 测试 hwb() 颜色：hwb(0 100% 0%) 应为白色 (255, 255, 255)
+fn test_parse_color_hwb_white() {
+    let result = parse_color("hwb(0 100% 0%)");
+    assert_eq!(result, Some(ColorValue::Rgba(255, 255, 255, 255)));
+}
 
-    // 验证 hwb() 在样式表中作为声明值不会导致解析崩溃
-    let css = "div { color: hwb(0 0% 0%); background: hwb(120 50% 25% / 0.5); }";
-    let stylesheet = Parser::parse_stylesheet(css);
-    assert_eq!(stylesheet.rules.len(), 1);
-    if let Rule::Style(sr) = &stylesheet.rules[0] {
-        // 至少应解析出两条声明
-        assert!(sr.declarations.len() >= 2);
-        assert!(sr.declarations.iter().any(|d| d.property == "color"));
-        assert!(sr.declarations.iter().any(|d| d.property == "background"));
+#[test]
+/// 测试 hwb() 颜色：hwb(0 0% 100%) 应为黑色 (0, 0, 0)
+fn test_parse_color_hwb_black() {
+    let result = parse_color("hwb(0 0% 100%)");
+    assert_eq!(result, Some(ColorValue::Rgba(0, 0, 0, 255)));
+}
+
+#[test]
+/// 测试 hwb() 带透明度：hwb(120 30% 20% / 0.5) — 验证 RGBA 分量合理
+fn test_parse_color_hwb_with_alpha() {
+    let result = parse_color("hwb(120 30% 20% / 0.5)");
+    assert!(result.is_some());
+    if let Some(ColorValue::Rgba(r, g, b, a)) = result {
+        // alpha = 0.5 → 128
+        assert_eq!(a, 128);
+        // 绿色色调 (hue=120)，30% 白度推亮，20% 黑度压暗
+        assert!(g > r, "green channel should be dominant at hue 120");
+        assert!(g > b, "green channel should be dominant at hue 120");
+    } else {
+        panic!("Expected Rgba color");
+    }
+}
+
+#[test]
+/// 测试 hwb() W+B 超过 100% 时应按比例缩小：hwb(0 80% 80%) 应产生灰色
+fn test_parse_color_hwb_clamped() {
+    let result = parse_color("hwb(0 80% 80%)");
+    assert!(result.is_some());
+    if let Some(ColorValue::Rgba(r, g, b, a)) = result {
+        // W+B=160% > 100%，缩小后 W=B=50%，混合结果应为灰色 (128,128,128)
+        assert_eq!(a, 255);
+        // 灰色：三个通道应接近相等
+        assert!((r as i32 - g as i32).abs() <= 2);
+        assert!((g as i32 - b as i32).abs() <= 2);
+    } else {
+        panic!("Expected Rgba color");
     }
 }
 
@@ -4079,6 +4108,46 @@ fn test_parse_var_deeply_nested_fallback() {
     let var = result.unwrap();
     assert_eq!(var.name, "--x");
     assert_eq!(var.fallback, Some("var(--y, red)".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 14. 错误恢复测试 — 畸形输入处理
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试畸形选择器 "div..class" 的错误恢复 — 解析器不应 panic。
+/// "div..class" 中连续两个点不是合法的选择器语法，解析器应优雅恢复。
+fn test_parse_double_dot_selector_recovery() {
+    // 双点选择器：不是合法语法，但不应 panic
+    let stylesheet = Parser::parse_stylesheet("div..class { color: red; }");
+    // 不 panic 即可，结果可以是空规则或部分解析
+    assert!(stylesheet.rules.len() <= 2);
+}
+
+#[test]
+/// 测试未闭合括号 "@media (min-width: 100px {" 的错误恢复 — 解析器不应 panic。
+/// 缺少右括号和右花括号的 @media 规则是畸形的，解析器应优雅恢复。
+fn test_parse_unclosed_bracket_recovery() {
+    // 未闭合括号 — 不应 panic
+    let stylesheet = Parser::parse_stylesheet("@media (min-width: 100px { div { color: red; }");
+    // 不 panic 即可
+    assert!(stylesheet.rules.len() <= 2);
+}
+
+#[test]
+/// 测试空值 "color: ;" 的错误恢复 — 解析器跳过该属性，不影响后续声明。
+fn test_parse_empty_value_recovery() {
+    // 带空值的声明后面跟着正常声明
+    let stylesheet = Parser::parse_stylesheet("div { color: ; font-size: 16px; }");
+    // 不 panic，应至少解析到 font-size 声明
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        // font-size 应被正确解析
+        assert!(
+            sr.declarations.iter().any(|d| d.property == "font-size"),
+            "font-size 应在空值恢复后被正确解析"
+        );
+    }
 }
 
 #[test]

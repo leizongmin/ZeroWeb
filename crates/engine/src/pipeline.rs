@@ -1161,6 +1161,45 @@ mod tests {
         assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
     }
 
+    /// 测试带 @media screen 的 CSS 渲染，验证媒体查询样式被正确应用。
+    ///
+    /// CSS 包含 @media screen 规则，设置元素的背景色和尺寸。
+    /// 验证渲染管线正确解析媒体查询并生成对应的填充图元。
+    #[test]
+    fn test_pipeline_render_with_media_query() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="responsive">Content</div>
+            <div class="always-visible">Static</div>
+        </body></html>"#;
+        let css = r#"
+            .always-visible { background-color: #333333; width: 100px; height: 50px; }
+            @media screen {
+                .responsive { background-color: #ff0000; width: 200px; height: 100px; }
+            }
+            @media print {
+                .responsive { background-color: #ffffff; width: 100%; }
+            }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        // 渲染应正常完成
+        assert!(result.timings.total_ms >= 0.0, "render should complete");
+        assert!(pipeline.layout().is_some(), "layout should exist");
+
+        // @media screen 中的样式应被应用，生成背景填充
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "CSS with @media screen should produce fill primitives"
+        );
+
+        // 布局树应有子节点
+        assert!(
+            !result.layout.root.children.is_empty(),
+            "layout tree should have children"
+        );
+    }
+
     /// 测试 HTML 表格结构的渲染。
     ///
     /// 验证含 <table><tr><td> 元素的 HTML 能正常通过管线，

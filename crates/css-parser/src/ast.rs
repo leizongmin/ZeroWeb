@@ -307,10 +307,17 @@ pub enum ContainerCondition {
 /// 容器尺寸条件。
 ///
 /// 支持格式如 `(min-width: 400px)`、`(width > 300px)`、`(max-width: 800px)`。
+/// 也支持范围语法如 `(200px <= width <= 500px)`。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerSizeCondition {
-    /// 查询的特征名（如 `min-width`、`width`、`max-width`）。
+    /// 查询的特征名（如 `min-width`、`width`、`max-width`、`inline-size`、`block-size`）。
     pub feature: String,
     /// 比较值。
     pub value: String,
+    /// 比较运算符（如 `>`、`>=`、`<`、`<=`）。为 None 时表示冒号语法（min-width: 400px）。
+    pub operator: Option<String>,
+    /// 范围查询的下界（如 `200px <= width <= 500px` 中的 `200px`）。
+    pub range_min: Option<String>,
+    /// 范围查询的上界（如 `200px <= width <= 500px` 中的 `500px`）。
+    pub range_max: Option<String>,
 }

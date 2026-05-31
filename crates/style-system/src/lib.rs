@@ -2662,4 +2662,201 @@ mod tests {
         // 第二个样式表的 green 胜过第一个的 red
         assert_eq!(div_style2.color, ColorValue::Rgba(0, 128, 0, 255)); // green
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 容器查询端到端测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 容器宽度 500px，@container (min-width: 400px) → 条件满足，样式应用。
+    fn test_container_query_min_width_applies() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(500.0, 600.0);
+
+        // @container (min-width: 400px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
+                name: None,
+                condition: zero_css_parser::ast::ContainerCondition::Size(
+                    zero_css_parser::ast::ContainerSizeCondition {
+                        feature: "min-width".to_string(),
+                        value: "400px".to_string(),
+                        operator: None,
+                        range_min: None,
+                        range_max: None,
+                    },
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 容器宽度 500px >= 400px，条件满足，color 应为红色
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// 容器宽度 300px，@container (min-width: 400px) → 条件不满足，样式不应用。
+    fn test_container_query_min_width_not_applies() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(300.0, 600.0);
+
+        // @container (min-width: 400px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
+                name: None,
+                condition: zero_css_parser::ast::ContainerCondition::Size(
+                    zero_css_parser::ast::ContainerSizeCondition {
+                        feature: "min-width".to_string(),
+                        value: "400px".to_string(),
+                        operator: None,
+                        range_min: None,
+                        range_max: None,
+                    },
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 容器宽度 300px < 400px，条件不满足，color 保持默认黑色
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    /// 容器宽度 500px，@container (max-width: 600px) → 500px <= 600px，条件满足。
+    fn test_container_query_max_width() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(500.0, 600.0);
+
+        // @container (max-width: 600px) { div { color: green; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
+                name: None,
+                condition: zero_css_parser::ast::ContainerCondition::Size(
+                    zero_css_parser::ast::ContainerSizeCondition {
+                        feature: "max-width".to_string(),
+                        value: "600px".to_string(),
+                        operator: None,
+                        range_min: None,
+                        range_max: None,
+                    },
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 容器宽度 500px <= 600px，max-width 条件满足
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255));
+    }
+
+    #[test]
+    /// 范围语法：@container (200px <= width <= 500px)，容器宽度 350px → 在范围内，样式应用。
+    fn test_container_query_range_syntax() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(350.0, 600.0);
+
+        // @container (200px <= width <= 500px) { div { color: blue; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
+                name: None,
+                condition: zero_css_parser::ast::ContainerCondition::Size(
+                    zero_css_parser::ast::ContainerSizeCondition {
+                        feature: "width".to_string(),
+                        value: String::new(),
+                        operator: None,
+                        range_min: Some("200px".to_string()),
+                        range_max: Some("500px".to_string()),
+                    },
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 200 <= 350 <= 500，范围条件满足
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+
+        // 额外验证：超出范围时不应用
+        let mut sys2 = StyleSystem::new();
+        sys2.set_viewport(600.0, 400.0);
+        let styles2 = sys2.compute_styles(&doc, &stylesheets);
+        let div_style2 = styles2.get(&div).expect("div should have style");
+        // 600 > 500，超出上界，不应用
+        assert_eq!(div_style2.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    /// @container 无 ContainerContext（未设置视口）→ 不应用容器查询样式。
+    fn test_container_query_no_context() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        // 不设置视口，无 ContainerContext
+
+        // @container (min-width: 400px) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
+                name: None,
+                condition: zero_css_parser::ast::ContainerCondition::Size(
+                    zero_css_parser::ast::ContainerSizeCondition {
+                        feature: "min-width".to_string(),
+                        value: "400px".to_string(),
+                        operator: None,
+                        range_min: None,
+                        range_max: None,
+                    },
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 无容器上下文，@container 不应用，color 保持默认黑色
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
 }

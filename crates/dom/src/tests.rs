@@ -5321,3 +5321,269 @@ fn test_document_fragment_child_count() {
     assert_eq!(doc.child_count(frag), 2, "移除一个子节点后 count 应为 2");
     assert_eq!(doc.child_nodes(frag), vec![c1, c3]);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 38. MutationObserver 集成测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试观察父节点、添加子节点后 mutation 记录包含 addedNodes。
+#[test]
+fn test_mutation_observer_child_list_add() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+    doc.take_mutation_records(); // 清空初始化记录
+
+    let child = doc.create_element("span");
+    doc.append_child(parent, child).unwrap();
+
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1, "添加一个子节点应产生 1 条记录");
+    assert_eq!(records[0].mutation_type, MutationType::ChildList);
+    assert_eq!(records[0].target, parent);
+    assert_eq!(records[0].added_nodes, vec![child], "addedNodes 应包含新添加的子节点");
+    assert!(records[0].removed_nodes.is_empty());
+}
+
+/// 测试观察父节点、移除子节点后 mutation 记录包含 removedNodes。
+#[test]
+fn test_mutation_observer_child_list_remove() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.take_mutation_records(); // 清空初始化记录
+
+    doc.remove_child(parent, child).unwrap();
+
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1, "移除一个子节点应产生 1 条记录");
+    assert_eq!(records[0].mutation_type, MutationType::ChildList);
+    assert_eq!(records[0].target, parent);
+    assert!(records[0].added_nodes.is_empty());
+    assert_eq!(
+        records[0].removed_nodes,
+        vec![child],
+        "removedNodes 应包含被移除的子节点"
+    );
+}
+
+/// 测试观察元素属性变更，设置属性后 mutation 记录包含 attributeName。
+#[test]
+fn test_mutation_observer_attribute_change() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+    doc.take_mutation_records(); // 清空初始化记录
+
+    // 首次设置属性
+    doc.set_attribute(elem, "class", "active");
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1, "设置属性应产生 1 条记录");
+    assert_eq!(records[0].mutation_type, MutationType::Attributes);
+    assert_eq!(records[0].target, elem);
+    assert_eq!(
+        records[0].attribute_name,
+        Some("class".to_string()),
+        "attributeName 应为 'class'"
+    );
+    assert_eq!(records[0].old_value, None, "首次设置属性 old_value 应为 None");
+
+    // 更新已有属性
+    doc.set_attribute(elem, "class", "updated");
+    let records = doc.take_mutation_records();
+    assert_eq!(
+        records[0].old_value,
+        Some("active".to_string()),
+        "更新属性 old_value 应为旧值"
+    );
+}
+
+/// 测试 subtree 观察模式：修改孙节点时，通过回调接收到 mutation 记录。
+///
+/// 当前实现中所有 mutation 记录都记录在 pending_mutations 中，
+/// process_mutations 会通知所有注册的 observer。此测试验证
+/// 嵌套深层节点的变更也能被正确捕获。
+#[test]
+fn test_mutation_observer_subtree() {
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let received_clone = received.clone();
+
+    let observer = MutationObserver::new(Box::new(move |records: &[MutationRecord]| {
+        for r in records {
+            received_clone.lock().unwrap().push(r.target);
+        }
+    }));
+
+    let mut doc = Document::new();
+    doc.add_observer(observer);
+
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    let grandchild = doc.create_element("p");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(child, grandchild).unwrap();
+
+    // 修改孙节点的属性
+    doc.set_attribute(grandchild, "data-x", "1");
+    doc.process_mutations();
+
+    let targets = received.lock().unwrap();
+    // 应该收到多条记录，其中包含对孙节点的修改
+    assert!(
+        targets.contains(&grandchild),
+        "观察 subtree 时，孙节点的属性变更应被捕获"
+    );
+}
+
+/// 测试 disconnect：注册 observer 后 disconnect，后续变更不再触发回调。
+#[test]
+fn test_mutation_observer_disconnect() {
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let received_clone = received.clone();
+
+    let observer = MutationObserver::new(Box::new(move |records: &[MutationRecord]| {
+        for r in records {
+            received_clone.lock().unwrap().push(r.mutation_type.clone());
+        }
+    }));
+
+    let mut doc = Document::new();
+    doc.add_observer(observer);
+
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+    doc.process_mutations();
+
+    // disconnect：移除所有 observer
+    doc.clear_observers();
+
+    // 继续修改 DOM
+    doc.set_attribute(elem, "class", "after-disconnect");
+    doc.process_mutations();
+
+    // disconnect 后不应有新的记录通过回调
+    let types = received.lock().unwrap();
+    // 只有 disconnect 之前的 ChildList 记录
+    assert!(
+        !types.contains(&MutationType::Attributes),
+        "disconnect 后 attribute 变更不应触发回调"
+    );
+}
+
+/// 测试多个 observer 观察同一目标，两者都收到 mutation 记录。
+#[test]
+fn test_mutation_observer_multiple_observers() {
+    let received1 = Arc::new(Mutex::new(Vec::new()));
+    let received2 = Arc::new(Mutex::new(Vec::new()));
+    let r1_clone = received1.clone();
+    let r2_clone = received2.clone();
+
+    let observer1 = MutationObserver::new(Box::new(move |records: &[MutationRecord]| {
+        for r in records {
+            r1_clone.lock().unwrap().push(r.mutation_type.clone());
+        }
+    }));
+    let observer2 = MutationObserver::new(Box::new(move |records: &[MutationRecord]| {
+        for r in records {
+            r2_clone.lock().unwrap().push(r.mutation_type.clone());
+        }
+    }));
+
+    let mut doc = Document::new();
+    doc.add_observer(observer1);
+    doc.add_observer(observer2);
+
+    let root = doc.root();
+    let child = doc.create_element("div");
+    doc.append_child(root, child).unwrap();
+    doc.process_mutations();
+
+    assert!(
+        !received1.lock().unwrap().is_empty(),
+        "第一个 observer 应收到 mutation 记录"
+    );
+    assert!(
+        !received2.lock().unwrap().is_empty(),
+        "第二个 observer 应收到 mutation 记录"
+    );
+    assert_eq!(
+        *received1.lock().unwrap(),
+        *received2.lock().unwrap(),
+        "两个 observer 应收到相同的 mutation 类型"
+    );
+}
+
+/// 测试 take_records：取走待处理记录后，再次取走应为空。
+#[test]
+fn test_mutation_observer_take_records() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let child = doc.create_element("span");
+    doc.append_child(parent, child).unwrap();
+    doc.set_attribute(parent, "class", "test");
+
+    // 取走所有待处理记录
+    let records = doc.take_mutation_records();
+    assert!(!records.is_empty(), "应有待处理的 mutation 记录");
+
+    // 验证记录类型
+    let has_child_list = records.iter().any(|r| r.mutation_type == MutationType::ChildList);
+    let has_attributes = records.iter().any(|r| r.mutation_type == MutationType::Attributes);
+    assert!(has_child_list, "应包含 ChildList 类型记录");
+    assert!(has_attributes, "应包含 Attributes 类型记录");
+
+    // 再次取走应为空
+    let records2 = doc.take_mutation_records();
+    assert!(records2.is_empty(), "取走后再次 take_records 应返回空");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 19. 错误恢复测试 — 畸形输入处理
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试带未闭合标签的嵌套格式化 HTML 的错误恢复。
+/// html5ever 的解析器应能优雅处理未闭合的 <b>、<i>、<div> 等标签，
+/// 不 panic 且构建出合理的 DOM 树。
+#[test]
+fn test_parse_malformed_html_nested_formatting() {
+    let html = "<html><body><div><b>bold <i>bold-italic</div> after<div>new div</body></html>";
+    let doc = parse_html(html);
+    // 不 panic，DOM 树应有效
+    assert!(doc.root().is_valid());
+    // 应能提取文本内容
+    let text = doc.text_content(doc.root());
+    assert!(text.is_some());
+    let text = text.unwrap();
+    assert!(text.contains("bold"), "应包含 'bold' 文本");
+    assert!(text.contains("bold-italic"), "应包含 'bold-italic' 文本");
+    assert!(text.contains("new div"), "应包含 'new div' 文本");
+    // div 元素应被正确解析
+    let divs = doc.get_elements_by_tag_name("div");
+    assert!(divs.len() >= 2, "应至少有 2 个 div 元素");
+}
+
+/// 测试使用无效名称 "123invalid" 调用 create_element。
+/// 以数字开头的标签名不是合法的 HTML 元素名，
+/// 但 create_element 不应 panic，应创建一个带有该名称的元素节点。
+#[test]
+fn test_document_create_element_invalid_name() {
+    let mut doc = Document::new();
+    // 以数字开头的名称不是合法 HTML 元素名，但不应 panic
+    let elem = doc.create_element("123invalid");
+    assert!(doc.contains(elem));
+    if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
+        // local_name 应该是传入的名称（由 markup5ever 的 LocalName 处理）
+        assert_eq!(e.local_name(), "123invalid", "元素 local_name 应为 '123invalid'");
+    }
+}

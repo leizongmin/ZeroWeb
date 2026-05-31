@@ -622,3 +622,325 @@ mod webview_full_pipeline {
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+mod cross_crate_integration {
+    use std::collections::HashMap;
+
+    use zero_canvas::CanvasContext;
+    use zero_css_parser::ast::{
+        ComplexSelector, CompoundSelector, ContainerCondition, ContainerRule, ContainerSizeCondition, Declaration,
+        Rule, StyleRule, TypeSelector,
+    };
+    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
+    use zero_css_parser::{Parser as CssParser, Selector};
+    use zero_dom::{Document, ShadowRootMode};
+    use zero_layout_engine::LayoutEngine;
+    use zero_render_foundation::color::Color;
+    use zero_style_system::{ComputedStyle, GridLineValue, StyleSystem};
+
+    // ── 辅助函数 ──
+
+    /// 创建包含 html > body 的基础 DOM，返回 (doc, body NodeId)。
+    fn make_doc_with_body() -> (Document, zero_dom::NodeId) {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        (doc, body)
+    }
+
+    /// 创建标签选择器。
+    fn make_tag_selector(tag: &str) -> Selector {
+        Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag(tag.to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    None,
+                )],
+            },
+        }
+    }
+
+    /// 在 LayoutBox 子树中查找指定 node_id 的盒子。
+    fn find_box_by_node_id(
+        root: &zero_layout_engine::LayoutBox,
+        target_id: zero_dom::NodeId,
+    ) -> Option<&zero_layout_engine::LayoutBox> {
+        if root.node_id == Some(target_id) {
+            return Some(root);
+        }
+        for child in &root.children {
+            if let Some(found) = find_box_by_node_id(child, target_id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    // ── 测试 ──
+
+    /// Shadow DOM 到布局的集成测试。
+    ///
+    /// 创建带 ShadowRoot 和具名 <slot> 的 DOM 树，
+    /// 将 light DOM 子元素通过 slot 属性分配到 shadow 树中，
+    /// 解析 slot 分配后构建布局树，验证 shadow 内容被正确展平。
+    #[test]
+    fn test_shadow_dom_to_layout_integration() {
+        let (mut doc, body) = make_doc_with_body();
+
+        // 创建宿主元素 <my-component>
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // 附加 ShadowRoot，内部包含 <div class="wrapper"><slot name="content"></slot></div>
+        let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.set_attribute(wrapper, "class", "wrapper");
+        doc.append_child(shadow, wrapper).unwrap();
+        let slot = doc.create_element("slot");
+        doc.set_attribute(slot, "name", "content");
+        doc.append_child(wrapper, slot).unwrap();
+
+        // light DOM 子元素：<p slot="content">Slotted</p>
+        let slotted_p = doc.create_element("p");
+        doc.set_attribute(slotted_p, "slot", "content");
+        doc.append_child(host, slotted_p).unwrap();
+
+        // 解析 slot 分配
+        doc.resolve_slots(host);
+
+        // 构建布局
+        let mut styles = HashMap::new();
+        let mut host_style = ComputedStyle::default();
+        host_style.display = DisplayValue::Block;
+        host_style.width = LengthValue::Px(400.0);
+        host_style.height = LengthValue::Px(300.0);
+        styles.insert(host, host_style);
+
+        let mut wrapper_style = ComputedStyle::default();
+        wrapper_style.display = DisplayValue::Block;
+        styles.insert(wrapper, wrapper_style);
+
+        let mut p_style = ComputedStyle::default();
+        p_style.display = DisplayValue::Block;
+        styles.insert(slotted_p, p_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 验证 slotted <p> 出现在布局树中
+        let p_box = find_box_by_node_id(&result.root, slotted_p);
+        assert!(p_box.is_some(), "slotted <p> 应出现在布局树中（shadow DOM 展平成功）");
+
+        // 验证 wrapper 也出现在布局树中
+        let wrapper_box = find_box_by_node_id(&result.root, wrapper);
+        assert!(wrapper_box.is_some(), "shadow wrapper div 应出现在布局树中");
+
+        // wrapper 应是 host 的子节点在布局树中
+        // slotted_p 应该在 wrapper 子树内（而非 host 直接子节点）
+        let p_box = p_box.unwrap();
+        assert!(p_box.width > 0.0 || p_box.height > 0.0, "slotted <p> 应有非零布局尺寸");
+    }
+
+    /// CSS @container 查询与样式系统的集成测试。
+    ///
+    /// 解析包含 @container 规则的 CSS，设置容器上下文（视口尺寸），
+    /// 计算样式后验证容器查询条件满足时样式被正确应用。
+    #[test]
+    fn test_css_container_query_style_integration() {
+        // 使用 CSS 解析器解析含 @container 的样式表
+        let css = r#"
+            div { color: black; }
+            @container (min-width: 400px) {
+                p { color: blue; }
+            }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        // 验证 CSS 解析产生了 @container 规则
+        let has_container = stylesheet.rules.iter().any(|r| matches!(r, Rule::Container(_)));
+        assert!(has_container, "CSS 应包含 @container 规则");
+
+        // 构建 DOM：html > body > div > p
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+        let p = doc.create_element("p");
+        doc.append_child(div, p).unwrap();
+
+        // 设置视口尺寸为 500px（满足 min-width: 400px 条件）
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(500.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let p_style = styles.get(&p).expect("p 应有计算样式");
+        // 容器宽度 500px >= 400px，条件满足，color 应为蓝色
+        assert_eq!(
+            p_style.color,
+            ColorValue::Rgba(0, 0, 255, 255),
+            "容器宽度 500px >= 400px，p 的 color 应为蓝色"
+        );
+
+        // 额外验证：不满足条件时不应用
+        let mut sys2 = StyleSystem::new();
+        sys2.set_viewport(300.0, 600.0);
+        let stylesheet2 = CssParser::parse_stylesheet(css);
+        let styles2 = sys2.compute_styles(&doc, &[stylesheet2]);
+        let p_style2 = styles2.get(&p).expect("p 应有计算样式");
+        assert_ne!(
+            p_style2.color,
+            ColorValue::Rgba(0, 0, 255, 255),
+            "容器宽度 300px < 400px，p 的 color 不应为蓝色"
+        );
+    }
+
+    /// Canvas ellipse 绘制到像素输出的集成测试。
+    ///
+    /// 创建 Canvas 上下文，使用 ellipse 方法绘制椭圆并填充，
+    /// 验证渲染输出中椭圆内部有非零像素（alpha > 0），
+    /// 椭圆外部区域保持为零。
+    #[test]
+    fn test_canvas_ellipse_render_integration() {
+        let mut ctx = CanvasContext::new(200, 200);
+
+        // 设置填充颜色为绿色
+        ctx.set_fill_color(Color::GREEN);
+
+        // 绘制椭圆：中心 (100, 100)，水平半径 60，垂直半径 40
+        ctx.begin_path();
+        ctx.ellipse(100.0, 100.0, 60.0, 40.0, 0.0, 0.0, std::f32::consts::TAU);
+        ctx.fill();
+
+        // 验证椭圆内部中心点有非零像素
+        let center_pixel = ctx.get_image_data(100, 100, 1, 1);
+        assert_ne!(center_pixel.data[3], 0, "椭圆中心应有非零 alpha 值");
+        // 绿色通道应 > 0
+        assert!(center_pixel.data[1] > 0, "椭圆中心像素的绿色通道应 > 0");
+
+        // 验证椭圆内部其他点也有像素
+        let inner_pixel = ctx.get_image_data(120, 100, 1, 1);
+        assert_ne!(inner_pixel.data[3], 0, "椭圆内部 (120, 100) 应有非零像素");
+
+        // 验证椭圆外部区域为零（左上角远离椭圆）
+        let outside_pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(outside_pixel.data[3], 0, "椭圆外部 (5, 5) 的 alpha 应为 0");
+    }
+
+    /// Grid 命名区域放置的集成测试。
+    ///
+    /// 使用 grid-template-areas 定义命名区域，
+    /// 子元素通过 grid-area 属性指定区域名，
+    /// 验证布局引擎正确计算各子元素的位置和尺寸。
+    #[test]
+    fn test_grid_area_named_placement() {
+        let (mut doc, body) = make_doc_with_body();
+
+        // 创建 grid 容器
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        // 创建三个子元素分别放置到 header / main / footer 区域
+        let header_el = doc.create_element("div");
+        doc.set_attribute(header_el, "class", "header");
+        doc.append_child(grid, header_el).unwrap();
+
+        let main_el = doc.create_element("div");
+        doc.set_attribute(main_el, "class", "main");
+        doc.append_child(grid, main_el).unwrap();
+
+        let footer_el = doc.create_element("div");
+        doc.set_attribute(footer_el, "class", "footer");
+        doc.append_child(grid, footer_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // grid 容器：3 行 1 列，命名区域 header / main / footer
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("300px".to_string());
+        grid_style.grid_template_rows = Some("50px 100px 40px".to_string());
+        grid_style.grid_template_areas = Some("\"header\" \"main\" \"footer\"".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(190.0);
+        styles.insert(grid, grid_style);
+
+        // header: grid-area: header
+        let mut header_style = ComputedStyle::default();
+        header_style.grid_row_start = GridLineValue::Name("header".to_string());
+        header_style.grid_row_end = GridLineValue::Name("header".to_string());
+        header_style.grid_column_start = GridLineValue::Name("header".to_string());
+        header_style.grid_column_end = GridLineValue::Name("header".to_string());
+        styles.insert(header_el, header_style);
+
+        // main: grid-area: main
+        let mut main_style = ComputedStyle::default();
+        main_style.grid_row_start = GridLineValue::Name("main".to_string());
+        main_style.grid_row_end = GridLineValue::Name("main".to_string());
+        main_style.grid_column_start = GridLineValue::Name("main".to_string());
+        main_style.grid_column_end = GridLineValue::Name("main".to_string());
+        styles.insert(main_el, main_style);
+
+        // footer: grid-area: footer
+        let mut footer_style = ComputedStyle::default();
+        footer_style.grid_row_start = GridLineValue::Name("footer".to_string());
+        footer_style.grid_row_end = GridLineValue::Name("footer".to_string());
+        footer_style.grid_column_start = GridLineValue::Name("footer".to_string());
+        footer_style.grid_column_end = GridLineValue::Name("footer".to_string());
+        styles.insert(footer_el, footer_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 查找各子元素的布局盒
+        let header_box = find_box_by_node_id(&result.root, header_el).expect("header 应在布局树中");
+        let main_box = find_box_by_node_id(&result.root, main_el).expect("main 应在布局树中");
+        let footer_box = find_box_by_node_id(&result.root, footer_el).expect("footer 应在布局树中");
+
+        // header 在第一行，高度 ~50px
+        assert!(header_box.y < 1.0, "header 应从 y=0 开始，实际 y={}", header_box.y);
+        assert!(
+            (header_box.height - 50.0).abs() < 1.0,
+            "header 高度应约 50px，实际 {}",
+            header_box.height
+        );
+
+        // main 在第二行，y 应在 header 之后
+        assert!(
+            main_box.y >= header_box.y + header_box.height - 1.0,
+            "main 应在 header 下方，main.y={} header.bottom={}",
+            main_box.y,
+            header_box.y + header_box.height
+        );
+        assert!(
+            (main_box.height - 100.0).abs() < 1.0,
+            "main 高度应约 100px，实际 {}",
+            main_box.height
+        );
+
+        // footer 在第三行
+        assert!(footer_box.y > main_box.y, "footer 应在 main 下方");
+        assert!(
+            (footer_box.height - 40.0).abs() < 1.0,
+            "footer 高度应约 40px，实际 {}",
+            footer_box.height
+        );
+
+        // 所有子元素宽度应为 300px
+        assert!(
+            (header_box.width - 300.0).abs() < 1.0,
+            "header 宽度应约 300px，实际 {}",
+            header_box.width
+        );
+    }
+}

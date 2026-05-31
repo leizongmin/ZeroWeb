@@ -526,6 +526,49 @@ mod tests {
         assert_eq!(r2.size.width, 50.0);
     }
 
+    /// 测试 DamageTracker 多个脏矩形累积面积等于各矩形面积之和。
+    ///
+    /// 添加多个不重叠的脏矩形后，验证总面积等于各个矩形面积的总和，
+    /// 而不是合并后的并集面积。这是因为 DamageTracker::add_damage 在不
+    /// 能合并时会保留独立矩形。
+    #[test]
+    fn test_damage_tracker_accumulated_area() {
+        let mut tracker = DamageTracker::new();
+
+        // 添加 4 个互不重叠且距离很远的矩形
+        let rects = vec![
+            Rect::new(0.0, 0.0, 100.0, 50.0),      // area = 5000
+            Rect::new(200.0, 0.0, 80.0, 40.0),     // area = 3200
+            Rect::new(0.0, 200.0, 60.0, 30.0),     // area = 1800
+            Rect::new(500.0, 500.0, 200.0, 150.0), // area = 30000
+        ];
+
+        let expected_total: f32 = rects.iter().map(|r| r.size.area()).sum();
+
+        for r in &rects {
+            tracker.add_damage(*r);
+        }
+
+        // 矩形间距足够远，不应合并
+        assert_eq!(tracker.dirty_rects().len(), 4, "4 distant rects should not merge");
+
+        // 累积面积应等于各矩形面积之和
+        let actual_total: f32 = tracker.dirty_rects().iter().map(|r| r.size.area()).sum();
+        assert!(
+            (actual_total - expected_total).abs() < 0.01,
+            "accumulated area should equal sum of individual areas: expected {expected_total}, got {actual_total}"
+        );
+
+        // 添加更多小矩形，验证累积不变
+        tracker.add_damage(Rect::new(1000.0, 1000.0, 25.0, 40.0)); // area = 1000
+        let expected_with_extra = expected_total + 25.0 * 40.0;
+        let actual_with_extra: f32 = tracker.dirty_rects().iter().map(|r| r.size.area()).sum();
+        assert!(
+            (actual_with_extra - expected_with_extra).abs() < 0.01,
+            "area after extra rect should be {expected_with_extra}, got {actual_with_extra}"
+        );
+    }
+
     /// 测试 DamageTracker 多次 clear
     #[test]
     fn test_damage_tracker_double_clear_unchanged() {

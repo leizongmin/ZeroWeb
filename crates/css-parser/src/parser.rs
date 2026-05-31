@@ -1251,9 +1251,43 @@ fn parse_container_condition(text: &str) -> Option<ContainerCondition> {
 
 /// 解析尺寸条件。
 ///
-/// 支持格式如 `min-width: 400px`、`width > 300px`。
+/// 支持格式如 `min-width: 400px`、`width > 300px`、`200px <= width <= 500px`。
 fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
     let text = text.trim();
+
+    // 尝试范围语法：`200px <= width <= 500px`
+    // 找到 "<=" ... "<=" 模式
+    let mut first_le = None;
+    let mut second_le = None;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'<' && bytes[i + 1] == b'=' {
+            if first_le.is_none() {
+                first_le = Some(i);
+            } else {
+                second_le = Some(i);
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    if let (Some(pos1), Some(pos2)) = (first_le, second_le) {
+        let min_val = text[..pos1].trim().to_string();
+        let feature = text[pos1 + 2..pos2].trim().to_string();
+        let max_val = text[pos2 + 2..].trim().to_string();
+        if !min_val.is_empty() && !feature.is_empty() && !max_val.is_empty() {
+            return Some(ContainerSizeCondition {
+                feature,
+                value: String::new(),
+                operator: None,
+                range_min: Some(min_val),
+                range_max: Some(max_val),
+            });
+        }
+    }
 
     // 尝试冒号分隔格式：`min-width: 400px`
     if let Some(colon_pos) = text.find(':') {
@@ -1262,7 +1296,13 @@ fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
         if feature.is_empty() || value.is_empty() {
             return None;
         }
-        return Some(ContainerSizeCondition { feature, value });
+        return Some(ContainerSizeCondition {
+            feature,
+            value,
+            operator: None,
+            range_min: None,
+            range_max: None,
+        });
     }
 
     // 尝试比较运算符格式：`width > 300px`、`width >= 300px`、`width < 300px`、`width <= 300px`
@@ -1273,7 +1313,13 @@ fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
             if feature.is_empty() || value.is_empty() {
                 return None;
             }
-            return Some(ContainerSizeCondition { feature, value });
+            return Some(ContainerSizeCondition {
+                feature,
+                value,
+                operator: Some(op.to_string()),
+                range_min: None,
+                range_max: None,
+            });
         }
     }
 

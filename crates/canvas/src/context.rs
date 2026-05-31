@@ -5912,4 +5912,35 @@ mod tests {
         assert_eq!(bitmap.height, 40);
         assert_eq!(bitmap.data.len(), 50 * 40 * 4);
     }
+
+    // ── 错误恢复测试 ──
+
+    /// 测试 drawImage 使用空 ImageData（零尺寸）时不 panic。
+    /// 空图像数据不应导致像素缓冲区越界访问或 panic。
+    #[test]
+    fn test_draw_image_no_data() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 空的 ImageData — 零尺寸，无像素数据
+        let empty_img = ImageData {
+            width: 0,
+            height: 0,
+            data: vec![],
+        };
+        // 不应 panic
+        ctx.draw_image(&empty_img, 0.0, 0.0);
+        ctx.draw_image_with_size(&empty_img, 0.0, 0.0, 50.0, 50.0);
+        ctx.draw_image_sliced(&empty_img, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 50.0, 50.0);
+        // 验证画布未被修改
+        let pixel = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 0, 0], "空图像不应写入任何像素");
+
+        // ImageData 有尺寸但数据向量为空 — 也不应 panic
+        let img_no_data = ImageData {
+            width: 10,
+            height: 10,
+            data: vec![],
+        };
+        ctx.draw_image(&img_no_data, 0.0, 0.0);
+        // 不 panic 即可
+    }
 }
