@@ -4326,6 +4326,113 @@ pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
     parse_color(v).map(CaretColorValue::Color)
 }
 
+// ── CSS Mix Blend Mode 值类型 ──────────────────────────────────────────
+
+/// CSS mix-blend-mode 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MixBlendModeValue {
+    /// normal（默认值）。
+    Normal,
+    /// multiply。
+    Multiply,
+    /// screen。
+    Screen,
+    /// overlay。
+    Overlay,
+    /// darken。
+    Darken,
+    /// lighten。
+    Lighten,
+    /// color-dodge。
+    ColorDodge,
+    /// color-burn。
+    ColorBurn,
+    /// hard-light。
+    HardLight,
+    /// soft-light。
+    SoftLight,
+    /// difference。
+    Difference,
+    /// exclusion。
+    Exclusion,
+    /// hue。
+    Hue,
+    /// saturation。
+    Saturation,
+    /// color。
+    Color,
+    /// luminosity。
+    Luminosity,
+}
+
+/// 解析 CSS mix-blend-mode 属性值。
+pub fn parse_mix_blend_mode(value: &str) -> Option<MixBlendModeValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(MixBlendModeValue::Normal),
+        "multiply" => Some(MixBlendModeValue::Multiply),
+        "screen" => Some(MixBlendModeValue::Screen),
+        "overlay" => Some(MixBlendModeValue::Overlay),
+        "darken" => Some(MixBlendModeValue::Darken),
+        "lighten" => Some(MixBlendModeValue::Lighten),
+        "color-dodge" => Some(MixBlendModeValue::ColorDodge),
+        "color-burn" => Some(MixBlendModeValue::ColorBurn),
+        "hard-light" => Some(MixBlendModeValue::HardLight),
+        "soft-light" => Some(MixBlendModeValue::SoftLight),
+        "difference" => Some(MixBlendModeValue::Difference),
+        "exclusion" => Some(MixBlendModeValue::Exclusion),
+        "hue" => Some(MixBlendModeValue::Hue),
+        "saturation" => Some(MixBlendModeValue::Saturation),
+        "color" => Some(MixBlendModeValue::Color),
+        "luminosity" => Some(MixBlendModeValue::Luminosity),
+        _ => None,
+    }
+}
+
+/// CSS scrollbar-width 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollbarWidthValue {
+    /// auto（默认值）— 浏览器默认滚动条宽度。
+    Auto,
+    /// thin — 细滚动条。
+    Thin,
+    /// none — 隐藏滚动条。
+    None,
+}
+
+/// 解析 CSS scrollbar-width 属性值。
+pub fn parse_scrollbar_width(value: &str) -> Option<ScrollbarWidthValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(ScrollbarWidthValue::Auto),
+        "thin" => Some(ScrollbarWidthValue::Thin),
+        "none" => Some(ScrollbarWidthValue::None),
+        _ => None,
+    }
+}
+
+/// CSS scrollbar-gutter 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollbarGutterValue {
+    /// auto（默认值）— 仅在内容溢出时保留滚动条空间。
+    Auto,
+    /// stable — 始终保留滚动条空间。
+    Stable,
+    /// stable both-edges — 在两侧都保留滚动条空间。
+    StableBothEdges,
+}
+
+/// 解析 CSS scrollbar-gutter 属性值。
+///
+/// 支持格式：`auto`、`stable`、`stable both-edges`。
+pub fn parse_scrollbar_gutter(value: &str) -> Option<ScrollbarGutterValue> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "auto" => Some(ScrollbarGutterValue::Auto),
+        "stable" => Some(ScrollbarGutterValue::Stable),
+        "stable both-edges" | "both-edges stable" => Some(ScrollbarGutterValue::StableBothEdges),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6052,5 +6159,113 @@ mod tests {
     fn test_parse_caret_color_invalid() {
         assert_eq!(parse_caret_color("not-a-color"), None);
         assert_eq!(parse_caret_color(""), None);
+    }
+
+    // ── MixBlendMode 测试 ──
+
+    #[test]
+    fn test_parse_mix_blend_mode_normal() {
+        assert_eq!(parse_mix_blend_mode("normal"), Some(MixBlendModeValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_mix_blend_mode_all_values() {
+        assert_eq!(parse_mix_blend_mode("multiply"), Some(MixBlendModeValue::Multiply));
+        assert_eq!(parse_mix_blend_mode("screen"), Some(MixBlendModeValue::Screen));
+        assert_eq!(parse_mix_blend_mode("overlay"), Some(MixBlendModeValue::Overlay));
+        assert_eq!(parse_mix_blend_mode("darken"), Some(MixBlendModeValue::Darken));
+        assert_eq!(parse_mix_blend_mode("lighten"), Some(MixBlendModeValue::Lighten));
+        assert_eq!(parse_mix_blend_mode("color-dodge"), Some(MixBlendModeValue::ColorDodge));
+        assert_eq!(parse_mix_blend_mode("color-burn"), Some(MixBlendModeValue::ColorBurn));
+        assert_eq!(parse_mix_blend_mode("hard-light"), Some(MixBlendModeValue::HardLight));
+        assert_eq!(parse_mix_blend_mode("soft-light"), Some(MixBlendModeValue::SoftLight));
+        assert_eq!(parse_mix_blend_mode("difference"), Some(MixBlendModeValue::Difference));
+        assert_eq!(parse_mix_blend_mode("exclusion"), Some(MixBlendModeValue::Exclusion));
+        assert_eq!(parse_mix_blend_mode("hue"), Some(MixBlendModeValue::Hue));
+        assert_eq!(parse_mix_blend_mode("saturation"), Some(MixBlendModeValue::Saturation));
+        assert_eq!(parse_mix_blend_mode("color"), Some(MixBlendModeValue::Color));
+        assert_eq!(parse_mix_blend_mode("luminosity"), Some(MixBlendModeValue::Luminosity));
+    }
+
+    #[test]
+    fn test_parse_mix_blend_mode_case_insensitive() {
+        assert_eq!(parse_mix_blend_mode("NORMAL"), Some(MixBlendModeValue::Normal));
+        assert_eq!(parse_mix_blend_mode("  Multiply  "), Some(MixBlendModeValue::Multiply));
+        assert_eq!(parse_mix_blend_mode("COLOR-DODGE"), Some(MixBlendModeValue::ColorDodge));
+    }
+
+    #[test]
+    fn test_parse_mix_blend_mode_invalid() {
+        assert_eq!(parse_mix_blend_mode("invalid"), None);
+        assert_eq!(parse_mix_blend_mode(""), None);
+        assert_eq!(parse_mix_blend_mode("inherit"), None);
+    }
+
+    // ── ScrollbarWidth 测试 ──
+
+    #[test]
+    fn test_parse_scrollbar_width_auto() {
+        assert_eq!(parse_scrollbar_width("auto"), Some(ScrollbarWidthValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_width_thin() {
+        assert_eq!(parse_scrollbar_width("thin"), Some(ScrollbarWidthValue::Thin));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_width_none() {
+        assert_eq!(parse_scrollbar_width("none"), Some(ScrollbarWidthValue::None));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_width_case_insensitive() {
+        assert_eq!(parse_scrollbar_width("AUTO"), Some(ScrollbarWidthValue::Auto));
+        assert_eq!(parse_scrollbar_width("  Thin  "), Some(ScrollbarWidthValue::Thin));
+        assert_eq!(parse_scrollbar_width("NONE"), Some(ScrollbarWidthValue::None));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_width_invalid() {
+        assert_eq!(parse_scrollbar_width("thick"), None);
+        assert_eq!(parse_scrollbar_width(""), None);
+    }
+
+    // ── ScrollbarGutter 测试 ──
+
+    #[test]
+    fn test_parse_scrollbar_gutter_auto() {
+        assert_eq!(parse_scrollbar_gutter("auto"), Some(ScrollbarGutterValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_gutter_stable() {
+        assert_eq!(parse_scrollbar_gutter("stable"), Some(ScrollbarGutterValue::Stable));
+    }
+
+    #[test]
+    fn test_parse_scrollbar_gutter_stable_both_edges() {
+        assert_eq!(
+            parse_scrollbar_gutter("stable both-edges"),
+            Some(ScrollbarGutterValue::StableBothEdges)
+        );
+    }
+
+    #[test]
+    fn test_parse_scrollbar_gutter_case_insensitive() {
+        assert_eq!(parse_scrollbar_gutter("AUTO"), Some(ScrollbarGutterValue::Auto));
+        assert_eq!(parse_scrollbar_gutter("  Stable  "), Some(ScrollbarGutterValue::Stable));
+        assert_eq!(
+            parse_scrollbar_gutter("STABLE BOTH-EDGES"),
+            Some(ScrollbarGutterValue::StableBothEdges)
+        );
+    }
+
+    #[test]
+    fn test_parse_scrollbar_gutter_invalid() {
+        assert_eq!(parse_scrollbar_gutter("both"), None);
+        assert_eq!(parse_scrollbar_gutter("both-edges"), None);
+        assert_eq!(parse_scrollbar_gutter(""), None);
+        assert_eq!(parse_scrollbar_gutter("invalid"), None);
     }
 }

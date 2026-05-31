@@ -6756,3 +6756,214 @@ fn test_serialize_processing_instruction() {
     assert!(short_html.contains("version=\"1.0\""));
     assert!(short_html.ends_with("?>"));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 42. 边界条件补充测试：PI 克隆、Shadow DOM 移除、子树查询、Comment 文本、事件冒泡
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 clone_node 对 ProcessingInstruction 节点的克隆。
+///
+/// ProcessingInstruction 是叶子节点，浅拷贝和深拷贝应产生相同结果：
+/// 新节点的 target 和 data 与原节点一致，但 NodeId 不同。
+#[test]
+fn test_clone_processing_instruction_node() {
+    let mut doc = Document::new();
+    let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"theme.css\"");
+
+    // 浅拷贝
+    let shallow = doc.clone_node(pi, false);
+    assert_ne!(shallow, pi, "浅拷贝应产生新 NodeId");
+    if let Some(NodeKind::ProcessingInstruction(data)) = doc.get(shallow).map(|n| n.kind.clone()) {
+        assert_eq!(data.target, "xml-stylesheet", "浅拷贝 target 应一致");
+        assert_eq!(data.data, "href=\"theme.css\"", "浅拷贝 data 应一致");
+    } else {
+        panic!("浅拷贝应为 ProcessingInstruction 类型");
+    }
+
+    // 深拷贝（PI 无子节点，效果等同于浅拷贝）
+    let deep = doc.clone_node(pi, true);
+    assert_ne!(deep, pi);
+    assert_ne!(deep, shallow);
+    assert_eq!(doc.node_type(deep), Some(7), "深拷贝 PI 的 nodeType 应为 7");
+    assert_eq!(
+        doc.text_content(deep),
+        Some("href=\"theme.css\"".to_string()),
+        "深拷贝 PI 的 textContent 应为 data 内容"
+    );
+}
+
+/// 测试从 Shadow DOM 中移除子节点后结构正确。
+///
+/// 在 shadow root 中添加多个子节点，移除中间节点后验证：
+/// shadow root 的子节点列表更新正确、被移除节点脱离树、
+/// 其余子节点的兄弟关系保持正确。
+#[test]
+fn test_shadow_dom_remove_child() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+    let s1 = doc.create_element("header");
+    let s2 = doc.create_element("main");
+    let s3 = doc.create_element("footer");
+    doc.append_child(shadow, s1).unwrap();
+    doc.append_child(shadow, s2).unwrap();
+    doc.append_child(shadow, s3).unwrap();
+
+    // 移除中间的 main
+    let removed = doc.remove_child(shadow, s2).unwrap();
+    assert_eq!(removed, s2);
+    assert_eq!(doc.parent_node(s2), None, "被移除节点不应有父节点");
+    assert_eq!(
+        doc.child_nodes(shadow),
+        vec![s1, s3],
+        "shadow root 子节点应更新为 [header, footer]"
+    );
+
+    // 兄弟关系正确
+    assert_eq!(doc.next_sibling(s1), Some(s3));
+    assert_eq!(doc.previous_sibling(s3), Some(s1));
+    assert_eq!(doc.next_sibling(s3), None);
+    assert_eq!(doc.previous_sibling(s1), None);
+
+    // shadow root 的 child_count 正确
+    assert_eq!(doc.child_count(shadow), 2);
+}
+
+/// 测试 query_selector_all 从子树根节点查找嵌套后代，按文档顺序返回。
+///
+/// 创建结构：div > [span > [em, strong], p > [a]]，
+/// 从 div 查找所有 span 后代内的元素，验证返回顺序为文档深度优先遍历顺序。
+#[test]
+fn test_query_selector_all_subtree_nested() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let em = doc.create_element("em");
+    let strong = doc.create_element("strong");
+    let p = doc.create_element("p");
+    let a = doc.create_element("a");
+
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, em).unwrap();
+    doc.append_child(span, strong).unwrap();
+    doc.append_child(div, p).unwrap();
+    doc.append_child(p, a).unwrap();
+
+    // 从 div 查找所有后代元素（使用通配选择器 * 或标签名）
+    // 查找 div 下的所有 p 和 span
+    let all_p = doc.query_selector_all(div, "p");
+    assert_eq!(all_p.len(), 1, "div 下应有 1 个 p");
+    assert_eq!(all_p[0], p);
+
+    let all_span = doc.query_selector_all(div, "span");
+    assert_eq!(all_span.len(), 1, "div 下应有 1 个 span");
+    assert_eq!(all_span[0], span);
+
+    // 从 span 查找后代元素
+    let em_result = doc.query_selector_all(span, "em");
+    assert_eq!(em_result.len(), 1);
+    assert_eq!(em_result[0], em);
+
+    let strong_result = doc.query_selector_all(span, "strong");
+    assert_eq!(strong_result.len(), 1);
+    assert_eq!(strong_result[0], strong);
+
+    // 从 span 查不到 a（a 在 p 下面，不在 span 下面）
+    let a_from_span = doc.query_selector_all(span, "a");
+    assert!(a_from_span.is_empty(), "span 下不应有 a 元素");
+
+    // 从 div 查找所有后代元素
+    let all_em = doc.query_selector_all(div, "em");
+    assert_eq!(all_em.len(), 1, "div 下应有 1 个 em");
+    assert_eq!(all_em[0], em);
+
+    // 从 p 查找 a
+    let a_from_p = doc.query_selector_all(p, "a");
+    assert_eq!(a_from_p.len(), 1);
+    assert_eq!(a_from_p[0], a);
+}
+
+/// 测试 set_text_content 对 Comment 节点更新内容。
+///
+/// 注释节点支持通过 set_text_content 修改注释文本，
+/// 修改后 text_content 和序列化输出都应反映新内容。
+#[test]
+fn test_set_text_content_comment() {
+    let mut doc = Document::new();
+    let comment = doc.create_comment("original comment");
+    assert_eq!(doc.text_content(comment), Some("original comment".to_string()));
+
+    // 更新注释内容
+    doc.set_text_content(comment, "updated comment");
+    assert_eq!(
+        doc.text_content(comment),
+        Some("updated comment".to_string()),
+        "set_text_content 应更新注释内容"
+    );
+
+    // 序列化输出反映新内容
+    let html = doc.outer_html(comment);
+    assert_eq!(html, "<!--updated comment-->", "序列化应反映更新后的注释内容");
+
+    // 设置为空字符串
+    doc.set_text_content(comment, "");
+    assert_eq!(doc.text_content(comment), Some("".to_string()));
+    let html_empty = doc.outer_html(comment);
+    assert!(html_empty.contains("<!--"), "空注释序列化仍应包含注释语法");
+
+    // 设置包含特殊字符的内容
+    doc.set_text_content(comment, "a < b & c > d");
+    assert_eq!(doc.text_content(comment), Some("a < b & c > d".to_string()));
+}
+
+/// 测试事件冒泡过程中 current_target 在每个阶段正确更新。
+///
+/// 结构：root > div > span，在三个节点上注册冒泡监听器，
+/// 从 span 派发冒泡事件，验证每个监听器中的 current_target
+/// 依次为 span、div（而非始终为 target 或 root）。
+#[test]
+fn test_event_current_target_bubbling_phase() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+
+    let current_targets = Arc::new(Mutex::new(Vec::new()));
+    let ct_span = current_targets.clone();
+    let ct_div = current_targets.clone();
+
+    // span 上的冒泡监听器
+    doc.add_event_listener(
+        span,
+        "click",
+        Box::new(move |e| {
+            ct_span.lock().unwrap().push(e.current_target());
+        }),
+        false,
+    );
+
+    // div 上的冒泡监听器
+    doc.add_event_listener(
+        div,
+        "click",
+        Box::new(move |e| {
+            ct_div.lock().unwrap().push(e.current_target());
+        }),
+        false,
+    );
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(span, &mut event);
+
+    let targets = current_targets.lock().unwrap();
+    assert_eq!(targets.len(), 2, "应触发 2 个冒泡监听器");
+    // 第一个触发的是 span（目标阶段），current_target 应为 span
+    assert_eq!(targets[0], Some(span), "span 监听器的 current_target 应为 span");
+    // 第二个触发的是 div（冒泡阶段），current_target 应为 div
+    assert_eq!(targets[1], Some(div), "div 监听器的 current_target 应为 div");
+}
