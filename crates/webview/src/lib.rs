@@ -1866,6 +1866,90 @@ mod tests {
         );
     }
 
+    // ── 边界条件测试：默认视口、导航到 URL、错误后状态、CSS 持久性 ──
+
+    /// 验证 WebView 默认视口尺寸为 800x600。
+    #[test]
+    fn test_webview_default_viewport() {
+        let wv = WebView::new(WebViewConfig::default());
+        assert_eq!(wv.config().width, 800, "默认视口宽度应为 800");
+        assert_eq!(wv.config().height, 600, "默认视口高度应为 600");
+        // 默认视口下渲染应正常工作
+        let mut wv2 = WebView::new(WebViewConfig::default());
+        let result = wv2.load_html("<html><body>viewport test</body></html>", None);
+        assert!(result.timings.total_ms >= 0.0, "默认视口渲染应成功");
+    }
+
+    /// 验证 navigate 到 URL 后 WebView 处于正确的加载状态。
+    #[test]
+    fn test_webview_navigate_to_url() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 初始状态：无 URL
+        assert!(wv.url().is_none());
+        assert!(!wv.is_loading());
+        // 导航到 URL
+        wv.load_url("https://example.com/page1");
+        assert_eq!(wv.url(), Some("https://example.com/page1"));
+        assert!(wv.is_loading());
+        assert!(wv.last_render().is_none(), "load_url 后不应有渲染结果");
+        // 完成加载
+        wv.complete_load("<html><body><div>Navigated</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://example.com/page1"));
+        assert!(wv.last_render().is_some());
+    }
+
+    /// 验证加载失败后 WebView 状态正确：loading 停止，URL 保留，last_render 保持。
+    #[test]
+    fn test_webview_state_after_error() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 先成功加载一个页面
+        wv.load_url("https://good.com");
+        wv.complete_load("<html><body>Good page</body></html>", None);
+        assert!(wv.last_render().is_some());
+        let render_before_error = wv.last_render().unwrap().timings.total_ms;
+        // 导航到新 URL 但加载失败
+        wv.load_url("https://bad.com");
+        assert!(wv.is_loading());
+        wv.fail_load("DNS resolution failed");
+        // 失败后 loading 应停止
+        assert!(!wv.is_loading(), "失败后 loading 应停止");
+        // URL 应保留为失败的 URL
+        assert_eq!(wv.url(), Some("https://bad.com"), "URL 应保留为失败请求的 URL");
+        // last_render 应保留上次成功的渲染结果
+        assert!(wv.last_render().is_some(), "失败后应保留上次成功的渲染结果");
+        assert!(
+            (wv.last_render().unwrap().timings.total_ms - render_before_error).abs() < f64::EPSILON,
+            "渲染结果应是上次成功加载的结果"
+        );
+    }
+
+    /// 验证 CSS 在多次 render 调用间持久保留。
+    #[test]
+    fn test_webview_css_persistence_across_render() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div id=\"box\">Content</div></body></html>";
+        let css = "#box { background-color: red; width: 100px; height: 50px; }";
+        // 第一次加载带 CSS
+        let first = wv.load_html(html, Some(css));
+        let first_fill_count = first.primitives.fills.len();
+        assert!(first_fill_count > 0, "带 CSS 的加载应产生 fills");
+        // 第一次 render — CSS 应持久
+        let second = wv.render();
+        assert_eq!(
+            second.primitives.fills.len(),
+            first_fill_count,
+            "第一次 render 后 CSS 应持久保留，fills 数量应一致"
+        );
+        // 第二次 render — CSS 仍应持久
+        let third = wv.render();
+        assert_eq!(
+            third.primitives.fills.len(),
+            first_fill_count,
+            "第二次 render 后 CSS 仍应持久保留"
+        );
+    }
+
     /// 验证 WebView 在完整生命周期中的状态转换正确性。
     ///
     /// 覆盖的状态转换路径：

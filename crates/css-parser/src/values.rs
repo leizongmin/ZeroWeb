@@ -2028,6 +2028,99 @@ pub fn parse_isolation(value: &str) -> Option<IsolationValue> {
     }
 }
 
+/// CSS overflow-wrap 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverflowWrapValue {
+    /// normal。
+    Normal,
+    /// break-word。
+    BreakWord,
+    /// anywhere。
+    Anywhere,
+}
+
+/// 解析 CSS overflow-wrap 属性值。
+pub fn parse_overflow_wrap(value: &str) -> Option<OverflowWrapValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(OverflowWrapValue::Normal),
+        "break-word" => Some(OverflowWrapValue::BreakWord),
+        "anywhere" => Some(OverflowWrapValue::Anywhere),
+        _ => None,
+    }
+}
+
+/// CSS text-align-last 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextAlignLastValue {
+    /// auto。
+    Auto,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// center。
+    Center,
+    /// justify。
+    Justify,
+}
+
+/// 解析 CSS text-align-last 属性值。
+pub fn parse_text_align_last(value: &str) -> Option<TextAlignLastValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(TextAlignLastValue::Auto),
+        "start" => Some(TextAlignLastValue::Start),
+        "end" => Some(TextAlignLastValue::End),
+        "left" => Some(TextAlignLastValue::Left),
+        "right" => Some(TextAlignLastValue::Right),
+        "center" => Some(TextAlignLastValue::Center),
+        "justify" => Some(TextAlignLastValue::Justify),
+        _ => None,
+    }
+}
+
+/// CSS font-variant-numeric 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontVariantNumericValue {
+    /// normal。
+    Normal,
+    /// ordinal。
+    Ordinal,
+    /// slashed-zero。
+    SlashedZero,
+    /// lining-nums。
+    LiningNums,
+    /// oldstyle-nums。
+    OldstyleNums,
+    /// proportional-nums。
+    ProportionalNums,
+    /// tabular-nums。
+    TabularNums,
+    /// diagonal-fractions。
+    DiagonalFractions,
+    /// stacked-fractions。
+    StackedFractions,
+}
+
+/// 解析 CSS font-variant-numeric 属性值。
+pub fn parse_font_variant_numeric(value: &str) -> Option<FontVariantNumericValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(FontVariantNumericValue::Normal),
+        "ordinal" => Some(FontVariantNumericValue::Ordinal),
+        "slashed-zero" => Some(FontVariantNumericValue::SlashedZero),
+        "lining-nums" => Some(FontVariantNumericValue::LiningNums),
+        "oldstyle-nums" => Some(FontVariantNumericValue::OldstyleNums),
+        "proportional-nums" => Some(FontVariantNumericValue::ProportionalNums),
+        "tabular-nums" => Some(FontVariantNumericValue::TabularNums),
+        "diagonal-fractions" => Some(FontVariantNumericValue::DiagonalFractions),
+        "stacked-fractions" => Some(FontVariantNumericValue::StackedFractions),
+        _ => None,
+    }
+}
+
 // ── CSS Transition 值类型 ──────────────────────────────────────────────
 
 /// CSS transition-timing-function / animation-timing-function 值。
@@ -3249,6 +3342,167 @@ pub fn parse_resize(value: &str) -> Option<ResizeValue> {
         "vertical" => Some(ResizeValue::Vertical),
         "block" => Some(ResizeValue::Block),
         "inline" => Some(ResizeValue::Inline),
+        _ => None,
+    }
+}
+
+// ── CSS Interaction / Performance Hint 值类型 ──────────────────────────
+
+/// CSS overscroll-behavior 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverscrollBehaviorValue {
+    /// auto（默认值）— 浏览器默认滚动溢出行为。
+    Auto,
+    /// contain — 阻止滚动链传播到祖先元素。
+    Contain,
+    /// none — 阻止滚动链和默认溢出行为。
+    None,
+}
+
+/// 解析 CSS overscroll-behavior 属性值。
+pub fn parse_overscroll_behavior(value: &str) -> Option<OverscrollBehaviorValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(OverscrollBehaviorValue::Auto),
+        "contain" => Some(OverscrollBehaviorValue::Contain),
+        "none" => Some(OverscrollBehaviorValue::None),
+        _ => None,
+    }
+}
+
+/// CSS touch-action 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TouchActionValue {
+    /// auto（默认值）— 浏览器处理所有触摸操作。
+    Auto,
+    /// none — 禁用所有触摸操作。
+    None,
+    /// pan-x — 仅允许水平平移。
+    PanX,
+    /// pan-y — 仅允许垂直平移。
+    PanY,
+    /// pan-x pan-y — 允许水平和垂直平移。
+    PanXPanY,
+    /// manipulation — 仅允许平移和缩放（禁用双击缩放）。
+    Manipulation,
+}
+
+/// 解析 CSS touch-action 属性值。
+pub fn parse_touch_action(value: &str) -> Option<TouchActionValue> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "auto" => Some(TouchActionValue::Auto),
+        "none" => Some(TouchActionValue::None),
+        "pan-x" => Some(TouchActionValue::PanX),
+        "pan-y" => Some(TouchActionValue::PanY),
+        "pan-x pan-y" | "pan-y pan-x" => Some(TouchActionValue::PanXPanY),
+        "manipulation" => Some(TouchActionValue::Manipulation),
+        _ => None,
+    }
+}
+
+/// CSS user-select 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum UserSelectValue {
+    /// auto（默认值）— 由浏览器决定。
+    Auto,
+    /// text — 可选择文本。
+    Text,
+    /// none — 禁止选择。
+    None,
+    /// all — 点击即全选。
+    All,
+    /// contain — 选择限制在元素内。
+    Contain,
+}
+
+/// 解析 CSS user-select 属性值。
+pub fn parse_user_select(value: &str) -> Option<UserSelectValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(UserSelectValue::Auto),
+        "text" => Some(UserSelectValue::Text),
+        "none" => Some(UserSelectValue::None),
+        "all" => Some(UserSelectValue::All),
+        "contain" => Some(UserSelectValue::Contain),
+        _ => None,
+    }
+}
+
+/// CSS will-change 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WillChangeValue {
+    /// auto（默认值）— 无特别提示。
+    Auto,
+    /// scroll-position — 预期滚动位置会变化。
+    ScrollPosition,
+    /// contents — 预期内容会变化。
+    Contents,
+    /// 自定义属性名（如 transform、opacity）。
+    Custom(String),
+}
+
+/// 解析 CSS will-change 属性值。
+pub fn parse_will_change(value: &str) -> Option<WillChangeValue> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "auto" => Some(WillChangeValue::Auto),
+        "scroll-position" => Some(WillChangeValue::ScrollPosition),
+        "contents" => Some(WillChangeValue::Contents),
+        _ => {
+            // 接受任意标识符（如 transform、opacity、top、left）
+            if v.is_empty() {
+                return None;
+            }
+            // 简单验证：只包含字母、数字、连字符
+            if v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                Some(WillChangeValue::Custom(v))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// CSS pointer-events 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PointerEventsValue {
+    /// auto（默认值）— 元素是指针事件的目标。
+    Auto,
+    /// none — 元素不是指针事件的目标。
+    None,
+    /// visiblePainted — SVG：可见且填充/描边区域。
+    VisiblePainted,
+    /// visibleFill — SVG：可见且填充区域。
+    VisibleFill,
+    /// visibleStroke — SVG：可见且描边区域。
+    VisibleStroke,
+    /// visible — SVG：可见区域。
+    Visible,
+    /// painted — SVG：填充/描边区域（不论可见性）。
+    Painted,
+    /// fill — SVG：填充区域。
+    Fill,
+    /// stroke — SVG：描边区域。
+    Stroke,
+    /// all — SVG：所有区域。
+    All,
+    /// inherit — 显式继承。
+    Inherit,
+}
+
+/// 解析 CSS pointer-events 属性值。
+pub fn parse_pointer_events(value: &str) -> Option<PointerEventsValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(PointerEventsValue::Auto),
+        "none" => Some(PointerEventsValue::None),
+        "visiblepainted" => Some(PointerEventsValue::VisiblePainted),
+        "visiblefill" => Some(PointerEventsValue::VisibleFill),
+        "visiblestroke" => Some(PointerEventsValue::VisibleStroke),
+        "visible" => Some(PointerEventsValue::Visible),
+        "painted" => Some(PointerEventsValue::Painted),
+        "fill" => Some(PointerEventsValue::Fill),
+        "stroke" => Some(PointerEventsValue::Stroke),
+        "all" => Some(PointerEventsValue::All),
+        "inherit" => Some(PointerEventsValue::Inherit),
         _ => None,
     }
 }
@@ -4505,5 +4759,253 @@ mod tests {
         assert_eq!(parse_isolation("auto"), Some(IsolationValue::Auto));
         assert_eq!(parse_isolation("isolate"), Some(IsolationValue::Isolate));
         assert_eq!(parse_isolation("invalid"), None);
+    }
+
+    // ── OverscrollBehavior 测试 ──
+
+    #[test]
+    fn test_parse_overscroll_behavior() {
+        assert_eq!(parse_overscroll_behavior("auto"), Some(OverscrollBehaviorValue::Auto));
+        assert_eq!(
+            parse_overscroll_behavior("contain"),
+            Some(OverscrollBehaviorValue::Contain)
+        );
+        assert_eq!(parse_overscroll_behavior("none"), Some(OverscrollBehaviorValue::None));
+        assert_eq!(parse_overscroll_behavior("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_overscroll_behavior_case_insensitive() {
+        assert_eq!(parse_overscroll_behavior("AUTO"), Some(OverscrollBehaviorValue::Auto));
+        assert_eq!(
+            parse_overscroll_behavior(" Contain "),
+            Some(OverscrollBehaviorValue::Contain)
+        );
+    }
+
+    // ── TouchAction 测试 ──
+
+    #[test]
+    fn test_parse_touch_action() {
+        assert_eq!(parse_touch_action("auto"), Some(TouchActionValue::Auto));
+        assert_eq!(parse_touch_action("none"), Some(TouchActionValue::None));
+        assert_eq!(parse_touch_action("pan-x"), Some(TouchActionValue::PanX));
+        assert_eq!(parse_touch_action("pan-y"), Some(TouchActionValue::PanY));
+        assert_eq!(parse_touch_action("manipulation"), Some(TouchActionValue::Manipulation));
+        assert_eq!(parse_touch_action("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_touch_action_pan_both() {
+        assert_eq!(parse_touch_action("pan-x pan-y"), Some(TouchActionValue::PanXPanY));
+        assert_eq!(parse_touch_action("pan-y pan-x"), Some(TouchActionValue::PanXPanY));
+    }
+
+    // ── UserSelect 测试 ──
+
+    #[test]
+    fn test_parse_user_select() {
+        assert_eq!(parse_user_select("auto"), Some(UserSelectValue::Auto));
+        assert_eq!(parse_user_select("text"), Some(UserSelectValue::Text));
+        assert_eq!(parse_user_select("none"), Some(UserSelectValue::None));
+        assert_eq!(parse_user_select("all"), Some(UserSelectValue::All));
+        assert_eq!(parse_user_select("contain"), Some(UserSelectValue::Contain));
+        assert_eq!(parse_user_select("invalid"), None);
+    }
+
+    // ── WillChange 测试 ──
+
+    #[test]
+    fn test_parse_will_change() {
+        assert_eq!(parse_will_change("auto"), Some(WillChangeValue::Auto));
+        assert_eq!(
+            parse_will_change("scroll-position"),
+            Some(WillChangeValue::ScrollPosition)
+        );
+        assert_eq!(parse_will_change("contents"), Some(WillChangeValue::Contents));
+        assert_eq!(
+            parse_will_change("transform"),
+            Some(WillChangeValue::Custom("transform".to_string()))
+        );
+        assert_eq!(
+            parse_will_change("opacity"),
+            Some(WillChangeValue::Custom("opacity".to_string()))
+        );
+        assert_eq!(parse_will_change(""), None);
+    }
+
+    // ── PointerEvents 测试 ──
+
+    #[test]
+    fn test_parse_pointer_events() {
+        assert_eq!(parse_pointer_events("auto"), Some(PointerEventsValue::Auto));
+        assert_eq!(parse_pointer_events("none"), Some(PointerEventsValue::None));
+        assert_eq!(
+            parse_pointer_events("visiblePainted"),
+            Some(PointerEventsValue::VisiblePainted)
+        );
+        assert_eq!(
+            parse_pointer_events("visibleFill"),
+            Some(PointerEventsValue::VisibleFill)
+        );
+        assert_eq!(
+            parse_pointer_events("visibleStroke"),
+            Some(PointerEventsValue::VisibleStroke)
+        );
+        assert_eq!(parse_pointer_events("visible"), Some(PointerEventsValue::Visible));
+        assert_eq!(parse_pointer_events("painted"), Some(PointerEventsValue::Painted));
+        assert_eq!(parse_pointer_events("fill"), Some(PointerEventsValue::Fill));
+        assert_eq!(parse_pointer_events("stroke"), Some(PointerEventsValue::Stroke));
+        assert_eq!(parse_pointer_events("all"), Some(PointerEventsValue::All));
+        assert_eq!(parse_pointer_events("inherit"), Some(PointerEventsValue::Inherit));
+        assert_eq!(parse_pointer_events("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_pointer_events_case_insensitive() {
+        assert_eq!(parse_pointer_events("NONE"), Some(PointerEventsValue::None));
+        assert_eq!(
+            parse_pointer_events(" VisiblePainted "),
+            Some(PointerEventsValue::VisiblePainted)
+        );
+    }
+
+    // ── OverflowWrap 测试 ──
+
+    #[test]
+    fn test_parse_overflow_wrap_normal() {
+        assert_eq!(parse_overflow_wrap("normal"), Some(OverflowWrapValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_overflow_wrap_break_word() {
+        assert_eq!(parse_overflow_wrap("break-word"), Some(OverflowWrapValue::BreakWord));
+    }
+
+    #[test]
+    fn test_parse_overflow_wrap_anywhere() {
+        assert_eq!(parse_overflow_wrap("anywhere"), Some(OverflowWrapValue::Anywhere));
+    }
+
+    #[test]
+    fn test_parse_overflow_wrap_invalid() {
+        assert_eq!(parse_overflow_wrap("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_overflow_wrap_case_insensitive() {
+        assert_eq!(parse_overflow_wrap("BREAK-WORD"), Some(OverflowWrapValue::BreakWord));
+        assert_eq!(parse_overflow_wrap(" Anywhere "), Some(OverflowWrapValue::Anywhere));
+    }
+
+    // ── TextAlignLast 测试 ──
+
+    #[test]
+    fn test_parse_text_align_last_auto() {
+        assert_eq!(parse_text_align_last("auto"), Some(TextAlignLastValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_text_align_last_start_end() {
+        assert_eq!(parse_text_align_last("start"), Some(TextAlignLastValue::Start));
+        assert_eq!(parse_text_align_last("end"), Some(TextAlignLastValue::End));
+    }
+
+    #[test]
+    fn test_parse_text_align_last_left_right_center() {
+        assert_eq!(parse_text_align_last("left"), Some(TextAlignLastValue::Left));
+        assert_eq!(parse_text_align_last("right"), Some(TextAlignLastValue::Right));
+        assert_eq!(parse_text_align_last("center"), Some(TextAlignLastValue::Center));
+    }
+
+    #[test]
+    fn test_parse_text_align_last_justify() {
+        assert_eq!(parse_text_align_last("justify"), Some(TextAlignLastValue::Justify));
+    }
+
+    #[test]
+    fn test_parse_text_align_last_invalid() {
+        assert_eq!(parse_text_align_last("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_text_align_last_case_insensitive() {
+        assert_eq!(parse_text_align_last("JUSTIFY"), Some(TextAlignLastValue::Justify));
+        assert_eq!(parse_text_align_last(" Center "), Some(TextAlignLastValue::Center));
+    }
+
+    // ── FontVariantNumeric 测试 ──
+
+    #[test]
+    fn test_parse_font_variant_numeric_normal() {
+        assert_eq!(
+            parse_font_variant_numeric("normal"),
+            Some(FontVariantNumericValue::Normal)
+        );
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_ordinal() {
+        assert_eq!(
+            parse_font_variant_numeric("ordinal"),
+            Some(FontVariantNumericValue::Ordinal)
+        );
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_slashed_zero() {
+        assert_eq!(
+            parse_font_variant_numeric("slashed-zero"),
+            Some(FontVariantNumericValue::SlashedZero)
+        );
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_num_styles() {
+        assert_eq!(
+            parse_font_variant_numeric("lining-nums"),
+            Some(FontVariantNumericValue::LiningNums)
+        );
+        assert_eq!(
+            parse_font_variant_numeric("oldstyle-nums"),
+            Some(FontVariantNumericValue::OldstyleNums)
+        );
+        assert_eq!(
+            parse_font_variant_numeric("proportional-nums"),
+            Some(FontVariantNumericValue::ProportionalNums)
+        );
+        assert_eq!(
+            parse_font_variant_numeric("tabular-nums"),
+            Some(FontVariantNumericValue::TabularNums)
+        );
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_fractions() {
+        assert_eq!(
+            parse_font_variant_numeric("diagonal-fractions"),
+            Some(FontVariantNumericValue::DiagonalFractions)
+        );
+        assert_eq!(
+            parse_font_variant_numeric("stacked-fractions"),
+            Some(FontVariantNumericValue::StackedFractions)
+        );
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_invalid() {
+        assert_eq!(parse_font_variant_numeric("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_font_variant_numeric_case_insensitive() {
+        assert_eq!(
+            parse_font_variant_numeric("ORDINAL"),
+            Some(FontVariantNumericValue::Ordinal)
+        );
+        assert_eq!(
+            parse_font_variant_numeric(" Lining-Nums "),
+            Some(FontVariantNumericValue::LiningNums)
+        );
     }
 }

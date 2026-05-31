@@ -1075,6 +1075,198 @@ mod tests {
         assert!(result.timings.total_ms >= 0.0);
     }
 
+    /// 测试 hsla_to_rgba 黑色（0, 0, 0, 1.0）和白色（0, 0, 100, 1.0）的边界值。
+    ///
+    /// 验证亮度为 0 和 100 时 HSL 转换结果正确。
+    #[test]
+    fn test_hsla_to_rgba_black_and_white() {
+        // 黑色：亮度 0%
+        let black = hsla_to_rgba(0.0, 0.0, 0.0, 1.0);
+        assert_eq!(black.r, 0, "HSL black R should be 0");
+        assert_eq!(black.g, 0, "HSL black G should be 0");
+        assert_eq!(black.b, 0, "HSL black B should be 0");
+        assert_eq!(black.a, 255, "HSL black A should be 255");
+
+        // 白色：亮度 100%
+        let white = hsla_to_rgba(0.0, 0.0, 100.0, 1.0);
+        assert_eq!(white.r, 255, "HSL white R should be 255");
+        assert_eq!(white.g, 255, "HSL white G should be 255");
+        assert_eq!(white.b, 255, "HSL white B should be 255");
+        assert_eq!(white.a, 255, "HSL white A should be 255");
+    }
+
+    /// 测试 ColorValue::Transparent 通过 color_value_to_render 转换为完全透明的黑色。
+    ///
+    /// 验证 ColorValue::Transparent 的 alpha 通道为 0。
+    #[test]
+    fn test_color_value_transparent_conversion() {
+        let color = color_value_to_render(&ColorValue::Transparent);
+        assert_eq!(color.r, 0, "transparent R should be 0");
+        assert_eq!(color.g, 0, "transparent G should be 0");
+        assert_eq!(color.b, 0, "transparent B should be 0");
+        assert_eq!(color.a, 0, "transparent A should be 0");
+    }
+
+    /// 测试渲染管线处理包含特殊字符（<、>、&、引号）的 HTML 文档不 panic。
+    ///
+    /// HTML 实体和特殊字符在解析时需正确处理，验证管线容错完成。
+    #[test]
+    fn test_pipeline_html_with_special_entities() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="a&amp;b">&lt;hello&gt;</div></body></html>"#;
+        let css = r#".a\26 b { background-color: #123456; width: 100px; height: 50px; }"#;
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "特殊字符 HTML 应容错完成");
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试合成层提升时根图层始终存在且 id=0，无论子节点是否被提升。
+    ///
+    /// 验证 promote_compositing_layers 返回值中 layers[0] 始终为根图层。
+    #[test]
+    fn test_composite_root_layer_always_present() {
+        use crate::composite::promote_compositing_layers;
+        use zero_style_system::property::ZIndexValue;
+
+        // 场景 1：空布局（仅根）
+        let empty_root = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let layers = promote_compositing_layers(&empty_root, &HashMap::new());
+        assert!(!layers.is_empty(), "应至少有根图层");
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+        assert_eq!(layers[0].id, 0, "根图层 id 应为 0");
+
+        // 场景 2：有提升子元素
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let child_box = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.z_index = ZIndexValue::Integer(5);
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert!(!layers.is_empty(), "应至少有根图层");
+        assert!(layers[0].is_root, "有提升子元素时第一个图层仍为根图层");
+    }
+
+    /// 测试渲染管线连续两次渲染不同文档，缓存布局正确切换。
+    ///
+    /// 第一次渲染含 div 的文档，第二次渲染含 span 的文档，
+    /// 验证缓存布局被第二次渲染的结果替换。
+    #[test]
+    fn test_pipeline_consecutive_different_renders() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+
+        let html1 = r#"<html><body><div class="a">First</div></body></html>"#;
+        let css1 = r#".a { background-color: red; width: 200px; height: 100px; }"#;
+        let result1 = pipeline.render_html(html1, css1);
+        assert!(pipeline.layout().is_some());
+        let fills1 = result1.primitives.fills.len();
+
+        let html2 = r#"<html><body><span class="b">Second</span></body></html>"#;
+        let css2 = r#".b { background-color: blue; width: 300px; height: 150px; }"#;
+        let result2 = pipeline.render_html(html2, css2);
+        assert!(pipeline.layout().is_some());
+        let fills2 = result2.primitives.fills.len();
+
+        // 两次渲染都应产生图元
+        assert!(fills1 > 0, "第一次渲染应产生填充图元");
+        assert!(fills2 > 0, "第二次渲染应产生填充图元");
+
+        // 缓存的布局应为第二次渲染的结果
+        let cached = pipeline.layout().unwrap();
+        assert_eq!(cached.viewport_width, 800.0);
+    }
+
     /// 测试 border-radius 裁剪：带圆角的元素尺寸信息正确。
     #[test]
     fn test_paint_border_radius_clipping_values() {

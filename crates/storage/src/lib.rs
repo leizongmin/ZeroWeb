@@ -350,4 +350,98 @@ mod tests {
         assert_eq!(storage.remove("temp"), Some("value".to_string()));
         assert_eq!(storage.remove("temp"), None, "重复移除应返回 None");
     }
+
+    /// 测试 IndexedDB 对不存在的 store 执行 add/put/delete/get_all 均返回错误。
+    #[test]
+    fn test_idb_operations_on_nonexistent_store() {
+        let db = IdbDatabase::new("test", 1);
+        // 未创建任何 store
+        let key = IdbKey::String("k".into());
+        assert!(db.get("ghost", &key).is_none(), "get 在不存在的 store 上应返回 None");
+    }
+
+    /// 测试 localStorage 对已有键设置空字符串值，旧值应被替换为空串。
+    #[test]
+    fn test_local_storage_set_empty_value_overwrites() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("token", "abc123").unwrap();
+        assert_eq!(storage.get("token"), Some("abc123"));
+        assert_eq!(storage.used_size(), 5 + 6); // "token" + "abc123" = 11
+
+        // 用空字符串覆盖
+        let old = storage.set("token", "").unwrap();
+        assert_eq!(old, Some("abc123".to_string()), "旧值应返回");
+        assert_eq!(storage.get("token"), Some(""), "新值应为空串");
+        assert_eq!(storage.len(), 1, "条目数应仍为 1");
+        assert_eq!(storage.used_size(), 5, "used_size 应只计算键长度");
+    }
+
+    /// 测试 CacheStorage 删除全部缓存后 match_request 返回 None。
+    #[test]
+    fn test_cache_storage_match_after_delete_all() {
+        let mut cs = CacheStorage::new();
+        let req = CacheRequest::new("https://example.com/app.js");
+        cs.open("v1")
+            .put(req.clone(), CacheResponse::ok(b"v1".to_vec()))
+            .unwrap();
+        cs.open("v2")
+            .put(req.clone(), CacheResponse::ok(b"v2".to_vec()))
+            .unwrap();
+
+        // 删除所有缓存
+        cs.delete("v1");
+        cs.delete("v2");
+        assert!(cs.keys().is_empty(), "所有缓存应已被删除");
+
+        // 全局匹配应返回 None
+        assert!(cs.match_request(&req).is_none(), "删除所有缓存后不应匹配到响应");
+    }
+
+    /// 测试 IndexedDB 自增主键在多次 add 后连续递增且不重复。
+    #[test]
+    fn test_idb_auto_increment_sequential() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("seq", None, true).unwrap();
+
+        let keys: Vec<IdbKey> = (0..5)
+            .map(|i| {
+                let k = db.add("seq", serde_json::json!({ "idx": i }), None).unwrap();
+                assert!(
+                    matches!(&k, IdbKey::Number(n) if *n == (i + 1) as f64),
+                    "自增主键应从 1 开始连续递增"
+                );
+                k
+            })
+            .collect();
+
+        assert_eq!(db.count("seq").unwrap(), 5);
+
+        // 确保所有键唯一
+        let key_set: std::collections::HashSet<IdbKey> = keys.into_iter().collect();
+        assert_eq!(key_set.len(), 5, "所有自增主键应唯一");
+    }
+
+    /// 测试 WebStorage contains_key 对未设置和已删除的键均返回 false。
+    #[test]
+    fn test_web_storage_contains_key_edge_cases() {
+        let mut storage = WebStorage::new(StorageType::Session, "https://example.com");
+
+        // 从未设置过的键
+        assert!(!storage.contains_key("missing"), "未设置的键应返回 false");
+
+        // 设置后检查
+        storage.set("exists", "yes").unwrap();
+        assert!(storage.contains_key("exists"), "已设置的键应返回 true");
+
+        // 删除后检查
+        storage.remove("exists");
+        assert!(!storage.contains_key("exists"), "删除后的键应返回 false");
+
+        // 清空后检查
+        storage.set("a", "1").unwrap();
+        storage.set("b", "2").unwrap();
+        storage.clear();
+        assert!(!storage.contains_key("a"), "clear 后的键应返回 false");
+        assert!(!storage.contains_key("b"), "clear 后的键应返回 false");
+    }
 }

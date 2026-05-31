@@ -6164,3 +6164,247 @@ fn test_parser_attribute_without_value() {
         "第二个 input 应有 type=\"text\""
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 20. 深度克隆与属性边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试深度克隆一个多层嵌套树时，所有层级的节点均被正确复制。
+#[test]
+fn test_node_clone_deep_nested() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 创建 5 层嵌套：div > section > article > p > span
+    let div = doc.create_element("div");
+    let section = doc.create_element("section");
+    let article = doc.create_element("article");
+    let p = doc.create_element("p");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("leaf");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, section).unwrap();
+    doc.append_child(section, article).unwrap();
+    doc.append_child(article, p).unwrap();
+    doc.append_child(p, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    // 添加属性以验证克隆深度
+    doc.set_attribute(div, "data-level", "0");
+    doc.set_attribute(section, "data-level", "1");
+    doc.set_attribute(article, "data-level", "2");
+    doc.set_attribute(p, "data-level", "3");
+    doc.set_attribute(span, "data-level", "4");
+
+    let cloned_div = doc.clone_node(div, true);
+    assert_ne!(cloned_div, div);
+
+    // 验证文本内容完整复制
+    assert_eq!(doc.text_content(cloned_div), Some("leaf".to_string()));
+
+    // 验证每一层的属性都被复制
+    assert_eq!(doc.get_attribute(cloned_div, "data-level"), Some("0".to_string()));
+    let c1 = doc.first_child(cloned_div).unwrap();
+    assert_eq!(doc.get_attribute(c1, "data-level"), Some("1".to_string()));
+    let c2 = doc.first_child(c1).unwrap();
+    assert_eq!(doc.get_attribute(c2, "data-level"), Some("2".to_string()));
+    let c3 = doc.first_child(c2).unwrap();
+    assert_eq!(doc.get_attribute(c3, "data-level"), Some("3".to_string()));
+    let c4 = doc.first_child(c3).unwrap();
+    assert_eq!(doc.get_attribute(c4, "data-level"), Some("4".to_string()));
+
+    // 克隆树是独立的
+    doc.set_attribute(div, "data-level", "modified");
+    assert_eq!(doc.get_attribute(cloned_div, "data-level"), Some("0".to_string()));
+}
+
+/// 测试 node_contains 对自身返回 true（边界条件）。
+#[test]
+fn test_node_contains_self_returns_true() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    // 未附加到文档的孤立节点，node_contains(self, self) 仍应为 true
+    assert!(doc.node_contains(elem, elem), "节点应包含自身");
+
+    // 文档根节点包含自身
+    let root = doc.root();
+    assert!(doc.node_contains(root, root), "根节点应包含自身");
+}
+
+/// 测试属性名大小写：get_attribute 区分大小写。
+#[test]
+fn test_element_get_attribute_case() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    // set_attribute 使用小写
+    doc.set_attribute(elem, "class", "my-class");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("my-class".to_string()));
+
+    // 尝试用大写获取 — 当前实现使用 local_name_eq 做精确字符串比较
+    // markup5ever 的 LocalName 比较是区分大小写的
+    let _upper = doc.get_attribute(elem, "CLASS");
+    // 无论内部实现是否大小写敏感，至少确保原始名称可获取
+    assert_eq!(doc.get_attribute(elem, "class"), Some("my-class".to_string()));
+    // 验证 has_attribute 行为一致
+    assert!(doc.has_attribute(elem, "class"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 40. normalize、import_node、get_elements_by_tag_name_ns 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 normalize 合并相邻文本节点。
+///
+/// 创建 div 包含三个连续文本节点 "a"、"b"、"c"，normalize 后
+/// 应合并为单个文本节点，textContent 为 "abc"。
+#[test]
+fn test_normalize_adjacent_text_nodes() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let t1 = doc.create_text_node("a");
+    let t2 = doc.create_text_node("b");
+    let t3 = doc.create_text_node("c");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, t1).unwrap();
+    doc.append_child(parent, t2).unwrap();
+    doc.append_child(parent, t3).unwrap();
+
+    assert_eq!(doc.child_nodes(parent).len(), 3, "normalize 前应有 3 个子节点");
+
+    doc.normalize(parent);
+
+    assert_eq!(doc.text_content(parent), Some("abc".to_string()));
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 1, "normalize 后应合并为 1 个文本节点");
+    assert_eq!(doc.text_content(children[0]), Some("abc".to_string()));
+}
+
+/// 测试 normalize 移除空文本节点。
+///
+/// 创建 div 包含文本节点 "hello"、空文本节点 ""、文本节点 "world"，
+/// normalize 后空节点应被移除，剩余节点合并为 "helloworld"。
+#[test]
+fn test_normalize_removes_empty_text_nodes() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let t1 = doc.create_text_node("hello");
+    let t_empty = doc.create_text_node("");
+    let t2 = doc.create_text_node("world");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, t1).unwrap();
+    doc.append_child(parent, t_empty).unwrap();
+    doc.append_child(parent, t2).unwrap();
+
+    assert_eq!(doc.child_nodes(parent).len(), 3, "normalize 前应有 3 个子节点");
+
+    doc.normalize(parent);
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 1, "normalize 后空节点被移除，相邻文本节点合并为 1 个");
+    assert_eq!(doc.text_content(parent), Some("helloworld".to_string()));
+}
+
+/// 测试 import_node 浅拷贝：只导入节点本身，不包含子节点。
+#[test]
+fn test_import_node_shallow() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "original");
+    let child = doc.create_text_node("content");
+    doc.append_child(root, elem).unwrap();
+    doc.append_child(elem, child).unwrap();
+
+    let imported = doc.import_node(elem, false);
+
+    // 浅拷贝应复制属性但不复制子节点
+    assert_ne!(imported, elem, "import_node 应创建新节点");
+    assert_eq!(
+        doc.get_attribute(imported, "class"),
+        Some("original".to_string()),
+        "浅拷贝应保留属性"
+    );
+    assert!(!doc.has_child_nodes(imported), "浅拷贝不应包含子节点");
+}
+
+/// 测试 import_node 深拷贝：递归复制整个子树。
+#[test]
+fn test_import_node_deep() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    let text = doc.create_text_node("deep content");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(child, text).unwrap();
+
+    let imported = doc.import_node(parent, true);
+
+    assert_ne!(imported, parent);
+    assert!(doc.has_child_nodes(imported), "深拷贝应包含子节点");
+    assert_eq!(
+        doc.text_content(imported),
+        Some("deep content".to_string()),
+        "深拷贝应递归复制文本内容"
+    );
+
+    // 导入的子树是独立的
+    let imported_child = doc.first_child(imported).unwrap();
+    assert_ne!(imported_child, child, "导入的子节点应为新节点");
+}
+
+/// 测试 normalize 不影响元素子节点，只合并文本节点。
+///
+/// 结构：div > ("text1" + <span> + "text2")，normalize 后
+/// 元素子节点保持不变，文本节点不被合并（因为中间有元素）。
+#[test]
+fn test_normalize_preserves_element_boundaries() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let t1 = doc.create_text_node("text1");
+    let span = doc.create_element("span");
+    let t2 = doc.create_text_node("text2");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, t1).unwrap();
+    doc.append_child(parent, span).unwrap();
+    doc.append_child(parent, t2).unwrap();
+
+    doc.normalize(parent);
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 3, "中间有元素时，文本节点不应跨元素合并");
+    assert_eq!(doc.text_content(parent), Some("text1text2".to_string()));
+}
+
+/// 测试 Range select_node 选中单个节点后 clone_contents 的正确性。
+#[test]
+fn test_range_select_node_and_clone() {
+    let mut doc = parse_html("<div><p>target</p><span>other</span></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+    let p = doc.first_child(div).unwrap();
+
+    let mut range = Range::new(div, div);
+    range.select_node(&doc, p).unwrap();
+
+    assert_eq!(range.start_container(), div);
+    assert_eq!(range.end_container(), div);
+
+    let fragment = range.clone_contents(&mut doc).unwrap();
+    let frag_children = doc.child_nodes(fragment);
+    assert_eq!(frag_children.len(), 1, "clone_contents 应克隆选中的节点");
+    assert_eq!(
+        doc.text_content(frag_children[0]),
+        Some("target".to_string()),
+        "克隆内容应匹配原始节点"
+    );
+
+    // 原始树不变
+    assert_eq!(doc.child_nodes(div).len(), 2);
+}

@@ -286,6 +286,142 @@ pub enum IsolationValue {
     Isolate,
 }
 
+/// CSS overflow-wrap 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverflowWrapValue {
+    /// normal（默认值）。
+    Normal,
+    /// break-word。
+    BreakWord,
+    /// anywhere。
+    Anywhere,
+}
+
+/// CSS text-align-last 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextAlignLastValue {
+    /// auto（默认值）。
+    Auto,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// center。
+    Center,
+    /// justify。
+    Justify,
+}
+
+/// CSS font-variant-numeric 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontVariantNumericValue {
+    /// normal（默认值）。
+    Normal,
+    /// ordinal。
+    Ordinal,
+    /// slashed-zero。
+    SlashedZero,
+    /// lining-nums。
+    LiningNums,
+    /// oldstyle-nums。
+    OldstyleNums,
+    /// proportional-nums。
+    ProportionalNums,
+    /// tabular-nums。
+    TabularNums,
+    /// diagonal-fractions。
+    DiagonalFractions,
+    /// stacked-fractions。
+    StackedFractions,
+}
+
+/// CSS overscroll-behavior 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverscrollBehaviorValue {
+    /// auto（默认值）— 浏览器默认滚动溢出行为。
+    Auto,
+    /// contain — 阻止滚动链传播。
+    Contain,
+    /// none — 阻止滚动链和默认溢出行为。
+    None,
+}
+
+/// CSS touch-action 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TouchActionValue {
+    /// auto（默认值）。
+    Auto,
+    /// none。
+    None,
+    /// pan-x。
+    PanX,
+    /// pan-y。
+    PanY,
+    /// pan-x pan-y。
+    PanXPanY,
+    /// manipulation。
+    Manipulation,
+}
+
+/// CSS user-select 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum UserSelectValue {
+    /// auto（默认值）。
+    Auto,
+    /// text。
+    Text,
+    /// none。
+    None,
+    /// all。
+    All,
+    /// contain。
+    Contain,
+}
+
+/// CSS will-change 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WillChangeValue {
+    /// auto（默认值）。
+    Auto,
+    /// scroll-position。
+    ScrollPosition,
+    /// contents。
+    Contents,
+    /// 自定义属性名。
+    Custom(String),
+}
+
+/// CSS pointer-events 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PointerEventsValue {
+    /// auto（默认值）。
+    Auto,
+    /// none。
+    None,
+    /// visiblePainted。
+    VisiblePainted,
+    /// visibleFill。
+    VisibleFill,
+    /// visibleStroke。
+    VisibleStroke,
+    /// visible。
+    Visible,
+    /// painted。
+    Painted,
+    /// fill。
+    Fill,
+    /// stroke。
+    Stroke,
+    /// all。
+    All,
+    /// inherit。
+    Inherit,
+}
+
 /// CSS flex-basis 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlexBasisValue {
@@ -609,6 +745,22 @@ pub enum PropertyValue {
     ImageRendering(ImageRenderingValue),
     /// isolation 值。
     Isolation(IsolationValue),
+    /// overscroll-behavior 值。
+    OverscrollBehavior(OverscrollBehaviorValue),
+    /// touch-action 值。
+    TouchAction(TouchActionValue),
+    /// user-select 值。
+    UserSelect(UserSelectValue),
+    /// will-change 值。
+    WillChange(WillChangeValue),
+    /// pointer-events 值。
+    PointerEvents(PointerEventsValue),
+    /// overflow-wrap 值。
+    OverflowWrap(OverflowWrapValue),
+    /// text-align-last 值。
+    TextAlignLast(TextAlignLastValue),
+    /// font-variant-numeric 值。
+    FontVariantNumeric(FontVariantNumericValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -961,6 +1113,28 @@ pub struct ComputedStyle {
     pub image_rendering: ImageRenderingValue,
     /// isolation 属性。
     pub isolation: IsolationValue,
+
+    // ── Interaction / Performance Hint ──
+    /// overscroll-behavior-x 属性。
+    pub overscroll_behavior_x: OverscrollBehaviorValue,
+    /// overscroll-behavior-y 属性。
+    pub overscroll_behavior_y: OverscrollBehaviorValue,
+    /// touch-action 属性。
+    pub touch_action: TouchActionValue,
+    /// user-select 属性。
+    pub user_select: UserSelectValue,
+    /// will-change 属性。
+    pub will_change: WillChangeValue,
+    /// pointer-events 属性。
+    pub pointer_events: PointerEventsValue,
+
+    // ── Text (新属性) ──
+    /// overflow-wrap 属性。
+    pub overflow_wrap: OverflowWrapValue,
+    /// text-align-last 属性。
+    pub text_align_last: TextAlignLastValue,
+    /// font-variant-numeric 属性。
+    pub font_variant_numeric: FontVariantNumericValue,
 }
 
 impl Default for ComputedStyle {
@@ -1154,6 +1328,19 @@ impl Default for ComputedStyle {
             box_decoration_break: BoxDecorationBreakValue::Slice,
             image_rendering: ImageRenderingValue::Auto,
             isolation: IsolationValue::Auto,
+
+            // Interaction / Performance Hint
+            overscroll_behavior_x: OverscrollBehaviorValue::Auto,
+            overscroll_behavior_y: OverscrollBehaviorValue::Auto,
+            touch_action: TouchActionValue::Auto,
+            user_select: UserSelectValue::Auto,
+            will_change: WillChangeValue::Auto,
+            pointer_events: PointerEventsValue::Auto,
+
+            // Text (新属性)
+            overflow_wrap: OverflowWrapValue::Normal,
+            text_align_last: TextAlignLastValue::Auto,
+            font_variant_numeric: FontVariantNumericValue::Normal,
         }
     }
 }
@@ -1330,6 +1517,20 @@ impl PropertyRegistry {
             "image-rendering" => Some(ImageRendering(ImageRenderingValue::Auto)),
             "isolation" => Some(Isolation(IsolationValue::Auto)),
 
+            // Interaction / Performance Hint
+            "overscroll-behavior-x" | "overscroll-behavior-y" => {
+                Some(OverscrollBehavior(OverscrollBehaviorValue::Auto))
+            }
+            "touch-action" => Some(TouchAction(TouchActionValue::Auto)),
+            "user-select" => Some(UserSelect(UserSelectValue::Auto)),
+            "will-change" => Some(WillChange(WillChangeValue::Auto)),
+            "pointer-events" => Some(PointerEvents(PointerEventsValue::Auto)),
+
+            // Text (新属性)
+            "overflow-wrap" => Some(OverflowWrap(OverflowWrapValue::Normal)),
+            "text-align-last" => Some(TextAlignLast(TextAlignLastValue::Auto)),
+            "font-variant-numeric" => Some(FontVariantNumeric(FontVariantNumericValue::Normal)),
+
             _ => None,
         }
     }
@@ -1358,6 +1559,10 @@ impl PropertyRegistry {
                 | "caption-side"
                 | "border-collapse"
                 | "quotes"
+                | "pointer-events"
+                | "overflow-wrap"
+                | "text-align-last"
+                | "font-variant-numeric"
         )
     }
 
@@ -1495,6 +1700,15 @@ impl PropertyRegistry {
             "box-decoration-break",
             "image-rendering",
             "isolation",
+            "overscroll-behavior-x",
+            "overscroll-behavior-y",
+            "touch-action",
+            "user-select",
+            "will-change",
+            "pointer-events",
+            "overflow-wrap",
+            "text-align-last",
+            "font-variant-numeric",
         ]
     }
 }
@@ -2993,6 +3207,136 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Interaction / Performance Hint 属性 ──
+        "overscroll-behavior-x" => {
+            if let Some(v) = values::parse_overscroll_behavior(value) {
+                style.overscroll_behavior_x = match v {
+                    zero_css_parser::values::OverscrollBehaviorValue::Auto => OverscrollBehaviorValue::Auto,
+                    zero_css_parser::values::OverscrollBehaviorValue::Contain => OverscrollBehaviorValue::Contain,
+                    zero_css_parser::values::OverscrollBehaviorValue::None => OverscrollBehaviorValue::None,
+                };
+                return true;
+            }
+        }
+        "overscroll-behavior-y" => {
+            if let Some(v) = values::parse_overscroll_behavior(value) {
+                style.overscroll_behavior_y = match v {
+                    zero_css_parser::values::OverscrollBehaviorValue::Auto => OverscrollBehaviorValue::Auto,
+                    zero_css_parser::values::OverscrollBehaviorValue::Contain => OverscrollBehaviorValue::Contain,
+                    zero_css_parser::values::OverscrollBehaviorValue::None => OverscrollBehaviorValue::None,
+                };
+                return true;
+            }
+        }
+        "touch-action" => {
+            if let Some(v) = values::parse_touch_action(value) {
+                style.touch_action = match v {
+                    zero_css_parser::values::TouchActionValue::Auto => TouchActionValue::Auto,
+                    zero_css_parser::values::TouchActionValue::None => TouchActionValue::None,
+                    zero_css_parser::values::TouchActionValue::PanX => TouchActionValue::PanX,
+                    zero_css_parser::values::TouchActionValue::PanY => TouchActionValue::PanY,
+                    zero_css_parser::values::TouchActionValue::PanXPanY => TouchActionValue::PanXPanY,
+                    zero_css_parser::values::TouchActionValue::Manipulation => TouchActionValue::Manipulation,
+                };
+                return true;
+            }
+        }
+        "user-select" => {
+            if let Some(v) = values::parse_user_select(value) {
+                style.user_select = match v {
+                    zero_css_parser::values::UserSelectValue::Auto => UserSelectValue::Auto,
+                    zero_css_parser::values::UserSelectValue::Text => UserSelectValue::Text,
+                    zero_css_parser::values::UserSelectValue::None => UserSelectValue::None,
+                    zero_css_parser::values::UserSelectValue::All => UserSelectValue::All,
+                    zero_css_parser::values::UserSelectValue::Contain => UserSelectValue::Contain,
+                };
+                return true;
+            }
+        }
+        "will-change" => {
+            if let Some(v) = values::parse_will_change(value) {
+                style.will_change = match v {
+                    zero_css_parser::values::WillChangeValue::Auto => WillChangeValue::Auto,
+                    zero_css_parser::values::WillChangeValue::ScrollPosition => WillChangeValue::ScrollPosition,
+                    zero_css_parser::values::WillChangeValue::Contents => WillChangeValue::Contents,
+                    zero_css_parser::values::WillChangeValue::Custom(s) => WillChangeValue::Custom(s),
+                };
+                return true;
+            }
+        }
+        "pointer-events" => {
+            if let Some(v) = values::parse_pointer_events(value) {
+                style.pointer_events = match v {
+                    zero_css_parser::values::PointerEventsValue::Auto => PointerEventsValue::Auto,
+                    zero_css_parser::values::PointerEventsValue::None => PointerEventsValue::None,
+                    zero_css_parser::values::PointerEventsValue::VisiblePainted => PointerEventsValue::VisiblePainted,
+                    zero_css_parser::values::PointerEventsValue::VisibleFill => PointerEventsValue::VisibleFill,
+                    zero_css_parser::values::PointerEventsValue::VisibleStroke => PointerEventsValue::VisibleStroke,
+                    zero_css_parser::values::PointerEventsValue::Visible => PointerEventsValue::Visible,
+                    zero_css_parser::values::PointerEventsValue::Painted => PointerEventsValue::Painted,
+                    zero_css_parser::values::PointerEventsValue::Fill => PointerEventsValue::Fill,
+                    zero_css_parser::values::PointerEventsValue::Stroke => PointerEventsValue::Stroke,
+                    zero_css_parser::values::PointerEventsValue::All => PointerEventsValue::All,
+                    zero_css_parser::values::PointerEventsValue::Inherit => PointerEventsValue::Inherit,
+                };
+                return true;
+            }
+        }
+        // ── OverflowWrap 属性 ──
+        "overflow-wrap" => {
+            if let Some(v) = values::parse_overflow_wrap(value) {
+                style.overflow_wrap = match v {
+                    zero_css_parser::values::OverflowWrapValue::Normal => OverflowWrapValue::Normal,
+                    zero_css_parser::values::OverflowWrapValue::BreakWord => OverflowWrapValue::BreakWord,
+                    zero_css_parser::values::OverflowWrapValue::Anywhere => OverflowWrapValue::Anywhere,
+                };
+                return true;
+            }
+        }
+        // ── TextAlignLast 属性 ──
+        "text-align-last" => {
+            if let Some(v) = values::parse_text_align_last(value) {
+                style.text_align_last = match v {
+                    zero_css_parser::values::TextAlignLastValue::Auto => TextAlignLastValue::Auto,
+                    zero_css_parser::values::TextAlignLastValue::Start => TextAlignLastValue::Start,
+                    zero_css_parser::values::TextAlignLastValue::End => TextAlignLastValue::End,
+                    zero_css_parser::values::TextAlignLastValue::Left => TextAlignLastValue::Left,
+                    zero_css_parser::values::TextAlignLastValue::Right => TextAlignLastValue::Right,
+                    zero_css_parser::values::TextAlignLastValue::Center => TextAlignLastValue::Center,
+                    zero_css_parser::values::TextAlignLastValue::Justify => TextAlignLastValue::Justify,
+                };
+                return true;
+            }
+        }
+        // ── FontVariantNumeric 属性 ──
+        "font-variant-numeric" => {
+            if let Some(v) = values::parse_font_variant_numeric(value) {
+                style.font_variant_numeric = match v {
+                    zero_css_parser::values::FontVariantNumericValue::Normal => FontVariantNumericValue::Normal,
+                    zero_css_parser::values::FontVariantNumericValue::Ordinal => FontVariantNumericValue::Ordinal,
+                    zero_css_parser::values::FontVariantNumericValue::SlashedZero => {
+                        FontVariantNumericValue::SlashedZero
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::LiningNums => FontVariantNumericValue::LiningNums,
+                    zero_css_parser::values::FontVariantNumericValue::OldstyleNums => {
+                        FontVariantNumericValue::OldstyleNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::ProportionalNums => {
+                        FontVariantNumericValue::ProportionalNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::TabularNums => {
+                        FontVariantNumericValue::TabularNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::DiagonalFractions => {
+                        FontVariantNumericValue::DiagonalFractions
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::StackedFractions => {
+                        FontVariantNumericValue::StackedFractions
+                    }
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -3073,6 +3417,22 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "quotes" => {
             child.quotes = parent.quotes.clone();
+            true
+        }
+        "pointer-events" => {
+            child.pointer_events = parent.pointer_events.clone();
+            true
+        }
+        "overflow-wrap" => {
+            child.overflow_wrap = parent.overflow_wrap.clone();
+            true
+        }
+        "text-align-last" => {
+            child.text_align_last = parent.text_align_last.clone();
+            true
+        }
+        "font-variant-numeric" => {
+            child.font_variant_numeric = parent.font_variant_numeric.clone();
             true
         }
         _ => false,
@@ -3654,6 +4014,42 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "isolation" => {
             style.isolation = default_style.isolation;
+            true
+        }
+        "overscroll-behavior-x" => {
+            style.overscroll_behavior_x = default_style.overscroll_behavior_x;
+            true
+        }
+        "overscroll-behavior-y" => {
+            style.overscroll_behavior_y = default_style.overscroll_behavior_y;
+            true
+        }
+        "touch-action" => {
+            style.touch_action = default_style.touch_action;
+            true
+        }
+        "pointer-events" => {
+            style.pointer_events = default_style.pointer_events;
+            true
+        }
+        "overflow-wrap" => {
+            style.overflow_wrap = default_style.overflow_wrap;
+            true
+        }
+        "text-align-last" => {
+            style.text_align_last = default_style.text_align_last;
+            true
+        }
+        "font-variant-numeric" => {
+            style.font_variant_numeric = default_style.font_variant_numeric;
+            true
+        }
+        "user-select" => {
+            style.user_select = default_style.user_select;
+            true
+        }
+        "will-change" => {
+            style.will_change = default_style.will_change;
             true
         }
         _ => false,
@@ -6999,5 +7395,316 @@ mod tests {
 
         assert!(apply_initial_value(&mut style, "isolation"));
         assert_eq!(style.isolation, IsolationValue::Auto);
+    }
+
+    // ── Interaction / Performance Hint 属性测试 ──
+
+    #[test]
+    /// overscroll-behavior-x/y 默认值为 Auto
+    fn test_overscroll_behavior_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.overscroll_behavior_x, OverscrollBehaviorValue::Auto);
+        assert_eq!(style.overscroll_behavior_y, OverscrollBehaviorValue::Auto);
+    }
+
+    #[test]
+    /// overscroll-behavior-x/y apply
+    fn test_overscroll_behavior_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "overscroll-behavior-x", "contain"));
+        assert_eq!(style.overscroll_behavior_x, OverscrollBehaviorValue::Contain);
+        assert!(apply_property_value(&mut style, "overscroll-behavior-y", "none"));
+        assert_eq!(style.overscroll_behavior_y, OverscrollBehaviorValue::None);
+        // 无效值
+        assert!(!apply_property_value(&mut style, "overscroll-behavior-x", "invalid"));
+    }
+
+    #[test]
+    /// touch-action apply
+    fn test_touch_action_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "touch-action", "none"));
+        assert_eq!(style.touch_action, TouchActionValue::None);
+        assert!(apply_property_value(&mut style, "touch-action", "pan-x"));
+        assert_eq!(style.touch_action, TouchActionValue::PanX);
+        assert!(apply_property_value(&mut style, "touch-action", "manipulation"));
+        assert_eq!(style.touch_action, TouchActionValue::Manipulation);
+        assert!(!apply_property_value(&mut style, "touch-action", "invalid"));
+    }
+
+    #[test]
+    /// user-select apply
+    fn test_user_select_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "user-select", "text"));
+        assert_eq!(style.user_select, UserSelectValue::Text);
+        assert!(apply_property_value(&mut style, "user-select", "none"));
+        assert_eq!(style.user_select, UserSelectValue::None);
+        assert!(apply_property_value(&mut style, "user-select", "all"));
+        assert_eq!(style.user_select, UserSelectValue::All);
+    }
+
+    #[test]
+    /// will-change apply
+    fn test_will_change_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "will-change", "auto"));
+        assert_eq!(style.will_change, WillChangeValue::Auto);
+        assert!(apply_property_value(&mut style, "will-change", "scroll-position"));
+        assert_eq!(style.will_change, WillChangeValue::ScrollPosition);
+        assert!(apply_property_value(&mut style, "will-change", "transform"));
+        assert_eq!(style.will_change, WillChangeValue::Custom("transform".to_string()));
+    }
+
+    #[test]
+    /// pointer-events apply 和继承
+    fn test_pointer_events_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "pointer-events", "none"));
+        assert_eq!(style.pointer_events, PointerEventsValue::None);
+        assert!(apply_property_value(&mut style, "pointer-events", "visiblePainted"));
+        assert_eq!(style.pointer_events, PointerEventsValue::VisiblePainted);
+        // 继承性
+        assert!(PropertyRegistry::is_inherited("pointer-events"));
+    }
+
+    #[test]
+    /// 新属性不在继承列表中（除 pointer-events）
+    fn test_interaction_properties_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("overscroll-behavior-x"));
+        assert!(!PropertyRegistry::is_inherited("overscroll-behavior-y"));
+        assert!(!PropertyRegistry::is_inherited("touch-action"));
+        assert!(!PropertyRegistry::is_inherited("user-select"));
+        assert!(!PropertyRegistry::is_inherited("will-change"));
+    }
+
+    #[test]
+    /// 新属性在 known_properties 中注册
+    fn test_interaction_properties_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"overscroll-behavior-x"));
+        assert!(props.contains(&"overscroll-behavior-y"));
+        assert!(props.contains(&"touch-action"));
+        assert!(props.contains(&"user-select"));
+        assert!(props.contains(&"will-change"));
+        assert!(props.contains(&"pointer-events"));
+    }
+
+    #[test]
+    /// 新属性的 initial_value 存在
+    fn test_interaction_properties_initial_values() {
+        assert!(PropertyRegistry::initial_value("overscroll-behavior-x").is_some());
+        assert!(PropertyRegistry::initial_value("overscroll-behavior-y").is_some());
+        assert!(PropertyRegistry::initial_value("touch-action").is_some());
+        assert!(PropertyRegistry::initial_value("user-select").is_some());
+        assert!(PropertyRegistry::initial_value("will-change").is_some());
+        assert!(PropertyRegistry::initial_value("pointer-events").is_some());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // overflow-wrap / text-align-last / font-variant-numeric 测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 overflow-wrap apply_property_value
+    fn test_apply_overflow_wrap() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.overflow_wrap, OverflowWrapValue::Normal);
+
+        assert!(apply_property_value(&mut style, "overflow-wrap", "break-word"));
+        assert_eq!(style.overflow_wrap, OverflowWrapValue::BreakWord);
+
+        assert!(apply_property_value(&mut style, "overflow-wrap", "anywhere"));
+        assert_eq!(style.overflow_wrap, OverflowWrapValue::Anywhere);
+
+        assert!(apply_property_value(&mut style, "overflow-wrap", "normal"));
+        assert_eq!(style.overflow_wrap, OverflowWrapValue::Normal);
+
+        assert!(!apply_property_value(&mut style, "overflow-wrap", "invalid"));
+    }
+
+    #[test]
+    /// 测试 overflow-wrap 继承性
+    fn test_overflow_wrap_inherited() {
+        assert!(PropertyRegistry::is_inherited("overflow-wrap"));
+    }
+
+    #[test]
+    /// 测试 overflow-wrap initial_value
+    fn test_overflow_wrap_initial_value() {
+        assert!(PropertyRegistry::initial_value("overflow-wrap").is_some());
+        let mut style = ComputedStyle::default();
+        style.overflow_wrap = OverflowWrapValue::BreakWord;
+        assert!(apply_initial_value(&mut style, "overflow-wrap"));
+        assert_eq!(style.overflow_wrap, OverflowWrapValue::Normal);
+    }
+
+    #[test]
+    /// 测试 overflow-wrap 继承
+    fn test_overflow_wrap_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.overflow_wrap = OverflowWrapValue::Anywhere;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "overflow-wrap"));
+        assert_eq!(child.overflow_wrap, OverflowWrapValue::Anywhere);
+    }
+
+    #[test]
+    /// 测试 text-align-last apply_property_value
+    fn test_apply_text_align_last() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.text_align_last, TextAlignLastValue::Auto);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "left"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Left);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "right"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Right);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "center"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Center);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "justify"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Justify);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "start"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Start);
+
+        assert!(apply_property_value(&mut style, "text-align-last", "end"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::End);
+
+        assert!(!apply_property_value(&mut style, "text-align-last", "invalid"));
+    }
+
+    #[test]
+    /// 测试 text-align-last 继承性
+    fn test_text_align_last_inherited() {
+        assert!(PropertyRegistry::is_inherited("text-align-last"));
+    }
+
+    #[test]
+    /// 测试 text-align-last initial_value
+    fn test_text_align_last_initial_value() {
+        assert!(PropertyRegistry::initial_value("text-align-last").is_some());
+        let mut style = ComputedStyle::default();
+        style.text_align_last = TextAlignLastValue::Justify;
+        assert!(apply_initial_value(&mut style, "text-align-last"));
+        assert_eq!(style.text_align_last, TextAlignLastValue::Auto);
+    }
+
+    #[test]
+    /// 测试 text-align-last 继承
+    fn test_text_align_last_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.text_align_last = TextAlignLastValue::Center;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "text-align-last"));
+        assert_eq!(child.text_align_last, TextAlignLastValue::Center);
+    }
+
+    #[test]
+    /// 测试 font-variant-numeric apply_property_value
+    fn test_apply_font_variant_numeric() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::Normal);
+
+        assert!(apply_property_value(&mut style, "font-variant-numeric", "ordinal"));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::Ordinal);
+
+        assert!(apply_property_value(&mut style, "font-variant-numeric", "slashed-zero"));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::SlashedZero);
+
+        assert!(apply_property_value(&mut style, "font-variant-numeric", "lining-nums"));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::LiningNums);
+
+        assert!(apply_property_value(
+            &mut style,
+            "font-variant-numeric",
+            "oldstyle-nums"
+        ));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::OldstyleNums);
+
+        assert!(apply_property_value(
+            &mut style,
+            "font-variant-numeric",
+            "proportional-nums"
+        ));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::ProportionalNums);
+
+        assert!(apply_property_value(&mut style, "font-variant-numeric", "tabular-nums"));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::TabularNums);
+
+        assert!(apply_property_value(
+            &mut style,
+            "font-variant-numeric",
+            "diagonal-fractions"
+        ));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::DiagonalFractions);
+
+        assert!(apply_property_value(
+            &mut style,
+            "font-variant-numeric",
+            "stacked-fractions"
+        ));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::StackedFractions);
+
+        assert!(!apply_property_value(&mut style, "font-variant-numeric", "invalid"));
+    }
+
+    #[test]
+    /// 测试 font-variant-numeric 继承性
+    fn test_font_variant_numeric_inherited() {
+        assert!(PropertyRegistry::is_inherited("font-variant-numeric"));
+    }
+
+    #[test]
+    /// 测试 font-variant-numeric initial_value
+    fn test_font_variant_numeric_initial_value() {
+        assert!(PropertyRegistry::initial_value("font-variant-numeric").is_some());
+        let mut style = ComputedStyle::default();
+        style.font_variant_numeric = FontVariantNumericValue::Ordinal;
+        assert!(apply_initial_value(&mut style, "font-variant-numeric"));
+        assert_eq!(style.font_variant_numeric, FontVariantNumericValue::Normal);
+    }
+
+    #[test]
+    /// 测试 font-variant-numeric 继承
+    fn test_font_variant_numeric_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.font_variant_numeric = FontVariantNumericValue::TabularNums;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "font-variant-numeric"));
+        assert_eq!(child.font_variant_numeric, FontVariantNumericValue::TabularNums);
+    }
+
+    #[test]
+    /// 测试新属性在 known_properties 中（overflow-wrap、text-align-last、font-variant-numeric）
+    fn test_text_new_properties_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"overflow-wrap"));
+        assert!(props.contains(&"text-align-last"));
+        assert!(props.contains(&"font-variant-numeric"));
+    }
+
+    #[test]
+    /// 测试新属性 apply_initial_value_all_properties 覆盖
+    fn test_new_properties_apply_initial_value() {
+        for prop in &["overflow-wrap", "text-align-last", "font-variant-numeric"] {
+            let mut style = ComputedStyle::default();
+            assert!(
+                apply_initial_value(&mut style, prop),
+                "apply_initial_value should handle: {prop}"
+            );
+        }
+    }
+
+    #[test]
+    /// 测试 pointer-events 继承（inherit_property）
+    fn test_pointer_events_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.pointer_events = PointerEventsValue::None;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "pointer-events"));
+        assert_eq!(child.pointer_events, PointerEventsValue::None);
     }
 }
