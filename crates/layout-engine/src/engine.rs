@@ -6134,4 +6134,313 @@ mod tests {
             );
         }
     }
+
+    // -- 边缘场景补充测试（第八批）--
+
+    /// 测试相邻兄弟 block 的 margin 折叠近似行为。
+    ///
+    /// 三个 block 元素垂直堆叠，相邻元素的 margin-bottom 与 margin-top
+    /// 在 taffy 中可能不发生折叠（不同于 CSS 规范的 margin collapse），
+    /// 验证布局引擎对正 margin 的处理是确定性的。
+    #[test]
+    fn test_block_adjacent_sibling_margins() {
+        let (mut doc, body) = make_doc_with_body();
+        let div1 = doc.create_element("div");
+        doc.append_child(body, div1).unwrap();
+        let div2 = doc.create_element("div");
+        doc.append_child(body, div2).unwrap();
+        let div3 = doc.create_element("div");
+        doc.append_child(body, div3).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut s1 = make_style_with_display(DisplayValue::Block, 200.0, 60.0);
+        s1.margin_bottom = LengthValue::Px(20.0);
+        styles.insert(div1, s1);
+
+        let mut s2 = make_style_with_display(DisplayValue::Block, 200.0, 60.0);
+        s2.margin_top = LengthValue::Px(30.0);
+        s2.margin_bottom = LengthValue::Px(10.0);
+        styles.insert(div2, s2);
+
+        let mut s3 = make_style_with_display(DisplayValue::Block, 200.0, 60.0);
+        s3.margin_top = LengthValue::Px(40.0);
+        styles.insert(div3, s3);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
+        let b2 = find_child_by_node_id(&result.root, div2).expect("div2 found");
+        let b3 = find_child_by_node_id(&result.root, div3).expect("div3 found");
+
+        // 所有元素宽度应为 200px
+        assert_eq!(b1.width, 200.0);
+        assert_eq!(b2.width, 200.0);
+        assert_eq!(b3.width, 200.0);
+
+        // 垂直排列顺序确定：b2 在 b1 之后，b3 在 b2 之后
+        assert!(
+            b2.y >= b1.y + b1.height,
+            "div2 应在 div1 底部之后: b2.y({}) >= b1.y({}) + b1.h({})",
+            b2.y,
+            b1.y,
+            b1.height
+        );
+        assert!(
+            b3.y >= b2.y + b2.height,
+            "div3 应在 div2 底部之后: b3.y({}) >= b2.y({}) + b2.h({})",
+            b3.y,
+            b2.y,
+            b2.height
+        );
+
+        // margin_bottom 和 margin_top 的间距应有限非负
+        let gap1 = b2.y - b1.y - b1.height;
+        assert!(
+            gap1 >= 0.0 && gap1.is_finite(),
+            "div1-div2 间距应为有限非负值，实际 {}",
+            gap1
+        );
+        let gap2 = b3.y - b2.y - b2.height;
+        assert!(
+            gap2 >= 0.0 && gap2.is_finite(),
+            "div2-div3 间距应为有限非负值，实际 {}",
+            gap2
+        );
+    }
+
+    /// 测试绝对定位元素在 static 父容器内的行为。
+    ///
+    /// 当父元素为 position:static（默认值）时，绝对定位子元素
+    /// 应相对于最近的 positioned 祖先（或初始包含块）定位。
+    /// 验证 absolute 子元素仍然获得正确的 is_absolute 标记和尺寸。
+    #[test]
+    fn test_absolute_in_static_parent() {
+        let (mut doc, body) = make_doc_with_body();
+        let static_parent = doc.create_element("div");
+        doc.append_child(body, static_parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(static_parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 父元素：position:static（默认），不建立定位上下文
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.width = LengthValue::Px(300.0);
+        parent_style.height = LengthValue::Px(200.0);
+        parent_style.padding_top = LengthValue::Px(20.0);
+        parent_style.padding_left = LengthValue::Px(15.0);
+        styles.insert(static_parent, parent_style);
+
+        // 子元素：position:absolute
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(25.0);
+        abs_style.left = LengthValue::Px(35.0);
+        abs_style.width = LengthValue::Px(80.0);
+        abs_style.height = LengthValue::Px(60.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let parent_box = find_child_by_node_id(&result.root, static_parent).expect("parent found");
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
+
+        // 绝对定位标记正确
+        assert!(abs_box.is_absolute, "子元素应标记为 absolute");
+
+        // 父元素 padding 正确
+        assert_eq!(parent_box.padding_top, 20.0);
+        assert_eq!(parent_box.padding_left, 15.0);
+
+        // 子元素尺寸正确
+        assert_eq!(abs_box.width, 80.0);
+        assert_eq!(abs_box.height, 60.0);
+
+        // 子元素位置坐标应为有限值
+        assert!(abs_box.x.is_finite(), "abs x 应为有限值");
+        assert!(abs_box.y.is_finite(), "abs y 应为有限值");
+    }
+
+    /// 测试无子元素的空 flex 容器。
+    ///
+    /// 空的 flex 容器尺寸由自身 width/height 决定，
+    /// 子元素列表应为空且布局不 panic。
+    #[test]
+    fn test_empty_flex_container() {
+        let (mut doc, body) = make_doc_with_body();
+        let flex = doc.create_element("div");
+        doc.append_child(body, flex).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.flex_direction = FlexDirectionValue::Row;
+        flex_style.width = LengthValue::Px(400.0);
+        flex_style.height = LengthValue::Px(200.0);
+        styles.insert(flex, flex_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let flex_box = find_child_by_node_id(&result.root, flex).expect("flex found");
+
+        // 空容器尺寸正确
+        assert!(
+            (flex_box.width - 400.0).abs() < 1.0,
+            "空 flex 容器宽度应为 400，实际 {}",
+            flex_box.width
+        );
+        assert!(
+            (flex_box.height - 200.0).abs() < 1.0,
+            "空 flex 容器高度应为 200，实际 {}",
+            flex_box.height
+        );
+
+        // 无子元素
+        assert!(flex_box.children.is_empty(), "空 flex 容器不应有子元素");
+
+        // 内容区域应等于总尺寸（无 padding/border）
+        assert!(
+            (flex_box.content_width - flex_box.width).abs() < 0.001,
+            "空 flex 内容宽度应等于总宽度"
+        );
+        assert!(
+            (flex_box.content_height - flex_box.height).abs() < 0.001,
+            "空 flex 内容高度应等于总高度"
+        );
+    }
+
+    /// 测试 grid 单列 auto-rows 布局。
+    ///
+    /// grid-template-columns 只有一列（100px），grid-auto-rows: 60px，
+    /// 4 个子元素自动放置在单列中，验证每行高度为 60px。
+    #[test]
+    fn test_grid_single_column_auto_rows() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..4 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px".to_string());
+        grid_style.grid_auto_rows = Some("60px".to_string());
+        grid_style.width = LengthValue::Px(100.0);
+        grid_style.height = LengthValue::Px(400.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let boxes: Vec<&LayoutBox> = item_ids
+            .iter()
+            .map(|id| find_child_by_node_id(&result.root, *id).expect("item found"))
+            .collect();
+
+        // 所有元素宽度应约 100px（单列）
+        for (i, b) in boxes.iter().enumerate() {
+            assert!(
+                (b.width - 100.0).abs() < 1.0,
+                "item{} 宽度应约 100px，实际 {}",
+                i,
+                b.width
+            );
+        }
+
+        // 所有元素高度应约 60px（grid-auto-rows）
+        for (i, b) in boxes.iter().enumerate() {
+            assert!(
+                (b.height - 60.0).abs() < 1.0,
+                "item{} 高度应约 60px（grid-auto-rows），实际 {}",
+                i,
+                b.height
+            );
+        }
+
+        // 所有元素应垂直排列（单列）
+        for i in 1..boxes.len() {
+            assert!(boxes[i].y > boxes[i - 1].y, "item{} 应在 item{} 下方", i, i - 1);
+        }
+
+        // 所有元素 x 应相同（同一列）
+        assert!((boxes[0].x - boxes[1].x).abs() < 0.01, "单列 grid 所有元素 x 应相同");
+    }
+
+    /// 测试绝对定位元素使用负 inset 值（负 top/left）。
+    ///
+    /// 绝对定位子元素设置 top:-10px, left:-20px，
+    /// 验证元素位置偏移到包含块的左上方，布局不 panic。
+    #[test]
+    fn test_absolute_position_negative_inset() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+        // 在 parent 后放一个正常流参照元素
+        let sibling = doc.create_element("div");
+        doc.append_child(body, sibling).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // relative 父容器
+        let mut parent_style = ComputedStyle::default();
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(300.0);
+        parent_style.height = LengthValue::Px(200.0);
+        styles.insert(parent, parent_style);
+
+        // 绝对定位子元素：负 top/left
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(-10.0);
+        abs_style.left = LengthValue::Px(-20.0);
+        abs_style.width = LengthValue::Px(100.0);
+        abs_style.height = LengthValue::Px(80.0);
+        styles.insert(abs_child, abs_style);
+
+        // 参照元素
+        styles.insert(sibling, make_style_with_display(DisplayValue::Block, 200.0, 50.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
+
+        // 绝对定位标记正确
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+
+        // 尺寸正确
+        assert_eq!(abs_box.width, 100.0);
+        assert_eq!(abs_box.height, 80.0);
+
+        // 位置坐标应为有限值（负 inset 不会导致 NaN）
+        assert!(abs_box.x.is_finite(), "abs x 应为有限值，实际 {}", abs_box.x);
+        assert!(abs_box.y.is_finite(), "abs y 应为有限值，实际 {}", abs_box.y);
+
+        // 负 inset 应将元素向左上方偏移
+        // top=-10, left=-20 表示相对于包含块向左上偏移
+        assert!(abs_box.x < 0.0, "负 left 应让 abs x 为负值，实际 {}", abs_box.x);
+        assert!(abs_box.y < 0.0, "负 top 应让 abs y 为负值，实际 {}", abs_box.y);
+
+        // 参照元素应正常布局
+        let sibling_box = find_child_by_node_id(&result.root, sibling).expect("sibling found");
+        assert_eq!(sibling_box.width, 200.0);
+        assert_eq!(sibling_box.height, 50.0);
+    }
 }

@@ -3510,4 +3510,293 @@ mod tests {
         assert_eq!(r.len(), 1, "应返回一个结果");
         assert_eq!(r[0], WasmValue::I32(0), "主机函数未写入结果时应为默认值 i32(0)");
     }
+
+    // =======================================================================
+    // 新增测试：更多边界条件（局部变量链、select 指令、i64 负值主机函数、
+    //           同一沙箱多模块编译、条件比较运算）
+    // =======================================================================
+
+    /// 测试 WASM 函数使用多个局部变量进行赋值链操作。
+    /// 函数接收一个参数，经过一系列 local.set/local.get 链式赋值后返回结果，
+    /// 验证局部变量在多步中间传递中不会丢失或错乱。
+    #[test]
+    fn test_local_variable_assignment_chain() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "chain") (param i32) (result i32)
+                    (local $a i32)
+                    (local $b i32)
+                    (local $c i32)
+                    ;; a = param + 1
+                    local.get 0
+                    i32.const 1
+                    i32.add
+                    local.set $a
+                    ;; b = a * 3
+                    local.get $a
+                    i32.const 3
+                    i32.mul
+                    local.set $b
+                    ;; c = b - a
+                    local.get $b
+                    local.get $a
+                    i32.sub
+                    local.set $c
+                    ;; 返回 c
+                    local.get $c)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 输入 4：a = 5, b = 15, c = 15 - 5 = 10
+        let r = instance.call("chain", &[WasmValue::I32(4)]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(10), "局部变量链 4 → a=5, b=15, c=10");
+
+        // 输入 0：a = 1, b = 3, c = 3 - 1 = 2
+        let r = instance.call("chain", &[WasmValue::I32(0)]).expect("call zero");
+        assert_eq!(r[0], WasmValue::I32(2), "局部变量链 0 → a=1, b=3, c=2");
+
+        // 输入 -1：a = 0, b = 0, c = 0 - 0 = 0
+        let r = instance.call("chain", &[WasmValue::I32(-1)]).expect("call neg");
+        assert_eq!(r[0], WasmValue::I32(0), "局部变量链 -1 → a=0, b=0, c=0");
+    }
+
+    /// 测试 WASM select 指令：根据条件值在两个操作数之间选择。
+    /// select(val1, val2, cond) — cond 非 0 返回 val1，cond 为 0 返回 val2。
+    /// 验证 WASM 条件选择在正条件、零条件和负条件下的正确行为。
+    #[test]
+    fn test_select_instruction() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "select_i32") (param i32 i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    local.get 2
+                    select)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // cond = 1 → 返回第一个值 (100)
+        let r = instance
+            .call(
+                "select_i32",
+                &[WasmValue::I32(100), WasmValue::I32(200), WasmValue::I32(1)],
+            )
+            .expect("call cond=1");
+        assert_eq!(r[0], WasmValue::I32(100), "cond=1 应选择第一个值 100");
+
+        // cond = 0 → 返回第二个值 (200)
+        let r = instance
+            .call(
+                "select_i32",
+                &[WasmValue::I32(100), WasmValue::I32(200), WasmValue::I32(0)],
+            )
+            .expect("call cond=0");
+        assert_eq!(r[0], WasmValue::I32(200), "cond=0 应选择第二个值 200");
+
+        // cond = -1 (非零) → 返回第一个值
+        let r = instance
+            .call(
+                "select_i32",
+                &[WasmValue::I32(42), WasmValue::I32(99), WasmValue::I32(-1)],
+            )
+            .expect("call cond=-1");
+        assert_eq!(r[0], WasmValue::I32(42), "cond=-1 应选择第一个值 42");
+
+        // cond = 999 (非零) → 返回第一个值
+        let r = instance
+            .call(
+                "select_i32",
+                &[WasmValue::I32(7), WasmValue::I32(8), WasmValue::I32(999)],
+            )
+            .expect("call cond=999");
+        assert_eq!(r[0], WasmValue::I32(7), "cond=999 应选择第一个值 7");
+    }
+
+    /// 测试主机函数接收负 i64 参数并返回其绝对值。
+    /// 验证 i64 负值在 WASM → 主机函数传递路径上保持精度，不发生符号丢失或截断。
+    #[test]
+    fn test_host_function_negative_i64_arg() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "abs64" (func $abs64 (param i64) (result i64)))
+                (func (export "call_abs") (param i64) (result i64)
+                    local.get 0
+                    call $abs64)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "abs64",
+            vec![WasmValueType::I64],
+            vec![WasmValueType::I64],
+            |params, results| {
+                if let WasmValue::I64(n) = params[0] {
+                    results.push(WasmValue::I64(n.abs()));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 负值: abs(-123456789) = 123456789
+        let r = instance
+            .call("call_abs", &[WasmValue::I64(-123456789)])
+            .expect("call neg");
+        assert_eq!(r[0], WasmValue::I64(123456789), "abs(-123456789) 应为 123456789");
+
+        // 正值不变: abs(42) = 42
+        let r = instance.call("call_abs", &[WasmValue::I64(42)]).expect("call pos");
+        assert_eq!(r[0], WasmValue::I64(42), "abs(42) 应为 42");
+
+        // i64::MIN 的绝对值在 Rust 中会 panic (overflow)，但 WASM 中不会，
+        // 因为这里 abs 是主机 Rust 代码，所以我们用接近 MIN 的值测试。
+        let near_min = i64::MIN + 1;
+        let r = instance
+            .call("call_abs", &[WasmValue::I64(near_min)])
+            .expect("call near_min");
+        assert_eq!(r[0], WasmValue::I64(i64::MAX), "abs(i64::MIN+1) 应为 i64::MAX");
+    }
+
+    /// 测试同一沙箱实例连续编译和实例化多个不同的 WASM 模块，
+    /// 验证沙箱可复用于多个独立模块的编译，模块间不会互相干扰。
+    #[test]
+    fn test_sandbox_compile_multiple_modules() {
+        let sandbox = WasmSandbox::new();
+
+        // 第一个模块：加法
+        let wasm_a = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+            )"#,
+        );
+        let module_a = sandbox.compile(&wasm_a).expect("compile A");
+        let mut inst_a = module_a.instantiate(&sandbox).expect("instantiate A");
+
+        // 第二个模块：乘法
+        let wasm_b = wat_to_wasm(
+            r#"(module
+                (func (export "mul") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.mul)
+            )"#,
+        );
+        let module_b = sandbox.compile(&wasm_b).expect("compile B");
+        let mut inst_b = module_b.instantiate(&sandbox).expect("instantiate B");
+
+        // 第三个模块：带内存的模块
+        let wasm_c = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (global $counter (export "counter") (mut i32) (i32.const 0))
+                (func (export "inc") (result i32)
+                    global.get $counter
+                    i32.const 1
+                    i32.add
+                    global.set $counter
+                    global.get $counter)
+            )"#,
+        );
+        let module_c = sandbox.compile(&wasm_c).expect("compile C");
+        let mut inst_c = module_c.instantiate(&sandbox).expect("instantiate C");
+
+        // 验证三个模块各自独立工作
+        let r_a = inst_a
+            .call("add", &[WasmValue::I32(10), WasmValue::I32(20)])
+            .expect("call A");
+        assert_eq!(r_a[0], WasmValue::I32(30), "模块 A: 10 + 20 = 30");
+
+        let r_b = inst_b
+            .call("mul", &[WasmValue::I32(6), WasmValue::I32(7)])
+            .expect("call B");
+        assert_eq!(r_b[0], WasmValue::I32(42), "模块 B: 6 * 7 = 42");
+
+        let r_c1 = inst_c.call("inc", &[]).expect("call C1");
+        assert_eq!(r_c1[0], WasmValue::I32(1), "模块 C: 第一次递增 = 1");
+        let r_c2 = inst_c.call("inc", &[]).expect("call C2");
+        assert_eq!(r_c2[0], WasmValue::I32(2), "模块 C: 第二次递增 = 2");
+
+        // 模块 C 的内存可用
+        assert!(inst_c.has_memory("mem"), "模块 C 应有内存导出");
+        assert!(inst_c.has_func("inc"), "模块 C 应有 inc 函数导出");
+
+        // 再次验证模块 A、B 未受影响
+        let r_a2 = inst_a
+            .call("add", &[WasmValue::I32(100), WasmValue::I32(-50)])
+            .expect("call A2");
+        assert_eq!(r_a2[0], WasmValue::I32(50), "模块 A: 100 + (-50) = 50");
+    }
+
+    /// 测试 WASM i32 比较运算符（i32.eq、i32.lt_s、i32.gt_s），
+    /// 验证条件比较在正数、负数和零之间的正确行为。
+    #[test]
+    fn test_i32_comparison_operations() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "eq") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.eq)
+                (func (export "lt_s") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.lt_s)
+                (func (export "gt_s") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.gt_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // eq: 相等返回 1，不等返回 0
+        let r = instance
+            .call("eq", &[WasmValue::I32(42), WasmValue::I32(42)])
+            .expect("eq same");
+        assert_eq!(r[0], WasmValue::I32(1), "42 == 42 应为 1");
+
+        let r = instance
+            .call("eq", &[WasmValue::I32(42), WasmValue::I32(43)])
+            .expect("eq diff");
+        assert_eq!(r[0], WasmValue::I32(0), "42 == 43 应为 0");
+
+        let r = instance
+            .call("eq", &[WasmValue::I32(0), WasmValue::I32(-0)])
+            .expect("eq zero");
+        assert_eq!(r[0], WasmValue::I32(1), "0 == -0 应为 1");
+
+        // lt_s: 有符号小于
+        let r = instance
+            .call("lt_s", &[WasmValue::I32(-1), WasmValue::I32(0)])
+            .expect("lt_s neg<pos");
+        assert_eq!(r[0], WasmValue::I32(1), "-1 < 0 应为 1");
+
+        let r = instance
+            .call("lt_s", &[WasmValue::I32(0), WasmValue::I32(-1)])
+            .expect("lt_s pos>neg");
+        assert_eq!(r[0], WasmValue::I32(0), "0 < -1 应为 0");
+
+        // gt_s: 有符号大于
+        let r = instance
+            .call("gt_s", &[WasmValue::I32(100), WasmValue::I32(50)])
+            .expect("gt_s big>small");
+        assert_eq!(r[0], WasmValue::I32(1), "100 > 50 应为 1");
+
+        let r = instance
+            .call("gt_s", &[WasmValue::I32(50), WasmValue::I32(100)])
+            .expect("gt_s small<big");
+        assert_eq!(r[0], WasmValue::I32(0), "50 > 100 应为 0");
+
+        // 极值比较
+        let r = instance
+            .call("lt_s", &[WasmValue::I32(i32::MIN), WasmValue::I32(i32::MAX)])
+            .expect("lt_s min<max");
+        assert_eq!(r[0], WasmValue::I32(1), "i32::MIN < i32::MAX 应为 1");
+    }
 }
