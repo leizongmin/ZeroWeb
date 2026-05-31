@@ -525,4 +525,75 @@ mod tests {
         let cache = Cache::new("my-cache");
         assert_eq!(cache.name(), "my-cache");
     }
+
+    // ── Cache API 集成测试 ──
+
+    /// 测试 Cache API 基本操作：put 存入请求/响应对，match_request 取回，delete 删除。
+    #[test]
+    fn test_cache_api_put_get_delete() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("assets");
+        let req = CacheRequest::new("https://example.com/style.css");
+        let resp = CacheResponse::ok(b"body { color: red; }".to_vec());
+
+        // put
+        cache.put(req.clone(), resp).unwrap();
+
+        // get（通过 CacheStorage 全局匹配）
+        let matched = cs.match_request(&req).unwrap();
+        assert_eq!(matched.status, 200);
+        assert_eq!(matched.body, b"body { color: red; }".to_vec());
+
+        // delete
+        assert!(cs.open("assets").delete(&req));
+        assert!(cs.match_request(&req).is_none());
+        // 重复删除返回 false
+        assert!(!cs.open("assets").delete(&req));
+    }
+
+    /// 测试 Cache API 覆盖行为：同一 URL 存入两次，第二次响应覆盖第一次。
+    #[test]
+    fn test_cache_api_overwrite() {
+        let mut cs = CacheStorage::new();
+        let req = CacheRequest::new("https://example.com/app.js");
+
+        // 第一次写入
+        cs.open("v1")
+            .put(req.clone(), CacheResponse::ok(b"console.log('v1');".to_vec()))
+            .unwrap();
+
+        // 第二次写入同一 URL
+        cs.open("v1")
+            .put(req.clone(), CacheResponse::new(200, b"console.log('v2');".to_vec()))
+            .unwrap();
+
+        // 应返回第二次的响应
+        let matched = cs.match_request(&req).unwrap();
+        assert_eq!(matched.body, b"console.log('v2');".to_vec());
+
+        // 缓存中应只有一条记录
+        assert_eq!(cs.open("v1").len(), 1);
+    }
+
+    /// 测试 Cache API keys()：存入多个条目，验证 keys() 返回所有 URL。
+    #[test]
+    fn test_cache_api_keys() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("resources");
+
+        let urls = [
+            "https://example.com/index.html",
+            "https://example.com/style.css",
+            "https://example.com/app.js",
+        ];
+        for url in &urls {
+            cache.put(CacheRequest::new(url), CacheResponse::ok(vec![])).unwrap();
+        }
+
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 3);
+        for url in &urls {
+            assert!(keys.contains(url), "keys() 应包含 {}", url);
+        }
+    }
 }

@@ -4027,4 +4027,77 @@ mod tests {
         // 不应 panic 或越界访问
         ctx.put_image_data(&image_data, 0, 0);
     }
+
+    // ── 线性渐变多色停止点边界测试 ──
+
+    /// 测试线性渐变添加 10 个颜色停止点（0.0 到 0.9），以及逆序添加时保持插入顺序。
+    #[test]
+    fn test_linear_gradient_many_stops_ordering() {
+        let ctx = CanvasContext::new(200, 200);
+
+        // 顺序添加 10 个停止点：0.0, 0.1, ..., 0.9
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        for i in 0..10 {
+            let offset = i as f32 * 0.1;
+            let color = Color::rgba(i as u8 * 25, 0, 0, 255);
+            grad.add_color_stop(offset, color);
+        }
+        assert_eq!(grad.stops.len(), 10);
+        for i in 0..10 {
+            let expected_offset = i as f32 * 0.1;
+            assert!(
+                (grad.stops[i].offset - expected_offset).abs() < f32::EPSILON,
+                "第 {} 个停止点偏移量应为 {}，实际 {}",
+                i,
+                expected_offset,
+                grad.stops[i].offset
+            );
+        }
+
+        // 逆序添加停止点：1.0, 0.5, 0.0 — 应保持插入顺序而非排序
+        let mut grad2 = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad2.add_color_stop(1.0, Color::BLUE);
+        grad2.add_color_stop(0.5, Color::GREEN);
+        grad2.add_color_stop(0.0, Color::RED);
+        assert_eq!(grad2.stops.len(), 3);
+        // 验证保持插入顺序（未排序）
+        assert!((grad2.stops[0].offset - 1.0).abs() < f32::EPSILON);
+        assert!((grad2.stops[1].offset - 0.5).abs() < f32::EPSILON);
+        assert!((grad2.stops[2].offset - 0.0).abs() < f32::EPSILON);
+        assert_eq!(grad2.stops[0].color, Color::BLUE);
+        assert_eq!(grad2.stops[1].color, Color::GREEN);
+        assert_eq!(grad2.stops[2].color, Color::RED);
+    }
+
+    /// 测试线性渐变在同一偏移量添加两个不同颜色的停止点，验证不会去重。
+    #[test]
+    fn test_gradient_duplicate_offset_stops() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.5, Color::GREEN);
+        // 在同一偏移量 0.5 添加另一个颜色的停止点
+        grad.add_color_stop(0.5, Color::BLUE);
+        grad.add_color_stop(1.0, Color::WHITE);
+        // 两个偏移量 0.5 的停止点都应保留，不会被去重
+        assert_eq!(grad.stops.len(), 4);
+        assert!((grad.stops[1].offset - 0.5).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[1].color, Color::GREEN);
+        assert!((grad.stops[2].offset - 0.5).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[2].color, Color::BLUE);
+    }
+
+    /// 测试线性渐变添加超出 [0, 1] 范围的偏移量不会 panic。
+    #[test]
+    fn test_gradient_out_of_range_offset_no_panic() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        // 负偏移量 — 不应 panic
+        grad.add_color_stop(-0.5, Color::RED);
+        // 大于 1 的偏移量 — 不应 panic
+        grad.add_color_stop(1.5, Color::BLUE);
+        assert_eq!(grad.stops.len(), 2);
+        assert!((grad.stops[0].offset - (-0.5)).abs() < f32::EPSILON);
+        assert!((grad.stops[1].offset - 1.5).abs() < f32::EPSILON);
+    }
 }

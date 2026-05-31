@@ -398,6 +398,60 @@ mod tests {
         assert!(origin.contains("data://"));
     }
 
+    // ── URL 与导航边界条件测试 ──
+
+    /// 测试 HTTPS URL 解析时 fragment 标识符正确提取。
+    /// 验证 scheme 为 https、path 正确、fragment 可独立访问。
+    #[test]
+    fn test_url_parse_with_fragment() {
+        let parsed = parse_url("https://example.com/page#section").unwrap();
+        assert_eq!(parsed.scheme, "https");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(parsed.path, "/page");
+        assert_eq!(parsed.fragment.as_deref(), Some("section"), "fragment 应为 'section'");
+        assert!(parsed.is_secure());
+    }
+
+    /// 测试 URL 同时包含 query 和 fragment 时两者均正确解析。
+    /// 这是浏览器常见场景（搜索结果页定位到锚点）。
+    #[test]
+    fn test_url_parse_with_query_and_fragment() {
+        let parsed = parse_url("https://example.com/search?q=hello&lang=en#results").unwrap();
+        assert_eq!(parsed.scheme, "https");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(parsed.path, "/search");
+        assert_eq!(
+            parsed.query.as_deref(),
+            Some("q=hello&lang=en"),
+            "query 应包含完整查询字符串"
+        );
+        assert_eq!(parsed.fragment.as_deref(), Some("results"), "fragment 应为 'results'");
+    }
+
+    /// 测试 IPv4 地址作为 host 的 URL 解析。
+    /// 验证 host 返回 IP 地址字符串而非域名。
+    #[test]
+    fn test_url_parse_ipv4_host() {
+        let parsed = parse_url("http://192.168.1.1:8080/path").unwrap();
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("192.168.1.1"), "host 应为 IPv4 地址");
+        assert_eq!(parsed.port, Some(8080));
+        assert_eq!(parsed.path, "/path");
+    }
+
+    /// 测试相对路径 URL 的解析。
+    /// 使用 base URL 将相对路径 "/about/team" 解析为完整 URL，
+    /// 验证路径部分正确处理。
+    #[test]
+    fn test_url_parse_relative_path() {
+        let base = Url::parse("https://example.com/").unwrap();
+        let resolved = base.join("/about/team").unwrap();
+        let parsed = parse_url(resolved.as_str()).unwrap();
+        assert_eq!(parsed.scheme, "https");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(parsed.path, "/about/team", "相对路径应正确解析为绝对路径");
+    }
+
     // ── 高优先级边界条件测试 ──
 
     /// 测试 URL 同时包含 userinfo、非默认端口、query（含特殊字符）和 fragment。

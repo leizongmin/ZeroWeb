@@ -866,4 +866,48 @@ mod tests {
         // 匹配 hash → 允许
         assert!(csp.is_inline_script_allowed(None, Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")));
     }
+
+    // ---- scheme-source 匹配测试 ----
+
+    #[test]
+    fn test_csp_scheme_source_https() {
+        // 策略 "script-src https:" 使用 scheme-source 语法。
+        // 当前实现中，check_source_list 的前缀匹配逻辑会检查 URL 是否以 "https:" 开头，
+        // 因此 https:// URL 会匹配 "https:" 前缀，而 http:// URL 不会。
+        let csp = ContentSecurityPolicy::parse("script-src https:");
+        // https URL 以 "https:" 开头，前缀匹配成功 → 允许
+        assert!(csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
+        // http URL 不以 "https:" 开头 → 拒绝
+        assert!(!csp.is_resource_allowed("script", "http://cdn.com/app.js", None));
+    }
+
+    // ---- frame-src 指令测试 ----
+
+    #[test]
+    fn test_csp_frame_src_restriction() {
+        // frame-src 'self' 应限制 iframe 来源为同源，阻止外部来源。
+        let csp = ContentSecurityPolicy::parse("frame-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+        // 同源 iframe URL → 允许
+        assert!(csp.is_resource_allowed("frame", "https://example.com/embed", Some(&doc_origin)));
+        // 外部来源 iframe URL → 拒绝
+        assert!(!csp.is_resource_allowed("frame", "https://evil.com/embed", Some(&doc_origin)));
+    }
+
+    // ---- report-only 模式测试 ----
+
+    #[test]
+    fn test_csp_report_only_mode() {
+        // Content-Security-Policy-Report-Only 模式下，策略不应阻止资源加载。
+        // 当前实现没有 report-only 标志字段，因此该测试记录当前行为：
+        // 即使策略声明 'none'（理论上在 report-only 模式下应仅报告不阻止），
+        // is_resource_allowed 仍然返回 false。
+        // 这反映了尚未实现 report-only 模式的现状。
+        let csp = ContentSecurityPolicy::parse("script-src 'none'");
+        // 当前行为：'none' 导致拒绝，report-only 模式尚未实现
+        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
+        // 注意：当 report-only 模式实现后，此测试应更新为：
+        //   assert!(report_only_csp.is_resource_allowed(...))
+        // 因为 report-only 策略只报告违规，不阻止加载。
+    }
 }
