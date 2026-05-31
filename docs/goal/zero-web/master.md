@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2534 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2591 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2534 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2591 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,11 +23,11 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 233 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot**、**id_map 自动清理** |
-| css-parser | 336 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、**calc() 嵌套**、**媒体查询 range syntax**、**Token 源位置追踪** |
-| style-system | 382 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**var() 解析集成**、**revert 关键字**、**grid-template-areas** |
-| layout-engine | 147 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、**auto-fill/minmax()**、**grid-template-areas**、**零尺寸容器**、**深层嵌套** |
-| engine | 145 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**内联文本渲染** |
+| dom | 258 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试** |
+| css-parser | 353 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、**min()/max()/clamp() 数学函数** |
+| style-system | 396 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、**calc/min/max/clamp 管线集成**、**aspect-ratio** |
+| layout-engine | 149 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、**aspect-ratio 布局**、**box-sizing:border-box 测试** |
+| engine | 147 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染 |
 | render-foundation | 190 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色 RGBA clamping**、**image cache eviction**、**surface resize** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
@@ -63,7 +63,21 @@
 
 ## 最近完成的改进
 
-### -1. 关键功能修复 + 测试覆盖率提升（本轮，2359 测试）
+### -2. CSS 数学函数 + aspect-ratio + DOM 模块测试（本轮，2591 测试）
+
+| 模块 | 实现内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **CSS min()/max()/clamp() 数学函数**：解析、求值、嵌套支持，LengthValue::Calc 变体 | 14 |
+| style-system | **calc/min/max/clamp 管线集成**：parse_length_or_math 辅助函数，所有长度属性自动支持数学函数 | 6 |
+| style-system | **aspect-ratio 属性**：ComputedStyle.aspect_ratio 字段，支持 auto/数字/w:h 斜杠语法 | 4 |
+| layout-engine | **aspect-ratio 布局**：converter 传递 aspect_ratio 到 taffy | 2 |
+| layout-engine | **box-sizing:border-box 布局验证**：确认 border-box/content-box 布局正确性 | 2 |
+| style-system | **@supports selector() 条件验证**：连续组合器检测，无效选择器拒绝 | 4 |
+| dom (serializer) | **ProcessingInstruction/Doctype PUBLIC+SYSTEM/Fragment/void 元素/转义 测试** | 8 |
+| dom (document) | **PI 内容、set_text_content on Comment/Fragment、多 class 查找、quirks_mode 等** | 10 |
+| dom (event) | **事件重用、Debug 格式、捕获阶段 prevent_default、深层嵌套传播** | 5 |
+
+### -1. 关键功能修复 + 测试覆盖率提升（前轮，2359 测试）
 
 通过工作流分析 14 个 crate 的高优先级功能缺口，并行修复并补充测试：
 
@@ -161,9 +175,9 @@
 | Tier 1 类别 | 状态 |
 |-------------|------|
 | 选择器全量 | ✅ ~95% |
-| 盒模型 | ✅ 100% |
-| Block/Inline/Flexbox 布局 | ✅ 已实现（**行内格式化上下文已实现**） |
-| Grid 布局 | ⚠️ ~65%（display + auto-flow + 项放置 + grid-area + **repeat()** + **auto-rows/cols**；缺 auto-fill 真实支持、命名区域） |
+| 盒模型 | ✅ 100%（含 **box-sizing: border-box** 布局测试） |
+| Block/Inline/Flexbox 布局 | ✅ 已实现（行内格式化上下文已实现） |
+| Grid 布局 | ⚠️ ~65%（display + auto-flow + 项放置 + grid-area + repeat() + auto-rows/cols；缺 auto-fill 真实支持、命名区域） |
 | 颜色 | ✅ ~95% |
 | 字体 | ✅ 100% |
 | 定位 | ✅ 100% |
@@ -174,11 +188,13 @@
 | 媒体查询 | ✅ ~70% |
 | **逻辑属性** | ✅ 已实现 |
 | **Animations/@keyframes** | ✅ 已实现 |
-| **@supports** | ✅ 已实现 |
+| **@supports** | ✅ 已实现（含 **selector() 条件验证**） |
 | **@layer** | ✅ 已实现 |
 | **@import** | ✅ 已实现 |
 | **@container** | ✅ 已实现（解析 + 骨架评估） |
 | **scroll-snap** | ✅ 已实现（scroll-snap-type/align/stop + scroll-margin/scroll-padding） |
+| **CSS 数学函数** | ✅ 已实现（**calc()/min()/max()/clamp()** 解析、求值、样式管线集成） |
+| **aspect-ratio** | ✅ 已实现（属性解析 + 布局引擎集成） |
 
 ---
 
