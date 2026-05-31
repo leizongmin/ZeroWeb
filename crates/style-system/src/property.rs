@@ -232,6 +232,8 @@ pub enum GridLineValue {
     Line(i16),
     /// span N（跨越 N 条轨道）。
     Span(u16),
+    /// 命名区域（grid-area: header / grid-row-start: sidebar）。
+    Name(String),
 }
 
 /// CSS scroll-snap-type 计算值。
@@ -554,6 +556,10 @@ pub struct ComputedStyle {
     /// grid-auto-columns 属性。
     /// 存储 CSS 原始值字符串，在布局转换时解析。
     pub grid_auto_columns: Option<String>,
+    /// grid-template-areas 属性。
+    /// 存储 CSS 原始值字符串（如 '"header header" "sidebar main"'），
+    /// 在布局转换时解析为区域映射。
+    pub grid_template_areas: Option<String>,
 
     // ── 定位 ──
     /// top 属性。
@@ -737,6 +743,7 @@ impl Default for ComputedStyle {
             grid_row_end: GridLineValue::Auto,
             grid_auto_rows: None,
             grid_auto_columns: None,
+            grid_template_areas: None,
 
             // 定位
             top: zero.clone(),
@@ -908,6 +915,7 @@ impl PropertyRegistry {
                 Some(GridLine(GridLineValue::Auto))
             }
             "grid-auto-rows" | "grid-auto-columns" => Some(OptionalString(None)),
+            "grid-template-areas" => Some(OptionalString(None)),
 
             // Transform
             "transform" => Some(Transform(zero_css_parser::values::TransformValue::None)),
@@ -1127,11 +1135,21 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         let span: u16 = span_str.trim().parse().ok()?;
         return Some(GridLineValue::Span(span));
     }
-    let line: i16 = value.parse().ok()?;
-    if line == 0 {
-        return None; // 0 是非法的 grid line 值
+    if let Ok(line) = value.parse::<i16>() {
+        if line == 0 {
+            return None; // 0 是非法的 grid line 值
+        }
+        return Some(GridLineValue::Line(line));
     }
-    Some(GridLineValue::Line(line))
+    // 非数字值视为命名区域（如 "header"、"sidebar"）
+    // 合法的命名区域标识符：非空，不含 / 和数字开头
+    if !value.is_empty()
+        && !value.starts_with(|c: char| c.is_ascii_digit())
+        && !value.contains('/')
+    {
+        return Some(GridLineValue::Name(value.to_string()));
+    }
+    None
 }
 
 /// 解析逗号分隔的 transition-timing-function 列表。
@@ -1867,6 +1885,10 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             style.grid_auto_columns = Some(value.to_string());
             return true;
         }
+        "grid-template-areas" => {
+            style.grid_template_areas = Some(value.to_string());
+            return true;
+        }
         "row-gap" => {
             if let Some(v) = values::parse_length(value) {
                 style.row_gap = v;
@@ -2292,6 +2314,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "grid-row-end" => { style.grid_row_end = default_style.grid_row_end; true }
         "grid-auto-rows" => { style.grid_auto_rows = default_style.grid_auto_rows; true }
         "grid-auto-columns" => { style.grid_auto_columns = default_style.grid_auto_columns; true }
+        "grid-template-areas" => { style.grid_template_areas = default_style.grid_template_areas; true }
         // 定位
         "top" => { style.top = default_style.top; true }
         "right" => { style.right = default_style.right; true }
@@ -3119,7 +3142,8 @@ mod tests {
         assert_eq!(parse_grid_line("span 2"), Some(GridLineValue::Span(2)));
         assert_eq!(parse_grid_line("span 3"), Some(GridLineValue::Span(3)));
         assert_eq!(parse_grid_line("0"), None); // 0 is invalid
-        assert_eq!(parse_grid_line("invalid"), None);
+        assert_eq!(parse_grid_line("invalid"), Some(GridLineValue::Name("invalid".to_string())));
+        assert_eq!(parse_grid_line("header"), Some(GridLineValue::Name("header".to_string())));
     }
 
     #[test]

@@ -129,7 +129,7 @@ crates/
 - 运行并显示输出：`cargo test -- --nocapture`
 - 覆盖率报告：`./scripts/check-coverage.sh`
 
-**重要**：所有代码变更提交前必须通过 `cargo test` 和 `cargo clippy -- -D warnings`。
+**重要**：所有代码变更提交前必须执行 `cargo fmt` 格式化，并通过 `cargo test` 和 `cargo clippy -- -D warnings`。
 
 ## 安全约束
 

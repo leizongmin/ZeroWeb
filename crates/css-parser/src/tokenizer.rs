@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+// ── Spanned ──────────────────────────────────────────────────────────
+
 // ── Token ────────────────────────────────────────────────────────────
 
 /// CSS token 类型。
@@ -109,25 +111,71 @@ impl fmt::Display for Token {
     }
 }
 
+// ── Spanned ──────────────────────────────────────────────────────────
+
+/// 带源码位置信息的 token。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spanned {
+    /// token 本身。
+    pub token: Token,
+    /// token 起始字节偏移量。
+    pub offset: usize,
+}
+
+/// 将字节偏移量转换为 (行, 列)，均为 1 起始。
+///
+/// 换行符 `\n`、`\r\n`、`\r` 均视为换行。
+pub fn line_column_from_offset(source: &str, offset: usize) -> (usize, usize) {
+    let bytes = source.as_bytes();
+    let offset = offset.min(bytes.len());
+    let mut line = 1;
+    let mut col = 1;
+    let mut i = 0;
+    while i < offset {
+        match bytes[i] {
+            b'\r' => {
+                line += 1;
+                col = 1;
+                i += 1;
+                if i < bytes.len() && bytes[i] == b'\n' {
+                    i += 1;
+                }
+            }
+            b'\n' => {
+                line += 1;
+                col = 1;
+                i += 1;
+            }
+            _ => {
+                col += 1;
+                i += 1;
+            }
+        }
+    }
+    (line, col)
+}
+
 // ── Tokenizer ────────────────────────────────────────────────────────
 
 /// CSS 词法分析器。
 ///
-/// 将 CSS 字符流逐个转换为 [`Token`]。
+/// 将 CSS 字符流逐个转换为带位置信息的 [`Spanned`]。
 ///
 /// # 示例
 ///
 /// ```
 /// use zero_css_parser::Tokenizer;
 ///
-/// let mut tokenizer = Tokenizer::new("div { color: red; }");
-/// let tokens: Vec<_> = tokenizer.collect();
+/// let tokenizer = Tokenizer::new("div { color: red; }");
+/// let tokens: Vec<_> = tokenizer.collect_tokens();
 /// ```
 pub struct Tokenizer {
     /// 输入字符。
     chars: Vec<char>,
     /// 当前位置。
     pos: usize,
+    /// 原始输入（用于计算字节偏移量）。
+    source: String,
 }
 
 impl Tokenizer {
@@ -136,12 +184,29 @@ impl Tokenizer {
         Self {
             chars: input.chars().collect(),
             pos: 0,
+            source: input.to_string(),
         }
     }
 
     /// 获取当前位置。
     pub fn position(&self) -> usize {
         self.pos
+    }
+
+    /// 获取当前字符位置对应的字节偏移量。
+    fn byte_offset(&self) -> usize {
+        self.source
+            .char_indices()
+            .nth(self.pos)
+            .map(|(i, _)| i)
+            .unwrap_or(self.source.len())
+    }
+
+    /// 收集所有 token（不带位置信息）。
+    ///
+    /// 便捷方法，等价于 `.map(|s| s.token).collect()`。
+    pub fn collect_tokens(self) -> Vec<Token> {
+        self.map(|s| s.token).collect()
     }
 
     /// 是否已到达末尾。
@@ -542,37 +607,41 @@ impl Tokenizer {
 // ── Iterator ─────────────────────────────────────────────────────────
 
 impl Iterator for Tokenizer {
-    type Item = Token;
+    type Item = Spanned;
 
-    fn next(&mut self) -> Option<Token> {
+    fn next(&mut self) -> Option<Spanned> {
         if self.is_eof() {
             return None;
         }
 
+        let start_offset = self.byte_offset();
         let c = self.peek()?;
 
-        match c {
+        let token = match c {
             // 空白
             ' ' | '\t' | '\n' | '\r' | '\x0C' => {
                 self.consume_whitespace();
-                Some(Token::Whitespace)
+                Token::Whitespace
             }
 
             // 注释
             '/' => {
                 if self.peek_at(1) == Some('*') {
                     self.consume(); // /
-                    self.consume_comment()
+                    return self.consume_comment().map(|t| Spanned {
+                        token: t,
+                        offset: start_offset,
+                    });
                 } else {
                     self.consume();
-                    Some(Token::Delim('/'))
+                    Token::Delim('/')
                 }
             }
 
             // 字符串
             '"' | '\'' => {
                 let quote = self.consume().unwrap();
-                Some(self.consume_string(quote))
+                self.consume_string(quote)
             }
 
             // Hash
@@ -581,67 +650,67 @@ impl Iterator for Tokenizer {
                 if let Some(next) = self.peek() {
                     if Self::is_ident_char(next) || next == '\\' {
                         let ident = self.consume_ident();
-                        Some(Token::Hash(ident))
+                        Token::Hash(ident)
                     } else {
-                        Some(Token::Error("Unexpected '#'".to_string()))
+                        Token::Error("Unexpected '#'".to_string())
                     }
                 } else {
-                    Some(Token::Error("Unexpected '#' at EOF".to_string()))
+                    Token::Error("Unexpected '#' at EOF".to_string())
                 }
             }
 
             // 左圆括号
             '(' => {
                 self.consume();
-                Some(Token::LParen)
+                Token::LParen
             }
 
             // 右圆括号
             ')' => {
                 self.consume();
-                Some(Token::RParen)
+                Token::RParen
             }
 
             // 左花括号
             '{' => {
                 self.consume();
-                Some(Token::LBrace)
+                Token::LBrace
             }
 
             // 右花括号
             '}' => {
                 self.consume();
-                Some(Token::RBrace)
+                Token::RBrace
             }
 
             // 左方括号
             '[' => {
                 self.consume();
-                Some(Token::LBracket)
+                Token::LBracket
             }
 
             // 右方括号
             ']' => {
                 self.consume();
-                Some(Token::RBracket)
+                Token::RBracket
             }
 
             // 冒号
             ':' => {
                 self.consume();
-                Some(Token::Colon)
+                Token::Colon
             }
 
             // 分号
             ';' => {
                 self.consume();
-                Some(Token::Semicolon)
+                Token::Semicolon
             }
 
             // 逗号
             ',' => {
                 self.consume();
-                Some(Token::Comma)
+                Token::Comma
             }
 
             // @ 关键字
@@ -650,12 +719,12 @@ impl Iterator for Tokenizer {
                 if let Some(next) = self.peek() {
                     if Self::is_ident_start(next) {
                         let ident = self.consume_ident();
-                        Some(Token::AtKeyword(ident))
+                        Token::AtKeyword(ident)
                     } else {
-                        Some(Token::Error("Expected identifier after @".to_string()))
+                        Token::Error("Expected identifier after @".to_string())
                     }
                 } else {
-                    Some(Token::Error("Unexpected @ at EOF".to_string()))
+                    Token::Error("Unexpected @ at EOF".to_string())
                 }
             }
 
@@ -666,37 +735,17 @@ impl Iterator for Tokenizer {
                     if let Some(next) = self.peek_at(1) {
                         if !Self::is_digit(next) {
                             self.consume();
-                            return Some(Token::Delim('.'));
+                            Token::Delim('.')
+                        } else {
+                            self.consume_number_and_suffix()
                         }
                     } else {
                         self.consume();
-                        return Some(Token::Delim('.'));
+                        Token::Delim('.')
                     }
+                } else {
+                    self.consume_number_and_suffix()
                 }
-
-                let number = self.consume_number();
-
-                // 检查百分比
-                if self.consume_if('%') {
-                    return Some(Token::Percentage(number));
-                }
-
-                // 检查单位（dimension）
-                if let Some(next) = self.peek() {
-                    if Self::is_ident_start(next) {
-                        let unit = self.consume_ident();
-                        return Some(Token::Dimension(number, unit));
-                    }
-                    // 检查 \ 转义开始的单位
-                    if next == '\\'
-                        && let Some(_escaped) = self.peek_at(1)
-                    {
-                        let unit = self.consume_ident();
-                        return Some(Token::Dimension(number, unit));
-                    }
-                }
-
-                Some(Token::Number(number))
             }
 
             // + 或 - 后面跟数字
@@ -721,53 +770,40 @@ impl Iterator for Tokenizer {
                     let number = self.consume_number();
 
                     if self.consume_if('%') {
-                        return Some(Token::Percentage(number));
-                    }
-
-                    if let Some(next) = self.peek()
+                        Token::Percentage(number)
+                    } else if let Some(next) = self.peek()
                         && (Self::is_ident_start(next) || next == '\\')
                     {
                         let unit = self.consume_ident();
-                        return Some(Token::Dimension(number, unit));
+                        Token::Dimension(number, unit)
+                    } else {
+                        Token::Number(number)
                     }
-
-                    return Some(Token::Number(number));
-                }
-
-                // 检查 ident-start（以 - 开头的标识符）
-                if sign == '-'
+                } else if sign == '-'
                     && let Some(next) = self.peek()
                     && (Self::is_ident_start(next) || next == '\\' || next == '-')
                 {
                     self.pos -= 1; // 回退
-                    return Some(self.consume_ident_like());
-                }
-
-                // 特殊组合器
-                if sign == '|' && self.peek() == Some('|') {
+                    self.consume_ident_like()
+                } else if sign == '|' && self.peek() == Some('|') {
                     self.consume();
-                    return Some(Token::Column);
-                }
-
-                // 当不是数字开头且不是标识符时，+/- 作为分隔符
-                if sign == '+' {
-                    Some(Token::Delim('+'))
+                    Token::Column
+                } else if sign == '+' {
+                    Token::Delim('+')
                 } else if sign == '-' {
-                    // 单独的 - 作为标识符
-                    Some(Token::Ident("-".to_string()))
+                    Token::Ident("-".to_string())
                 } else {
-                    Some(Token::Ident(sign.to_string()))
+                    Token::Ident(sign.to_string())
                 }
             }
 
-            // 点号（如果不是数字开头）
             // ~ （~= 或 ~）
             '~' => {
                 self.consume();
                 if self.consume_if('=') {
-                    Some(Token::IncludeMatch)
+                    Token::IncludeMatch
                 } else {
-                    Some(Token::Delim('~'))
+                    Token::Delim('~')
                 }
             }
 
@@ -775,11 +811,11 @@ impl Iterator for Tokenizer {
             '|' => {
                 self.consume();
                 if self.consume_if('=') {
-                    Some(Token::DashMatch)
+                    Token::DashMatch
                 } else if self.consume_if('|') {
-                    Some(Token::Column)
+                    Token::Column
                 } else {
-                    Some(Token::Ident("|".to_string()))
+                    Token::Ident("|".to_string())
                 }
             }
 
@@ -787,9 +823,9 @@ impl Iterator for Tokenizer {
             '^' => {
                 self.consume();
                 if self.consume_if('=') {
-                    Some(Token::PrefixMatch)
+                    Token::PrefixMatch
                 } else {
-                    Some(Token::Ident("^".to_string()))
+                    Token::Ident("^".to_string())
                 }
             }
 
@@ -797,9 +833,9 @@ impl Iterator for Tokenizer {
             '$' => {
                 self.consume();
                 if self.consume_if('=') {
-                    Some(Token::SuffixMatch)
+                    Token::SuffixMatch
                 } else {
-                    Some(Token::Ident("$".to_string()))
+                    Token::Ident("$".to_string())
                 }
             }
 
@@ -807,38 +843,70 @@ impl Iterator for Tokenizer {
             '*' => {
                 self.consume();
                 if self.consume_if('=') {
-                    Some(Token::SubstringMatch)
+                    Token::SubstringMatch
                 } else {
-                    Some(Token::Delim('*'))
+                    Token::Delim('*')
                 }
             }
 
             // ! 作为分隔符
             '!' => {
                 self.consume();
-                Some(Token::Delim('!'))
+                Token::Delim('!')
             }
 
             // > 作为分隔符
             '>' => {
                 self.consume();
-                Some(Token::Delim('>'))
+                Token::Delim('>')
             }
 
             // = 作为分隔符（用于属性选择器中的精确匹配 [attr=val]）
             '=' => {
                 self.consume();
-                Some(Token::Delim('='))
+                Token::Delim('=')
             }
 
             // 标识符
-            _ if Self::is_ident_start(c) => Some(self.consume_ident_like()),
+            _ if Self::is_ident_start(c) => self.consume_ident_like(),
 
             // 未知字符
             _ => {
                 self.consume();
-                Some(Token::Error(format!("Unexpected character: '{}'", c)))
+                Token::Error(format!("Unexpected character: '{}'", c))
+            }
+        };
+
+        Some(Spanned {
+            token,
+            offset: start_offset,
+        })
+    }
+}
+
+impl Tokenizer {
+    /// 消耗数字并检查后缀（百分比、单位）。
+    fn consume_number_and_suffix(&mut self) -> Token {
+        let number = self.consume_number();
+
+        // 检查百分比
+        if self.consume_if('%') {
+            return Token::Percentage(number);
+        }
+
+        // 检查单位（dimension）
+        if let Some(next) = self.peek() {
+            if Self::is_ident_start(next) {
+                let unit = self.consume_ident();
+                return Token::Dimension(number, unit);
+            }
+            // 检查 \ 转义开始的单位
+            if next == '\\' && let Some(_escaped) = self.peek_at(1) {
+                let unit = self.consume_ident();
+                return Token::Dimension(number, unit);
             }
         }
+
+        Token::Number(number)
     }
 }

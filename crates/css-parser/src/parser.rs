@@ -24,7 +24,7 @@ impl<'a> Parser<'a> {
     /// 从 CSS 文本解析完整的样式表。
     pub fn parse_stylesheet(input: &str) -> Stylesheet {
         let tokenizer = Tokenizer::new(input);
-        let mut tokens: Vec<Token> = tokenizer.collect();
+        let mut tokens: Vec<Token> = tokenizer.map(|s| s.token).collect();
         // 添加 EOF
         tokens.push(Token::Eof);
 

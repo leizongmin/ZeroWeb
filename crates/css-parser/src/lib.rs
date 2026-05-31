@@ -28,7 +28,7 @@ pub use media_query::*;
 pub use parser::Parser;
 pub use selector::*;
 pub use supports_condition::*;
-pub use tokenizer::{Token, Tokenizer};
+pub use tokenizer::{Token, Tokenizer, Spanned, line_column_from_offset};
 
 #[cfg(test)]
 mod tests;

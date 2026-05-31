@@ -11,10 +11,21 @@ use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLi
 
 use taffy::prelude::*;
 
+/// grid-template-areas 区域映射类型。
+///
+/// 键为区域名（如 "header"），值为 (row_start, row_end, col_start, col_end)，
+/// 行号和列号均为 1-based，区间为 [start, end)。
+pub type GridAreaMap = std::collections::HashMap<String, (i16, i16, i16, i16)>;
+
 /// 将 ComputedStyle 转换为 taffy::Style。
 ///
 /// 处理所有 CSS 属性到 taffy 布局属性的映射。
-pub fn computed_style_to_taffy(style: &ComputedStyle) -> taffy::Style {
+/// `parent_areas` 为父级 grid 容器的 grid-template-areas 区域映射，
+/// 用于将子元素的 GridLineValue::Name 解析为行号。
+pub fn computed_style_to_taffy(
+    style: &ComputedStyle,
+    parent_areas: Option<&GridAreaMap>,
+) -> taffy::Style {
     taffy::Style {
         display: convert_display(&style.display),
         box_sizing: convert_box_sizing(&style.box_sizing),
@@ -74,13 +85,21 @@ pub fn computed_style_to_taffy(style: &ComputedStyle) -> taffy::Style {
         grid_auto_flow: convert_grid_auto_flow(&style.grid_auto_flow),
         grid_auto_rows: parse_grid_auto_tracks(&style.grid_auto_rows),
         grid_auto_columns: parse_grid_auto_tracks(&style.grid_auto_columns),
-        grid_row: taffy::geometry::Line {
-            start: convert_grid_line(&style.grid_row_start),
-            end: convert_grid_line(&style.grid_row_end),
+        grid_row: {
+            let rs = resolve_named_area(&style.grid_row_start, parent_areas, "row-start");
+            let re = resolve_named_area(&style.grid_row_end, parent_areas, "row-end");
+            taffy::geometry::Line {
+                start: convert_grid_line(&rs),
+                end: convert_grid_line(&re),
+            }
         },
-        grid_column: taffy::geometry::Line {
-            start: convert_grid_line(&style.grid_column_start),
-            end: convert_grid_line(&style.grid_column_end),
+        grid_column: {
+            let cs = resolve_named_area(&style.grid_column_start, parent_areas, "col-start");
+            let ce = resolve_named_area(&style.grid_column_end, parent_areas, "col-end");
+            taffy::geometry::Line {
+                start: convert_grid_line(&cs),
+                end: convert_grid_line(&ce),
+            }
         },
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
@@ -686,12 +705,118 @@ fn convert_grid_auto_flow(value: &GridAutoFlowValue) -> taffy::style::GridAutoFl
 }
 
 /// 转换 GridLineValue 到 taffy GridPlacement。
+///
+/// Name 变体应已由 resolve_named_area 预处理为 Line，
+/// 若仍有 Name 则 fallback 到 Auto。
 fn convert_grid_line(value: &GridLineValue) -> taffy::style::GridPlacement {
     match value {
         GridLineValue::Auto => taffy::style::GridPlacement::Auto,
         GridLineValue::Line(n) => taffy::style::GridPlacement::from_line_index(*n),
         GridLineValue::Span(s) => taffy::style::GridPlacement::from_span(*s),
+        GridLineValue::Name(_) => taffy::style::GridPlacement::Auto,
     }
+}
+
+/// 解析 grid-template-areas CSS 字符串为区域映射。
+///
+/// 输入格式：'"header header" "sidebar main" "sidebar footer"'
+/// 返回：HashMap<区域名, (row_start, row_end, col_start, col_end)>
+///
+/// 行号和列号均为 1-based。区域占据的行/列为 [start, end)，
+/// 即 row_end = row_start + span_rows。
+pub fn parse_grid_template_areas(
+    value: &str,
+) -> GridAreaMap {
+    let mut areas = std::collections::HashMap::new();
+    let mut row = 1i16;
+
+    // 按引号对分割出每行
+    let mut chars = value.chars().peekable();
+    while let Some(&ch) = chars.peek() {
+        if ch == '"' {
+            chars.next(); // 消费开引号
+            let mut line = String::new();
+            while let Some(&c) = chars.peek() {
+                if c == '"' {
+                    chars.next(); // 消费闭引号
+                    break;
+                }
+                line.push(c);
+                chars.next();
+            }
+
+            // 解析行内 token
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            for (col_idx, &token) in tokens.iter().enumerate() {
+                let col = (col_idx + 1) as i16;
+
+                if let Some(entry) = areas.get_mut(token) {
+                    // 扩展现有区域的 row_end 和 col_end
+                    let (_, ref mut re, _, ref mut ce) = *entry;
+                    if row + 1 > *re {
+                        *re = row + 1;
+                    }
+                    if col + 1 > *ce {
+                        *ce = col + 1;
+                    }
+                } else {
+                    areas.insert(token.to_string(), (row, row + 1, col, col + 1));
+                }
+            }
+
+            row += 1;
+        } else {
+            chars.next();
+        }
+    }
+
+    areas
+}
+
+/// 解析子元素的命名区域引用为具体的行号。
+///
+/// 当子元素的 grid-row-start/end 或 grid-column-start/end 为 Name 时，
+/// 查找父级区域映射，将 Name 替换为 Line（区域边界）。
+/// `which` 为 "row-start"、"row-end"、"col-start"、"col-end" 之一。
+fn resolve_named_area(
+    value: &GridLineValue,
+    parent_areas: Option<&GridAreaMap>,
+    which: &str,
+) -> GridLineValue {
+    match value {
+        GridLineValue::Name(name) => {
+            if let Some(areas) = parent_areas {
+                if let Some(&(rs, re, cs, ce)) = areas.get(name) {
+                    match which {
+                        "row-start" => GridLineValue::Line(rs),
+                        "row-end" => GridLineValue::Line(re),
+                        "col-start" => GridLineValue::Line(cs),
+                        "col-end" => GridLineValue::Line(ce),
+                        _ => GridLineValue::Auto,
+                    }
+                } else {
+                    GridLineValue::Auto
+                }
+            } else {
+                GridLineValue::Auto
+            }
+        }
+        other => other.clone(),
+    }
+}
+
+/// 预处理子元素的 grid line 值，将 Name 引用解析为具体行号。
+///
+/// 返回解析后的 (row_start, row_end, col_start, col_end)。
+pub fn resolve_grid_placement(
+    style: &ComputedStyle,
+    parent_areas: Option<&GridAreaMap>,
+) -> (GridLineValue, GridLineValue, GridLineValue, GridLineValue) {
+    let rs = resolve_named_area(&style.grid_row_start, parent_areas, "row-start");
+    let re = resolve_named_area(&style.grid_row_end, parent_areas, "row-end");
+    let cs = resolve_named_area(&style.grid_column_start, parent_areas, "col-start");
+    let ce = resolve_named_area(&style.grid_column_end, parent_areas, "col-end");
+    (rs, re, cs, ce)
 }
 
 #[cfg(test)]
@@ -706,7 +831,7 @@ mod tests {
     fn test_convert_block_display() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Block;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Block);
     }
 
@@ -715,7 +840,7 @@ mod tests {
     fn test_convert_flex_display() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Flex;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Flex);
     }
 
@@ -724,7 +849,7 @@ mod tests {
     fn test_convert_grid_display() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Grid;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Grid);
     }
 
@@ -733,7 +858,7 @@ mod tests {
     fn test_convert_none_display() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::None;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::None);
     }
 
@@ -742,11 +867,11 @@ mod tests {
     fn test_convert_inline_display() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Inline;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Block);
 
         style.display = DisplayValue::InlineBlock;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Block);
     }
 
@@ -755,7 +880,7 @@ mod tests {
     fn test_convert_position_absolute() {
         let mut style = ComputedStyle::default();
         style.position = PositionValue::Absolute;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.position, taffy::style::Position::Absolute);
     }
 
@@ -764,11 +889,11 @@ mod tests {
     fn test_convert_position_relative() {
         let mut style = ComputedStyle::default();
         style.position = PositionValue::Relative;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.position, taffy::style::Position::Relative);
 
         style.position = PositionValue::Static;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.position, taffy::style::Position::Relative);
     }
 
@@ -778,7 +903,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.width = LengthValue::Px(200.0);
         style.height = LengthValue::Px(100.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.size.width,
             taffy::style::Dimension::Length(200.0)
@@ -793,7 +918,7 @@ mod tests {
     #[test]
     fn test_convert_size_auto() {
         let style = ComputedStyle::default();
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.size.width, taffy::style::Dimension::Auto);
         assert_eq!(taffy_style.size.height, taffy::style::Dimension::Auto);
     }
@@ -814,7 +939,7 @@ mod tests {
         style.border_right_width = LengthValue::Px(2.0);
         style.border_bottom_width = LengthValue::Px(1.0);
         style.border_left_width = LengthValue::Px(2.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.margin.top,
             taffy::style::LengthPercentageAuto::Length(10.0)
@@ -843,7 +968,7 @@ mod tests {
         style.flex_grow = 2.0;
         style.flex_shrink = 0.5;
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(100.0));
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.flex_direction,
             taffy::style::FlexDirection::Column
@@ -864,7 +989,7 @@ mod tests {
         style.justify_content = AlignmentValue::Center;
         style.align_items = AlignmentValue::FlexEnd;
         style.align_self = AlignmentValue::Baseline;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.justify_content,
             Some(taffy::style::JustifyContent::Center)
@@ -884,7 +1009,7 @@ mod tests {
     fn test_convert_gap() {
         let mut style = ComputedStyle::default();
         style.gap = LengthValue::Px(10.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.gap.width,
             taffy::style::LengthPercentage::Length(10.0)
@@ -897,7 +1022,7 @@ mod tests {
 
         // 设置不同的 row-gap
         style.row_gap = LengthValue::Px(20.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.gap.width,
             taffy::style::LengthPercentage::Length(10.0)
@@ -914,7 +1039,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.overflow_x = OverflowValue::Hidden;
         style.overflow_y = OverflowValue::Scroll;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.overflow.x, taffy::style::Overflow::Hidden);
         assert_eq!(taffy_style.overflow.y, taffy::style::Overflow::Scroll);
     }
@@ -928,7 +1053,7 @@ mod tests {
         style.right = LengthValue::Px(20.0);
         style.bottom = LengthValue::Px(30.0);
         style.left = LengthValue::Px(40.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.inset.top,
             taffy::style::LengthPercentageAuto::Length(10.0)
@@ -952,11 +1077,11 @@ mod tests {
     fn test_convert_box_sizing() {
         let mut style = ComputedStyle::default();
         style.box_sizing = BoxSizingValue::BorderBox;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.box_sizing, taffy::style::BoxSizing::BorderBox);
 
         style.box_sizing = BoxSizingValue::ContentBox;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.box_sizing, taffy::style::BoxSizing::ContentBox);
     }
 
@@ -967,7 +1092,7 @@ mod tests {
         style.display = DisplayValue::Grid;
         style.grid_template_columns = Some("100px 200px 1fr".to_string());
         style.grid_template_rows = Some("auto 50px".to_string());
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.display, taffy::style::Display::Grid);
         assert_eq!(taffy_style.grid_template_columns.len(), 3);
         assert_eq!(taffy_style.grid_template_rows.len(), 2);
@@ -979,14 +1104,14 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Grid;
         style.grid_auto_flow = GridAutoFlowValue::Column;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.grid_auto_flow,
             taffy::style::GridAutoFlow::Column
         );
 
         style.grid_auto_flow = GridAutoFlowValue::RowDense;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.grid_auto_flow,
             taffy::style::GridAutoFlow::RowDense
@@ -999,7 +1124,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.gap = LengthValue::Px(10.0);
         style.row_gap = LengthValue::Px(20.0);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.gap.width,
             taffy::style::LengthPercentage::Length(10.0)
@@ -1020,7 +1145,7 @@ mod tests {
         style.grid_column_end = GridLineValue::Line(3);
         style.grid_row_start = GridLineValue::Line(2);
         style.grid_row_end = GridLineValue::Auto;
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.grid_column.start,
             taffy::style::GridPlacement::from_line_index(1)
@@ -1043,7 +1168,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.grid_column_start = GridLineValue::Span(2);
         style.grid_row_start = GridLineValue::Line(-1);
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(
             taffy_style.grid_column.start,
             taffy::style::GridPlacement::from_span(2)
@@ -1096,7 +1221,7 @@ mod tests {
     fn test_convert_grid_auto_rows() {
         let mut style = ComputedStyle::default();
         style.grid_auto_rows = Some("100px 200px".to_string());
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.grid_auto_rows.len(), 2);
     }
 
@@ -1105,7 +1230,7 @@ mod tests {
     fn test_convert_grid_auto_columns() {
         let mut style = ComputedStyle::default();
         style.grid_auto_columns = Some("1fr auto".to_string());
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.grid_auto_columns.len(), 2);
     }
 
@@ -1113,8 +1238,95 @@ mod tests {
     #[test]
     fn test_convert_grid_auto_default() {
         let style = ComputedStyle::default();
-        let taffy_style = computed_style_to_taffy(&style);
+        let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.grid_auto_rows.len(), 0);
         assert_eq!(taffy_style.grid_auto_columns.len(), 0);
+    }
+
+    /// 测试 parse_grid_template_areas 解析 2x2 区域。
+    #[test]
+    fn test_parse_grid_template_areas_2x2() {
+        let areas = parse_grid_template_areas("\"header header\" \"sidebar main\"");
+        assert_eq!(areas.len(), 3); // header, sidebar, main
+
+        // header: row 1-2, col 1-3（跨两列）
+        assert_eq!(areas.get("header"), Some(&(1, 2, 1, 3)));
+        // sidebar: row 2-3, col 1-2
+        assert_eq!(areas.get("sidebar"), Some(&(2, 3, 1, 2)));
+        // main: row 2-3, col 2-3
+        assert_eq!(areas.get("main"), Some(&(2, 3, 2, 3)));
+    }
+
+    /// 测试 parse_grid_template_areas 解析 3x3 区域。
+    #[test]
+    fn test_parse_grid_template_areas_3x3() {
+        let areas = parse_grid_template_areas(
+            "\"header header header\" \"sidebar main main\" \"sidebar footer footer\"",
+        );
+        assert_eq!(areas.len(), 4);
+
+        // header: row 1-2, col 1-4（跨三列）
+        assert_eq!(areas.get("header"), Some(&(1, 2, 1, 4)));
+        // sidebar: row 2-4, col 1-2（跨两行）
+        assert_eq!(areas.get("sidebar"), Some(&(2, 4, 1, 2)));
+        // main: row 2-3, col 2-4（跨两列）
+        assert_eq!(areas.get("main"), Some(&(2, 3, 2, 4)));
+        // footer: row 3-4, col 2-4（跨两列）
+        assert_eq!(areas.get("footer"), Some(&(3, 4, 2, 4)));
+    }
+
+    /// 测试 parse_grid_template_areas 空输入。
+    #[test]
+    fn test_parse_grid_template_areas_empty() {
+        let areas = parse_grid_template_areas("");
+        assert!(areas.is_empty());
+
+        let areas = parse_grid_template_areas("none");
+        assert!(areas.is_empty());
+    }
+
+    /// 测试 resolve_named_area 将 Name 解析为 Line。
+    #[test]
+    fn test_resolve_named_area_with_map() {
+        use zero_style_system::GridLineValue;
+
+        let mut areas = std::collections::HashMap::new();
+        areas.insert("header".to_string(), (1, 2, 1, 3));
+        areas.insert("sidebar".to_string(), (2, 3, 1, 2));
+
+        // Name 被解析
+        let val = resolve_named_area(
+            &GridLineValue::Name("header".to_string()),
+            Some(&areas),
+            "row-start",
+        );
+        assert_eq!(val, GridLineValue::Line(1));
+
+        let val = resolve_named_area(
+            &GridLineValue::Name("header".to_string()),
+            Some(&areas),
+            "col-end",
+        );
+        assert_eq!(val, GridLineValue::Line(3));
+
+        // 不存在的名称 → Auto
+        let val = resolve_named_area(
+            &GridLineValue::Name("nonexistent".to_string()),
+            Some(&areas),
+            "row-start",
+        );
+        assert_eq!(val, GridLineValue::Auto);
+
+        // 没有 area map → Auto
+        let val = resolve_named_area(
+            &GridLineValue::Name("header".to_string()),
+            None,
+            "row-start",
+        );
+        assert_eq!(val, GridLineValue::Auto);
+
+        // 非 Name 值不变
+        let val = resolve_named_area(&GridLineValue::Line(2), Some(&areas), "row-start");
+        assert_eq!(val, GridLineValue::Line(2));
     }
 }

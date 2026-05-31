@@ -9,7 +9,7 @@ use zero_css_parser::values::DisplayValue;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
-use crate::converter::computed_style_to_taffy;
+use crate::converter::{computed_style_to_taffy, parse_grid_template_areas, GridAreaMap};
 
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
 struct BuildContext {
@@ -56,7 +56,7 @@ pub fn build_layout_tree(
     let root = doc.root();
     let first_element = find_first_element(doc, root);
 
-    let root_taffy_id = build_subtree(&mut ctx, doc, styles, first_element);
+    let root_taffy_id = build_subtree(&mut ctx, doc, styles, first_element, None);
 
     (ctx.taffy, root_taffy_id, ctx.taffy_to_dom)
 }
@@ -87,11 +87,14 @@ fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
 /// 递归构建 DOM 子树对应的 taffy 子树。
 ///
 /// 返回创建的 taffy 节点 ID。如果元素为 display:none 则不创建节点。
+/// `parent_grid_areas` 为父级 grid 容器的区域映射（如果有），
+/// 用于解析子元素的 grid-area 命名引用。
 fn build_subtree(
     ctx: &mut BuildContext,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
+    parent_grid_areas: Option<&GridAreaMap>,
 ) -> taffy::NodeId {
     // 获取计算样式（或使用默认值）
     let computed = styles.get(&dom_id).cloned().unwrap_or_default();
@@ -109,8 +112,14 @@ fn build_subtree(
             .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
     }
 
-    // 转换为 taffy 样式
-    let taffy_style = computed_style_to_taffy(&computed);
+    // 解析此元素的 grid-template-areas（如果有）
+    let grid_areas = computed
+        .grid_template_areas
+        .as_ref()
+        .map(|s| parse_grid_template_areas(s));
+
+    // 转换为 taffy 样式（传入父级区域映射）
+    let taffy_style = computed_style_to_taffy(&computed, parent_grid_areas);
 
     // 收集需要创建 taffy 节点的子元素
     let node_data = doc.get(dom_id);
@@ -122,7 +131,13 @@ fn build_subtree(
         let child_data = doc.get(child_dom);
         // 只处理元素节点
         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-            let child_taffy = build_subtree(ctx, doc, styles, child_dom);
+            let child_taffy = build_subtree(
+                ctx,
+                doc,
+                styles,
+                child_dom,
+                grid_areas.as_ref(),
+            );
             child_taffy_ids.push(child_taffy);
         }
     }

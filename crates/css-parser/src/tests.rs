@@ -3,7 +3,7 @@
 use crate::ast::*;
 use crate::parser::Parser;
 use crate::selector;
-use crate::tokenizer::{Token, Tokenizer};
+use crate::tokenizer::{Token, Tokenizer, Spanned, line_column_from_offset};
 use crate::values::{
     CalcContext, ContainerTypeValue, GradientDirection, GradientValue, LengthValue,
     RadialShape, RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
@@ -21,158 +21,158 @@ use crate::values::{
 
 #[test]
 fn test_tokenize_ident() {
-    let tokens: Vec<_> = Tokenizer::new("div").collect();
+    let tokens: Vec<_> = Tokenizer::new("div").collect_tokens();
     assert_eq!(tokens, vec![Token::Ident("div".to_string())]);
 }
 
 #[test]
 fn test_tokenize_at_keyword() {
-    let tokens: Vec<_> = Tokenizer::new("@media").collect();
+    let tokens: Vec<_> = Tokenizer::new("@media").collect_tokens();
     assert_eq!(tokens, vec![Token::AtKeyword("media".to_string())]);
 }
 
 #[test]
 fn test_tokenize_hash() {
-    let tokens: Vec<_> = Tokenizer::new("#main").collect();
+    let tokens: Vec<_> = Tokenizer::new("#main").collect_tokens();
     assert_eq!(tokens, vec![Token::Hash("main".to_string())]);
 }
 
 #[test]
 fn test_tokenize_hash_color() {
-    let tokens: Vec<_> = Tokenizer::new("#fff").collect();
+    let tokens: Vec<_> = Tokenizer::new("#fff").collect_tokens();
     assert_eq!(tokens, vec![Token::Hash("fff".to_string())]);
 }
 
 #[test]
 fn test_tokenize_string_double() {
-    let tokens: Vec<_> = Tokenizer::new("\"hello world\"").collect();
+    let tokens: Vec<_> = Tokenizer::new("\"hello world\"").collect_tokens();
     assert_eq!(tokens, vec![Token::String("hello world".to_string())]);
 }
 
 #[test]
 fn test_tokenize_string_single() {
-    let tokens: Vec<_> = Tokenizer::new("'hello'").collect();
+    let tokens: Vec<_> = Tokenizer::new("'hello'").collect_tokens();
     assert_eq!(tokens, vec![Token::String("hello".to_string())]);
 }
 
 #[test]
 fn test_tokenize_number() {
-    let tokens: Vec<_> = Tokenizer::new("42").collect();
+    let tokens: Vec<_> = Tokenizer::new("42").collect_tokens();
     assert!(matches!(tokens[0], Token::Number(n) if n == 42.0));
 }
 
 #[test]
 fn test_tokenize_number_decimal() {
-    let tokens: Vec<_> = Tokenizer::new("3.14").collect();
+    let tokens: Vec<_> = Tokenizer::new("3.14").collect_tokens();
     let expected = 314.0_f64 / 100.0;
     assert!(matches!(tokens[0], Token::Number(n) if (n - expected).abs() < 0.001));
 }
 
 #[test]
 fn test_tokenize_percentage() {
-    let tokens: Vec<_> = Tokenizer::new("50%").collect();
+    let tokens: Vec<_> = Tokenizer::new("50%").collect_tokens();
     assert!(matches!(tokens[0], Token::Percentage(n) if n == 50.0));
 }
 
 #[test]
 fn test_tokenize_dimension_px() {
-    let tokens: Vec<_> = Tokenizer::new("10px").collect();
+    let tokens: Vec<_> = Tokenizer::new("10px").collect_tokens();
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 10.0 && u == "px"));
 }
 
 #[test]
 fn test_tokenize_dimension_em() {
-    let tokens: Vec<_> = Tokenizer::new("1.5em").collect();
+    let tokens: Vec<_> = Tokenizer::new("1.5em").collect_tokens();
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if (*n - 1.5).abs() < 0.001 && u == "em"));
 }
 
 #[test]
 fn test_tokenize_function() {
-    let tokens: Vec<_> = Tokenizer::new("rgb(").collect();
+    let tokens: Vec<_> = Tokenizer::new("rgb(").collect_tokens();
     assert_eq!(tokens, vec![Token::Function("rgb".to_string())]);
 }
 
 #[test]
 fn test_tokenize_url() {
-    let tokens: Vec<_> = Tokenizer::new("url(image.png)").collect();
+    let tokens: Vec<_> = Tokenizer::new("url(image.png)").collect_tokens();
     assert_eq!(tokens, vec![Token::Url("image.png".to_string())]);
 }
 
 #[test]
 fn test_tokenize_colon() {
-    let tokens: Vec<_> = Tokenizer::new(":").collect();
+    let tokens: Vec<_> = Tokenizer::new(":").collect_tokens();
     assert_eq!(tokens, vec![Token::Colon]);
 }
 
 #[test]
 fn test_tokenize_semicolon() {
-    let tokens: Vec<_> = Tokenizer::new(";").collect();
+    let tokens: Vec<_> = Tokenizer::new(";").collect_tokens();
     assert_eq!(tokens, vec![Token::Semicolon]);
 }
 
 #[test]
 fn test_tokenize_comma() {
-    let tokens: Vec<_> = Tokenizer::new(",").collect();
+    let tokens: Vec<_> = Tokenizer::new(",").collect_tokens();
     assert_eq!(tokens, vec![Token::Comma]);
 }
 
 #[test]
 fn test_tokenize_braces() {
-    let tokens: Vec<_> = Tokenizer::new("{}").collect();
+    let tokens: Vec<_> = Tokenizer::new("{}").collect_tokens();
     assert_eq!(tokens, vec![Token::LBrace, Token::RBrace]);
 }
 
 #[test]
 fn test_tokenize_brackets() {
-    let tokens: Vec<_> = Tokenizer::new("[]").collect();
+    let tokens: Vec<_> = Tokenizer::new("[]").collect_tokens();
     assert_eq!(tokens, vec![Token::LBracket, Token::RBracket]);
 }
 
 #[test]
 fn test_tokenize_parens() {
-    let tokens: Vec<_> = Tokenizer::new("()").collect();
+    let tokens: Vec<_> = Tokenizer::new("()").collect_tokens();
     assert_eq!(tokens, vec![Token::LParen, Token::RParen]);
 }
 
 #[test]
 fn test_tokenize_whitespace() {
-    let tokens: Vec<_> = Tokenizer::new("  \t\n").collect();
+    let tokens: Vec<_> = Tokenizer::new("  \t\n").collect_tokens();
     assert_eq!(tokens, vec![Token::Whitespace]);
 }
 
 #[test]
 fn test_tokenize_comment() {
-    let tokens: Vec<_> = Tokenizer::new("/* hello */").collect();
+    let tokens: Vec<_> = Tokenizer::new("/* hello */").collect_tokens();
     assert_eq!(tokens, vec![Token::Comment(" hello ".to_string())]);
 }
 
 #[test]
 fn test_tokenize_attribute_matchers() {
-    let tokens: Vec<_> = Tokenizer::new("~=").collect();
+    let tokens: Vec<_> = Tokenizer::new("~=").collect_tokens();
     assert_eq!(tokens, vec![Token::IncludeMatch]);
 
-    let tokens: Vec<_> = Tokenizer::new("|=").collect();
+    let tokens: Vec<_> = Tokenizer::new("|=").collect_tokens();
     assert_eq!(tokens, vec![Token::DashMatch]);
 
-    let tokens: Vec<_> = Tokenizer::new("^=").collect();
+    let tokens: Vec<_> = Tokenizer::new("^=").collect_tokens();
     assert_eq!(tokens, vec![Token::PrefixMatch]);
 
-    let tokens: Vec<_> = Tokenizer::new("$=").collect();
+    let tokens: Vec<_> = Tokenizer::new("$=").collect_tokens();
     assert_eq!(tokens, vec![Token::SuffixMatch]);
 
-    let tokens: Vec<_> = Tokenizer::new("*=").collect();
+    let tokens: Vec<_> = Tokenizer::new("*=").collect_tokens();
     assert_eq!(tokens, vec![Token::SubstringMatch]);
 }
 
 #[test]
 fn test_tokenize_negative_number() {
-    let tokens: Vec<_> = Tokenizer::new("-10px").collect();
+    let tokens: Vec<_> = Tokenizer::new("-10px").collect_tokens();
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == -10.0 && u == "px"));
 }
 
 #[test]
 fn test_tokenize_simple_rule() {
-    let tokens: Vec<_> = Tokenizer::new("div { color: red; }").collect();
+    let tokens: Vec<_> = Tokenizer::new("div { color: red; }").collect_tokens();
     assert!(tokens.len() >= 5);
 }
 
@@ -416,13 +416,13 @@ fn test_parse_at_layer() {
 
 #[test]
 fn test_tokenize_zero() {
-    let tokens: Vec<_> = Tokenizer::new("0").collect();
+    let tokens: Vec<_> = Tokenizer::new("0").collect_tokens();
     assert!(matches!(tokens[0], Token::Number(0.0)));
 }
 
 #[test]
 fn test_tokenize_escaped_ident() {
-    let tokens: Vec<_> = Tokenizer::new("\\41 ").collect(); // \41 = 'A', needs space terminator
+    let tokens: Vec<_> = Tokenizer::new("\\41 ").collect_tokens(); // \41 = 'A', needs space terminator
     // Escaped hex codepoint should produce a valid ident (could be "A" or "A ")
     assert!(!tokens.is_empty());
 }
@@ -430,38 +430,38 @@ fn test_tokenize_escaped_ident() {
 #[test]
 fn test_tokenize_multiple_rules() {
     let css = "div { color: red; } .class { font-size: 16px; }";
-    let tokens: Vec<_> = Tokenizer::new(css).collect();
+    let tokens: Vec<_> = Tokenizer::new(css).collect_tokens();
     assert!(tokens.len() > 10);
 }
 
 #[test]
 fn test_tokenize_nested_parens() {
     let css = "rgba(255, 0, 0, 0.5)";
-    let tokens: Vec<_> = Tokenizer::new(css).collect();
+    let tokens: Vec<_> = Tokenizer::new(css).collect_tokens();
     assert!(tokens.len() >= 2); // At least Function + some content
 }
 
 #[test]
 fn test_tokenize_rem_dimension() {
-    let tokens: Vec<_> = Tokenizer::new("1.2rem").collect();
+    let tokens: Vec<_> = Tokenizer::new("1.2rem").collect_tokens();
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if (*n - 1.2).abs() < 0.001 && u == "rem"));
 }
 
 #[test]
 fn test_tokenize_vh_dimension() {
-    let tokens: Vec<_> = Tokenizer::new("100vh").collect();
+    let tokens: Vec<_> = Tokenizer::new("100vh").collect_tokens();
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 100.0 && u == "vh"));
 }
 
 #[test]
 fn test_tokenize_unterminated_comment() {
-    let tokens: Vec<_> = Tokenizer::new("/* unterminated").collect();
+    let tokens: Vec<_> = Tokenizer::new("/* unterminated").collect_tokens();
     assert!(matches!(&tokens[0], Token::Error(_)));
 }
 
 #[test]
 fn test_tokenize_unterminated_string() {
-    let tokens: Vec<_> = Tokenizer::new("\"unterminated").collect();
+    let tokens: Vec<_> = Tokenizer::new("\"unterminated").collect_tokens();
     // Should still return a string (partial)
     assert!(matches!(&tokens[0], Token::String(_)));
 }
@@ -472,44 +472,44 @@ fn test_tokenize_unterminated_string() {
 
 #[test]
 fn test_tokenize_dot_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new(".").collect();
+    let tokens: Vec<_> = Tokenizer::new(".").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('.')]);
 }
 
 #[test]
 fn test_tokenize_bang_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new("!").collect();
+    let tokens: Vec<_> = Tokenizer::new("!").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('!')]);
 }
 
 #[test]
 fn test_tokenize_greater_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new(">").collect();
+    let tokens: Vec<_> = Tokenizer::new(">").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('>')]);
 }
 
 #[test]
 fn test_tokenize_plus_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new("+").collect();
+    let tokens: Vec<_> = Tokenizer::new("+").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('+')]);
 }
 
 #[test]
 fn test_tokenize_star_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new("*").collect();
+    let tokens: Vec<_> = Tokenizer::new("*").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('*')]);
 }
 
 #[test]
 fn test_tokenize_tilde_as_delim() {
-    let tokens: Vec<_> = Tokenizer::new("~").collect();
+    let tokens: Vec<_> = Tokenizer::new("~").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('~')]);
 }
 
 #[test]
 fn test_tokenize_complex_selector() {
     // div.class#id:hover → Ident Delim('.') Ident Hash Colon Ident
-    let tokens: Vec<_> = Tokenizer::new("div.class#id:hover").collect();
+    let tokens: Vec<_> = Tokenizer::new("div.class#id:hover").collect_tokens();
     assert!(tokens.len() >= 6);
     assert_eq!(tokens[0], Token::Ident("div".to_string()));
     assert_eq!(tokens[1], Token::Delim('.'));
@@ -522,14 +522,14 @@ fn test_tokenize_complex_selector() {
 #[test]
 fn test_tokenize_dot_before_digit_still_number() {
     // ".5" → Number(0.5)
-    let tokens: Vec<_> = Tokenizer::new(".5").collect();
+    let tokens: Vec<_> = Tokenizer::new(".5").collect_tokens();
     assert!(matches!(tokens[0], Token::Number(n) if (n - 0.5).abs() < 0.001));
 }
 
 #[test]
 fn test_tokenize_child_combinator_in_context() {
     // div > p → Ident Whitespace Delim('>') Whitespace Ident
-    let tokens: Vec<_> = Tokenizer::new("div > p").collect();
+    let tokens: Vec<_> = Tokenizer::new("div > p").collect_tokens();
     assert!(tokens.len() >= 5);
     assert_eq!(tokens[0], Token::Ident("div".to_string()));
     assert_eq!(tokens[1], Token::Whitespace);
@@ -541,7 +541,7 @@ fn test_tokenize_child_combinator_in_context() {
 #[test]
 fn test_tokenize_important() {
     // !important → Delim('!') Ident("important")
-    let tokens: Vec<_> = Tokenizer::new("!important").collect();
+    let tokens: Vec<_> = Tokenizer::new("!important").collect_tokens();
     assert!(tokens.len() >= 2);
     assert_eq!(tokens[0], Token::Delim('!'));
     assert_eq!(tokens[1], Token::Ident("important".to_string()));
@@ -2162,14 +2162,14 @@ fn test_parse_has_selector_list() {
 #[test]
 /// 测试 `/` 作为独立分隔符（用于 font shorthand 等）
 fn test_tokenize_slash_delim() {
-    let tokens: Vec<_> = Tokenizer::new("/").collect();
+    let tokens: Vec<_> = Tokenizer::new("/").collect_tokens();
     assert_eq!(tokens, vec![Token::Delim('/')]);
 }
 
 #[test]
 /// 测试 font shorthand 中的 `/` 分隔符：`font: 12px/1.5 sans-serif`
 fn test_tokenize_font_shorthand_slash() {
-    let tokens: Vec<_> = Tokenizer::new("12px/1.5").collect();
+    let tokens: Vec<_> = Tokenizer::new("12px/1.5").collect_tokens();
     assert!(tokens.len() >= 3);
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 12.0 && u == "px"));
     assert_eq!(tokens[1], Token::Delim('/'));
@@ -2179,7 +2179,7 @@ fn test_tokenize_font_shorthand_slash() {
 #[test]
 /// 测试 calc() 中的除法 `/`
 fn test_tokenize_calc_division() {
-    let tokens: Vec<_> = Tokenizer::new("100px / 2").collect();
+    let tokens: Vec<_> = Tokenizer::new("100px / 2").collect_tokens();
     assert!(tokens.len() >= 3);
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 100.0 && u == "px"));
     assert_eq!(tokens[1], Token::Whitespace);
@@ -3147,7 +3147,7 @@ fn test_eval_calc_divide_by_zero() {
 #[test]
 /// 测试 url() 函数 tokenization
 fn test_tokenize_url_with_path() {
-    let tokens: Vec<_> = Tokenizer::new("url(../images/bg.png)").collect();
+    let tokens: Vec<_> = Tokenizer::new("url(../images/bg.png)").collect_tokens();
     assert_eq!(tokens.len(), 1);
     assert!(matches!(&tokens[0], Token::Url(u) if u == "../images/bg.png"));
 }
@@ -3155,7 +3155,7 @@ fn test_tokenize_url_with_path() {
 #[test]
 /// 测试 url() 带引号参数
 fn test_tokenize_url_quoted() {
-    let tokens: Vec<_> = Tokenizer::new("url('path/to/font.woff2')").collect();
+    let tokens: Vec<_> = Tokenizer::new("url('path/to/font.woff2')").collect_tokens();
     assert!(matches!(&tokens[0], Token::Url(u) if u == "path/to/font.woff2"));
 }
 
@@ -3330,7 +3330,7 @@ fn test_parse_container_with_inline_size_condition() {
 #[test]
 /// 测试注释在值中间
 fn test_tokenize_comment_in_value() {
-    let tokens: Vec<_> = Tokenizer::new("10px /* comment */ 20px").collect();
+    let tokens: Vec<_> = Tokenizer::new("10px /* comment */ 20px").collect_tokens();
     // Tokens: Dimension(10,px) Whitespace Comment Whitespace Dimension(20,px)
     assert!(tokens.len() >= 5);
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 10.0 && u == "px"));
@@ -3343,7 +3343,7 @@ fn test_tokenize_comment_in_value() {
 #[test]
 /// 测试标识符中转义字符
 fn test_tokenize_escaped_character_in_ident() {
-    let tokens: Vec<_> = Tokenizer::new("\\41 ctive").collect(); // \41 = 'A'
+    let tokens: Vec<_> = Tokenizer::new("\\41 ctive").collect_tokens(); // \41 = 'A'
     assert!(!tokens.is_empty());
     // The escaped \41 should produce 'A', so the ident should start with 'A'
     if let Token::Ident(s) = &tokens[0] {
@@ -3354,24 +3354,24 @@ fn test_tokenize_escaped_character_in_ident() {
 #[test]
 /// 测试科学计数法数字
 fn test_tokenize_scientific_notation() {
-    let tokens: Vec<_> = Tokenizer::new("1e2").collect();
+    let tokens: Vec<_> = Tokenizer::new("1e2").collect_tokens();
     assert!(matches!(&tokens[0], Token::Number(n) if (*n - 100.0).abs() < 0.001));
 
-    let tokens: Vec<_> = Tokenizer::new("3.5e-1").collect();
+    let tokens: Vec<_> = Tokenizer::new("3.5e-1").collect_tokens();
     assert!(matches!(&tokens[0], Token::Number(n) if (*n - 0.35).abs() < 0.001));
 }
 
 #[test]
 /// 测试多行字符串
 fn test_tokenize_multiline_string() {
-    let tokens: Vec<_> = Tokenizer::new("\"line1\\nline2\"").collect();
+    let tokens: Vec<_> = Tokenizer::new("\"line1\\nline2\"").collect_tokens();
     assert!(matches!(&tokens[0], Token::String(s) if s.contains("line1") && s.contains("line2")));
 }
 
 #[test]
 /// 测试自定义属性 (--*) tokenization
 fn test_tokenize_custom_property() {
-    let tokens: Vec<_> = Tokenizer::new("--main-color").collect();
+    let tokens: Vec<_> = Tokenizer::new("--main-color").collect_tokens();
     // Custom properties start with '--', which is parsed as an ident starting with '-'
     assert!(!tokens.is_empty());
     if let Token::Ident(s) = &tokens[0] {
@@ -3382,7 +3382,7 @@ fn test_tokenize_custom_property() {
 #[test]
 /// 测试连续空白合并为单个 Whitespace token
 fn test_tokenize_multiple_whitespace() {
-    let tokens: Vec<_> = Tokenizer::new("   \t  \n  ").collect();
+    let tokens: Vec<_> = Tokenizer::new("   \t  \n  ").collect_tokens();
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0], Token::Whitespace);
 }
@@ -3415,6 +3415,122 @@ fn test_parse_unclosed_string_recovery() {
     let stylesheet = Parser::parse_stylesheet(css);
     // Parser should produce at least one rule (even if malformed)
     assert!(stylesheet.rules.len() >= 1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 23. Token 偏移量追踪测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 token 偏移量追踪：验证 token 的起始字节位置正确
+fn test_token_offset_tracking() {
+    let css = "div { color: red; }";
+    let tokens: Vec<Spanned> = Tokenizer::new(css).collect();
+
+    // "div" 起始于偏移量 0
+    assert_eq!(tokens[0].offset, 0);
+    assert!(matches!(tokens[0].token, Token::Ident(ref s) if s == "div"));
+
+    // " " （空白）起始于偏移量 3
+    assert_eq!(tokens[1].offset, 3);
+    assert!(matches!(tokens[1].token, Token::Whitespace));
+
+    // "{" 起始于偏移量 4
+    assert_eq!(tokens[2].offset, 4);
+    assert!(matches!(tokens[2].token, Token::LBrace));
+
+    // " " （空白）起始于偏移量 5
+    assert_eq!(tokens[3].offset, 5);
+
+    // "color" 起始于偏移量 6
+    assert_eq!(tokens[4].offset, 6);
+    assert!(matches!(tokens[4].token, Token::Ident(ref s) if s == "color"));
+
+    // ":" 起始于偏移量 11
+    assert_eq!(tokens[5].offset, 11);
+
+    // " " （空白）起始于偏移量 12
+    assert_eq!(tokens[6].offset, 12);
+
+    // "red" 起始于偏移量 13
+    assert_eq!(tokens[7].offset, 13);
+
+    // ";" 起始于偏移量 16
+    assert_eq!(tokens[8].offset, 16);
+
+    // " " （空白）起始于偏移量 17
+    assert_eq!(tokens[9].offset, 17);
+
+    // "}" 起始于偏移量 18
+    assert_eq!(tokens[10].offset, 18);
+}
+
+#[test]
+/// 测试换行后位置正确推进
+fn test_tokenizer_position_after_newline() {
+    let css = "a\nb";
+    let tokens: Vec<Spanned> = Tokenizer::new(css).collect();
+
+    // "a" 起始于偏移量 0
+    assert_eq!(tokens[0].offset, 0);
+
+    // "\n" （空白）起始于偏移量 1
+    assert_eq!(tokens[1].offset, 1);
+
+    // "b" 起始于偏移量 2
+    assert_eq!(tokens[2].offset, 2);
+
+    // 测试 \r\n 换行
+    let css_crlf = "a\r\nb";
+    let tokens_crlf: Vec<Spanned> = Tokenizer::new(css_crlf).collect();
+
+    // "a" 起始于偏移量 0
+    assert_eq!(tokens_crlf[0].offset, 0);
+
+    // 空白（包含 \r\n）起始于偏移量 1
+    assert_eq!(tokens_crlf[1].offset, 1);
+
+    // "b" 起始于偏移量 3（\r\n 占 2 字节）
+    assert_eq!(tokens_crlf[2].offset, 3);
+}
+
+#[test]
+/// 测试字节偏移量到行:列的转换
+fn test_line_column_from_offset() {
+    let source = "div {\n  color: red;\n}";
+
+    // 偏移量 0 → 第 1 行第 1 列 ("d")
+    assert_eq!(line_column_from_offset(source, 0), (1, 1));
+
+    // 偏移量 3 → 第 1 行第 4 列 (" ")
+    assert_eq!(line_column_from_offset(source, 3), (1, 4));
+
+    // 偏移量 5 → 第 1 行第 6 列 ("\n" 本身)
+    assert_eq!(line_column_from_offset(source, 5), (1, 6));
+
+    // 偏移量 6 → 第 2 行第 1 列 ("\n" 后第一个字符)
+    assert_eq!(line_column_from_offset(source, 6), (2, 1));
+
+    // 偏移量 8 → 第 2 行第 3 列 ("c")
+    assert_eq!(line_column_from_offset(source, 8), (2, 3));
+
+    // 偏移量 14 → 第 2 行第 9 列 (冒号后空格)
+    assert_eq!(line_column_from_offset(source, 14), (2, 9));
+
+    // 偏移量 19 → 第 2 行第 14 列 ("\n" 是第 2 行最后一个字符)
+    assert_eq!(line_column_from_offset(source, 19), (2, 14));
+
+    // 偏移量 20 → 第 3 行第 1 列 ("}")
+    assert_eq!(line_column_from_offset(source, 20), (3, 1));
+
+    // 测试 \r\n 换行
+    let source_crlf = "a\r\nb";
+    assert_eq!(line_column_from_offset(source_crlf, 0), (1, 1));
+    assert_eq!(line_column_from_offset(source_crlf, 1), (1, 2));
+    // \r 触发换行并跳过 \n，因此 \r\n 整体被视为换行
+    assert_eq!(line_column_from_offset(source_crlf, 2), (2, 1));
+    assert_eq!(line_column_from_offset(source_crlf, 3), (2, 1)); // b 的位置
+    assert_eq!(line_column_from_offset(source_crlf, 4), (2, 2)); // b 之后
 }
 
 #[test]

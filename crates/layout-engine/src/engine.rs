@@ -2854,4 +2854,192 @@ mod tests {
             total
         );
     }
+
+    /// 测试 grid-template-areas 基本 2x2 布局。
+    ///
+    /// 定义 2x2 区域：
+    ///   "header header"
+    ///   "sidebar main"
+    /// 验证 header 跨两列，sidebar 和 main 各占一列。
+    #[test]
+    fn test_grid_template_areas_basic() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let header_el = doc.create_element("div");
+        doc.append_child(grid, header_el).unwrap();
+        let sidebar_el = doc.create_element("div");
+        doc.append_child(grid, sidebar_el).unwrap();
+        let main_el = doc.create_element("div");
+        doc.append_child(grid, main_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // grid 容器：2x2 模板 + 区域定义
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.grid_template_areas =
+            Some("\"header header\" \"sidebar main\"".to_string());
+        grid_style.width = LengthValue::Px(200.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        // header: grid-area: header（跨第一行两列）
+        let mut header_style = ComputedStyle::default();
+        header_style.grid_row_start = GridLineValue::Name("header".to_string());
+        header_style.grid_row_end = GridLineValue::Name("header".to_string());
+        header_style.grid_column_start = GridLineValue::Name("header".to_string());
+        header_style.grid_column_end = GridLineValue::Name("header".to_string());
+        styles.insert(header_el, header_style);
+
+        // sidebar: grid-area: sidebar（第二行第一列）
+        let mut sidebar_style = ComputedStyle::default();
+        sidebar_style.grid_row_start = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_row_end = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_column_start = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_column_end = GridLineValue::Name("sidebar".to_string());
+        styles.insert(sidebar_el, sidebar_style);
+
+        // main: grid-area: main（第二行第二列）
+        let mut main_style = ComputedStyle::default();
+        main_style.grid_row_start = GridLineValue::Name("main".to_string());
+        main_style.grid_row_end = GridLineValue::Name("main".to_string());
+        main_style.grid_column_start = GridLineValue::Name("main".to_string());
+        main_style.grid_column_end = GridLineValue::Name("main".to_string());
+        styles.insert(main_el, main_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let header_box =
+            find_child_by_node_id(&result.root, header_el).expect("header found");
+        let sidebar_box =
+            find_child_by_node_id(&result.root, sidebar_el).expect("sidebar found");
+        let main_box =
+            find_child_by_node_id(&result.root, main_el).expect("main found");
+
+        // header 应跨两列（约 200px），在第一行
+        assert!(
+            (header_box.width - 200.0).abs() < 1.0,
+            "header 应跨两列（~200px），实际 {}",
+            header_box.width
+        );
+        assert!(
+            (header_box.height - 50.0).abs() < 1.0,
+            "header 应高约 50px，实际 {}",
+            header_box.height
+        );
+
+        // sidebar 在第二行第一列
+        assert!(
+            sidebar_box.y > header_box.y,
+            "sidebar 应在 header 下方"
+        );
+        assert!(
+            (sidebar_box.width - 100.0).abs() < 1.0,
+            "sidebar 应宽约 100px，实际 {}",
+            sidebar_box.width
+        );
+
+        // main 在第二行第二列，在 sidebar 右侧
+        assert!(
+            main_box.x > sidebar_box.x,
+            "main 应在 sidebar 右侧: main.x={} vs sidebar.x={}",
+            main_box.x,
+            sidebar_box.x
+        );
+        assert!(
+            (main_box.width - 100.0).abs() < 1.0,
+            "main 应宽约 100px，实际 {}",
+            main_box.width
+        );
+
+        // sidebar 和 main 在同一行
+        assert!(
+            (sidebar_box.y - main_box.y).abs() < 0.01,
+            "sidebar 和 main 应在同一行"
+        );
+    }
+
+    /// 测试 grid-area 命名引用放置。
+    ///
+    /// 元素设置 grid-area: "header" 后，应被放置在 header 区域对应的单元格。
+    #[test]
+    fn test_grid_area_name_placement() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let header_el = doc.create_element("div");
+        doc.append_child(grid, header_el).unwrap();
+        let content_el = doc.create_element("div");
+        doc.append_child(grid, content_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // grid 容器
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("200px 200px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.grid_template_areas =
+            Some("\"header header\" \"content content\"".to_string());
+        grid_style.width = LengthValue::Px(400.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        // header: 仅设置 grid-area 为命名 "header"
+        let mut header_style = ComputedStyle::default();
+        header_style.grid_row_start = GridLineValue::Name("header".to_string());
+        header_style.grid_row_end = GridLineValue::Name("header".to_string());
+        header_style.grid_column_start = GridLineValue::Name("header".to_string());
+        header_style.grid_column_end = GridLineValue::Name("header".to_string());
+        styles.insert(header_el, header_style);
+
+        // content: 命名 "content"
+        let mut content_style = ComputedStyle::default();
+        content_style.grid_row_start = GridLineValue::Name("content".to_string());
+        content_style.grid_row_end = GridLineValue::Name("content".to_string());
+        content_style.grid_column_start = GridLineValue::Name("content".to_string());
+        content_style.grid_column_end = GridLineValue::Name("content".to_string());
+        styles.insert(content_el, content_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let header_box =
+            find_child_by_node_id(&result.root, header_el).expect("header found");
+        let content_box =
+            find_child_by_node_id(&result.root, content_el).expect("content found");
+
+        // header 应在第一行，跨两列
+        assert!(
+            (header_box.y).abs() < 1.0,
+            "header 应从 y=0 开始，实际 y={}",
+            header_box.y
+        );
+        assert!(
+            (header_box.width - 400.0).abs() < 1.0,
+            "header 应跨两列（~400px），实际 {}",
+            header_box.width
+        );
+
+        // content 应在第二行，跨两列
+        assert!(
+            content_box.y > header_box.y,
+            "content 应在 header 下方"
+        );
+        assert!(
+            (content_box.width - 400.0).abs() < 1.0,
+            "content 应跨两列（~400px），实际 {}",
+            content_box.width
+        );
+    }
 }
