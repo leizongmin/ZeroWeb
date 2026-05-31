@@ -490,4 +490,93 @@ mod tests {
         assert_eq!(img.byte_size(), 100 * 100 * 4);
         assert_eq!(img.get_pixel(50, 50), [128, 128, 128, 128]);
     }
+
+    /// 测试 LRU 淘汰顺序：先插入（最旧世代）的条目应被优先淘汰
+    #[test]
+    fn test_cache_gc_lru_eviction_order() {
+        let mut cache = ImageCache::new(2, 1024 * 1024);
+        let key1 = cache.insert(make_image(1, 1, 10)); // gen 0
+        let key2 = cache.insert(make_image(1, 1, 20)); // gen 0
+        // 推进世代后插入 key3，使 key1/key2 有更旧的 last_access_gen
+        cache.gc(); // gen -> 1，key1 和 key2 的 last_access_gen 仍为 0
+        let key3 = cache.insert(make_image(1, 1, 30)); // last_access_gen = 1
+
+        cache.gc(); // gen -> 2，应淘汰 gen=0 的条目（key1 和 key2 之一）
+        assert_eq!(cache.len(), 2);
+        // key3 最新（gen=1），一定保留
+        assert!(cache.ref_count(&key3).is_some(), "最新的 key3 应保留");
+        // key1 和 key2 同为 gen=0，淘汰其中一个即可
+        let remaining = cache.ref_count(&key1).is_some() as usize
+            + cache.ref_count(&key2).is_some() as usize;
+        assert_eq!(remaining, 1, "key1 和 key2 中应恰好保留一个");
+    }
+
+    /// 测试多次 GC 后访问时间更新使条目免于被淘汰
+    #[test]
+    fn test_cache_gc_get_updates_lru_and_protects_entry() {
+        let mut cache = ImageCache::new(2, 1024 * 1024);
+        let key1 = cache.insert(make_image(1, 1, 10));
+        let key2 = cache.insert(make_image(1, 1, 20));
+
+        // 先执行一次 GC 使世代推进到 1
+        cache.gc();
+        // 此时 key1 和 key2 的 last_access_gen 仍为 0
+
+        // 访问 key1 使其 last_access_gen 更新为 1
+        let _ = cache.get(&key1);
+        // key2 的 last_access_gen 仍为 0（更旧）
+
+        // 插入第三个，触发超限
+        let key3 = cache.insert(make_image(1, 1, 30)); // gen=1
+
+        cache.gc(); // 世代推进到 2
+        assert_eq!(cache.len(), 2);
+        // key1 被访问过（gen=1），应保留；key2 最旧（gen=0），应被淘汰
+        assert!(cache.ref_count(&key1).is_some(), "被访问过的 key1 应保留");
+        assert!(cache.ref_count(&key2).is_none(), "未被访问的 key2 应被淘汰");
+        assert!(cache.ref_count(&key3).is_some(), "key3 应保留");
+    }
+
+    /// 测试混合 release + get 模式下 GC 的正确性
+    #[test]
+    fn test_cache_gc_mixed_release_and_get_pattern() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key1 = cache.insert(make_image(1, 1, 10));
+        let key2 = cache.insert(make_image(1, 1, 20));
+        let key3 = cache.insert(make_image(1, 1, 30));
+
+        // key1: release → ref_count=0（应被 GC 移除）
+        cache.release(&key1);
+        // key2: get → ref_count=2（应保留）
+        let _ = cache.get(&key2);
+        // key3: 保持 ref_count=1（应保留）
+
+        cache.gc();
+        assert!(cache.ref_count(&key1).is_none(), "ref_count=0 的 key1 应被移除");
+        assert_eq!(cache.ref_count(&key2), Some(2), "key2 ref_count 应为 2");
+        assert_eq!(cache.ref_count(&key3), Some(1), "key3 ref_count 应为 1");
+        assert_eq!(cache.len(), 2);
+    }
+
+    /// 测试超大图片超过 max_bytes 时被淘汰
+    #[test]
+    fn test_cache_gc_single_image_exceeds_max_bytes() {
+        let mut cache = ImageCache::new(10, 16); // 仅允许 16 字节
+        let key1 = cache.insert(make_image(1, 1, 10)); // 4 字节
+        let key2 = cache.insert(make_image(1, 1, 20)); // 4 字节
+        assert_eq!(cache.total_bytes(), 8);
+
+        // 插入一个 4x4（64 字节）的图片，远超 max_bytes
+        let key_big = cache.insert(make_image(4, 4, 255)); // 64 字节
+        assert!(cache.total_bytes() > 16);
+
+        cache.gc();
+        // GC 应不断淘汰最旧条目直到总字节数 ≤ max_bytes
+        // 即使淘汰所有旧条目后只剩 key_big (64 > 16)，也会继续淘汰
+        // 最终 key_big 也会被淘汰（因为 64 > 16）
+        assert!(
+            cache.total_bytes() <= 16,
+            "GC 后总字节数应不超过 max_bytes"
+        );
+    }
 }

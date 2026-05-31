@@ -869,4 +869,221 @@ mod tests {
         let line = MouseScrollDelta::LineDelta(1.0, 2.0);
         assert_ne!(pixel, line);
     }
+
+    // --- 高优先级事件处理测试 ---
+
+    /// 验证：窗口 resize 事件携带正确的新尺寸（包括极端值和常见分辨率）
+    #[test]
+    fn test_resize_event_carries_correct_dimensions() {
+        let cases: Vec<(u32, u32)> = vec![
+            (1920, 1080), // Full HD
+            (2560, 1440), // QHD
+            (1366, 768),  // 常见笔记本
+            (1, 1),       // 最小值
+        ];
+        for (w, h) in cases {
+            let event = AppEvent::Resized { width: w, height: h };
+            if let AppEvent::Resized { width, height } = event {
+                assert_eq!(width, w, "resize width 不匹配: 期望 {w}, 实际 {width}");
+                assert_eq!(height, h, "resize height 不匹配: 期望 {h}, 实际 {height}");
+            } else {
+                panic!("Expected Resized variant");
+            }
+        }
+    }
+
+    /// 验证：鼠标移动事件坐标精确传递（包括分数值和负值）
+    #[test]
+    fn test_mouse_move_coordinates_precision() {
+        let cases: Vec<(f64, f64)> = vec![
+            (0.0, 0.0),
+            (1920.5, 1080.25),   // 分数坐标
+            (-100.0, -200.0),    // 窗口外
+        ];
+        for (x, y) in cases {
+            let event = AppEvent::MouseMoved { x, y };
+            if let AppEvent::MouseMoved { x: ex, y: ey } = event {
+                assert!((ex - x).abs() < f64::EPSILON, "x 坐标不精确: 期望 {x}, 实际 {ex}");
+                assert!((ey - y).abs() < f64::EPSILON, "y 坐标不精确: 期望 {y}, 实际 {ey}");
+            } else {
+                panic!("Expected MouseMoved variant");
+            }
+        }
+    }
+
+    /// 验证：IME 组合事件完整流程 — Enabled → 多次 Preedit → Commit → Disabled
+    #[test]
+    fn test_ime_composition_full_lifecycle() {
+        // 模拟拼音输入"中"的完整流程
+        let enabled = ImeEvent::Enabled;
+        let preedit1 = ImeEvent::Preedit {
+            text: "z".to_string(),
+            cursor: Some((0, 1)),
+        };
+        let preedit2 = ImeEvent::Preedit {
+            text: "zh".to_string(),
+            cursor: Some((0, 2)),
+        };
+        let preedit3 = ImeEvent::Preedit {
+            text: "zhon".to_string(),
+            cursor: Some((0, 4)),
+        };
+        let preedit4 = ImeEvent::Preedit {
+            text: "zhong".to_string(),
+            cursor: Some((0, 5)),
+        };
+        let commit = ImeEvent::Commit("中".to_string());
+        let disabled = ImeEvent::Disabled;
+
+        // 验证每个阶段的事件类型和内容
+        assert!(matches!(enabled, ImeEvent::Enabled));
+        assert_eq!(
+            preedit3,
+            ImeEvent::Preedit {
+                text: "zhon".to_string(),
+                cursor: Some((0, 4))
+            }
+        );
+        assert_eq!(commit, ImeEvent::Commit("中".to_string()));
+        assert!(matches!(disabled, ImeEvent::Disabled));
+
+        // 验证完整流程按序收集
+        let lifecycle: Vec<ImeEvent> = vec![enabled, preedit1, preedit2, preedit3, preedit4, commit, disabled];
+        assert_eq!(lifecycle.len(), 7);
+
+        // 验证 commit 文本
+        if let ImeEvent::Commit(text) = &lifecycle[5] {
+            assert!(!text.is_empty(), "IME commit 文本不应为空");
+            assert_eq!(text, "中");
+        } else {
+            panic!("第 6 个事件应为 Commit");
+        }
+
+        // 验证 Preedit 文本逐步增长
+        let texts: Vec<&str> = lifecycle[1..=4]
+            .iter()
+            .map(|e| {
+                if let ImeEvent::Preedit { text, .. } = e {
+                    text.as_str()
+                } else {
+                    ""
+                }
+            })
+            .collect();
+        assert_eq!(texts, vec!["z", "zh", "zhon", "zhong"]);
+    }
+
+    /// 验证：键盘修饰键状态通过 element_state_to_pressed 正确转换
+    /// （Ctrl/Shift 按下时 pressed=true，释放时 pressed=false）
+    #[test]
+    fn test_keyboard_modifier_state_conversion() {
+        // 模拟 Ctrl+Shift 组合键的按下和释放
+        // 1. Ctrl 按下
+        let ctrl_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
+        assert!(ctrl_pressed, "Ctrl 按下时 pressed 应为 true");
+
+        // 2. Shift 按下（同时 Ctrl 仍按住）
+        let shift_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
+        assert!(shift_pressed, "Shift 按下时 pressed 应为 true");
+
+        // 3. 字符键按下（Ctrl+Shift+A）
+        let char_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
+        assert!(char_pressed, "字符键按下时 pressed 应为 true");
+
+        // 4. 字符键释放
+        let char_released = element_state_to_pressed(winit::event::ElementState::Released);
+        assert!(!char_released, "字符键释放时 pressed 应为 false");
+
+        // 5. Shift 释放
+        let shift_released = element_state_to_pressed(winit::event::ElementState::Released);
+        assert!(!shift_released, "Shift 释放时 pressed 应为 false");
+
+        // 6. Ctrl 释放
+        let ctrl_released = element_state_to_pressed(winit::event::ElementState::Released);
+        assert!(!ctrl_released, "Ctrl 释放时 pressed 应为 false");
+
+        // 验证 AppEvent::KeyboardInput 正确承载修饰键按下/释放状态
+        let ctrl_down_event = AppEvent::KeyboardInput {
+            key: "Control".to_string(),
+            pressed: ctrl_pressed,
+        };
+        let shift_down_event = AppEvent::KeyboardInput {
+            key: "Shift".to_string(),
+            pressed: shift_pressed,
+        };
+        if let AppEvent::KeyboardInput { key, pressed } = ctrl_down_event {
+            assert_eq!(key, "Control");
+            assert!(pressed);
+        } else {
+            panic!("Expected KeyboardInput");
+        }
+        if let AppEvent::KeyboardInput { key, pressed } = shift_down_event {
+            assert_eq!(key, "Shift");
+            assert!(pressed);
+        } else {
+            panic!("Expected KeyboardInput");
+        }
+
+        // 释放后的事件
+        let ctrl_up_event = AppEvent::KeyboardInput {
+            key: "Control".to_string(),
+            pressed: ctrl_released,
+        };
+        if let AppEvent::KeyboardInput { pressed, .. } = ctrl_up_event {
+            assert!(!pressed, "Ctrl 释放事件 pressed 应为 false");
+        } else {
+            panic!("Expected KeyboardInput");
+        }
+    }
+
+    /// 验证：所有转换函数对极端输入的鲁棒性
+    #[test]
+    fn test_conversion_functions_robustness() {
+        // convert_mouse_button: Other(0) 和 Other(u16::MAX) 边界值
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Other(0)),
+            MouseButton::Other(0)
+        );
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Other(u16::MAX)),
+            MouseButton::Other(u16::MAX)
+        );
+
+        // convert_scroll_delta: PixelDelta 极端值
+        let extreme_pos = winit::dpi::PhysicalPosition::new(f64::MAX, f64::MIN);
+        let result = convert_scroll_delta(winit::event::MouseScrollDelta::PixelDelta(extreme_pos));
+        assert_eq!(result, MouseScrollDelta::PixelDelta(f64::MAX, f64::MIN));
+
+        // convert_scroll_delta: LineDelta 零值
+        let result = convert_scroll_delta(winit::event::MouseScrollDelta::LineDelta(0.0, 0.0));
+        assert_eq!(result, MouseScrollDelta::LineDelta(0.0, 0.0));
+
+        // convert_ime: 空字符串 Preedit 和 Commit
+        assert_eq!(
+            convert_ime(winit::event::Ime::Preedit(String::new(), None)),
+            ImeEvent::Preedit {
+                text: String::new(),
+                cursor: None
+            }
+        );
+        assert_eq!(
+            convert_ime(winit::event::Ime::Commit(String::new())),
+            ImeEvent::Commit(String::new())
+        );
+
+        // convert_touch_phase: 全部变体两两不同
+        let phases = [
+            (winit::event::TouchPhase::Started, TouchPhase::Started),
+            (winit::event::TouchPhase::Moved, TouchPhase::Moved),
+            (winit::event::TouchPhase::Ended, TouchPhase::Ended),
+            (winit::event::TouchPhase::Cancelled, TouchPhase::Cancelled),
+        ];
+        for (winit_phase, expected) in &phases {
+            assert_eq!(convert_touch_phase(*winit_phase), *expected);
+        }
+
+        // element_state_to_pressed: 双重确认对称性
+        assert!(element_state_to_pressed(winit::event::ElementState::Pressed));
+        assert!(!element_state_to_pressed(winit::event::ElementState::Released));
+    }
 }

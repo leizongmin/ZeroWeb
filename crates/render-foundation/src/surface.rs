@@ -229,4 +229,78 @@ mod tests {
         // Unset pixel should still be black (0,0,0,0)
         assert_eq!(fb.get_pixel(0, 1), [0, 0, 0, 0]);
     }
+
+    /// 测试 GPU 与 CPU 渲染路径对纯黑/纯白填充产生一致的像素输出
+    ///
+    /// GPU 路径：通过 GpuRenderer 无头模式渲染 FillPrimitive 并回读像素
+    /// CPU 路径：通过 FrameBuffer::clear 填充相同颜色
+    /// 纯黑 (0,0,0) 和纯白 (255,255,255) 在 sRGB 下无 gamma 偏移，
+    /// 因此 GPU 与 CPU 必须产生完全相同的 RGBA 像素值。
+    #[test]
+    fn test_gpu_cpu_rendering_consistency_solid_fill() {
+        use crate::color::Color;
+        use crate::gpu::renderer::GpuRenderer;
+        use crate::primitive::FillPrimitive;
+        use crate::font::cache::GlyphCache;
+        use crate::font::loader::FontLoader;
+
+        let width = 16u32;
+        let height = 16u32;
+
+        // 测试纯黑
+        {
+            let mut cpu_fb = FrameBuffer::new(width, height);
+            cpu_fb.clear(0, 0, 0, 255);
+
+            let mut gpu_renderer = GpuRenderer::new_headless(width, height).expect("headless");
+            let fills = vec![FillPrimitive {
+                rect: crate::geometry::Rect::new(0.0, 0.0, width as f32, height as f32),
+                color: Color::BLACK,
+            }];
+            let font_loader = FontLoader::new();
+            let mut glyph_cache = GlyphCache::new(64);
+            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+            let gpu_pixels = gpu_renderer.read_pixels().expect("read_pixels");
+
+            assert_eq!(gpu_pixels.len(), cpu_fb.data.len());
+            for (x, y) in [(0, 0), (8, 8), (15, 15)] {
+                let cpu_pixel = cpu_fb.get_pixel(x, y);
+                let idx = ((y * width + x) * 4) as usize;
+                let gpu_pixel = &gpu_pixels[idx..idx + 4];
+                assert_eq!(
+                    cpu_pixel,
+                    [gpu_pixel[0], gpu_pixel[1], gpu_pixel[2], gpu_pixel[3]],
+                    "纯黑: GPU 和 CPU 在 ({x},{y}) 处的像素应一致"
+                );
+            }
+        }
+
+        // 测试纯白
+        {
+            let mut cpu_fb = FrameBuffer::new(width, height);
+            cpu_fb.clear(255, 255, 255, 255);
+
+            let mut gpu_renderer = GpuRenderer::new_headless(width, height).expect("headless");
+            let fills = vec![FillPrimitive {
+                rect: crate::geometry::Rect::new(0.0, 0.0, width as f32, height as f32),
+                color: Color::WHITE,
+            }];
+            let font_loader = FontLoader::new();
+            let mut glyph_cache = GlyphCache::new(64);
+            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+            let gpu_pixels = gpu_renderer.read_pixels().expect("read_pixels");
+
+            assert_eq!(gpu_pixels.len(), cpu_fb.data.len());
+            for (x, y) in [(0, 0), (8, 8), (15, 15)] {
+                let cpu_pixel = cpu_fb.get_pixel(x, y);
+                let idx = ((y * width + x) * 4) as usize;
+                let gpu_pixel = &gpu_pixels[idx..idx + 4];
+                assert_eq!(
+                    cpu_pixel,
+                    [gpu_pixel[0], gpu_pixel[1], gpu_pixel[2], gpu_pixel[3]],
+                    "纯白: GPU 和 CPU 在 ({x},{y}) 处的像素应一致"
+                );
+            }
+        }
+    }
 }

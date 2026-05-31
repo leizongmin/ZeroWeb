@@ -140,9 +140,15 @@ fn expand_one(
         "border" => expand_border_all(value, important, specificity),
 
         // ── overflow ──
+        // 单值：同时应用于 overflow-x 和 overflow-y
+        // 双值：第一个为 overflow-x，第二个为 overflow-y
         "overflow" => {
-            let v = value.trim();
-            vec![mk("overflow-x", v), mk("overflow-y", v)]
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            match parts.len() {
+                1 => vec![mk("overflow-x", parts[0]), mk("overflow-y", parts[0])],
+                2 => vec![mk("overflow-x", parts[0]), mk("overflow-y", parts[1])],
+                _ => vec![mk("overflow-x", value.trim()), mk("overflow-y", value.trim())],
+            }
         }
 
         // ── border-radius ──
@@ -1858,5 +1864,38 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, "visible");
         assert_eq!(result[1].1, "visible");
+    }
+
+    #[test]
+    /// overflow 简写单值：hidden → overflow-x=hidden, overflow-y=hidden
+    fn test_overflow_shorthand_single_value() {
+        let result = expand_one("overflow", "hidden", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overflow-x");
+        assert_eq!(result[0].1, "hidden");
+        assert_eq!(result[1].0, "overflow-y");
+        assert_eq!(result[1].1, "hidden");
+    }
+
+    #[test]
+    /// overflow 简写双值：hidden scroll → overflow-x=hidden, overflow-y=scroll
+    fn test_overflow_shorthand_two_values() {
+        let result = expand_one("overflow", "hidden scroll", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overflow-x");
+        assert_eq!(result[0].1, "hidden");
+        assert_eq!(result[1].0, "overflow-y");
+        assert_eq!(result[1].1, "scroll");
+    }
+
+    #[test]
+    /// overflow 简写双值：visible hidden → overflow-x=visible, overflow-y=hidden
+    fn test_overflow_shorthand_visible_hidden() {
+        let result = expand_one("overflow", "visible hidden", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overflow-x");
+        assert_eq!(result[0].1, "visible");
+        assert_eq!(result[1].0, "overflow-y");
+        assert_eq!(result[1].1, "hidden");
     }
 }
