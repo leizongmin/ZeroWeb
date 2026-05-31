@@ -41,9 +41,7 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
                             let max_spec = sels
                                 .iter()
                                 .map(specificity)
-                                .max_by(|(a1, b1, c1), (a2, b2, c2)| {
-                                    a1.cmp(a2).then(b1.cmp(b2)).then(c1.cmp(c2))
-                                })
+                                .max_by(|(a1, b1, c1), (a2, b2, c2)| a1.cmp(a2).then(b1.cmp(b2)).then(c1.cmp(c2)))
                                 .unwrap_or((0, 0, 0));
                             a += max_spec.0;
                             b += max_spec.1;
@@ -170,9 +168,9 @@ mod tests {
                 parts: vec![(
                     CompoundSelector {
                         type_selector: None,
-                        subclass_selectors: vec![SubclassSelector::PseudoClass(
-                            PseudoClassSelector::Where(vec![make_tag_selector("div")]),
-                        )],
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Where(vec![
+                            make_tag_selector("div"),
+                        ]))],
                     },
                     None,
                 )],

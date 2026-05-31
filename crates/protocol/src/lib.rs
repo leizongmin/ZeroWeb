@@ -1479,8 +1479,7 @@ mod tests {
             .collect();
 
         let serialized: Vec<Vec<u8>> = messages.iter().map(|m| serialize(m).expect("s")).collect();
-        let deserialized: Vec<IpcMessage> =
-            serialized.iter().map(|b| deserialize(b).expect("d")).collect();
+        let deserialized: Vec<IpcMessage> = serialized.iter().map(|b| deserialize(b).expect("d")).collect();
 
         for (i, msg) in deserialized.iter().enumerate() {
             assert_eq!(i as u64, msg.id);
@@ -1711,11 +1710,7 @@ mod tests {
         for msg in &msgs {
             let b1 = serialize(msg).expect("serialize 1");
             let b2 = serialize(msg).expect("serialize 2");
-            assert_eq!(
-                b1, b2,
-                "deterministic encoding violated for message id={}",
-                msg.id
-            );
+            assert_eq!(b1, b2, "deterministic encoding violated for message id={}", msg.id);
         }
     }
 

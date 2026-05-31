@@ -9,7 +9,7 @@ use zero_css_parser::values::DisplayValue;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
-use crate::converter::{computed_style_to_taffy, parse_grid_template_areas, GridAreaMap};
+use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
 
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
 struct BuildContext {
@@ -131,13 +131,7 @@ fn build_subtree(
         let child_data = doc.get(child_dom);
         // 只处理元素节点
         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-            let child_taffy = build_subtree(
-                ctx,
-                doc,
-                styles,
-                child_dom,
-                grid_areas.as_ref(),
-            );
+            let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref());
             child_taffy_ids.push(child_taffy);
         }
     }
@@ -146,9 +140,7 @@ fn build_subtree(
     let taffy_id = if child_taffy_ids.is_empty() {
         ctx.taffy.new_leaf(taffy_style).unwrap()
     } else {
-        ctx.taffy
-            .new_with_children(taffy_style, &child_taffy_ids)
-            .unwrap()
+        ctx.taffy.new_with_children(taffy_style, &child_taffy_ids).unwrap()
     };
 
     // 记录映射
@@ -183,10 +175,7 @@ mod tests {
     }
 
     /// 在 taffy_to_dom 中查找指定 dom_id 对应的 taffy NodeId。
-    fn find_taffy_for_dom(
-        taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
-        target_dom: NodeId,
-    ) -> taffy::NodeId {
+    fn find_taffy_for_dom(taffy_to_dom: &HashMap<taffy::NodeId, NodeId>, target_dom: NodeId) -> taffy::NodeId {
         taffy_to_dom
             .iter()
             .find(|(_, dom_id)| **dom_id == target_dom)
@@ -398,10 +387,7 @@ mod tests {
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         // 默认 margin 是 Px(0.0)，转换为 Length(0.0)
-        assert_eq!(
-            style.margin.top,
-            taffy::style::LengthPercentageAuto::Length(0.0)
-        );
+        assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(0.0));
     }
 
     /// 测试 margin: auto 正确传递。
@@ -530,10 +516,7 @@ mod tests {
         let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
         let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
         let style = taffy_tree.style(flex_taffy).unwrap();
-        assert_eq!(
-            style.gap.width,
-            taffy::style::LengthPercentage::Length(10.0)
-        );
+        assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(10.0));
     }
 
     /// 测试带 padding/border/margin。
@@ -556,18 +539,9 @@ mod tests {
         let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
-        assert_eq!(
-            style.padding.top,
-            taffy::style::LengthPercentage::Length(10.0)
-        );
-        assert_eq!(
-            style.border.top,
-            taffy::style::LengthPercentage::Length(2.0)
-        );
-        assert_eq!(
-            style.margin.top,
-            taffy::style::LengthPercentageAuto::Length(5.0)
-        );
+        assert_eq!(style.padding.top, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(style.border.top, taffy::style::LengthPercentage::Length(2.0));
+        assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(5.0));
     }
 
     /// 测试带 min/max size。

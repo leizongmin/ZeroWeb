@@ -592,9 +592,7 @@ mod tests {
 
     #[test]
     fn test_webview_builder_auto_loads_config_url() {
-        let wv = WebViewBuilder::new()
-            .url("https://example.com")
-            .build();
+        let wv = WebViewBuilder::new().url("https://example.com").build();
         // builder 应自动调用 load_url
         assert_eq!(wv.url(), Some("https://example.com"));
         assert!(wv.is_loading());
@@ -617,9 +615,7 @@ mod tests {
         let wv_direct = WebView::new(config.clone());
         assert!(wv_direct.url().is_none());
 
-        let wv_builder = WebViewBuilder::new()
-            .url("https://example.com")
-            .build();
+        let wv_builder = WebViewBuilder::new().url("https://example.com").build();
         assert_eq!(wv_builder.url(), Some("https://example.com"));
     }
 
@@ -820,10 +816,7 @@ mod tests {
 
     #[test]
     fn test_webview_builder_then_load_html() {
-        let mut wv = WebViewBuilder::new()
-            .width(1024)
-            .height(768)
-            .build();
+        let mut wv = WebViewBuilder::new().width(1024).height(768).build();
         let result = wv.load_html("<html><body><p>Builder HTML</p></body></html>", None);
         assert!(result.timings.total_ms >= 0.0);
         assert!(wv.last_render().is_some());
@@ -833,9 +826,7 @@ mod tests {
 
     #[test]
     fn test_webview_builder_with_url_then_complete() {
-        let mut wv = WebViewBuilder::new()
-            .url("https://builder-test.com")
-            .build();
+        let mut wv = WebViewBuilder::new().url("https://builder-test.com").build();
         assert!(wv.is_loading());
         assert_eq!(wv.url(), Some("https://builder-test.com"));
         wv.complete_load("<html><body>Loaded</body></html>", None);
@@ -857,17 +848,13 @@ mod tests {
 
     #[test]
     fn test_webview_builder_devtools_enabled() {
-        let wv = WebViewBuilder::new()
-            .devtools(true)
-            .build();
+        let wv = WebViewBuilder::new().devtools(true).build();
         assert!(wv.config().devtools);
     }
 
     #[test]
     fn test_webview_builder_user_agent_with_unicode() {
-        let wv = WebViewBuilder::new()
-            .user_agent("ZeroBrowser/1.0 (日本語)")
-            .build();
+        let wv = WebViewBuilder::new().user_agent("ZeroBrowser/1.0 (日本語)").build();
         assert_eq!(wv.config().user_agent.as_deref(), Some("ZeroBrowser/1.0 (日本語)"));
     }
 
@@ -1090,8 +1077,12 @@ mod tests {
         let events_b: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
         let ea = events_a.clone();
         let eb = events_b.clone();
-        let idx_a = wv.on_event(move |_| { *ea.borrow_mut() += 1; });
-        wv.on_event(move |_| { *eb.borrow_mut() += 1; });
+        let idx_a = wv.on_event(move |_| {
+            *ea.borrow_mut() += 1;
+        });
+        wv.on_event(move |_| {
+            *eb.borrow_mut() += 1;
+        });
 
         wv.set_title("T");
         assert_eq!(*events_a.borrow(), 1);

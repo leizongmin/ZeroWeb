@@ -67,9 +67,7 @@ impl fmt::Display for WasmValue {
 ///
 /// WASM 调用主机函数时传入的参数和返回值的缓冲区。
 /// 主机函数从 `params` 读取参数，将结果写入 `results`。
-pub type HostFn = dyn Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError>
-    + Send
-    + Sync;
+pub type HostFn = dyn Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError> + Send + Sync;
 
 /// 主机函数定义
 ///
@@ -97,10 +95,7 @@ impl HostFunction {
         name: impl Into<String>,
         params: Vec<WasmValueType>,
         results: Vec<WasmValueType>,
-        func: impl Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError>
-            + Send
-            + Sync
-            + 'static,
+        func: impl Fn(&[WasmValue], &mut Vec<WasmValue>) -> Result<(), WasmError> + Send + Sync + 'static,
     ) -> Self {
         Self {
             module: module.into(),
@@ -232,8 +227,8 @@ mod wasmi_backend {
 
         /// 编译 WASM 模块
         pub fn compile(&self, bytes: &[u8]) -> Result<WasmModule, WasmError> {
-            let module = wasmi::Module::new(&self.engine, bytes)
-                .map_err(|e| WasmError::InvalidBinary(e.to_string()))?;
+            let module =
+                wasmi::Module::new(&self.engine, bytes).map_err(|e| WasmError::InvalidBinary(e.to_string()))?;
             Ok(WasmModule { module })
         }
 
@@ -316,8 +311,7 @@ mod wasmi_backend {
                         &host_func.name,
                         func_type,
                         move |_caller, params, results| {
-                            let wasm_params: Vec<WasmValue> =
-                                params.iter().map(wasmi_val_to_wasm).collect();
+                            let wasm_params: Vec<WasmValue> = params.iter().map(wasmi_val_to_wasm).collect();
                             let mut wasm_results = Vec::new();
                             match arc_func(&wasm_params, &mut wasm_results) {
                                 Ok(()) => {
@@ -346,10 +340,7 @@ mod wasmi_backend {
 
         /// 获取导出名称列表
         pub fn exports(&self) -> Vec<String> {
-            self.module
-                .exports()
-                .map(|e| e.name().to_string())
-                .collect()
+            self.module.exports().map(|e| e.name().to_string()).collect()
         }
     }
 
@@ -361,36 +352,27 @@ mod wasmi_backend {
 
     impl WasmInstance {
         /// 调用导出函数
-        pub fn call(
-            &mut self,
-            name: &str,
-            args: &[WasmValue],
-        ) -> Result<Vec<WasmValue>, WasmError> {
-            let func = self.instance.get_func(&self.store, name).ok_or_else(|| {
-                WasmError::ExportNotFound {
-                    name: name.to_string(),
-                }
-            })?;
+        pub fn call(&mut self, name: &str, args: &[WasmValue]) -> Result<Vec<WasmValue>, WasmError> {
+            let func = self
+                .instance
+                .get_func(&self.store, name)
+                .ok_or_else(|| WasmError::ExportNotFound { name: name.to_string() })?;
 
             let params: Vec<wasmi::Val> = args.iter().map(wasm_value_to_wasmi).collect();
 
             // 获取返回值类型以分配输出缓冲区
             let func_type = func.ty(&self.store);
             let result_types: Vec<_> = func_type.results().to_vec();
-            let mut outputs: Vec<wasmi::Val> = result_types
-                .iter()
-                .map(|t| wasmi::Val::default(*t))
-                .collect();
+            let mut outputs: Vec<wasmi::Val> = result_types.iter().map(|t| wasmi::Val::default(*t)).collect();
 
-            func.call(&mut self.store, &params, &mut outputs)
-                .map_err(|e| {
-                    // 检查是否是燃料耗尽的 trap
-                    if e.as_trap_code() == Some(wasmi::core::TrapCode::OutOfFuel) {
-                        WasmError::FuelExhausted
-                    } else {
-                        WasmError::CallError(e.to_string())
-                    }
-                })?;
+            func.call(&mut self.store, &params, &mut outputs).map_err(|e| {
+                // 检查是否是燃料耗尽的 trap
+                if e.as_trap_code() == Some(wasmi::core::TrapCode::OutOfFuel) {
+                    WasmError::FuelExhausted
+                } else {
+                    WasmError::CallError(e.to_string())
+                }
+            })?;
 
             Ok(outputs.iter().map(wasmi_val_to_wasm).collect())
         }
@@ -406,17 +388,11 @@ mod wasmi_backend {
         }
 
         /// 写入线性内存
-        pub fn write_memory(
-            &mut self,
-            name: &str,
-            offset: usize,
-            data: &[u8],
-        ) -> Result<(), WasmError> {
-            let memory = self.instance.get_memory(&self.store, name).ok_or_else(|| {
-                WasmError::ExportNotFound {
-                    name: name.to_string(),
-                }
-            })?;
+        pub fn write_memory(&mut self, name: &str, offset: usize, data: &[u8]) -> Result<(), WasmError> {
+            let memory = self
+                .instance
+                .get_memory(&self.store, name)
+                .ok_or_else(|| WasmError::ExportNotFound { name: name.to_string() })?;
             let mem_data = memory.data_mut(&mut self.store);
             let end = offset
                 .checked_add(data.len())
@@ -461,9 +437,7 @@ mod wasmi_backend {
         ///
         /// 如果燃料计量未启用，返回错误。
         pub fn get_fuel(&self) -> Result<u64, WasmError> {
-            self.store
-                .get_fuel()
-                .map_err(|e| WasmError::CallError(e.to_string()))
+            self.store.get_fuel().map_err(|e| WasmError::CallError(e.to_string()))
         }
     }
 }
@@ -539,11 +513,7 @@ mod stub_backend {
 
     impl WasmInstance {
         /// 调用导出函数
-        pub fn call(
-            &mut self,
-            _name: &str,
-            _args: &[WasmValue],
-        ) -> Result<Vec<WasmValue>, WasmError> {
+        pub fn call(&mut self, _name: &str, _args: &[WasmValue]) -> Result<Vec<WasmValue>, WasmError> {
             Err(WasmError::CallError("no backend".into()))
         }
 
@@ -553,12 +523,7 @@ mod stub_backend {
         }
 
         /// 写入线性内存
-        pub fn write_memory(
-            &mut self,
-            _name: &str,
-            _offset: usize,
-            _data: &[u8],
-        ) -> Result<(), WasmError> {
+        pub fn write_memory(&mut self, _name: &str, _offset: usize, _data: &[u8]) -> Result<(), WasmError> {
             Err(WasmError::MemoryError("no backend".into()))
         }
 
@@ -720,9 +685,7 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance
-            .call("double_f32", &[WasmValue::F32(3.5)])
-            .expect("call");
+        let results = instance.call("double_f32", &[WasmValue::F32(3.5)]).expect("call");
         if let WasmValue::F32(v) = results[0] {
             assert!((v - 7.0).abs() < 0.001);
         } else {
@@ -741,9 +704,7 @@ mod tests {
         );
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
-        let results = instance
-            .call("double_f64", &[WasmValue::F64(2.5)])
-            .expect("call");
+        let results = instance.call("double_f64", &[WasmValue::F64(2.5)]).expect("call");
         if let WasmValue::F64(v) = results[0] {
             assert!((v - 5.0).abs() < 0.001);
         } else {
@@ -893,9 +854,7 @@ mod tests {
         let module = sandbox.compile(&wasm).expect("compile");
         let mut instance = module.instantiate(&sandbox).expect("instantiate");
 
-        let r = instance
-            .call("factorial", &[WasmValue::I32(5)])
-            .expect("call");
+        let r = instance.call("factorial", &[WasmValue::I32(5)]).expect("call");
         assert_eq!(r[0], WasmValue::I32(120));
     }
 
@@ -924,9 +883,7 @@ mod tests {
             WasmValue::I32(9)
         );
         assert_eq!(
-            instance
-                .call("double", &[WasmValue::I32(7)])
-                .expect("double")[0],
+            instance.call("double", &[WasmValue::I32(7)]).expect("double")[0],
             WasmValue::I32(14)
         );
     }
@@ -989,12 +946,8 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
-        let r = instance
-            .call("call_host", &[WasmValue::I32(5)])
-            .expect("call");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+        let r = instance.call("call_host", &[WasmValue::I32(5)]).expect("call");
         assert_eq!(r[0], WasmValue::I32(99));
     }
 
@@ -1025,12 +978,8 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
-        let r = instance
-            .call("test", &[WasmValue::I32(21)])
-            .expect("call");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+        let r = instance.call("test", &[WasmValue::I32(21)]).expect("call");
         assert_eq!(r[0], WasmValue::I32(42));
     }
 
@@ -1079,9 +1028,7 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
         // add(3, 4) + mul(3, 4) = 7 + 12 = 19
         let r = instance
             .call("test", &[WasmValue::I32(3), WasmValue::I32(4)])
@@ -1134,9 +1081,7 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
         let r = instance
             .call("test", &[WasmValue::I64(100), WasmValue::I64(200)])
             .expect("call");
@@ -1368,14 +1313,10 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
 
         instance.set_fuel(100).expect("set_fuel");
-        let r = instance
-            .call("test", &[WasmValue::I32(21)])
-            .expect("call");
+        let r = instance.call("test", &[WasmValue::I32(21)]).expect("call");
         assert_eq!(r[0], WasmValue::I32(42));
     }
 
@@ -1797,18 +1738,12 @@ mod tests {
         );
 
         let mut linker = LinkerConfig::new();
-        linker.define(HostFunction::new(
-            "env",
-            "ping",
-            vec![],
-            vec![],
-            |_params, _results| Ok(()),
-        ));
+        linker.define(HostFunction::new("env", "ping", vec![], vec![], |_params, _results| {
+            Ok(())
+        }));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
         // Should succeed without panic
         let r = instance.call("do_ping", &[]).expect("call");
         assert!(r.is_empty());
@@ -1841,12 +1776,8 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
-        let r = instance
-            .call("test", &[WasmValue::F64(3.14)])
-            .expect("call");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+        let r = instance.call("test", &[WasmValue::F64(3.14)]).expect("call");
         if let WasmValue::F64(v) = r[0] {
             assert!((v - (-3.14)).abs() < 0.001);
         } else {
@@ -1891,9 +1822,7 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
         let r = instance.call("test", &[]).expect("call");
         assert_eq!(r[0], WasmValue::I32(42));
     }
@@ -1996,9 +1925,7 @@ mod tests {
         ));
 
         let module = sandbox.compile(&wasm).expect("compile");
-        let mut instance = module
-            .instantiate_with_linker(&sandbox, &linker)
-            .expect("instantiate");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
         let result = instance.call("call_host", &[WasmValue::I32(1)]);
         assert!(result.is_err());
         if let Err(WasmError::CallError(msg)) = result {
@@ -2052,10 +1979,7 @@ mod tests {
         let result = instance.write_memory("mem", usize::MAX, b"data");
         assert!(result.is_err());
         if let Err(WasmError::MemoryError(msg)) = result {
-            assert!(
-                msg.contains("overflow"),
-                "expected overflow error message, got: {msg}"
-            );
+            assert!(msg.contains("overflow"), "expected overflow error message, got: {msg}");
         } else {
             panic!("expected MemoryError for offset overflow, got: {result:?}");
         }

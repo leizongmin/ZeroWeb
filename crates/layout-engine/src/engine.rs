@@ -85,22 +85,15 @@ impl LayoutEngine {
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
-        let overflow_x = computed.map_or(OverflowClip::Visible, |s| {
-            convert_overflow_to_clip(&s.overflow_x)
-        });
-        let overflow_y = computed.map_or(OverflowClip::Visible, |s| {
-            convert_overflow_to_clip(&s.overflow_y)
-        });
+        let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
+        let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
 
         // 计算内容区域
         let content_x = layout.location.x + layout.border.left + layout.padding.left;
         let content_y = layout.location.y + layout.border.top + layout.padding.top;
-        let content_width = (layout.size.width
-            - layout.border.left
-            - layout.border.right
-            - layout.padding.left
-            - layout.padding.right)
-            .max(0.0);
+        let content_width =
+            (layout.size.width - layout.border.left - layout.border.right - layout.padding.left - layout.padding.right)
+                .max(0.0);
         let content_height = (layout.size.height
             - layout.border.top
             - layout.border.bottom
@@ -112,12 +105,7 @@ impl LayoutEngine {
         let children_taffy = taffy.children(taffy_id).unwrap_or_default();
         let mut children_boxes = Vec::with_capacity(children_taffy.len());
         for child_taffy in &children_taffy {
-            children_boxes.push(Self::extract_layout(
-                taffy,
-                *child_taffy,
-                taffy_to_dom,
-                styles,
-            ));
+            children_boxes.push(Self::extract_layout(taffy, *child_taffy, taffy_to_dom, styles));
         }
 
         LayoutBox {
@@ -166,8 +154,7 @@ fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
 mod tests {
     use super::*;
     use zero_css_parser::values::{
-        AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue,
-        OverflowValue, PositionValue,
+        AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue, PositionValue,
     };
     use zero_dom::Document;
     use zero_style_system::FlexBasisValue;
@@ -204,10 +191,7 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(
-            div,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
+        styles.insert(div, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -229,10 +213,7 @@ mod tests {
 
         let mut styles = HashMap::new();
         for id in div_ids {
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, 100.0, 30.0),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, 100.0, 30.0));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -756,10 +737,7 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(
-            div,
-            make_style_with_display(DisplayValue::Block, 200.0, 100.0),
-        );
+        styles.insert(div, make_style_with_display(DisplayValue::Block, 200.0, 100.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -799,10 +777,7 @@ mod tests {
         // 总宽度 = width + padding_left + padding_right
         assert_eq!(div_box.width, 240.0, "total width = 200 + 20 + 20");
         // 内容区域 = width（content-box 模式）
-        assert_eq!(
-            div_box.content_width, 200.0,
-            "content width = 200 (content-box)"
-        );
+        assert_eq!(div_box.content_width, 200.0, "content width = 200 (content-box)");
     }
 
     /// 验证 border 正确出现在布局盒中。
@@ -845,14 +820,8 @@ mod tests {
         doc.append_child(body, div2).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(
-            div1,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
-        styles.insert(
-            div2,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
+        styles.insert(div1, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(div2, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -887,14 +856,8 @@ mod tests {
         container_style.width = LengthValue::Px(400.0);
         container_style.height = LengthValue::Px(100.0);
         styles.insert(container, container_style);
-        styles.insert(
-            item1,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
-        styles.insert(
-            item2,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
+        styles.insert(item1, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(item2, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -989,14 +952,8 @@ mod tests {
         doc.append_child(outer, inner).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(
-            outer,
-            make_style_with_display(DisplayValue::Block, 200.0, 300.0),
-        );
-        styles.insert(
-            inner,
-            make_style_with_display(DisplayValue::Block, 100.0, 150.0),
-        );
+        styles.insert(outer, make_style_with_display(DisplayValue::Block, 200.0, 300.0));
+        styles.insert(inner, make_style_with_display(DisplayValue::Block, 100.0, 150.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -1010,10 +967,7 @@ mod tests {
         assert_eq!(inner_box.height, 150.0, "内层 div 高度应为 150");
 
         // 内层 div 应在外层 div 内部
-        assert!(
-            inner_box.x >= outer_box.content_x,
-            "内层 x 应 >= 外层内容区域 x"
-        );
+        assert!(inner_box.x >= outer_box.content_x, "内层 x 应 >= 外层内容区域 x");
     }
 
     /// 测试三层嵌套 block 布局。
@@ -1030,18 +984,9 @@ mod tests {
         doc.append_child(d2, d3).unwrap();
 
         let mut styles = HashMap::new();
-        styles.insert(
-            d1,
-            make_style_with_display(DisplayValue::Block, 600.0, 400.0),
-        );
-        styles.insert(
-            d2,
-            make_style_with_display(DisplayValue::Block, 400.0, 200.0),
-        );
-        styles.insert(
-            d3,
-            make_style_with_display(DisplayValue::Block, 200.0, 100.0),
-        );
+        styles.insert(d1, make_style_with_display(DisplayValue::Block, 600.0, 400.0));
+        styles.insert(d2, make_style_with_display(DisplayValue::Block, 400.0, 200.0));
+        styles.insert(d3, make_style_with_display(DisplayValue::Block, 200.0, 100.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -1069,10 +1014,7 @@ mod tests {
         let mut style1 = make_style_with_display(DisplayValue::Block, 100.0, 50.0);
         style1.margin_bottom = LengthValue::Px(20.0);
         styles.insert(div1, style1);
-        styles.insert(
-            div2,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
+        styles.insert(div2, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -1085,7 +1027,11 @@ mod tests {
         assert!(
             (box2.y - expected_y).abs() < 0.01,
             "div2.y ({}) 应等于 div1.y({}) + div1.height({}) + margin_bottom({}) = {}",
-            box2.y, box1.y, box1.height, box1.margin_bottom, expected_y
+            box2.y,
+            box1.y,
+            box1.height,
+            box1.margin_bottom,
+            expected_y
         );
     }
 
@@ -1111,10 +1057,7 @@ mod tests {
         styles.insert(container, container_style);
 
         for id in [item1, item2, item3] {
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, 80.0, 40.0),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, 80.0, 40.0));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -1157,10 +1100,7 @@ mod tests {
         styles.insert(container, container_style);
 
         for id in [item1, item2, item3] {
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, 80.0, 40.0),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, 80.0, 40.0));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -1201,10 +1141,7 @@ mod tests {
         styles.insert(container, container_style);
 
         for id in [item1, item2] {
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, 80.0, 40.0),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, 80.0, 40.0));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -1214,10 +1151,7 @@ mod tests {
         let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
 
         // Row-reverse：item1 在右，item2 在左
-        assert!(
-            b2.x < b1.x,
-            "row-reverse 中 item2 应在 item1 左侧（x 更小）"
-        );
+        assert!(b2.x < b1.x, "row-reverse 中 item2 应在 item1 左侧（x 更小）");
     }
 
     /// 测试 flex-direction: column-reverse — 子元素反向垂直排列。
@@ -1240,10 +1174,7 @@ mod tests {
         styles.insert(container, container_style);
 
         for id in [item1, item2] {
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, 80.0, 40.0),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, 80.0, 40.0));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -1253,10 +1184,7 @@ mod tests {
         let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
 
         // Column-reverse：item1 在下方，item2 在上方
-        assert!(
-            b2.y < b1.y,
-            "column-reverse 中 item2 应在 item1 上方（y 更小）"
-        );
+        assert!(b2.y < b1.y, "column-reverse 中 item2 应在 item1 上方（y 更小）");
     }
 
     /// 测试 Grid 布局中显式的行/列放置。
@@ -1334,21 +1262,24 @@ mod tests {
         assert!(
             b2.x > b1.x,
             "item2 (col 2) 应在 item1 (col 1) 右侧: {} vs {}",
-            b2.x, b1.x
+            b2.x,
+            b1.x
         );
 
         // item1 (0,0) vs item3 (1,0): item3 应在 item1 下方
         assert!(
             b3.y > b1.y,
             "item3 (row 2) 应在 item1 (row 1) 下方: {} vs {}",
-            b3.y, b1.y
+            b3.y,
+            b1.y
         );
 
         // item4 (1,1) 应在 item3 (1,0) 右侧
         assert!(
             b4.x > b3.x,
             "item4 (col 2) 应在 item3 (col 1) 右侧: {} vs {}",
-            b4.x, b3.x
+            b4.x,
+            b3.x
         );
 
         // 所有格子宽度应约 100px
@@ -1414,7 +1345,8 @@ mod tests {
         assert!(
             wide_box.width > normal_box.width,
             "跨两列元素应比单列元素宽: {} vs {}",
-            wide_box.width, normal_box.width
+            wide_box.width,
+            normal_box.width
         );
         assert!(
             (wide_box.width - 200.0).abs() < 1.0,
@@ -1428,10 +1360,7 @@ mod tests {
         );
 
         // 两个元素应在同一行
-        assert!(
-            (wide_box.y - normal_box.y).abs() < 0.01,
-            "同行元素 y 应相同"
-        );
+        assert!((wide_box.y - normal_box.y).abs() < 0.01, "同行元素 y 应相同");
     }
 
     /// 测试 Grid 布局中 fr 单位轨道。
@@ -1466,16 +1395,8 @@ mod tests {
         let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
 
         // 1fr : 2fr = 100px : 200px
-        assert!(
-            (b1.width - 100.0).abs() < 1.0,
-            "1fr 应约 100px，实际 {}",
-            b1.width
-        );
-        assert!(
-            (b2.width - 200.0).abs() < 1.0,
-            "2fr 应约 200px，实际 {}",
-            b2.width
-        );
+        assert!((b1.width - 100.0).abs() < 1.0, "1fr 应约 100px，实际 {}", b1.width);
+        assert!((b2.width - 200.0).abs() < 1.0, "2fr 应约 200px，实际 {}", b2.width);
     }
 
     // ── 边缘场景和真实世界补充测试 ──
@@ -1499,10 +1420,7 @@ mod tests {
         let mut styles = HashMap::new();
         for (i, &id) in ids.iter().enumerate() {
             let size = 600.0 - (i as f64) * 45.0;
-            styles.insert(
-                id,
-                make_style_with_display(DisplayValue::Block, size, size * 0.6),
-            );
+            styles.insert(id, make_style_with_display(DisplayValue::Block, size, size * 0.6));
         }
 
         let engine = LayoutEngine::new(800.0, 600.0);
@@ -1547,15 +1465,9 @@ mod tests {
         s1.height = LengthValue::Px(50.0);
         styles.insert(div1, s1);
         // div2: 正常尺寸
-        styles.insert(
-            div2,
-            make_style_with_display(DisplayValue::Block, 200.0, 50.0),
-        );
+        styles.insert(div2, make_style_with_display(DisplayValue::Block, 200.0, 50.0));
         // div3: 零尺寸
-        styles.insert(
-            div3,
-            make_style_with_display(DisplayValue::Block, 0.0, 0.0),
-        );
+        styles.insert(div3, make_style_with_display(DisplayValue::Block, 0.0, 0.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
@@ -1566,24 +1478,15 @@ mod tests {
 
         // div1: block 元素即使设置 width:0，taffy 可能将其拉伸到容器宽度。
         // 无论如何高度应有效
-        assert!(
-            b1.height >= 0.0,
-            "div1 height should be non-negative"
-        );
+        assert!(b1.height >= 0.0, "div1 height should be non-negative");
 
         // div2 正常尺寸
         assert_eq!(b2.width, 200.0);
         assert_eq!(b2.height, 50.0);
 
         // 垂直堆叠顺序：div2 在 div1 之后
-        assert!(
-            b2.y >= b1.y,
-            "div2 should be at or below div1"
-        );
-        assert!(
-            b3.y >= b2.y,
-            "div3 should be at or below div2"
-        );
+        assert!(b2.y >= b1.y, "div2 should be at or below div1");
+        assert!(b3.y >= b2.y, "div3 should be at or below div2");
     }
 
     /// Block 布局中负 margin 造成元素重叠。
@@ -1614,7 +1517,9 @@ mod tests {
         assert!(
             b2.y < b1.y + b1.height,
             "negative margin should cause overlap: b2.y({}) < b1.y({}) + b1.height({})",
-            b2.y, b1.y, b1.height
+            b2.y,
+            b1.y,
+            b1.height
         );
     }
 
@@ -1645,14 +1550,18 @@ mod tests {
         assert!(
             (b2.y - (b1.y + b1.height)).abs() < 0.01,
             "d2.y({}) should equal d1.y({}) + d1.height({})",
-            b2.y, b1.y, b1.height
+            b2.y,
+            b1.y,
+            b1.height
         );
 
         // d3 应紧跟 d2
         assert!(
             (b3.y - (b2.y + b2.height)).abs() < 0.01,
             "d3.y({}) should equal d2.y({}) + d2.height({})",
-            b3.y, b2.y, b2.height
+            b3.y,
+            b2.y,
+            b2.height
         );
     }
 
@@ -1698,7 +1607,8 @@ mod tests {
         assert!(
             b1.y > b0.y,
             "wrapped item1 (y={}) should be below item0 (y={})",
-            b1.y, b0.y
+            b1.y,
+            b0.y
         );
     }
 
@@ -1752,7 +1662,8 @@ mod tests {
         assert!(
             b2.width > b1.width,
             "item2 (grow=2) should be wider than item1 (grow=1): {} vs {}",
-            b2.width, b1.width
+            b2.width,
+            b1.width
         );
     }
 
@@ -1833,10 +1744,7 @@ mod tests {
         assert_eq!(last.width, 50.0);
 
         // 最后一项应在第一项右侧很远
-        assert!(
-            last.x > first.x + 200.0,
-            "last item should overflow past container"
-        );
+        assert!(last.x > first.x + 200.0, "last item should overflow past container");
     }
 
     // -- Grid layout edge cases --
@@ -1951,14 +1859,18 @@ mod tests {
         assert!(
             (b1.x - b0.x - b0.width - 10.0).abs() < 1.0,
             "gap between col0 and col1 should be ~10px: b1.x({}) - b0.x({}) - b0.width({}) = {}",
-            b1.x, b0.x, b0.width, b1.x - b0.x - b0.width
+            b1.x,
+            b0.x,
+            b0.width,
+            b1.x - b0.x - b0.width
         );
 
         // b2 在下一行（行模板有高度 50px，所以 y 应更大）
         assert!(
             b2.y > b0.y,
             "item2 should be on the next row: b2.y({}) > b0.y({})",
-            b2.y, b0.y
+            b2.y,
+            b0.y
         );
     }
 
@@ -2092,11 +2004,7 @@ mod tests {
             "abs x should be ~100, got {}",
             abs_box.x
         );
-        assert!(
-            (abs_box.y - 50.0).abs() < 1.0,
-            "abs y should be ~50, got {}",
-            abs_box.y
-        );
+        assert!((abs_box.y - 50.0).abs() < 1.0, "abs y should be ~50, got {}", abs_box.y);
         assert_eq!(abs_box.width, 80.0);
         assert_eq!(abs_box.height, 60.0);
     }
@@ -2245,10 +2153,7 @@ mod tests {
             nav_box.y >= header_box.y + header_box.height,
             "nav should be below header"
         );
-        assert!(
-            footer_box.y >= nav_box.y + nav_box.height,
-            "footer should be below nav"
-        );
+        assert!(footer_box.y >= nav_box.y + nav_box.height, "footer should be below nav");
 
         // flex 子元素水平排列
         let ni1 = find_child_by_node_id(&result.root, nav_item1).expect("ni1 found");
@@ -2308,10 +2213,7 @@ mod tests {
         let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
 
         // inner 和 bottom 垂直排列（外层 column）
-        assert!(
-            bottom_box.y > inner_box.y,
-            "bottom should be below inner flex row"
-        );
+        assert!(bottom_box.y > inner_box.y, "bottom should be below inner flex row");
 
         // item1 和 item2 水平排列（内层 row）
         assert!(b2.x > b1.x, "inner items should be horizontal");
@@ -2407,24 +2309,15 @@ mod tests {
         styles.insert(container, container_style);
 
         // 子元素有明确尺寸
-        styles.insert(
-            child1,
-            make_style_with_display(DisplayValue::Block, 100.0, 50.0),
-        );
-        styles.insert(
-            child2,
-            make_style_with_display(DisplayValue::Block, 80.0, 40.0),
-        );
+        styles.insert(child1, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+        styles.insert(child2, make_style_with_display(DisplayValue::Block, 80.0, 40.0));
 
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
 
-        let container_box =
-            find_child_by_node_id(&result.root, container).expect("容器应找到");
-        let child1_box =
-            find_child_by_node_id(&result.root, child1).expect("子元素 1 应找到");
-        let child2_box =
-            find_child_by_node_id(&result.root, child2).expect("子元素 2 应找到");
+        let container_box = find_child_by_node_id(&result.root, container).expect("容器应找到");
+        let child1_box = find_child_by_node_id(&result.root, child1).expect("子元素 1 应找到");
+        let child2_box = find_child_by_node_id(&result.root, child2).expect("子元素 2 应找到");
 
         // 容器尺寸不为 NaN 或负值
         assert!(
@@ -2542,16 +2435,8 @@ mod tests {
         assert!(abs_box.is_absolute, "应标记为绝对定位");
 
         // 验证位置偏移
-        assert!(
-            (abs_box.x - 30.0).abs() < 1.0,
-            "x 偏移应约 30，实际 {}",
-            abs_box.x
-        );
-        assert!(
-            (abs_box.y - 20.0).abs() < 1.0,
-            "y 偏移应约 20，实际 {}",
-            abs_box.y
-        );
+        assert!((abs_box.x - 30.0).abs() < 1.0, "x 偏移应约 30，实际 {}", abs_box.x);
+        assert!((abs_box.y - 20.0).abs() < 1.0, "y 偏移应约 20，实际 {}", abs_box.y);
 
         // 验证由 inset 约束推导的尺寸
         assert!(
@@ -2629,10 +2514,7 @@ mod tests {
             > x_vals.iter().cloned().fold(f32::INFINITY, f32::min);
         let has_y_spread = y_vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
             > y_vals.iter().cloned().fold(f32::INFINITY, f32::min);
-        assert!(
-            has_x_spread || has_y_spread,
-            "grid 子元素应在 x 或 y 方向有不同位置"
-        );
+        assert!(has_x_spread || has_y_spread, "grid 子元素应在 x 或 y 方向有不同位置");
     }
 
     // ── auto-fill 和 minmax() 集成测试 ──
@@ -2671,8 +2553,7 @@ mod tests {
 
         // 每个 item 宽度应约 100px（500 / 5 = 100）
         for (i, &id) in item_ids.iter().enumerate() {
-            let item_box = find_child_by_node_id(&result.root, id)
-                .unwrap_or_else(|| panic!("item{} not found", i));
+            let item_box = find_child_by_node_id(&result.root, id).unwrap_or_else(|| panic!("item{} not found", i));
             assert!(
                 (item_box.width - 100.0).abs() < 1.0,
                 "item{} 宽度应约 100px，实际 {}",
@@ -2728,17 +2609,10 @@ mod tests {
 
         // item1 应在 item0 右侧，间距约 10px
         let gap = b1.x - b0.x - b0.width;
-        assert!(
-            (gap - 10.0).abs() < 1.0,
-            "gap 应约 10px，实际 {}",
-            gap
-        );
+        assert!((gap - 10.0).abs() < 1.0, "gap 应约 10px，实际 {}", gap);
 
         // item2 也应在 item1 右侧（同一行），说明有 3 个轨道
-        assert!(
-            b2.x > b1.x,
-            "item2 应在 item1 右侧，说明至少 3 个轨道"
-        );
+        assert!(b2.x > b1.x, "item2 应在 item1 右侧，说明至少 3 个轨道");
     }
 
     /// 测试 minmax(100px, 1fr) 在 300px 容器中正确约束轨道大小。
@@ -2757,8 +2631,7 @@ mod tests {
         let mut styles = HashMap::new();
         let mut grid_style = ComputedStyle::default();
         grid_style.display = DisplayValue::Grid;
-        grid_style.grid_template_columns =
-            Some("minmax(100px, 1fr) minmax(100px, 1fr)".to_string());
+        grid_style.grid_template_columns = Some("minmax(100px, 1fr) minmax(100px, 1fr)".to_string());
         grid_style.width = LengthValue::Px(300.0);
         grid_style.height = LengthValue::Px(100.0);
         styles.insert(grid, grid_style);
@@ -2786,11 +2659,7 @@ mod tests {
 
         // 总宽度应约 300px
         let total = b1.width + b2.width;
-        assert!(
-            (total - 300.0).abs() < 1.0,
-            "总宽度应约 300px，实际 {}",
-            total
-        );
+        assert!((total - 300.0).abs() < 1.0, "总宽度应约 300px，实际 {}", total);
     }
 
     /// 测试 repeat(auto-fill, minmax(100px, 1fr)) 基本支持。
@@ -2813,8 +2682,7 @@ mod tests {
         let mut styles = HashMap::new();
         let mut grid_style = ComputedStyle::default();
         grid_style.display = DisplayValue::Grid;
-        grid_style.grid_template_columns =
-            Some("repeat(auto-fill, minmax(100px, 1fr))".to_string());
+        grid_style.grid_template_columns = Some("repeat(auto-fill, minmax(100px, 1fr))".to_string());
         grid_style.width = LengthValue::Px(350.0);
         grid_style.height = LengthValue::Px(100.0);
         styles.insert(grid, grid_style);
@@ -2848,11 +2716,7 @@ mod tests {
 
         // 总宽度应约 350px
         let total = b0.width + b1.width + b2.width;
-        assert!(
-            (total - 350.0).abs() < 2.0,
-            "总宽度应约 350px，实际 {}",
-            total
-        );
+        assert!((total - 350.0).abs() < 2.0, "总宽度应约 350px，实际 {}", total);
     }
 
     /// 测试 grid-template-areas 基本 2x2 布局。
@@ -2883,8 +2747,7 @@ mod tests {
         grid_style.display = DisplayValue::Grid;
         grid_style.grid_template_columns = Some("100px 100px".to_string());
         grid_style.grid_template_rows = Some("50px 50px".to_string());
-        grid_style.grid_template_areas =
-            Some("\"header header\" \"sidebar main\"".to_string());
+        grid_style.grid_template_areas = Some("\"header header\" \"sidebar main\"".to_string());
         grid_style.width = LengthValue::Px(200.0);
         grid_style.height = LengthValue::Px(100.0);
         styles.insert(grid, grid_style);
@@ -2916,12 +2779,9 @@ mod tests {
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
 
-        let header_box =
-            find_child_by_node_id(&result.root, header_el).expect("header found");
-        let sidebar_box =
-            find_child_by_node_id(&result.root, sidebar_el).expect("sidebar found");
-        let main_box =
-            find_child_by_node_id(&result.root, main_el).expect("main found");
+        let header_box = find_child_by_node_id(&result.root, header_el).expect("header found");
+        let sidebar_box = find_child_by_node_id(&result.root, sidebar_el).expect("sidebar found");
+        let main_box = find_child_by_node_id(&result.root, main_el).expect("main found");
 
         // header 应跨两列（约 200px），在第一行
         assert!(
@@ -2936,10 +2796,7 @@ mod tests {
         );
 
         // sidebar 在第二行第一列
-        assert!(
-            sidebar_box.y > header_box.y,
-            "sidebar 应在 header 下方"
-        );
+        assert!(sidebar_box.y > header_box.y, "sidebar 应在 header 下方");
         assert!(
             (sidebar_box.width - 100.0).abs() < 1.0,
             "sidebar 应宽约 100px，实际 {}",
@@ -2960,10 +2817,7 @@ mod tests {
         );
 
         // sidebar 和 main 在同一行
-        assert!(
-            (sidebar_box.y - main_box.y).abs() < 0.01,
-            "sidebar 和 main 应在同一行"
-        );
+        assert!((sidebar_box.y - main_box.y).abs() < 0.01, "sidebar 和 main 应在同一行");
     }
 
     /// 测试 grid-area 命名引用放置。
@@ -2989,8 +2843,7 @@ mod tests {
         grid_style.display = DisplayValue::Grid;
         grid_style.grid_template_columns = Some("200px 200px".to_string());
         grid_style.grid_template_rows = Some("50px 50px".to_string());
-        grid_style.grid_template_areas =
-            Some("\"header header\" \"content content\"".to_string());
+        grid_style.grid_template_areas = Some("\"header header\" \"content content\"".to_string());
         grid_style.width = LengthValue::Px(400.0);
         grid_style.height = LengthValue::Px(100.0);
         styles.insert(grid, grid_style);
@@ -3014,10 +2867,8 @@ mod tests {
         let engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
 
-        let header_box =
-            find_child_by_node_id(&result.root, header_el).expect("header found");
-        let content_box =
-            find_child_by_node_id(&result.root, content_el).expect("content found");
+        let header_box = find_child_by_node_id(&result.root, header_el).expect("header found");
+        let content_box = find_child_by_node_id(&result.root, content_el).expect("content found");
 
         // header 应在第一行，跨两列
         assert!(
@@ -3032,10 +2883,7 @@ mod tests {
         );
 
         // content 应在第二行，跨两列
-        assert!(
-            content_box.y > header_box.y,
-            "content 应在 header 下方"
-        );
+        assert!(content_box.y > header_box.y, "content 应在 header 下方");
         assert!(
             (content_box.width - 400.0).abs() < 1.0,
             "content 应跨两列（~400px），实际 {}",

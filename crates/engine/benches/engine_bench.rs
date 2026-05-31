@@ -14,10 +14,7 @@ use zero_style_system::ComputedStyle;
 // ── 辅助函数 ──────────────────────────────────────────────────────
 
 /// 创建扁平的 LayoutBox 树（N 个子节点）。
-fn make_flat_layout(
-    n: usize,
-    with_background: bool,
-) -> (LayoutBox, HashMap<zero_dom::NodeId, ComputedStyle>) {
+fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero_dom::NodeId, ComputedStyle>) {
     let mut doc = Document::new();
     let root = doc.root();
     let html = doc.create_element("html");
@@ -34,12 +31,8 @@ fn make_flat_layout(
 
         let mut style = ComputedStyle::default();
         if with_background {
-            style.background_color = ColorValue::Rgba(
-                (i % 256) as u8,
-                ((i * 3) % 256) as u8,
-                ((i * 7) % 256) as u8,
-                255,
-            );
+            style.background_color =
+                ColorValue::Rgba((i % 256) as u8, ((i * 3) % 256) as u8, ((i * 7) % 256) as u8, 255);
         }
         styles.insert(elem, style);
 
@@ -156,10 +149,7 @@ fn bench_compositing_layer_analysis(c: &mut Criterion) {
     let (layout, styles) = make_flat_layout(200, false);
     c.bench_function("compositing_layer_analysis_200", |b| {
         b.iter(|| {
-            black_box(promote_compositing_layers(
-                black_box(&layout),
-                black_box(&styles),
-            ));
+            black_box(promote_compositing_layers(black_box(&layout), black_box(&styles)));
         })
     });
 }

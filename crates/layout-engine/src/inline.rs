@@ -89,7 +89,7 @@ impl InlineFormattingContext {
                                 text,
                                 node_id: child_id,
                                 font_size: 16.0,   // 默认字体大小
-                                line_height: 20.0,  // 默认行高
+                                line_height: 20.0, // 默认行高
                             });
                         }
                     }
@@ -176,9 +176,7 @@ impl InlineFormattingContext {
 
     /// 将文本按空白字符分割成单词。
     fn split_into_words(&self, text: &str) -> Vec<String> {
-        text.split_whitespace()
-            .map(|w| format!("{w} "))
-            .collect()
+        text.split_whitespace().map(|w| format!("{w} ")).collect()
     }
 
     /// 获取所有行盒的总高度。
@@ -402,10 +400,7 @@ mod tests {
         // 验证所有片段的 x 坐标在同一行内递增
         for line in &ctx.lines {
             for i in 1..line.runs.len() {
-                assert!(
-                    line.runs[i].x >= line.runs[i - 1].x,
-                    "片段 x 坐标应在行内递增"
-                );
+                assert!(line.runs[i].x >= line.runs[i - 1].x, "片段 x 坐标应在行内递增");
             }
         }
     }
@@ -429,11 +424,7 @@ mod tests {
         ctx.break_into_lines(runs);
 
         // 应产生 1 行（单个不中断单词不换行）
-        assert_eq!(
-            ctx.lines.len(),
-            1,
-            "超长单词应在单行中（溢出而不是换行）"
-        );
+        assert_eq!(ctx.lines.len(), 1, "超长单词应在单行中（溢出而不是换行）");
         assert_eq!(ctx.lines[0].runs.len(), 1, "只有一个单词片段");
 
         // 片段宽度应超过容器宽度
@@ -453,18 +444,9 @@ mod tests {
         let runs: Vec<TextRun> = vec![];
         ctx.break_into_lines(runs);
 
-        assert!(
-            ctx.lines.is_empty(),
-            "空容器不应产生行盒"
-        );
-        assert!(
-            ctx.all_fragments().is_empty(),
-            "空容器不应有文本片段"
-        );
-        assert!(
-            (ctx.total_height() - 0.0).abs() < 0.01,
-            "空容器总高度应为 0"
-        );
+        assert!(ctx.lines.is_empty(), "空容器不应产生行盒");
+        assert!(ctx.all_fragments().is_empty(), "空容器不应有文本片段");
+        assert!((ctx.total_height() - 0.0).abs() < 0.01, "空容器总高度应为 0");
     }
 
     /// 测试空容器通过 Document layout 方法。
@@ -481,10 +463,7 @@ mod tests {
         let mut ctx = InlineFormattingContext::new(800.0);
         ctx.layout(&doc, p);
 
-        assert!(
-            ctx.lines.is_empty(),
-            "没有文本的空 p 元素不应产生行盒"
-        );
+        assert!(ctx.lines.is_empty(), "没有文本的空 p 元素不应产生行盒");
     }
 
     /// 测试行高计算 — 不同行高产生不同的行盒高度。
@@ -518,14 +497,8 @@ mod tests {
             (ctx32.lines[0].height - 32.0).abs() < 0.01,
             "行高 32px 应产生高度 32px 的行盒"
         );
-        assert!(
-            (ctx24.total_height() - 24.0).abs() < 0.01,
-            "总高度应为 24.0"
-        );
-        assert!(
-            (ctx32.total_height() - 32.0).abs() < 0.01,
-            "总高度应为 32.0"
-        );
+        assert!((ctx24.total_height() - 24.0).abs() < 0.01, "总高度应为 24.0");
+        assert!((ctx32.total_height() - 32.0).abs() < 0.01, "总高度应为 32.0");
     }
 
     /// 测试行高在多行中的累加效果。
@@ -637,11 +610,7 @@ mod tests {
 
         // 20px 字体的片段宽度应为 10px 字体的 2 倍
         let ratio = fragments[1].width / fragments[0].width;
-        assert!(
-            (ratio - 2.0).abs() < 0.01,
-            "宽度比应为 2.0，实际 {}",
-            ratio
-        );
+        assert!((ratio - 2.0).abs() < 0.01, "宽度比应为 2.0，实际 {}", ratio);
     }
 
     /// 测试窄容器中多个 TextRun 跨行排列。
@@ -706,10 +675,7 @@ mod tests {
         // 每个片段都应有有效的 NodeId（即使是默认值）
         assert_eq!(fragments.len(), 2, "应有 2 个片段");
         for f in &fragments {
-            assert!(
-                f.node_id.is_valid(),
-                "每个片段都应有有效的 NodeId"
-            );
+            assert!(f.node_id.is_valid(), "每个片段都应有有效的 NodeId");
         }
     }
 
@@ -727,13 +693,7 @@ mod tests {
 
         // 容器宽度为 0 时，第一个单词放入第一行（即使溢出），
         // 后续每个单词都换新行
-        assert!(
-            !ctx.lines.is_empty(),
-            "即使容器宽度为 0，也应产生行盒"
-        );
-        assert!(
-            ctx.lines.len() >= 2,
-            "零宽度容器中多个单词应产生多行"
-        );
+        assert!(!ctx.lines.is_empty(), "即使容器宽度为 0，也应产生行盒");
+        assert!(ctx.lines.len() >= 2, "零宽度容器中多个单词应产生多行");
     }
 }

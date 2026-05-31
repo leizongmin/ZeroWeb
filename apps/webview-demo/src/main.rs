@@ -121,10 +121,7 @@ impl DemoState {
     fn init_gpu(&mut self, window: &Arc<winit::window::Window>) {
         match GpuRenderer::new_for_window(Arc::clone(window)) {
             Ok(renderer) => {
-                println!(
-                    "wgpu GPU 渲染器初始化成功 (format: {:?})",
-                    renderer.surface_format()
-                );
+                println!("wgpu GPU 渲染器初始化成功 (format: {:?})", renderer.surface_format());
                 self.gpu_renderer = Some(renderer);
                 self.surface_configured = false;
                 self.needs_redraw = true;
@@ -152,12 +149,7 @@ impl DemoState {
 
         // 背景填充
         let fills = vec![FillPrimitive {
-            rect: zero_render_foundation::geometry::Rect::new(
-                0.0,
-                0.0,
-                width as f32,
-                height as f32,
-            ),
+            rect: zero_render_foundation::geometry::Rect::new(0.0, 0.0, width as f32, height as f32),
             color: Color::rgb(255, 255, 255), // 白色背景
         }];
 
@@ -168,11 +160,11 @@ impl DemoState {
             // 计算文本起始位置（居中）
             let mut total_width = 0.0f32;
             for ch in text.chars() {
-                let key =
-                    zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
-                if let Ok(bitmap) = self.glyph_cache.get_or_insert_with(key, || {
-                    self.font_loader.rasterize_glyph(fid, ch, font_size)
-                }) {
+                let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
+                if let Ok(bitmap) = self
+                    .glyph_cache
+                    .get_or_insert_with(key, || self.font_loader.rasterize_glyph(fid, ch, font_size))
+                {
                     total_width += bitmap.advance;
                 }
             }
@@ -190,11 +182,11 @@ impl DemoState {
                     font_id: fid,
                     font_size,
                 });
-                let key =
-                    zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
-                if let Ok(bitmap) = self.glyph_cache.get_or_insert_with(key, || {
-                    self.font_loader.rasterize_glyph(fid, ch, font_size)
-                }) {
+                let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
+                if let Ok(bitmap) = self
+                    .glyph_cache
+                    .get_or_insert_with(key, || self.font_loader.rasterize_glyph(fid, ch, font_size))
+                {
                     x += bitmap.advance;
                 }
             }
@@ -224,8 +216,7 @@ fn main() {
         fb.clear(255, 255, 255, 255);
         for ch in text.chars() {
             let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
-            if let Ok(bitmap) = glyph_cache
-                .get_or_insert_with(key, || font_loader.rasterize_glyph(fid, ch, font_size))
+            if let Ok(bitmap) = glyph_cache.get_or_insert_with(key, || font_loader.rasterize_glyph(fid, ch, font_size))
             {
                 // Blit glyph to framebuffer
                 let start_x = (x as i32 + bitmap.x_offset as i32).max(0) as u32;
@@ -237,8 +228,7 @@ fn main() {
                         if px >= fb.width || py >= fb.height {
                             continue;
                         }
-                        let alpha =
-                            bitmap.data[(row as usize * bitmap.width as usize) + col as usize];
+                        let alpha = bitmap.data[(row as usize * bitmap.width as usize) + col as usize];
                         if alpha == 0 {
                             continue;
                         }

@@ -2,8 +2,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use zero_protocol::{
-    FetchParams, IpcMessage, IpcMessageKind, MouseEventParams, MouseEventType, NavigateParams,
-    deserialize, serialize,
+    FetchParams, IpcMessage, IpcMessageKind, MouseEventParams, MouseEventType, NavigateParams, deserialize, serialize,
 };
 
 /// 基准：IPC 消息序列化

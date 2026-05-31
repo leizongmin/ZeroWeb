@@ -1,5 +1,7 @@
 style_edition = "2024"
 max_width = 120
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
 reorder_imports = true
+
+# Nightly-only, 待稳定后启用:
+# imports_granularity = "Crate"
+# group_imports = "StdExternalCrate"

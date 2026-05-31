@@ -15,12 +15,7 @@ pub struct Color {
 
 impl Color {
     /// 透明色
-    pub const TRANSPARENT: Self = Self {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 0,
-    };
+    pub const TRANSPARENT: Self = Self { r: 0, g: 0, b: 0, a: 0 };
     /// 黑色
     pub const BLACK: Self = Self {
         r: 0,
@@ -159,10 +154,7 @@ mod tests {
         assert_eq!(Color::from_hex("#fff"), Some(Color::WHITE));
         assert_eq!(Color::from_hex("#000000"), Some(Color::BLACK));
         assert_eq!(Color::from_hex("#ff0000"), Some(Color::RED));
-        assert_eq!(
-            Color::from_hex("#00ff0000"),
-            Some(Color::rgba(0, 255, 0, 0))
-        );
+        assert_eq!(Color::from_hex("#00ff0000"), Some(Color::rgba(0, 255, 0, 0)));
         assert_eq!(Color::from_hex("invalid"), None);
     }
 

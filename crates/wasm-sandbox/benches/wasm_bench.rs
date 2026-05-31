@@ -58,8 +58,7 @@ fn bench_function_call_i32(c: &mut Criterion) {
     c.bench_function("wasm_call_add_i32_1000", |b| {
         b.iter(|| {
             for i in 0..1000u32 {
-                let _ =
-                    black_box(instance.call("add", &[WasmValue::I32(i as i32), WasmValue::I32(1)]));
+                let _ = black_box(instance.call("add", &[WasmValue::I32(i as i32), WasmValue::I32(1)]));
             }
         })
     });

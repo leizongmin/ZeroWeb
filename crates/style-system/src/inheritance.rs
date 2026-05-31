@@ -5,9 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::property::{
-    ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value, inherit_property,
-};
+use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value, inherit_property};
 
 /// 为元素计算继承样式。
 ///
@@ -121,11 +119,7 @@ enum KeywordResolution {
 /// 解析 CSS 全局关键字。
 ///
 /// 返回关键字类型或具体值。
-fn resolve_keyword(
-    value: &str,
-    _property: &str,
-    _parent: Option<&ComputedStyle>,
-) -> KeywordResolution {
+fn resolve_keyword(value: &str, _property: &str, _parent: Option<&ComputedStyle>) -> KeywordResolution {
     let trimmed = value.trim();
     match trimmed {
         "inherit" => KeywordResolution::Inherit,

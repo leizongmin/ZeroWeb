@@ -15,10 +15,7 @@ fn test_create_document() {
     assert!(doc.root().is_valid());
     assert_eq!(doc.node_count(), 1);
     let root = doc.root();
-    assert!(matches!(
-        doc.get(root).map(|n| &n.kind),
-        Some(NodeKind::Document(_))
-    ));
+    assert!(matches!(doc.get(root).map(|n| &n.kind), Some(NodeKind::Document(_))));
 }
 
 #[test]
@@ -26,10 +23,7 @@ fn test_create_element() {
     let mut doc = Document::new();
     let elem = doc.create_element("div");
     assert!(doc.contains(elem));
-    assert!(matches!(
-        doc.get(elem).map(|n| &n.kind),
-        Some(NodeKind::Element(_))
-    ));
+    assert!(matches!(doc.get(elem).map(|n| &n.kind), Some(NodeKind::Element(_))));
     if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
         assert_eq!(e.local_name(), "div");
     }
@@ -337,10 +331,7 @@ fn test_set_get_attribute() {
     let elem = doc.create_element("div");
 
     doc.set_attribute(elem, "class", "container");
-    assert_eq!(
-        doc.get_attribute(elem, "class"),
-        Some("container".to_string())
-    );
+    assert_eq!(doc.get_attribute(elem, "class"), Some("container".to_string()));
     assert_eq!(doc.get_attribute(elem, "id"), None);
 }
 
@@ -494,26 +485,19 @@ fn test_parse_html_with_doctype() {
     let first_child = doc.first_child(root);
     assert!(first_child.is_some());
     if let Some(fc) = first_child {
-        assert!(matches!(
-            doc.get(fc).map(|n| &n.kind),
-            Some(NodeKind::DocumentType(_))
-        ));
+        assert!(matches!(doc.get(fc).map(|n| &n.kind), Some(NodeKind::DocumentType(_))));
     }
 }
 
 #[test]
 fn test_parse_html_with_attributes() {
-    let doc =
-        parse_html("<html><body><div id=\"main\" class=\"container\">text</div></body></html>");
+    let doc = parse_html("<html><body><div id=\"main\" class=\"container\">text</div></body></html>");
     let divs = doc.get_elements_by_tag_name("div");
     assert_eq!(divs.len(), 1);
 
     let div = divs[0];
     assert_eq!(doc.get_attribute(div, "id"), Some("main".to_string()));
-    assert_eq!(
-        doc.get_attribute(div, "class"),
-        Some("container".to_string())
-    );
+    assert_eq!(doc.get_attribute(div, "class"), Some("container".to_string()));
 }
 
 #[test]
@@ -571,10 +555,7 @@ fn test_get_element_by_id() {
     let doc = parse_html("<html><body><div id=\"main\">content</div></body></html>");
     let elem = doc.get_element_by_id("main");
     assert!(elem.is_some());
-    assert_eq!(
-        doc.get_attribute(elem.unwrap(), "id"),
-        Some("main".to_string())
-    );
+    assert_eq!(doc.get_attribute(elem.unwrap(), "id"), Some("main".to_string()));
 }
 
 #[test]
@@ -602,9 +583,7 @@ fn test_get_elements_by_tag_name_case_insensitive() {
 
 #[test]
 fn test_get_elements_by_class_name() {
-    let doc = parse_html(
-        "<html><body><div class=\"item\">a</div><div class=\"item\">b</div></body></html>",
-    );
+    let doc = parse_html("<html><body><div class=\"item\">a</div><div class=\"item\">b</div></body></html>");
     let items = doc.get_elements_by_class_name("item");
     assert_eq!(items.len(), 2);
 }
@@ -637,8 +616,7 @@ fn test_query_selector_class() {
 
 #[test]
 fn test_query_selector_attribute() {
-    let doc =
-        parse_html("<html><body><input type=\"text\" /><input type=\"password\" /></body></html>");
+    let doc = parse_html("<html><body><input type=\"text\" /><input type=\"password\" /></body></html>");
     let root = doc.root();
     let result = doc.query_selector(root, "[type=text]");
     assert!(result.is_some());
@@ -854,10 +832,7 @@ fn test_deep_nesting() {
     }
 
     // 验证最深层的文本内容
-    assert_eq!(
-        doc.get_attribute(current, "data-depth"),
-        Some("99".to_string())
-    );
+    assert_eq!(doc.get_attribute(current, "data-depth"), Some("99".to_string()));
     assert_eq!(doc.node_count(), 101); // 1 document + 100 divs
 }
 
@@ -926,8 +901,7 @@ fn test_node_not_found_error() {
 
 #[test]
 fn test_multiple_id_attribute() {
-    let doc =
-        parse_html("<html><body><div id=\"first\">a</div><div id=\"second\">b</div></body></html>");
+    let doc = parse_html("<html><body><div id=\"first\">a</div><div id=\"second\">b</div></body></html>");
     assert!(doc.get_element_by_id("first").is_some());
     assert!(doc.get_element_by_id("second").is_some());
     assert!(doc.get_element_by_id("third").is_none());
@@ -939,9 +913,7 @@ fn test_multiple_id_attribute() {
 
 #[test]
 fn test_query_selector_combined() {
-    let doc = parse_html(
-        "<html><body><div id=\"main\" class=\"container active\"><p>text</p></div></body></html>",
-    );
+    let doc = parse_html("<html><body><div id=\"main\" class=\"container active\"><p>text</p></div></body></html>");
     let root = doc.root();
 
     // 组合选择器
@@ -981,10 +953,7 @@ fn test_inner_vs_outer_html_distinct() {
 
     let outer = doc.outer_html(div);
     let inner = doc.inner_html(div);
-    assert!(
-        outer.starts_with("<div>"),
-        "outer should include the element tag"
-    );
+    assert!(outer.starts_with("<div>"), "outer should include the element tag");
     assert!(outer.ends_with("</div>"));
     assert_eq!(inner, "hello", "inner should only have children");
 }
@@ -1017,10 +986,7 @@ fn test_serialize_attribute_escaping() {
     doc.append_child(root, div).unwrap();
 
     let html = doc.outer_html(div);
-    assert!(
-        html.contains("&quot;"),
-        "should escape quotes in attributes"
-    );
+    assert!(html.contains("&quot;"), "should escape quotes in attributes");
     assert!(html.contains("&amp;"), "should escape & in attributes");
 }
 
@@ -1030,10 +996,7 @@ fn test_serialize_orphan_node() {
     let mut doc = Document::new();
     let orphan = doc.create_element("div");
     let html = doc.outer_html(orphan);
-    assert!(
-        html.contains("<div"),
-        "orphan node should still serialize, got: {html}"
-    );
+    assert!(html.contains("<div"), "orphan node should still serialize, got: {html}");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1134,11 +1097,7 @@ fn test_mutation_observer_repeated_notify() {
 
     observer.notify(std::slice::from_ref(&record));
     observer.notify(&[record.clone(), record.clone()]);
-    assert_eq!(
-        *count.lock().unwrap(),
-        3,
-        "should have received 3 total records"
-    );
+    assert_eq!(*count.lock().unwrap(), 3, "should have received 3 total records");
 }
 
 /// 测试 CharacterData mutation type 记录。
@@ -1162,10 +1121,7 @@ fn test_mutation_character_data_record() {
         old_value: Some("old text".to_string()),
     };
     observer.notify(&[record]);
-    assert_eq!(
-        *received_type.lock().unwrap(),
-        Some(MutationType::CharacterData)
-    );
+    assert_eq!(*received_type.lock().unwrap(), Some(MutationType::CharacterData));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1449,10 +1405,7 @@ fn test_prevent_default_cancelable() {
 fn test_prevent_default_not_cancelable() {
     let mut event = Event::new("load"); // bubbles=false, cancelable=false
     let result = event.prevent_default();
-    assert!(
-        !result,
-        "preventDefault should return false for non-cancelable event"
-    );
+    assert!(!result, "preventDefault should return false for non-cancelable event");
     assert!(!event.default_prevented());
 }
 
@@ -1577,10 +1530,7 @@ fn test_dispatch_returns_not_prevented() {
 
     let mut event = Event::new_with_options("click", false, true);
     let not_prevented = doc.dispatch_event(elem, &mut event);
-    assert!(
-        not_prevented,
-        "dispatch should return true when no preventDefault"
-    );
+    assert!(not_prevented, "dispatch should return true when no preventDefault");
 }
 
 /// 测试 add_event_listener 多个监听器。
@@ -1643,7 +1593,10 @@ fn test_different_event_types() {
     let mut event = Event::new("click");
     doc.dispatch_event(elem, &mut event);
     assert!(*click_called.lock().unwrap());
-    assert!(!*input_called.lock().unwrap(), "input listener should not fire for click event");
+    assert!(
+        !*input_called.lock().unwrap(),
+        "input listener should not fire for click event"
+    );
 }
 
 /// 测试 remove_event_listener。
@@ -1671,10 +1624,7 @@ fn test_remove_event_listener() {
 
     let mut event = Event::new("click");
     doc.dispatch_event(elem, &mut event);
-    assert!(
-        !*called.lock().unwrap(),
-        "removed listener should not fire"
-    );
+    assert!(!*called.lock().unwrap(), "removed listener should not fire");
 }
 
 /// 测试 remove_event_listener 不存在的类型返回 0。
@@ -1694,18 +1644,8 @@ fn test_remove_all_event_listeners() {
     let elem = doc.create_element("div");
     doc.append_child(doc.root(), elem).unwrap();
 
-    doc.add_event_listener(
-        elem,
-        "click",
-        Box::new(|_| {}),
-        false,
-    );
-    doc.add_event_listener(
-        elem,
-        "input",
-        Box::new(|_| {}),
-        false,
-    );
+    doc.add_event_listener(elem, "click", Box::new(|_| {}), false);
+    doc.add_event_listener(elem, "input", Box::new(|_| {}), false);
 
     assert_eq!(doc.listener_count(elem, "click"), 1);
     assert_eq!(doc.listener_count(elem, "input"), 1);
@@ -1860,11 +1800,7 @@ fn test_stop_propagation_during_bubble() {
     doc.dispatch_event(p, &mut event);
 
     let log = call_log.lock().unwrap();
-    assert_eq!(
-        *log,
-        vec!["p"],
-        "stopPropagation should prevent bubbling to ancestors"
-    );
+    assert_eq!(*log, vec!["p"], "stopPropagation should prevent bubbling to ancestors");
 }
 
 /// 测试 stopImmediatePropagation 阻止同节点上的后续监听器。
@@ -2027,10 +1963,9 @@ fn test_full_event_propagation_phases() {
         div,
         "click",
         Box::new(move |event| {
-            log.lock().unwrap().push(format!(
-                "div-capture(phase={:?})",
-                event.phase()
-            ));
+            log.lock()
+                .unwrap()
+                .push(format!("div-capture(phase={:?})", event.phase()));
         }),
         true,
     );
@@ -2041,10 +1976,9 @@ fn test_full_event_propagation_phases() {
         div,
         "click",
         Box::new(move |event| {
-            log.lock().unwrap().push(format!(
-                "div-bubble(phase={:?})",
-                event.phase()
-            ));
+            log.lock()
+                .unwrap()
+                .push(format!("div-bubble(phase={:?})", event.phase()));
         }),
         false,
     );
@@ -2055,10 +1989,9 @@ fn test_full_event_propagation_phases() {
         span,
         "click",
         Box::new(move |event| {
-            log.lock().unwrap().push(format!(
-                "span-target-cap(phase={:?})",
-                event.phase()
-            ));
+            log.lock()
+                .unwrap()
+                .push(format!("span-target-cap(phase={:?})", event.phase()));
         }),
         true,
     );
@@ -2069,10 +2002,9 @@ fn test_full_event_propagation_phases() {
         span,
         "click",
         Box::new(move |event| {
-            log.lock().unwrap().push(format!(
-                "span-target(phase={:?})",
-                event.phase()
-            ));
+            log.lock()
+                .unwrap()
+                .push(format!("span-target(phase={:?})", event.phase()));
         }),
         false,
     );
@@ -2084,7 +2016,10 @@ fn test_full_event_propagation_phases() {
     assert_eq!(log.len(), 4, "all 4 listeners should fire");
     // 顺序：div-capture -> span-target-cap -> span-target -> div-bubble
     assert!(log[0].contains("div-capture"), "first should be div capture");
-    assert!(log[1].contains("span-target-cap"), "second should be span capture at target");
+    assert!(
+        log[1].contains("span-target-cap"),
+        "second should be span capture at target"
+    );
     assert!(log[2].contains("span-target"), "third should be span at target");
     assert!(log[3].contains("div-bubble"), "fourth should be div bubble");
 }
@@ -2146,10 +2081,7 @@ fn test_stop_propagation_in_capture_phase() {
 fn test_node_contains_self() {
     let doc = Document::new();
     let root = doc.root();
-    assert!(
-        doc.node_contains(root, root),
-        "a node should contain itself"
-    );
+    assert!(doc.node_contains(root, root), "a node should contain itself");
 }
 
 /// 测试 node_contains 对后代节点返回 true。
@@ -2217,10 +2149,7 @@ fn test_compare_document_position_preceding() {
 
     // c1 在 c2 之前 → c2 在 c1 之后（FOLLOWING）
     let pos = doc.compare_document_position(c1, c2).unwrap();
-    assert!(
-        pos.contains(DocumentPosition::FOLLOWING),
-        "c2 should be following c1"
-    );
+    assert!(pos.contains(DocumentPosition::FOLLOWING), "c2 should be following c1");
 }
 
 /// 测试 compare_document_position：后面的节点返回 PRECEDING。
@@ -2235,10 +2164,7 @@ fn test_compare_document_position_following() {
 
     // c2 在 c1 之后 → c2 在 c1 的位置看来是在前面（PRECEDING）
     let pos = doc.compare_document_position(c2, c1).unwrap();
-    assert!(
-        pos.contains(DocumentPosition::PRECEDING),
-        "c1 should be preceding c2"
-    );
+    assert!(pos.contains(DocumentPosition::PRECEDING), "c1 should be preceding c2");
 }
 
 /// 测试 compare_document_position：包含关系。
@@ -2253,10 +2179,7 @@ fn test_compare_document_position_contains() {
 
     // div 包含 span → 从 span 看 div，div 在前面且包含 span
     let pos = doc.compare_document_position(span, div).unwrap();
-    assert!(
-        pos.contains(DocumentPosition::CONTAINS),
-        "div should contain span"
-    );
+    assert!(pos.contains(DocumentPosition::CONTAINS), "div should contain span");
     assert!(
         pos.contains(DocumentPosition::PRECEDING),
         "div should be preceding span"
@@ -2293,7 +2216,10 @@ fn test_collect_descendants_empty() {
     let mut doc = Document::new();
     let elem = doc.create_element("div");
     let descendants = doc.collect_descendants(elem);
-    assert!(descendants.is_empty(), "element with no children should have no descendants");
+    assert!(
+        descendants.is_empty(),
+        "element with no children should have no descendants"
+    );
 }
 
 /// 测试 collect_descendants 对深层树。
@@ -2660,10 +2586,7 @@ fn test_slot_default_content_fallback() {
     assert!(assigned.is_empty(), "no nodes assigned yet");
 
     // slot 本身的 textContent 仍包含默认内容
-    assert_eq!(
-        doc.text_content(slot_elem),
-        Some("Default Header".to_string())
-    );
+    assert_eq!(doc.text_content(slot_elem), Some("Default Header".to_string()));
 }
 
 /// 测试多个节点分配到同一 slot。
@@ -3096,15 +3019,25 @@ fn test_immediate_propagation_stops_bubbling_to_ancestors() {
     let log_div = call_log.clone();
 
     // span: stopImmediatePropagation
-    doc.add_event_listener(span, "click", Box::new(move |e| {
-        log_span.lock().unwrap().push("span");
-        e.stop_immediate_propagation();
-    }), false);
+    doc.add_event_listener(
+        span,
+        "click",
+        Box::new(move |e| {
+            log_span.lock().unwrap().push("span");
+            e.stop_immediate_propagation();
+        }),
+        false,
+    );
 
     // div bubble: should not fire
-    doc.add_event_listener(div, "click", Box::new(move |_| {
-        log_div.lock().unwrap().push("div");
-    }), false);
+    doc.add_event_listener(
+        div,
+        "click",
+        Box::new(move |_| {
+            log_div.lock().unwrap().push("div");
+        }),
+        false,
+    );
 
     let mut event = Event::new_with_options("click", true, false);
     doc.dispatch_event(span, &mut event);
@@ -3134,9 +3067,14 @@ fn test_event_on_disconnected_node() {
     let target_seen = Arc::new(Mutex::new(None));
     let target_clone = target_seen.clone();
     let mut doc2 = Document::new();
-    doc2.add_event_listener(orphan, "custom", Box::new(move |e| {
-        *target_clone.lock().unwrap() = e.target();
-    }), false);
+    doc2.add_event_listener(
+        orphan,
+        "custom",
+        Box::new(move |e| {
+            *target_clone.lock().unwrap() = e.target();
+        }),
+        false,
+    );
 
     let mut event = Event::new("custom");
     doc2.dispatch_event(orphan, &mut event);
@@ -3156,15 +3094,30 @@ fn test_multiple_event_types_independent() {
     let f2 = flags.clone();
     let f3 = flags.clone();
 
-    doc.add_event_listener(elem, "click", Box::new(move |_| {
-        f1.lock().unwrap().0 = true;
-    }), false);
-    doc.add_event_listener(elem, "focus", Box::new(move |_| {
-        f2.lock().unwrap().1 = true;
-    }), false);
-    doc.add_event_listener(elem, "blur", Box::new(move |_| {
-        f3.lock().unwrap().2 = true;
-    }), false);
+    doc.add_event_listener(
+        elem,
+        "click",
+        Box::new(move |_| {
+            f1.lock().unwrap().0 = true;
+        }),
+        false,
+    );
+    doc.add_event_listener(
+        elem,
+        "focus",
+        Box::new(move |_| {
+            f2.lock().unwrap().1 = true;
+        }),
+        false,
+    );
+    doc.add_event_listener(
+        elem,
+        "blur",
+        Box::new(move |_| {
+            f3.lock().unwrap().2 = true;
+        }),
+        false,
+    );
 
     assert_eq!(doc.listener_count(elem, "click"), 1);
     assert_eq!(doc.listener_count(elem, "focus"), 1);
@@ -3402,7 +3355,9 @@ fn test_query_selector_attribute_value() {
 /// Nested element queries: searching from a subtree root.
 #[test]
 fn test_nested_element_queries() {
-    let doc = parse_html("<html><body><div class=\"outer\"><span id=\"target\"><em>deep</em></span></div><span id=\"sibling\">outside</span></body></html>");
+    let doc = parse_html(
+        "<html><body><div class=\"outer\"><span id=\"target\"><em>deep</em></span></div><span id=\"sibling\">outside</span></body></html>",
+    );
     let root = doc.root();
     let outer = doc.query_selector(root, ".outer").unwrap();
 
@@ -3681,11 +3636,7 @@ fn test_id_map_update_on_attribute_change() {
     doc.set_attribute(elem, "id", "new");
 
     // 旧 id 不再映射
-    assert_eq!(
-        doc.get_element_by_id("old"),
-        None,
-        "修改 id 后旧 id 应从 id_map 中移除"
-    );
+    assert_eq!(doc.get_element_by_id("old"), None, "修改 id 后旧 id 应从 id_map 中移除");
     // 新 id 正确映射
     assert_eq!(
         doc.get_element_by_id("new"),
@@ -3738,11 +3689,7 @@ fn test_set_attribute_updates_id_map() {
     doc.set_attribute(elem, "id", "new");
 
     // 旧 id 不再映射
-    assert_eq!(
-        doc.get_element_by_id("old"),
-        None,
-        "修改 id 后旧 id 应从 id_map 中移除"
-    );
+    assert_eq!(doc.get_element_by_id("old"), None, "修改 id 后旧 id 应从 id_map 中移除");
     // 新 id 正确映射
     assert_eq!(
         doc.get_element_by_id("new"),

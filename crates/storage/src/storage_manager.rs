@@ -36,18 +36,14 @@ impl StorageManager {
     pub fn local_storage(&mut self, origin: &str) -> &mut WebStorage {
         self.local_stores
             .entry(origin.to_string())
-            .or_insert_with(|| {
-                WebStorage::new_with_max_size(StorageType::Local, origin, self.default_max_size)
-            })
+            .or_insert_with(|| WebStorage::new_with_max_size(StorageType::Local, origin, self.default_max_size))
     }
 
     /// 获取指定源的 sessionStorage（如不存在则创建）。
     pub fn session_storage(&mut self, origin: &str) -> &mut WebStorage {
         self.session_stores
             .entry(origin.to_string())
-            .or_insert_with(|| {
-                WebStorage::new_with_max_size(StorageType::Session, origin, self.default_max_size)
-            })
+            .or_insert_with(|| WebStorage::new_with_max_size(StorageType::Session, origin, self.default_max_size))
     }
 
     /// 清除指定源的所有存储。
@@ -104,14 +100,8 @@ mod tests {
     #[test]
     fn test_manager_different_origins() {
         let mut manager = StorageManager::new();
-        manager
-            .local_storage("https://a.com")
-            .set("key", "a")
-            .unwrap();
-        manager
-            .local_storage("https://b.com")
-            .set("key", "b")
-            .unwrap();
+        manager.local_storage("https://a.com").set("key", "a").unwrap();
+        manager.local_storage("https://b.com").set("key", "b").unwrap();
 
         assert_eq!(manager.local_storage("https://a.com").get("key"), Some("a"));
         assert_eq!(manager.local_storage("https://b.com").get("key"), Some("b"));
@@ -120,18 +110,9 @@ mod tests {
     #[test]
     fn test_manager_clear_origin() {
         let mut manager = StorageManager::new();
-        manager
-            .local_storage("https://a.com")
-            .set("key", "value")
-            .unwrap();
-        manager
-            .session_storage("https://a.com")
-            .set("sk", "sv")
-            .unwrap();
-        manager
-            .local_storage("https://b.com")
-            .set("key", "value")
-            .unwrap();
+        manager.local_storage("https://a.com").set("key", "value").unwrap();
+        manager.session_storage("https://a.com").set("sk", "sv").unwrap();
+        manager.local_storage("https://b.com").set("key", "value").unwrap();
 
         manager.clear_origin("https://a.com");
 
@@ -143,18 +124,9 @@ mod tests {
     #[test]
     fn test_manager_clear_all() {
         let mut manager = StorageManager::new();
-        manager
-            .local_storage("https://a.com")
-            .set("key", "value")
-            .unwrap();
-        manager
-            .local_storage("https://b.com")
-            .set("key", "value")
-            .unwrap();
-        manager
-            .session_storage("https://a.com")
-            .set("sk", "sv")
-            .unwrap();
+        manager.local_storage("https://a.com").set("key", "value").unwrap();
+        manager.local_storage("https://b.com").set("key", "value").unwrap();
+        manager.session_storage("https://a.com").set("sk", "sv").unwrap();
 
         manager.clear_all_local();
         assert!(manager.local_storage("https://a.com").is_empty());
@@ -208,7 +180,10 @@ mod tests {
     fn test_manager_local_and_session_independent() {
         let mut manager = StorageManager::new();
         manager.local_storage("https://a.com").set("key", "local-val").unwrap();
-        manager.session_storage("https://a.com").set("key", "session-val").unwrap();
+        manager
+            .session_storage("https://a.com")
+            .set("key", "session-val")
+            .unwrap();
         assert_eq!(manager.local_storage("https://a.com").get("key"), Some("local-val"));
         assert_eq!(manager.session_storage("https://a.com").get("key"), Some("session-val"));
         // Clear local does not affect session

@@ -107,8 +107,7 @@ impl ContentSecurityPolicy {
 
     /// 查找指定名称的指令，若不存在则回退到 default-src。
     fn find_directive_or_default(&self, name: &str) -> Option<&CspDirective> {
-        self.find_directive(name)
-            .or_else(|| self.find_directive("default-src"))
+        self.find_directive(name).or_else(|| self.find_directive("default-src"))
     }
 
     /// 检查资源加载是否允许。
@@ -116,12 +115,7 @@ impl ContentSecurityPolicy {
     /// `resource_type` 如 "script", "style", "img", "connect", "font", "media"。
     /// `url` 为资源 URL。
     /// `document_origin` 为文档源（用于 'self' 匹配），None 时仅对非绝对 URL 视为同源。
-    pub fn is_resource_allowed(
-        &self,
-        resource_type: &str,
-        url: &str,
-        document_origin: Option<&Origin>,
-    ) -> bool {
+    pub fn is_resource_allowed(&self, resource_type: &str, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive_name = format!("{resource_type}-src");
 
         let directive = self.find_directive_or_default(&directive_name);
@@ -135,12 +129,7 @@ impl ContentSecurityPolicy {
     }
 
     /// 检查源列表是否匹配给定 URL。
-    fn check_source_list(
-        &self,
-        values: &[String],
-        url: &str,
-        document_origin: Option<&Origin>,
-    ) -> bool {
+    fn check_source_list(&self, values: &[String], url: &str, document_origin: Option<&Origin>) -> bool {
         if values.is_empty() {
             return true;
         }
@@ -156,9 +145,7 @@ impl ContentSecurityPolicy {
         }
 
         // 检查 'self' — 与文档源匹配
-        if values.iter().any(|v| v == "'self'")
-            && Self::is_self_match(url, document_origin)
-        {
+        if values.iter().any(|v| v == "'self'") && Self::is_self_match(url, document_origin) {
             return true;
         }
 
@@ -216,9 +203,7 @@ impl ContentSecurityPolicy {
         // 简单提取：尝试剥离 scheme
         let after_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
         // 取到第一个 '/' 或 ':'（端口）或 '?' 或 '#' 之前
-        let end = after_scheme
-            .find(['/', ':', '?', '#'])
-            .unwrap_or(after_scheme.len());
+        let end = after_scheme.find(['/', ':', '?', '#']).unwrap_or(after_scheme.len());
         Some(after_scheme[..end].to_string())
     }
 
@@ -226,11 +211,7 @@ impl ContentSecurityPolicy {
     ///
     /// `nonce` 为脚本标签上的 nonce 属性值（不含 'nonce-' 前缀）。
     /// `hash` 为脚本内容的 SHA-256 哈希值（base64 编码，不含 'sha256-' 前缀）。
-    pub fn is_inline_script_allowed(
-        &self,
-        nonce: Option<&str>,
-        hash: Option<&str>,
-    ) -> bool {
+    pub fn is_inline_script_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
         let directive = self.find_directive_or_default("script-src");
 
         let Some(directive) = directive else {
@@ -245,11 +226,7 @@ impl ContentSecurityPolicy {
         if let Some(n) = nonce {
             let nonce_quoted = format!("'nonce-{n}'");
             let nonce_bare = format!("nonce-{n}");
-            if directive
-                .values
-                .iter()
-                .any(|v| v == &nonce_quoted || v == &nonce_bare)
-            {
+            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
                 return true;
             }
         }
@@ -258,11 +235,7 @@ impl ContentSecurityPolicy {
         if let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
-            if directive
-                .values
-                .iter()
-                .any(|v| v == &hash_quoted || v == &hash_bare)
-            {
+            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
                 return true;
             }
         }
@@ -274,11 +247,7 @@ impl ContentSecurityPolicy {
     ///
     /// `nonce` 为样式标签上的 nonce 属性值（不含 'nonce-' 前缀）。
     /// `hash` 为样式内容的 SHA-256 哈希值（base64 编码，不含 'sha256-' 前缀）。
-    pub fn is_inline_style_allowed(
-        &self,
-        nonce: Option<&str>,
-        hash: Option<&str>,
-    ) -> bool {
+    pub fn is_inline_style_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
         let directive = self.find_directive_or_default("style-src");
 
         let Some(directive) = directive else {
@@ -293,11 +262,7 @@ impl ContentSecurityPolicy {
         if let Some(n) = nonce {
             let nonce_quoted = format!("'nonce-{n}'");
             let nonce_bare = format!("nonce-{n}");
-            if directive
-                .values
-                .iter()
-                .any(|v| v == &nonce_quoted || v == &nonce_bare)
-            {
+            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
                 return true;
             }
         }
@@ -306,11 +271,7 @@ impl ContentSecurityPolicy {
         if let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
-            if directive
-                .values
-                .iter()
-                .any(|v| v == &hash_quoted || v == &hash_bare)
-            {
+            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
                 return true;
             }
         }
@@ -489,10 +450,7 @@ mod tests {
         let csp = ContentSecurityPolicy::parse("script-src 'self' https://cdn.example.com");
         assert_eq!(csp.directives.len(), 1);
         assert_eq!(csp.directives[0].name, "script-src");
-        assert_eq!(
-            csp.directives[0].values,
-            vec!["'self'", "https://cdn.example.com"]
-        );
+        assert_eq!(csp.directives[0].values, vec!["'self'", "https://cdn.example.com"]);
     }
 
     #[test]
@@ -532,11 +490,7 @@ mod tests {
         let csp = ContentSecurityPolicy::parse("default-src 'self'");
         // 相对 URL 在有或无 document_origin 时都应允许
         assert!(csp.is_resource_allowed("script", "app.js", None));
-        assert!(csp.is_resource_allowed(
-            "script",
-            "app.js",
-            Some(&Origin::parse("https://example.com").unwrap())
-        ));
+        assert!(csp.is_resource_allowed("script", "app.js", Some(&Origin::parse("https://example.com").unwrap())));
     }
 
     #[test]
@@ -551,11 +505,7 @@ mod tests {
         let csp = ContentSecurityPolicy::parse("default-src 'self'");
         let doc_origin = Origin::parse("https://example.com").unwrap();
         // 同源绝对 URL → 应允许
-        assert!(csp.is_resource_allowed(
-            "script",
-            "https://example.com/app.js",
-            Some(&doc_origin)
-        ));
+        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
     }
 
     #[test]
@@ -563,11 +513,7 @@ mod tests {
         let csp = ContentSecurityPolicy::parse("default-src 'self'");
         let doc_origin = Origin::parse("https://example.com").unwrap();
         // 不同源绝对 URL → 应拒绝
-        assert!(!csp.is_resource_allowed(
-            "script",
-            "https://evil.com/app.js",
-            Some(&doc_origin)
-        ));
+        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", Some(&doc_origin)));
     }
 
     #[test]
@@ -666,10 +612,7 @@ mod tests {
     #[test]
     fn test_csp_inline_script_hash_match() {
         let csp = ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
-        assert!(csp.is_inline_script_allowed(
-            None,
-            Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")
-        ));
+        assert!(csp.is_inline_script_allowed(None, Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")));
         assert!(!csp.is_inline_script_allowed(None, Some("wronghash")));
         assert!(!csp.is_inline_script_allowed(None, None));
     }
@@ -919,12 +862,8 @@ mod tests {
     #[test]
     fn test_csp_hash_allows_matching_script() {
         // CSP script-src 仅允许特定 hash 的脚本
-        let csp =
-            ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
+        let csp = ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
         // 匹配 hash → 允许
-        assert!(csp.is_inline_script_allowed(
-            None,
-            Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")
-        ));
+        assert!(csp.is_inline_script_allowed(None, Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")));
     }
 }

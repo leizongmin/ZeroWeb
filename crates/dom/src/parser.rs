@@ -2,8 +2,8 @@
 
 use crate::document::Document;
 use crate::node::{
-    CommentData, DocumentData, DocumentTypeData, NodeData, NodeId, NodeKind,
-    ProcessingInstructionData, QuirksMode, TextData,
+    CommentData, DocumentData, DocumentTypeData, NodeData, NodeId, NodeKind, ProcessingInstructionData, QuirksMode,
+    TextData,
 };
 use hashbrown::HashMap;
 use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
@@ -82,18 +82,14 @@ impl DomBuilder {
         for (old_id, node_data) in &inner.nodes {
             let new_id = match &node_data.kind {
                 NodeKind::Document(_) => doc.root(),
-                NodeKind::Element(elem) => {
-                    doc.create_element_with_qname(elem.name.clone(), elem.attributes.clone())
-                }
+                NodeKind::Element(elem) => doc.create_element_with_qname(elem.name.clone(), elem.attributes.clone()),
                 NodeKind::Text(data) => doc.create_text_node(&data.content),
                 NodeKind::Comment(data) => doc.create_comment(&data.content),
                 NodeKind::DocumentType(dt) => {
                     doc.create_document_type(&dt.name, dt.public_id.clone(), dt.system_id.clone())
                 }
                 NodeKind::DocumentFragment => doc.create_document_fragment(),
-                NodeKind::ProcessingInstruction(pi) => {
-                    doc.create_processing_instruction(&pi.target, &pi.data)
-                }
+                NodeKind::ProcessingInstruction(pi) => doc.create_processing_instruction(&pi.target, &pi.data),
                 NodeKind::ShadowRoot(_) => doc.create_document_fragment(),
             };
             mapping.insert(old_id, new_id);
@@ -194,17 +190,10 @@ impl TreeSink for DomBuilder {
         }
     }
 
-    fn create_element(
-        &self,
-        name: QualName,
-        attrs: Vec<Attribute>,
-        _flags: ElementFlags,
-    ) -> Self::Handle {
+    fn create_element(&self, name: QualName, attrs: Vec<Attribute>, _flags: ElementFlags) -> Self::Handle {
         let mut inner = self.inner.borrow_mut();
         let elem_data = crate::node::ElementData::new(name, attrs);
-        inner
-            .nodes
-            .insert(NodeData::new(NodeKind::Element(elem_data)))
+        inner.nodes.insert(NodeData::new(NodeKind::Element(elem_data)))
     }
 
     fn create_comment(&self, text: StrTendril) -> Self::Handle {
@@ -216,14 +205,12 @@ impl TreeSink for DomBuilder {
 
     fn create_pi(&self, target: StrTendril, data: StrTendril) -> Self::Handle {
         let mut inner = self.inner.borrow_mut();
-        inner
-            .nodes
-            .insert(NodeData::new(NodeKind::ProcessingInstruction(
-                ProcessingInstructionData {
-                    target: target.to_string(),
-                    data: data.to_string(),
-                },
-            )))
+        inner.nodes.insert(NodeData::new(NodeKind::ProcessingInstruction(
+            ProcessingInstructionData {
+                target: target.to_string(),
+                data: data.to_string(),
+            },
+        )))
     }
 
     fn append(&self, parent: &Self::Handle, child: NodeOrText<Self::Handle>) {
@@ -236,34 +223,19 @@ impl TreeSink for DomBuilder {
                     .get(*parent)
                     .and_then(|p| p.children.last().copied())
                     .map(|last| {
-                        let is_new_text = matches!(
-                            inner.nodes.get(node_id).map(|n| &n.kind),
-                            Some(NodeKind::Text(_))
-                        );
-                        let is_last_text = matches!(
-                            inner.nodes.get(last).map(|n| &n.kind),
-                            Some(NodeKind::Text(_))
-                        );
+                        let is_new_text = matches!(inner.nodes.get(node_id).map(|n| &n.kind), Some(NodeKind::Text(_)));
+                        let is_last_text = matches!(inner.nodes.get(last).map(|n| &n.kind), Some(NodeKind::Text(_)));
                         is_new_text && is_last_text
                     })
                     .unwrap_or(false);
 
                 if should_merge {
-                    let last_child = inner
-                        .nodes
-                        .get(*parent)
-                        .unwrap()
-                        .children
-                        .last()
-                        .copied()
-                        .unwrap();
+                    let last_child = inner.nodes.get(*parent).unwrap().children.last().copied().unwrap();
                     let new_content = match inner.nodes.get(node_id).map(|n| n.kind.clone()) {
                         Some(NodeKind::Text(data)) => data.content,
                         _ => return,
                     };
-                    if let Some(NodeKind::Text(data)) =
-                        inner.nodes.get_mut(last_child).map(|n| &mut n.kind)
-                    {
+                    if let Some(NodeKind::Text(data)) = inner.nodes.get_mut(last_child).map(|n| &mut n.kind) {
                         data.content.push_str(&new_content);
                     }
                     inner.nodes.remove(node_id);
@@ -278,31 +250,19 @@ impl TreeSink for DomBuilder {
             }
             NodeOrText::AppendText(text) => {
                 // 检查是否需要合并到上一个文本节点
-                let last_child = inner
-                    .nodes
-                    .get(*parent)
-                    .and_then(|p| p.children.last().copied());
+                let last_child = inner.nodes.get(*parent).and_then(|p| p.children.last().copied());
 
                 let should_merge = last_child
-                    .map(|last| {
-                        matches!(
-                            inner.nodes.get(last).map(|n| &n.kind),
-                            Some(NodeKind::Text(_))
-                        )
-                    })
+                    .map(|last| matches!(inner.nodes.get(last).map(|n| &n.kind), Some(NodeKind::Text(_))))
                     .unwrap_or(false);
 
                 if should_merge {
                     let last = last_child.unwrap();
-                    if let Some(NodeKind::Text(data)) =
-                        inner.nodes.get_mut(last).map(|n| &mut n.kind)
-                    {
+                    if let Some(NodeKind::Text(data)) = inner.nodes.get_mut(last).map(|n| &mut n.kind) {
                         data.content.push_str(&text);
                     }
                 } else {
-                    let text_id = inner
-                        .nodes
-                        .insert(NodeData::new(NodeKind::Text(TextData::new(&text))));
+                    let text_id = inner.nodes.insert(NodeData::new(NodeKind::Text(TextData::new(&text))));
                     if let Some(child_data) = inner.nodes.get_mut(text_id) {
                         child_data.parent = Some(*parent);
                     }
@@ -332,30 +292,24 @@ impl TreeSink for DomBuilder {
         }
     }
 
-    fn append_doctype_to_document(
-        &self,
-        name: StrTendril,
-        public_id: StrTendril,
-        system_id: StrTendril,
-    ) {
+    fn append_doctype_to_document(&self, name: StrTendril, public_id: StrTendril, system_id: StrTendril) {
         let mut inner = self.inner.borrow_mut();
         let root = inner.root;
-        let doctype_id =
-            inner
-                .nodes
-                .insert(NodeData::new(NodeKind::DocumentType(DocumentTypeData {
-                    name: name.to_string(),
-                    public_id: if public_id.is_empty() {
-                        None
-                    } else {
-                        Some(public_id.to_string())
-                    },
-                    system_id: if system_id.is_empty() {
-                        None
-                    } else {
-                        Some(system_id.to_string())
-                    },
-                })));
+        let doctype_id = inner
+            .nodes
+            .insert(NodeData::new(NodeKind::DocumentType(DocumentTypeData {
+                name: name.to_string(),
+                public_id: if public_id.is_empty() {
+                    None
+                } else {
+                    Some(public_id.to_string())
+                },
+                system_id: if system_id.is_empty() {
+                    None
+                } else {
+                    Some(system_id.to_string())
+                },
+            })));
 
         if let Some(dt_data) = inner.nodes.get_mut(doctype_id) {
             dt_data.parent = Some(root);
@@ -421,25 +375,18 @@ impl TreeSink for DomBuilder {
                 // 如果 sibling 前面有文本节点，合并
                 let should_merge = if sibling_idx > 0 {
                     let prev_id = inner.nodes.get(parent).unwrap().children[sibling_idx - 1];
-                    matches!(
-                        inner.nodes.get(prev_id).map(|n| &n.kind),
-                        Some(NodeKind::Text(_))
-                    )
+                    matches!(inner.nodes.get(prev_id).map(|n| &n.kind), Some(NodeKind::Text(_)))
                 } else {
                     false
                 };
 
                 if should_merge {
                     let prev_id = inner.nodes.get(parent).unwrap().children[sibling_idx - 1];
-                    if let Some(NodeKind::Text(data)) =
-                        inner.nodes.get_mut(prev_id).map(|n| &mut n.kind)
-                    {
+                    if let Some(NodeKind::Text(data)) = inner.nodes.get_mut(prev_id).map(|n| &mut n.kind) {
                         data.content.push_str(&text);
                     }
                 } else {
-                    let text_id = inner
-                        .nodes
-                        .insert(NodeData::new(NodeKind::Text(TextData::new(&text))));
+                    let text_id = inner.nodes.insert(NodeData::new(NodeKind::Text(TextData::new(&text))));
                     if let Some(child_data) = inner.nodes.get_mut(text_id) {
                         child_data.parent = Some(parent);
                     }
@@ -495,11 +442,7 @@ impl TreeSink for DomBuilder {
     fn reparent_children(&self, node: &Self::Handle, new_parent: &Self::Handle) {
         let mut inner = self.inner.borrow_mut();
 
-        let children: Vec<NodeId> = inner
-            .nodes
-            .get(*node)
-            .map(|n| n.children.clone())
-            .unwrap_or_default();
+        let children: Vec<NodeId> = inner.nodes.get(*node).map(|n| n.children.clone()).unwrap_or_default();
 
         if let Some(node_data) = inner.nodes.get_mut(*node) {
             node_data.children.clear();

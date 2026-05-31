@@ -50,31 +50,49 @@ mod tests {
 
     #[test]
     fn test_cross_origin_isolated_when_both_set() {
-        assert!(is_cross_origin_isolated(CoopPolicy::SameOrigin, CoepPolicy::RequireCorp));
+        assert!(is_cross_origin_isolated(
+            CoopPolicy::SameOrigin,
+            CoepPolicy::RequireCorp
+        ));
     }
 
     #[test]
     fn test_not_isolated_when_only_coop() {
-        assert!(!is_cross_origin_isolated(CoopPolicy::SameOrigin, CoepPolicy::UnsafeNone));
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::SameOrigin,
+            CoepPolicy::UnsafeNone
+        ));
     }
 
     #[test]
     fn test_not_isolated_when_only_coep() {
-        assert!(!is_cross_origin_isolated(CoopPolicy::UnsafeNone, CoepPolicy::RequireCorp));
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::UnsafeNone,
+            CoepPolicy::RequireCorp
+        ));
     }
 
     #[test]
     fn test_not_isolated_when_neither() {
-        assert!(!is_cross_origin_isolated(CoopPolicy::UnsafeNone, CoepPolicy::UnsafeNone));
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::UnsafeNone,
+            CoepPolicy::UnsafeNone
+        ));
     }
 
     #[test]
     fn test_not_isolated_with_coop_allow_popups() {
-        assert!(!is_cross_origin_isolated(CoopPolicy::SameOriginAllowPopups, CoepPolicy::RequireCorp));
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::SameOriginAllowPopups,
+            CoepPolicy::RequireCorp
+        ));
     }
 
     #[test]
     fn test_not_isolated_with_coep_credentialless() {
-        assert!(!is_cross_origin_isolated(CoopPolicy::SameOrigin, CoepPolicy::Credentialless));
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::SameOrigin,
+            CoepPolicy::Credentialless
+        ));
     }
 }

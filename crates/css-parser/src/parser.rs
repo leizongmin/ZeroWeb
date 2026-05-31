@@ -148,11 +148,7 @@ impl<'a> Parser<'a> {
             break;
         }
 
-        if selectors.is_empty() {
-            None
-        } else {
-            Some(selectors)
-        }
+        if selectors.is_empty() { None } else { Some(selectors) }
     }
 
     /// 消耗单个复杂选择器。
@@ -163,10 +159,7 @@ impl<'a> Parser<'a> {
             self.skip_whitespace();
 
             // 检查是否到达选择器列表的结束位置
-            if matches!(
-                self.peek(),
-                Token::LBrace | Token::Comma | Token::RBrace | Token::Eof
-            ) {
+            if matches!(self.peek(), Token::LBrace | Token::Comma | Token::RBrace | Token::Eof) {
                 break;
             }
 
@@ -244,10 +237,7 @@ impl<'a> Parser<'a> {
 
             // 检查是否继续
             self.skip_whitespace();
-            if matches!(
-                self.peek(),
-                Token::LBrace | Token::Comma | Token::RBrace | Token::Eof
-            ) {
+            if matches!(self.peek(), Token::LBrace | Token::Comma | Token::RBrace | Token::Eof) {
                 break;
             }
         }
@@ -309,9 +299,8 @@ impl<'a> Parser<'a> {
                         // 伪元素（::before, ::after）
                         self.advance();
                         if let Token::Ident(name) = self.peek().clone() {
-                            subclass_selectors.push(SubclassSelector::PseudoElement(
-                                PseudoElementSelector::Standard(name),
-                            ));
+                            subclass_selectors
+                                .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
                             self.advance();
                         }
                     } else if let Token::Ident(name) = self.peek().clone() {
@@ -334,9 +323,7 @@ impl<'a> Parser<'a> {
                             };
                             subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                         } else {
-                            subclass_selectors.push(SubclassSelector::PseudoClass(
-                                PseudoClassSelector::Simple(name),
-                            ));
+                            subclass_selectors.push(SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)));
                         }
                     } else if let Token::Function(name) = self.peek().clone() {
                         // 函数伪类（Function token 形式，tokenizer 直接产生 Function）
@@ -1002,10 +989,7 @@ impl<'a> Parser<'a> {
             Token::Semicolon => {
                 // @layer <name>; — 仅声明层名
                 self.advance();
-                Some(LayerRule {
-                    name,
-                    rules: vec![],
-                })
+                Some(LayerRule { name, rules: vec![] })
             }
             Token::LBrace => {
                 self.advance();
@@ -1098,10 +1082,7 @@ impl<'a> Parser<'a> {
             media_queries.push(trimmed);
         }
 
-        Some(ImportRule {
-            url,
-            media_queries,
-        })
+        Some(ImportRule { url, media_queries })
     }
 
     /// 消耗 @supports 规则。
@@ -1246,11 +1227,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Some(ContainerRule {
-            name,
-            condition,
-            rules,
-        })
+        Some(ContainerRule { name, condition, rules })
     }
 }
 
@@ -1264,13 +1241,8 @@ fn parse_container_condition(text: &str) -> Option<ContainerCondition> {
     if let Some(inner) = text.strip_prefix("size(").and_then(|s| s.strip_suffix(')')) {
         return Some(ContainerCondition::Size(parse_size_condition(inner.trim())?));
     }
-    if let Some(inner) = text
-        .strip_prefix("inline-size(")
-        .and_then(|s| s.strip_suffix(')'))
-    {
-        return Some(ContainerCondition::InlineSize(parse_size_condition(
-            inner.trim(),
-        )?));
+    if let Some(inner) = text.strip_prefix("inline-size(").and_then(|s| s.strip_suffix(')')) {
+        return Some(ContainerCondition::InlineSize(parse_size_condition(inner.trim())?));
     }
 
     // 默认为 Size 条件（裸条件如 `min-width: 400px`）

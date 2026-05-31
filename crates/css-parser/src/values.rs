@@ -264,8 +264,7 @@ const MAX_CALC_DEPTH: u32 = 10;
 impl<'a> CalcParser<'a> {
     /// 跳过前导空白。
     fn skip_whitespace(&mut self) {
-        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace()
-        {
+        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace() {
             self.pos += 1;
         }
     }
@@ -344,9 +343,7 @@ impl<'a> CalcParser<'a> {
         let neg = if self.peek_rest().starts_with('-') {
             // 判断是否为负号（而非减号）：后面紧跟数字或 calc(
             let after = self.peek_rest()[1..].trim_start();
-            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.')
-                || after.starts_with("calc(")
-            {
+            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.') || after.starts_with("calc(") {
                 self.pos += 1;
                 true
             } else {
@@ -385,11 +382,7 @@ impl<'a> CalcParser<'a> {
         };
 
         if neg {
-            expr = CalcExpr::BinaryOp(
-                Box::new(CalcExpr::Number(0.0)),
-                CalcOp::Subtract,
-                Box::new(expr),
-            );
+            expr = CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(expr));
         }
 
         Some(expr)
@@ -1436,11 +1429,7 @@ fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
             return None;
         }
     }
-    if result.is_empty() {
-        None
-    } else {
-        Some(result)
-    }
+    if result.is_empty() { None } else { Some(result) }
 }
 
 /// 解析 CSS 数值（可能带 px/deg/rad/turn 等单位）。
@@ -1925,10 +1914,7 @@ fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
 
     // 仅颜色
     let color = parse_color(s)?;
-    Some(GradientColorStop {
-        color,
-        position: None,
-    })
+    Some(GradientColorStop { color, position: None })
 }
 
 #[cfg(test)]
@@ -1939,22 +1925,10 @@ mod tests {
 
     #[test]
     fn test_parse_timing_function_keywords() {
-        assert_eq!(
-            parse_timing_function("ease"),
-            Some(TimingFunctionValue::Ease)
-        );
-        assert_eq!(
-            parse_timing_function("linear"),
-            Some(TimingFunctionValue::Linear)
-        );
-        assert_eq!(
-            parse_timing_function("ease-in"),
-            Some(TimingFunctionValue::EaseIn)
-        );
-        assert_eq!(
-            parse_timing_function("ease-out"),
-            Some(TimingFunctionValue::EaseOut)
-        );
+        assert_eq!(parse_timing_function("ease"), Some(TimingFunctionValue::Ease));
+        assert_eq!(parse_timing_function("linear"), Some(TimingFunctionValue::Linear));
+        assert_eq!(parse_timing_function("ease-in"), Some(TimingFunctionValue::EaseIn));
+        assert_eq!(parse_timing_function("ease-out"), Some(TimingFunctionValue::EaseOut));
         assert_eq!(
             parse_timing_function("ease-in-out"),
             Some(TimingFunctionValue::EaseInOut)
@@ -1963,19 +1937,13 @@ mod tests {
             parse_timing_function("step-start"),
             Some(TimingFunctionValue::StepStart)
         );
-        assert_eq!(
-            parse_timing_function("step-end"),
-            Some(TimingFunctionValue::StepEnd)
-        );
+        assert_eq!(parse_timing_function("step-end"), Some(TimingFunctionValue::StepEnd));
     }
 
     #[test]
     fn test_parse_timing_function_cubic_bezier() {
         let result = parse_timing_function("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
-        assert_eq!(
-            result,
-            Some(TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0))
-        );
+        assert_eq!(result, Some(TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0)));
     }
 
     #[test]

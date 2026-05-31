@@ -95,10 +95,7 @@ pub fn check_cors(
                 format!("{}:{}", request_origin.host, request_origin.port)
             }
         );
-        policy
-            .allow_origins
-            .iter()
-            .any(|o| o.eq_ignore_ascii_case(&origin_str))
+        policy.allow_origins.iter().any(|o| o.eq_ignore_ascii_case(&origin_str))
     };
 
     if !origin_allowed {
@@ -121,17 +118,8 @@ pub fn check_cors(
     }
 
     // 检查请求头
-    let simple_headers = [
-        "accept",
-        "accept-language",
-        "content-language",
-        "content-type",
-    ];
-    let simple_content_types = [
-        "application/x-www-form-urlencoded",
-        "multipart/form-data",
-        "text/plain",
-    ];
+    let simple_headers = ["accept", "accept-language", "content-language", "content-type"];
+    let simple_content_types = ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
 
     for (name, value) in request_headers {
         let name_lower = name.to_ascii_lowercase();
@@ -142,11 +130,7 @@ pub fn check_cors(
                 let ct_main = ct_lower.split(';').next().unwrap_or("").trim();
                 if !simple_content_types.contains(&ct_main) {
                     // 非简单 Content-Type 需要在 allow_headers 中
-                    if !policy
-                        .allow_headers
-                        .iter()
-                        .any(|h| h.eq_ignore_ascii_case(name))
-                    {
+                    if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
                         return CorsResult {
                             allowed: false,
                             reason: format!("header {name} not allowed"),
@@ -158,11 +142,7 @@ pub fn check_cors(
         }
 
         // 非简单头必须在 allow_headers 中
-        if !policy
-            .allow_headers
-            .iter()
-            .any(|h| h.eq_ignore_ascii_case(name))
-        {
+        if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
             return CorsResult {
                 allowed: false,
                 reason: format!("header {name} not allowed"),
@@ -177,17 +157,10 @@ pub fn check_cors(
 }
 
 /// 判断是否为简单请求（不需要预检）。
-pub fn is_simple_request(
-    method: &str,
-    content_type: Option<&str>,
-    headers: &[(String, String)],
-) -> bool {
+pub fn is_simple_request(method: &str, content_type: Option<&str>, headers: &[(String, String)]) -> bool {
     // 简单方法
     let simple_methods = ["GET", "HEAD", "POST"];
-    if !simple_methods
-        .iter()
-        .any(|m| m.eq_ignore_ascii_case(method))
-    {
+    if !simple_methods.iter().any(|m| m.eq_ignore_ascii_case(method)) {
         return false;
     }
 
@@ -195,23 +168,14 @@ pub fn is_simple_request(
     if let Some(ct) = content_type {
         let ct_lower = ct.to_ascii_lowercase();
         let ct_main = ct_lower.split(';').next().unwrap_or("").trim();
-        let simple_content_types = [
-            "application/x-www-form-urlencoded",
-            "multipart/form-data",
-            "text/plain",
-        ];
+        let simple_content_types = ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
         if !simple_content_types.contains(&ct_main) {
             return false;
         }
     }
 
     // 检查是否有非简单头
-    let simple_headers = [
-        "accept",
-        "accept-language",
-        "content-language",
-        "content-type",
-    ];
+    let simple_headers = ["accept", "accept-language", "content-language", "content-type"];
     for (name, _) in headers {
         let name_lower = name.to_ascii_lowercase();
         if !simple_headers.contains(&name_lower.as_str()) {
@@ -263,10 +227,7 @@ pub fn generate_preflight_response(
                 format!("{}:{}", request_origin.host, request_origin.port)
             }
         );
-        policy
-            .allow_origins
-            .iter()
-            .any(|o| o.eq_ignore_ascii_case(&origin_str))
+        policy.allow_origins.iter().any(|o| o.eq_ignore_ascii_case(&origin_str))
     };
 
     if !origin_allowed {
@@ -296,12 +257,9 @@ pub fn generate_preflight_response(
     }
 
     // 检查请求头是否全部允许
-    let all_headers_allowed = request_headers.iter().all(|h| {
-        policy
-            .allow_headers
-            .iter()
-            .any(|ah| ah.eq_ignore_ascii_case(h))
-    });
+    let all_headers_allowed = request_headers
+        .iter()
+        .all(|h| policy.allow_headers.iter().any(|ah| ah.eq_ignore_ascii_case(h)));
 
     if !all_headers_allowed {
         return PreflightResponseHeaders {
@@ -573,10 +531,7 @@ mod tests {
             &policy,
             &origin,
             "POST",
-            &[(
-                "Content-Type".to_string(),
-                "text/plain; charset=utf-8".to_string(),
-            )],
+            &[("Content-Type".to_string(), "text/plain; charset=utf-8".to_string())],
         );
         assert!(result.allowed);
     }
@@ -692,12 +647,7 @@ mod tests {
             max_age: None,
         };
         let origin = Origin::parse("http://example.com").unwrap();
-        let headers = generate_preflight_response(
-            &policy,
-            &origin,
-            "GET",
-            &["X-Blocked".to_string()],
-        );
+        let headers = generate_preflight_response(&policy, &origin, "GET", &["X-Blocked".to_string()]);
         assert!(headers.allow_origin.is_none());
     }
 
@@ -770,12 +720,7 @@ mod tests {
             max_age: None,
         };
         let origin = Origin::parse("http://example.com").unwrap();
-        let headers = generate_preflight_response(
-            &policy,
-            &origin,
-            "GET",
-            &["x-custom-header".to_string()],
-        );
+        let headers = generate_preflight_response(&policy, &origin, "GET", &["x-custom-header".to_string()]);
         assert_eq!(headers.allow_origin, Some("*".to_string()));
     }
 }

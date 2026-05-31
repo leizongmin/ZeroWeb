@@ -130,10 +130,7 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
     // 按属性名分组
     let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
     for decl in declarations {
-        by_property
-            .entry(decl.property.clone())
-            .or_default()
-            .push(decl);
+        by_property.entry(decl.property.clone()).or_default().push(decl);
     }
 
     let mut result = HashMap::new();
@@ -164,13 +161,7 @@ pub fn collect_declarations(
         .map(|(i, (property, value, important))| CascadedDeclaration {
             property: property.clone(),
             value: value.clone(),
-            order: CascadeOrder::new(
-                origin,
-                layer_index,
-                specificity,
-                base_position + i,
-                *important,
-            ),
+            order: CascadeOrder::new(origin, layer_index, specificity, base_position + i, *important),
         })
         .collect()
 }
@@ -427,9 +418,7 @@ mod tests {
     #[test]
     /// collect_declarations 带 layer_index
     fn test_collect_declarations_with_layer() {
-        let decls = vec![
-            ("color".to_string(), "red".to_string(), false),
-        ];
+        let decls = vec![("color".to_string(), "red".to_string(), false)];
         let cascaded = collect_declarations(&decls, Origin::Author, Some(2), (0, 1, 0), 10);
         assert_eq!(cascaded.len(), 1);
         assert_eq!(cascaded[0].order.layer_index, Some(2));

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::PositionValue;
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
-use zero_style_system::property::ZIndexValue;
 use zero_style_system::ComputedStyle;
+use zero_style_system::property::ZIndexValue;
 
 /// 合成层 — 可以独立渲染和合成的图层。
 #[derive(Debug, Clone)]
@@ -172,14 +172,7 @@ mod tests {
     use zero_style_system::ComputedStyle;
 
     /// 辅助函数：创建简单 LayoutBox。
-    fn make_box(
-        node_id: Option<NodeId>,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        is_fixed: bool,
-    ) -> LayoutBox {
+    fn make_box(node_id: Option<NodeId>, x: f32, y: f32, w: f32, h: f32, is_fixed: bool) -> LayoutBox {
         LayoutBox {
             node_id,
             x,
@@ -616,12 +609,8 @@ mod tests {
     #[test]
     fn test_compositing_layer_bounding_box() {
         let mut layer = CompositingLayer::new(0);
-        layer
-            .boxes
-            .push(make_box(None, 10.0, 20.0, 100.0, 50.0, false));
-        layer
-            .boxes
-            .push(make_box(None, 50.0, 30.0, 80.0, 60.0, false));
+        layer.boxes.push(make_box(None, 10.0, 20.0, 100.0, 50.0, false));
+        layer.boxes.push(make_box(None, 50.0, 30.0, 80.0, 60.0, false));
 
         let (x, y, w, h) = layer.bounding_box();
         assert_eq!(x, 10.0);
@@ -1154,8 +1143,10 @@ mod tests {
         // layers[1] z-index=1 先绘制（底层），layers[2] z-index=10 后绘制（上层）
         assert_eq!(layers[1].z_index, 1);
         assert_eq!(layers[2].z_index, 10);
-        assert!(layers[2].z_index > layers[1].z_index,
-            "higher z-index layer should render after (on top of) lower z-index layer");
+        assert!(
+            layers[2].z_index > layers[1].z_index,
+            "higher z-index layer should render after (on top of) lower z-index layer"
+        );
     }
 
     /// 测试多个 z-index 值（负/零/正）的完整合成排序。
@@ -1232,8 +1223,10 @@ mod tests {
 
         // 验证单调递增
         for i in 1..layers.len() - 1 {
-            assert!(layers[i].z_index <= layers[i + 1].z_index,
-                "layers should be sorted by ascending z-index");
+            assert!(
+                layers[i].z_index <= layers[i + 1].z_index,
+                "layers should be sorted by ascending z-index"
+            );
         }
     }
 }

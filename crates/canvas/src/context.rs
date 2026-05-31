@@ -130,10 +130,7 @@ impl Transform2D {
 
     /// 变换点。
     pub fn transform_point(&self, x: f32, y: f32) -> (f32, f32) {
-        (
-            self.a * x + self.c * y + self.e,
-            self.b * x + self.d * y + self.f,
-        )
+        (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
     }
 }
 
@@ -328,10 +325,7 @@ pub struct CanvasPattern {
 impl CanvasPattern {
     /// 创建图案。
     pub fn new(image_data: ImageData, repetition: PatternRepetition) -> Self {
-        Self {
-            image_data,
-            repetition,
-        }
+        Self { image_data, repetition }
     }
 }
 
@@ -587,8 +581,7 @@ impl CanvasContext {
     /// 画弧。
     pub fn arc(&mut self, x: f32, y: f32, radius: f32, start_angle: f32, end_angle: f32) {
         let (tx, ty) = self.transform.transform_point(x, y);
-        self.current_path
-            .arc(tx, ty, radius, start_angle, end_angle);
+        self.current_path.arc(tx, ty, radius, start_angle, end_angle);
     }
 
     /// 画二次贝塞尔曲线。
@@ -607,9 +600,7 @@ impl CanvasContext {
         let (tx, ty) = self.transform.transform_point(x, y);
         self.current_path
             .commands_mut()
-            .push(PathCommand::BezierCurveTo(
-                tcp1x, tcp1y, tcp2x, tcp2y, tx, ty,
-            ));
+            .push(PathCommand::BezierCurveTo(tcp1x, tcp1y, tcp2x, tcp2y, tx, ty));
     }
 
     /// 填充路径。将路径命令扁平化为顶点列表，生成路径填充图元。
@@ -638,8 +629,13 @@ impl CanvasContext {
             self.draw_shadow_path(&vertices);
         }
         let color = self.apply_alpha(self.stroke_color);
-        let closed = self.current_path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
-        self.primitives.add_path_stroke(vertices.clone(), color, self.line_width, closed);
+        let closed = self
+            .current_path
+            .commands()
+            .iter()
+            .any(|c| matches!(c, PathCommand::ClosePath));
+        self.primitives
+            .add_path_stroke(vertices.clone(), color, self.line_width, closed);
         self.blit_stroke_to_pixels(&vertices, color, self.line_width);
     }
 
@@ -668,7 +664,8 @@ impl CanvasContext {
         }
         let color = self.apply_alpha(self.stroke_color);
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
-        self.primitives.add_path_stroke(vertices.clone(), color, self.line_width, closed);
+        self.primitives
+            .add_path_stroke(vertices.clone(), color, self.line_width, closed);
         self.blit_stroke_to_pixels(&vertices, color, self.line_width);
     }
 
@@ -941,15 +938,7 @@ impl CanvasContext {
     }
 
     /// 创建径向渐变。
-    pub fn create_radial_gradient(
-        &self,
-        x0: f32,
-        y0: f32,
-        r0: f32,
-        x1: f32,
-        y1: f32,
-        r1: f32,
-    ) -> RadialGradient {
+    pub fn create_radial_gradient(&self, x0: f32, y0: f32, r0: f32, x1: f32, y1: f32, r1: f32) -> RadialGradient {
         RadialGradient::new(x0, y0, r0, x1, y1, r1)
     }
 
@@ -969,10 +958,7 @@ impl CanvasContext {
         if vertices.is_empty() {
             return false;
         }
-        let points: Vec<(f32, f32)> = vertices
-            .chunks_exact(2)
-            .map(|c| (c[0], c[1]))
-            .collect();
+        let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
         point_in_polygon(x, y, &points)
     }
 
@@ -994,15 +980,10 @@ impl CanvasContext {
             let dst_start = row * width as usize * 4;
             let copy_len = src_end.saturating_sub(src_start);
             if copy_len > 0 {
-                data[dst_start..dst_start + copy_len]
-                    .copy_from_slice(&self.pixel_buffer[src_start..src_end]);
+                data[dst_start..dst_start + copy_len].copy_from_slice(&self.pixel_buffer[src_start..src_end]);
             }
         }
-        ImageData {
-            width,
-            height,
-            data,
-        }
+        ImageData { width, height, data }
     }
 
     /// 放置像素数据。将 ImageData 写入画布像素缓冲区的指定偏移位置。
@@ -1032,27 +1013,29 @@ impl CanvasContext {
     pub fn draw_image(&mut self, image_data: &ImageData, dx: f32, dy: f32) {
         self.draw_image_sized(
             image_data,
-            0.0, 0.0,
-            image_data.width as f32, image_data.height as f32,
-            dx, dy,
-            image_data.width as f32, image_data.height as f32,
+            0.0,
+            0.0,
+            image_data.width as f32,
+            image_data.height as f32,
+            dx,
+            dy,
+            image_data.width as f32,
+            image_data.height as f32,
         );
     }
 
     /// 将图像绘制到画布的指定位置，缩放到目标尺寸。应用当前变换。
-    pub fn draw_image_with_size(
-        &mut self,
-        image_data: &ImageData,
-        dx: f32,
-        dy: f32,
-        dw: f32,
-        dh: f32,
-    ) {
+    pub fn draw_image_with_size(&mut self, image_data: &ImageData, dx: f32, dy: f32, dw: f32, dh: f32) {
         self.draw_image_sized(
             image_data,
-            0.0, 0.0,
-            image_data.width as f32, image_data.height as f32,
-            dx, dy, dw, dh,
+            0.0,
+            0.0,
+            image_data.width as f32,
+            image_data.height as f32,
+            dx,
+            dy,
+            dw,
+            dh,
         );
     }
 
@@ -1154,9 +1137,15 @@ impl CanvasContext {
                     let out_a = src_a + dst_a * (1.0 - src_a);
                     if out_a > 0.0 {
                         let factor = 1.0 / out_a;
-                        self.pixel_buffer[dst_idx] = ((r as f32 * src_a + self.pixel_buffer[dst_idx] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
-                        self.pixel_buffer[dst_idx + 1] = ((g as f32 * src_a + self.pixel_buffer[dst_idx + 1] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
-                        self.pixel_buffer[dst_idx + 2] = ((b as f32 * src_a + self.pixel_buffer[dst_idx + 2] as f32 * dst_a * (1.0 - src_a)) * factor) as u8;
+                        self.pixel_buffer[dst_idx] = ((r as f32 * src_a
+                            + self.pixel_buffer[dst_idx] as f32 * dst_a * (1.0 - src_a))
+                            * factor) as u8;
+                        self.pixel_buffer[dst_idx + 1] = ((g as f32 * src_a
+                            + self.pixel_buffer[dst_idx + 1] as f32 * dst_a * (1.0 - src_a))
+                            * factor) as u8;
+                        self.pixel_buffer[dst_idx + 2] = ((b as f32 * src_a
+                            + self.pixel_buffer[dst_idx + 2] as f32 * dst_a * (1.0 - src_a))
+                            * factor) as u8;
                         self.pixel_buffer[dst_idx + 3] = (out_a * 255.0) as u8;
                     }
                 }
@@ -1179,8 +1168,14 @@ impl CanvasContext {
         } else {
             1.0
         };
-        let shadow_alpha = ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
-        let color = Color::rgba(self.shadow_color.r, self.shadow_color.g, self.shadow_color.b, shadow_alpha);
+        let shadow_alpha =
+            ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
+        let color = Color::rgba(
+            self.shadow_color.r,
+            self.shadow_color.g,
+            self.shadow_color.b,
+            shadow_alpha,
+        );
         let shadow_rect = Rect::new(
             rect.left() + self.shadow_offset_x,
             rect.top() + self.shadow_offset_y,
@@ -1197,8 +1192,14 @@ impl CanvasContext {
         } else {
             1.0
         };
-        let shadow_alpha = ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
-        let color = Color::rgba(self.shadow_color.r, self.shadow_color.g, self.shadow_color.b, shadow_alpha);
+        let shadow_alpha =
+            ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
+        let color = Color::rgba(
+            self.shadow_color.r,
+            self.shadow_color.g,
+            self.shadow_color.b,
+            shadow_alpha,
+        );
         // 将路径的每个顶点偏移 shadow_offset
         let offset_vertices: Vec<f32> = vertices
             .chunks_exact(2)
@@ -1482,9 +1483,7 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::RoundRect(x, y, w, h, ref radii) => {
-                    let (nx, ny) = Self::flatten_round_rect(
-                        &mut vertices, current_x, current_y, x, y, w, h, radii,
-                    );
+                    let (nx, ny) = Self::flatten_round_rect(&mut vertices, current_x, current_y, x, y, w, h, radii);
                     current_x = nx;
                     current_y = ny;
                 }
@@ -1607,9 +1606,7 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::RoundRect(x, y, w, h, ref radii) => {
-                    let (nx, ny) = Self::flatten_round_rect(
-                        &mut vertices, current_x, current_y, x, y, w, h, radii,
-                    );
+                    let (nx, ny) = Self::flatten_round_rect(&mut vertices, current_x, current_y, x, y, w, h, radii);
                     current_x = nx;
                     current_y = ny;
                 }
@@ -3692,7 +3689,10 @@ mod tests {
                 assert!(
                     (vx - cx).abs() > 0.01 || (vy - cy).abs() > 0.01,
                     "vertex ({}, {}) should not be at sharp corner ({}, {})",
-                    vx, vy, cx, cy
+                    vx,
+                    vy,
+                    cx,
+                    cy
                 );
             }
         }
@@ -3788,10 +3788,10 @@ mod tests {
         let pf = &ctx.primitives().path_fills[0];
         // 检查所有顶点不在矩形的四个尖角 20×20 正方形区域内
         let corner_zones = [
-            (x, y),               // 左上
-            (x + w - r, y),       // 右上起点
-            (x + w, y + h - r),   // 右下起点
-            (x, y + h - r),       // 左下起点
+            (x, y),             // 左上
+            (x + w - r, y),     // 右上起点
+            (x + w, y + h - r), // 右下起点
+            (x, y + h - r),     // 左下起点
         ];
         // 至少应有一些顶点在圆角区域（不在直边上）
         let mut has_corner_vertex = false;
@@ -3889,14 +3889,34 @@ mod tests {
 
         // 验证可见区域被正确写入
         let visible = ctx.get_image_data(8, 8, 2, 2);
-        assert_eq!(visible.data[0..4], [255, 0, 0, 255], "visible pixel (8,8) should be red");
-        assert_eq!(visible.data[4..8], [255, 0, 0, 255], "visible pixel (9,8) should be red");
-        assert_eq!(visible.data[8..12], [255, 0, 0, 255], "visible pixel (8,9) should be red");
-        assert_eq!(visible.data[12..16], [255, 0, 0, 255], "visible pixel (9,9) should be red");
+        assert_eq!(
+            visible.data[0..4],
+            [255, 0, 0, 255],
+            "visible pixel (8,8) should be red"
+        );
+        assert_eq!(
+            visible.data[4..8],
+            [255, 0, 0, 255],
+            "visible pixel (9,8) should be red"
+        );
+        assert_eq!(
+            visible.data[8..12],
+            [255, 0, 0, 255],
+            "visible pixel (8,9) should be red"
+        );
+        assert_eq!(
+            visible.data[12..16],
+            [255, 0, 0, 255],
+            "visible pixel (9,9) should be red"
+        );
 
         // 验证溢出区域未影响其他像素
         let outside = ctx.get_image_data(7, 7, 1, 1);
-        assert_eq!(outside.data[0..4], [0, 0, 0, 0], "pixel before offset should be untouched");
+        assert_eq!(
+            outside.data[0..4],
+            [0, 0, 0, 0],
+            "pixel before offset should be untouched"
+        );
     }
 
     /// 测试 get_image_data 在完全超出画布边界时返回全零数据。

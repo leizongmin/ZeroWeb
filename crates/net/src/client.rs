@@ -142,9 +142,7 @@ impl HttpClient {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                 .collect();
-            let resp_body = response
-                .bytes()
-                .map_err(|e| NetError::Network(e.to_string()))?;
+            let resp_body = response.bytes().map_err(|e| NetError::Network(e.to_string()))?;
             let resp_body = resp_body.to_vec();
 
             return Ok(HttpResponse {
@@ -232,8 +230,7 @@ mod tests {
     #[test]
     fn test_send_invalid_header_name() {
         let client = HttpClient::new();
-        let req = HttpRequest::get("http://example.com/")
-            .header("Bad Header", "value");
+        let req = HttpRequest::get("http://example.com/").header("Bad Header", "value");
         // This will fail because "Bad Header" is not a valid header name
         let result = client.send(req);
         assert!(result.is_err());
@@ -544,9 +541,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let response = format!(
-                "HTTP/1.1 302 Found\r\nLocation: {target_clone}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let response = format!("HTTP/1.1 302 Found\r\nLocation: {target_clone}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
         });
@@ -556,10 +551,7 @@ mod integration_tests {
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
             let body = "final page";
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
-                body.len()
-            );
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
         });
@@ -588,9 +580,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -626,9 +616,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 303 See Other\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 303 See Other\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -672,9 +660,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 307 Temporary Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 307 Temporary Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -718,9 +704,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 308 Permanent Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 308 Permanent Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -1023,9 +1007,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -1069,9 +1051,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 301 Moved Permanently\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -1093,7 +1073,9 @@ mod integration_tests {
         });
 
         let client = HttpClient::new();
-        let resp = client.send(HttpRequest::post(&url1, b"original-body".to_vec())).unwrap();
+        let resp = client
+            .send(HttpRequest::post(&url1, b"original-body".to_vec()))
+            .unwrap();
         assert_eq!(resp.status_code, 200);
         assert_eq!(resp.redirect_count, 1);
 
@@ -1217,9 +1199,7 @@ mod integration_tests {
             let mut stream = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 307 Temporary Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n"
-            );
+            let resp = format!("HTTP/1.1 307 Temporary Redirect\r\nLocation: {tc}\r\nContent-Length: 0\r\n\r\n");
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
         });
@@ -1270,7 +1250,8 @@ mod integration_tests {
             let mut s = l1.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t2c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ =
+                s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t2c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
             let _ = s.flush();
         });
 
@@ -1279,7 +1260,8 @@ mod integration_tests {
             let mut s = l2.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t3c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ =
+                s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t3c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
             let _ = s.flush();
         });
 
@@ -1288,7 +1270,8 @@ mod integration_tests {
             let mut s = l3.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t4c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ =
+                s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t4c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
             let _ = s.flush();
         });
 
@@ -1326,7 +1309,8 @@ mod integration_tests {
             let mut s = l5.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t6c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ =
+                s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t6c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
             let _ = s.flush();
         });
 

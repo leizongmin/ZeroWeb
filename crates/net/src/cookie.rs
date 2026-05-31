@@ -110,11 +110,7 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
 
     // 将两位年份转换为四位数（0-68 → 20xx，69-99 → 19xx）
     fn fix_two_digit_year(y: u32) -> u32 {
-        if y <= 68 {
-            2000 + y
-        } else {
-            1900 + y
-        }
+        if y <= 68 { 2000 + y } else { 1900 + y }
     }
 
     // 简易的 days_in_year 函数
@@ -223,9 +219,7 @@ pub struct CookieStore {
 impl CookieStore {
     /// 创建空的 Cookie 存储。
     pub fn new() -> Self {
-        Self {
-            cookies: Vec::new(),
-        }
+        Self { cookies: Vec::new() }
     }
 
     /// 解析 Set-Cookie header 值。
@@ -330,9 +324,8 @@ impl CookieStore {
             return;
         }
         // 如果同名同 domain 同 path，替换旧值
-        self.cookies.retain(|c| {
-            !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path)
-        });
+        self.cookies
+            .retain(|c| !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path));
         self.cookies.push(cookie);
     }
 
@@ -350,12 +343,7 @@ impl CookieStore {
     /// - `SameSite::Strict` 仅在 `RequestContext::SameSite` 时发送。
     /// - `SameSite::Lax` 在 `SameSite` 和 `CrossSiteTopLevel`（安全方法）时发送。
     /// - `SameSite::None` 始终发送。
-    pub fn cookie_header_with_context(
-        &self,
-        url: &ParsedUrl,
-        context: RequestContext,
-        is_safe_method: bool,
-    ) -> String {
+    pub fn cookie_header_with_context(&self, url: &ParsedUrl, context: RequestContext, is_safe_method: bool) -> String {
         self.cookies
             .iter()
             .filter(|c| !c.is_expired() && cookie_matches_url(c, url))
@@ -410,8 +398,7 @@ pub fn same_site_allows(same_site: SameSite, context: RequestContext, is_safe_me
     match same_site {
         SameSite::Strict => context == RequestContext::SameSite,
         SameSite::Lax => {
-            context == RequestContext::SameSite
-                || (context == RequestContext::CrossSiteTopLevel && is_safe_method)
+            context == RequestContext::SameSite || (context == RequestContext::CrossSiteTopLevel && is_safe_method)
         }
         SameSite::None => true,
     }
@@ -530,8 +517,7 @@ mod tests {
     #[test]
     fn test_cookie_store_for_url() {
         let mut store = CookieStore::new();
-        store
-            .add(CookieStore::parse_set_cookie("sess=abc; Domain=example.com; Path=/app").unwrap());
+        store.add(CookieStore::parse_set_cookie("sess=abc; Domain=example.com; Path=/app").unwrap());
 
         let matching = parse_url("http://example.com/app/page").unwrap();
         let not_matching = parse_url("http://example.com/other").unwrap();
@@ -608,8 +594,7 @@ mod tests {
 
     #[test]
     fn test_parse_cookie_expires() {
-        let cookie =
-            CookieStore::parse_set_cookie("a=1; Expires=Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
+        let cookie = CookieStore::parse_set_cookie("a=1; Expires=Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
         // The parsed expiry should be a concrete UNIX timestamp
         assert!(cookie.expires.is_some());
         // Wed, 09 Jun 2021 10:18:14 GMT = 1623233894
@@ -743,10 +728,7 @@ mod tests {
     #[test]
     fn test_parse_cookie_max_age_priority_over_expires() {
         // When both Max-Age and Expires are present, Max-Age takes priority
-        let cookie = CookieStore::parse_set_cookie(
-            "a=1; Max-Age=3600; Expires=Wed, 09 Jun 2021 10:18:14 GMT",
-        )
-        .unwrap();
+        let cookie = CookieStore::parse_set_cookie("a=1; Max-Age=3600; Expires=Wed, 09 Jun 2021 10:18:14 GMT").unwrap();
         // Should use Max-Age (now + 3600), not the past Expires
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -805,11 +787,7 @@ mod tests {
 
     #[test]
     fn test_same_site_strict_allowed_same_site() {
-        assert!(same_site_allows(
-            SameSite::Strict,
-            RequestContext::SameSite,
-            true
-        ));
+        assert!(same_site_allows(SameSite::Strict, RequestContext::SameSite, true));
     }
 
     #[test]
@@ -832,20 +810,12 @@ mod tests {
 
     #[test]
     fn test_same_site_lax_allowed_same_site() {
-        assert!(same_site_allows(
-            SameSite::Lax,
-            RequestContext::SameSite,
-            true
-        ));
+        assert!(same_site_allows(SameSite::Lax, RequestContext::SameSite, true));
     }
 
     #[test]
     fn test_same_site_lax_allowed_cross_site_top_level_safe_method() {
-        assert!(same_site_allows(
-            SameSite::Lax,
-            RequestContext::CrossSiteTopLevel,
-            true
-        ));
+        assert!(same_site_allows(SameSite::Lax, RequestContext::CrossSiteTopLevel, true));
     }
 
     #[test]
@@ -868,11 +838,7 @@ mod tests {
 
     #[test]
     fn test_same_site_none_always_allowed() {
-        assert!(same_site_allows(
-            SameSite::None,
-            RequestContext::SameSite,
-            true
-        ));
+        assert!(same_site_allows(SameSite::None, RequestContext::SameSite, true));
         assert!(same_site_allows(
             SameSite::None,
             RequestContext::CrossSiteTopLevel,
@@ -888,32 +854,18 @@ mod tests {
     #[test]
     fn test_cookie_header_with_context_strict_same_site() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict")
-                .unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
         // Same-site: both sent
-        let header = store.cookie_header_with_context(
-            &url,
-            RequestContext::SameSite,
-            true,
-        );
+        let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);
         assert!(header.contains("strict_cookie=v1"));
         assert!(header.contains("none_cookie=v2"));
 
         // Cross-site top-level: only None
-        let header = store.cookie_header_with_context(
-            &url,
-            RequestContext::CrossSiteTopLevel,
-            true,
-        );
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, true);
         assert!(!header.contains("strict_cookie"));
         assert!(header.contains("none_cookie=v2"));
     }
@@ -921,54 +873,30 @@ mod tests {
     #[test]
     fn test_cookie_header_with_context_lax_top_level_get() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
         // Cross-site top-level GET: Lax is allowed
-        let header = store.cookie_header_with_context(
-            &url,
-            RequestContext::CrossSiteTopLevel,
-            true,
-        );
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, true);
         assert!(header.contains("lax_cookie=v1"));
 
         // Cross-site top-level POST: Lax is blocked
-        let header = store.cookie_header_with_context(
-            &url,
-            RequestContext::CrossSiteTopLevel,
-            false,
-        );
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, false);
         assert!(header.is_empty());
     }
 
     #[test]
     fn test_cookie_header_with_context_cross_site_subresource() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax")
-                .unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict")
-                .unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax").unwrap());
+        store.add(CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
         // Cross-site subresource: only None allowed
-        let header = store.cookie_header_with_context(
-            &url,
-            RequestContext::CrossSiteSubresource,
-            true,
-        );
+        let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteSubresource, true);
         assert!(!header.contains("lax_cookie"));
         assert!(!header.contains("strict_cookie"));
         assert!(header.contains("none_cookie=v3"));
@@ -985,8 +913,15 @@ mod tests {
         let http_url = parse_url("http://example.com/").unwrap();
         let https_url = parse_url("https://example.com/").unwrap();
 
-        assert!(store.get_for_url(&http_url).is_empty(), "Secure cookie 不应通过 HTTP 发送");
-        assert_eq!(store.get_for_url(&https_url).len(), 1, "Secure cookie 应通过 HTTPS 发送");
+        assert!(
+            store.get_for_url(&http_url).is_empty(),
+            "Secure cookie 不应通过 HTTP 发送"
+        );
+        assert_eq!(
+            store.get_for_url(&https_url).len(),
+            1,
+            "Secure cookie 应通过 HTTPS 发送"
+        );
     }
 
     /// HttpOnly 属性正确解析（不可通过脚本访问）。
@@ -1001,10 +936,7 @@ mod tests {
     #[test]
     fn test_samesite_strict_blocks_cross_site_request() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("auth=token; Domain=example.com; SameSite=Strict")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("auth=token; Domain=example.com; SameSite=Strict").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
@@ -1025,10 +957,7 @@ mod tests {
     #[test]
     fn test_samesite_lax_allows_top_level_navigation() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("theme=dark; Domain=example.com; SameSite=Lax")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("theme=dark; Domain=example.com; SameSite=Lax").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
@@ -1060,8 +989,15 @@ mod tests {
 
         assert_eq!(store.get_for_url(&matching).len(), 1, "/app/page 应匹配 Path=/app");
         assert_eq!(store.get_for_url(&matching_exact).len(), 1, "/app 应匹配 Path=/app");
-        assert_eq!(store.get_for_url(&matching_prefix).len(), 1, "/application 以 /app 开头，匹配 Path=/app");
-        assert!(store.get_for_url(&not_matching_parent).is_empty(), "/other 不应匹配 Path=/app");
+        assert_eq!(
+            store.get_for_url(&matching_prefix).len(),
+            1,
+            "/application 以 /app 开头，匹配 Path=/app"
+        );
+        assert!(
+            store.get_for_url(&not_matching_parent).is_empty(),
+            "/other 不应匹配 Path=/app"
+        );
         assert!(store.get_for_url(&not_matching_root).is_empty(), "/ 不应匹配 Path=/app");
     }
 
@@ -1108,18 +1044,9 @@ mod tests {
     #[test]
     fn test_samesite_full_matrix() {
         let mut store = CookieStore::new();
-        store.add(
-            CookieStore::parse_set_cookie("strict_ck=s; Domain=example.com; SameSite=Strict")
-                .unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("lax_ck=l; Domain=example.com; SameSite=Lax")
-                .unwrap(),
-        );
-        store.add(
-            CookieStore::parse_set_cookie("none_ck=n; Domain=example.com; SameSite=None")
-                .unwrap(),
-        );
+        store.add(CookieStore::parse_set_cookie("strict_ck=s; Domain=example.com; SameSite=Strict").unwrap());
+        store.add(CookieStore::parse_set_cookie("lax_ck=l; Domain=example.com; SameSite=Lax").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_ck=n; Domain=example.com; SameSite=None").unwrap());
 
         let url = parse_url("http://example.com/").unwrap();
 
@@ -1137,7 +1064,10 @@ mod tests {
 
         // 跨站顶层导航（不安全方法）：仅 None 发送
         let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteTopLevel, false);
-        assert!(!header.contains("strict_ck"), "SameSite: Strict 不应在跨站不安全方法发送");
+        assert!(
+            !header.contains("strict_ck"),
+            "SameSite: Strict 不应在跨站不安全方法发送"
+        );
         assert!(!header.contains("lax_ck"), "SameSite: Lax 不应在跨站不安全方法发送");
         assert!(header.contains("none_ck=n"), "SameSite: None 应在跨站不安全方法发送");
 

@@ -63,36 +63,32 @@ fn bench_cascade(c: &mut Criterion) {
     let mut group = c.benchmark_group("cascade");
 
     for count in [10, 50, 100, 500] {
-        group.bench_with_input(
-            BenchmarkId::new("declarations", count),
-            &count,
-            |b, &count| {
-                let decls: Vec<_> = (0..count)
-                    .map(|i| cascade::CascadedDeclaration {
-                        property: if i % 3 == 0 {
-                            "color".to_string()
-                        } else if i % 3 == 1 {
-                            "font-size".to_string()
-                        } else {
-                            "margin".to_string()
-                        },
-                        value: format!("#{:06x}", i * 11111 % 0xFFFFFF),
-                        order: cascade::CascadeOrder {
-                            origin: cascade::Origin::Author,
-                            layer_index: None,
-                            specificity: (i as u32 % 2, i as u32 % 3, i as u32),
-                            position: i,
-                            important: i % 10 == 0,
-                        },
-                    })
-                    .collect();
+        group.bench_with_input(BenchmarkId::new("declarations", count), &count, |b, &count| {
+            let decls: Vec<_> = (0..count)
+                .map(|i| cascade::CascadedDeclaration {
+                    property: if i % 3 == 0 {
+                        "color".to_string()
+                    } else if i % 3 == 1 {
+                        "font-size".to_string()
+                    } else {
+                        "margin".to_string()
+                    },
+                    value: format!("#{:06x}", i * 11111 % 0xFFFFFF),
+                    order: cascade::CascadeOrder {
+                        origin: cascade::Origin::Author,
+                        layer_index: None,
+                        specificity: (i as u32 % 2, i as u32 % 3, i as u32),
+                        position: i,
+                        important: i % 10 == 0,
+                    },
+                })
+                .collect();
 
-                b.iter(|| {
-                    let result = cascade::cascade(black_box(decls.clone()));
-                    black_box(&result);
-                });
-            },
-        );
+            b.iter(|| {
+                let result = cascade::cascade(black_box(decls.clone()));
+                black_box(&result);
+            });
+        });
     }
     group.finish();
 }
@@ -155,11 +151,7 @@ fn bench_selector_matching(c: &mut Criterion) {
                 for rule in &stylesheet.rules {
                     if let zero_css_parser::ast::Rule::Style(style_rule) = rule {
                         for sel in &style_rule.selectors {
-                            let _ = matcher::matches_selector(
-                                black_box(&doc),
-                                black_box(el),
-                                black_box(sel),
-                            );
+                            let _ = matcher::matches_selector(black_box(&doc), black_box(el), black_box(sel));
                         }
                     }
                 }

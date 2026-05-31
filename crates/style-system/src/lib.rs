@@ -73,11 +73,7 @@ impl StyleSystem {
     /// # 返回值
     ///
     /// 返回一个 HashMap，键为元素 NodeId，值为对应的 ComputedStyle。
-    pub fn compute_styles(
-        &mut self,
-        doc: &Document,
-        stylesheets: &[Stylesheet],
-    ) -> HashMap<NodeId, ComputedStyle> {
+    pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = HashMap::new();
 
         // 从文档根开始 DFS
@@ -106,8 +102,7 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed =
-                self.compute_element_style_internal(doc, node, stylesheets, parent_style);
+            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style);
             styles.insert(node, computed);
         }
 
@@ -120,11 +115,7 @@ impl StyleSystem {
         // 对于子节点：如果当前节点是元素节点且有计算样式，
         // 需要从 styles 中取出作为 parent_style。
         // 为了避免借用冲突，先克隆当前节点的样式。
-        let current_style = if is_element {
-            styles.get(&node).cloned()
-        } else {
-            None
-        };
+        let current_style = if is_element { styles.get(&node).cloned() } else { None };
 
         let parent_ref = current_style.as_ref().or(parent_style);
 
@@ -188,7 +179,8 @@ impl StyleSystem {
 
         // 2. 构建 CascadedDeclaration 列表
         let mut declarations = Vec::new();
-        for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate() {
+        for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
+        {
             declarations.push(CascadedDeclaration {
                 property: property.clone(),
                 value: value.clone(),
@@ -285,8 +277,7 @@ fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<Strin
 mod tests {
     use super::*;
     use zero_css_parser::ast::{
-        ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule,
-        SubclassSelector, TypeSelector,
+        ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
     };
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
     use zero_dom::{Document, NodeId};
@@ -572,10 +563,7 @@ mod tests {
         assert_eq!(div_style.border_right_width, LengthValue::Px(1.0));
         assert_eq!(div_style.border_bottom_width, LengthValue::Px(1.0));
         assert_eq!(div_style.border_left_width, LengthValue::Px(1.0));
-        assert_eq!(
-            div_style.border_top_style,
-            property::BorderStyleValue::Solid
-        );
+        assert_eq!(div_style.border_top_style, property::BorderStyleValue::Solid);
         assert_eq!(div_style.border_top_color, ColorValue::Rgba(255, 0, 0, 255));
     }
 
@@ -792,10 +780,7 @@ mod tests {
 
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
-                condition: zero_css_parser::ast::SupportsCondition::Property(
-                    "display".to_string(),
-                    "grid".to_string(),
-                ),
+                condition: zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "grid".to_string()),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
                     declarations: vec![Declaration {
@@ -847,10 +832,7 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
                 condition: zero_css_parser::ast::SupportsCondition::Not(Box::new(
-                    zero_css_parser::ast::SupportsCondition::Property(
-                        "display".to_string(),
-                        "grid".to_string(),
-                    ),
+                    zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "grid".to_string()),
                 )),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
@@ -876,14 +858,8 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
                 condition: zero_css_parser::ast::SupportsCondition::And(vec![
-                    zero_css_parser::ast::SupportsCondition::Property(
-                        "display".to_string(),
-                        "flex".to_string(),
-                    ),
-                    zero_css_parser::ast::SupportsCondition::Property(
-                        "color".to_string(),
-                        "blue".to_string(),
-                    ),
+                    zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "flex".to_string()),
+                    zero_css_parser::ast::SupportsCondition::Property("color".to_string(), "blue".to_string()),
                 ]),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
@@ -909,14 +885,8 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
                 condition: zero_css_parser::ast::SupportsCondition::Or(vec![
-                    zero_css_parser::ast::SupportsCondition::Property(
-                        "display".to_string(),
-                        "unknown".to_string(),
-                    ),
-                    zero_css_parser::ast::SupportsCondition::Property(
-                        "display".to_string(),
-                        "flex".to_string(),
-                    ),
+                    zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "unknown".to_string()),
+                    zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "flex".to_string()),
                 ]),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
@@ -982,25 +952,25 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
-                declarations: vec![Declaration {
-                    property: "display".to_string(),
-                    value: "grid".to_string(),
-                    important: false,
-                }, Declaration {
-                    property: "grid-template-columns".to_string(),
-                    value: "100px 1fr auto".to_string(),
-                    important: false,
-                }],
+                declarations: vec![
+                    Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-template-columns".to_string(),
+                        value: "100px 1fr auto".to_string(),
+                        important: false,
+                    },
+                ],
             })],
         }];
 
         let styles = sys.compute_styles(&doc, &stylesheets);
         let div_style = styles.get(&div).expect("div should have style");
         assert_eq!(div_style.display, DisplayValue::Grid);
-        assert_eq!(
-            div_style.grid_template_columns,
-            Some("100px 1fr auto".to_string())
-        );
+        assert_eq!(div_style.grid_template_columns, Some("100px 1fr auto".to_string()));
     }
 
     #[test]
@@ -1011,25 +981,25 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
-                declarations: vec![Declaration {
-                    property: "display".to_string(),
-                    value: "grid".to_string(),
-                    important: false,
-                }, Declaration {
-                    property: "grid-template-rows".to_string(),
-                    value: "50px 1fr".to_string(),
-                    important: false,
-                }],
+                declarations: vec![
+                    Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-template-rows".to_string(),
+                        value: "50px 1fr".to_string(),
+                        important: false,
+                    },
+                ],
             })],
         }];
 
         let styles = sys.compute_styles(&doc, &stylesheets);
         let div_style = styles.get(&div).expect("div should have style");
         assert_eq!(div_style.display, DisplayValue::Grid);
-        assert_eq!(
-            div_style.grid_template_rows,
-            Some("50px 1fr".to_string())
-        );
+        assert_eq!(div_style.grid_template_rows, Some("50px 1fr".to_string()));
     }
 
     #[test]
@@ -1040,15 +1010,18 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
-                declarations: vec![Declaration {
-                    property: "display".to_string(),
-                    value: "grid".to_string(),
-                    important: false,
-                }, Declaration {
-                    property: "grid-auto-flow".to_string(),
-                    value: "column dense".to_string(),
-                    important: false,
-                }],
+                declarations: vec![
+                    Declaration {
+                        property: "display".to_string(),
+                        value: "grid".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-auto-flow".to_string(),
+                        value: "column dense".to_string(),
+                        important: false,
+                    },
+                ],
             })],
         }];
 
@@ -1257,9 +1230,7 @@ mod tests {
                                 parts: vec![(
                                     CompoundSelector {
                                         type_selector: None,
-                                        subclass_selectors: vec![SubclassSelector::Id(
-                                            "main".to_string(),
-                                        )],
+                                        subclass_selectors: vec![SubclassSelector::Id("main".to_string())],
                                     },
                                     None,
                                 )],
@@ -1445,13 +1416,11 @@ mod tests {
         let stylesheets = vec![Stylesheet {
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
-                declarations: vec![
-                    Declaration {
-                        property: "grid-column-start".to_string(),
-                        value: "-1".to_string(),
-                        important: false,
-                    },
-                ],
+                declarations: vec![Declaration {
+                    property: "grid-column-start".to_string(),
+                    value: "-1".to_string(),
+                    important: false,
+                }],
             })],
         }];
 
@@ -1593,7 +1562,10 @@ mod tests {
 
         let styles = sys.compute_styles(&doc, &stylesheets);
         let div_style = styles.get(&div).expect("div should have style");
-        assert!(!matches!(div_style.transform, zero_css_parser::values::TransformValue::None));
+        assert!(!matches!(
+            div_style.transform,
+            zero_css_parser::values::TransformValue::None
+        ));
     }
 
     #[test]

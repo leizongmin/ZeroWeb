@@ -183,10 +183,7 @@ impl WebView {
                     WebViewError::Navigation(format!("Failed to decode response body: {e}"))
                 })?;
 
-                tracing::info!(
-                    "Fetched {} bytes from {url}",
-                    html.len()
-                );
+                tracing::info!("Fetched {} bytes from {url}", html.len());
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, None);

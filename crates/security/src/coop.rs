@@ -32,11 +32,7 @@ pub enum CoopResult {
 /// `navigation_coop` 为导航发起方（opener 文档）的 COOP。
 /// `response_coop` 为响应文档的 COOP。
 /// `is_same_origin` 表示 opener 与新文档是否同源。
-pub fn evaluate_coop(
-    navigation_coop: CoopPolicy,
-    response_coop: CoopPolicy,
-    is_same_origin: bool,
-) -> CoopResult {
+pub fn evaluate_coop(navigation_coop: CoopPolicy, response_coop: CoopPolicy, is_same_origin: bool) -> CoopResult {
     // 双方均为 UnsafeNone 时总是允许
     if navigation_coop == CoopPolicy::UnsafeNone && response_coop == CoopPolicy::UnsafeNone {
         return CoopResult::Allowed;
@@ -82,78 +78,56 @@ mod tests {
 
     #[test]
     fn test_coop_unsafe_none_allows_all() {
-        let result = evaluate_coop(
-            CoopPolicy::UnsafeNone,
-            CoopPolicy::UnsafeNone,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::UnsafeNone, false);
         assert_eq!(result, CoopResult::Allowed);
     }
 
     #[test]
     fn test_coop_same_origin_blocks_cross_origin() {
-        let result = evaluate_coop(
-            CoopPolicy::UnsafeNone,
-            CoopPolicy::SameOrigin,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOrigin, false);
         assert_eq!(result, CoopResult::Blocked);
     }
 
     #[test]
     fn test_coop_same_origin_allows_same_origin() {
-        let result = evaluate_coop(
-            CoopPolicy::UnsafeNone,
-            CoopPolicy::SameOrigin,
-            true,
-        );
+        let result = evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOrigin, true);
         assert_eq!(result, CoopResult::Allowed);
     }
 
     #[test]
     fn test_coop_same_origin_allow_popups() {
         // 跨源 + 导航方 UnsafeNone + 响应方 SameOriginAllowPopups → 允许
-        let result = evaluate_coop(
-            CoopPolicy::UnsafeNone,
-            CoopPolicy::SameOriginAllowPopups,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOriginAllowPopups, false);
         assert_eq!(result, CoopResult::Allowed);
 
         // 跨源 + 导航方 SameOrigin + 响应方 SameOriginAllowPopups → 阻止
-        let result = evaluate_coop(
-            CoopPolicy::SameOrigin,
-            CoopPolicy::SameOriginAllowPopups,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::SameOrigin, CoopPolicy::SameOriginAllowPopups, false);
         assert_eq!(result, CoopResult::Blocked);
     }
 
     #[test]
     fn test_coop_same_origin_including_popups_blocks_cross_origin() {
-        let result = evaluate_coop(
-            CoopPolicy::UnsafeNone,
-            CoopPolicy::SameOriginIncludingPopups,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOriginIncludingPopups, false);
         assert_eq!(result, CoopResult::Blocked);
     }
 
     #[test]
     fn test_coop_both_restrictive_cross_origin() {
-        let result = evaluate_coop(
-            CoopPolicy::SameOrigin,
-            CoopPolicy::SameOrigin,
-            false,
-        );
+        let result = evaluate_coop(CoopPolicy::SameOrigin, CoopPolicy::SameOrigin, false);
         assert_eq!(result, CoopResult::Blocked);
     }
 
     #[test]
     fn test_coop_parse_header_values() {
         assert_eq!(parse_coop("same-origin"), CoopPolicy::SameOrigin);
-        assert_eq!(parse_coop("same-origin-allow-popups"), CoopPolicy::SameOriginAllowPopups);
-        assert_eq!(parse_coop("same-origin-including-popups"), CoopPolicy::SameOriginIncludingPopups);
+        assert_eq!(
+            parse_coop("same-origin-allow-popups"),
+            CoopPolicy::SameOriginAllowPopups
+        );
+        assert_eq!(
+            parse_coop("same-origin-including-popups"),
+            CoopPolicy::SameOriginIncludingPopups
+        );
         assert_eq!(parse_coop("unsafe-none"), CoopPolicy::UnsafeNone);
         assert_eq!(parse_coop(""), CoopPolicy::UnsafeNone);
     }

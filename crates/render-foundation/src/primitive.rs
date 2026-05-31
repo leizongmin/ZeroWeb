@@ -263,13 +263,7 @@ impl RenderPrimitives {
     }
 
     /// 添加一个路径描边图元。
-    pub fn add_path_stroke(
-        &mut self,
-        vertices: Vec<f32>,
-        color: Color,
-        line_width: f32,
-        closed: bool,
-    ) {
+    pub fn add_path_stroke(&mut self, vertices: Vec<f32>, color: Color, line_width: f32, closed: bool) {
         self.path_strokes.push(PathStrokePrimitive {
             vertices,
             color,
@@ -455,11 +449,7 @@ mod tests {
 
     #[test]
     fn test_rounded_rect_uniform() {
-        let rr = RoundedRectPrimitive::uniform(
-            Rect::new(0.0, 0.0, 100.0, 50.0),
-            Color::RED,
-            10.0,
-        );
+        let rr = RoundedRectPrimitive::uniform(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED, 10.0);
         assert_eq!(rr.top_left_radius, 10.0);
         assert_eq!(rr.top_right_radius, 10.0);
         assert_eq!(rr.bottom_right_radius, 10.0);
@@ -760,10 +750,7 @@ mod tests {
     #[test]
     fn test_bounding_box_with_path_fill() {
         let mut p = RenderPrimitives::new();
-        p.add_path_fill(
-            vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
-            Color::RED,
-        );
+        p.add_path_fill(vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0], Color::RED);
         let bb = p.bounding_box().unwrap();
         // Points: (10,20), (30,40), (50,60)
         assert_eq!(bb.left(), 10.0);

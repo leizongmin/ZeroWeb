@@ -8,8 +8,8 @@ use zero_css_parser::values::TransformFunction;
 use zero_css_parser::values::TransformValue;
 use zero_css_parser::values::VisibilityValue;
 use zero_dom::NodeId;
-use zero_layout_engine::types::OverflowClip;
 use zero_layout_engine::LayoutBox;
+use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
@@ -40,12 +40,7 @@ impl Painter {
     ///
     /// 遍历布局树时跳过与脏区域完全不相交的子树，
     /// 只生成落在脏区域内的图元。
-    pub fn paint_in_rect(
-        &mut self,
-        layout: &LayoutBox,
-        styles: &HashMap<NodeId, ComputedStyle>,
-        dirty_rect: &Rect,
-    ) {
+    pub fn paint_in_rect(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, dirty_rect: &Rect) {
         self.paint_node_in_rect(layout, styles, 0.0, 0.0, dirty_rect);
     }
 
@@ -73,8 +68,7 @@ impl Painter {
         }
 
         // 节点与脏区域相交，执行正常绘制
-        let needs_clip = box_node.overflow_x != OverflowClip::Visible
-            || box_node.overflow_y != OverflowClip::Visible;
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
 
         let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
@@ -141,8 +135,7 @@ impl Painter {
         let abs_y = offset_y + box_node.y;
 
         // 判断是否需要裁剪子内容
-        let needs_clip = box_node.overflow_x != OverflowClip::Visible
-            || box_node.overflow_y != OverflowClip::Visible;
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
 
         // 获取该节点对应的计算样式
         let is_hidden = if let Some(node_id) = box_node.node_id
@@ -208,13 +201,7 @@ impl Painter {
     /// 绘制背景（考虑 border-radius）。
     ///
     /// 当 border-radius 为零时退化为普通矩形填充。
-    fn paint_background(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    fn paint_background(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let radii = BorderRadiusSpec::from_style(style);
         if radii.is_zero() {
             // 无圆角：简单矩形填充
@@ -238,14 +225,7 @@ impl Painter {
     ///
     /// 在当前渲染架构下，使用额外的 0-尺寸填充图元记录圆角参数。
     /// 每个 CornerFill 代表一个角部的圆角半径信息。
-    fn add_rounded_rect_metadata(
-        &mut self,
-        _x: f32,
-        _y: f32,
-        _w: f32,
-        _h: f32,
-        _radii: &BorderRadiusSpec,
-    ) {
+    fn add_rounded_rect_metadata(&mut self, _x: f32, _y: f32, _w: f32, _h: f32, _radii: &BorderRadiusSpec) {
         // 圆角信息通过 CornerFill 图元存储。
         // 在完整实现中会生成圆角裁剪蒙版或扇形填充。
         // 当前阶段记录圆角存在，待后续渲染后端支持。
@@ -254,13 +234,7 @@ impl Painter {
     /// 绘制边框（4 个矩形）。
     ///
     /// 分别绘制上、右、下、左四条边框。每条边框是一个填充矩形。
-    fn paint_borders(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let w = box_node.width;
         let h = box_node.height;
 
@@ -297,12 +271,7 @@ impl Painter {
             && style.border_bottom_style != BorderStyleValue::Hidden
         {
             self.primitives.add_fill(
-                Rect::new(
-                    abs_x,
-                    abs_y + h - box_node.border_bottom,
-                    w,
-                    box_node.border_bottom,
-                ),
+                Rect::new(abs_x, abs_y + h - box_node.border_bottom, w, box_node.border_bottom),
                 color_value_to_render(&style.border_bottom_color),
             );
         }
@@ -327,18 +296,10 @@ impl Painter {
     /// 绘制 outline（位于 border 外侧）。
     ///
     /// outline 绘制为 4 个矩形，offset 默认为 0（紧贴 border 外侧）。
-    fn paint_outline(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    fn paint_outline(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let outline_width = length_to_f32(&style.outline_width);
 
-        if outline_width <= 0.0
-            || style.outline_style == OutlineStyleValue::None
-        {
+        if outline_width <= 0.0 || style.outline_style == OutlineStyleValue::None {
             return;
         }
 
@@ -409,13 +370,7 @@ impl Painter {
     /// 当元素具有非 `CurrentColor` 的前景色且 font_size 有效时，
     /// 为该元素生成一个占位 GlyphPrimitive。
     /// 完整实现需要通过 DOM 获取 text_content 并进行 font shaping。
-    pub fn paint_text(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub fn paint_text(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,
@@ -445,18 +400,17 @@ impl Painter {
 
         // 占位 glyph：标记此位置有文本内容
         // 完整实现需要 font shaping 和 glyph atlas
-        self.primitives.add_glyph(
-            zero_render_foundation::primitive::GlyphPrimitive {
+        self.primitives
+            .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
                 x: glyph_x,
                 y: glyph_y + font_size, // baseline at bottom of text
                 font_size,
                 color,
-                glyph_id: 0, // placeholder glyph id
+                glyph_id: 0,                                           // placeholder glyph id
                 font_id: zero_render_foundation::primitive::FontId(0), // default font
                 bitmap_width: None,
                 bitmap_height: None,
-            },
-        );
+            });
     }
 }
 
@@ -521,8 +475,10 @@ fn clip_glyphs(glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive],
         // 字形位置是左上角，假定宽高约等于 font_size
         let right = g.x + g.font_size;
         let bottom = g.y + g.font_size;
-        if right <= clip_rect.left() || bottom <= clip_rect.top()
-            || g.x >= clip_rect.right() || g.y >= clip_rect.bottom()
+        if right <= clip_rect.left()
+            || bottom <= clip_rect.top()
+            || g.x >= clip_rect.right()
+            || g.y >= clip_rect.bottom()
         {
             g.glyph_id = 0; // 标记为不可见
             g.font_size = 0.0;
@@ -556,10 +512,7 @@ impl BorderRadiusSpec {
 
     /// 所有圆角都为零。
     pub fn is_zero(&self) -> bool {
-        self.top_left == 0.0
-            && self.top_right == 0.0
-            && self.bottom_right == 0.0
-            && self.bottom_left == 0.0
+        self.top_left == 0.0 && self.top_right == 0.0 && self.bottom_right == 0.0 && self.bottom_left == 0.0
     }
 }
 
@@ -911,10 +864,7 @@ mod tests {
         assert_eq!(painter.primitives().fills.len(), 2);
 
         // 第一个填充是父元素背景
-        assert_eq!(
-            painter.primitives().fills[0].color,
-            Color::rgb(200, 200, 200)
-        );
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(200, 200, 200));
         // 第二个填充是子元素背景（位置偏移 10,10）
         assert_eq!(painter.primitives().fills[1].rect.origin.x, 10.0);
         assert_eq!(painter.primitives().fills[1].rect.origin.y, 10.0);
@@ -1089,10 +1039,7 @@ mod tests {
         // 1 background fill + 4 border fills = 5
         assert_eq!(painter.primitives().fills.len(), 5);
         // First fill is background
-        assert_eq!(
-            painter.primitives().fills[0].color,
-            Color::rgb(200, 200, 200)
-        );
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(200, 200, 200));
     }
 
     /// 测试无样式节点（no node_id）不产生任何填充。
@@ -1254,10 +1201,7 @@ mod tests {
 
         // parent 的 visibility:hidden 阻止了父节点绘制，但子节点不受影响
         assert_eq!(painter.primitives().fills.len(), 1);
-        assert_eq!(
-            painter.primitives().fills[0].color,
-            Color::rgb(100, 100, 255)
-        );
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(100, 100, 255));
     }
 
     /// 测试 border-style: none 的边框不生成填充图元。
@@ -1662,9 +1606,7 @@ mod tests {
     #[test]
     fn test_transform_translate_offset() {
         let mut style = ComputedStyle::default();
-        style.transform = TransformValue::List(vec![
-            TransformFunction::Translate(10.0, 20.0),
-        ]);
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(10.0, 20.0)]);
 
         let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
         assert_eq!(dx, 10.0);
@@ -1780,9 +1722,7 @@ mod tests {
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(16.0);
         style.color = ColorValue::Rgba(0, 0, 0, 255);
-        style.transform = TransformValue::List(vec![
-            TransformFunction::Translate(5.0, 10.0),
-        ]);
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(5.0, 10.0)]);
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -1936,9 +1876,7 @@ mod tests {
         style.font_size = LengthValue::Px(14.0);
         style.color = ColorValue::Rgba(0, 0, 0, 255);
         style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-        style.transform = TransformValue::List(vec![
-            TransformFunction::Translate(15.0, 25.0),
-        ]);
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(15.0, 25.0)]);
         styles.insert(elem, style);
 
         let mut painter = Painter::new();
@@ -2004,8 +1942,14 @@ mod tests {
         painter.paint(&parent_box, &styles);
 
         let fill = &painter.primitives().fills[0];
-        assert!(fill.rect.size.width <= 100.0, "child should be clipped to parent content width");
-        assert!(fill.rect.size.height <= 80.0, "child should be clipped to parent content height");
+        assert!(
+            fill.rect.size.width <= 100.0,
+            "child should be clipped to parent content width"
+        );
+        assert!(
+            fill.rect.size.height <= 80.0,
+            "child should be clipped to parent content height"
+        );
     }
 
     /// 测试带 border-radius 的页面正确生成背景填充。
@@ -2127,9 +2071,7 @@ mod tests {
     #[test]
     fn test_transform_translate_x_only() {
         let mut style = ComputedStyle::default();
-        style.transform = TransformValue::List(vec![
-            TransformFunction::TranslateX(42.0),
-        ]);
+        style.transform = TransformValue::List(vec![TransformFunction::TranslateX(42.0)]);
         let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
         assert_eq!(dx, 42.0);
         assert_eq!(dy, 0.0);
@@ -2139,9 +2081,7 @@ mod tests {
     #[test]
     fn test_transform_translate_y_only() {
         let mut style = ComputedStyle::default();
-        style.transform = TransformValue::List(vec![
-            TransformFunction::TranslateY(99.0),
-        ]);
+        style.transform = TransformValue::List(vec![TransformFunction::TranslateY(99.0)]);
         let (dx, dy) = apply_transform_offset(&style, 0.0, 0.0);
         assert_eq!(dx, 0.0);
         assert_eq!(dy, 99.0);
@@ -2445,8 +2385,14 @@ mod tests {
         let child_fill = &fills[1];
         assert_eq!(child_fill.rect.origin.x, 80.0);
         assert_eq!(child_fill.rect.origin.y, 80.0);
-        assert_eq!(child_fill.rect.size.width, 20.0, "child width clipped at grandparent boundary");
-        assert_eq!(child_fill.rect.size.height, 20.0, "child height clipped at grandparent boundary");
+        assert_eq!(
+            child_fill.rect.size.width, 20.0,
+            "child width clipped at grandparent boundary"
+        );
+        assert_eq!(
+            child_fill.rect.size.height, 20.0,
+            "child height clipped at grandparent boundary"
+        );
     }
 
     /// 测试双层 overflow:hidden 嵌套，内层和外层各自裁剪。
@@ -2657,7 +2603,11 @@ mod tests {
         assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph（子2 内联文本）");
 
         // 验证绘制顺序：父背景先绘制
-        assert_eq!(prims.fills[0].color, Color::rgb(200, 200, 200), "第一个 fill 应为父背景");
+        assert_eq!(
+            prims.fills[0].color,
+            Color::rgb(200, 200, 200),
+            "第一个 fill 应为父背景"
+        );
         assert_eq!(prims.fills[1].color, Color::rgb(255, 0, 0), "第二个 fill 应为子1 背景");
         assert_eq!(prims.fills[2].color, Color::rgb(0, 255, 0), "第三个 fill 应为子3 背景");
 

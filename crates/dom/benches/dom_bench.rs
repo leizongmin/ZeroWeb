@@ -21,10 +21,7 @@ fn generate_nested_html(depth: usize) -> String {
 fn generate_wide_html(width: usize) -> String {
     let mut html = String::from("<html><body>");
     for i in 0..width {
-        html.push_str(&format!(
-            "<div class=\"item\" id=\"item-{}\">text {}</div>",
-            i, i
-        ));
+        html.push_str(&format!("<div class=\"item\" id=\"item-{}\">text {}</div>", i, i));
     }
     html.push_str("</body></html>");
     html

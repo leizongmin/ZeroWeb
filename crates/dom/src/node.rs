@@ -91,12 +91,7 @@ impl ElementData {
         let class_list = attributes
             .iter()
             .find(|a| local_name_eq(&a.name.local, "class"))
-            .map(|a| {
-                a.value
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect::<Vec<_>>()
-            })
+            .map(|a| a.value.split_whitespace().map(String::from).collect::<Vec<_>>())
             .unwrap_or_default();
 
         Self {
@@ -130,11 +125,7 @@ impl ElementData {
         use markup5ever::{LocalName, Namespace, QualName};
         use tendril::StrTendril;
 
-        if let Some(attr) = self
-            .attributes
-            .iter_mut()
-            .find(|a| local_name_eq(&a.name.local, name))
-        {
+        if let Some(attr) = self.attributes.iter_mut().find(|a| local_name_eq(&a.name.local, name)) {
             attr.value = StrTendril::from(value);
         } else {
             self.attributes.push(markup5ever::Attribute {
@@ -171,17 +162,12 @@ impl ElementData {
 
     /// 检查是否有指定属性。
     pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes
-            .iter()
-            .any(|a| local_name_eq(&a.name.local, name))
+        self.attributes.iter().any(|a| local_name_eq(&a.name.local, name))
     }
 
     /// 获取所有属性名。
     pub fn attribute_names(&self) -> Vec<String> {
-        self.attributes
-            .iter()
-            .map(|a| a.name.local.to_string())
-            .collect()
+        self.attributes.iter().map(|a| a.name.local.to_string()).collect()
     }
 }
 

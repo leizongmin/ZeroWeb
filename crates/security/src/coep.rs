@@ -114,97 +114,52 @@ mod tests {
 
     #[test]
     fn test_coep_unsafe_none_allows_all() {
-        let result = evaluate_coep(
-            CoepPolicy::UnsafeNone,
-            CorpStatus::NoPolicy,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::UnsafeNone, CorpStatus::NoPolicy, false, false);
         assert_eq!(result, CoepResult::Allowed);
     }
 
     #[test]
     fn test_coep_require_corp_blocks_without_corp() {
-        let result = evaluate_coep(
-            CoepPolicy::RequireCorp,
-            CorpStatus::NoPolicy,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, false, false);
         assert_eq!(result, CoepResult::Blocked);
     }
 
     #[test]
     fn test_coep_require_corp_allows_with_corp_same_origin() {
-        let result = evaluate_coep(
-            CoepPolicy::RequireCorp,
-            CorpStatus::SameOrigin,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::SameOrigin, false, false);
         assert_eq!(result, CoepResult::Allowed);
     }
 
     #[test]
     fn test_coep_require_corp_blocks_cross_origin_corp() {
-        let result = evaluate_coep(
-            CoepPolicy::RequireCorp,
-            CorpStatus::CrossOrigin,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::CrossOrigin, false, false);
         assert_eq!(result, CoepResult::Blocked);
     }
 
     #[test]
     fn test_coep_credentialless_behavior() {
         // Credentialless: NoPolicy → 允许（无凭证加载）
-        let result = evaluate_coep(
-            CoepPolicy::Credentialless,
-            CorpStatus::NoPolicy,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::NoPolicy, false, false);
         assert_eq!(result, CoepResult::Allowed);
 
         // Credentialless: CrossOrigin → 阻止
-        let result = evaluate_coep(
-            CoepPolicy::Credentialless,
-            CorpStatus::CrossOrigin,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::CrossOrigin, false, false);
         assert_eq!(result, CoepResult::Blocked);
 
         // Credentialless: SameOrigin → 允许
-        let result = evaluate_coep(
-            CoepPolicy::Credentialless,
-            CorpStatus::SameOrigin,
-            false,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::SameOrigin, false, false);
         assert_eq!(result, CoepResult::Allowed);
     }
 
     #[test]
     fn test_coep_require_corp_allows_same_origin_resource() {
-        let result = evaluate_coep(
-            CoepPolicy::RequireCorp,
-            CorpStatus::NoPolicy,
-            true,
-            false,
-        );
+        let result = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, true, false);
         assert_eq!(result, CoepResult::Allowed);
     }
 
     #[test]
     fn test_coep_require_corp_allows_cors() {
-        let result = evaluate_coep(
-            CoepPolicy::RequireCorp,
-            CorpStatus::NoPolicy,
-            false,
-            true,
-        );
+        let result = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, false, true);
         assert_eq!(result, CoepResult::Allowed);
     }
 

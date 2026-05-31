@@ -5,8 +5,8 @@
 //! - `run_with_window()`: GPU 模式，回调额外接收 `Arc<Window>` 引用
 
 use crate::event::{
-    convert_ime, convert_keyboard_input, convert_mouse_button, convert_scroll_delta,
-    convert_touch_phase, AppEvent, TouchEvent,
+    AppEvent, TouchEvent, convert_ime, convert_keyboard_input, convert_mouse_button, convert_scroll_delta,
+    convert_touch_phase,
 };
 use crate::{HostError, HostResult};
 use std::sync::Arc;
@@ -67,15 +67,11 @@ impl HostRuntime {
     where
         F: FnMut(AppEvent) + 'static,
     {
-        let event_loop = winit::event_loop::EventLoop::new()
-            .map_err(|e| HostError::EventLoopError(e.to_string()))?;
+        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| HostError::EventLoopError(e.to_string()))?;
 
         let window_attrs = winit::window::WindowAttributes::default()
             .with_title(&self.config.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(
-                self.config.width,
-                self.config.height,
-            ))
+            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
             .with_resizable(self.config.resizable);
 
         event_loop
@@ -93,15 +89,11 @@ impl HostRuntime {
     where
         F: FnMut(AppEvent, Option<Arc<winit::window::Window>>) + 'static,
     {
-        let event_loop = winit::event_loop::EventLoop::new()
-            .map_err(|e| HostError::EventLoopError(e.to_string()))?;
+        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| HostError::EventLoopError(e.to_string()))?;
 
         let window_attrs = winit::window::WindowAttributes::default()
             .with_title(&self.config.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(
-                self.config.width,
-                self.config.height,
-            ))
+            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
             .with_resizable(self.config.resizable);
 
         event_loop
@@ -121,10 +113,7 @@ pub(crate) struct BasicApp<'a, F> {
 
 impl<'a, F: FnMut(AppEvent)> BasicApp<'a, F> {
     /// 创建基本模式事件处理器（用于测试）
-    pub(crate) fn new_basic(
-        window_attrs: winit::window::WindowAttributes,
-        on_event: &'a mut F,
-    ) -> Self {
+    pub(crate) fn new_basic(window_attrs: winit::window::WindowAttributes, on_event: &'a mut F) -> Self {
         Self {
             window_attrs: Some(window_attrs),
             window: None,
@@ -168,17 +157,13 @@ impl<F: FnMut(AppEvent)> BasicApp<'_, F> {
             } => {
                 (self.on_event)(convert_keyboard_input(device_id, event, is_synthetic));
             }
-            winit::event::WindowEvent::CursorMoved {
-                position, ..
-            } => {
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
                 (self.on_event)(AppEvent::MouseMoved {
                     x: position.x,
                     y: position.y,
                 });
             }
-            winit::event::WindowEvent::MouseInput {
-                state, button, ..
-            } => {
+            winit::event::WindowEvent::MouseInput { state, button, .. } => {
                 (self.on_event)(AppEvent::MouseInput {
                     button: convert_mouse_button(button),
                     pressed: state == winit::event::ElementState::Pressed,
@@ -210,9 +195,7 @@ impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for BasicApp
         if self.window.is_none()
             && let Some(attrs) = self.window_attrs.take()
         {
-            let win = event_loop
-                .create_window(attrs)
-                .expect("Failed to create window");
+            let win = event_loop.create_window(attrs).expect("Failed to create window");
             self.window = Some(Arc::new(win));
         }
     }
@@ -241,10 +224,7 @@ pub(crate) struct GpuApp<'a, F> {
 
 impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
     /// 创建 GPU 模式事件处理器（用于测试）
-    pub(crate) fn new_with_window(
-        window_attrs: winit::window::WindowAttributes,
-        on_event: &'a mut F,
-    ) -> Self {
+    pub(crate) fn new_with_window(window_attrs: winit::window::WindowAttributes, on_event: &'a mut F) -> Self {
         Self {
             window_attrs: Some(window_attrs),
             window: None,
@@ -294,14 +274,9 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
                 event,
                 is_synthetic,
             } => {
-                (self.on_event)(
-                    convert_keyboard_input(device_id, event, is_synthetic),
-                    win_ref,
-                );
+                (self.on_event)(convert_keyboard_input(device_id, event, is_synthetic), win_ref);
             }
-            winit::event::WindowEvent::CursorMoved {
-                position, ..
-            } => {
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
                 (self.on_event)(
                     AppEvent::MouseMoved {
                         x: position.x,
@@ -310,9 +285,7 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
                     win_ref,
                 );
             }
-            winit::event::WindowEvent::MouseInput {
-                state, button, ..
-            } => {
+            winit::event::WindowEvent::MouseInput { state, button, .. } => {
                 (self.on_event)(
                     AppEvent::MouseInput {
                         button: convert_mouse_button(button),
@@ -348,16 +321,14 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
     }
 }
 
-impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)>
-    winit::application::ApplicationHandler<()> for GpuApp<'_, F>
+impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application::ApplicationHandler<()>
+    for GpuApp<'_, F>
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none()
             && let Some(attrs) = self.window_attrs.take()
         {
-            let win = event_loop
-                .create_window(attrs)
-                .expect("Failed to create window");
+            let win = event_loop.create_window(attrs).expect("Failed to create window");
             self.window = Some(Arc::new(win));
         }
     }
@@ -400,9 +371,7 @@ mod tests {
 
     #[test]
     fn test_window_config_builder() {
-        let config = WindowConfig::new("Test")
-            .with_size(1024, 768)
-            .with_resizable(false);
+        let config = WindowConfig::new("Test").with_size(1024, 768).with_resizable(false);
         assert_eq!(config.width, 1024);
         assert_eq!(config.height, 768);
         assert!(!config.resizable);
@@ -458,9 +427,7 @@ mod tests {
 
     #[test]
     fn test_host_runtime_new_custom_config() {
-        let config = WindowConfig::new("Custom")
-            .with_size(1920, 1080)
-            .with_resizable(false);
+        let config = WindowConfig::new("Custom").with_size(1920, 1080).with_resizable(false);
         let _runtime = HostRuntime::new(config);
     }
 
@@ -493,9 +460,7 @@ mod tests {
         let mut received: Vec<AppEvent> = Vec::new();
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(0, 0),
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(0, 0)));
         assert_eq!(received.len(), 1);
         match &received[0] {
             AppEvent::Resized { width, height } => {
@@ -670,9 +635,7 @@ mod tests {
         let mut app = make_basic_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::MouseWheel {
             device_id: winit::event::DeviceId::dummy(),
-            delta: winit::event::MouseScrollDelta::PixelDelta(
-                winit::dpi::PhysicalPosition::new(10.0, -5.0),
-            ),
+            delta: winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(10.0, -5.0)),
             phase: winit::event::TouchPhase::Moved,
         });
         assert_eq!(received.len(), 1);
@@ -749,18 +712,15 @@ mod tests {
         let mut received: Vec<AppEvent> = Vec::new();
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
-        app.handle_window_event(winit::event::WindowEvent::Ime(
-            winit::event::Ime::Enabled,
-        ));
-        app.handle_window_event(winit::event::WindowEvent::Ime(
-            winit::event::Ime::Preedit("你好".to_string(), Some((0, 2))),
-        ));
-        app.handle_window_event(winit::event::WindowEvent::Ime(
-            winit::event::Ime::Commit("你好世界".to_string()),
-        ));
-        app.handle_window_event(winit::event::WindowEvent::Ime(
-            winit::event::Ime::Disabled,
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Enabled));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
+            "你好".to_string(),
+            Some((0, 2)),
+        )));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Commit(
+            "你好世界".to_string(),
+        )));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Disabled));
         assert_eq!(received.len(), 4);
         assert!(matches!(&received[0], AppEvent::Ime(ImeEvent::Enabled)));
         match &received[1] {
@@ -782,9 +742,10 @@ mod tests {
         let mut received: Vec<AppEvent> = Vec::new();
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
-        app.handle_window_event(winit::event::WindowEvent::Ime(
-            winit::event::Ime::Preedit(String::new(), None),
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
+            String::new(),
+            None,
+        )));
         assert_eq!(received.len(), 1);
         match &received[0] {
             AppEvent::Ime(ImeEvent::Preedit { text, cursor }) => {
@@ -828,18 +789,14 @@ mod tests {
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::Destroyed);
-        app.handle_window_event(winit::event::WindowEvent::ThemeChanged(
-            winit::window::Theme::Light,
-        ));
+        app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
         app.handle_window_event(winit::event::WindowEvent::Occluded(false));
         assert!(received.is_empty(), "Ignored events should not dispatch");
     }
 
     // === GpuApp 事件分发测试 ===
 
-    fn make_gpu_app<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)>(
-        on_event: &'_ mut F,
-    ) -> GpuApp<'_, F> {
+    fn make_gpu_app<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)>(on_event: &'_ mut F) -> GpuApp<'_, F> {
         let attrs = winit::window::WindowAttributes::default();
         GpuApp::new_with_window(attrs, on_event)
     }
@@ -847,8 +804,7 @@ mod tests {
     #[test]
     fn test_gpu_app_resized_dispatch() {
         let mut received: Vec<(AppEvent, bool)> = Vec::new();
-        let mut callback =
-            |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
         let mut app = make_gpu_app(&mut callback);
         let size = winit::dpi::PhysicalSize::new(1024, 768);
         app.handle_window_event(winit::event::WindowEvent::Resized(size), None);
@@ -860,8 +816,7 @@ mod tests {
     #[test]
     fn test_gpu_app_focused_dispatch() {
         let mut received: Vec<(AppEvent, bool)> = Vec::new();
-        let mut callback =
-            |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
         let mut app = make_gpu_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::Focused(true), None);
         app.handle_window_event(winit::event::WindowEvent::Focused(false), None);
@@ -873,8 +828,7 @@ mod tests {
     #[test]
     fn test_gpu_app_redraw_dispatch() {
         let mut received: Vec<(AppEvent, bool)> = Vec::new();
-        let mut callback =
-            |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
         let mut app = make_gpu_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::RedrawRequested, None);
         assert_eq!(received.len(), 1);
@@ -884,8 +838,7 @@ mod tests {
     #[test]
     fn test_gpu_app_close_dispatch() {
         let mut received: Vec<(AppEvent, bool)> = Vec::new();
-        let mut callback =
-            |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| received.push((e, w.is_some()));
         let mut app = make_gpu_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::CloseRequested, None);
         assert_eq!(received.len(), 1);
@@ -951,9 +904,7 @@ mod tests {
         app.handle_window_event(
             winit::event::WindowEvent::MouseWheel {
                 device_id: winit::event::DeviceId::dummy(),
-                delta: winit::event::MouseScrollDelta::PixelDelta(
-                    winit::dpi::PhysicalPosition::new(5.0, -3.0),
-                ),
+                delta: winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(5.0, -3.0)),
                 phase: winit::event::TouchPhase::Moved,
             },
             None,
@@ -1037,10 +988,7 @@ mod tests {
             winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Dark),
             None,
         );
-        assert!(
-            received.is_empty(),
-            "Ignored events should not dispatch"
-        );
+        assert!(received.is_empty(), "Ignored events should not dispatch");
     }
 
     #[test]
@@ -1051,32 +999,20 @@ mod tests {
         };
         let mut app = make_gpu_app(&mut callback);
         // Simulate full IME lifecycle: enabled -> preedit -> commit -> disabled
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Enabled), None);
         app.handle_window_event(
-            winit::event::WindowEvent::Ime(winit::event::Ime::Enabled),
+            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit("n".to_string(), Some((1, 1)))),
             None,
         );
         app.handle_window_event(
-            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
-                "n".to_string(),
-                Some((1, 1)),
-            )),
-            None,
-        );
-        app.handle_window_event(
-            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
-                "ni".to_string(),
-                Some((2, 2)),
-            )),
+            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit("ni".to_string(), Some((2, 2)))),
             None,
         );
         app.handle_window_event(
             winit::event::WindowEvent::Ime(winit::event::Ime::Commit("你".to_string())),
             None,
         );
-        app.handle_window_event(
-            winit::event::WindowEvent::Ime(winit::event::Ime::Disabled),
-            None,
-        );
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Disabled), None);
         assert_eq!(received.len(), 5);
         assert!(matches!(&received[0], AppEvent::Ime(ImeEvent::Enabled)));
         assert!(matches!(&received[4], AppEvent::Ime(ImeEvent::Disabled)));
@@ -1121,9 +1057,7 @@ mod tests {
 
     #[test]
     fn test_window_config_clone() {
-        let config = WindowConfig::new("CloneTest")
-            .with_size(640, 480)
-            .with_resizable(false);
+        let config = WindowConfig::new("CloneTest").with_size(640, 480).with_resizable(false);
         let cloned = config.clone();
         assert_eq!(cloned.title, "CloneTest");
         assert_eq!(cloned.width, 640);
@@ -1133,9 +1067,7 @@ mod tests {
 
     #[test]
     fn test_window_config_builder_chaining_preserves_all() {
-        let config = WindowConfig::new("Chain")
-            .with_size(1280, 720)
-            .with_resizable(true);
+        let config = WindowConfig::new("Chain").with_size(1280, 720).with_resizable(true);
         assert_eq!(config.title, "Chain");
         assert_eq!(config.width, 1280);
         assert_eq!(config.height, 720);
@@ -1194,9 +1126,9 @@ mod tests {
         let mut received: Vec<AppEvent> = Vec::new();
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(7680, 4320),
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            7680, 4320,
+        )));
         assert_eq!(received.len(), 1);
         match &received[0] {
             AppEvent::Resized { width, height } => {
@@ -1212,15 +1144,15 @@ mod tests {
         let mut received: Vec<AppEvent> = Vec::new();
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(100, 100),
-        ));
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(200, 200),
-        ));
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(300, 300),
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            100, 100,
+        )));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            200, 200,
+        )));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            300, 300,
+        )));
         assert_eq!(received.len(), 3);
         match &received[0] {
             AppEvent::Resized { width, .. } => assert_eq!(*width, 100),
@@ -1305,9 +1237,7 @@ mod tests {
         let mut app = make_basic_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::MouseWheel {
             device_id: winit::event::DeviceId::dummy(),
-            delta: winit::event::MouseScrollDelta::PixelDelta(
-                winit::dpi::PhysicalPosition::new(-100.0, -200.0),
-            ),
+            delta: winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(-100.0, -200.0)),
             phase: winit::event::TouchPhase::Started,
         });
         assert_eq!(received.len(), 1);
@@ -1350,9 +1280,9 @@ mod tests {
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
         app.handle_window_event(winit::event::WindowEvent::Focused(true));
-        app.handle_window_event(winit::event::WindowEvent::Resized(
-            winit::dpi::PhysicalSize::new(500, 400),
-        ));
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            500, 400,
+        )));
         app.handle_window_event(winit::event::WindowEvent::CursorMoved {
             device_id: winit::event::DeviceId::dummy(),
             position: winit::dpi::PhysicalPosition::new(10.0, 20.0),
@@ -1494,10 +1424,7 @@ mod tests {
         };
         let mut app = make_gpu_app(&mut callback);
         app.handle_window_event(
-            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
-                "abc".to_string(),
-                Some((0, 3)),
-            )),
+            winit::event::WindowEvent::Ime(winit::event::Ime::Preedit("abc".to_string(), Some((0, 3)))),
             None,
         );
         assert_eq!(received.len(), 1);

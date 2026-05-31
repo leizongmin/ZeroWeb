@@ -64,9 +64,7 @@ fn bench_csp_parse(c: &mut Criterion) {
 
 /// 基准：CSP 资源检查
 fn bench_csp_resource_check(c: &mut Criterion) {
-    let csp = ContentSecurityPolicy::parse(
-        "default-src 'self'; script-src 'self' https://cdn.example.com",
-    );
+    let csp = ContentSecurityPolicy::parse("default-src 'self'; script-src 'self' https://cdn.example.com");
 
     c.bench_function("csp_resource_check_1000", |b| {
         b.iter(|| {
