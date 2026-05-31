@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3366 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3409 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3366 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3409 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -63,7 +63,27 @@
 
 ## 最近完成的改进
 
-### -11. CSS hwb color + inline-block 布局 + MutationObserver 集成 + container queries + 36 个新测试（本轮，3366 测试）
+### -12. br 元素 + Path2D closePath/isPointInPath + scroll-snap 集成 + 字符宽度优化 + 43 个新测试（本轮，3409 测试）
+
+实现 <br> 元素行内换行、Path2D 闭合路径和点击检测、scroll-snap 管线集成、
+逐字符宽度估算替代固定 0.6 系数，以及 12 个 crate 的 43 个边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| layout-engine | **br 元素**：InlineItem::Br 强制换行，与文本和 inline-block 协同；**逐字符宽度估算**：CJK 全宽、ASCII 0.55x、空格 0.25x、标点 0.4x、数字 0.5x | 9 |
+| canvas | **Path2D closePath()**：子路径跟踪 + 闭合线段；**is_point_in_path()**：射线法点在多边形内检测 | 5 |
+| style-system | **scroll-snap 管线集成**：scroll-snap-type/align/stop 计算值验证 | 5 |
+| dom | **序列化边界**：void 元素自闭合、深层嵌套、script/style 内容保留、无值属性 | 4 |
+| css-parser | **选择器边界**：media range syntax、:has() 组合器、:not() 多选择器、:is()/:where() | 4 |
+| security | **CSP form-action**、mixed content 升级、CORS header 验证 | 3 |
+| net | **请求方法链式**、响应状态码分类 | 2 |
+| storage | **对象仓库重命名**、多条目索引 | 2 |
+| webview | **Builder 默认值**、data URI、CSS 注入渲染 | 3 |
+| wasm-sandbox | **内存初始页**、函数参数传递 | 2 |
+| host-runtime | **resize 状态保持** | 1 |
+| render-foundation | **damage tracker 全量重绘**、填充颜色钳位 | 2 |
+
+### -11. CSS hwb color + inline-block 布局 + MutationObserver 集成 + container queries + 36 个新测试（前轮，3366 测试）
 
 实现 CSS hwb() 颜色解析、inline-block 行内布局、MutationObserver 完整集成测试、
 container query 评估改进，以及跨 crate 集成测试和错误恢复测试：
