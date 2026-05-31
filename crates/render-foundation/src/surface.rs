@@ -340,4 +340,33 @@ mod tests {
         assert_eq!(desc.height, 0);
         assert!(!desc.transparent);
     }
+
+    /// 测试表面多次 resize 后最终尺寸正确
+    ///
+    /// 模拟连续多次调整表面尺寸：每次创建新的 FrameBuffer 并填充测试像素，
+    /// 验证中间步骤和最终尺寸均为预期值。
+    #[test]
+    fn test_surface_multiple_resizes() {
+        let sizes = [(100, 100), (200, 150), (50, 300), (1024, 768)];
+
+        let mut fb = FrameBuffer::new(sizes[0].0, sizes[0].1);
+        assert_eq!(fb.width, sizes[0].0);
+        assert_eq!(fb.height, sizes[0].1);
+
+        for &(w, h) in &sizes[1..] {
+            // 模拟 resize：创建新的帧缓冲
+            fb = FrameBuffer::new(w, h);
+            assert_eq!(fb.width, w, "resize 后宽度应为 {w}");
+            assert_eq!(fb.height, h, "resize 后高度应为 {h}");
+            assert_eq!(fb.data.len(), (w * h * 4) as usize);
+        }
+
+        // 验证最终尺寸
+        let (final_w, final_h) = sizes[sizes.len() - 1];
+        assert_eq!(fb.width, final_w);
+        assert_eq!(fb.height, final_h);
+        // 验证最终帧缓冲可以正常读写像素
+        fb.set_pixel(final_w - 1, final_h - 1, [255, 128, 64, 200]);
+        assert_eq!(fb.get_pixel(final_w - 1, final_h - 1), [255, 128, 64, 200]);
+    }
 }

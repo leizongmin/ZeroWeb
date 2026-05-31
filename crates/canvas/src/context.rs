@@ -162,6 +162,30 @@ pub enum TextBaseline {
     Bottom,
 }
 
+/// 线段连接样式。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum LineJoin {
+    /// 默认：尖角连接。
+    #[default]
+    Miter,
+    /// 圆角连接。
+    Round,
+    /// 斜角连接。
+    Bevel,
+}
+
+/// 线段端点样式。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum LineCap {
+    /// 默认：平头端点。
+    #[default]
+    Butt,
+    /// 圆头端点。
+    Round,
+    /// 方头端点（延伸半个线宽）。
+    Square,
+}
+
 /// 合成操作模式 — 控制 Canvas 绘制时新图元与已有内容的混合方式。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CompositeOperation {
@@ -375,6 +399,8 @@ struct CanvasState {
     shadow_offset_y: f32,
     line_dash: Vec<f32>,
     line_dash_offset: f32,
+    line_join: LineJoin,
+    line_cap: LineCap,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -419,6 +445,10 @@ pub struct CanvasContext {
     line_dash: Vec<f32>,
     /// 线段虚线偏移。
     line_dash_offset: f32,
+    /// 线段连接样式。
+    line_join: LineJoin,
+    /// 线段端点样式。
+    line_cap: LineCap,
 }
 
 /// 文本度量。
@@ -468,6 +498,8 @@ impl CanvasContext {
             shadow_offset_y: 0.0,
             line_dash: Vec::new(),
             line_dash_offset: 0.0,
+            line_join: LineJoin::default(),
+            line_cap: LineCap::default(),
         }
     }
 
@@ -794,6 +826,8 @@ impl CanvasContext {
             shadow_offset_y: self.shadow_offset_y,
             line_dash: self.line_dash.clone(),
             line_dash_offset: self.line_dash_offset,
+            line_join: self.line_join,
+            line_cap: self.line_cap,
         });
     }
 
@@ -813,6 +847,8 @@ impl CanvasContext {
             self.shadow_offset_y = state.shadow_offset_y;
             self.line_dash = state.line_dash;
             self.line_dash_offset = state.line_dash_offset;
+            self.line_join = state.line_join;
+            self.line_cap = state.line_cap;
         }
     }
 
@@ -863,6 +899,16 @@ impl CanvasContext {
         self.line_width = width;
     }
 
+    /// 设置线段连接样式。
+    pub fn set_line_join(&mut self, join: LineJoin) {
+        self.line_join = join;
+    }
+
+    /// 设置线段端点样式。
+    pub fn set_line_cap(&mut self, cap: LineCap) {
+        self.line_cap = cap;
+    }
+
     /// 设置字体。
     pub fn set_font(&mut self, font: FontDescriptor) {
         self.font = font;
@@ -886,6 +932,16 @@ impl CanvasContext {
     /// 返回当前线宽。
     pub fn line_width(&self) -> f32 {
         self.line_width
+    }
+
+    /// 返回当前线段连接样式。
+    pub fn line_join(&self) -> LineJoin {
+        self.line_join
+    }
+
+    /// 返回当前线段端点样式。
+    pub fn line_cap(&self) -> LineCap {
+        self.line_cap
     }
 
     /// 返回当前全局透明度。
@@ -1020,6 +1076,23 @@ impl CanvasContext {
         }
         let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
         point_in_polygon(x, y, &points)
+    }
+
+    /// 判断点是否在当前路径的描边区域内。
+    /// 检测点到路径中每条线段的距离是否小于 line_width / 2。
+    pub fn is_point_in_stroke(&self, x: f32, y: f32) -> bool {
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return false;
+        }
+        let half_lw = self.line_width / 2.0;
+        for chunk in vertices.chunks_exact(4) {
+            let dist = point_to_segment_dist(x, y, chunk[0], chunk[1], chunk[2], chunk[3]);
+            if dist < half_lw {
+                return true;
+            }
+        }
+        false
     }
 
     // ── Pixel data ──
@@ -1968,6 +2041,25 @@ fn point_in_polygon(px: f32, py: f32, points: &[(f32, f32)]) -> bool {
         j = i;
     }
     inside
+}
+
+/// 计算点到线段的最短距离。
+fn point_to_segment_dist(px: f32, py: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < f32::EPSILON {
+        // 线段退化为点
+        let ddx = px - x1;
+        let ddy = py - y1;
+        return (ddx * ddx + ddy * ddy).sqrt();
+    }
+    let t = (((px - x1) * dx + (py - y1) * dy) / len_sq).clamp(0.0, 1.0);
+    let proj_x = x1 + t * dx;
+    let proj_y = y1 + t * dy;
+    let ddx = px - proj_x;
+    let ddy = py - proj_y;
+    (ddx * ddx + ddy * ddy).sqrt()
 }
 
 #[cfg(test)]
@@ -4611,5 +4703,100 @@ mod tests {
         // 共线时退化为 lineTo(50, 0)，只有 1 条线段 = 4 floats
         let pf = &ctx.primitives().path_fills[0];
         assert_eq!(pf.vertices.len(), 4, "共线 arcTo 应退化为一条线段");
+    }
+
+    // ── line_join / line_cap 测试 ──
+
+    /// 测试 line_join 和 line_cap 默认值分别为 Miter 和 Butt。
+    #[test]
+    fn test_line_join_and_line_cap_default_values() {
+        let ctx = CanvasContext::new(100, 100);
+        assert_eq!(ctx.line_join(), LineJoin::Miter);
+        assert_eq!(ctx.line_cap(), LineCap::Butt);
+    }
+
+    /// 测试 LineJoin 和 LineCap 默认值与枚举 Default trait 一致。
+    #[test]
+    fn test_line_join_and_line_cap_default_trait() {
+        assert_eq!(LineJoin::default(), LineJoin::Miter);
+        assert_eq!(LineCap::default(), LineCap::Butt);
+    }
+
+    /// 测试设置和获取 line_join 的所有变体。
+    #[test]
+    fn test_line_join_set_get_roundtrip() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_join(LineJoin::Round);
+        assert_eq!(ctx.line_join(), LineJoin::Round);
+        ctx.set_line_join(LineJoin::Bevel);
+        assert_eq!(ctx.line_join(), LineJoin::Bevel);
+        ctx.set_line_join(LineJoin::Miter);
+        assert_eq!(ctx.line_join(), LineJoin::Miter);
+    }
+
+    /// 测试设置和获取 line_cap 的所有变体。
+    #[test]
+    fn test_line_cap_set_get_roundtrip() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_cap(LineCap::Round);
+        assert_eq!(ctx.line_cap(), LineCap::Round);
+        ctx.set_line_cap(LineCap::Square);
+        assert_eq!(ctx.line_cap(), LineCap::Square);
+        ctx.set_line_cap(LineCap::Butt);
+        assert_eq!(ctx.line_cap(), LineCap::Butt);
+    }
+
+    /// 测试 line_join 和 line_cap 在 save/restore 中正确保存和恢复。
+    #[test]
+    fn test_line_join_and_line_cap_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_join(LineJoin::Round);
+        ctx.set_line_cap(LineCap::Square);
+        ctx.save();
+        ctx.set_line_join(LineJoin::Bevel);
+        ctx.set_line_cap(LineCap::Round);
+        assert_eq!(ctx.line_join(), LineJoin::Bevel);
+        assert_eq!(ctx.line_cap(), LineCap::Round);
+        ctx.restore();
+        assert_eq!(ctx.line_join(), LineJoin::Round);
+        assert_eq!(ctx.line_cap(), LineCap::Square);
+    }
+
+    // ── isPointInStroke 测试 ──
+
+    /// 测试描边线上的点被检测到。
+    #[test]
+    fn test_is_point_in_stroke_on_line() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 50.0);
+        ctx.line_to(100.0, 50.0);
+        // 默认 line_width = 1.0，点 (50, 50) 在线段上，距离为 0
+        assert!(ctx.is_point_in_stroke(50.0, 50.0));
+    }
+
+    /// 测试远离描边的点不被检测到。
+    #[test]
+    fn test_is_point_in_stroke_far_away() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 50.0);
+        ctx.line_to(100.0, 50.0);
+        // 默认 line_width = 1.0，点 (50, 100) 距线段 50，远大于 0.5
+        assert!(!ctx.is_point_in_stroke(50.0, 100.0));
+    }
+
+    /// 测试粗线宽增大检测区域。
+    #[test]
+    fn test_is_point_in_stroke_thick_line() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(20.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, 50.0);
+        ctx.line_to(100.0, 50.0);
+        // line_width = 20，half = 10，点 (50, 55) 距线段 5 < 10
+        assert!(ctx.is_point_in_stroke(50.0, 55.0));
+        // 点 (50, 65) 距线段 15 > 10
+        assert!(!ctx.is_point_in_stroke(50.0, 65.0));
     }
 }

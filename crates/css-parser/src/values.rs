@@ -2390,6 +2390,74 @@ fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
     Some(GradientColorStop { color, position: None })
 }
 
+/// 解析 CSS grid-area 简写属性值。
+///
+/// 支持格式：
+/// - 单值：`"header"` → 四个值均为 `"header"`
+/// - `"auto"` → 四个值均为 `"auto"`
+/// - 四值斜杠分隔：`"1 / 2 / 3 / 4"` → `("1", "2", "3", "4")`
+/// - 两值斜杠分隔：`"1 / 3"` → `("1", "auto", "3", "auto")`
+/// - 三值斜杠分隔：`"1 / 2 / 3"` → `("1", "2", "3", "auto")`
+///
+/// 返回 `(row_start, row_end, col_start, col_end)` 原始字符串元组，
+/// 由 style-system 调用 `parse_grid_line` 转换为 `GridLineValue`。
+pub fn parse_grid_area(input: &str) -> Option<(String, String, String, String)> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+
+    // 包含斜杠 → 按斜杠分割
+    if input.contains('/') {
+        let parts: Vec<&str> = input.split('/').map(|s| s.trim()).collect();
+        match parts.len() {
+            1 => {
+                // 单值（斜杠后为空，不合法）
+                let v = parts[0].to_string();
+                if v.is_empty() {
+                    return None;
+                }
+                Some((v.clone(), v.clone(), v.clone(), v))
+            }
+            2 => {
+                // row-start / col-start
+                let rs = parts[0].to_string();
+                let cs = parts[1].to_string();
+                if rs.is_empty() || cs.is_empty() {
+                    return None;
+                }
+                Some((rs, "auto".to_string(), cs, "auto".to_string()))
+            }
+            3 => {
+                // row-start / row-end / col-start
+                let rs = parts[0].to_string();
+                let re = parts[1].to_string();
+                let cs = parts[2].to_string();
+                if rs.is_empty() || re.is_empty() || cs.is_empty() {
+                    return None;
+                }
+                Some((rs, re, cs, "auto".to_string()))
+            }
+            4 => {
+                // row-start / row-end / col-start / col-end
+                let rs = parts[0].to_string();
+                let re = parts[1].to_string();
+                let cs = parts[2].to_string();
+                let ce = parts[3].to_string();
+                if rs.is_empty() || re.is_empty() || cs.is_empty() || ce.is_empty() {
+                    return None;
+                }
+                Some((rs, re, cs, ce))
+            }
+            _ => None,
+        }
+    } else {
+        // 单值，所有四个都设为同一值
+        let v = input.to_string();
+        Some((v.clone(), v.clone(), v.clone(), v))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2911,5 +2979,110 @@ mod tests {
             Some(ListStylePositionValue::Inside)
         );
         assert_eq!(parse_list_style_position("center"), None);
+    }
+
+    // ── parse_grid_area 测试 ──
+
+    #[test]
+    /// 测试 grid-area 单个命名区域
+    fn test_parse_grid_area_named_area() {
+        let result = parse_grid_area("header").unwrap();
+        assert_eq!(
+            result,
+            (
+                "header".to_string(),
+                "header".to_string(),
+                "header".to_string(),
+                "header".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area auto
+    fn test_parse_grid_area_auto() {
+        let result = parse_grid_area("auto").unwrap();
+        assert_eq!(
+            result,
+            (
+                "auto".to_string(),
+                "auto".to_string(),
+                "auto".to_string(),
+                "auto".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 四值斜杠分隔
+    fn test_parse_grid_area_four_values() {
+        let result = parse_grid_area("1 / 2 / 3 / 4").unwrap();
+        assert_eq!(
+            result,
+            ("1".to_string(), "2".to_string(), "3".to_string(), "4".to_string())
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 两值斜杠分隔（row-start / col-start）
+    fn test_parse_grid_area_two_values() {
+        let result = parse_grid_area("1 / 3").unwrap();
+        assert_eq!(
+            result,
+            ("1".to_string(), "auto".to_string(), "3".to_string(), "auto".to_string())
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 三值斜杠分隔
+    fn test_parse_grid_area_three_values() {
+        let result = parse_grid_area("1 / 2 / 3").unwrap();
+        assert_eq!(
+            result,
+            ("1".to_string(), "2".to_string(), "3".to_string(), "auto".to_string())
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 包含 span 关键字
+    fn test_parse_grid_area_span() {
+        let result = parse_grid_area("span 2 / span 3 / span 1 / span 4").unwrap();
+        assert_eq!(
+            result,
+            (
+                "span 2".to_string(),
+                "span 3".to_string(),
+                "span 1".to_string(),
+                "span 4".to_string()
+            )
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 带空白
+    fn test_parse_grid_area_whitespace() {
+        let result = parse_grid_area("  header  ").unwrap();
+        assert_eq!(
+            result,
+            (
+                "header".to_string(),
+                "header".to_string(),
+                "header".to_string(),
+                "header".to_string()
+            )
+        );
+
+        let result = parse_grid_area("  1  /  2  /  3  /  4  ").unwrap();
+        assert_eq!(
+            result,
+            ("1".to_string(), "2".to_string(), "3".to_string(), "4".to_string())
+        );
+    }
+
+    #[test]
+    /// 测试 grid-area 无效输入
+    fn test_parse_grid_area_invalid() {
+        assert_eq!(parse_grid_area(""), None);
+        assert_eq!(parse_grid_area("   "), None);
     }
 }

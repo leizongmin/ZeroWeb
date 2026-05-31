@@ -671,4 +671,34 @@ mod tests {
         assert!(cache.ref_count(&k2).is_some(), "较新的 k2 应保留");
         assert!(cache.ref_count(&k1).is_none(), "较旧的 k1 应被淘汰");
     }
+
+    /// 测试 max_entries=0 时 GC 会清除所有条目
+    ///
+    /// 当 max_entries 设置为 0 时，每次 GC 都会淘汰所有条目，
+    /// 因为任何条目数（>0）都超过限制。insert 本身不会拒绝插入，
+    /// 但 GC 后缓存一定为空。
+    #[test]
+    fn test_image_cache_zero_max_entries() {
+        let mut cache = ImageCache::new(0, 1024 * 1024);
+
+        // 插入多个条目
+        let k1 = cache.insert(make_image(1, 1, 10));
+        let k2 = cache.insert(make_image(2, 2, 20));
+        let k3 = cache.insert(make_image(3, 3, 30));
+        assert_eq!(cache.len(), 3, "插入后应有 3 个条目");
+
+        // GC 后所有条目因 max_entries=0 被淘汰
+        cache.gc();
+        assert!(cache.is_empty(), "GC 后缓存应为空");
+        assert_eq!(cache.len(), 0);
+        assert!(cache.ref_count(&k1).is_none(), "k1 应被淘汰");
+        assert!(cache.ref_count(&k2).is_none(), "k2 应被淘汰");
+        assert!(cache.ref_count(&k3).is_none(), "k3 应被淘汰");
+
+        // 再次插入后立即 GC，同样被淘汰
+        let k4 = cache.insert(make_image(1, 1, 40));
+        cache.gc();
+        assert!(cache.is_empty(), "再次 GC 后缓存仍应为空");
+        assert!(cache.ref_count(&k4).is_none());
+    }
 }

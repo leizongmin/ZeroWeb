@@ -1203,6 +1203,40 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     None
 }
 
+/// 解析 CSS grid-area 简写并展开为四个 GridLineValue。
+///
+/// 返回 `(row_start, row_end, col_start, col_end)`。
+/// 解析失败返回 `None`。
+pub fn parse_grid_area_shorthand(value: &str) -> Option<(GridLineValue, GridLineValue, GridLineValue, GridLineValue)> {
+    let (rs, re, cs, ce) = values::parse_grid_area(value)?;
+    let row_start = parse_grid_line(&rs)?;
+    let row_end = parse_grid_line(&re)?;
+    let col_start = parse_grid_line(&cs)?;
+    let col_end = parse_grid_line(&ce)?;
+    Some((row_start, row_end, col_start, col_end))
+}
+
+/// 解析 CSS grid-column / grid-row 简写（`<start> / <end>` 格式）。
+///
+/// 返回 `(start, end)`。
+/// 无斜杠时，`<start>` 作为 start，end 为 Auto。
+pub fn parse_grid_line_shorthand(value: &str) -> Option<(GridLineValue, GridLineValue)> {
+    let value = value.trim();
+    if let Some(slash_pos) = value.find('/') {
+        let start_str = value[..slash_pos].trim();
+        let end_str = value[slash_pos + 1..].trim();
+        if start_str.is_empty() || end_str.is_empty() {
+            return None;
+        }
+        let start = parse_grid_line(start_str)?;
+        let end = parse_grid_line(end_str)?;
+        Some((start, end))
+    } else {
+        let start = parse_grid_line(value)?;
+        Some((start, GridLineValue::Auto))
+    }
+}
+
 /// 解析逗号分隔的 transition-timing-function 列表。
 ///
 /// 需要处理 cubic-bezier() 和 steps() 内部的逗号。
@@ -1996,6 +2030,30 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "grid-template-areas" => {
             style.grid_template_areas = Some(value.to_string());
             return true;
+        }
+        // ── Grid 简写属性 ──
+        "grid-area" => {
+            if let Some((rs, re, cs, ce)) = parse_grid_area_shorthand(value) {
+                style.grid_row_start = rs;
+                style.grid_row_end = re;
+                style.grid_column_start = cs;
+                style.grid_column_end = ce;
+                return true;
+            }
+        }
+        "grid-column" => {
+            if let Some((start, end)) = parse_grid_line_shorthand(value) {
+                style.grid_column_start = start;
+                style.grid_column_end = end;
+                return true;
+            }
+        }
+        "grid-row" => {
+            if let Some((start, end)) = parse_grid_line_shorthand(value) {
+                style.grid_row_start = start;
+                style.grid_row_end = end;
+                return true;
+            }
         }
         "row-gap" => {
             if let Some(v) = parse_length_or_math(value) {
@@ -4803,5 +4861,165 @@ mod tests {
     fn test_apply_initial_value_unknown() {
         let mut style = ComputedStyle::default();
         assert!(!apply_initial_value(&mut style, "unknown-prop"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // grid-area / grid-column / grid-row 简写属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 grid-area 命名区域简写
+    fn test_grid_area_named_area() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-area", "header"));
+        assert_eq!(style.grid_row_start, GridLineValue::Name("header".to_string()));
+        assert_eq!(style.grid_row_end, GridLineValue::Name("header".to_string()));
+        assert_eq!(style.grid_column_start, GridLineValue::Name("header".to_string()));
+        assert_eq!(style.grid_column_end, GridLineValue::Name("header".to_string()));
+    }
+
+    #[test]
+    /// 测试 grid-area auto 简写
+    fn test_grid_area_auto() {
+        let mut style = ComputedStyle::default();
+        // 先设置非 auto 值
+        style.grid_row_start = GridLineValue::Line(1);
+        assert!(apply_property_value(&mut style, "grid-area", "auto"));
+        assert_eq!(style.grid_row_start, GridLineValue::Auto);
+        assert_eq!(style.grid_row_end, GridLineValue::Auto);
+        assert_eq!(style.grid_column_start, GridLineValue::Auto);
+        assert_eq!(style.grid_column_end, GridLineValue::Auto);
+    }
+
+    #[test]
+    /// 测试 grid-area 四值斜杠分隔行号
+    fn test_grid_area_four_line_numbers() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-area", "1 / 2 / 3 / 4"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(1));
+        assert_eq!(style.grid_row_end, GridLineValue::Line(2));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(3));
+        assert_eq!(style.grid_column_end, GridLineValue::Line(4));
+    }
+
+    #[test]
+    /// 测试 grid-area 两值斜杠分隔（row-start / col-start）
+    fn test_grid_area_two_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-area", "1 / 3"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(1));
+        assert_eq!(style.grid_row_end, GridLineValue::Auto);
+        assert_eq!(style.grid_column_start, GridLineValue::Line(3));
+        assert_eq!(style.grid_column_end, GridLineValue::Auto);
+    }
+
+    #[test]
+    /// 测试 grid-area 三值斜杠分隔
+    fn test_grid_area_three_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-area", "1 / 3 / 2"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(1));
+        assert_eq!(style.grid_row_end, GridLineValue::Line(3));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(2));
+        assert_eq!(style.grid_column_end, GridLineValue::Auto);
+    }
+
+    #[test]
+    /// 测试 grid-area 包含 span 关键字
+    fn test_grid_area_with_span() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-area", "2 / span 2 / 3 / span 3"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(2));
+        assert_eq!(style.grid_row_end, GridLineValue::Span(2));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(3));
+        assert_eq!(style.grid_column_end, GridLineValue::Span(3));
+    }
+
+    #[test]
+    /// 测试 grid-column 简写（start / end）
+    fn test_grid_column_shorthand() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-column", "1 / 3"));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(1));
+        assert_eq!(style.grid_column_end, GridLineValue::Line(3));
+    }
+
+    #[test]
+    /// 测试 grid-column 简写（单个值）
+    fn test_grid_column_single_value() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-column", "2"));
+        assert_eq!(style.grid_column_start, GridLineValue::Line(2));
+        assert_eq!(style.grid_column_end, GridLineValue::Auto);
+    }
+
+    #[test]
+    /// 测试 grid-row 简写（start / end）
+    fn test_grid_row_shorthand() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-row", "1 / span 2"));
+        assert_eq!(style.grid_row_start, GridLineValue::Line(1));
+        assert_eq!(style.grid_row_end, GridLineValue::Span(2));
+    }
+
+    #[test]
+    /// 测试 grid-column 包含命名行
+    fn test_grid_column_named() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "grid-column",
+            "sidebar-start / sidebar-end"
+        ));
+        assert_eq!(
+            style.grid_column_start,
+            GridLineValue::Name("sidebar-start".to_string())
+        );
+        assert_eq!(style.grid_column_end, GridLineValue::Name("sidebar-end".to_string()));
+    }
+
+    #[test]
+    /// 测试 grid-area 无效值返回 false
+    fn test_grid_area_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "grid-area", ""));
+    }
+
+    #[test]
+    /// 测试 parse_grid_area_shorthand 函数
+    fn test_parse_grid_area_shorthand() {
+        let result = parse_grid_area_shorthand("header").unwrap();
+        assert_eq!(result.0, GridLineValue::Name("header".to_string()));
+        assert_eq!(result.1, GridLineValue::Name("header".to_string()));
+        assert_eq!(result.2, GridLineValue::Name("header".to_string()));
+        assert_eq!(result.3, GridLineValue::Name("header".to_string()));
+
+        let result = parse_grid_area_shorthand("auto").unwrap();
+        assert_eq!(result.0, GridLineValue::Auto);
+        assert_eq!(result.1, GridLineValue::Auto);
+        assert_eq!(result.2, GridLineValue::Auto);
+        assert_eq!(result.3, GridLineValue::Auto);
+
+        let result = parse_grid_area_shorthand("1 / 3 / 2 / 4").unwrap();
+        assert_eq!(result.0, GridLineValue::Line(1));
+        assert_eq!(result.1, GridLineValue::Line(3));
+        assert_eq!(result.2, GridLineValue::Line(2));
+        assert_eq!(result.3, GridLineValue::Line(4));
+    }
+
+    #[test]
+    /// 测试 parse_grid_line_shorthand 函数
+    fn test_parse_grid_line_shorthand() {
+        let result = parse_grid_line_shorthand("1 / 3").unwrap();
+        assert_eq!(result.0, GridLineValue::Line(1));
+        assert_eq!(result.1, GridLineValue::Line(3));
+
+        let result = parse_grid_line_shorthand("span 2 / 5").unwrap();
+        assert_eq!(result.0, GridLineValue::Span(2));
+        assert_eq!(result.1, GridLineValue::Line(5));
+
+        let result = parse_grid_line_shorthand("auto").unwrap();
+        assert_eq!(result.0, GridLineValue::Auto);
+        assert_eq!(result.1, GridLineValue::Auto);
     }
 }

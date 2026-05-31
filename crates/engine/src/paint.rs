@@ -3865,4 +3865,308 @@ mod tests {
         assert_eq!(painter.primitives().fills.len(), 1, "只有与脏区域相交的兄弟应被绘制");
         assert_eq!(painter.primitives().fills[0].color, Color::rgb(255, 0, 0));
     }
+
+    // ── 边界条件测试：overflow + dirty rect 交互、HSLA 极值、零宽度文本、多层裁剪 ──
+
+    /// 测试 paint_in_rect 中 overflow:hidden 父节点与脏区域部分重叠时子节点被裁剪。
+    ///
+    /// 父节点（overflow:hidden）位于 (0,0) 大小 200x200，内容区域 200x200。
+    /// 子节点位于 (140,140) 大小 200x200，超出父内容区域。
+    /// 脏区域为 (0,0,200,200) 完全覆盖父节点，与子节点有交集。
+    /// 子节点填充被 overflow:hidden 裁剪到父内容区域 (0,0,200,200)，
+    /// 裁剪后子节点可见区域为 (140,140) 大小 60x60（200-140）。
+    #[test]
+    fn test_paint_in_rect_overflow_hidden_clips_child_partially_intersecting() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // 子节点从 (140,140) 开始 200x200，右下角超出父内容区域
+        let child_box = make_box(Some(child), 140.0, 140.0, 200.0, 200.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 200.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 200.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        // 脏区域覆盖父节点 (0,0,200,200)
+        // 子节点绝对坐标 (140,140,200,200) → node_right=340, node_bottom=340
+        // 140 < dirty_right(200) 且 140 < dirty_bottom(200) → 不被剔除
+        // 子节点进入绘制流程，overflow:hidden 裁剪到父内容 (0,0,200,200)
+        // 裁剪后：origin=(140,140), size=(60,60)（200-140=60）
+        let dirty_rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&parent_box, &styles, &dirty_rect, None);
+
+        assert!(!painter.primitives().fills.is_empty(), "应产生子节点填充");
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.origin.x, 140.0, "子节点裁剪后 x 应为 140");
+        assert_eq!(fill.rect.origin.y, 140.0, "子节点裁剪后 y 应为 140");
+        assert_eq!(fill.rect.size.width, 60.0, "子节点宽度应被裁剪到 60（200-140）");
+        assert_eq!(fill.rect.size.height, 60.0, "子节点高度应被裁剪到 60（200-140）");
+    }
+
+    /// 测试 HSLA 零饱和度零亮度（纯黑）和零饱和度满亮度（纯白）。
+    ///
+    /// hsla(0, 0, 0, 1.0) → s=0, l=0 → c=0, m=0 → RGB(0,0,0) 纯黑
+    /// hsla(0, 0, 100, 1.0) → s=0, l=1 → c=0, m=1 → RGB(255,255,255) 纯白
+    #[test]
+    fn test_hsla_zero_saturation_and_lightness() {
+        // 纯黑：饱和度 0，亮度 0
+        let black = hsla_to_rgba(0.0, 0.0, 0.0, 1.0);
+        assert_eq!(black.r, 0, "HSLA 黑色 R 应为 0");
+        assert_eq!(black.g, 0, "HSLA 黑色 G 应为 0");
+        assert_eq!(black.b, 0, "HSLA 黑色 B 应为 0");
+        assert_eq!(black.a, 255, "HSLA 黑色 A 应为 255");
+
+        // 纯白：饱和度 0，亮度 100
+        let white = hsla_to_rgba(0.0, 0.0, 100.0, 1.0);
+        assert_eq!(white.r, 255, "HSLA 白色 R 应为 255");
+        assert_eq!(white.g, 255, "HSLA 白色 G 应为 255");
+        assert_eq!(white.b, 255, "HSLA 白色 B 应为 255");
+        assert_eq!(white.a, 255, "HSLA 白色 A 应为 255");
+
+        // 验证通过 ColorValue::Hsla 间接调用也正确
+        let black_cv = color_value_to_render(&ColorValue::Hsla(0.0, 0.0, 0.0, 1.0));
+        assert_eq!(black_cv.r, 0);
+        assert_eq!(black_cv.g, 0);
+        assert_eq!(black_cv.b, 0);
+
+        let white_cv = color_value_to_render(&ColorValue::Hsla(0.0, 0.0, 100.0, 1.0));
+        assert_eq!(white_cv.r, 255);
+        assert_eq!(white_cv.g, 255);
+        assert_eq!(white_cv.b, 255);
+    }
+
+    /// 测试 width=0 的 LayoutBox 带文本内容不 panic。
+    ///
+    /// 当布局盒宽度为零时，paint_text 应正常返回而不崩溃。
+    /// 零宽度容器的 InlineFormattingContext 应安全处理，
+    /// 退化为 fallback glyph 或直接返回。
+    #[test]
+    fn test_paint_text_zero_width_no_panic() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        // 零宽度布局盒，但带有文本样式
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 10.0,
+            y: 20.0,
+            width: 0.0,
+            height: 50.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 0.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        styles.insert(elem, style);
+
+        // 调用 paint 不应 panic
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // 零宽度不应产生有效的 glyph（content_width=0 可能导致问题）
+        // 关键是整个过程不 panic
+        let prims = painter.primitives();
+        // 可能产生 0 个 glyph（因为容器宽度为 0）或 1 个 fallback glyph
+        assert!(
+            prims.glyphs.len() <= 1,
+            "零宽度容器应产生 0 或 1 个 glyph，实际 {}",
+            prims.glyphs.len()
+        );
+
+        // 也测试通过 paint_text 直接调用不 panic
+        let mut painter2 = Painter::new();
+        painter2.paint_text(&layout, 10.0, 20.0, &styles[&elem], None);
+        // 不 panic 即通过
+    }
+
+    /// 测试三层 overflow:hidden 嵌套裁剪：最内层子节点被所有祖先裁剪。
+    ///
+    /// 结构：outer(overflow:hidden, 80x80) > middle(overflow:hidden, 50x50) > inner(overflow:hidden, 30x30) > child(200x200)
+    /// child(200x200) 被 inner 裁剪到 30x30，
+    /// inner 的结果(30x30) 在 middle 内不需要进一步裁剪，
+    /// middle 的结果在 outer 内也不需要进一步裁剪。
+    /// 最终 child 填充应为 30x30。
+    #[test]
+    fn test_multiple_overflow_hidden_nested() {
+        let mut doc = zero_dom::Document::new();
+        let outer = doc.create_element("div");
+        let middle = doc.create_element("div");
+        let inner = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // child: 200x200 远超所有祖先
+        let child_box = make_box(Some(child), 0.0, 0.0, 200.0, 200.0);
+        // inner: overflow:hidden, 30x30 内容区域
+        let inner_box = LayoutBox {
+            node_id: Some(inner),
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 30.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 30.0,
+            content_height: 30.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+        // middle: overflow:hidden, 50x50 内容区域
+        let middle_box = LayoutBox {
+            node_id: Some(middle),
+            x: 0.0,
+            y: 0.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![inner_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+        // outer: overflow:hidden, 80x80 内容区域
+        let outer_box = LayoutBox {
+            node_id: Some(outer),
+            x: 0.0,
+            y: 0.0,
+            width: 80.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 80.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![middle_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&outer_box, &styles, None);
+
+        // child(200x200) → inner 裁剪到 30x30
+        // inner 的裁剪结果(30x30) 在 middle(50x50) 内 → 不进一步裁剪
+        // middle 的裁剪结果在 outer(80x80) 内 → 不进一步裁剪
+        // 最终 child 填充应为 30x30
+        assert_eq!(
+            painter.primitives().fills.len(),
+            1,
+            "三层嵌套 overflow:hidden 应产生 1 个子节点填充"
+        );
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.rect.size.width, 30.0, "child 应被 inner 裁剪到 30 宽");
+        assert_eq!(fill.rect.size.height, 30.0, "child 应被 inner 裁剪到 30 高");
+    }
 }

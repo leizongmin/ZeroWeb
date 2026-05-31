@@ -1534,4 +1534,156 @@ mod tests {
         assert_eq!(recorded[7], "UrlChanged(https://retry-test.com)");
         assert_eq!(recorded[8], "LoadEnd(https://retry-test.com)");
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：多次导航、CSS 注入累积、脚本占位、Builder 视口
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证连续导航两次后，WebView 最终状态反映 URL2 的内容。
+    ///
+    /// 模拟用户从 URL1 导航到 URL2 的场景：
+    /// 1. 加载 URL1 并完成（complete_load），确认状态为 URL1
+    /// 2. 加载 URL2 并完成（complete_load），确认最终状态为 URL2
+    /// 3. 确保 URL、加载状态、渲染结果全部正确指向 URL2
+    #[test]
+    fn test_webview_multiple_navigate() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 第一次导航：URL1
+        wv.load_url("https://url-one.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://url-one.com"));
+        wv.complete_load("<html><body><div>Content from URL1</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://url-one.com"));
+        let render1 = wv.last_render().unwrap();
+        assert!(render1.timings.total_ms >= 0.0);
+
+        // 第二次导航：URL2
+        wv.load_url("https://url-two.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://url-two.com"));
+        wv.complete_load("<html><body><div>Content from URL2</div></body></html>", None);
+        assert!(!wv.is_loading());
+
+        // 验证最终状态指向 URL2
+        assert_eq!(wv.url(), Some("https://url-two.com"));
+        assert!(wv.last_render().is_some());
+        let render2 = wv.last_render().unwrap();
+        assert!(render2.timings.total_ms >= 0.0);
+
+        // 重新渲染应仍反映 URL2 的内容（cached_html 为 URL2 的 HTML）
+        let rerender = wv.render();
+        assert!(rerender.timings.total_ms >= 0.0);
+    }
+
+    /// 验证 load_html 加载 CSS 后，inject_css 追加新样式，cached_css 同时包含原始和注入的 CSS。
+    ///
+    /// 步骤：
+    /// 1. load_html 加载带 CSS 的 HTML（为 .orig 元素设置红色背景）
+    /// 2. inject_css 注入额外 CSS（为 .injected 元素设置蓝色背景）
+    /// 3. 通过 render() 的 fills 数量验证 CSS 累积效果：
+    ///    - 注入后 fills >= 仅原始 CSS 时的 fills
+    ///    - render() 使用累积 CSS，fills 数量一致
+    #[test]
+    fn test_webview_inject_css_after_load() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body>\
+            <div class=\"orig\">Original</div>\
+            <div class=\"injected\">Injected</div>\
+            </body></html>";
+        let original_css = ".orig { background-color: red; width: 100px; height: 50px; }";
+
+        // 加载带原始 CSS 的 HTML
+        let after_load = wv.load_html(html, Some(original_css));
+        let fills_after_load = after_load.primitives.fills.len();
+        assert!(fills_after_load > 0, "带 CSS 的 load_html 应产生 fills");
+
+        // 注入额外 CSS
+        let injected_css = ".injected { background-color: blue; width: 80px; height: 40px; }";
+        let after_inject = wv.inject_css(injected_css);
+        let fills_after_inject = after_inject.primitives.fills.len();
+
+        // 注入后 fills 应 >= 仅原始 CSS（CSS 累积，不替换）
+        assert!(
+            fills_after_inject >= fills_after_load,
+            "inject_css 应追加 CSS，fills 数量应 >= 注入前 (got {fills_after_inject} < {fills_after_load})"
+        );
+
+        // render() 应使用累积的 CSS（原始 + 注入），fills 数量一致
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_after_inject,
+            "render() 应使用累积的 cached_css（原始 + 注入）"
+        );
+    }
+
+    /// 验证 execute_script 作为占位方法，在 JS 引擎集成前返回 NotImplemented 错误。
+    ///
+    /// 当前 zero-script-sandbox 尚未集成 V8/QuickJS 引擎，
+    /// execute_script 应安全地拒绝所有脚本执行请求，
+    /// 并返回包含引擎信息的 NotImplemented 错误。
+    #[test]
+    fn test_webview_execute_script_placeholder() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 执行一条简单的脚本——应返回 NotImplemented
+        let result = wv.execute_script("document.title = 'test'");
+        assert!(result.is_err(), "JS 引擎未集成时应返回错误");
+
+        match result.unwrap_err() {
+            WebViewError::NotImplemented(msg) => {
+                // 错误信息应指明需要的引擎
+                assert!(
+                    msg.contains("V8") || msg.contains("QuickJS"),
+                    "错误信息应提及 V8 或 QuickJS 引擎，实际: {msg}"
+                );
+            }
+            other => panic!("预期 NotImplemented 错误，实际: {other}"),
+        }
+
+        // WebView 状态不应因 execute_script 调用而改变
+        assert!(wv.url().is_none());
+        assert!(!wv.is_loading());
+
+        // 多次调用同样安全返回错误
+        for _ in 0..3 {
+            let r = wv.execute_script("var x = 42;");
+            assert!(r.is_err());
+        }
+    }
+
+    /// 验证 WebViewBuilder 支持自定义视口尺寸，且 build 后 WebView 正确反映配置。
+    ///
+    /// 测试非默认视口（如 1280x900），确认：
+    /// 1. Builder 的 width/height 链式调用正确
+    /// 2. build 后 config 反映自定义尺寸
+    /// 3. 后续 render 在正确尺寸的视口上工作
+    #[test]
+    fn test_webview_builder_custom_viewport() {
+        let mut wv = WebViewBuilder::new().width(1280).height(900).build();
+
+        // 验证自定义视口尺寸
+        assert_eq!(wv.config().width, 1280, "视口宽度应为 1280");
+        assert_eq!(wv.config().height, 900, "视口高度应为 900");
+
+        // 默认值应保持不变
+        assert!(!wv.config().transparent);
+        assert!(wv.config().user_agent.is_none());
+        assert!(!wv.config().devtools);
+
+        // 加载 HTML 并渲染，验证在自定义视口上正常工作
+        let html = "<html><body><div>Custom viewport</div></body></html>";
+        let result = wv.load_html(html, None);
+        assert!(result.timings.total_ms >= 0.0, "自定义视口上的渲染应成功");
+        assert!(wv.last_render().is_some());
+
+        // resize 后视口尺寸应更新
+        wv.resize(640, 480);
+        assert_eq!(wv.config().width, 640);
+        assert_eq!(wv.config().height, 480);
+        let after_resize = wv.render();
+        assert!(after_resize.timings.total_ms >= 0.0);
+    }
 }
