@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4563 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4619 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4563 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4619 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -73,7 +73,24 @@
 
 ## 最近完成的改进
 
-### -34. CSS background-size/attachment + 6 crate 边界测试 + 54 个测试（本轮，4563 测试）
+### -35. CSS background-clip/origin + 5 集成测试 + 6 crate 边界测试 + 56 个测试（本轮，4619 测试）
+
+新增 2 个 CSS 背景属性、5 个跨 crate 集成测试、6 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **background-clip**：border-box/padding-box/content-box/text；**background-origin**：padding-box/border-box/content-box | 6 |
+| style-system | **2 属性管线集成**（全部非继承） | 15 |
+| integration | **background-size/background-attachment/background-clip/background-origin/accent-color 管线集成** | 5 |
+| security | CSP/CORS/sandbox 边界 | 5 |
+| storage | IndexedDB/Cache API 边界 | 5 |
+| net | URL/请求/Cookie 边界 | 5 |
+| host-runtime | 窗口/事件边界 | 5 |
+| render-foundation | 渲染/图像缓存/字体边界 | 5 |
+| protocol | IPC 序列化边界 | 5 |
+Total: 4563 → 4619 (+56 tests)
+
+### -34. CSS background-size/attachment + 6 crate 边界测试 + 54 个测试（前轮，4563 测试）
 
 新增 2 个 CSS 背景属性、6 个 crate 边界条件测试：
 
