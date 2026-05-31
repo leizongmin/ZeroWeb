@@ -2811,4 +2811,147 @@ mod tests {
         let rb = inst_b.call("inc", &[]).expect("B inc 1");
         assert_eq!(rb[0], WasmValue::I32(1), "实例 B 应从 0 开始独立计数");
     }
+
+    // =======================================================================
+    // 新增测试：边界条件测试
+    // =======================================================================
+
+    /// 测试 WASM 内存写入后立即覆盖同一区域，验证后续读回的是最新写入的数据。
+    #[test]
+    fn test_wasm_memory_read_write() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 先写入一组数据
+        instance.write_memory("mem", 0, b"AAAA").expect("write first");
+        let data = instance.read_memory("mem", 0, 4).expect("read first");
+        assert_eq!(&data, b"AAAA", "initial write should be AAAA");
+
+        // 覆盖同一区域
+        instance.write_memory("mem", 0, b"BBBB").expect("write overwrite");
+        let data = instance.read_memory("mem", 0, 4).expect("read overwrite");
+        assert_eq!(&data, b"BBBB", "overwritten data should be BBBB");
+
+        // 确认非覆盖区域不受影响
+        instance.write_memory("mem", 100, b"CCCC").expect("write offset");
+        let data = instance.read_memory("mem", 100, 4).expect("read offset");
+        assert_eq!(&data, b"CCCC", "offset write should be CCCC");
+        // 原区域仍是 BBBB
+        let data = instance.read_memory("mem", 0, 4).expect("read original");
+        assert_eq!(&data, b"BBBB", "original area should still be BBBB");
+    }
+
+    /// 编译一个包含 2 个导出函数的 WASM 模块，分别调用并验证结果。
+    #[test]
+    fn test_wasm_multiple_functions() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "square") (param i32) (result i32)
+                    local.get 0 local.get 0 i32.mul)
+                (func (export "negate") (param i32) (result i32)
+                    i32.const 0 local.get 0 i32.sub)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 调用 square 函数
+        let r1 = instance.call("square", &[WasmValue::I32(7)]).expect("call square");
+        assert_eq!(r1[0], WasmValue::I32(49), "7 * 7 should be 49");
+
+        // 调用 negate 函数
+        let r2 = instance.call("negate", &[WasmValue::I32(15)]).expect("call negate");
+        assert_eq!(r2[0], WasmValue::I32(-15), "negate(15) should be -15");
+    }
+
+    /// 创建启用燃料计量的沙箱，执行简单函数后验证燃料被消耗且剩余燃料减少。
+    #[test]
+    fn test_wasm_fuel_consumption_simple() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "double") (param i32) (result i32)
+                    local.get 0 local.get 0 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 设置燃料
+        instance.set_fuel(1000).expect("set_fuel");
+        let fuel_before = instance.get_fuel().expect("get_fuel before");
+        assert_eq!(fuel_before, 1000, "fuel should be 1000 after set");
+
+        // 执行函数
+        let r = instance.call("double", &[WasmValue::I32(21)]).expect("call double");
+        assert_eq!(r[0], WasmValue::I32(42), "double(21) should be 42");
+
+        // 验证燃料被消耗
+        let fuel_after = instance.get_fuel().expect("get_fuel after");
+        assert!(
+            fuel_after < fuel_before,
+            "fuel should decrease after call, before: {fuel_before}, after: {fuel_after}"
+        );
+        assert!(fuel_after > 0, "remaining fuel should still be positive");
+    }
+
+    /// 编译 WASM 模块导出全局变量，通过 get_global_export 读取值并验证。
+    #[test]
+    fn test_wasm_global_get() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global (export "g_i32") i32 (i32.const 12345))
+                (global (export "g_i64") i64 (i64.const -1))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let g_i32 = instance.get_global_export("g_i32").expect("read g_i32");
+        assert_eq!(g_i32, WasmValue::I32(12345), "global g_i32 should be i32(12345)");
+
+        let g_i64 = instance.get_global_export("g_i64").expect("read g_i64");
+        assert_eq!(g_i64, WasmValue::I64(-1), "global g_i64 should be i64(-1)");
+
+        // 不存在的全局导出应返回 None
+        assert!(
+            instance.get_global_export("nonexistent").is_none(),
+            "nonexistent global should return None"
+        );
+    }
+
+    /// 尝试编译无效的 WASM 字节，验证返回错误而非 panic。
+    #[test]
+    fn test_wasm_error_on_invalid_module() {
+        let sandbox = WasmSandbox::new();
+
+        // 完全无效的字节序列
+        let result = sandbox.compile(&[0xFF, 0xFE, 0xFD, 0xFC]);
+        assert!(result.is_err(), "invalid bytes should fail to compile");
+        assert!(
+            matches!(result, Err(WasmError::InvalidBinary(_))),
+            "should return InvalidBinary error"
+        );
+
+        // 空输入
+        let result = sandbox.compile(&[]);
+        assert!(result.is_err(), "empty bytes should fail to compile");
+        assert!(
+            matches!(result, Err(WasmError::InvalidBinary(_))),
+            "should return InvalidBinary error"
+        );
+
+        // 合法魔数但内容损坏
+        let result = sandbox.compile(&[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF]);
+        assert!(result.is_err(), "corrupted module should fail to compile");
+    }
 }

@@ -3570,6 +3570,328 @@ mod tests {
         );
     }
 
+    // ── 边界条件测试（第三批）──
+
+    /// 测试 block 元素使用负 margin-top（Px(-10.0)），验证布局计算不 panic 且几何值合理。
+    #[test]
+    fn test_layout_negative_margin() {
+        let (mut doc, body) = make_doc_with_body();
+        let div1 = doc.create_element("div");
+        doc.append_child(body, div1).unwrap();
+        let div2 = doc.create_element("div");
+        doc.append_child(body, div2).unwrap();
+
+        let mut styles = HashMap::new();
+        styles.insert(div1, make_style_with_display(DisplayValue::Block, 200.0, 100.0));
+
+        let mut s2 = make_style_with_display(DisplayValue::Block, 200.0, 80.0);
+        s2.margin_top = LengthValue::Px(-10.0);
+        styles.insert(div2, s2);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
+        let b2 = find_child_by_node_id(&result.root, div2).expect("div2 found");
+
+        assert!(
+            b1.width.is_finite() && b1.width > 0.0,
+            "div1 width should be finite and positive"
+        );
+        assert!(
+            b2.width.is_finite() && b2.width > 0.0,
+            "div2 width should be finite and positive"
+        );
+        assert!(
+            b2.height.is_finite() && b2.height >= 0.0,
+            "div2 height should be finite and non-negative"
+        );
+
+        // negative margin-top should shift div2 upward relative to normal flow
+        let normal_y = b1.y + b1.height;
+        assert!(
+            b2.y < normal_y,
+            "div2.y ({}) should be less than normal flow position ({}) due to negative margin-top",
+            b2.y,
+            normal_y
+        );
+    }
+
+    /// 测试嵌套 flex 容器（flex 嵌套 flex），验证内层 flex 布局正确计算。
+    #[test]
+    fn test_layout_nested_flex() {
+        let (mut doc, body) = make_doc_with_body();
+        // outer flex container (row)
+        let outer = doc.create_element("div");
+        doc.append_child(body, outer).unwrap();
+        // inner flex container (also flex, column)
+        let inner = doc.create_element("div");
+        doc.append_child(outer, inner).unwrap();
+        // inner items
+        let inner_item1 = doc.create_element("span");
+        doc.append_child(inner, inner_item1).unwrap();
+        let inner_item2 = doc.create_element("span");
+        doc.append_child(inner, inner_item2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut outer_style = ComputedStyle::default();
+        outer_style.display = DisplayValue::Flex;
+        outer_style.flex_direction = FlexDirectionValue::Row;
+        outer_style.width = LengthValue::Px(400.0);
+        outer_style.height = LengthValue::Px(200.0);
+        styles.insert(outer, outer_style);
+
+        // inner is also a flex container (column)
+        let mut inner_style = ComputedStyle::default();
+        inner_style.display = DisplayValue::Flex;
+        inner_style.flex_direction = FlexDirectionValue::Column;
+        inner_style.width = LengthValue::Px(200.0);
+        inner_style.height = LengthValue::Px(200.0);
+        styles.insert(inner, inner_style);
+
+        for id in [inner_item1, inner_item2] {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(100.0);
+            s.height = LengthValue::Px(60.0);
+            styles.insert(id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let outer_box = find_child_by_node_id(&result.root, outer).expect("outer found");
+        let inner_box = find_child_by_node_id(&result.root, inner).expect("inner found");
+        let i1 = find_child_by_node_id(&result.root, inner_item1).expect("item1 found");
+        let i2 = find_child_by_node_id(&result.root, inner_item2).expect("item2 found");
+
+        assert!((outer_box.width - 400.0).abs() < 1.0, "outer width should be ~400");
+        assert!((inner_box.width - 200.0).abs() < 1.0, "inner width should be ~200");
+
+        // inner items should be vertically stacked (column)
+        assert!(i2.y > i1.y, "inner item2 should be below item1 in column flex");
+    }
+
+    /// 测试 relative 父容器内的 absolute 子元素，验证 absolute 子元素以父元素作为包含块。
+    #[test]
+    fn test_layout_absolute_in_relative() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // parent: relative positioned container
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(300.0);
+        parent_style.height = LengthValue::Px(200.0);
+        styles.insert(parent, parent_style);
+
+        // absolute child positioned relative to parent
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(30.0);
+        abs_style.left = LengthValue::Px(40.0);
+        abs_style.width = LengthValue::Px(100.0);
+        abs_style.height = LengthValue::Px(80.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child found");
+        assert!(abs_box.is_absolute, "child should be flagged as absolute");
+
+        // absolute child should use parent as containing block
+        assert!(
+            (abs_box.x - 40.0).abs() < 1.0,
+            "abs child x should be ~40, got {}",
+            abs_box.x
+        );
+        assert!(
+            (abs_box.y - 30.0).abs() < 1.0,
+            "abs child y should be ~30, got {}",
+            abs_box.y
+        );
+        assert_eq!(abs_box.width, 100.0);
+        assert_eq!(abs_box.height, 80.0);
+    }
+
+    /// 测试 overflow:hidden 容器包含超出边界的子元素，验证布局计算正常（裁剪在渲染层处理）。
+    #[test]
+    fn test_layout_overflow_hidden_truncation() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // container with overflow:hidden and fixed size
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.overflow_x = OverflowValue::Hidden;
+        container_style.overflow_y = OverflowValue::Hidden;
+        container_style.width = LengthValue::Px(100.0);
+        container_style.height = LengthValue::Px(100.0);
+        styles.insert(container, container_style);
+
+        // child exceeds container bounds
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(200.0);
+        child_style.height = LengthValue::Px(200.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let container_box = find_child_by_node_id(&result.root, container).expect("container found");
+        let child_box = find_child_by_node_id(&result.root, child).expect("child found");
+
+        // container size should remain fixed
+        assert!(
+            (container_box.width - 100.0).abs() < 1.0,
+            "container width should be ~100, got {}",
+            container_box.width
+        );
+        assert!(
+            (container_box.height - 100.0).abs() < 1.0,
+            "container height should be ~100, got {}",
+            container_box.height
+        );
+
+        // overflow flags should be set
+        assert_eq!(container_box.overflow_x, OverflowClip::Hidden);
+        assert_eq!(container_box.overflow_y, OverflowClip::Hidden);
+
+        // child retains its full size (clipping is at render level)
+        assert!(
+            (child_box.width - 200.0).abs() < 1.0,
+            "child width should still be ~200, got {}",
+            child_box.width
+        );
+        assert!(
+            (child_box.height - 200.0).abs() < 1.0,
+            "child height should still be ~200, got {}",
+            child_box.height
+        );
+    }
+
+    /// 测试 grid auto-placement：3 个子元素无显式 grid-area 赋值，验证自动放置分配位置。
+    #[test]
+    fn test_layout_grid_auto_placement() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..3 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+
+        // grid container with 2 columns, no explicit grid-area on children
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        grid_style.width = LengthValue::Px(200.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        // no grid-area assignments — auto-placement should assign positions
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+
+        // auto-placement: item0 and item1 should be in row 1, item2 wraps to row 2
+        assert!(
+            b1.x > b0.x,
+            "item1 (x={}) should be right of item0 (x={}) via auto-placement",
+            b1.x,
+            b0.x
+        );
+        assert!((b0.y - b1.y).abs() < 0.01, "item0 and item1 should be on the same row");
+        assert!(
+            b2.y > b0.y,
+            "item2 (y={}) should wrap to next row, below item0 (y={})",
+            b2.y,
+            b0.y
+        );
+
+        // all items should have finite positive widths
+        for (i, &id) in item_ids.iter().enumerate() {
+            let b = find_child_by_node_id(&result.root, id).unwrap();
+            assert!(
+                b.width.is_finite() && b.width > 0.0,
+                "item{} width should be finite and positive, got {}",
+                i,
+                b.width
+            );
+        }
+    }
+
+    /// 测试 block 元素 height:0px，验证产生高度为 0 的布局盒。
+    #[test]
+    fn test_layout_zero_height_block() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.display = DisplayValue::Block;
+        div_style.width = LengthValue::Px(200.0);
+        div_style.height = LengthValue::Px(0.0);
+        styles.insert(div, div_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let div_box = find_child_by_node_id(&result.root, div).expect("div found");
+
+        // height should be exactly 0
+        assert!(
+            (div_box.height - 0.0).abs() < 0.001,
+            "div height should be 0, got {}",
+            div_box.height
+        );
+
+        // width should still be correct
+        assert!(
+            (div_box.width - 200.0).abs() < 1.0,
+            "div width should be ~200, got {}",
+            div_box.width
+        );
+
+        // content height should also be 0
+        assert!(
+            div_box.content_height.abs() < 0.001,
+            "content_height should be 0, got {}",
+            div_box.content_height
+        );
+
+        // should not be NaN or negative
+        assert!(div_box.height.is_finite(), "height should be finite");
+        assert!(div_box.height >= 0.0, "height should be non-negative");
+    }
+
     /// flex-shrink 在空间不足时收缩子元素。
     #[test]
     fn test_flex_shrink_behavior() {
