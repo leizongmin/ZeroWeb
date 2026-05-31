@@ -82,7 +82,7 @@ impl Painter {
         let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
-            let hidden = style.visibility == VisibilityValue::Hidden;
+            let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
             if !hidden {
                 if style.background_color != ColorValue::Transparent {
@@ -152,7 +152,7 @@ impl Painter {
         let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
-            let hidden = style.visibility == VisibilityValue::Hidden;
+            let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
             if !hidden {
                 // 1. 背景色填充（根据 border-radius 生成圆角矩形图元）
@@ -3550,5 +3550,153 @@ mod tests {
         assert_eq!(named_color_to_render("nonexistent"), Color::rgb(0, 0, 0));
         assert_eq!(named_color_to_render("chartreuse"), Color::rgb(0, 0, 0));
         assert_eq!(named_color_to_render(""), Color::rgb(0, 0, 0));
+    }
+
+    /// 测试子元素 visibility:visible 覆盖父元素 visibility:hidden。
+    ///
+    /// 父元素设置为 visibility:hidden，子元素设置为 visibility:visible。
+    /// 父元素不应绘制自身背景，但子元素应正常绘制。
+    #[test]
+    fn test_painter_child_visible_overrides_parent_hidden() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 0.0, 0.0, 50.0, 20.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        parent_style.visibility = VisibilityValue::Hidden;
+        styles.insert(parent, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(100, 100, 255, 255);
+        child_style.visibility = VisibilityValue::Visible;
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles, None);
+
+        // 父元素 visibility:hidden → 不绘制自身背景
+        // 子元素 visibility:visible → 正常绘制
+        assert_eq!(painter.primitives().fills.len(), 1);
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(100, 100, 255));
+    }
+
+    /// 测试 LayoutBox 的 node_id=None 但传入 doc=Some 时退化为 fallback glyph。
+    ///
+    /// 当布局盒没有关联 DOM 节点（node_id=None），即使传入了 Document，
+    /// paint_text 也无法使用 InlineFormattingContext，应退化为 glyph_id=0 的占位 glyph。
+    #[test]
+    fn test_paint_text_doc_some_node_id_none_fallback() {
+        let doc = zero_dom::Document::new();
+
+        // node_id=None 的布局盒
+        let layout = make_box(None, 0.0, 0.0, 200.0, 30.0);
+
+        let style = ComputedStyle {
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            font_size: LengthValue::Px(16.0),
+            ..ComputedStyle::default()
+        };
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &style, Some(&doc));
+
+        // node_id=None → 无法使用 InlineFormattingContext → 走 fallback 路径
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+        let glyph = &painter.primitives().glyphs[0];
+        assert_eq!(glyph.glyph_id, 0, "fallback glyph 应为 glyph_id=0");
+        assert_eq!(glyph.font_size, 16.0);
+    }
+
+    /// 测试 visibility:collapse 在非表格元素上表现为 hidden。
+    ///
+    /// 根据 CSS 规范，visibility:collapse 在非表格行/列元素上
+    /// 应与 visibility:hidden 行为一致，元素不绘制但保留布局空间。
+    #[test]
+    fn test_painter_visibility_collapse_acts_as_hidden() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.visibility = VisibilityValue::Collapse;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // visibility:collapse 应阻止元素绘制（与 hidden 行为一致）
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "visibility:collapse 应阻止元素绘制"
+        );
+        assert!(
+            painter.primitives().glyphs.is_empty(),
+            "visibility:collapse 应阻止 glyph 生成"
+        );
+    }
+
+    /// 测试 paint_in_rect 对 visibility:hidden 的节点不生成任何图元。
+    ///
+    /// 增量绘制路径（paint_node_in_rect）同样应遵守 visibility 规则，
+    /// 隐藏元素不应产生任何填充或 glyph 图元。
+    #[test]
+    fn test_paint_in_rect_visibility_hidden_skips_node() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // 节点与脏区域相交
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.visibility = VisibilityValue::Hidden;
+        styles.insert(elem, style);
+
+        let dirty_rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
+
+        // visibility:hidden → 节点不应产生任何图元
+        assert!(
+            painter.primitives().is_empty(),
+            "visibility:hidden 在 paint_in_rect 中应跳过节点绘制"
+        );
     }
 }
