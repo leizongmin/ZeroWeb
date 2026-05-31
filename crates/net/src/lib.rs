@@ -485,4 +485,128 @@ mod tests {
         // content_type_mime 通过 trim() 去除尾部空格
         assert_eq!(resp.content_type_mime(), Some("application/json"));
     }
+
+    // ── 边界条件补充测试（5 个） ──
+
+    /// 测试 1xx 信息性状态码不属于任何分类（success/redirect/client_error/server_error）。
+    /// 100 Continue、101 Switching Protocols 等状态码在浏览器场景中较少直接处理，
+    /// 但确保分类方法对它们均返回 false 是正确的行为。
+    #[test]
+    fn test_1xx_status_code_belongs_to_no_category() {
+        let r100 = HttpResponse {
+            status_code: 100,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r101 = HttpResponse {
+            status_code: 101,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        let r199 = HttpResponse {
+            status_code: 199,
+            headers: vec![],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+
+        assert!(!r100.is_success(), "100 不应是 success");
+        assert!(!r100.is_redirect(), "100 不应是 redirect");
+        assert!(!r100.is_client_error(), "100 不应是 client_error");
+        assert!(!r100.is_server_error(), "100 不应是 server_error");
+
+        assert!(!r101.is_success(), "101 不应是 success");
+        assert!(!r101.is_redirect(), "101 不应是 redirect");
+        assert!(!r101.is_client_error(), "101 不应是 client_error");
+        assert!(!r101.is_server_error(), "101 不应是 server_error");
+
+        assert!(!r199.is_success(), "199 不应是 success");
+        assert!(!r199.is_redirect(), "199 不应是 redirect");
+        assert!(!r199.is_client_error(), "199 不应是 client_error");
+        assert!(!r199.is_server_error(), "199 不应是 server_error");
+    }
+
+    /// 测试 WebSocket 多条消息的 FIFO（先进先出）出队顺序。
+    /// 连续发送三条消息后依次 receive，验证返回顺序与发送顺序一致。
+    #[test]
+    fn test_websocket_message_fifo_order() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+        ws.connect();
+        ws.send("first").unwrap();
+        ws.send("second").unwrap();
+        ws.send("third").unwrap();
+        assert_eq!(ws.receive(), Some("first".to_string()), "第一条应为 first");
+        assert_eq!(ws.receive(), Some("second".to_string()), "第二条应为 second");
+        assert_eq!(ws.receive(), Some("third".to_string()), "第三条应为 third");
+        assert_eq!(ws.receive(), None, "队列清空后应返回 None");
+    }
+
+    /// 测试 NavigationHistory 中 replace_current 后在索引 0 的边界状态。
+    /// 只有一个条目时 replace_current 替换 URL 和标题，
+    /// 替换后 can_go_back 和 can_go_forward 仍应为 false。
+    #[test]
+    fn test_navigation_replace_only_entry_at_index_zero() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://original.com", Some("Original".into()));
+        assert_eq!(nav.len(), 1);
+        assert!(!nav.can_go_back());
+        assert!(!nav.can_go_forward());
+
+        nav.replace_current("http://replaced.com", Some("Replaced".into()));
+        assert_eq!(nav.len(), 1, "replace 不应改变长度");
+        assert_eq!(nav.current().unwrap().url, "http://replaced.com");
+        assert_eq!(nav.current().unwrap().title.as_deref(), Some("Replaced"));
+        assert!(!nav.can_go_back(), "单个条目替换后仍不应能后退");
+        assert!(!nav.can_go_forward(), "单个条目替换后仍不应能前进");
+    }
+
+    /// 测试 CookieStore 对同名但不同 domain 的 Cookie 独立存储。
+    /// 同名 Cookie 若 domain 不同应视为不同条目，不会互相替换。
+    #[test]
+    fn test_cookie_store_same_name_different_domain_stored_separately() {
+        let mut store = crate::CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("token=alpha; Domain=a.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("token=beta; Domain=b.com").unwrap());
+        assert_eq!(store.len(), 2, "同名不同 domain 的 cookie 应独立存储");
+
+        let url_a = parse_url("http://a.com/").unwrap();
+        let url_b = parse_url("http://b.com/").unwrap();
+        assert_eq!(store.get_for_url(&url_a)[0].value, "alpha", "a.com 应返回 alpha");
+        assert_eq!(store.get_for_url(&url_b)[0].value, "beta", "b.com 应返回 beta");
+    }
+
+    /// 测试 cookie_header_with_context 对 Secure+SameSite=None 的 Cookie
+    /// 在 HTTP URL 下的过滤行为：Secure 限制应优先于 SameSite 策略，
+    /// 即使 SameSite=None 允许跨站发送，Secure cookie 也不应通过 HTTP 发送。
+    #[test]
+    fn test_secure_samesite_none_cookie_blocked_on_http() {
+        let mut store = crate::CookieStore::new();
+        store.add(
+            CookieStore::parse_set_cookie("ad_tracker=id123; SameSite=None; Secure; Domain=ads.example.com").unwrap(),
+        );
+        assert_eq!(store.len(), 1);
+
+        // HTTP URL：Secure 限制优先于 SameSite=None 的宽松策略
+        let http_url = parse_url("http://ads.example.com/").unwrap();
+        let header =
+            store.cookie_header_with_context(&http_url, crate::cookie::RequestContext::CrossSiteSubresource, false);
+        assert!(
+            header.is_empty(),
+            "Secure+SameSite=None 的 cookie 不应通过 HTTP 发送，即使跨站上下文允许"
+        );
+
+        // HTTPS URL：应正常发送
+        let https_url = parse_url("https://ads.example.com/").unwrap();
+        let header =
+            store.cookie_header_with_context(&https_url, crate::cookie::RequestContext::CrossSiteSubresource, false);
+        assert!(
+            header.contains("ad_tracker=id123"),
+            "Secure+SameSite=None 的 cookie 应通过 HTTPS 在跨站子资源中发送"
+        );
+    }
 }

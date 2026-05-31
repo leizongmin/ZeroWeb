@@ -286,6 +286,74 @@ pub enum IsolationValue {
     Isolate,
 }
 
+/// CSS break-inside 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BreakInsideValue {
+    /// auto（默认值）。
+    Auto,
+    /// avoid。
+    Avoid,
+    /// avoid-page。
+    AvoidPage,
+    /// avoid-column。
+    AvoidColumn,
+}
+
+/// CSS break-before / break-after 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BreakValue {
+    /// auto（默认值）。
+    Auto,
+    /// avoid。
+    Avoid,
+    /// column。
+    Column,
+    /// page。
+    Page,
+    /// avoid-page。
+    AvoidPage,
+    /// avoid-column。
+    AvoidColumn,
+}
+
+/// CSS column-rule-width 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnRuleWidthComputedValue {
+    /// medium（默认值）。
+    Medium,
+    /// thin。
+    Thin,
+    /// thick。
+    Thick,
+    /// 长度值。
+    Length(LengthValue),
+}
+
+/// CSS column-rule-style 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnRuleStyleComputedValue {
+    /// none（默认值）。
+    None,
+    /// hidden。
+    Hidden,
+    /// dotted。
+    Dotted,
+    /// dashed。
+    Dashed,
+    /// solid。
+    Solid,
+    /// double。
+    Double,
+    /// groove。
+    Groove,
+    /// ridge。
+    Ridge,
+    /// inset。
+    Inset,
+    /// outset。
+    Outset,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -780,6 +848,16 @@ pub enum PropertyValue {
     ImageRendering(ImageRenderingValue),
     /// isolation 值。
     Isolation(IsolationValue),
+    /// break-inside 值。
+    BreakInside(BreakInsideValue),
+    /// break-before 值。
+    BreakBefore(BreakValue),
+    /// break-after 值。
+    BreakAfter(BreakValue),
+    /// column-rule-width 值。
+    ColumnRuleWidth(ColumnRuleWidthComputedValue),
+    /// column-rule-style 值。
+    ColumnRuleStyle(ColumnRuleStyleComputedValue),
     /// overscroll-behavior 值。
     OverscrollBehavior(OverscrollBehaviorValue),
     /// touch-action 值。
@@ -1223,6 +1301,20 @@ pub struct ComputedStyle {
     /// isolation 属性。
     pub isolation: IsolationValue,
 
+    // ── Break ──
+    /// break-inside 属性。
+    pub break_inside: BreakInsideValue,
+    /// break-before 属性。
+    pub break_before: BreakValue,
+    /// break-after 属性。
+    pub break_after: BreakValue,
+
+    // ── Column Rule ──
+    /// column-rule-width 属性。
+    pub column_rule_width: ColumnRuleWidthComputedValue,
+    /// column-rule-style 属性。
+    pub column_rule_style: ColumnRuleStyleComputedValue,
+
     // ── Interaction / Performance Hint ──
     /// overscroll-behavior-x 属性。
     pub overscroll_behavior_x: OverscrollBehaviorValue,
@@ -1458,6 +1550,15 @@ impl Default for ComputedStyle {
             image_rendering: ImageRenderingValue::Auto,
             isolation: IsolationValue::Auto,
 
+            // Break
+            break_inside: BreakInsideValue::Auto,
+            break_before: BreakValue::Auto,
+            break_after: BreakValue::Auto,
+
+            // Column Rule
+            column_rule_width: ColumnRuleWidthComputedValue::Medium,
+            column_rule_style: ColumnRuleStyleComputedValue::None,
+
             // Interaction / Performance Hint
             overscroll_behavior_x: OverscrollBehaviorValue::Auto,
             overscroll_behavior_y: OverscrollBehaviorValue::Auto,
@@ -1659,6 +1760,15 @@ impl PropertyRegistry {
             "image-rendering" => Some(ImageRendering(ImageRenderingValue::Auto)),
             "isolation" => Some(Isolation(IsolationValue::Auto)),
 
+            // Break
+            "break-inside" => Some(BreakInside(BreakInsideValue::Auto)),
+            "break-before" => Some(BreakBefore(BreakValue::Auto)),
+            "break-after" => Some(BreakAfter(BreakValue::Auto)),
+
+            // Column Rule
+            "column-rule-width" => Some(ColumnRuleWidth(ColumnRuleWidthComputedValue::Medium)),
+            "column-rule-style" => Some(ColumnRuleStyle(ColumnRuleStyleComputedValue::None)),
+
             // Interaction / Performance Hint
             "overscroll-behavior-x" | "overscroll-behavior-y" => {
                 Some(OverscrollBehavior(OverscrollBehaviorValue::Auto))
@@ -1857,6 +1967,11 @@ impl PropertyRegistry {
             "box-decoration-break",
             "image-rendering",
             "isolation",
+            "break-inside",
+            "break-before",
+            "break-after",
+            "column-rule-width",
+            "column-rule-style",
             "overscroll-behavior-x",
             "overscroll-behavior-y",
             "touch-action",
@@ -3371,6 +3486,73 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Break 属性 ──
+        "break-inside" => {
+            if let Some(v) = values::parse_break_inside(value) {
+                style.break_inside = match v {
+                    zero_css_parser::values::BreakInsideValue::Auto => BreakInsideValue::Auto,
+                    zero_css_parser::values::BreakInsideValue::Avoid => BreakInsideValue::Avoid,
+                    zero_css_parser::values::BreakInsideValue::AvoidPage => BreakInsideValue::AvoidPage,
+                    zero_css_parser::values::BreakInsideValue::AvoidColumn => BreakInsideValue::AvoidColumn,
+                };
+                return true;
+            }
+        }
+        "break-before" => {
+            if let Some(v) = values::parse_break_before(value) {
+                style.break_before = match v {
+                    zero_css_parser::values::BreakValue::Auto => BreakValue::Auto,
+                    zero_css_parser::values::BreakValue::Avoid => BreakValue::Avoid,
+                    zero_css_parser::values::BreakValue::Column => BreakValue::Column,
+                    zero_css_parser::values::BreakValue::Page => BreakValue::Page,
+                    zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
+                    zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                };
+                return true;
+            }
+        }
+        "break-after" => {
+            if let Some(v) = values::parse_break_after(value) {
+                style.break_after = match v {
+                    zero_css_parser::values::BreakValue::Auto => BreakValue::Auto,
+                    zero_css_parser::values::BreakValue::Avoid => BreakValue::Avoid,
+                    zero_css_parser::values::BreakValue::Column => BreakValue::Column,
+                    zero_css_parser::values::BreakValue::Page => BreakValue::Page,
+                    zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
+                    zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                };
+                return true;
+            }
+        }
+        // ── Column Rule 属性 ──
+        "column-rule-width" => {
+            if let Some(v) = values::parse_column_rule_width(value) {
+                style.column_rule_width = match v {
+                    zero_css_parser::values::ColumnRuleWidthValue::Medium => ColumnRuleWidthComputedValue::Medium,
+                    zero_css_parser::values::ColumnRuleWidthValue::Thin => ColumnRuleWidthComputedValue::Thin,
+                    zero_css_parser::values::ColumnRuleWidthValue::Thick => ColumnRuleWidthComputedValue::Thick,
+                    zero_css_parser::values::ColumnRuleWidthValue::Length(l) => ColumnRuleWidthComputedValue::Length(l),
+                };
+                return true;
+            }
+        }
+        "column-rule-style" => {
+            if let Some(v) = values::parse_column_rule_style(value) {
+                style.column_rule_style = match v {
+                    zero_css_parser::values::ColumnRuleStyleValue::None => ColumnRuleStyleComputedValue::None,
+                    zero_css_parser::values::ColumnRuleStyleValue::Hidden => ColumnRuleStyleComputedValue::Hidden,
+                    zero_css_parser::values::ColumnRuleStyleValue::Dotted => ColumnRuleStyleComputedValue::Dotted,
+                    zero_css_parser::values::ColumnRuleStyleValue::Dashed => ColumnRuleStyleComputedValue::Dashed,
+                    zero_css_parser::values::ColumnRuleStyleValue::Solid => ColumnRuleStyleComputedValue::Solid,
+                    zero_css_parser::values::ColumnRuleStyleValue::Double => ColumnRuleStyleComputedValue::Double,
+                    zero_css_parser::values::ColumnRuleStyleValue::Groove => ColumnRuleStyleComputedValue::Groove,
+                    zero_css_parser::values::ColumnRuleStyleValue::Ridge => ColumnRuleStyleComputedValue::Ridge,
+                    zero_css_parser::values::ColumnRuleStyleValue::Inset => ColumnRuleStyleComputedValue::Inset,
+                    zero_css_parser::values::ColumnRuleStyleValue::Outset => ColumnRuleStyleComputedValue::Outset,
+                };
+                return true;
+            }
+        }
         // ── Interaction / Performance Hint 属性 ──
         "overscroll-behavior-x" => {
             if let Some(v) = values::parse_overscroll_behavior(value) {
@@ -4272,6 +4454,28 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "isolation" => {
             style.isolation = default_style.isolation;
+            true
+        }
+        // Break
+        "break-inside" => {
+            style.break_inside = default_style.break_inside;
+            true
+        }
+        "break-before" => {
+            style.break_before = default_style.break_before;
+            true
+        }
+        "break-after" => {
+            style.break_after = default_style.break_after;
+            true
+        }
+        // Column Rule
+        "column-rule-width" => {
+            style.column_rule_width = default_style.column_rule_width;
+            true
+        }
+        "column-rule-style" => {
+            style.column_rule_style = default_style.column_rule_style;
             true
         }
         "overscroll-behavior-x" => {

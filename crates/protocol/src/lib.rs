@@ -3341,4 +3341,274 @@ mod tests {
         .expect("serialize");
         assert_ne!(bytes_some_empty, bytes_none, "Some(\"\") 和 None 的序列化结果应不同");
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  新增边界条件测试
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 IpcChannel trait 的对象安全性（object safety）。
+    /// 验证 `Box<dyn IpcChannel>` 可以正常使用 send/recv/try_recv/close 方法，
+    /// 确保 trait 定义满足动态派发要求。
+    #[test]
+    fn test_ipc_channel_trait_object_dynamic_dispatch() {
+        let mut ch: Box<dyn crate::IpcChannel> = Box::new(MockChannel::new());
+
+        // 通过 trait object 发送消息
+        ch.send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Heartbeat,
+        })
+        .expect("trait object send 应成功");
+        ch.send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::Ok,
+        })
+        .expect("trait object send 应成功");
+
+        // 通过 trait object 接收消息（FIFO 顺序）
+        let msg1 = ch.recv().expect("trait object recv 应成功");
+        assert_eq!(1, msg1.id);
+        assert!(matches!(msg1.kind, IpcMessageKind::Heartbeat));
+
+        let msg2 = ch.recv().expect("trait object recv 应成功");
+        assert_eq!(2, msg2.id);
+        assert!(matches!(msg2.kind, IpcMessageKind::Ok));
+
+        // 空通道 recv 应返回错误
+        assert!(ch.recv().is_err());
+
+        // 空通道 try_recv 应返回 Ok(None)
+        assert!(ch.try_recv().expect("try_recv").is_none());
+
+        // 关闭后操作应失败
+        ch.close();
+        assert!(
+            ch.send(IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::Ok
+            })
+            .is_err()
+        );
+        assert!(ch.recv().is_err());
+        assert!(ch.try_recv().is_err());
+    }
+
+    /// 测试 ProtocolError 的 std::error::Error trait 实现。
+    /// 验证 thiserror derive 生成的 source() 方法能够正确返回内部错误源，
+    /// 以及 Display 格式包含关键信息。
+    #[test]
+    fn test_protocol_error_std_error_integration() {
+        use std::error::Error;
+
+        let err = ProtocolError::Serialization("frame overflow".into());
+        // 验证 Display 输出
+        let display = format!("{err}");
+        assert!(display.contains("Serialization error"), "Display 应包含错误类型");
+        assert!(display.contains("frame overflow"), "Display 应包含错误详情");
+
+        // 验证 source() — thiserror 简单变体无内部 source，应返回 None
+        assert!(err.source().is_none(), "ProtocolError 无嵌套 source，应为 None");
+
+        // 验证 Debug 输出
+        let debug = format!("{err:?}");
+        assert!(debug.contains("Serialization"), "Debug 应包含变体名");
+
+        // 验证每种变体的 Display 格式
+        let channel_err = ProtocolError::Channel("pipe broken".into());
+        assert!(format!("{channel_err}").contains("Channel error"));
+
+        let process_err = ProtocolError::Process("spawn failed".into());
+        assert!(format!("{process_err}").contains("Process error"));
+
+        let deser_err = ProtocolError::Deserialization("unexpected EOF".into());
+        assert!(format!("{deser_err}").contains("Deserialization error"));
+    }
+
+    /// 测试 KeyboardEvent 中 key 和 code 字段包含控制字符时的序列化/反序列化。
+    /// 控制字符（null、tab、换行、回车）在 IPC 传输中不应被丢失或损坏。
+    #[test]
+    fn test_keyboard_event_control_characters_in_key_and_code() {
+        // key 包含 null、tab、换行、回车等控制字符
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: "a\tb\nc\rd\u{0000}e".into(),
+                code: "Key\u{0009}Code\u{000A}".into(),
+                ctrl: false,
+                shift: false,
+                alt: false,
+                meta: false,
+                event_type: KeyboardEventType::Down,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::KeyboardEvent(p) = out.kind {
+            assert_eq!("a\tb\nc\rd\u{0000}e", p.key, "含控制字符的 key 往返后应完全一致");
+            assert_eq!("Key\u{0009}Code\u{000A}", p.code, "含控制字符的 code 往返后应完全一致");
+        } else {
+            panic!("期望 KeyboardEvent");
+        }
+
+        // key 和 code 均为纯控制字符的极端情况
+        let msg2 = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: "\u{0000}\u{0001}\u{001F}".into(),
+                code: "\t\n\r".into(),
+                ctrl: true,
+                shift: true,
+                alt: true,
+                meta: true,
+                event_type: KeyboardEventType::Press,
+            }),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::KeyboardEvent(p) = out2.kind {
+            assert_eq!("\u{0000}\u{0001}\u{001F}", p.key);
+            assert_eq!("\t\n\r", p.code);
+            assert!(p.ctrl && p.shift && p.alt && p.meta);
+        } else {
+            panic!("期望 KeyboardEvent");
+        }
+    }
+
+    /// 测试反序列化错误恢复：无效数据反序列化失败后，
+    /// 紧接着对有效数据反序列化应不受影响。
+    /// 验证 deserialize 函数是无状态的，不会因前一次失败而污染后续调用。
+    #[test]
+    fn test_deserialization_error_recovery() {
+        // 1. 先反序列化一条有效消息
+        let valid_msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Heartbeat,
+        };
+        let valid_bytes = serialize(&valid_msg).expect("序列化应成功");
+        let out = deserialize(&valid_bytes).expect("有效数据反序列化应成功");
+        assert_eq!(42, out.id);
+
+        // 2. 用无效数据反序列化（应失败）
+        let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8];
+        assert!(deserialize(&garbage).is_err(), "无效数据应反序列化失败");
+
+        // 3. 紧接着再次反序列化有效数据（应成功，不受前一次失败影响）
+        let valid_msg2 = IpcMessage {
+            id: 99,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://recovery.test".into(),
+                referrer: Some("https://referrer.test".into()),
+            }),
+        };
+        let valid_bytes2 = serialize(&valid_msg2).expect("序列化应成功");
+        let out2 = deserialize(&valid_bytes2).expect("错误恢复后有效数据应能正确反序列化");
+        assert_eq!(99, out2.id);
+        if let IpcMessageKind::Navigate(p) = out2.kind {
+            assert_eq!("https://recovery.test", p.url);
+            assert_eq!(Some("https://referrer.test".into()), p.referrer);
+        } else {
+            panic!("期望 Navigate");
+        }
+
+        // 4. 连续多次无效数据后再验证有效数据
+        for _ in 0..5 {
+            let _ = deserialize(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        }
+        let valid_msg3 = IpcMessage {
+            id: u64::MAX,
+            kind: IpcMessageKind::Error("recovery test".into()),
+        };
+        let valid_bytes3 = serialize(&valid_msg3).expect("序列化应成功");
+        let out3 = deserialize(&valid_bytes3).expect("多次失败后应仍能反序列化有效数据");
+        assert_eq!(u64::MAX, out3.id);
+        if let IpcMessageKind::Error(e) = out3.kind {
+            assert_eq!("recovery test", e);
+        } else {
+            panic!("期望 Error");
+        }
+    }
+
+    /// 测试 FetchRequest 的 body 为恰好 1 字节的 Vec<u8> 时的序列化/反序列化。
+    /// 单字节 body 是 Option<Vec<u8>> 的最小非空边界，确保不会与 body=None 混淆。
+    #[test]
+    fn test_fetch_request_single_byte_body() {
+        // body = Some(vec![0x00]) — 最小非空 body，内容为零字节
+        let msg1 = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "POST".into(),
+                headers: vec![],
+                body: Some(vec![0x00]),
+            }),
+        };
+        let out1 = roundtrip(msg1);
+        if let IpcMessageKind::FetchRequest(p) = out1.kind {
+            assert_eq!(Some(vec![0x00]), p.body, "单字节零值 body 往返应一致");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // body = Some(vec![0xFF]) — 单字节最大值
+        let msg2 = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 2,
+                url: "https://example.com".into(),
+                method: "PUT".into(),
+                headers: vec![],
+                body: Some(vec![0xFF]),
+            }),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::FetchRequest(p) = out2.kind {
+            assert_eq!(Some(vec![0xFF]), p.body, "单字节 0xFF body 往返应一致");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // 对比：body = None 的序列化结果必须与 Some(vec![0x00]) 不同
+        let bytes_single = serialize(&IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 3,
+                url: "https://example.com".into(),
+                method: "POST".into(),
+                headers: vec![],
+                body: Some(vec![0x00]),
+            }),
+        })
+        .expect("serialize");
+        let bytes_none = serialize(&IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 3,
+                url: "https://example.com".into(),
+                method: "POST".into(),
+                headers: vec![],
+                body: None,
+            }),
+        })
+        .expect("serialize");
+        assert_ne!(
+            bytes_single, bytes_none,
+            "Some(vec![0x00]) 和 None 的序列化结果必须不同"
+        );
+
+        // 对比：FetchResponse 单字节 body 也应正确往返
+        let msg_resp = IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 4,
+                status_code: 200,
+                headers: vec![],
+                body: vec![0x42],
+            }),
+        };
+        let out_resp = roundtrip(msg_resp);
+        if let IpcMessageKind::FetchResponse(p) = out_resp.kind {
+            assert_eq!(vec![0x42], p.body, "FetchResponse 单字节 body 往返应一致");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
 }

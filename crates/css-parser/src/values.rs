@@ -2028,6 +2028,139 @@ pub fn parse_isolation(value: &str) -> Option<IsolationValue> {
     }
 }
 
+/// CSS break-inside 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BreakInsideValue {
+    /// auto。
+    Auto,
+    /// avoid。
+    Avoid,
+    /// avoid-page。
+    AvoidPage,
+    /// avoid-column。
+    AvoidColumn,
+}
+
+/// CSS break-before / break-after 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BreakValue {
+    /// auto。
+    Auto,
+    /// avoid。
+    Avoid,
+    /// column。
+    Column,
+    /// page。
+    Page,
+    /// avoid-page。
+    AvoidPage,
+    /// avoid-column。
+    AvoidColumn,
+}
+
+/// CSS column-rule-width 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnRuleWidthValue {
+    /// medium。
+    Medium,
+    /// thin。
+    Thin,
+    /// thick。
+    Thick,
+    /// 长度值。
+    Length(LengthValue),
+}
+
+/// CSS column-rule-style 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnRuleStyleValue {
+    /// none。
+    None,
+    /// hidden。
+    Hidden,
+    /// dotted。
+    Dotted,
+    /// dashed。
+    Dashed,
+    /// solid。
+    Solid,
+    /// double。
+    Double,
+    /// groove。
+    Groove,
+    /// ridge。
+    Ridge,
+    /// inset。
+    Inset,
+    /// outset。
+    Outset,
+}
+
+/// 解析 CSS break-inside 属性值。
+pub fn parse_break_inside(value: &str) -> Option<BreakInsideValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(BreakInsideValue::Auto),
+        "avoid" => Some(BreakInsideValue::Avoid),
+        "avoid-page" => Some(BreakInsideValue::AvoidPage),
+        "avoid-column" => Some(BreakInsideValue::AvoidColumn),
+        _ => None,
+    }
+}
+
+/// 解析 CSS break-before 属性值。
+pub fn parse_break_before(value: &str) -> Option<BreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(BreakValue::Auto),
+        "avoid" => Some(BreakValue::Avoid),
+        "column" => Some(BreakValue::Column),
+        "page" => Some(BreakValue::Page),
+        "avoid-page" => Some(BreakValue::AvoidPage),
+        "avoid-column" => Some(BreakValue::AvoidColumn),
+        _ => None,
+    }
+}
+
+/// 解析 CSS break-after 属性值。
+pub fn parse_break_after(value: &str) -> Option<BreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(BreakValue::Auto),
+        "avoid" => Some(BreakValue::Avoid),
+        "column" => Some(BreakValue::Column),
+        "page" => Some(BreakValue::Page),
+        "avoid-page" => Some(BreakValue::AvoidPage),
+        "avoid-column" => Some(BreakValue::AvoidColumn),
+        _ => None,
+    }
+}
+
+/// 解析 CSS column-rule-width 属性值。
+pub fn parse_column_rule_width(value: &str) -> Option<ColumnRuleWidthValue> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "medium" => Some(ColumnRuleWidthValue::Medium),
+        "thin" => Some(ColumnRuleWidthValue::Thin),
+        "thick" => Some(ColumnRuleWidthValue::Thick),
+        _ => parse_length(&v).map(ColumnRuleWidthValue::Length),
+    }
+}
+
+/// 解析 CSS column-rule-style 属性值。
+pub fn parse_column_rule_style(value: &str) -> Option<ColumnRuleStyleValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(ColumnRuleStyleValue::None),
+        "hidden" => Some(ColumnRuleStyleValue::Hidden),
+        "dotted" => Some(ColumnRuleStyleValue::Dotted),
+        "dashed" => Some(ColumnRuleStyleValue::Dashed),
+        "solid" => Some(ColumnRuleStyleValue::Solid),
+        "double" => Some(ColumnRuleStyleValue::Double),
+        "groove" => Some(ColumnRuleStyleValue::Groove),
+        "ridge" => Some(ColumnRuleStyleValue::Ridge),
+        "inset" => Some(ColumnRuleStyleValue::Inset),
+        "outset" => Some(ColumnRuleStyleValue::Outset),
+        _ => None,
+    }
+}
+
 /// CSS direction 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectionValue {
@@ -5493,5 +5626,117 @@ mod tests {
         assert_eq!(parse_var(""), None);
         // 缺少右括号应返回 None
         assert_eq!(parse_var("var(--color"), None);
+    }
+
+    // ── break-inside 测试 ──
+
+    #[test]
+    fn test_parse_break_inside_valid() {
+        assert_eq!(parse_break_inside("auto"), Some(BreakInsideValue::Auto));
+        assert_eq!(parse_break_inside("avoid"), Some(BreakInsideValue::Avoid));
+        assert_eq!(parse_break_inside("avoid-page"), Some(BreakInsideValue::AvoidPage));
+        assert_eq!(parse_break_inside("avoid-column"), Some(BreakInsideValue::AvoidColumn));
+    }
+
+    #[test]
+    fn test_parse_break_inside_case_insensitive() {
+        assert_eq!(parse_break_inside("AVOID"), Some(BreakInsideValue::Avoid));
+        assert_eq!(parse_break_inside("  Avoid-Page  "), Some(BreakInsideValue::AvoidPage));
+    }
+
+    #[test]
+    fn test_parse_break_inside_invalid() {
+        assert_eq!(parse_break_inside("column"), None);
+        assert_eq!(parse_break_inside("page"), None);
+        assert_eq!(parse_break_inside("invalid"), None);
+        assert_eq!(parse_break_inside(""), None);
+    }
+
+    // ── break-before / break-after 测试 ──
+
+    #[test]
+    fn test_parse_break_before_valid() {
+        assert_eq!(parse_break_before("auto"), Some(BreakValue::Auto));
+        assert_eq!(parse_break_before("avoid"), Some(BreakValue::Avoid));
+        assert_eq!(parse_break_before("column"), Some(BreakValue::Column));
+        assert_eq!(parse_break_before("page"), Some(BreakValue::Page));
+        assert_eq!(parse_break_before("avoid-page"), Some(BreakValue::AvoidPage));
+        assert_eq!(parse_break_before("avoid-column"), Some(BreakValue::AvoidColumn));
+    }
+
+    #[test]
+    fn test_parse_break_after_valid() {
+        assert_eq!(parse_break_after("auto"), Some(BreakValue::Auto));
+        assert_eq!(parse_break_after("avoid"), Some(BreakValue::Avoid));
+        assert_eq!(parse_break_after("column"), Some(BreakValue::Column));
+        assert_eq!(parse_break_after("page"), Some(BreakValue::Page));
+        assert_eq!(parse_break_after("avoid-page"), Some(BreakValue::AvoidPage));
+        assert_eq!(parse_break_after("avoid-column"), Some(BreakValue::AvoidColumn));
+    }
+
+    #[test]
+    fn test_parse_break_before_after_invalid() {
+        assert_eq!(parse_break_before("always"), None);
+        assert_eq!(parse_break_before("invalid"), None);
+        assert_eq!(parse_break_after("left"), None);
+        assert_eq!(parse_break_after(""), None);
+    }
+
+    // ── column-rule-width 测试 ──
+
+    #[test]
+    fn test_parse_column_rule_width_keywords() {
+        assert_eq!(parse_column_rule_width("medium"), Some(ColumnRuleWidthValue::Medium));
+        assert_eq!(parse_column_rule_width("thin"), Some(ColumnRuleWidthValue::Thin));
+        assert_eq!(parse_column_rule_width("thick"), Some(ColumnRuleWidthValue::Thick));
+    }
+
+    #[test]
+    fn test_parse_column_rule_width_length() {
+        assert_eq!(
+            parse_column_rule_width("2px"),
+            Some(ColumnRuleWidthValue::Length(LengthValue::Px(2.0)))
+        );
+        assert_eq!(
+            parse_column_rule_width("0.5em"),
+            Some(ColumnRuleWidthValue::Length(LengthValue::Em(0.5)))
+        );
+    }
+
+    #[test]
+    fn test_parse_column_rule_width_invalid() {
+        assert_eq!(parse_column_rule_width("invalid"), None);
+        assert_eq!(parse_column_rule_width(""), None);
+    }
+
+    // ── column-rule-style 测试 ──
+
+    #[test]
+    fn test_parse_column_rule_style_all_values() {
+        assert_eq!(parse_column_rule_style("none"), Some(ColumnRuleStyleValue::None));
+        assert_eq!(parse_column_rule_style("hidden"), Some(ColumnRuleStyleValue::Hidden));
+        assert_eq!(parse_column_rule_style("dotted"), Some(ColumnRuleStyleValue::Dotted));
+        assert_eq!(parse_column_rule_style("dashed"), Some(ColumnRuleStyleValue::Dashed));
+        assert_eq!(parse_column_rule_style("solid"), Some(ColumnRuleStyleValue::Solid));
+        assert_eq!(parse_column_rule_style("double"), Some(ColumnRuleStyleValue::Double));
+        assert_eq!(parse_column_rule_style("groove"), Some(ColumnRuleStyleValue::Groove));
+        assert_eq!(parse_column_rule_style("ridge"), Some(ColumnRuleStyleValue::Ridge));
+        assert_eq!(parse_column_rule_style("inset"), Some(ColumnRuleStyleValue::Inset));
+        assert_eq!(parse_column_rule_style("outset"), Some(ColumnRuleStyleValue::Outset));
+    }
+
+    #[test]
+    fn test_parse_column_rule_style_case_insensitive() {
+        assert_eq!(parse_column_rule_style("SOLID"), Some(ColumnRuleStyleValue::Solid));
+        assert_eq!(
+            parse_column_rule_style("  Dotted  "),
+            Some(ColumnRuleStyleValue::Dotted)
+        );
+    }
+
+    #[test]
+    fn test_parse_column_rule_style_invalid() {
+        assert_eq!(parse_column_rule_style("invalid"), None);
+        assert_eq!(parse_column_rule_style(""), None);
     }
 }

@@ -1601,4 +1601,139 @@ mod tests {
         assert_eq!(received[1], (1920, 1080), "最大化尺寸应为 1920x1080");
         assert_eq!(received[2], (800, 600), "恢复尺寸应为 800x600");
     }
+
+    /// 验证 WindowConfig::with_size 链式调用多次时，最后一次调用生效。
+    /// 模拟用户先设置 800x600 再覆盖为 1024x768，最终尺寸应为 1024x768。
+    #[test]
+    fn test_window_config_with_size_chained_overwrite() {
+        let config = WindowConfig::new("Overwrite").with_size(800, 600).with_size(1024, 768);
+        assert_eq!(config.width, 1024, "最终宽度应为 1024，后设置的值应覆盖前值");
+        assert_eq!(config.height, 768, "最终高度应为 768，后设置的值应覆盖前值");
+    }
+
+    /// 验证 GpuApp 分发 CloseRequested 事件时，回调同时接收到事件和窗口引用。
+    /// 由于测试环境未创建实际窗口，窗口引用应为 None。
+    #[test]
+    fn test_gpu_app_close_dispatch_with_window_ref() {
+        let mut received: Vec<(AppEvent, bool)> = Vec::new();
+        let mut callback = |e: AppEvent, w: Option<Arc<winit::window::Window>>| {
+            received.push((e, w.is_some()));
+        };
+        let mut app = make_gpu_app(&mut callback);
+        app.handle_window_event(winit::event::WindowEvent::CloseRequested, None);
+        assert_eq!(received.len(), 1, "应收到 1 个 CloseRequested 事件");
+        assert!(
+            matches!(received[0].0, AppEvent::CloseRequested),
+            "事件应为 CloseRequested"
+        );
+        assert!(!received[0].1, "未创建窗口时，窗口引用应为 None");
+    }
+
+    /// 验证通过 BasicApp 分发的触摸事件在 u64::MAX 极端 id 值下正确传递。
+    /// 模拟高 id 触摸点的 Started 和 Ended 阶段，确保 id 不被截断或溢出。
+    #[test]
+    fn test_basic_app_touch_max_id_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        // 按下阶段
+        app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            phase: winit::event::TouchPhase::Started,
+            location: winit::dpi::PhysicalPosition::new(50.0, 75.0),
+            id: u64::MAX,
+            force: None,
+        }));
+        // 释放阶段
+        app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            phase: winit::event::TouchPhase::Ended,
+            location: winit::dpi::PhysicalPosition::new(55.0, 80.0),
+            id: u64::MAX,
+            force: None,
+        }));
+
+        assert_eq!(received.len(), 2, "应收到 2 个 Touch 事件");
+
+        match &received[0] {
+            AppEvent::Touch(te) => {
+                assert_eq!(te.id, u64::MAX, "触摸点 id 应为 u64::MAX，不应被截断");
+                assert_eq!(te.phase, TouchPhase::Started);
+                assert!((te.x - 50.0).abs() < f64::EPSILON);
+                assert!((te.y - 75.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("第 1 个事件应为 Touch"),
+        }
+        match &received[1] {
+            AppEvent::Touch(te) => {
+                assert_eq!(te.id, u64::MAX, "释放事件的触摸点 id 应保持 u64::MAX");
+                assert_eq!(te.phase, TouchPhase::Ended);
+                assert!((te.x - 55.0).abs() < f64::EPSILON);
+                assert!((te.y - 80.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("第 2 个事件应为 Touch"),
+        }
+    }
+
+    /// 验证通过 BasicApp 分发的鼠标滚轮事件在 PixelDelta 极端 f64 值下正确传递。
+    /// 使用 f64::MAX 和 f64::MIN 模拟极端滚动增量，确保不丢失精度。
+    #[test]
+    fn test_basic_app_mouse_wheel_pixel_extreme_delta() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::MouseWheel {
+            device_id: winit::event::DeviceId::dummy(),
+            delta: winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(f64::MAX, f64::MIN)),
+            phase: winit::event::TouchPhase::Moved,
+        });
+
+        assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
+        match &received[0] {
+            AppEvent::MouseWheel { delta } => {
+                assert_eq!(
+                    *delta,
+                    MouseScrollDelta::PixelDelta(f64::MAX, f64::MIN),
+                    "极端 PixelDelta 值应精确传递"
+                );
+            }
+            _ => panic!("应为 MouseWheel 事件"),
+        }
+    }
+
+    /// 验证 BasicApp 对多种未处理窗口事件的静默忽略行为。
+    /// 这些事件不在 handle_window_event 的 match 分支中（落入 `_ => {}`），
+    /// 分发后回调不应收到任何事件，确保未处理事件不触发回调。
+    /// 忽略事件后，正常事件仍能正确分发，验证忽略不影响后续处理。
+    #[test]
+    fn test_basic_app_unhandled_events_silently_ignored() {
+        // 阶段 1：验证未处理事件不产生回调
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent| received.push(e);
+            let mut app = make_basic_app(&mut callback);
+
+            // 以下事件均不在 handle_window_event 的 match 分支中
+            app.handle_window_event(winit::event::WindowEvent::Destroyed);
+            app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
+            app.handle_window_event(winit::event::WindowEvent::Occluded(false));
+
+            assert!(received.is_empty(), "未处理的事件应被静默忽略，不应产生任何回调事件");
+        }
+
+        // 阶段 2：验证忽略事件后，正常事件仍能正确分发
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent| received.push(e);
+            let mut app = make_basic_app(&mut callback);
+
+            app.handle_window_event(winit::event::WindowEvent::Destroyed);
+            app.handle_window_event(winit::event::WindowEvent::Focused(true));
+
+            assert_eq!(received.len(), 1, "忽略未处理事件后，正常事件应能正确分发");
+            assert!(matches!(received[0], AppEvent::Focused), "应为 Focused 事件");
+        }
+    }
 }
