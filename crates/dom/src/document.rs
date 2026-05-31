@@ -1653,6 +1653,85 @@ impl Default for Document {
     }
 }
 
+// ── TreeWalker ──────────────────────────────────────────────────────
+
+/// DOM TreeWalker — 提供深度优先遍历 DOM 子树的能力。
+///
+/// 遵循 WHATWG DOM 规范中 `TreeWalker` 接口的核心语义。
+/// 使用 `NodeId` 和 `&Document` 进行遍历，与 crate 的 slotmap 架构一致。
+pub struct TreeWalker {
+    /// 遍历的根节点。
+    root: NodeId,
+    /// 当前节点位置。
+    current: NodeId,
+    /// 节点类型过滤位掩码（0xFFFFFFFF = 显示所有节点）。
+    #[expect(dead_code)]
+    what_to_show: u32,
+}
+
+impl TreeWalker {
+    /// 创建新的 TreeWalker。
+    pub fn new(root: NodeId, what_to_show: u32) -> Self {
+        let current = root;
+        Self {
+            root,
+            current,
+            what_to_show,
+        }
+    }
+
+    /// 移动到下一个节点（深度优先，文档顺序，前序遍历）。
+    ///
+    /// 遍历顺序：先尝试第一个子节点，然后下一个兄弟节点，
+    /// 最后向上回溯到父节点并尝试父节点的下一个兄弟节点。
+    /// 当到达根节点的父级时停止。
+    pub fn next_node(&mut self, doc: &Document) -> Option<NodeId> {
+        // 尝试第一个子节点
+        if let Some(child) = doc.first_child(self.current) {
+            self.current = child;
+            return Some(self.current);
+        }
+
+        // 尝试下一个兄弟节点，或向上回溯
+        let mut node = self.current;
+        loop {
+            if node == self.root {
+                return None;
+            }
+            if let Some(sibling) = doc.next_sibling(node) {
+                self.current = sibling;
+                return Some(self.current);
+            }
+            // 回溯到父节点继续查找
+            node = doc.parent_node(node)?;
+        }
+    }
+
+    /// 移动到当前节点的第一个子节点。
+    pub fn first_child(&mut self, doc: &Document) -> Option<NodeId> {
+        let child = doc.first_child(self.current)?;
+        self.current = child;
+        Some(self.current)
+    }
+
+    /// 移动到当前节点的下一个兄弟节点。
+    pub fn next_sibling(&mut self, doc: &Document) -> Option<NodeId> {
+        let sibling = doc.next_sibling(self.current)?;
+        self.current = sibling;
+        Some(self.current)
+    }
+
+    /// 获取当前节点。
+    pub fn current_node(&self) -> NodeId {
+        self.current
+    }
+
+    /// 获取根节点。
+    pub fn root(&self) -> NodeId {
+        self.root
+    }
+}
+
 // ── DomError ────────────────────────────────────────────────────────
 
 /// DOM 操作错误类型。
@@ -2160,5 +2239,127 @@ mod tests {
         assert!(results.contains(&container));
         assert!(results.contains(&svg_rect));
         assert!(results.contains(&xhtml_span));
+    }
+
+    // ── TreeWalker 测试 ──────────────────────────────────────────────
+
+    /// 测试 TreeWalker 遍历 3 层树的所有节点。
+    #[test]
+    fn test_tree_walker_traverse_all() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        let span = doc.create_element("span");
+        let p = doc.create_element("p");
+        let text = doc.create_text_node("hello");
+        doc.append_child(doc.root(), root).unwrap();
+        doc.append_child(root, span).unwrap();
+        doc.append_child(root, p).unwrap();
+        doc.append_child(span, text).unwrap();
+
+        let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+        assert_eq!(walker.current_node(), root);
+
+        let mut visited = vec![walker.current_node()];
+        while let Some(node) = walker.next_node(&doc) {
+            visited.push(node);
+        }
+
+        // root, span, text, p = 4 个节点
+        assert_eq!(visited.len(), 4);
+        assert_eq!(visited[0], root);
+        assert_eq!(visited[1], span);
+        assert_eq!(visited[2], text);
+        assert_eq!(visited[3], p);
+    }
+
+    /// 测试 TreeWalker first_child 返回正确的子节点。
+    #[test]
+    fn test_tree_walker_first_child() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        let span = doc.create_element("span");
+        let p = doc.create_element("p");
+        doc.append_child(root, span).unwrap();
+        doc.append_child(root, p).unwrap();
+
+        let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+        assert_eq!(walker.current_node(), root);
+
+        let child = walker.first_child(&doc);
+        assert_eq!(child, Some(span));
+        assert_eq!(walker.current_node(), span);
+    }
+
+    /// 测试 TreeWalker next_sibling 在兄弟节点间正确移动。
+    #[test]
+    fn test_tree_walker_next_sibling() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        let span = doc.create_element("span");
+        let p = doc.create_element("p");
+        doc.append_child(root, span).unwrap();
+        doc.append_child(root, p).unwrap();
+
+        let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+        // 先移到第一个子节点
+        walker.first_child(&doc);
+        assert_eq!(walker.current_node(), span);
+
+        // 移到下一个兄弟
+        let sibling = walker.next_sibling(&doc);
+        assert_eq!(sibling, Some(p));
+        assert_eq!(walker.current_node(), p);
+
+        // p 没有下一个兄弟
+        assert_eq!(walker.next_sibling(&doc), None);
+        assert_eq!(walker.current_node(), p);
+    }
+
+    /// 测试 TreeWalker 在单节点（无子节点）时 next_node 返回 None。
+    #[test]
+    fn test_tree_walker_empty_tree() {
+        let mut doc = Document::new();
+        let sole = doc.create_element("div");
+
+        let mut walker = TreeWalker::new(sole, 0xFFFFFFFF);
+        assert_eq!(walker.current_node(), sole);
+
+        // 没有子节点，没有兄弟，没有父节点 → next_node 应返回 None
+        assert_eq!(walker.next_node(&doc), None);
+        assert_eq!(walker.current_node(), sole);
+    }
+
+    /// 测试 TreeWalker current_node 在每步遍历后返回正确的节点。
+    #[test]
+    fn test_tree_walker_current_node() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        let a = doc.create_element("a");
+        let b = doc.create_text_node("text");
+        let c = doc.create_element("span");
+        doc.append_child(root, a).unwrap();
+        doc.append_child(a, b).unwrap();
+        doc.append_child(root, c).unwrap();
+
+        let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+
+        // 初始：root
+        assert_eq!(walker.current_node(), root);
+
+        // next_node → a（root 的第一个子节点）
+        walker.next_node(&doc);
+        assert_eq!(walker.current_node(), a);
+
+        // next_node → b（a 的第一个子节点）
+        walker.next_node(&doc);
+        assert_eq!(walker.current_node(), b);
+
+        // next_node → c（b 无子无兄弟，回溯到 a 再到 root，root 的下一个兄弟是 c）
+        walker.next_node(&doc);
+        assert_eq!(walker.current_node(), c);
+
+        // next_node → None（c 无子节点，回溯到 root 后无更多兄弟）
+        assert_eq!(walker.next_node(&doc), None);
+        assert_eq!(walker.current_node(), c);
     }
 }

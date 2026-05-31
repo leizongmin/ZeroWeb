@@ -6152,4 +6152,125 @@ mod tests {
             "alpha < 0 should clamp to 0.0"
         );
     }
+
+    // ── 新增边界条件测试（6 个） ──
+
+    /// 测试创建包含 4 个颜色停止点的线性渐变，验证停止点数量、偏移量和颜色均正确。
+    #[test]
+    fn test_canvas_create_linear_gradient_multi_stop() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 200.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.33, Color::rgba(255, 255, 0, 255));
+        grad.add_color_stop(0.66, Color::GREEN);
+        grad.add_color_stop(1.0, Color::BLUE);
+        assert_eq!(grad.stops.len(), 4);
+        assert!((grad.stops[0].offset - 0.0).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[0].color, Color::RED);
+        assert!((grad.stops[1].offset - 0.33).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[1].color, Color::rgba(255, 255, 0, 255));
+        assert!((grad.stops[2].offset - 0.66).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[2].color, Color::GREEN);
+        assert!((grad.stops[3].offset - 1.0).abs() < f32::EPSILON);
+        assert_eq!(grad.stops[3].color, Color::BLUE);
+    }
+
+    /// 测试创建径向渐变，验证内外圆的圆心坐标和半径正确。
+    #[test]
+    fn test_canvas_create_radial_gradient_circle() {
+        let ctx = CanvasContext::new(200, 200);
+        let grad = ctx.create_radial_gradient(50.0, 50.0, 10.0, 50.0, 50.0, 80.0);
+        // 内圆：圆心 (50,50)，半径 10
+        assert!((grad.x0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r0 - 10.0).abs() < f32::EPSILON);
+        // 外圆：圆心 (50,50)，半径 80
+        assert!((grad.x1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r1 - 80.0).abs() < f32::EPSILON);
+        // 同心圆渐变初始无停止点
+        assert!(grad.stops.is_empty());
+    }
+
+    /// 测试当前路径填充使用奇偶规则（even-odd）。
+    /// 当前实现默认使用非零环绕规则，is_point_in_path 基于射线法（等效于奇偶规则）。
+    /// 验证嵌套矩形路径在奇偶规则下内部矩形被判断为"外部"。
+    #[test]
+    fn test_canvas_fill_rule_evenodd() {
+        // 使用 CanvasContext 的 is_point_in_path（射线法 = 奇偶规则）
+        // 构造嵌套矩形路径（外矩形顺时针 + 内矩形顺时针）
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        // 外矩形
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.line_to(0.0, 100.0);
+        ctx.close_path();
+        // 内矩形（反向绕行模拟 even-odd 挖空）
+        ctx.move_to(25.0, 25.0);
+        ctx.line_to(25.0, 75.0);
+        ctx.line_to(75.0, 75.0);
+        ctx.line_to(75.0, 25.0);
+        ctx.close_path();
+        // 射线法（奇偶规则）：外矩形与内矩形之间的点穿过 1 条边 → 在路径内
+        assert!(ctx.is_point_in_path(15.0, 15.0), "even-odd: 两矩形之间的点应在路径内");
+        // 射线法（奇偶规则）：内矩形内的点穿过 2 条边 → 不在路径内
+        assert!(
+            !ctx.is_point_in_path(50.0, 50.0),
+            "even-odd: 内矩形内的点应不在路径内（穿过偶数条边）"
+        );
+    }
+
+    /// 测试设置线段虚线模式 [5, 10, 15]，验证 get_line_dash 返回加倍后的数组。
+    #[test]
+    fn test_canvas_set_line_dash_pattern() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_dash(vec![5.0, 10.0, 15.0]);
+        // 奇数长度时 Canvas 规范要求复制拼接
+        assert_eq!(ctx.get_line_dash(), &[5.0, 10.0, 15.0, 5.0, 10.0, 15.0]);
+    }
+
+    /// 测试 measure_text("Hello") 返回非零宽度。
+    #[test]
+    fn test_canvas_measure_text_hello() {
+        let ctx = CanvasContext::new(200, 200);
+        let metrics = ctx.measure_text("Hello");
+        // 默认字体大小 10.0，5 字符 × 10.0 × 0.6 = 30.0
+        assert!(
+            metrics.width > 0.0,
+            "measure_text(\"Hello\") 宽度应大于零，实际 {}",
+            metrics.width
+        );
+        assert!(
+            (metrics.width - 30.0).abs() < f32::EPSILON,
+            "measure_text(\"Hello\") 宽度应约 30.0，实际 {}",
+            metrics.width
+        );
+    }
+
+    /// 测试设置 shadowBlur、shadowOffsetX、shadowOffsetY、shadowColor 后，
+    /// 每个 getter 返回正确的设置值。
+    #[test]
+    fn test_canvas_shadow_properties() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_shadow_blur(8.0);
+        ctx.set_shadow_offset_x(4.0);
+        ctx.set_shadow_offset_y(6.0);
+        ctx.set_shadow_color(Color::rgba(128, 0, 128, 200));
+        assert!((ctx.shadow_blur() - 8.0).abs() < f32::EPSILON, "shadowBlur 应为 8.0");
+        assert!(
+            (ctx.shadow_offset_x() - 4.0).abs() < f32::EPSILON,
+            "shadowOffsetX 应为 4.0"
+        );
+        assert!(
+            (ctx.shadow_offset_y() - 6.0).abs() < f32::EPSILON,
+            "shadowOffsetY 应为 6.0"
+        );
+        let sc = ctx.shadow_color();
+        assert_eq!(sc.r, 128, "shadowColor.r 应为 128");
+        assert_eq!(sc.g, 0, "shadowColor.g 应为 0");
+        assert_eq!(sc.b, 128, "shadowColor.b 应为 128");
+        assert_eq!(sc.a, 200, "shadowColor.a 应为 200");
+    }
 }

@@ -150,6 +150,19 @@ pub enum TextOverflowValue {
     Ellipsis,
 }
 
+/// CSS word-break 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WordBreakValue {
+    /// normal。
+    Normal,
+    /// break-all。
+    BreakAll,
+    /// keep-all。
+    KeepAll,
+    /// break-word。
+    BreakWord,
+}
+
 /// CSS flex-basis 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlexBasisValue {
@@ -406,6 +419,8 @@ pub enum PropertyValue {
     ContainerName(Option<String>),
     /// vertical-align 值。
     VerticalAlign(VerticalAlignValue),
+    /// word-break 值。
+    WordBreak(WordBreakValue),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -540,6 +555,8 @@ pub struct ComputedStyle {
     pub text_overflow: TextOverflowValue,
     /// vertical-align 属性。
     pub vertical_align: VerticalAlignValue,
+    /// word-break 属性。
+    pub word_break: WordBreakValue,
 
     // ── Flexbox ──
     /// flex-direction 属性。
@@ -759,6 +776,7 @@ impl Default for ComputedStyle {
             white_space: WhiteSpaceValue::Normal,
             text_overflow: TextOverflowValue::Clip,
             vertical_align: VerticalAlignValue::Baseline,
+            word_break: WordBreakValue::Normal,
 
             // Flexbox
             flex_direction: FlexDirectionValue::Row,
@@ -915,6 +933,7 @@ impl PropertyRegistry {
             "white-space" => Some(WhiteSpace(WhiteSpaceValue::Normal)),
             "text-overflow" => Some(TextOverflow(TextOverflowValue::Clip)),
             "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
+            "word-break" => Some(WordBreak(WordBreakValue::Normal)),
 
             // Flexbox
             "flex-direction" => Some(FlexDirection(FlexDirectionValue::Row)),
@@ -1008,6 +1027,7 @@ impl PropertyRegistry {
                 | "letter-spacing"
                 | "word-spacing"
                 | "white-space"
+                | "word-break"
                 | "visibility"
                 | "cursor"
         )
@@ -1070,6 +1090,7 @@ impl PropertyRegistry {
             "white-space",
             "text-overflow",
             "vertical-align",
+            "word-break",
             "flex-direction",
             "flex-wrap",
             "justify-content",
@@ -1338,6 +1359,17 @@ pub fn parse_white_space(value: &str) -> Option<WhiteSpaceValue> {
         "nowrap" => Some(WhiteSpaceValue::Nowrap),
         "pre-wrap" => Some(WhiteSpaceValue::PreWrap),
         "pre-line" => Some(WhiteSpaceValue::PreLine),
+        _ => None,
+    }
+}
+
+/// 解析 CSS word-break 值。
+pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
+    match value.trim() {
+        "normal" => Some(WordBreakValue::Normal),
+        "break-all" => Some(WordBreakValue::BreakAll),
+        "keep-all" => Some(WordBreakValue::KeepAll),
+        "break-word" => Some(WordBreakValue::BreakWord),
         _ => None,
     }
 }
@@ -1860,6 +1892,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "white-space" => {
             if let Some(v) = parse_white_space(value) {
                 style.white_space = v;
+                return true;
+            }
+        }
+        "word-break" => {
+            if let Some(v) = parse_word_break(value) {
+                style.word_break = v;
                 return true;
             }
         }
@@ -2412,6 +2450,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.white_space = parent.white_space.clone();
             true
         }
+        "word-break" => {
+            child.word_break = parent.word_break.clone();
+            true
+        }
         "visibility" => {
             child.visibility = parent.visibility.clone();
             true
@@ -2658,6 +2700,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "white-space" => {
             style.white_space = default_style.white_space;
+            true
+        }
+        "word-break" => {
+            style.word_break = default_style.word_break;
             true
         }
         "text-overflow" => {
@@ -5188,5 +5234,76 @@ mod tests {
         // 子元素显式设置 cursor 后覆盖继承值
         assert!(apply_property_value(&mut child, "cursor", "text"));
         assert_eq!(child.cursor, CursorValue::Text);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // word-break 属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 apply_property_value 对 word-break: break-all
+    fn test_apply_word_break_break_all() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "word-break", "break-all"));
+        assert_eq!(style.word_break, WordBreakValue::BreakAll);
+
+        // 无效值返回 false
+        assert!(!apply_property_value(&mut style, "word-break", "invalid"));
+        assert_eq!(style.word_break, WordBreakValue::BreakAll);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 word-break: keep-all
+    fn test_apply_word_break_keep_all() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "word-break", "keep-all"));
+        assert_eq!(style.word_break, WordBreakValue::KeepAll);
+
+        // break-word
+        assert!(apply_property_value(&mut style, "word-break", "break-word"));
+        assert_eq!(style.word_break, WordBreakValue::BreakWord);
+
+        // normal
+        assert!(apply_property_value(&mut style, "word-break", "normal"));
+        assert_eq!(style.word_break, WordBreakValue::Normal);
+    }
+
+    #[test]
+    /// 测试 word-break 继承：父元素 break-all，子元素应继承
+    fn test_word_break_inheritance() {
+        let mut parent = ComputedStyle::default();
+        parent.word_break = WordBreakValue::BreakAll;
+
+        let mut child = ComputedStyle::default();
+        assert_eq!(child.word_break, WordBreakValue::Normal);
+
+        // word-break 是继承属性
+        assert!(inherit_property(&parent, &mut child, "word-break"));
+        assert_eq!(child.word_break, WordBreakValue::BreakAll);
+
+        // 子元素显式设置后覆盖继承值
+        assert!(apply_property_value(&mut child, "word-break", "keep-all"));
+        assert_eq!(child.word_break, WordBreakValue::KeepAll);
+    }
+
+    #[test]
+    /// 测试 word-break 默认值为 Normal
+    fn test_word_break_default_is_normal() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.word_break, WordBreakValue::Normal);
+
+        // 验证注册表初始值
+        assert!(PropertyRegistry::initial_value("word-break").is_some());
+        assert!(PropertyRegistry::is_inherited("word-break"));
+
+        // 验证 known_properties 包含
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"word-break"));
+
+        // 验证 apply_initial_value 重置
+        let mut style = ComputedStyle::default();
+        style.word_break = WordBreakValue::BreakAll;
+        assert!(apply_initial_value(&mut style, "word-break"));
+        assert_eq!(style.word_break, WordBreakValue::Normal);
     }
 }

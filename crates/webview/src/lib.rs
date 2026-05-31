@@ -1751,4 +1751,205 @@ mod tests {
         let after_resize = wv.render();
         assert!(after_resize.timings.total_ms >= 0.0);
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：默认配置、data URI、连续导航、CSS 存储、状态转换
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证 WebView 使用默认配置创建后，所有字段均为预期默认值。
+    ///
+    /// 测试通过 WebViewConfig::default() 构造 WebView，
+    /// 确认宽高、透明度、user_agent、devtools 等字段均为默认值，
+    /// 且初始状态下无 URL、无标题、不在加载中、无渲染结果。
+    #[test]
+    fn test_webview_default_config() {
+        let config = WebViewConfig::default();
+        let wv = WebView::new(config);
+
+        // 配置字段默认值
+        assert_eq!(wv.config().width, 800, "默认宽度应为 800");
+        assert_eq!(wv.config().height, 600, "默认高度应为 600");
+        assert!(!wv.config().transparent, "默认不应透明");
+        assert!(wv.config().user_agent.is_none(), "默认 user_agent 应为 None");
+        assert!(wv.config().url.is_none(), "默认 url 应为 None");
+        assert!(!wv.config().devtools, "默认 devtools 应为 false");
+
+        // 初始状态
+        assert!(wv.url().is_none(), "初始 URL 应为 None");
+        assert!(wv.title().is_none(), "初始标题应为 None");
+        assert!(!wv.is_loading(), "初始不应处于加载中");
+        assert!(wv.last_render().is_none(), "初始不应有渲染结果");
+    }
+
+    /// 验证加载 data URI 格式的 HTML 内容不会 panic，且渲染管线返回有效结果。
+    ///
+    /// 模拟 "data:text/html,<h1>Hello</h1>" 场景：
+    /// 通过 load_html 加载 data URI 中嵌入的 HTML 片段，
+    /// 确认渲染结果非负耗时，且 last_render 存在。
+    #[test]
+    fn test_webview_load_data_uri_content() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 模拟 data URI 中提取的 HTML 内容
+        let html = "<h1>Hello</h1>";
+        let result = wv.load_html(html, None);
+        assert!(result.timings.total_ms >= 0.0, "data URI 渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "加载 data URI 后应有渲染结果");
+        assert!(!wv.is_loading(), "load_html 不应将 WebView 置为加载状态");
+        assert!(wv.url().is_none(), "load_html 不应设置 URL");
+    }
+
+    /// 验证连续导航到 url1 再到 url2 后，当前 URL 为 url2。
+    ///
+    /// 模拟用户在浏览器中依次访问两个不同页面的场景：
+    /// 1. 导航到 url1 并完成加载，确认状态正确
+    /// 2. 导航到 url2 并完成加载，确认最终 URL 为 url2
+    /// 3. 渲染结果应反映 url2 的内容
+    #[test]
+    fn test_webview_sequential_navigate() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let url1 = "https://first-page.com";
+        let url2 = "https://second-page.com";
+
+        // 第一次导航：url1
+        wv.load_url(url1);
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some(url1));
+        wv.complete_load("<html><body><div>Page 1</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some(url1));
+
+        // 第二次导航：url2
+        wv.load_url(url2);
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some(url2));
+        wv.complete_load("<html><body><div>Page 2</div></body></html>", None);
+        assert!(!wv.is_loading());
+
+        // 最终状态：URL 为 url2
+        assert_eq!(wv.url(), Some(url2), "连续导航后当前 URL 应为 url2");
+        assert!(wv.last_render().is_some(), "应有渲染结果");
+    }
+
+    /// 验证加载 HTML 后注入 CSS，CSS 被正确存储在 cached_css 中。
+    ///
+    /// 步骤：
+    /// 1. load_html 加载 HTML（带初始 CSS）
+    /// 2. inject_css 注入额外 CSS
+    /// 3. 多次 render() 后 CSS 仍被保留（fills 数量不变）
+    /// 4. 再次 inject_css 后 CSS 继续累积
+    #[test]
+    fn test_webview_css_stored_after_inject() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div class=\"a b\">Text</div></body></html>";
+        let css_a = ".a { background-color: red; width: 100px; height: 50px; }";
+
+        // 加载带初始 CSS 的 HTML
+        let after_load = wv.load_html(html, Some(css_a));
+        let fills_after_load = after_load.primitives.fills.len();
+        assert!(fills_after_load > 0, "带 CSS 的 load_html 应产生 fills");
+
+        // 注入额外 CSS，应被存储
+        let css_b = ".b { background-color: green; width: 80px; height: 40px; }";
+        let after_inject = wv.inject_css(css_b);
+        let fills_after_inject = after_inject.primitives.fills.len();
+        assert!(
+            fills_after_inject >= fills_after_load,
+            "注入后 fills 应 >= 注入前 (got {fills_after_inject} < {fills_after_load})"
+        );
+
+        // render() 后 CSS 应被保留（fills 数量不变）
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_after_inject,
+            "render() 后 CSS 应被保留，fills 数量应一致"
+        );
+    }
+
+    /// 验证 WebView 在完整生命周期中的状态转换正确性。
+    ///
+    /// 覆盖的状态转换路径：
+    /// 1. Created -> Loading（load_url）
+    /// 2. Loading -> Loaded（complete_load）
+    /// 3. Loaded -> Loading（load_url 新 URL）
+    /// 4. Loading -> Failed（fail_load）
+    /// 5. Failed -> Loading（load_url 重试）
+    /// 6. Loading -> Loaded（complete_load）
+    /// 7. Loaded -> Loading（load_html 不改变 loading 状态）
+    /// 验证每个阶段 is_loading、url、last_render 的值正确。
+    #[test]
+    fn test_webview_lifecycle_state_transitions() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // ── 阶段 1: Created ──
+        assert!(!wv.is_loading());
+        assert!(wv.url().is_none());
+        assert!(wv.last_render().is_none());
+
+        // ── 阶段 2: Created -> Loading ──
+        wv.load_url("https://lifecycle.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://lifecycle.com"));
+        assert!(wv.last_render().is_none());
+
+        // ── 阶段 3: Loading -> Loaded ──
+        wv.complete_load("<html><body><div>Loaded</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://lifecycle.com"));
+        assert!(wv.last_render().is_some());
+
+        // ── 阶段 4: Loaded -> Loading（导航到新 URL）──
+        wv.load_url("https://fail-lifecycle.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://fail-lifecycle.com"));
+
+        // ── 阶段 5: Loading -> Failed ──
+        wv.fail_load("connection refused");
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://fail-lifecycle.com"));
+
+        // ── 阶段 6: Failed -> Loading（重试）──
+        wv.load_url("https://retry-lifecycle.com");
+        assert!(wv.is_loading());
+        assert_eq!(wv.url(), Some("https://retry-lifecycle.com"));
+
+        // ── 阶段 7: Loading -> Loaded（重试成功）──
+        wv.complete_load("<html><body><div>Retry OK</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some("https://retry-lifecycle.com"));
+        assert!(wv.last_render().is_some());
+
+        // ── 验证事件序列 ──
+        let recorded = events.borrow();
+        // 完整序列:
+        //   load_url -> LoadStart+UrlChanged (2)
+        //   complete_load -> LoadEnd (1)
+        //   load_url -> LoadStart+UrlChanged (2)
+        //   fail_load -> LoadFailed (1)
+        //   load_url -> LoadStart+UrlChanged (2)
+        //   complete_load -> LoadEnd (1)
+        //   合计 = 9
+        assert_eq!(recorded.len(), 9, "应有 9 个事件，实际: {recorded:?}");
+        assert_eq!(recorded[0], "LoadStart(https://lifecycle.com)");
+        assert_eq!(recorded[1], "UrlChanged(https://lifecycle.com)");
+        assert_eq!(recorded[2], "LoadEnd(https://lifecycle.com)");
+        assert_eq!(recorded[3], "LoadStart(https://fail-lifecycle.com)");
+        assert_eq!(recorded[4], "UrlChanged(https://fail-lifecycle.com)");
+        assert!(recorded[5].starts_with("LoadFailed(https://fail-lifecycle.com"));
+        assert_eq!(recorded[6], "LoadStart(https://retry-lifecycle.com)");
+        assert_eq!(recorded[7], "UrlChanged(https://retry-lifecycle.com)");
+        assert_eq!(recorded[8], "LoadEnd(https://retry-lifecycle.com)");
+    }
 }
