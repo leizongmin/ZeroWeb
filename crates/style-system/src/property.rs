@@ -339,6 +339,41 @@ pub enum FontVariantNumericValue {
     StackedFractions,
 }
 
+/// CSS direction 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirectionValue {
+    /// ltr（默认值）— 从左到右。
+    Ltr,
+    /// rtl — 从右到左。
+    Rtl,
+}
+
+/// CSS unicode-bidi 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnicodeBidiValue {
+    /// normal（默认值）。
+    Normal,
+    /// embed。
+    Embed,
+    /// isolate。
+    Isolate,
+    /// bidi-override。
+    BidiOverride,
+    /// isolate-override。
+    IsolateOverride,
+    /// plaintext。
+    Plaintext,
+}
+
+/// CSS tab-size 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TabSizeValue {
+    /// 数字值（空格数）。
+    Number(u32),
+    /// 长度值（如 px、em）。
+    Length(LengthValue),
+}
+
 /// CSS overscroll-behavior 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverscrollBehaviorValue {
@@ -761,6 +796,12 @@ pub enum PropertyValue {
     TextAlignLast(TextAlignLastValue),
     /// font-variant-numeric 值。
     FontVariantNumeric(FontVariantNumericValue),
+    /// direction 值。
+    Direction(DirectionValue),
+    /// unicode-bidi 值。
+    UnicodeBidi(UnicodeBidiValue),
+    /// tab-size 值。
+    TabSize(TabSizeValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1135,6 +1176,14 @@ pub struct ComputedStyle {
     pub text_align_last: TextAlignLastValue,
     /// font-variant-numeric 属性。
     pub font_variant_numeric: FontVariantNumericValue,
+
+    // ── Writing Direction / Tab ──
+    /// direction 属性。
+    pub direction: DirectionValue,
+    /// unicode-bidi 属性。
+    pub unicode_bidi: UnicodeBidiValue,
+    /// tab-size 属性。
+    pub tab_size: TabSizeValue,
 }
 
 impl Default for ComputedStyle {
@@ -1341,6 +1390,11 @@ impl Default for ComputedStyle {
             overflow_wrap: OverflowWrapValue::Normal,
             text_align_last: TextAlignLastValue::Auto,
             font_variant_numeric: FontVariantNumericValue::Normal,
+
+            // Writing Direction / Tab
+            direction: DirectionValue::Ltr,
+            unicode_bidi: UnicodeBidiValue::Normal,
+            tab_size: TabSizeValue::Number(8),
         }
     }
 }
@@ -1531,6 +1585,11 @@ impl PropertyRegistry {
             "text-align-last" => Some(TextAlignLast(TextAlignLastValue::Auto)),
             "font-variant-numeric" => Some(FontVariantNumeric(FontVariantNumericValue::Normal)),
 
+            // Writing Direction / Tab
+            "direction" => Some(Direction(DirectionValue::Ltr)),
+            "unicode-bidi" => Some(UnicodeBidi(UnicodeBidiValue::Normal)),
+            "tab-size" => Some(TabSize(TabSizeValue::Number(8))),
+
             _ => None,
         }
     }
@@ -1563,6 +1622,8 @@ impl PropertyRegistry {
                 | "overflow-wrap"
                 | "text-align-last"
                 | "font-variant-numeric"
+                | "direction"
+                | "tab-size"
         )
     }
 
@@ -1709,6 +1770,9 @@ impl PropertyRegistry {
             "overflow-wrap",
             "text-align-last",
             "font-variant-numeric",
+            "direction",
+            "unicode-bidi",
+            "tab-size",
         ]
     }
 }
@@ -3337,6 +3401,40 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Direction 属性 ──
+        "direction" => {
+            if let Some(v) = values::parse_direction(value) {
+                style.direction = match v {
+                    zero_css_parser::values::DirectionValue::Ltr => DirectionValue::Ltr,
+                    zero_css_parser::values::DirectionValue::Rtl => DirectionValue::Rtl,
+                };
+                return true;
+            }
+        }
+        // ── UnicodeBidi 属性 ──
+        "unicode-bidi" => {
+            if let Some(v) = values::parse_unicode_bidi(value) {
+                style.unicode_bidi = match v {
+                    zero_css_parser::values::UnicodeBidiValue::Normal => UnicodeBidiValue::Normal,
+                    zero_css_parser::values::UnicodeBidiValue::Embed => UnicodeBidiValue::Embed,
+                    zero_css_parser::values::UnicodeBidiValue::Isolate => UnicodeBidiValue::Isolate,
+                    zero_css_parser::values::UnicodeBidiValue::BidiOverride => UnicodeBidiValue::BidiOverride,
+                    zero_css_parser::values::UnicodeBidiValue::IsolateOverride => UnicodeBidiValue::IsolateOverride,
+                    zero_css_parser::values::UnicodeBidiValue::Plaintext => UnicodeBidiValue::Plaintext,
+                };
+                return true;
+            }
+        }
+        // ── TabSize 属性 ──
+        "tab-size" => {
+            if let Some(v) = values::parse_tab_size(value) {
+                style.tab_size = match v {
+                    zero_css_parser::values::TabSizeValue::Number(n) => TabSizeValue::Number(n),
+                    zero_css_parser::values::TabSizeValue::Length(l) => TabSizeValue::Length(l),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -3433,6 +3531,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "font-variant-numeric" => {
             child.font_variant_numeric = parent.font_variant_numeric.clone();
+            true
+        }
+        "direction" => {
+            child.direction = parent.direction.clone();
+            true
+        }
+        "tab-size" => {
+            child.tab_size = parent.tab_size.clone();
             true
         }
         _ => false,
@@ -4050,6 +4156,18 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "will-change" => {
             style.will_change = default_style.will_change;
+            true
+        }
+        "direction" => {
+            style.direction = default_style.direction;
+            true
+        }
+        "unicode-bidi" => {
+            style.unicode_bidi = default_style.unicode_bidi;
+            true
+        }
+        "tab-size" => {
+            style.tab_size = default_style.tab_size;
             true
         }
         _ => false,
@@ -7706,5 +7824,158 @@ mod tests {
         let mut child = ComputedStyle::default();
         assert!(inherit_property(&parent, &mut child, "pointer-events"));
         assert_eq!(child.pointer_events, PointerEventsValue::None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // direction / unicode-bidi / tab-size 测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 direction 默认值为 ltr
+    fn test_direction_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.direction, DirectionValue::Ltr);
+    }
+
+    #[test]
+    /// 测试 direction apply_property_value
+    fn test_direction_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "direction", "rtl"));
+        assert_eq!(style.direction, DirectionValue::Rtl);
+
+        assert!(apply_property_value(&mut style, "direction", "ltr"));
+        assert_eq!(style.direction, DirectionValue::Ltr);
+
+        assert!(!apply_property_value(&mut style, "direction", "invalid"));
+    }
+
+    #[test]
+    /// 测试 direction 继承性（inherited）
+    fn test_direction_inherited() {
+        assert!(PropertyRegistry::is_inherited("direction"));
+    }
+
+    #[test]
+    /// 测试 direction initial_value
+    fn test_direction_initial_value() {
+        assert!(PropertyRegistry::initial_value("direction").is_some());
+        let mut style = ComputedStyle::default();
+        style.direction = DirectionValue::Rtl;
+        assert!(apply_initial_value(&mut style, "direction"));
+        assert_eq!(style.direction, DirectionValue::Ltr);
+    }
+
+    #[test]
+    /// 测试 direction 继承
+    fn test_direction_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.direction = DirectionValue::Rtl;
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "direction"));
+        assert_eq!(child.direction, DirectionValue::Rtl);
+    }
+
+    #[test]
+    /// 测试 unicode-bidi 默认值为 normal
+    fn test_unicode_bidi_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::Normal);
+    }
+
+    #[test]
+    /// 测试 unicode-bidi apply_property_value
+    fn test_unicode_bidi_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "unicode-bidi", "embed"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::Embed);
+
+        assert!(apply_property_value(&mut style, "unicode-bidi", "isolate"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::Isolate);
+
+        assert!(apply_property_value(&mut style, "unicode-bidi", "bidi-override"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::BidiOverride);
+
+        assert!(apply_property_value(&mut style, "unicode-bidi", "isolate-override"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::IsolateOverride);
+
+        assert!(apply_property_value(&mut style, "unicode-bidi", "plaintext"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::Plaintext);
+
+        assert!(!apply_property_value(&mut style, "unicode-bidi", "invalid"));
+    }
+
+    #[test]
+    /// 测试 unicode-bidi 不继承
+    fn test_unicode_bidi_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("unicode-bidi"));
+    }
+
+    #[test]
+    /// 测试 unicode-bidi initial_value
+    fn test_unicode_bidi_initial_value() {
+        assert!(PropertyRegistry::initial_value("unicode-bidi").is_some());
+        let mut style = ComputedStyle::default();
+        style.unicode_bidi = UnicodeBidiValue::Embed;
+        assert!(apply_initial_value(&mut style, "unicode-bidi"));
+        assert_eq!(style.unicode_bidi, UnicodeBidiValue::Normal);
+    }
+
+    #[test]
+    /// 测试 tab-size 默认值为 8
+    fn test_tab_size_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.tab_size, TabSizeValue::Number(8));
+    }
+
+    #[test]
+    /// 测试 tab-size apply_property_value
+    fn test_tab_size_apply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "tab-size", "4"));
+        assert_eq!(style.tab_size, TabSizeValue::Number(4));
+
+        assert!(apply_property_value(&mut style, "tab-size", "20px"));
+        assert_eq!(style.tab_size, TabSizeValue::Length(LengthValue::Px(20.0)));
+
+        assert!(apply_property_value(&mut style, "tab-size", "2em"));
+        assert_eq!(style.tab_size, TabSizeValue::Length(LengthValue::Em(2.0)));
+
+        assert!(!apply_property_value(&mut style, "tab-size", "invalid"));
+    }
+
+    #[test]
+    /// 测试 tab-size 继承性（inherited）
+    fn test_tab_size_inherited() {
+        assert!(PropertyRegistry::is_inherited("tab-size"));
+    }
+
+    #[test]
+    /// 测试 tab-size initial_value
+    fn test_tab_size_initial_value() {
+        assert!(PropertyRegistry::initial_value("tab-size").is_some());
+        let mut style = ComputedStyle::default();
+        style.tab_size = TabSizeValue::Number(2);
+        assert!(apply_initial_value(&mut style, "tab-size"));
+        assert_eq!(style.tab_size, TabSizeValue::Number(8));
+    }
+
+    #[test]
+    /// 测试 tab-size 继承
+    fn test_tab_size_inherit() {
+        let mut parent = ComputedStyle::default();
+        parent.tab_size = TabSizeValue::Number(4);
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "tab-size"));
+        assert_eq!(child.tab_size, TabSizeValue::Number(4));
+    }
+
+    #[test]
+    /// 测试新属性在 known_properties 中
+    fn test_direction_unicode_bidi_tab_size_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"direction"));
+        assert!(props.contains(&"unicode-bidi"));
+        assert!(props.contains(&"tab-size"));
     }
 }

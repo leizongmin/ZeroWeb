@@ -284,4 +284,155 @@ mod tests {
         let fake_key = crate::image_cache::ImageKey::new(999);
         assert!(cache.get(&fake_key).is_none());
     }
+
+    /// 测试 DamageTracker 使用零尺寸调用 damage_all 仍标记为脏
+    ///
+    /// 验证 damage_all(0x0) 不会 panic，并且产生一个零面积的脏矩形。
+    /// 这是一个边界条件：表面尺寸为 0 时仍能正常追踪脏区域。
+    #[test]
+    fn test_damage_tracker_damage_all_zero_size() {
+        let mut tracker = DamageTracker::new();
+        tracker.damage_all(Size::new(0.0, 0.0));
+        // damage_all 始终插入一个矩形，即使尺寸为零
+        assert!(tracker.is_dirty(), "damage_all 后应标记为脏");
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        let r = &tracker.dirty_rects()[0];
+        assert_eq!(r.origin.x, 0.0);
+        assert_eq!(r.origin.y, 0.0);
+        assert_eq!(r.size.width, 0.0);
+        assert_eq!(r.size.height, 0.0);
+        // 零面积的脏矩形 — 面积应为 0
+        assert!((r.size.area() - 0.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 ImageCache 在 max_bytes=0 时任何插入后 GC 都立即淘汰所有条目
+    ///
+    /// 当 max_bytes 设为 0 时，即使只插入极小图片，
+    /// GC 后缓存也应为空，因为 total_bytes > max_bytes 始终成立。
+    #[test]
+    fn test_image_cache_max_bytes_zero() {
+        let mut cache = ImageCache::new(100, 0);
+        let img = ImageData::new_empty(1, 1); // 4 字节，远超 max_bytes=0
+        let key = cache.insert(img);
+        assert_eq!(cache.len(), 1, "插入后应有一个条目");
+        assert!(cache.total_bytes() > 0, "total_bytes 应大于 0");
+
+        cache.gc();
+        assert!(cache.is_empty(), "max_bytes=0 时 GC 应淘汰所有条目");
+        assert!(cache.get(&key).is_none(), "key 在 GC 后不应再可用");
+
+        // 多次插入+GC 循环验证稳定性
+        let k2 = cache.insert(ImageData::new_empty(2, 2));
+        cache.gc();
+        assert!(cache.is_empty(), "第二次 GC 后仍应为空");
+        assert!(cache.ref_count(&k2).is_none());
+    }
+
+    /// 测试 FrameBuffer::from_rgba 在数据比期望值少一个字节时返回错误
+    ///
+    /// 验证 from_rgba 的边界条件：差一个字节也应产生明确的错误信息，
+    /// 确保不会静默截断或越界访问。
+    #[test]
+    fn test_frame_buffer_from_rgba_off_by_one() {
+        let width = 10u32;
+        let height = 10u32;
+        let expected = (width * height * 4) as usize; // 400
+        // 仅差一个字节
+        let data = vec![128u8; expected - 1];
+        let result = FrameBuffer::from_rgba(data, width, height);
+        assert!(result.is_err(), "少一个字节应返回错误");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("期望") && err.contains("实际"),
+            "错误信息应包含期望和实际大小: {err}"
+        );
+
+        // 多一个字节也应返回错误
+        let data_extra = vec![128u8; expected + 1];
+        let result_extra = FrameBuffer::from_rgba(data_extra, width, height);
+        assert!(result_extra.is_err(), "多一个字节也应返回错误");
+    }
+
+    /// 测试 Color::lerp 对同一颜色的恒等插值
+    ///
+    /// 验证 lerp(color, color, t) 在 t=0 和 t=1 时都返回原始颜色，
+    /// 这是 lerp 的恒等性质：插值起点和终点相同时结果不变。
+    #[test]
+    fn test_color_lerp_identity_same_color() {
+        let c = Color::rgba(100, 150, 200, 250);
+
+        // t=0：应返回 self（即 c）
+        let at_zero = c.lerp(c, 0.0);
+        assert_eq!(at_zero, c, "lerp(c, c, 0) 应返回 c 本身");
+
+        // t=1：应返回 other（也是 c）
+        let at_one = c.lerp(c, 1.0);
+        assert_eq!(at_one, c, "lerp(c, c, 1) 应返回 c 本身");
+
+        // t=0.5：由于 a=b，插值结果也应为 c
+        let at_mid = c.lerp(c, 0.5);
+        assert_eq!(at_mid.r, c.r, "lerp(c, c, 0.5) 的 R 通道应为 c.r");
+        assert_eq!(at_mid.g, c.g, "lerp(c, c, 0.5) 的 G 通道应为 c.g");
+        assert_eq!(at_mid.b, c.b, "lerp(c, c, 0.5) 的 B 通道应为 c.b");
+        assert_eq!(at_mid.a, c.a, "lerp(c, c, 0.5) 的 A 通道应为 c.a");
+
+        // 透明色插值
+        let transparent = Color::TRANSPARENT;
+        assert_eq!(transparent.lerp(transparent, 0.3), transparent);
+    }
+
+    /// 测试 RenderPrimitives 的 bounding_box 在所有图元类型混合且含负坐标时的正确性
+    ///
+    /// 同时包含 fills、rounded_rects、strokes、shadows、glyphs、images 等多种图元，
+    /// 部分使用负坐标和负偏移量，验证 bounding_box 能正确计算全局包围盒。
+    #[test]
+    fn test_render_primitives_bounding_box_mixed_negative_offsets() {
+        use crate::image_cache::ImageKey;
+        use crate::primitive::*;
+
+        let mut p = RenderPrimitives::new();
+
+        // 负坐标的 fill
+        p.add_fill(Rect::new(-100.0, -50.0, 200.0, 100.0), Color::BLACK);
+        // 正坐标的 stroke
+        p.add_stroke(StrokePrimitive {
+            x1: 50.0,
+            y1: 50.0,
+            x2: 150.0,
+            y2: 150.0,
+            width: 4.0,
+            color: Color::RED,
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        });
+        // 负偏移的 shadow
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(0.0, 0.0, 50.0, 50.0),
+            color: Color::BLACK,
+            offset_x: -10.0,
+            offset_y: -10.0,
+            blur_radius: 5.0,
+            spread_radius: 3.0,
+        });
+        // 远处的 image
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(500.0, 500.0, 100.0, 100.0),
+            image_key: ImageKey::new(1),
+        });
+
+        let bb = p.bounding_box().expect("应有包围盒");
+
+        // fill: left=-100, top=-50, right=100, bottom=50
+        // stroke (含 half_width=2): left=48, top=48, right=152, bottom=152
+        // shadow: left=-18, top=-18, right=58, bottom=58
+        // image: left=500, top=500, right=600, bottom=600
+        assert!(bb.left() <= -100.0, "left 应 <= -100, 实际: {}", bb.left());
+        assert!(bb.top() <= -50.0, "top 应 <= -50, 实际: {}", bb.top());
+        assert!(bb.right() >= 600.0, "right 应 >= 600, 实际: {}", bb.right());
+        assert!(bb.bottom() >= 600.0, "bottom 应 >= 600, 实际: {}", bb.bottom());
+
+        // 确认包围盒尺寸为正
+        assert!(bb.size.width > 0.0, "包围盒宽度应为正");
+        assert!(bb.size.height > 0.0, "包围盒高度应为正");
+    }
 }

@@ -227,6 +227,15 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── Grid template 简写 ──
         "grid-template" => expand_grid_template(value, important, specificity),
 
+        // ── background 简写 ──
+        "background" => expand_background(value, important, specificity),
+
+        // ── font 简写 ──
+        "font" => expand_font(value, important, specificity),
+
+        // ── text-decoration 简写 ──
+        "text-decoration" => expand_text_decoration(value, important, specificity),
+
         // ── list-style 简写 ──
         "list-style" => expand_list_style(value, important, specificity),
 
@@ -1000,6 +1009,143 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         mk("outline-width", width),
         mk("outline-style", style),
         mk("outline-color", color),
+    ]
+}
+
+/// 展开 background 简写。
+///
+/// 简化实现：仅解析 background-color 部分。
+/// 如果值是颜色关键字或颜色值，则作为 background-color。
+/// 如果包含 `url(`，则提取为 background-image。
+fn expand_background(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+
+    // 如果包含 url()，提取为 background-image；否则作为 background-color
+    if let Some(url_part) = parts.iter().find(|p| p.starts_with("url(")) {
+        vec![mk("background-image", url_part)]
+    } else {
+        vec![mk("background-color", value)]
+    }
+}
+
+/// 展开 font 简写。
+///
+/// 简化实现：`font: [style] [weight] <size>[/<line-height>] <family>`
+/// 识别 font-weight 关键字、font-size 和 line-height（通过 `/` 分隔）以及 font-family。
+fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let mut weight = "normal".to_string();
+    let mut style = "normal".to_string();
+    let mut size = "medium".to_string();
+    let mut line_height = "normal".to_string();
+    let mut family = String::new();
+
+    let is_weight = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "normal"
+                | "bold"
+                | "bolder"
+                | "lighter"
+                | "100"
+                | "200"
+                | "300"
+                | "400"
+                | "500"
+                | "600"
+                | "700"
+                | "800"
+                | "900"
+        )
+    };
+
+    let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "normal" | "italic" | "oblique");
+
+    // 找到 size 部分：包含数字或者带 / 的部分
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut size_found = false;
+    let mut family_parts: Vec<&str> = Vec::new();
+
+    for part in &parts {
+        if size_found {
+            family_parts.push(part);
+        } else if part.contains('/') {
+            // size/line-height 格式
+            let sub: Vec<&str> = part.splitn(2, '/').collect();
+            size = sub[0].to_string();
+            if sub.len() > 1 {
+                line_height = sub[1].to_string();
+            }
+            size_found = true;
+        } else if !size_found && (looks_like_length(part) || part.parse::<f64>().is_ok()) {
+            size = part.to_string();
+            size_found = true;
+        } else if !size_found && is_weight(part) {
+            weight = part.to_string();
+        } else if !size_found && is_style(part) {
+            style = part.to_string();
+        }
+    }
+
+    if !family_parts.is_empty() {
+        family = family_parts.join(" ");
+    }
+
+    vec![
+        mk("font-style", &style),
+        mk("font-weight", &weight),
+        mk("font-size", &size),
+        mk("line-height", &line_height),
+        mk("font-family", &family),
+    ]
+}
+
+/// 展开 text-decoration 简写。
+///
+/// `text-decoration: [line] [style] [color]`
+/// line: underline, overline, line-through, none
+/// style: solid, double, dotted, dashed, wavy
+/// color: 颜色值
+fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if value == "none" {
+        return vec![
+            mk("text-decoration-line", "none"),
+            mk("text-decoration-style", "solid"),
+            mk("text-decoration-color", "currentcolor"),
+        ];
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut line = "none".to_string();
+    let mut dec_style = "solid".to_string();
+    let mut color = "currentcolor".to_string();
+
+    let is_line = |s: &str| matches!(s, "underline" | "overline" | "line-through" | "blink" | "none");
+
+    let is_dec_style = |s: &str| matches!(s, "solid" | "double" | "dotted" | "dashed" | "wavy");
+
+    for part in &parts {
+        if is_line(part) {
+            line = part.to_string();
+        } else if is_dec_style(part) {
+            dec_style = part.to_string();
+        } else if looks_like_color(part) {
+            color = part.to_string();
+        }
+    }
+
+    vec![
+        mk("text-decoration-line", &line),
+        mk("text-decoration-style", &dec_style),
+        mk("text-decoration-color", &color),
     ]
 }
 
@@ -2143,6 +2289,113 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].0, "overscroll-behavior-x");
         assert_eq!(result[0].1, "auto");
+        assert_eq!(result[1].0, "overscroll-behavior-y");
+        assert_eq!(result[1].1, "none");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增简写展开测试（test_shorthand_<property>_<scenario>）
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// background 简写展开：颜色值 → background-color
+    fn test_shorthand_background_color() {
+        let result = expand_one("background", "red", false, (0, 0, 1));
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "background-color");
+        assert_eq!(result[0].1, "red");
+    }
+
+    #[test]
+    /// background 简写展开：url() 值 → background-image
+    fn test_shorthand_background_image() {
+        let result = expand_one("background", "url(img/bg.png)", false, (0, 0, 1));
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "background-image");
+        assert_eq!(result[0].1, "url(img/bg.png)");
+    }
+
+    #[test]
+    /// border-radius 单值展开：10px → 四个角均为 10px
+    fn test_shorthand_border_radius_single_value() {
+        let result = expand_one("border-radius", "10px", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].0, "border-top-left-radius");
+        assert_eq!(result[0].1, "10px");
+        assert_eq!(result[1].0, "border-top-right-radius");
+        assert_eq!(result[1].1, "10px");
+        assert_eq!(result[2].0, "border-bottom-right-radius");
+        assert_eq!(result[2].1, "10px");
+        assert_eq!(result[3].0, "border-bottom-left-radius");
+        assert_eq!(result[3].1, "10px");
+    }
+
+    #[test]
+    /// border-radius 双值展开：10px 20px → top-left/bottom-right=10px, top-right/bottom-left=20px
+    fn test_shorthand_border_radius_two_values() {
+        let result = expand_one("border-radius", "10px 20px", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "10px"); // top-left
+        assert_eq!(result[1].1, "20px"); // top-right
+        assert_eq!(result[2].1, "10px"); // bottom-right
+        assert_eq!(result[3].1, "20px"); // bottom-left
+    }
+
+    #[test]
+    /// font 简写展开：bold 16px/1.5 sans-serif → font-weight, font-size, line-height, font-family
+    fn test_shorthand_font_bold_size_line_family() {
+        let result = expand_one("font", "bold 16px/1.5 sans-serif", false, (0, 0, 1));
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].0, "font-style");
+        assert_eq!(result[0].1, "normal");
+        assert_eq!(result[1].0, "font-weight");
+        assert_eq!(result[1].1, "bold");
+        assert_eq!(result[2].0, "font-size");
+        assert_eq!(result[2].1, "16px");
+        assert_eq!(result[3].0, "line-height");
+        assert_eq!(result[3].1, "1.5");
+        assert_eq!(result[4].0, "font-family");
+        assert_eq!(result[4].1, "sans-serif");
+    }
+
+    #[test]
+    /// list-style 简写展开：disc inside → list-style-type=disc, list-style-position=inside
+    fn test_shorthand_list_style_disc_inside() {
+        let result = expand_one("list-style", "disc inside", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "list-style-type");
+        assert_eq!(result[0].1, "disc");
+        assert_eq!(result[1].0, "list-style-position");
+        assert_eq!(result[1].1, "inside");
+    }
+
+    #[test]
+    /// text-decoration 简写展开：underline dotted red → line, style, color
+    fn test_shorthand_text_decoration_line_style_color() {
+        let result = expand_one("text-decoration", "underline dotted red", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "text-decoration-line");
+        assert_eq!(result[0].1, "underline");
+        assert_eq!(result[1].0, "text-decoration-style");
+        assert_eq!(result[1].1, "dotted");
+        assert_eq!(result[2].0, "text-decoration-color");
+        assert_eq!(result[2].1, "red");
+    }
+
+    #[test]
+    /// 无效简写值应返回空 vec
+    fn test_shorthand_invalid_returns_empty() {
+        let result = expand_one("margin", "1 2 3 4 5 6 7", false, (0, 0, 1));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    /// overscroll-behavior 双值展开：contain none → x=contain, y=none
+    fn test_shorthand_overscroll_behavior_double_value() {
+        let result = expand_one("overscroll-behavior", "contain none", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overscroll-behavior-x");
+        assert_eq!(result[0].1, "contain");
         assert_eq!(result[1].0, "overscroll-behavior-y");
         assert_eq!(result[1].1, "none");
     }
