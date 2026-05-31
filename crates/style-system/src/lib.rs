@@ -160,12 +160,19 @@ impl StyleSystem {
             _ => None,
         };
 
-        // 1. 收集匹配的声明（带媒体查询评估）
+        // 0.5 构建容器查询上下文（简化：使用视口尺寸作为默认容器尺寸）
+        let container_ctx = match (self.viewport_width, self.viewport_height) {
+            (Some(w), Some(h)) => Some(matcher::ContainerContext::with_size(w, h)),
+            _ => None,
+        };
+
+        // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         let matching = matcher::collect_matching_declarations_with_media(
             doc,
             element,
             stylesheets,
             media_ctx.as_ref(),
+            container_ctx.as_ref(),
         );
 
         // 1.5. 展开简写属性（保留层索引）
@@ -195,8 +202,11 @@ impl StyleSystem {
         // 4. 收集自定义属性
         self.custom_properties = gather_custom_properties(&cascaded);
 
+        // 4.5. 在级联值中解析 var() 引用
+        let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
+
         // 5. 计算继承样式
-        let style = inheritance::compute_inherited_style(parent_style, &cascaded);
+        let style = inheritance::compute_inherited_style(parent_style, &resolved_cascaded);
 
         // 6. 解析计算值（相对单位转换）
         computed::resolve_computed_style(
@@ -208,19 +218,58 @@ impl StyleSystem {
     }
 }
 
+/// 在级联属性值中解析 var() 引用。
+///
+/// 自定义属性（--*）本身不解析，仅解析标准属性的值。
+fn resolve_var_in_cascaded(
+    cascaded: &HashMap<String, String>,
+    custom_properties: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    cascaded
+        .iter()
+        .map(|(k, v)| {
+            if k.starts_with("--") {
+                (k.clone(), v.clone())
+            } else {
+                (k.clone(), computed::resolve_var(v, custom_properties))
+            }
+        })
+        .collect()
+}
+
 impl Default for StyleSystem {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// 从级联值中收集自定义属性。
+/// 从级联值中收集自定义属性，并解析自定义属性值中的 var() 引用。
+///
+/// 自定义属性值可以引用其他自定义属性，需要迭代解析直到稳定。
 fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<String, String> {
-    cascaded
+    let mut props: HashMap<String, String> = cascaded
         .iter()
         .filter(|(k, _)| k.starts_with("--"))
         .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
+        .collect();
+
+    // 迭代解析自定义属性值中的 var() 引用
+    let mut changed = true;
+    let mut max_iter = 10;
+    while changed && max_iter > 0 {
+        max_iter -= 1;
+        changed = false;
+        let snapshot = props.clone();
+        for (_key, value) in props.iter_mut() {
+            let resolved = computed::resolve_var(value, &snapshot);
+            if resolved != *value {
+                *value = resolved;
+                changed = true;
+            }
+        }
+    }
+
+    props
 }
 
 #[cfg(test)]
@@ -1565,5 +1614,120 @@ mod tests {
         let styles = sys.compute_styles(&doc, &stylesheets);
         let div_style = styles.get(&div).expect("div should have style");
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    }
+
+    /// var() 引用在样式计算管线中正确解析。
+    #[test]
+    fn test_var_resolution_in_pipeline() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--main-color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "var(--main-color)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // var(--main-color) 应该被解析为 "red"
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    /// var() 带回退值时，变量不存在则使用回退。
+    #[test]
+    fn test_var_fallback_in_pipeline() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "var(--undefined, blue)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    }
+
+    /// var() 解析 width 长度值。
+    #[test]
+    fn test_var_resolution_width_length() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--my-width".to_string(),
+                        value: "100px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "width".to_string(),
+                        value: "var(--my-width)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.width, LengthValue::Px(100.0));
+    }
+
+    /// 嵌套 var() 正确解析。
+    #[test]
+    fn test_var_nested_resolution() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--base".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "--accent".to_string(),
+                        value: "var(--base)".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "var(--accent)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
     }
 }
