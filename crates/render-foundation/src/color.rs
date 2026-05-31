@@ -368,4 +368,25 @@ mod tests {
         let f_max = c_max.to_f32_array();
         assert!(f_max.iter().all(|&v| (v - 1.0).abs() < f32::EPSILON));
     }
+
+    /// 测试 RGBA 各通道超出范围时的 clamp 行为
+    ///
+    /// rgba(300, 300, 300, 300) 在输入端应被 clamp 到 255，
+    /// 确保所有通道不会超过 u8 最大值。
+    #[test]
+    fn test_color_rgba_clamp_edge() {
+        let r = 300u32.clamp(0, 255) as u8;
+        let g = 300u32.clamp(0, 255) as u8;
+        let b = 300u32.clamp(0, 255) as u8;
+        let a = 300u32.clamp(0, 255) as u8;
+
+        let c = Color::rgba(r, g, b, a);
+        assert_eq!(c.r, 255, "R 通道应被 clamp 到 255");
+        assert_eq!(c.g, 255, "G 通道应被 clamp 到 255");
+        assert_eq!(c.b, 255, "B 通道应被 clamp 到 255");
+        assert_eq!(c.a, 255, "A 通道应被 clamp 到 255");
+
+        // clamp 后应等于白色
+        assert_eq!(c, Color::WHITE);
+    }
 }

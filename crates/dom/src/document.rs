@@ -444,6 +444,33 @@ impl Document {
         new_id
     }
 
+    /// 从外部文档导入节点。如果 `deep` 为 true，递归导入所有子孙节点。
+    ///
+    /// 与 `clone_node` 类似，但强调语义：导入的节点是独立的副本，
+    /// 没有父节点（未附着到任何树），可安全地插入到当前文档中。
+    pub fn import_node(&mut self, node_id: NodeId, deep: bool) -> NodeId {
+        let cloned_kind = match self.nodes.get(node_id).map(|n| n.kind.clone()) {
+            Some(kind) => kind,
+            None => return node_id,
+        };
+
+        let new_id = self.nodes.insert(NodeData::new(cloned_kind));
+
+        if deep && let Some(children) = self.nodes.get(node_id).map(|n| n.children.clone()) {
+            for child in children {
+                let cloned_child = self.import_node(child, true);
+                if let Some(node_data) = self.nodes.get_mut(new_id) {
+                    node_data.children.push(cloned_child);
+                }
+                if let Some(child_data) = self.nodes.get_mut(cloned_child) {
+                    child_data.parent = Some(new_id);
+                }
+            }
+        }
+
+        new_id
+    }
+
     // ── 遍历 ────────────────────────────────────────────────────
 
     /// 获取父节点 ID。
@@ -1718,5 +1745,79 @@ mod tests {
         // 无变化
         assert_eq!(doc.child_count(parent), 3);
         assert_eq!(doc.text_content(parent), Some("helloworld".to_string()));
+    }
+
+    // ── import_node 测试 ─────────────────────────────────────────
+
+    /// 浅导入元素节点，不应包含子节点。
+    #[test]
+    fn test_import_node_shallow() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+        doc.set_attribute(parent, "class", "outer");
+
+        let imported = doc.import_node(parent, false);
+
+        // 导入节点保留属性但无子节点
+        assert_eq!(doc.get_attribute(imported, "class"), Some("outer".to_string()));
+        assert!(!doc.has_child_nodes(imported));
+    }
+
+    /// 深导入保留完整子树。
+    #[test]
+    fn test_import_node_deep_preserves_subtree() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        let child1 = doc.create_element("p");
+        let child2 = doc.create_element("span");
+        let text = doc.create_text_node("hello");
+        doc.append_child(child1, text).unwrap();
+        doc.append_child(root, child1).unwrap();
+        doc.append_child(root, child2).unwrap();
+
+        let imported = doc.import_node(root, true);
+
+        // 导入节点应包含完整的子树结构
+        assert_eq!(doc.child_count(imported), 2);
+        let children = doc.child_nodes(imported);
+        let imported_p = children[0];
+        let imported_span = children[1];
+        assert_eq!(doc.child_count(imported_p), 1);
+        assert_eq!(doc.text_content(imported_p), Some("hello".to_string()));
+        assert_eq!(doc.child_count(imported_span), 0);
+    }
+
+    /// 导入的节点没有父节点（独立于原文档树）。
+    #[test]
+    fn test_import_node_has_no_parent() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        let imported = doc.import_node(elem, true);
+
+        // 导入节点没有父节点
+        assert!(doc.parent_node(imported).is_none());
+    }
+
+    /// 导入的节点是独立的，修改原始节点不影响导入副本。
+    #[test]
+    fn test_import_node_is_independent() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "class", "original");
+        let child = doc.create_text_node("text");
+        doc.append_child(elem, child).unwrap();
+
+        let imported = doc.import_node(elem, true);
+
+        // 修改原始节点
+        doc.set_attribute(elem, "class", "modified");
+
+        // 导入副本不受影响
+        assert_eq!(doc.get_attribute(imported, "class"), Some("original".to_string()));
+        assert_eq!(doc.text_content(imported), Some("text".to_string()));
     }
 }
