@@ -58,6 +58,14 @@ pub enum MediaCondition {
     Hover,
     /// color 布尔特性（是否支持彩色）。
     Color,
+    /// 用户颜色方案偏好。
+    PrefersColorScheme(PrefersColorSchemeValue),
+    /// 用户动画偏好。
+    PrefersReducedMotion(ReducedMotionValue),
+    /// 指针设备类型。
+    Pointer(PointerValue),
+    /// 分辨率（dpi）。
+    Resolution(MediaFeatureOp, f64),
 }
 
 /// 媒体特性比较操作。
@@ -84,6 +92,35 @@ pub enum OrientationValue {
     Landscape,
 }
 
+/// 用户颜色方案偏好。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefersColorSchemeValue {
+    /// 深色模式。
+    Dark,
+    /// 浅色模式。
+    Light,
+}
+
+/// 用户动画偏好。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReducedMotionValue {
+    /// 减少动画。
+    Reduce,
+    /// 无偏好。
+    NoPreference,
+}
+
+/// 指针设备类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerValue {
+    /// 无指针设备。
+    None,
+    /// 粗指针（如触摸屏）。
+    Coarse,
+    /// 精细指针（如鼠标）。
+    Fine,
+}
+
 /// 媒体查询评估上下文。
 #[derive(Debug, Clone)]
 pub struct MediaContext {
@@ -93,6 +130,14 @@ pub struct MediaContext {
     pub viewport_height: f64,
     /// 当前媒体类型。
     pub media_type: MediaType,
+    /// 用户颜色方案偏好。
+    pub prefers_color_scheme: PrefersColorSchemeValue,
+    /// 用户动画偏好。
+    pub prefers_reduced_motion: ReducedMotionValue,
+    /// 指针设备类型。
+    pub pointer_type: PointerValue,
+    /// 分辨率（dpi），默认 96.0。
+    pub resolution_dpi: f64,
 }
 
 impl MediaContext {
@@ -102,6 +147,10 @@ impl MediaContext {
             viewport_width: width,
             viewport_height: height,
             media_type: MediaType::Screen,
+            prefers_color_scheme: PrefersColorSchemeValue::Light,
+            prefers_reduced_motion: ReducedMotionValue::NoPreference,
+            pointer_type: PointerValue::Coarse,
+            resolution_dpi: 96.0,
         }
     }
 
@@ -111,11 +160,17 @@ impl MediaContext {
             viewport_width: width,
             viewport_height: height,
             media_type,
+            prefers_color_scheme: PrefersColorSchemeValue::Light,
+            prefers_reduced_motion: ReducedMotionValue::NoPreference,
+            pointer_type: PointerValue::Coarse,
+            resolution_dpi: 96.0,
         }
     }
 }
 
-/// 解析 @media 规则的 prelude 字符串为 MediaQuery。
+/// 解析 @media 规则的 prelude 字符串为 MediaQuery 列表。
+///
+/// 逗号分隔的查询表示 OR 关系——只要其中任意一个匹配，整体即为真。
 ///
 /// 支持的格式示例：
 /// - `"(min-width: 600px)"`
@@ -126,7 +181,50 @@ impl MediaContext {
 /// - `"(width > 600px)"` — Level 4 范围语法
 /// - `"(600px <= width <= 1000px)"` — Level 4 组合范围
 /// - `"(hover)"` — 布尔特性
-pub fn parse_media_query(input: &str) -> Option<MediaQuery> {
+/// - `"only screen and ..."` — only 前缀（兼容旧浏览器）
+/// - `"screen, print"` — 逗号分隔 OR 查询
+pub fn parse_media_query(input: &str) -> Option<Vec<MediaQuery>> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+
+    // 按逗号分割为多个查询
+    let parts = split_media_queries(input);
+    let mut queries = Vec::new();
+
+    for part in parts {
+        if let Some(q) = parse_single_media_query(part.trim()) {
+            queries.push(q);
+        }
+    }
+
+    if queries.is_empty() { None } else { Some(queries) }
+}
+
+/// 按顶层逗号分割媒体查询字符串（不分割括号内的逗号）。
+fn split_media_queries(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+
+    for (i, b) in input.bytes().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+/// 解析单个媒体查询（不含逗号分隔）。
+fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
     let input = input.trim();
     if input.is_empty() {
         return None;
@@ -140,6 +238,11 @@ pub fn parse_media_query(input: &str) -> Option<MediaQuery> {
     if remaining.starts_with("not ") || remaining.starts_with("NOT ") {
         negated = true;
         remaining = remaining[4..].trim_start();
+    }
+
+    // 处理 "only" 前缀（兼容旧浏览器，忽略不影响行为）
+    if remaining.starts_with("only ") || remaining.starts_with("ONLY ") {
+        remaining = remaining[5..].trim_start();
     }
 
     // 尝试提取媒体类型
@@ -248,6 +351,16 @@ fn evaluate_condition(cond: &MediaCondition, ctx: &MediaContext) -> bool {
         }
         MediaCondition::Hover => true,
         MediaCondition::Color => true,
+        MediaCondition::PrefersColorScheme(val) => ctx.prefers_color_scheme == *val,
+        MediaCondition::PrefersReducedMotion(val) => ctx.prefers_reduced_motion == *val,
+        MediaCondition::Pointer(val) => ctx.pointer_type == *val,
+        MediaCondition::Resolution(op, v) => match op {
+            MediaFeatureOp::Exact => (ctx.resolution_dpi - *v).abs() < 0.01,
+            MediaFeatureOp::GreaterThan => ctx.resolution_dpi > *v,
+            MediaFeatureOp::GreaterEqual => ctx.resolution_dpi >= *v,
+            MediaFeatureOp::LessThan => ctx.resolution_dpi < *v,
+            MediaFeatureOp::LessEqual => ctx.resolution_dpi <= *v,
+        },
     }
 }
 
@@ -267,6 +380,15 @@ fn parse_conditions_from_inner(s: &str) -> Vec<MediaCondition> {
         match lower.as_str() {
             "hover" => return vec![MediaCondition::Hover],
             "color" => return vec![MediaCondition::Color],
+            "prefers-reduced-motion" => {
+                // 布尔特性：当值为 reduce 时为真
+                return vec![MediaCondition::PrefersReducedMotion(ReducedMotionValue::Reduce)];
+            }
+            "pointer" => {
+                // 布尔特性：当指针设备不为 none 时为真
+                return vec![MediaCondition::Pointer(PointerValue::Coarse)];
+            }
+            // prefers-color-scheme 无布尔语义，需要明确值
             _ => return vec![],
         }
     }
@@ -296,6 +418,43 @@ fn parse_colon_syntax(s: &str, colon_pos: usize) -> Option<MediaCondition> {
                 "landscape" => Some(MediaCondition::Orientation(OrientationValue::Landscape)),
                 _ => None,
             }
+        }
+        "prefers-color-scheme" => {
+            let lower = value.to_ascii_lowercase();
+            match lower.as_str() {
+                "dark" => Some(MediaCondition::PrefersColorScheme(PrefersColorSchemeValue::Dark)),
+                "light" => Some(MediaCondition::PrefersColorScheme(PrefersColorSchemeValue::Light)),
+                _ => None,
+            }
+        }
+        "prefers-reduced-motion" => {
+            let lower = value.to_ascii_lowercase();
+            match lower.as_str() {
+                "reduce" => Some(MediaCondition::PrefersReducedMotion(ReducedMotionValue::Reduce)),
+                "no-preference" => Some(MediaCondition::PrefersReducedMotion(ReducedMotionValue::NoPreference)),
+                _ => None,
+            }
+        }
+        "pointer" => {
+            let lower = value.to_ascii_lowercase();
+            match lower.as_str() {
+                "none" => Some(MediaCondition::Pointer(PointerValue::None)),
+                "coarse" => Some(MediaCondition::Pointer(PointerValue::Coarse)),
+                "fine" => Some(MediaCondition::Pointer(PointerValue::Fine)),
+                _ => None,
+            }
+        }
+        "resolution" => {
+            let num = parse_dpi_value(value)?;
+            Some(MediaCondition::Resolution(MediaFeatureOp::Exact, num))
+        }
+        "min-resolution" => {
+            let num = parse_dpi_value(value)?;
+            Some(MediaCondition::Resolution(MediaFeatureOp::GreaterEqual, num))
+        }
+        "max-resolution" => {
+            let num = parse_dpi_value(value)?;
+            Some(MediaCondition::Resolution(MediaFeatureOp::LessEqual, num))
         }
         _ => {
             let num = parse_px_value(value)?;
@@ -449,6 +608,15 @@ fn parse_px_value(s: &str) -> Option<f64> {
     s.parse::<f64>().ok()
 }
 
+/// 从 CSS 值字符串解析 dpi 数值。
+///
+/// 支持 `"96dpi"`、`"96"`、`"150.5dpi"` 等格式。
+fn parse_dpi_value(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let s = s.strip_suffix("dpi").unwrap_or(s).trim();
+    s.parse::<f64>().ok()
+}
+
 /// 找到第一个 `(` 对应的 `)` 的位置。
 fn find_matching_paren(s: &str) -> Option<usize> {
     let bytes = s.as_bytes();
@@ -475,11 +643,16 @@ fn find_matching_paren(s: &str) -> Option<usize> {
 mod tests {
     use super::*;
 
+    /// 辅助：从 parse_media_query 结果中取第一个查询。
+    fn first_query(input: &str) -> MediaQuery {
+        parse_media_query(input).unwrap().into_iter().next().unwrap()
+    }
+
     // ── 解析测试 ──
 
     #[test]
     fn test_parse_simple_min_width() {
-        let q = parse_media_query("(min-width: 600px)").unwrap();
+        let q = first_query("(min-width: 600px)");
         assert_eq!(q.media_type, None);
         assert!(!q.negated);
         assert_eq!(q.conditions.len(), 1);
@@ -488,27 +661,27 @@ mod tests {
 
     #[test]
     fn test_parse_max_width() {
-        let q = parse_media_query("(max-width: 768px)").unwrap();
+        let q = first_query("(max-width: 768px)");
         assert_eq!(q.conditions[0], MediaCondition::MaxWidth(768.0));
     }
 
     #[test]
     fn test_parse_screen_and() {
-        let q = parse_media_query("screen and (min-width: 600px)").unwrap();
+        let q = first_query("screen and (min-width: 600px)");
         assert_eq!(q.media_type, Some(MediaType::Screen));
         assert_eq!(q.conditions.len(), 1);
     }
 
     #[test]
     fn test_parse_print() {
-        let q = parse_media_query("print").unwrap();
+        let q = first_query("print");
         assert_eq!(q.media_type, Some(MediaType::Print));
         assert!(q.conditions.is_empty());
     }
 
     #[test]
     fn test_parse_multiple_conditions() {
-        let q = parse_media_query("screen and (min-width: 600px) and (max-width: 1024px)").unwrap();
+        let q = first_query("screen and (min-width: 600px) and (max-width: 1024px)");
         assert_eq!(q.media_type, Some(MediaType::Screen));
         assert_eq!(q.conditions.len(), 2);
         assert_eq!(q.conditions[0], MediaCondition::MinWidth(600.0));
@@ -517,7 +690,7 @@ mod tests {
 
     #[test]
     fn test_parse_orientation() {
-        let q = parse_media_query("(orientation: landscape)").unwrap();
+        let q = first_query("(orientation: landscape)");
         assert_eq!(
             q.conditions[0],
             MediaCondition::Orientation(OrientationValue::Landscape)
@@ -526,13 +699,13 @@ mod tests {
 
     #[test]
     fn test_parse_height() {
-        let q = parse_media_query("(min-height: 400px)").unwrap();
+        let q = first_query("(min-height: 400px)");
         assert_eq!(q.conditions[0], MediaCondition::MinHeight(400.0));
     }
 
     #[test]
     fn test_parse_not() {
-        let q = parse_media_query("not screen").unwrap();
+        let q = first_query("not screen");
         assert!(q.negated);
         assert_eq!(q.media_type, Some(MediaType::Screen));
     }
@@ -544,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_parse_just_parentheses() {
-        let q = parse_media_query("(width: 800px)").unwrap();
+        let q = first_query("(width: 800px)");
         assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::Exact, 800.0));
     }
 
@@ -553,7 +726,7 @@ mod tests {
     #[test]
     fn test_media_range_greater_than() {
         // (width > 600px) — 大于，不含 600
-        let q = parse_media_query("(width > 600px)").unwrap();
+        let q = first_query("(width > 600px)");
         assert_eq!(q.conditions.len(), 1);
         assert_eq!(
             q.conditions[0],
@@ -570,7 +743,7 @@ mod tests {
     #[test]
     fn test_media_range_less_than() {
         // (width < 1000px) — 小于，不含 1000
-        let q = parse_media_query("(width < 1000px)").unwrap();
+        let q = first_query("(width < 1000px)");
         assert_eq!(q.conditions.len(), 1);
         assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::LessThan, 1000.0));
 
@@ -584,7 +757,7 @@ mod tests {
     #[test]
     fn test_media_range_combined() {
         // (600px <= width <= 1000px) — 组合范围
-        let q = parse_media_query("(600px <= width <= 1000px)").unwrap();
+        let q = first_query("(600px <= width <= 1000px)");
         assert_eq!(q.conditions.len(), 2);
         assert_eq!(
             q.conditions[0],
@@ -610,7 +783,7 @@ mod tests {
     #[test]
     fn test_media_boolean_feature() {
         // (hover) — 布尔特性
-        let q = parse_media_query("(hover)").unwrap();
+        let q = first_query("(hover)");
         assert_eq!(q.conditions.len(), 1);
         assert_eq!(q.conditions[0], MediaCondition::Hover);
 
@@ -618,7 +791,7 @@ mod tests {
         assert!(evaluate_media_query(&q, &MediaContext::new(1024.0, 768.0)));
 
         // (color) — 布尔特性
-        let q_color = parse_media_query("(color)").unwrap();
+        let q_color = first_query("(color)");
         assert_eq!(q_color.conditions.len(), 1);
         assert_eq!(q_color.conditions[0], MediaCondition::Color);
         assert!(evaluate_media_query(&q_color, &MediaContext::new(1024.0, 768.0)));
@@ -627,7 +800,7 @@ mod tests {
     #[test]
     fn test_media_range_greater_equal() {
         // (width >= 600px) — 大于等于
-        let q = parse_media_query("(width >= 600px)").unwrap();
+        let q = first_query("(width >= 600px)");
         assert_eq!(
             q.conditions[0],
             MediaCondition::Width(MediaFeatureOp::GreaterEqual, 600.0)
@@ -641,7 +814,7 @@ mod tests {
     #[test]
     fn test_media_range_less_equal() {
         // (width <= 1000px) — 小于等于
-        let q = parse_media_query("(width <= 1000px)").unwrap();
+        let q = first_query("(width <= 1000px)");
         assert_eq!(
             q.conditions[0],
             MediaCondition::Width(MediaFeatureOp::LessEqual, 1000.0)
@@ -655,7 +828,7 @@ mod tests {
     #[test]
     fn test_media_range_height() {
         // (height > 400px)
-        let q = parse_media_query("(height > 400px)").unwrap();
+        let q = first_query("(height > 400px)");
         assert_eq!(
             q.conditions[0],
             MediaCondition::Height(MediaFeatureOp::GreaterThan, 400.0)
@@ -668,7 +841,7 @@ mod tests {
     #[test]
     fn test_media_range_combined_with_type() {
         // screen and (600px <= width <= 1000px)
-        let q = parse_media_query("screen and (600px <= width <= 1000px)").unwrap();
+        let q = first_query("screen and (600px <= width <= 1000px)");
         assert_eq!(q.media_type, Some(MediaType::Screen));
         assert_eq!(q.conditions.len(), 2);
         assert_eq!(
@@ -685,35 +858,35 @@ mod tests {
 
     #[test]
     fn test_eval_min_width_pass() {
-        let q = parse_media_query("(min-width: 600px)").unwrap();
+        let q = first_query("(min-width: 600px)");
         let ctx = MediaContext::new(1024.0, 768.0);
         assert!(evaluate_media_query(&q, &ctx));
     }
 
     #[test]
     fn test_eval_min_width_fail() {
-        let q = parse_media_query("(min-width: 600px)").unwrap();
+        let q = first_query("(min-width: 600px)");
         let ctx = MediaContext::new(400.0, 300.0);
         assert!(!evaluate_media_query(&q, &ctx));
     }
 
     #[test]
     fn test_eval_max_width_pass() {
-        let q = parse_media_query("(max-width: 768px)").unwrap();
+        let q = first_query("(max-width: 768px)");
         let ctx = MediaContext::new(600.0, 400.0);
         assert!(evaluate_media_query(&q, &ctx));
     }
 
     #[test]
     fn test_eval_max_width_fail() {
-        let q = parse_media_query("(max-width: 768px)").unwrap();
+        let q = first_query("(max-width: 768px)");
         let ctx = MediaContext::new(1024.0, 768.0);
         assert!(!evaluate_media_query(&q, &ctx));
     }
 
     #[test]
     fn test_eval_screen_type() {
-        let q = parse_media_query("screen and (min-width: 600px)").unwrap();
+        let q = first_query("screen and (min-width: 600px)");
         let ctx_screen = MediaContext::with_type(1024.0, 768.0, MediaType::Screen);
         let ctx_print = MediaContext::with_type(1024.0, 768.0, MediaType::Print);
         assert!(evaluate_media_query(&q, &ctx_screen));
@@ -722,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_eval_print_type() {
-        let q = parse_media_query("print").unwrap();
+        let q = first_query("print");
         let ctx_print = MediaContext::with_type(800.0, 600.0, MediaType::Print);
         let ctx_screen = MediaContext::with_type(800.0, 600.0, MediaType::Screen);
         assert!(evaluate_media_query(&q, &ctx_print));
@@ -731,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_eval_orientation_portrait() {
-        let q = parse_media_query("(orientation: portrait)").unwrap();
+        let q = first_query("(orientation: portrait)");
         let portrait = MediaContext::new(400.0, 800.0);
         let landscape = MediaContext::new(800.0, 400.0);
         assert!(evaluate_media_query(&q, &portrait));
@@ -740,7 +913,7 @@ mod tests {
 
     #[test]
     fn test_eval_orientation_landscape() {
-        let q = parse_media_query("(orientation: landscape)").unwrap();
+        let q = first_query("(orientation: landscape)");
         let landscape = MediaContext::new(1024.0, 768.0);
         let portrait = MediaContext::new(400.0, 800.0);
         assert!(evaluate_media_query(&q, &landscape));
@@ -749,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_eval_multiple_conditions_and() {
-        let q = parse_media_query("(min-width: 600px) and (max-width: 1024px)").unwrap();
+        let q = first_query("(min-width: 600px) and (max-width: 1024px)");
         // 在范围内
         assert!(evaluate_media_query(&q, &MediaContext::new(800.0, 600.0)));
         // 太小
@@ -760,7 +933,7 @@ mod tests {
 
     #[test]
     fn test_eval_negated() {
-        let q = parse_media_query("not screen").unwrap();
+        let q = first_query("not screen");
         let ctx_screen = MediaContext::with_type(800.0, 600.0, MediaType::Screen);
         let ctx_print = MediaContext::with_type(800.0, 600.0, MediaType::Print);
         assert!(!evaluate_media_query(&q, &ctx_screen));
@@ -780,7 +953,7 @@ mod tests {
 
     #[test]
     fn test_eval_boundary_exact() {
-        let q = parse_media_query("(min-width: 600px)").unwrap();
+        let q = first_query("(min-width: 600px)");
         // 恰好 600px 应该通过
         assert!(evaluate_media_query(&q, &MediaContext::new(600.0, 400.0)));
         // 599.99 不通过
@@ -802,5 +975,322 @@ mod tests {
         assert_eq!(find_matching_paren("(test)"), Some(5));
         assert_eq!(find_matching_paren("(test) and (more)"), Some(5));
         assert_eq!(find_matching_paren("no paren"), None);
+    }
+
+    // ── "only" 前缀测试 ──
+
+    #[test]
+    fn test_parse_only_screen() {
+        // "only screen" 应等价于 "screen"
+        let q = first_query("only screen");
+        assert_eq!(q.media_type, Some(MediaType::Screen));
+        assert!(!q.negated);
+        assert!(q.conditions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_only_screen_with_conditions() {
+        let q = first_query("only screen and (min-width: 600px)");
+        assert_eq!(q.media_type, Some(MediaType::Screen));
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(q.conditions[0], MediaCondition::MinWidth(600.0));
+    }
+
+    // ── 逗号分隔 OR 查询测试 ──
+
+    #[test]
+    fn test_comma_separated_or_queries() {
+        let queries = parse_media_query("screen, print").unwrap();
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0].media_type, Some(MediaType::Screen));
+        assert_eq!(queries[1].media_type, Some(MediaType::Print));
+    }
+
+    #[test]
+    fn test_comma_separated_or_evaluation() {
+        // screen, print — screen 上下文应匹配（第一个）
+        let queries = parse_media_query("screen, print").unwrap();
+        let ctx_screen = MediaContext::with_type(800.0, 600.0, MediaType::Screen);
+        let screen_matches = queries.iter().any(|q| evaluate_media_query(q, &ctx_screen));
+        assert!(screen_matches);
+
+        // print 上下文也应匹配（第二个）
+        let ctx_print = MediaContext::with_type(800.0, 600.0, MediaType::Print);
+        let print_matches = queries.iter().any(|q| evaluate_media_query(q, &ctx_print));
+        assert!(print_matches);
+    }
+
+    #[test]
+    fn test_comma_separated_with_conditions() {
+        let queries = parse_media_query("screen and (min-width: 600px), print").unwrap();
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0].media_type, Some(MediaType::Screen));
+        assert_eq!(queries[0].conditions.len(), 1);
+        assert_eq!(queries[1].media_type, Some(MediaType::Print));
+    }
+
+    // ── prefers-color-scheme 测试 ──
+
+    #[test]
+    fn test_parse_prefers_color_scheme_dark() {
+        let q = first_query("(prefers-color-scheme: dark)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::PrefersColorScheme(PrefersColorSchemeValue::Dark)
+        );
+    }
+
+    #[test]
+    fn test_parse_prefers_color_scheme_light() {
+        let q = first_query("(prefers-color-scheme: light)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::PrefersColorScheme(PrefersColorSchemeValue::Light)
+        );
+    }
+
+    #[test]
+    fn test_eval_prefers_color_scheme() {
+        let q = first_query("(prefers-color-scheme: dark)");
+
+        // 深色模式上下文应匹配
+        let mut ctx_dark = MediaContext::new(1024.0, 768.0);
+        ctx_dark.prefers_color_scheme = PrefersColorSchemeValue::Dark;
+        assert!(evaluate_media_query(&q, &ctx_dark));
+
+        // 浅色模式上下文不应匹配
+        let ctx_light = MediaContext::new(1024.0, 768.0);
+        assert!(!evaluate_media_query(&q, &ctx_light));
+    }
+
+    #[test]
+    fn test_prefers_color_scheme_not_boolean() {
+        // "(prefers-color-scheme)" 无值，不产生有效条件
+        let queries = parse_media_query("(prefers-color-scheme)").unwrap();
+        assert_eq!(queries[0].conditions.len(), 0);
+    }
+
+    // ── prefers-reduced-motion 测试 ──
+
+    #[test]
+    fn test_parse_prefers_reduced_motion_reduce() {
+        let q = first_query("(prefers-reduced-motion: reduce)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::PrefersReducedMotion(ReducedMotionValue::Reduce)
+        );
+    }
+
+    #[test]
+    fn test_parse_prefers_reduced_motion_no_preference() {
+        let q = first_query("(prefers-reduced-motion: no-preference)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::PrefersReducedMotion(ReducedMotionValue::NoPreference)
+        );
+    }
+
+    #[test]
+    fn test_eval_prefers_reduced_motion() {
+        let q = first_query("(prefers-reduced-motion: reduce)");
+
+        let mut ctx_reduce = MediaContext::new(1024.0, 768.0);
+        ctx_reduce.prefers_reduced_motion = ReducedMotionValue::Reduce;
+        assert!(evaluate_media_query(&q, &ctx_reduce));
+
+        let ctx_no_pref = MediaContext::new(1024.0, 768.0);
+        assert!(!evaluate_media_query(&q, &ctx_no_pref));
+    }
+
+    #[test]
+    fn test_prefers_reduced_motion_boolean() {
+        // "(prefers-reduced-motion)" 布尔形式 — 当 reduce 时为真
+        let q = first_query("(prefers-reduced-motion)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::PrefersReducedMotion(ReducedMotionValue::Reduce)
+        );
+
+        let mut ctx_reduce = MediaContext::new(1024.0, 768.0);
+        ctx_reduce.prefers_reduced_motion = ReducedMotionValue::Reduce;
+        assert!(evaluate_media_query(&q, &ctx_reduce));
+
+        let mut ctx_no_pref = MediaContext::new(1024.0, 768.0);
+        ctx_no_pref.prefers_reduced_motion = ReducedMotionValue::NoPreference;
+        assert!(!evaluate_media_query(&q, &ctx_no_pref));
+    }
+
+    // ── pointer 测试 ──
+
+    #[test]
+    fn test_parse_pointer_none() {
+        let q = first_query("(pointer: none)");
+        assert_eq!(q.conditions[0], MediaCondition::Pointer(PointerValue::None));
+    }
+
+    #[test]
+    fn test_parse_pointer_coarse() {
+        let q = first_query("(pointer: coarse)");
+        assert_eq!(q.conditions[0], MediaCondition::Pointer(PointerValue::Coarse));
+    }
+
+    #[test]
+    fn test_parse_pointer_fine() {
+        let q = first_query("(pointer: fine)");
+        assert_eq!(q.conditions[0], MediaCondition::Pointer(PointerValue::Fine));
+    }
+
+    #[test]
+    fn test_eval_pointer() {
+        let q = first_query("(pointer: fine)");
+
+        let mut ctx_fine = MediaContext::new(1024.0, 768.0);
+        ctx_fine.pointer_type = PointerValue::Fine;
+        assert!(evaluate_media_query(&q, &ctx_fine));
+
+        let mut ctx_coarse = MediaContext::new(1024.0, 768.0);
+        ctx_coarse.pointer_type = PointerValue::Coarse;
+        assert!(!evaluate_media_query(&q, &ctx_coarse));
+    }
+
+    #[test]
+    fn test_pointer_boolean() {
+        // "(pointer)" 布尔形式 — 当指针不为 none 时为真
+        let q = first_query("(pointer)");
+        assert_eq!(q.conditions.len(), 1);
+
+        let mut ctx_coarse = MediaContext::new(1024.0, 768.0);
+        ctx_coarse.pointer_type = PointerValue::Coarse;
+        assert!(evaluate_media_query(&q, &ctx_coarse));
+
+        let mut ctx_fine = MediaContext::new(1024.0, 768.0);
+        ctx_fine.pointer_type = PointerValue::Fine;
+        // 布尔形式解析为 Pointer(Coarse)，fine 上下文不匹配
+        assert!(!evaluate_media_query(&q, &ctx_fine));
+
+        let mut ctx_none = MediaContext::new(1024.0, 768.0);
+        ctx_none.pointer_type = PointerValue::None;
+        assert!(!evaluate_media_query(&q, &ctx_none));
+    }
+
+    // ── resolution 测试 ──
+
+    #[test]
+    fn test_parse_resolution_exact() {
+        let q = first_query("(resolution: 150dpi)");
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Resolution(MediaFeatureOp::Exact, 150.0)
+        );
+    }
+
+    #[test]
+    fn test_parse_min_resolution() {
+        let q = first_query("(min-resolution: 96dpi)");
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Resolution(MediaFeatureOp::GreaterEqual, 96.0)
+        );
+    }
+
+    #[test]
+    fn test_parse_max_resolution() {
+        let q = first_query("(max-resolution: 300dpi)");
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Resolution(MediaFeatureOp::LessEqual, 300.0)
+        );
+    }
+
+    #[test]
+    fn test_eval_resolution_exact() {
+        let q = first_query("(resolution: 96dpi)");
+
+        let mut ctx_96 = MediaContext::new(1024.0, 768.0);
+        ctx_96.resolution_dpi = 96.0;
+        assert!(evaluate_media_query(&q, &ctx_96));
+
+        let mut ctx_150 = MediaContext::new(1024.0, 768.0);
+        ctx_150.resolution_dpi = 150.0;
+        assert!(!evaluate_media_query(&q, &ctx_150));
+    }
+
+    #[test]
+    fn test_eval_min_resolution() {
+        let q = first_query("(min-resolution: 150dpi)");
+
+        let mut ctx_200 = MediaContext::new(1024.0, 768.0);
+        ctx_200.resolution_dpi = 200.0;
+        assert!(evaluate_media_query(&q, &ctx_200));
+
+        let mut ctx_96 = MediaContext::new(1024.0, 768.0);
+        ctx_96.resolution_dpi = 96.0;
+        assert!(!evaluate_media_query(&q, &ctx_96));
+    }
+
+    #[test]
+    fn test_eval_max_resolution() {
+        let q = first_query("(max-resolution: 150dpi)");
+
+        let mut ctx_96 = MediaContext::new(1024.0, 768.0);
+        ctx_96.resolution_dpi = 96.0;
+        assert!(evaluate_media_query(&q, &ctx_96));
+
+        let mut ctx_200 = MediaContext::new(1024.0, 768.0);
+        ctx_200.resolution_dpi = 200.0;
+        assert!(!evaluate_media_query(&q, &ctx_200));
+    }
+
+    // ── MediaContext 默认值测试 ──
+
+    #[test]
+    fn test_media_context_defaults() {
+        let ctx = MediaContext::new(800.0, 600.0);
+        assert_eq!(ctx.media_type, MediaType::Screen);
+        assert_eq!(ctx.prefers_color_scheme, PrefersColorSchemeValue::Light);
+        assert_eq!(ctx.prefers_reduced_motion, ReducedMotionValue::NoPreference);
+        assert_eq!(ctx.pointer_type, PointerValue::Coarse);
+        assert!((ctx.resolution_dpi - 96.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_media_context_with_type_defaults() {
+        let ctx = MediaContext::with_type(800.0, 600.0, MediaType::Print);
+        assert_eq!(ctx.media_type, MediaType::Print);
+        assert_eq!(ctx.prefers_color_scheme, PrefersColorSchemeValue::Light);
+        assert_eq!(ctx.prefers_reduced_motion, ReducedMotionValue::NoPreference);
+        assert_eq!(ctx.pointer_type, PointerValue::Coarse);
+        assert!((ctx.resolution_dpi - 96.0).abs() < 0.01);
+    }
+
+    // ── parse_dpi_value 辅助函数测试 ──
+
+    #[test]
+    fn test_parse_dpi_value() {
+        assert_eq!(parse_dpi_value("96dpi"), Some(96.0));
+        assert_eq!(parse_dpi_value("150dpi"), Some(150.0));
+        assert_eq!(parse_dpi_value("96"), Some(96.0));
+        assert_eq!(parse_dpi_value("invalid"), None);
+    }
+
+    // ── 组合测试：新特性与媒体类型混合 ──
+
+    #[test]
+    fn test_screen_with_prefers_color_scheme() {
+        let q = first_query("screen and (prefers-color-scheme: dark)");
+        assert_eq!(q.media_type, Some(MediaType::Screen));
+        assert_eq!(q.conditions.len(), 1);
+
+        let mut ctx = MediaContext::new(1024.0, 768.0);
+        ctx.prefers_color_scheme = PrefersColorSchemeValue::Dark;
+        assert!(evaluate_media_query(&q, &ctx));
+
+        let ctx_light = MediaContext::new(1024.0, 768.0);
+        assert!(!evaluate_media_query(&q, &ctx_light));
     }
 }

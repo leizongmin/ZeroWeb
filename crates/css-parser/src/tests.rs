@@ -3737,7 +3737,8 @@ fn test_parse_conic_gradient_at_position() {
 /// 测试媒体查询 "all" 类型解析
 fn test_media_query_all_type() {
     use crate::media_query::{MediaType, parse_media_query};
-    let q = parse_media_query("all").unwrap();
+    let queries = parse_media_query("all").unwrap();
+    let q = &queries[0];
     assert_eq!(q.media_type, Some(MediaType::All));
     assert!(q.conditions.is_empty());
 }
@@ -3746,11 +3747,12 @@ fn test_media_query_all_type() {
 /// 测试媒体查询多重条件评估
 fn test_media_query_multiple_conditions_eval() {
     use crate::media_query::{MediaContext, evaluate_media_query, parse_media_query};
-    let q = parse_media_query("screen and (min-width: 600px) and (orientation: landscape)").unwrap();
+    let queries = parse_media_query("screen and (min-width: 600px) and (orientation: landscape)").unwrap();
+    let q = &queries[0];
     let ctx = MediaContext::new(1024.0, 768.0);
-    assert!(evaluate_media_query(&q, &ctx));
+    assert!(evaluate_media_query(q, &ctx));
     let ctx_portrait = MediaContext::new(1024.0, 1200.0);
-    assert!(!evaluate_media_query(&q, &ctx_portrait));
+    assert!(!evaluate_media_query(q, &ctx_portrait));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4134,27 +4136,100 @@ fn test_parse_gradient_with_multiple_types() {
 }
 
 #[test]
-/// 测试 3D 变换函数：translate3d、scale3d、rotate3d、perspective。
-/// 当前 TransformFunction 不包含 3D 变体，应返回 None。
+/// 测试 3D 变换函数：translate3d、scale3d、rotate3d、perspective、rotateX、rotateY、rotateZ、matrix。
 fn test_parse_transform_3d_functions() {
-    // translate3d — 不支持，应返回 None
-    assert_eq!(parse_transform("translate3d(10px, 20px, 30px)"), None);
+    // translate3d
+    let result = parse_transform("translate3d(10px, 20px, 30px)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns.len(), 1);
+    assert_eq!(fns[0], TransformFunction::Translate3d(10.0, 20.0, 30.0));
 
-    // scale3d — 不支持，应返回 None
-    assert_eq!(parse_transform("scale3d(1, 2, 3)"), None);
+    // scale3d
+    let result = parse_transform("scale3d(1, 2, 3)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns.len(), 1);
+    assert_eq!(fns[0], TransformFunction::Scale3d(1.0, 2.0, 3.0));
 
-    // rotate3d — 不支持，应返回 None
-    assert_eq!(parse_transform("rotate3d(1, 0, 0, 45deg)"), None);
+    // rotate3d
+    let result = parse_transform("rotate3d(1, 0, 0, 45deg)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns.len(), 1);
+    assert_eq!(fns[0], TransformFunction::Rotate3d(1.0, 0.0, 0.0, 45.0));
 
-    // perspective — 不支持，应返回 None
-    assert_eq!(parse_transform("perspective(500px)"), None);
+    // perspective
+    let result = parse_transform("perspective(500px)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns.len(), 1);
+    assert_eq!(fns[0], TransformFunction::Perspective(500.0));
 
-    // 混合 2D 和 3D：只要有一个不支持就应返回 None
-    assert_eq!(parse_transform("translate(10px) rotate3d(1, 0, 0, 45deg)"), None);
+    // rotateX
+    let result = parse_transform("rotateX(45deg)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns[0], TransformFunction::RotateX(45.0));
+
+    // rotateY
+    let result = parse_transform("rotateY(30deg)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns[0], TransformFunction::RotateY(30.0));
+
+    // rotateZ
+    let result = parse_transform("rotateZ(90deg)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns[0], TransformFunction::RotateZ(90.0));
+
+    // matrix
+    let result = parse_transform("matrix(1, 0, 0, 1, 10, 20)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns[0], TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 10.0, 20.0));
+
+    // 混合 2D 和 3D 变换
+    let result = parse_transform("translate(10px) rotate3d(1, 0, 0, 45deg)").unwrap();
+    let fns = match result {
+        TransformValue::List(f) => f,
+        _ => panic!("expected List"),
+    };
+    assert_eq!(fns.len(), 2);
 
     // 纯 2D 变换仍然正常
     let result = parse_transform("translate(10px, 20px) rotate(45deg)");
     assert!(result.is_some());
+
+    // perspective 不接受零或负值
+    assert_eq!(parse_transform("perspective(0)"), None);
+    assert_eq!(parse_transform("perspective(-100px)"), None);
+
+    // rotate3d 需要 4 个参数
+    assert_eq!(parse_transform("rotate3d(1, 0, 0)"), None);
+
+    // translate3d 需要 3 个参数
+    assert_eq!(parse_transform("translate3d(10px, 20px)"), None);
+
+    // matrix 需要 6 个参数
+    assert_eq!(parse_transform("matrix(1, 0, 0, 1, 10)"), None);
 }
 
 #[test]
@@ -4273,7 +4348,8 @@ fn test_parse_media_query_range_syntax() {
     use crate::media_query::{MediaCondition, MediaContext, MediaFeatureOp, evaluate_media_query, parse_media_query};
 
     // 解析组合范围
-    let q = parse_media_query("(200px <= width <= 800px)").unwrap();
+    let queries = parse_media_query("(200px <= width <= 800px)").unwrap();
+    let q = &queries[0];
     assert_eq!(q.conditions.len(), 2, "组合范围应展开为 2 个条件");
     assert_eq!(
         q.conditions[0],
@@ -4288,26 +4364,23 @@ fn test_parse_media_query_range_syntax() {
 
     // 评估：500 在范围内通过
     let ctx_inside = MediaContext::new(500.0, 400.0);
-    assert!(
-        evaluate_media_query(&q, &ctx_inside),
-        "500px 在 [200, 800] 范围内应通过"
-    );
+    assert!(evaluate_media_query(q, &ctx_inside), "500px 在 [200, 800] 范围内应通过");
 
     // 评估：200 恰好下界通过
     let ctx_lower = MediaContext::new(200.0, 400.0);
-    assert!(evaluate_media_query(&q, &ctx_lower), "200px 恰好下界应通过（>=）");
+    assert!(evaluate_media_query(q, &ctx_lower), "200px 恰好下界应通过（>=）");
 
     // 评估：800 恰好上界通过
     let ctx_upper = MediaContext::new(800.0, 400.0);
-    assert!(evaluate_media_query(&q, &ctx_upper), "800px 恰好上界应通过（<=）");
+    assert!(evaluate_media_query(q, &ctx_upper), "800px 恰好上界应通过（<=）");
 
     // 评估：100 在范围外不通过
     let ctx_below = MediaContext::new(100.0, 400.0);
-    assert!(!evaluate_media_query(&q, &ctx_below), "100px 低于下界不应通过");
+    assert!(!evaluate_media_query(q, &ctx_below), "100px 低于下界不应通过");
 
     // 评估：900 在范围外不通过
     let ctx_above = MediaContext::new(900.0, 400.0);
-    assert!(!evaluate_media_query(&q, &ctx_above), "900px 超过上限不应通过");
+    assert!(!evaluate_media_query(q, &ctx_above), "900px 超过上限不应通过");
 }
 
 /// 测试 :has(> .child) 选择器解析正确。

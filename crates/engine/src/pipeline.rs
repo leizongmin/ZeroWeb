@@ -1200,6 +1200,143 @@ mod tests {
         );
     }
 
+    // ── 边缘场景补充测试（变换/合成/样式保持）──
+
+    /// 测试 perspective 变换在渲染管线中不崩溃。
+    ///
+    /// CSS 设置 perspective: 500px 和 transform: translateZ(50px)，
+    /// 验证渲染管线安全处理透视变换，不 panic。
+    #[test]
+    fn test_perspective_transform_offset() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div id="p">Perspective</div></body></html>"#;
+        let css = r#"
+            div { perspective: 500px; transform: translateZ(50px); width: 200px; height: 100px; background-color: red; }
+        "#;
+        let result = pipeline.render_html(html, css);
+        assert!(
+            result.timings.total_ms >= 0.0,
+            "perspective transform should not crash paint"
+        );
+        assert!(pipeline.layout().is_some());
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "perspective element should produce fills"
+        );
+    }
+
+    /// 测试 transform-origin 偏移变换效果。
+    ///
+    /// CSS 设置 transform-origin: 0 0 和 transform: rotate(45deg)，
+    /// 验证渲染管线安全处理非默认 transform-origin，不 panic。
+    #[test]
+    fn test_transform_origin_offset() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div id="t">Origin</div></body></html>"#;
+        let css = r#"
+            div {
+                transform-origin: 0px 0px;
+                transform: rotate(45deg);
+                width: 100px;
+                height: 100px;
+                background-color: blue;
+            }
+        "#;
+        let result = pipeline.render_html(html, css);
+        assert!(
+            result.timings.total_ms >= 0.0,
+            "transform-origin should not crash paint"
+        );
+        assert!(pipeline.layout().is_some());
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "transform-origin element should produce fills"
+        );
+    }
+
+    /// 测试负坐标绘制不崩溃。
+    ///
+    /// 元素使用 transform: translate(-50px, -30px) 将内容移到视口外，
+    /// 验证渲染管线安全处理负坐标。
+    #[test]
+    fn test_paint_with_negative_coords() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div id="neg">Offscreen</div></body></html>"#;
+        let css = r#"
+            div {
+                transform: translate(-50px, -30px);
+                width: 200px;
+                height: 200px;
+                background-color: green;
+            }
+        "#;
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0, "negative coords should not crash paint");
+        assert!(pipeline.layout().is_some());
+        assert!(
+            result.primitives.len() > 0,
+            "negative coord element should still produce primitives"
+        );
+    }
+
+    /// 测试深层嵌套 z-index 合成。
+    ///
+    /// 5 层嵌套元素各自设置不同 z-index，验证渲染管线正确处理
+    /// 多层 z-index 堆叠上下文，不 panic。
+    #[test]
+    fn test_composite_deeply_nested_z() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div style="position: relative; z-index: 5; width: 400px; height: 400px; background-color: #ff0000;">
+                <div style="position: relative; z-index: 4; width: 300px; height: 300px; background-color: #00ff00;">
+                    <div style="position: relative; z-index: 3; width: 200px; height: 200px; background-color: #0000ff;">
+                        <div style="position: relative; z-index: 2; width: 150px; height: 150px; background-color: #ffff00;">
+                            <div style="position: relative; z-index: 1; width: 100px; height: 100px; background-color: #ff00ff;">
+                                Deep
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "deeply nested z-index should not crash");
+        assert!(pipeline.layout().is_some());
+        assert!(
+            result.primitives.len() > 0,
+            "deeply nested z-index should produce primitives"
+        );
+    }
+
+    /// 测试 recompute_styles 后布局信息保持完整。
+    ///
+    /// 先 render_html 渲染一次，然后用 recompute_styles 重新计算，
+    /// 验证布局结果（viewport_width/height、root 子节点数）不丢失。
+    #[test]
+    fn test_recompute_style_preserves_layout() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+        let css = ".box { background-color: red; width: 200px; height: 100px; }";
+
+        // 首次渲染
+        let first = pipeline.render_html(html, css);
+        let first_child_count = first.layout.root.children.len();
+        let first_vp_width = first.layout.viewport_width;
+        let first_vp_height = first.layout.viewport_height;
+        assert!(first_child_count > 0, "首次渲染应有布局子节点");
+
+        // 重新计算样式（使用相同 CSS）
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (_, _, layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+        // 验证布局信息不丢失
+        assert_eq!(layout.viewport_width, first_vp_width, "viewport_width 应保持不变");
+        assert_eq!(layout.viewport_height, first_vp_height, "viewport_height 应保持不变");
+        assert_eq!(layout.root.children.len(), first_child_count, "布局子节点数应保持不变");
+        assert!(pipeline.layout().is_some(), "缓存布局应仍可用");
+    }
+
     /// 测试 HTML 表格结构的渲染。
     ///
     /// 验证含 <table><tr><td> 元素的 HTML 能正常通过管线，

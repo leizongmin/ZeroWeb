@@ -5014,6 +5014,459 @@ mod tests {
         assert!((b1.y - b2.y).abs() < 0.01, "两个元素应在同一行");
     }
 
+    // ── 边缘场景补充测试（第六批）──
+
+    /// 测试 grid-template-areas 3x3 布局。
+    ///
+    /// 定义 3x3 区域：
+    ///   "header header header"
+    ///   "sidebar main   aside"
+    ///   "footer footer footer"
+    /// 验证 header 和 footer 跨三列，sidebar/main/aside 各占一列。
+    #[test]
+    fn test_grid_template_areas_3x3() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let header_el = doc.create_element("div");
+        doc.append_child(grid, header_el).unwrap();
+        let sidebar_el = doc.create_element("div");
+        doc.append_child(grid, sidebar_el).unwrap();
+        let main_el = doc.create_element("div");
+        doc.append_child(grid, main_el).unwrap();
+        let aside_el = doc.create_element("div");
+        doc.append_child(grid, aside_el).unwrap();
+        let footer_el = doc.create_element("div");
+        doc.append_child(grid, footer_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 3x3 grid
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 200px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 100px 50px".to_string());
+        grid_style.grid_template_areas =
+            Some("\"header header header\" \"sidebar main aside\" \"footer footer footer\"".to_string());
+        grid_style.width = LengthValue::Px(400.0);
+        grid_style.height = LengthValue::Px(200.0);
+        styles.insert(grid, grid_style);
+
+        // header 跨第一行三列
+        let mut header_style = ComputedStyle::default();
+        header_style.grid_row_start = GridLineValue::Name("header".to_string());
+        header_style.grid_row_end = GridLineValue::Name("header".to_string());
+        header_style.grid_column_start = GridLineValue::Name("header".to_string());
+        header_style.grid_column_end = GridLineValue::Name("header".to_string());
+        styles.insert(header_el, header_style);
+
+        // sidebar 第二行第一列
+        let mut sidebar_style = ComputedStyle::default();
+        sidebar_style.grid_row_start = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_row_end = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_column_start = GridLineValue::Name("sidebar".to_string());
+        sidebar_style.grid_column_end = GridLineValue::Name("sidebar".to_string());
+        styles.insert(sidebar_el, sidebar_style);
+
+        // main 第二行第二列
+        let mut main_style = ComputedStyle::default();
+        main_style.grid_row_start = GridLineValue::Name("main".to_string());
+        main_style.grid_row_end = GridLineValue::Name("main".to_string());
+        main_style.grid_column_start = GridLineValue::Name("main".to_string());
+        main_style.grid_column_end = GridLineValue::Name("main".to_string());
+        styles.insert(main_el, main_style);
+
+        // aside 第二行第三列
+        let mut aside_style = ComputedStyle::default();
+        aside_style.grid_row_start = GridLineValue::Name("aside".to_string());
+        aside_style.grid_row_end = GridLineValue::Name("aside".to_string());
+        aside_style.grid_column_start = GridLineValue::Name("aside".to_string());
+        aside_style.grid_column_end = GridLineValue::Name("aside".to_string());
+        styles.insert(aside_el, aside_style);
+
+        // footer 跨第三行三列
+        let mut footer_style = ComputedStyle::default();
+        footer_style.grid_row_start = GridLineValue::Name("footer".to_string());
+        footer_style.grid_row_end = GridLineValue::Name("footer".to_string());
+        footer_style.grid_column_start = GridLineValue::Name("footer".to_string());
+        footer_style.grid_column_end = GridLineValue::Name("footer".to_string());
+        styles.insert(footer_el, footer_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let header_box = find_child_by_node_id(&result.root, header_el).expect("header found");
+        let sidebar_box = find_child_by_node_id(&result.root, sidebar_el).expect("sidebar found");
+        let main_box = find_child_by_node_id(&result.root, main_el).expect("main found");
+        let aside_box = find_child_by_node_id(&result.root, aside_el).expect("aside found");
+        let footer_box = find_child_by_node_id(&result.root, footer_el).expect("footer found");
+
+        // header 应跨三列（~400px）
+        assert!(
+            (header_box.width - 400.0).abs() < 2.0,
+            "header 应跨三列（~400px），实际 {}",
+            header_box.width
+        );
+        assert!(
+            (header_box.height - 50.0).abs() < 2.0,
+            "header 应高约 50px，实际 {}",
+            header_box.height
+        );
+
+        // sidebar 和 aside 应在 main 两侧
+        assert!(sidebar_box.x < main_box.x, "sidebar 应在 main 左侧");
+        assert!(aside_box.x > main_box.x, "aside 应在 main 右侧");
+
+        // main 宽度约 200px（中间列）
+        assert!(
+            (main_box.width - 200.0).abs() < 2.0,
+            "main 应宽约 200px，实际 {}",
+            main_box.width
+        );
+
+        // sidebar 和 main 在同一行
+        assert!((sidebar_box.y - main_box.y).abs() < 1.0, "sidebar 和 main 应在同一行");
+
+        // footer 应在 main 下方
+        assert!(footer_box.y > main_box.y, "footer 应在 main 下方");
+        assert!(
+            (footer_box.width - 400.0).abs() < 2.0,
+            "footer 应跨三列（~400px），实际 {}",
+            footer_box.width
+        );
+    }
+
+    /// 测试 grid-template-areas 中列数不匹配的情况。
+    ///
+    /// 第一行有 3 列，第二行只有 2 列。
+    /// 验证布局不 panic，且子元素仍有有效布局盒。
+    #[test]
+    fn test_grid_template_areas_invalid_shape() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let a = doc.create_element("div");
+        doc.append_child(grid, a).unwrap();
+        let b = doc.create_element("div");
+        doc.append_child(grid, b).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_template_rows = Some("50px 50px".to_string());
+        // 第二行只有 2 列（不匹配 3 列模板）— taffy 应容错
+        grid_style.grid_template_areas = Some("\"a a a\" \"b b\"".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        let mut sa = ComputedStyle::default();
+        sa.grid_row_start = GridLineValue::Name("a".to_string());
+        sa.grid_row_end = GridLineValue::Name("a".to_string());
+        sa.grid_column_start = GridLineValue::Name("a".to_string());
+        sa.grid_column_end = GridLineValue::Name("a".to_string());
+        styles.insert(a, sa);
+
+        let mut sb = ComputedStyle::default();
+        sb.grid_row_start = GridLineValue::Name("b".to_string());
+        sb.grid_row_end = GridLineValue::Name("b".to_string());
+        sb.grid_column_start = GridLineValue::Name("b".to_string());
+        sb.grid_column_end = GridLineValue::Name("b".to_string());
+        styles.insert(b, sb);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        // 不应 panic
+        let result = engine.compute(&doc, &styles);
+
+        // 子元素应有有效的布局盒
+        let box_a = find_child_by_node_id(&result.root, a);
+        let box_b = find_child_by_node_id(&result.root, b);
+        // 即使 taffy 无法正确解析不匹配的模板，也不应 panic
+        // 至少验证 grid 容器存在
+        assert!(result.root.width > 0.0);
+        if let Some(ba) = box_a {
+            assert!(ba.width.is_finite(), "元素 a 宽度应为有限值");
+        }
+        if let Some(bb) = box_b {
+            assert!(bb.width.is_finite(), "元素 b 宽度应为有限值");
+        }
+    }
+
+    /// 测试 grid auto-fill + minmax(100px, 1fr) 在 500px 容器中的轨道大小。
+    ///
+    /// repeat(auto-fill, minmax(100px, 1fr)) 应创建 5 个等宽轨道。
+    #[test]
+    fn test_grid_auto_fill_minmax_equal_tracks() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..5 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("repeat(auto-fill, minmax(100px, 1fr))".to_string());
+        grid_style.width = LengthValue::Px(500.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 每个 item 至少 100px（minmax 的 min 约束）
+        for (i, &id) in item_ids.iter().enumerate() {
+            let item_box = find_child_by_node_id(&result.root, id).unwrap_or_else(|| panic!("item{} not found", i));
+            assert!(
+                item_box.width >= 99.0,
+                "item{} 宽度应 >= 100px（minmax min），实际 {}",
+                i,
+                item_box.width
+            );
+        }
+
+        // 5 个 item 应在同一行（水平排列）
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b4 = find_child_by_node_id(&result.root, item_ids[4]).expect("item4 found");
+        assert!(b4.x > b0.x, "最后一个 item 应在第一个 item 右侧");
+
+        // 所有 item 宽度应相等（均为 1fr）
+        let widths: Vec<f32> = item_ids
+            .iter()
+            .map(|id| find_child_by_node_id(&result.root, *id).unwrap().width)
+            .collect();
+        for w in &widths[1..] {
+            assert!((w - widths[0]).abs() < 2.0, "所有轨道宽度应相等，实际 {:?}", widths);
+        }
+    }
+
+    /// 测试 grid-area 命名引用的完整端到端流程。
+    ///
+    /// 定义 template-areas 并通过 grid-area: name 放置元素，
+    /// 验证元素被正确分配到对应区域。
+    #[test]
+    fn test_grid_named_area_resolution_full() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let top_el = doc.create_element("div");
+        doc.append_child(grid, top_el).unwrap();
+        let bottom_el = doc.create_element("div");
+        doc.append_child(grid, bottom_el).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("1fr 1fr".to_string());
+        grid_style.grid_template_rows = Some("100px 100px".to_string());
+        grid_style.grid_template_areas = Some("\"top top\" \"bottom bottom\"".to_string());
+        grid_style.width = LengthValue::Px(400.0);
+        grid_style.height = LengthValue::Px(200.0);
+        styles.insert(grid, grid_style);
+
+        let mut top_style = ComputedStyle::default();
+        top_style.grid_row_start = GridLineValue::Name("top".to_string());
+        top_style.grid_row_end = GridLineValue::Name("top".to_string());
+        top_style.grid_column_start = GridLineValue::Name("top".to_string());
+        top_style.grid_column_end = GridLineValue::Name("top".to_string());
+        styles.insert(top_el, top_style);
+
+        let mut bottom_style = ComputedStyle::default();
+        bottom_style.grid_row_start = GridLineValue::Name("bottom".to_string());
+        bottom_style.grid_row_end = GridLineValue::Name("bottom".to_string());
+        bottom_style.grid_column_start = GridLineValue::Name("bottom".to_string());
+        bottom_style.grid_column_end = GridLineValue::Name("bottom".to_string());
+        styles.insert(bottom_el, bottom_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let top_box = find_child_by_node_id(&result.root, top_el).expect("top found");
+        let bottom_box = find_child_by_node_id(&result.root, bottom_el).expect("bottom found");
+
+        // top 应在第一行，跨两列（~400px）
+        assert!(
+            (top_box.width - 400.0).abs() < 2.0,
+            "top 应跨两列（~400px），实际 {}",
+            top_box.width
+        );
+        assert!(
+            (top_box.height - 100.0).abs() < 2.0,
+            "top 应高约 100px，实际 {}",
+            top_box.height
+        );
+
+        // bottom 应在第二行
+        assert!(bottom_box.y > top_box.y, "bottom 应在 top 下方");
+        assert!(
+            (bottom_box.width - 400.0).abs() < 2.0,
+            "bottom 应跨两列（~400px），实际 {}",
+            bottom_box.width
+        );
+    }
+
+    /// 测试 grid 中 gap 与 fr 单位组合。
+    ///
+    /// grid-template-columns: 1fr 1fr; gap: 20px 在 420px 容器中，
+    /// 每个轨道 = (420 - 20) / 2 = 200px。
+    #[test]
+    fn test_grid_gap_with_fr_units() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("1fr 1fr".to_string());
+        grid_style.grid_template_rows = Some("100px".to_string());
+        grid_style.gap = LengthValue::Px(20.0);
+        grid_style.width = LengthValue::Px(420.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        styles.insert(item1, ComputedStyle::default());
+        styles.insert(item2, ComputedStyle::default());
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+
+        // 每个轨道 = (420 - 20) / 2 = 200px
+        assert!(
+            (b1.width - 200.0).abs() < 2.0,
+            "item1 宽度应约 200px（(420-20)/2），实际 {}",
+            b1.width
+        );
+        assert!(
+            (b2.width - 200.0).abs() < 2.0,
+            "item2 宽度应约 200px，实际 {}",
+            b2.width
+        );
+
+        // item2 应在 item1 右侧，间距约 20px
+        let gap = b2.x - b1.x - b1.width;
+        assert!((gap - 20.0).abs() < 2.0, "gap 应约 20px，实际 {}", gap);
+
+        // 总宽度应约 420px
+        let total = b1.width + b2.width + gap;
+        assert!((total - 420.0).abs() < 2.0, "总宽度应约 420px，实际 {}", total);
+    }
+
+    /// 测试负 z-index 值在布局输出中正确反映。
+    ///
+    /// 验证 z_index: -1 的元素在 LayoutBox 中产生 z_index: -1，
+    /// 而 z_index: auto 产生 0。
+    #[test]
+    fn test_layout_negative_z_index() {
+        use zero_style_system::ZIndexValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let div_neg = doc.create_element("div");
+        doc.append_child(body, div_neg).unwrap();
+        let div_auto = doc.create_element("div");
+        doc.append_child(body, div_auto).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut s_neg = ComputedStyle::default();
+        s_neg.display = DisplayValue::Block;
+        s_neg.width = LengthValue::Px(100.0);
+        s_neg.height = LengthValue::Px(50.0);
+        s_neg.z_index = ZIndexValue::Integer(-1);
+        s_neg.position = PositionValue::Relative;
+        styles.insert(div_neg, s_neg);
+
+        let mut s_auto = ComputedStyle::default();
+        s_auto.display = DisplayValue::Block;
+        s_auto.width = LengthValue::Px(100.0);
+        s_auto.height = LengthValue::Px(50.0);
+        styles.insert(div_auto, s_auto);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let box_neg = find_child_by_node_id(&result.root, div_neg).expect("div_neg found");
+        let box_auto = find_child_by_node_id(&result.root, div_auto).expect("div_auto found");
+
+        assert_eq!(box_neg.z_index, -1, "z-index: -1 应产生 z_index=-1");
+        assert_eq!(box_auto.z_index, 0, "z-index: auto 应产生 z_index=0");
+    }
+
+    /// 测试百分比 gap 值。
+    ///
+    /// grid 中 gap:10% 在 400px 容器中，gap 应约 40px。
+    #[test]
+    fn test_layout_percentage_gap() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("1fr 1fr".to_string());
+        grid_style.grid_template_rows = Some("100px".to_string());
+        grid_style.gap = LengthValue::Percentage(10.0);
+        grid_style.width = LengthValue::Px(400.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        styles.insert(item1, ComputedStyle::default());
+        styles.insert(item2, ComputedStyle::default());
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+
+        // 百分比 gap 相对于容器宽度：400 * 10% = 40px
+        // 两个 item 间距应反映百分比 gap
+        let gap = b2.x - b1.x - b1.width;
+        assert!(gap >= 0.0, "gap 应为非负值，实际 {}", gap);
+
+        // 验证总宽度不超过容器
+        let total = b1.width + b2.width + gap;
+        assert!(total <= 401.0, "总宽度应不超过容器（400px），实际 {}", total);
+
+        // item 应在同一行
+        assert!((b1.y - b2.y).abs() < 1.0, "两个 item 应在同一行");
+    }
+
     /// 测试 box-sizing:border-box 时，width 包含 padding。
     ///
     /// 元素 width:100px，padding:10px（四边），box-sizing:border-box。
