@@ -1312,12 +1312,14 @@ mod integration_tests {
         let _ = h4.join();
 
         // ── 阶段 2: 2 次重定向，max=1，应失败 ──
+        // l5 返回 302 → l6，l6 返回 302 → /final
+        // 客户端收到 l5 的 302（count=1, 1<=1 继续）→ 请求 l6
+        // 收到 l6 的 302（count=2, 2>1 失败）→ TooManyRedirects
+        // l6 必须能响应（客户端确实会连接 l6），不需要第三个服务器。
         let (l5, url5) = bind_server();
         let (l6, url6) = bind_server();
-        let (l7, url7) = bind_server();
 
         let t6 = format!("{url6}/hop");
-        let t7 = format!("{url7}/final");
 
         let t6c = t6.clone();
         let h5 = std::thread::spawn(move || {
@@ -1328,23 +1330,12 @@ mod integration_tests {
             let _ = s.flush();
         });
 
-        let t7c = t7.clone();
         let h6 = std::thread::spawn(move || {
             let mut s = l6.incoming().next().unwrap().unwrap();
             let mut buf = [0u8; 4096];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t7c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.write_all("HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n".as_bytes());
             let _ = s.flush();
-        });
-
-        let h7 = std::thread::spawn(move || {
-            // 可能不会被访问，但保险起见
-            if let Ok(mut s) = l7.incoming().next().unwrap() {
-                let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf);
-                let _ = s.write_all("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".as_bytes());
-                let _ = s.flush();
-            }
         });
 
         let client = HttpClient::with_max_redirects(1);
@@ -1357,6 +1348,5 @@ mod integration_tests {
 
         let _ = h5.join();
         let _ = h6.join();
-        let _ = h7.join();
     }
 }
