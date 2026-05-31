@@ -7407,4 +7407,104 @@ mod tests {
         ctx.restore();
         assert_eq!(ctx.fill_color(), Color::RED, "恢复到层级 0 应为红色");
     }
+
+    // ── 边界条件测试（第九批）──
+
+    /// 测试 resize 到更大尺寸后画布像素缓冲区重新分配，之前内容被清空。
+    #[test]
+    fn test_canvas_resize_larger_clears_pixels() {
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 确认红色已写入
+        let before = ctx.get_image_data(0, 0, 5, 5);
+        assert_eq!(before.data[0], 255);
+        // resize 到更大尺寸
+        ctx.resize(20, 20);
+        assert_eq!(ctx.width(), 20);
+        assert_eq!(ctx.height(), 20);
+        // resize 后像素应全部清零
+        let after = ctx.get_image_data(0, 0, 5, 5);
+        assert_eq!(after.data[0..4], [0, 0, 0, 0], "resize 后像素应被清零");
+    }
+
+    /// 测试 set_fill_style 使用径向渐变后 fill_rect 像素使用采样颜色。
+    #[test]
+    fn test_fill_rect_with_radial_gradient_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_radial_gradient(50.0, 50.0, 0.0, 50.0, 50.0, 50.0);
+        grad.add_color_stop(0.0, Color::WHITE);
+        grad.add_color_stop(1.0, Color::BLACK);
+        ctx.set_fill_style(CanvasStyle::RadialGradient(grad));
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+        // fill_rect 使用 resolve_color()，对 RadialGradient 在 offset=0.5 处采样
+        let pixel = ctx.get_image_data(10, 10, 1, 1);
+        // 中间灰度值
+        assert!(
+            (pixel.data[0] as i32 - 128).abs() <= 2,
+            "radial gradient sample at 0.5 应为 ~128, got {}",
+            pixel.data[0]
+        );
+        assert_eq!(pixel.data[3], 255, "alpha 应为 255");
+    }
+
+    /// 测试 set_stroke_style 使用锥形渐变后 stroke_rect 像素使用采样颜色。
+    #[test]
+    fn test_stroke_rect_with_conic_gradient_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_conic_gradient(0.0, 50.0, 50.0);
+        grad.add_color_stop(0.0, Color::BLACK);
+        grad.add_color_stop(1.0, Color::WHITE);
+        ctx.set_stroke_style(CanvasStyle::ConicGradient(grad));
+        ctx.stroke_rect(5.0, 5.0, 20.0, 20.0);
+        // stroke_rect 使用 resolve_color()，ConicGradient 在 offset=0.0 处采样
+        // offset=0.0 对应第一个 stop 的颜色：黑色
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0], 0, "conic gradient sample at 0.0 应为黑色");
+        assert_eq!(pixel.data[1], 0);
+        assert_eq!(pixel.data[2], 0);
+        assert_eq!(pixel.data[3], 255);
+    }
+
+    /// 测试 scale(0, 0) 后 fill_rect 不 panic 且变换结果退化。
+    #[test]
+    fn test_canvas_scale_zero_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.scale(0.0, 0.0);
+        // scale(0,0) 使变换矩阵退化为全零平移，fill_rect 应不 panic
+        ctx.fill_rect(10.0, 10.0, 50.0, 50.0);
+        // 退化矩阵下 transform_point 产生的矩形宽高为 0，不应写入像素
+        let pixel = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 0, 0], "退化矩阵不应写入像素");
+    }
+
+    /// 测试 measure_text 在 set_font 改变字体大小后返回不同的宽度值。
+    #[test]
+    fn test_measure_text_reflects_font_size_change() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 默认字体大小 10.0
+        let m1 = ctx.measure_text("abc");
+        let expected1 = 3.0 * 10.0 * 0.6; // 18.0
+        assert!(
+            (m1.width - expected1).abs() < f32::EPSILON,
+            "默认大小 10.0 时宽度应为 {}",
+            expected1
+        );
+        // 改为 20.0
+        ctx.set_font(FontDescriptor {
+            family: "sans-serif".to_string(),
+            size: 20.0,
+            weight: FontWeight::Normal,
+            style: FontStyle::Normal,
+        });
+        let m2 = ctx.measure_text("abc");
+        let expected2 = 3.0 * 20.0 * 0.6; // 36.0
+        assert!(
+            (m2.width - expected2).abs() < f32::EPSILON,
+            "字体大小 20.0 时宽度应为 {}",
+            expected2
+        );
+        // 两次测量应不同
+        assert!((m1.width - m2.width).abs() > 1.0, "不同字体大小的测量结果应不同");
+    }
 }

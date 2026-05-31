@@ -242,6 +242,18 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── outline 简写 ──
         "outline" => expand_outline(value, important, specificity),
 
+        // ── columns 简写 ──
+        // columns: <column-count> <column-width>
+        // 若值为纯整数 → column-count，其余设为 auto
+        // 若值为长度 → column-width，其余设为 auto
+        // 双值：依次为 column-count 和 column-width
+        "columns" => expand_columns(value, important, specificity),
+
+        // ── column-rule 简写 ──
+        // column-rule: [width] [style] [color]
+        // 与 outline 类似，各部分顺序无关
+        "column-rule" => expand_column_rule(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
@@ -1009,6 +1021,68 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         mk("outline-width", width),
         mk("outline-style", style),
         mk("outline-color", color),
+    ]
+}
+
+/// 展开 columns 简写。
+///
+/// CSS `columns` 简写格式为：
+/// `columns: [column-count] [column-width]`
+///
+/// - 单个整数（如 `3`）→ column-count: 3, column-width: auto
+/// - 单个长度值（如 `200px`）→ column-count: auto, column-width: 200px
+/// - 双值（如 `3 200px`）→ column-count: 3, column-width: 200px
+fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => {
+            // 单值：判断是整数（column-count）还是长度（column-width）
+            if parts[0].parse::<u32>().is_ok() || parts[0] == "auto" {
+                vec![mk("column-count", parts[0]), mk("column-width", "auto")]
+            } else {
+                vec![mk("column-count", "auto"), mk("column-width", parts[0])]
+            }
+        }
+        2 => {
+            // 双值：第一个为 column-count，第二个为 column-width
+            vec![mk("column-count", parts[0]), mk("column-width", parts[1])]
+        }
+        _ => vec![],
+    }
+}
+
+/// 展开 column-rule 简写。
+///
+/// CSS `column-rule` 简写格式为：
+/// `column-rule: [width] [style] [color]`
+///
+/// 各部分顺序无关，未指定的部分使用初始值。
+fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut width = "medium".to_string();
+    let mut style = "none".to_string();
+    let mut color = "currentcolor".to_string();
+
+    for part in parts {
+        if is_border_style_keyword(part) {
+            style = part.to_string();
+        } else if looks_like_length(part) {
+            width = part.to_string();
+        } else if looks_like_color(part) {
+            color = part.to_string();
+        }
+    }
+
+    vec![
+        mk("column-rule-width", &width),
+        mk("column-rule-style", &style),
+        mk("column-rule-color", &color),
     ]
 }
 
@@ -2398,5 +2472,75 @@ mod tests {
         assert_eq!(result[0].1, "contain");
         assert_eq!(result[1].0, "overscroll-behavior-y");
         assert_eq!(result[1].1, "none");
+    }
+
+    // ── columns 简写测试 ──
+
+    #[test]
+    /// columns 双值展开：3 200px → column-count=3, column-width=200px
+    fn test_columns_both_values() {
+        let result = expand_one("columns", "3 200px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "column-count");
+        assert_eq!(result[0].1, "3");
+        assert_eq!(result[1].0, "column-width");
+        assert_eq!(result[1].1, "200px");
+    }
+
+    #[test]
+    /// columns 单个整数展开：3 → column-count=3, column-width=auto
+    fn test_columns_count_only() {
+        let result = expand_one("columns", "3", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "column-count");
+        assert_eq!(result[0].1, "3");
+        assert_eq!(result[1].0, "column-width");
+        assert_eq!(result[1].1, "auto");
+    }
+
+    #[test]
+    /// columns 单个长度值展开：200px → column-count=auto, column-width=200px
+    fn test_columns_width_only() {
+        let result = expand_one("columns", "200px", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "column-count");
+        assert_eq!(result[0].1, "auto");
+        assert_eq!(result[1].0, "column-width");
+        assert_eq!(result[1].1, "200px");
+    }
+
+    // ── column-rule 简写测试 ──
+
+    #[test]
+    /// column-rule 三值展开：2px solid blue → width, style, color
+    fn test_column_rule_three_values() {
+        let result = expand_one("column-rule", "2px solid blue", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "column-rule-width");
+        assert_eq!(result[0].1, "2px");
+        assert_eq!(result[1].0, "column-rule-style");
+        assert_eq!(result[1].1, "solid");
+        assert_eq!(result[2].0, "column-rule-color");
+        assert_eq!(result[2].1, "blue");
+    }
+
+    #[test]
+    /// column-rule 单值展开：dotted → style=dotted，其余为默认值
+    fn test_column_rule_style_only() {
+        let result = expand_one("column-rule", "dotted", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1, "medium"); // 默认 width
+        assert_eq!(result[1].1, "dotted"); // style
+        assert_eq!(result[2].1, "currentcolor"); // 默认 color
+    }
+
+    #[test]
+    /// column-rule 双值展开：3px dashed → width=3px, style=dashed
+    fn test_column_rule_width_and_style() {
+        let result = expand_one("column-rule", "3px dashed", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1, "3px");
+        assert_eq!(result[1].1, "dashed");
+        assert_eq!(result[2].1, "currentcolor"); // 默认 color
     }
 }

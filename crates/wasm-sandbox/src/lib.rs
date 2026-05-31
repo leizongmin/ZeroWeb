@@ -3057,4 +3057,222 @@ mod tests {
         let result = sandbox.compile(&[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF]);
         assert!(result.is_err(), "corrupted module should fail to compile");
     }
+
+    // =======================================================================
+    // 新增测试：更多边界条件
+    // =======================================================================
+
+    /// 测试向不存在的内存导出名调用 write_memory，应返回 ExportNotFound 错误。
+    /// 已有 test_memory_not_found 测试了 read_memory/has_memory/memory_size，
+    /// 但 write_memory 的错误路径尚未覆盖。
+    #[test]
+    fn test_write_memory_nonexistent_export() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "f") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 模块没有导出内存，write_memory 应返回 ExportNotFound 错误
+        let result = instance.write_memory("nonexistent_mem", 0, b"data");
+        assert!(result.is_err(), "写入不存在的内存应返回错误");
+        if let Err(WasmError::ExportNotFound { name }) = result {
+            assert_eq!(name, "nonexistent_mem", "错误中应包含请求的导出名");
+        } else {
+            panic!("期望 ExportNotFound 错误，实际: {result:?}");
+        }
+    }
+
+    /// 测试 WASM 函数返回 f32 特殊值（NaN、正无穷、负无穷），
+    /// 验证沙箱能正确传递这些浮点边界值而不崩溃或截断。
+    #[test]
+    fn test_call_f32_special_values() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "ret_nan") (result f32)
+                    f32.const nan:0x400000
+                )
+                (func (export "ret_inf") (result f32)
+                    f32.const inf
+                )
+                (func (export "ret_neg_inf") (result f32)
+                    f32.const -inf
+                )
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // NaN 值
+        let r = instance.call("ret_nan", &[]).expect("call nan");
+        if let WasmValue::F32(v) = r[0] {
+            assert!(v.is_nan(), "返回值应为 NaN，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+
+        // 正无穷
+        let r = instance.call("ret_inf", &[]).expect("call inf");
+        if let WasmValue::F32(v) = r[0] {
+            assert!(v.is_infinite() && v.is_sign_positive(), "返回值应为正无穷，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+
+        // 负无穷
+        let r = instance.call("ret_neg_inf", &[]).expect("call neg_inf");
+        if let WasmValue::F32(v) = r[0] {
+            assert!(v.is_infinite() && v.is_sign_negative(), "返回值应为负无穷，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+    }
+
+    /// 测试 WASM 内部函数间调用：导出函数调用另一个未导出的内部函数，
+    /// 验证 WASM 模块内部的 call 指令正确执行，参数和返回值传递无误。
+    #[test]
+    fn test_internal_function_call_chain() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                ;; 内部辅助函数：计算平方
+                (func $square (param i32) (result i32)
+                    local.get 0
+                    local.get 0
+                    i32.mul)
+                ;; 内部辅助函数：计算两数之和
+                (func $add (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    i32.add)
+                ;; 导出函数：计算 (a+b)^2，调用内部 $add 和 $square
+                (func (export "sum_sq") (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    call $add
+                    call $square)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        // 只有 sum_sq 被导出
+        assert_eq!(module.exports().len(), 1);
+        assert!(module.exports().contains(&"sum_sq".to_string()));
+
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // (3 + 4)^2 = 49
+        let r = instance
+            .call("sum_sq", &[WasmValue::I32(3), WasmValue::I32(4)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(49), "(3+4)^2 应为 49");
+
+        // (0 + 0)^2 = 0
+        let r = instance
+            .call("sum_sq", &[WasmValue::I32(0), WasmValue::I32(0)])
+            .expect("call zero");
+        assert_eq!(r[0], WasmValue::I32(0), "(0+0)^2 应为 0");
+
+        // (-2 + 5)^2 = 9
+        let r = instance
+            .call("sum_sq", &[WasmValue::I32(-2), WasmValue::I32(5)])
+            .expect("call negative");
+        assert_eq!(r[0], WasmValue::I32(9), "(-2+5)^2 应为 9");
+    }
+
+    /// 测试可变全局变量在 WASM 函数修改后，通过 get_global_export 能读回最新值。
+    /// 已有 test_global_variable 测试函数返回值，但未验证 get_global_export 的同步读取。
+    #[test]
+    fn test_get_global_export_after_mutation() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global $val (export "val") (mut i32) (i32.const 10))
+                (func (export "set_val") (param i32)
+                    local.get 0
+                    global.set $val)
+                (func (export "get_val") (result i32)
+                    global.get $val)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 初始值
+        let g = instance.get_global_export("val").expect("initial read");
+        assert_eq!(g, WasmValue::I32(10), "初始全局值应为 10");
+
+        // 通过 WASM 函数修改全局变量
+        instance.call("set_val", &[WasmValue::I32(99)]).expect("set_val");
+
+        // 通过 get_global_export 验证值已更新
+        let g = instance.get_global_export("val").expect("after set");
+        assert_eq!(g, WasmValue::I32(99), "修改后全局值应为 99");
+
+        // 同时通过 WASM 函数验证一致性
+        let r = instance.call("get_val", &[]).expect("get_val");
+        assert_eq!(r[0], WasmValue::I32(99), "WASM 函数返回值应与 get_global_export 一致");
+
+        // 再次修改为负数
+        instance.call("set_val", &[WasmValue::I32(-1)]).expect("set_val neg");
+        let g = instance.get_global_export("val").expect("after neg");
+        assert_eq!(g, WasmValue::I32(-1), "修改为负数后应为 -1");
+    }
+
+    /// 测试主机函数返回多个结果值（2 个 i32），
+    /// 验证 WASM 能正确接收主机函数的所有返回值并进一步运算。
+    #[test]
+    fn test_host_function_multiple_results() {
+        let sandbox = WasmSandbox::new();
+        // WASM 导入一个返回两个 i32 的主机函数 divmod：
+        // 给定 n 和 d，主机函数返回 (n/d, n%d)
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "divmod"
+                    (func $divmod (param i32 i32) (result i32 i32)))
+                (func (export "test") (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    call $divmod
+                    ;; 栈上现在有商和余数，将它们相加返回
+                    i32.add)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "divmod",
+            vec![WasmValueType::I32, WasmValueType::I32],
+            vec![WasmValueType::I32, WasmValueType::I32],
+            |params, results| {
+                if let (WasmValue::I32(n), WasmValue::I32(d)) = (&params[0], &params[1]) {
+                    // WASM 整数除法为截断向零
+                    let quotient = *n / *d;
+                    let remainder = *n % *d;
+                    results.push(WasmValue::I32(quotient));
+                    results.push(WasmValue::I32(remainder));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 17 / 5 = 商 3，余数 2，和 = 5
+        let r = instance
+            .call("test", &[WasmValue::I32(17), WasmValue::I32(5)])
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(5), "17 divmod 5 的商+余数应为 3+2=5");
+
+        // 100 / 7 = 商 14，余数 2，和 = 16
+        let r = instance
+            .call("test", &[WasmValue::I32(100), WasmValue::I32(7)])
+            .expect("call2");
+        assert_eq!(r[0], WasmValue::I32(16), "100 divmod 7 的商+余数应为 14+2=16");
+    }
 }
