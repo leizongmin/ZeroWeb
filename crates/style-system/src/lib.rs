@@ -279,7 +279,7 @@ mod tests {
     use zero_css_parser::ast::{
         ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
     };
-    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
+    use zero_css_parser::values::{BoxSizingValue, ColorValue, DisplayValue, LengthValue, OverflowValue};
     use zero_dom::{Document, NodeId};
 
     /// 创建测试 DOM：html > body > div#main > p.text
@@ -2064,5 +2064,180 @@ mod tests {
         let styles = sys.compute_styles(&doc, &stylesheets);
         let div_style = styles.get(&div).expect("div should have style");
         assert_eq!(div_style.aspect_ratio, None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 属性边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// cursor 是继承属性：父元素设置 cursor:pointer，子元素无显式 cursor 时继承 pointer
+    fn test_cursor_inheritance() {
+        let (doc, _html, _body, _div, p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "cursor".to_string(),
+                    value: "pointer".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let p_style = styles.get(&p).expect("p 应该有样式");
+        // cursor 是继承属性，p 应从 div 继承 pointer
+        assert_eq!(p_style.cursor, property::CursorValue::Pointer);
+    }
+
+    #[test]
+    /// opacity 不是继承属性：父元素设置 opacity:0.5，子元素默认 opacity 为 1.0
+    fn test_opacity_inheritance() {
+        let (doc, _html, _body, _div, p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "opacity".to_string(),
+                    value: "0.5".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let p_style = styles.get(&p).expect("p 应该有样式");
+        // opacity 不继承，子元素默认 1.0
+        assert_eq!(p_style.opacity, 1.0);
+    }
+
+    #[test]
+    /// transition-property: none 表示无过渡属性，结果为空列表
+    fn test_transition_property_none() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "transition".to_string(),
+                    value: "none".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // transition: none → transition-property 解析为空列表
+        assert!(div_style.transition_property.is_empty());
+    }
+
+    #[test]
+    /// animation-name: none 表示无动画，结果为空列表
+    fn test_animation_name_none() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "animation".to_string(),
+                    value: "none".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // animation: none → animation-name 解析为空列表
+        assert!(div_style.animation_name.is_empty());
+    }
+
+    #[test]
+    /// box-sizing: border-box 时，border 宽度从总宽度中扣除，
+    /// 内容区域宽度 = 指定宽度 - border 宽度
+    fn test_box_sizing_effect_on_width() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "box-sizing".to_string(),
+                        value: "border-box".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "width".to_string(),
+                        value: "100px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "border".to_string(),
+                        value: "10px solid black".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // box-sizing 应用为 border-box
+        assert_eq!(div_style.box_sizing, BoxSizingValue::BorderBox);
+        // width 仍为 100px（内容宽度计算由布局引擎完成）
+        assert_eq!(div_style.width, LengthValue::Px(100.0));
+        // border 各边宽度为 10px
+        assert_eq!(div_style.border_top_width, LengthValue::Px(10.0));
+        assert_eq!(div_style.border_left_width, LengthValue::Px(10.0));
+    }
+
+    #[test]
+    /// transform 支持多个变换函数组合：translateX(10px) rotate(45deg) 两个函数都被应用
+    fn test_multiple_transform_functions() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "transform".to_string(),
+                    value: "translateX(10px) rotate(45deg)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        // 应该解析为 TransformValue::List 且包含两个函数
+        match &div_style.transform {
+            zero_css_parser::values::TransformValue::List(funcs) => {
+                assert_eq!(funcs.len(), 2, "应包含两个变换函数");
+                // 验证第一个函数是 translateX(10px)
+                assert!(
+                    matches!(&funcs[0], zero_css_parser::values::TransformFunction::TranslateX(v) if (*v - 10.0).abs() < 0.01),
+                    "第一个函数应为 translateX(10px)"
+                );
+                // 验证第二个函数是 rotate(45deg)
+                assert!(
+                    matches!(&funcs[1], zero_css_parser::values::TransformFunction::Rotate(v) if (*v - 45.0).abs() < 0.01),
+                    "第二个函数应为 rotate(45deg)"
+                );
+            }
+            other => panic!("transform 应为 List，实际为 {:?}", other),
+        }
     }
 }

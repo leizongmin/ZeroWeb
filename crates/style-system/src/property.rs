@@ -1406,6 +1406,39 @@ pub fn parse_cursor(value: &str) -> Option<CursorValue> {
     }
 }
 
+/// 将 css-parser 的 CursorValue 映射为 style-system 的 CursorValue。
+fn map_css_cursor(v: zero_css_parser::values::CursorValue) -> CursorValue {
+    use zero_css_parser::values::CursorValue as Cv;
+    match v {
+        Cv::Auto => CursorValue::Auto,
+        Cv::Default => CursorValue::Default,
+        Cv::Pointer => CursorValue::Pointer,
+        Cv::Move => CursorValue::Move,
+        Cv::Text => CursorValue::Text,
+        Cv::Wait => CursorValue::Wait,
+        Cv::Crosshair => CursorValue::Crosshair,
+        Cv::NotAllowed => CursorValue::NotAllowed,
+        Cv::Grab => CursorValue::Grab,
+        Cv::Grabbing => CursorValue::Grabbing,
+        Cv::Help => CursorValue::Help,
+        Cv::Progress => CursorValue::Progress,
+        Cv::NResize => CursorValue::NsResize,
+        Cv::SResize => CursorValue::NsResize,
+        Cv::EResize => CursorValue::EwResize,
+        Cv::WResize => CursorValue::EwResize,
+        Cv::NeResize => CursorValue::NsResize,
+        Cv::NwResize => CursorValue::NsResize,
+        Cv::SeResize => CursorValue::NsResize,
+        Cv::SwResize => CursorValue::NsResize,
+        Cv::ColResize => CursorValue::ColResize,
+        Cv::RowResize => CursorValue::RowResize,
+        Cv::AllScroll => CursorValue::AllScroll,
+        Cv::ZoomIn => CursorValue::ZoomIn,
+        Cv::ZoomOut => CursorValue::ZoomOut,
+        Cv::None => CursorValue::None,
+    }
+}
+
 /// 解析 CSS scroll-snap-type 值。
 ///
 /// 格式：none | [ mandatory | proximity ] [ x | y | both ]?
@@ -1755,8 +1788,8 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "opacity" => {
-            if let Ok(v) = value.parse::<f64>() {
-                style.opacity = v.clamp(0.0, 1.0);
+            if let Some(v) = values::parse_opacity(value) {
+                style.opacity = v;
                 return true;
             }
         }
@@ -1975,8 +2008,8 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         }
         // ── Cursor 属性 ──
         "cursor" => {
-            if let Some(v) = parse_cursor(value) {
-                style.cursor = v;
+            if let Some(v) = values::parse_cursor(value) {
+                style.cursor = map_css_cursor(v);
                 return true;
             }
         }
@@ -2070,7 +2103,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         }
         // ── Transitions ──
         "transition-property" => {
-            style.transition_property = value.split(',').map(|s| s.trim().to_string()).collect();
+            // transition-property: none 表示无过渡属性，结果为空列表
+            style.transition_property = value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| s != "none")
+                .collect();
             return true;
         }
         "transition-duration" => {
@@ -2169,7 +2207,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
 
         // ── Animation 属性 ──
         "animation-name" => {
-            style.animation_name = value.split(',').map(|s| s.trim().to_string()).collect();
+            // animation-name: none 表示无动画，结果为空列表
+            style.animation_name = value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| s != "none")
+                .collect();
             return true;
         }
         "animation-duration" => {
@@ -5021,5 +5064,129 @@ mod tests {
         let result = parse_grid_line_shorthand("auto").unwrap();
         assert_eq!(result.0, GridLineValue::Auto);
         assert_eq!(result.1, GridLineValue::Auto);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // cursor/opacity 管线集成测试 — 验证 css-parser 的解析器被正确接入
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 cursor 属性通过 CSS 管线应用（使用 css-parser 的 parse_cursor）
+    fn test_cursor_via_css_parser_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.cursor, CursorValue::Auto);
+
+        // 基本关键字
+        assert!(apply_property_value(&mut style, "cursor", "pointer"));
+        assert_eq!(style.cursor, CursorValue::Pointer);
+
+        assert!(apply_property_value(&mut style, "cursor", "move"));
+        assert_eq!(style.cursor, CursorValue::Move);
+
+        assert!(apply_property_value(&mut style, "cursor", "wait"));
+        assert_eq!(style.cursor, CursorValue::Wait);
+
+        assert!(apply_property_value(&mut style, "cursor", "not-allowed"));
+        assert_eq!(style.cursor, CursorValue::NotAllowed);
+
+        // 大小写不敏感（css-parser 使用 to_ascii_lowercase）
+        assert!(apply_property_value(&mut style, "cursor", "Pointer"));
+        assert_eq!(style.cursor, CursorValue::Pointer);
+
+        assert!(apply_property_value(&mut style, "cursor", "HELP"));
+        assert_eq!(style.cursor, CursorValue::Help);
+
+        // 方向性 resize 映射到 style-system 的 NsResize/EwResize
+        assert!(apply_property_value(&mut style, "cursor", "n-resize"));
+        assert_eq!(style.cursor, CursorValue::NsResize);
+
+        assert!(apply_property_value(&mut style, "cursor", "s-resize"));
+        assert_eq!(style.cursor, CursorValue::NsResize);
+
+        assert!(apply_property_value(&mut style, "cursor", "e-resize"));
+        assert_eq!(style.cursor, CursorValue::EwResize);
+
+        assert!(apply_property_value(&mut style, "cursor", "w-resize"));
+        assert_eq!(style.cursor, CursorValue::EwResize);
+
+        // 无效值返回 false
+        assert!(!apply_property_value(&mut style, "cursor", "invalid-cursor"));
+        assert_eq!(style.cursor, CursorValue::EwResize); // 上一个有效值
+    }
+
+    #[test]
+    /// 测试 opacity 属性通过 css-parser 的 parse_opacity 应用
+    fn test_opacity_via_css_parser_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert_eq!(style.opacity, 1.0);
+
+        // 正常数值
+        assert!(apply_property_value(&mut style, "opacity", "0.5"));
+        assert!((style.opacity - 0.5).abs() < f64::EPSILON);
+
+        assert!(apply_property_value(&mut style, "opacity", "0"));
+        assert_eq!(style.opacity, 0.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "1"));
+        assert_eq!(style.opacity, 1.0);
+
+        // 百分比格式（css-parser parse_opacity 支持）
+        assert!(apply_property_value(&mut style, "opacity", "50%"));
+        assert!((style.opacity - 0.5).abs() < f64::EPSILON);
+
+        assert!(apply_property_value(&mut style, "opacity", "100%"));
+        assert_eq!(style.opacity, 1.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "0%"));
+        assert_eq!(style.opacity, 0.0);
+
+        // 无效值返回 false
+        assert!(!apply_property_value(&mut style, "opacity", "abc"));
+        assert!(!apply_property_value(&mut style, "opacity", "half"));
+    }
+
+    #[test]
+    /// 测试 opacity 值被 clamp 到 [0.0, 1.0] 范围
+    fn test_opacity_clamping_via_css_parser() {
+        let mut style = ComputedStyle::default();
+
+        // 超出上界 → clamp 到 1.0
+        assert!(apply_property_value(&mut style, "opacity", "1.5"));
+        assert_eq!(style.opacity, 1.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "999"));
+        assert_eq!(style.opacity, 1.0);
+
+        // 超出下界 → clamp 到 0.0
+        assert!(apply_property_value(&mut style, "opacity", "-0.5"));
+        assert_eq!(style.opacity, 0.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "-10"));
+        assert_eq!(style.opacity, 0.0);
+
+        // 百分比超出范围
+        assert!(apply_property_value(&mut style, "opacity", "150%"));
+        assert_eq!(style.opacity, 1.0);
+
+        assert!(apply_property_value(&mut style, "opacity", "-25%"));
+        assert_eq!(style.opacity, 0.0);
+    }
+
+    #[test]
+    /// 测试 cursor 继承：父元素 cursor:pointer，子元素应继承
+    fn test_cursor_inheritance() {
+        let mut parent = ComputedStyle::default();
+        parent.cursor = CursorValue::Pointer;
+
+        let mut child = ComputedStyle::default();
+        assert_eq!(child.cursor, CursorValue::Auto);
+
+        // cursor 是继承属性
+        assert!(inherit_property(&parent, &mut child, "cursor"));
+        assert_eq!(child.cursor, CursorValue::Pointer);
+
+        // 子元素显式设置 cursor 后覆盖继承值
+        assert!(apply_property_value(&mut child, "cursor", "text"));
+        assert_eq!(child.cursor, CursorValue::Text);
     }
 }

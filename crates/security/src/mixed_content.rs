@@ -250,4 +250,22 @@ mod tests {
             "小写 http:// 应被检测为混合内容"
         );
     }
+
+    /// 测试已经是 HTTPS 的 URL 不需要升级（upgrade_to_https 返回 None）。
+    #[test]
+    fn test_upgrade_to_https_already_https() {
+        // HTTPS URL → 无需升级，返回 None
+        assert_eq!(upgrade_to_https("https://example.com/script.js"), None);
+        // 其他非 http:// 协议 → 也返回 None
+        assert_eq!(upgrade_to_https("data:text/html,<h1>Hi</h1>"), None);
+    }
+
+    /// 测试 "worker" 资源类型被归类为 Blockable（阻塞型混合内容）。
+    #[test]
+    fn test_mixed_content_worker_type() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let status = check_mixed_content(&page, "http://cdn.example.com/worker.js", "worker");
+        // worker 不在可选阻塞列表中，应为 Blockable
+        assert_eq!(status, MixedContentStatus::Blockable);
+    }
 }

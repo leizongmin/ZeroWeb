@@ -964,4 +964,45 @@ mod tests {
         // allow_credentials 应为 "true"
         assert_eq!(headers.allow_credentials, Some("true".to_string()));
     }
+
+    /// 测试预检响应 max-age 为 0 时不缓存预检结果。
+    #[test]
+    fn test_cors_preflight_max_age_zero() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(0),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        // max-age 为 0 → 响应头包含 "0"，表示不缓存
+        assert_eq!(headers.max_age, Some("0".to_string()));
+        assert!(headers.allow_origin.is_some(), "max-age=0 不应影响请求本身是否允许");
+    }
+
+    /// 测试 Access-Control-Allow-Methods 包含通配符时的行为。
+    ///
+    /// 当前实现中，allow_methods 中的 "*" 作为字面值参与方法匹配，
+    /// 不会展开为"所有方法"。预检响应会原样输出策略中的方法列表。
+    #[test]
+    fn test_cors_allow_methods_wildcard() {
+        // 策略 allow_methods 包含 "*" 时，输出的 allow_methods 为 "*"
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["*".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        // 请求方法为 "*" 时匹配策略中的 "*" → 预检通过
+        let headers = generate_preflight_response(&policy, &origin, "*", &[]);
+        assert_eq!(headers.allow_methods, Some("*".to_string()));
+        assert!(headers.allow_origin.is_some());
+        // 请求方法为 "GET" 时不匹配 "*" → 预检拒绝
+        let headers_get = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert!(headers_get.allow_origin.is_none(), "GET 不匹配字面量 '*'");
+    }
 }

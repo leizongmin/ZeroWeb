@@ -1229,6 +1229,38 @@ mod integration_tests {
         let _ = h2.join();
     }
 
+    /// 验证 timeout=0 时请求极快完成或立即超时（边界值测试）。
+    #[test]
+    fn test_http_client_timeout_zero() {
+        let (listener, url) = bind_server();
+
+        let h = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        });
+
+        // timeout_secs=0 创建客户端，reqwest 的 Duration::from_secs(0) 表示无等待
+        // 在 mock 服务器快速响应的情况下应能收到 200，
+        // 但如果响应稍慢也可能超时——两种结果均可接受。
+        let client = HttpClient::with_config(0, 5);
+        let result = client.send(HttpRequest::get(&url));
+        match result {
+            Ok(resp) => {
+                assert_eq!(resp.status_code, 200, "timeout=0 快速响应时应返回 200");
+            }
+            Err(NetError::Timeout) => {
+                // 零超时立即触发超时也是合理行为
+            }
+            Err(other) => panic!("expected 200 or Timeout, got: {other:?}"),
+        }
+
+        let _ = h.join();
+    }
+
     // ── 高优先级重定向链深度边界测试 ──
 
     /// 验证恰好 N 次重定向在 max_redirects=N 时成功，N+1 次则失败。

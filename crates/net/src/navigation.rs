@@ -530,6 +530,52 @@ mod tests {
         assert!(nav.current().is_none());
     }
 
+    /// 测试 go_forward() 在没有前进历史时为 no-op，返回 None 且状态不变。
+    #[test]
+    fn test_navigation_go_forward_beyond_available() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+
+        // 当前在最新条目（b），go_forward() 应返回 None
+        assert!(nav.go_forward().is_none(), "没有前进历史时 go_forward 应返回 None");
+        assert_eq!(nav.current().unwrap().url, "http://b.com", "状态不应改变");
+
+        // 后退一步后再尝试前进到末尾再 go_forward
+        nav.go_back(); // at a
+        nav.go_forward(); // at b (end)
+        assert!(nav.go_forward().is_none(), "到达最新条目后 go_forward 应返回 None");
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
+
+    /// 测试后退后新导航会清除前进历史。
+    #[test]
+    fn test_navigation_clear_forward_on_new_navigate() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("A".into()));
+        nav.navigate("http://b.com", Some("B".into()));
+        nav.navigate("http://c.com", Some("C".into()));
+
+        // 后退到 b → 前进历史为 [c]
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        assert!(nav.can_go_forward(), "后退后应有前进历史");
+
+        // 新导航清除前进历史
+        nav.navigate("http://d.com", Some("D".into()));
+        assert!(!nav.can_go_forward(), "新导航后前进历史应被清除");
+        assert_eq!(nav.len(), 3, "历史应为 a, b, d");
+        assert_eq!(nav.current().unwrap().url, "http://d.com");
+
+        // 验证 c 确实被移除：后退到 b，再后退到 a
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
+        // 无法再后退
+        assert!(!nav.can_go_back());
+    }
+
     /// 测试恰好 max_entries 条目时不触发淘汰。
     #[test]
     fn test_navigation_max_entries_boundary() {
