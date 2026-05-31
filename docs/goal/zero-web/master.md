@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3112 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3134 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3112 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3134 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,8 +23,8 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 324 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone** |
-| css-parser | 365 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc** |
+| dom | 328 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()** |
+| css-parser | 374 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity** |
 | style-system | 478 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear** |
 | layout-engine | 271 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本** |
 | engine | 219 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty** |
@@ -34,7 +34,7 @@
 | security | 202 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port** |
 | protocol | 87 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化** |
 | storage | 179 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has** |
-| canvas | 193 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage** |
+| canvas | 202 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient** |
 | webview | 107 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置** |
 | wasm-sandbox | 83 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出** |
 
@@ -276,11 +276,11 @@
 
 ## 下一步优先级
 
-1. **Shadow DOM**（高优先级）— Shadow root、slot、DOM 树封装
-2. **Grid 布局增强**（高优先级）— auto-fill 真实支持、命名区域、minmax()
-3. **内联布局集成**（高优先级）— 行内格式化上下文集成到 paint 管线、文本换行
-4. **更多 Canvas API**（中优先级）— OffscreenCanvas、Path2D 完善、更多合成模式测试
-5. **安全增强**（中优先级）— 沙箱、混合内容阻止、COOP/COEP
+1. **Shadow DOM**（高优先级）— Shadow root、slot、DOM 树封装、布局树扁平化
+2. **Grid 布局增强**（高优先级）— grid-area 简写解析、命名区域、subgrid
+3. **内联布局集成**（高优先级）— 行内格式化上下文集成到 paint 管线、文本换行、inline-block
+4. **更多 Canvas API**（中优先级）— OffscreenCanvas、line_join/line_cap、更多合成模式测试
+5. **V8 集成**（阻塞）— 需要 rusty_v8 编译环境
 
 ---
 
