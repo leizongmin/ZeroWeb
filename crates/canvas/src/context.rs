@@ -510,7 +510,22 @@ impl CanvasContext {
         // 添加一个透明色填充来表示清除操作
         let rect = self.transform_rect(x, y, width, height);
         self.primitives.add_fill(rect, Color::TRANSPARENT);
-        self.blit_rect_to_pixels(&rect, Color::TRANSPARENT);
+        // clear_rect 直接将像素清零，不经过合成操作（与 Canvas 规范一致）
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        let x_start = rect.left().max(0.0) as usize;
+        let y_start = rect.top().max(0.0) as usize;
+        let x_end = (rect.right().min(self.width as f32) as usize).min(canvas_w);
+        let y_end = (rect.bottom().min(self.height as f32) as usize).min(canvas_h);
+        for py in y_start..y_end {
+            for px in x_start..x_end {
+                let idx = (py * canvas_w + px) * 4;
+                self.pixel_buffer[idx] = 0;
+                self.pixel_buffer[idx + 1] = 0;
+                self.pixel_buffer[idx + 2] = 0;
+                self.pixel_buffer[idx + 3] = 0;
+            }
+        }
     }
 
     /// 填充矩形。
@@ -1924,7 +1939,52 @@ impl CanvasContext {
         vertices
     }
 
-    /// 将矩形区域的颜色写入像素缓冲区（光栅化填充）。
+    /// 使用当前合成操作模式，将源颜色与目标像素进行合成。
+    /// 返回合成后的 RGBA 值（0-255）。
+    /// 参考 Porter-Duff alpha compositing 规范实现。
+    fn composite_pixel(&self, src: Color, dst_r: u8, dst_g: u8, dst_b: u8, dst_a: u8) -> (u8, u8, u8, u8) {
+        let sa = src.a as f32 / 255.0;
+        let da = dst_a as f32 / 255.0;
+        let sr = src.r as f32 / 255.0;
+        let sg = src.g as f32 / 255.0;
+        let sb = src.b as f32 / 255.0;
+        let dr = dst_r as f32 / 255.0;
+        let dg = dst_g as f32 / 255.0;
+        let db = dst_b as f32 / 255.0;
+
+        // Porter-Duff 合成因子 (Fa, Fb)
+        let (fa, fb) = match self.composite_operation {
+            CompositeOperation::SourceOver => (1.0, 1.0 - sa),
+            CompositeOperation::DestinationOver => (1.0 - da, 1.0),
+            CompositeOperation::SourceIn => (da, 0.0),
+            CompositeOperation::DestinationIn => (0.0, sa),
+            CompositeOperation::DestinationOut => (0.0, 1.0 - sa),
+            CompositeOperation::SourceAtop => (da, 1.0 - sa),
+            CompositeOperation::DestinationAtop => (1.0 - da, sa),
+            CompositeOperation::Copy => (1.0, 0.0),
+            CompositeOperation::Xor => (1.0 - da, 1.0 - sa),
+            CompositeOperation::Lighter => (1.0, 1.0),
+            // 其余混合模式使用 source-over 的合成因子
+            _ => (1.0, 1.0 - sa),
+        };
+
+        let out_a = sa * fa + da * fb;
+        if out_a <= 0.0 {
+            return (0, 0, 0, 0);
+        }
+        let out_r = (sr * sa * fa + dr * da * fb) / out_a;
+        let out_g = (sg * sa * fa + dg * da * fb) / out_a;
+        let out_b = (sb * sa * fa + db * da * fb) / out_a;
+
+        (
+            (out_r * 255.0).round().clamp(0.0, 255.0) as u8,
+            (out_g * 255.0).round().clamp(0.0, 255.0) as u8,
+            (out_b * 255.0).round().clamp(0.0, 255.0) as u8,
+            (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
+        )
+    }
+
+    /// 将矩形区域的颜色写入像素缓冲区（光栅化填充），应用当前合成操作模式。
     fn blit_rect_to_pixels(&mut self, rect: &Rect, color: Color) {
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
@@ -1935,10 +1995,17 @@ impl CanvasContext {
         for y in y_start..y_end {
             for x in x_start..x_end {
                 let idx = (y * canvas_w + x) * 4;
-                self.pixel_buffer[idx] = color.r;
-                self.pixel_buffer[idx + 1] = color.g;
-                self.pixel_buffer[idx + 2] = color.b;
-                self.pixel_buffer[idx + 3] = color.a;
+                let (r, g, b, a) = self.composite_pixel(
+                    color,
+                    self.pixel_buffer[idx],
+                    self.pixel_buffer[idx + 1],
+                    self.pixel_buffer[idx + 2],
+                    self.pixel_buffer[idx + 3],
+                );
+                self.pixel_buffer[idx] = r;
+                self.pixel_buffer[idx + 1] = g;
+                self.pixel_buffer[idx + 2] = b;
+                self.pixel_buffer[idx + 3] = a;
             }
         }
     }
@@ -4798,5 +4865,152 @@ mod tests {
         assert!(ctx.is_point_in_stroke(50.0, 55.0));
         // 点 (50, 65) 距线段 15 > 10
         assert!(!ctx.is_point_in_stroke(50.0, 65.0));
+    }
+
+    // ── 合成操作像素级测试 ──
+
+    /// 测试默认 source-over 合成：先绘制红色矩形，再绘制重叠的蓝色矩形，
+    /// 重叠区域的蓝色应覆盖红色（不透明像素的 source-over 结果）。
+    #[test]
+    fn test_composite_source_over_default() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 再绘制蓝色 (5,0)-(15,10)，默认 source-over
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 不重叠区域 (0,0)：仍为红色
+        let red_only = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(
+            red_only.data[0..4],
+            [255, 0, 0, 255],
+            "source-over: 非重叠区域应保留红色"
+        );
+
+        // 重叠区域 (7,0)：蓝色覆盖红色
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(overlap.data[0..4], [0, 0, 255, 255], "source-over: 重叠区域应为蓝色");
+
+        // 蓝色独占区域 (12,0)：蓝色
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(
+            blue_only.data[0..4],
+            [0, 0, 255, 255],
+            "source-over: 蓝色独占区域应为蓝色"
+        );
+    }
+
+    /// 测试 destination-over 合成：先绘制蓝色（目标），再以 destination-over 绘制红色（源），
+    /// 红色应出现在蓝色下方（重叠区域蓝色在上方）。
+    #[test]
+    fn test_composite_destination_over() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制蓝色 (0,0)-(10,10) 作为目标
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 destination-over 绘制红色 (5,0)-(15,10) 作为源
+        ctx.set_composite_operation(CompositeOperation::DestinationOver);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 蓝色独占区域 (2,0)：蓝色不变
+        let blue_only = ctx.get_image_data(2, 0, 1, 1);
+        assert_eq!(
+            blue_only.data[0..4],
+            [0, 0, 255, 255],
+            "destination-over: 蓝色独占区域不变"
+        );
+
+        // 重叠区域 (7,0)：destination-over 下蓝色（目标）在红色（源）之上
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(
+            overlap.data[0..4],
+            [0, 0, 255, 255],
+            "destination-over: 重叠区域应显示蓝色（目标在上）"
+        );
+
+        // 红色独占区域 (12,0)：没有目标，只有源
+        let red_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(
+            red_only.data[0..4],
+            [255, 0, 0, 255],
+            "destination-over: 红色独占区域应显示红色"
+        );
+    }
+
+    /// 测试 copy 合成：先绘制红色，再设置 copy 模式绘制蓝色，
+    /// copy 模式下蓝色完全替换已有内容，不受之前内容影响。
+    #[test]
+    fn test_composite_copy() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色填充整个画布
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 20.0, 10.0);
+        // 使用 copy 合成绘制蓝色矩形
+        ctx.set_composite_operation(CompositeOperation::Copy);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // copy 模式下蓝色区域内应为蓝色
+        let inside = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(inside.data[0..4], [0, 0, 255, 255], "copy: 绘制区域内应为蓝色");
+
+        // copy 区域外应为红色（未被覆盖）
+        let outside = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(outside.data[0..4], [255, 0, 0, 255], "copy: 未绘制区域应保留红色");
+    }
+
+    /// 测试 xor 合成：先绘制红色矩形，再绘制重叠的蓝色矩形，
+    /// xor 模式下重叠区域应变为透明（两个不透明像素的异或结果为空）。
+    #[test]
+    fn test_composite_xor() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 xor 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::Xor);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 红色独占区域 (2,0)：sa=0,da=1 → xor 保留目标 = 红色
+        let red_only = ctx.get_image_data(2, 0, 1, 1);
+        assert_eq!(red_only.data[0..4], [255, 0, 0, 255], "xor: 红色独占区域应保留");
+
+        // 重叠区域 (7,0)：两个不透明像素 xor → 透明
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(overlap.data[0..4], [0, 0, 0, 0], "xor: 重叠区域应为透明");
+
+        // 蓝色独占区域 (12,0)：sa=1,da=0 → xor 保留源 = 蓝色
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(blue_only.data[0..4], [0, 0, 255, 255], "xor: 蓝色独占区域应为蓝色");
+    }
+
+    /// 测试 source-atop 合成：先绘制红色矩形，再绘制重叠的蓝色矩形，
+    /// source-atop 模式下蓝色只出现在已有红色内容的区域。
+    #[test]
+    fn test_composite_source_atop() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 source-atop 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::SourceAtop);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 重叠区域 (7,0)：source-atop → 源色（蓝色）出现在目标存在的区域
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(overlap.data[0..4], [0, 0, 255, 255], "source-atop: 重叠区域应为蓝色");
+
+        // 蓝色独占区域 (12,0)：没有目标像素 → source-atop 保留目标 = 透明
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(
+            blue_only.data[0..4],
+            [0, 0, 0, 0],
+            "source-atop: 无目标的源区域应为透明"
+        );
     }
 }

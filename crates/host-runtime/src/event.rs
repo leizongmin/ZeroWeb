@@ -1206,6 +1206,450 @@ mod tests {
         );
     }
 
+    /// 验证：多个修饰键同时按下时，每个修饰键独立产生 KeyboardInput 事件，
+    /// 事件的 key 和 pressed 字段均正确。
+    /// 模拟 Ctrl+Shift+Alt 组合键场景。
+    #[test]
+    fn test_event_modifiers_combination() {
+        // 模拟 Ctrl+Shift+Alt 组合键的完整按下和释放序列
+        let events: Vec<AppEvent> = vec![
+            // 1. Ctrl 按下
+            AppEvent::KeyboardInput {
+                key: "Control".to_string(),
+                pressed: true,
+            },
+            // 2. Shift 按下（Ctrl 仍按住）
+            AppEvent::KeyboardInput {
+                key: "Shift".to_string(),
+                pressed: true,
+            },
+            // 3. Alt 按下（Ctrl+Shift 仍按住）
+            AppEvent::KeyboardInput {
+                key: "Alt".to_string(),
+                pressed: true,
+            },
+            // 4. 字符键按下（Ctrl+Shift+Alt 全部按住）
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: true,
+            },
+            // 5. 字符键释放
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: false,
+            },
+            // 6. Alt 释放
+            AppEvent::KeyboardInput {
+                key: "Alt".to_string(),
+                pressed: false,
+            },
+            // 7. Shift 释放
+            AppEvent::KeyboardInput {
+                key: "Shift".to_string(),
+                pressed: false,
+            },
+            // 8. Ctrl 释放
+            AppEvent::KeyboardInput {
+                key: "Control".to_string(),
+                pressed: false,
+            },
+        ];
+
+        // 验证事件数量
+        assert_eq!(events.len(), 8, "完整的修饰键组合应产生 8 个事件");
+
+        // 验证每个修饰键按下事件的 pressed 为 true
+        let modifier_presses: Vec<&AppEvent> = events.iter().take(3).collect();
+        for (i, event) in modifier_presses.iter().enumerate() {
+            if let AppEvent::KeyboardInput { pressed, .. } = event {
+                assert!(pressed, "第 {} 个修饰键按下事件 pressed 应为 true", i + 1);
+            } else {
+                panic!("前三个事件应为 KeyboardInput");
+            }
+        }
+
+        // 验证修饰键名称正确
+        if let AppEvent::KeyboardInput { key, .. } = &events[0] {
+            assert_eq!(key, "Control");
+        }
+        if let AppEvent::KeyboardInput { key, .. } = &events[1] {
+            assert_eq!(key, "Shift");
+        }
+        if let AppEvent::KeyboardInput { key, .. } = &events[2] {
+            assert_eq!(key, "Alt");
+        }
+
+        // 验证字符键按下和释放
+        if let AppEvent::KeyboardInput { key, pressed } = &events[3] {
+            assert_eq!(key, "A");
+            assert!(pressed, "字符键按下 pressed 应为 true");
+        }
+        if let AppEvent::KeyboardInput { key, pressed } = &events[4] {
+            assert_eq!(key, "A");
+            assert!(!pressed, "字符键释放 pressed 应为 false");
+        }
+
+        // 验证释放顺序与按下顺序相反
+        let release_keys: Vec<String> = events[5..]
+            .iter()
+            .map(|e| {
+                if let AppEvent::KeyboardInput { key, pressed } = e {
+                    assert!(!pressed, "释放事件 pressed 应为 false");
+                    key.clone()
+                } else {
+                    panic!("应为 KeyboardInput");
+                }
+            })
+            .collect();
+        assert_eq!(release_keys, vec!["Alt", "Shift", "Control"]);
+    }
+
+    /// 验证：按键重复事件的 pressed 字段始终为 true。
+    /// 当用户长按某个键时，操作系统会产生多次按下事件（key repeat），
+    /// 这些事件的 pressed 字段应全部为 true（而非混合 true/false）。
+    #[test]
+    fn test_key_event_repeat_flag() {
+        // 模拟长按 "A" 键产生的事件序列：首次按下 + 多次重复
+        let repeat_events: Vec<AppEvent> = vec![
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "A".to_string(),
+                pressed: false,
+            },
+        ];
+
+        // 验证所有重复按下事件的 key 和 pressed 字段
+        for (i, event) in repeat_events.iter().enumerate() {
+            if let AppEvent::KeyboardInput { key, pressed } = event {
+                assert_eq!(key, "A", "第 {} 个事件的 key 应为 'A'", i + 1);
+                if i < 4 {
+                    assert!(pressed, "第 {} 个 repeat 事件的 pressed 应为 true", i + 1);
+                } else {
+                    // 最终释放事件
+                    assert!(!pressed, "释放事件的 pressed 应为 false");
+                }
+            } else {
+                panic!("应为 KeyboardInput 变体");
+            }
+        }
+
+        // 验证：重复事件数量为 4 次按下 + 1 次释放 = 5
+        assert_eq!(repeat_events.len(), 5);
+
+        // 验证：通过 element_state_to_pressed 转换，所有 Pressed 状态映射为 true
+        for _ in 0..4 {
+            assert!(element_state_to_pressed(winit::event::ElementState::Pressed));
+        }
+    }
+
+    /// 验证：鼠标左键、右键、中键、后退、前进五个标准按钮值的完整覆盖。
+    /// 确保每种按钮的 Debug 输出、等价性和互不相等性均正确。
+    #[test]
+    fn test_mouse_button_all_variants() {
+        let buttons = [
+            MouseButton::Left,
+            MouseButton::Right,
+            MouseButton::Middle,
+            MouseButton::Back,
+            MouseButton::Forward,
+        ];
+
+        // 验证 Debug 输出非空且各不相同
+        let debug_outputs: Vec<String> = buttons.iter().map(|b| format!("{:?}", b)).collect();
+        for debug in &debug_outputs {
+            assert!(!debug.is_empty(), "MouseButton Debug 输出不应为空");
+        }
+        for i in 0..debug_outputs.len() {
+            for j in (i + 1)..debug_outputs.len() {
+                assert_ne!(
+                    debug_outputs[i], debug_outputs[j],
+                    "{:?} 和 {:?} 的 Debug 输出不应相同",
+                    buttons[i], buttons[j]
+                );
+            }
+        }
+
+        // 验证每种按钮的自等价性
+        for btn in &buttons {
+            assert_eq!(*btn, *btn, "{:?} 应等于自身", btn);
+        }
+
+        // 验证五种按钮两两互不相等
+        for i in 0..buttons.len() {
+            for j in (i + 1)..buttons.len() {
+                assert_ne!(buttons[i], buttons[j], "{:?} 不应等于 {:?}", buttons[i], buttons[j]);
+            }
+        }
+
+        // 验证五种按钮通过 convert_mouse_button 转换正确
+        let winit_buttons = [
+            winit::event::MouseButton::Left,
+            winit::event::MouseButton::Right,
+            winit::event::MouseButton::Middle,
+            winit::event::MouseButton::Back,
+            winit::event::MouseButton::Forward,
+        ];
+        for (winit_btn, expected_btn) in winit_buttons.iter().zip(buttons.iter()) {
+            assert_eq!(
+                convert_mouse_button(*winit_btn),
+                *expected_btn,
+                "convert_mouse_button({:?}) 应返回 {:?}",
+                winit_btn,
+                expected_btn
+            );
+        }
+
+        // 验证 Copy 语义正确
+        for btn in &buttons {
+            let copied = *btn;
+            assert_eq!(*btn, copied);
+        }
+    }
+
+    /// 验证：鼠标进入/离开窗口时，CursorMoved 事件携带正确的坐标。
+    /// 由于当前 AppEvent 使用 MouseMoved 统一表示光标位置，
+    /// 进入和离开均通过 MouseMoved 事件传递坐标信息。
+    #[test]
+    fn test_mouse_enter_leave_coordinates() {
+        // 模拟鼠标进入窗口：光标从窗口外移入窗口内
+        let enter_event = AppEvent::MouseMoved { x: 0.0, y: 0.0 };
+        if let AppEvent::MouseMoved { x, y } = enter_event {
+            assert!((x - 0.0).abs() < f64::EPSILON, "鼠标进入窗口的 x 坐标应为 0.0");
+            assert!((y - 0.0).abs() < f64::EPSILON, "鼠标进入窗口的 y 坐标应为 0.0");
+        } else {
+            panic!("Expected MouseMoved variant");
+        }
+
+        // 模拟鼠标在窗口内移动
+        let move_inside = AppEvent::MouseMoved { x: 500.5, y: 300.25 };
+        if let AppEvent::MouseMoved { x, y } = move_inside {
+            assert!((x - 500.5).abs() < f64::EPSILON);
+            assert!((y - 300.25).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected MouseMoved variant");
+        }
+
+        // 模拟鼠标离开窗口：光标移动到窗口边界外
+        let leave_event = AppEvent::MouseMoved { x: -5.0, y: -10.0 };
+        if let AppEvent::MouseMoved { x, y } = leave_event {
+            assert!((x - (-5.0)).abs() < f64::EPSILON, "鼠标离开窗口的 x 坐标应为负值");
+            assert!((y - (-10.0)).abs() < f64::EPSILON, "鼠标离开窗口的 y 坐标应为负值");
+        } else {
+            panic!("Expected MouseMoved variant");
+        }
+
+        // 模拟鼠标从右侧离开窗口
+        let leave_right = AppEvent::MouseMoved { x: 1921.0, y: 1080.0 };
+        if let AppEvent::MouseMoved { x, y } = leave_right {
+            assert!((x - 1921.0).abs() < f64::EPSILON);
+            assert!((y - 1080.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected MouseMoved variant");
+        }
+
+        // 通过 BasicApp 分发路径验证坐标传递
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        // 模拟进入事件
+        app.handle_window_event(winit::event::WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(0.0, 0.0),
+        });
+        // 模拟离开事件
+        app.handle_window_event(winit::event::WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(-50.0, -100.0),
+        });
+
+        assert_eq!(received.len(), 2, "应收到两个 MouseMoved 事件");
+        // 进入事件坐标
+        match &received[0] {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((*x - 0.0).abs() < f64::EPSILON);
+                assert!((*y - 0.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected MouseMoved"),
+        }
+        // 离开事件坐标
+        match &received[1] {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((*x - (-50.0)).abs() < f64::EPSILON);
+                assert!((*y - (-100.0)).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected MouseMoved"),
+        }
+    }
+
+    /// 验证：窗口 resize 到 0x0 尺寸时不会 panic，且事件正确携带零值。
+    /// 某些平台在窗口最小化时会发出 (0, 0) 尺寸的 resize 事件。
+    #[test]
+    fn test_resize_to_zero_dimensions() {
+        // 直接构造 AppEvent::Resized { 0, 0 }，验证不会 panic
+        let event = AppEvent::Resized { width: 0, height: 0 };
+        if let AppEvent::Resized { width, height } = event {
+            assert_eq!(width, 0, "零宽度应正确存储");
+            assert_eq!(height, 0, "零高度应正确存储");
+        } else {
+            panic!("Expected Resized variant");
+        }
+
+        // 通过 winit PhysicalSize 构造零尺寸
+        let size = winit::dpi::PhysicalSize::new(0u32, 0u32);
+        assert_eq!(size.width, 0);
+        assert_eq!(size.height, 0);
+
+        // 通过 BasicApp 分发路径验证 0x0 resize 不 panic
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            0u32, 0u32,
+        )));
+        assert_eq!(received.len(), 1, "应收到一个 Resized 事件");
+        match &received[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 0, "分发后的宽度应为 0");
+                assert_eq!(*height, 0, "分发后的高度应为 0");
+            }
+            _ => panic!("Expected Resized"),
+        }
+
+        // 通过 GpuApp 分发路径验证 0x0 resize 不 panic
+        let mut received_gpu: Vec<AppEvent> = Vec::new();
+        let mut gpu_callback = |e: AppEvent, _: Option<std::sync::Arc<winit::window::Window>>| {
+            received_gpu.push(e);
+        };
+        let gpu_attrs = winit::window::WindowAttributes::default();
+        let mut gpu_app = crate::window::GpuApp::new_with_window(gpu_attrs, &mut gpu_callback);
+        gpu_app.handle_window_event(
+            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(0u32, 0u32)),
+            None,
+        );
+        assert_eq!(received_gpu.len(), 1);
+        match &received_gpu[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 0);
+                assert_eq!(*height, 0);
+            }
+            _ => panic!("Expected Resized"),
+        }
+
+        // Debug 格式化不应 panic
+        let debug_str = format!("{:?}", event);
+        assert!(!debug_str.is_empty());
+    }
+
+    /// 验证：IME 组合事件在空字符串情况下的完整处理（含分发路径验证）。
+    /// 某些输入法在特定状态下可能提交或预编辑空字符串。
+    #[test]
+    fn test_ime_composition_empty_string_dispatch() {
+        // 空字符串 Commit 事件
+        let commit_empty = ImeEvent::Commit(String::new());
+        if let ImeEvent::Commit(text) = &commit_empty {
+            assert!(text.is_empty(), "空字符串 commit 的 text 应为空");
+        } else {
+            panic!("Expected Commit variant");
+        }
+
+        // 空字符串 Preedit 事件（无光标）
+        let preedit_empty = ImeEvent::Preedit {
+            text: String::new(),
+            cursor: None,
+        };
+        if let ImeEvent::Preedit { text, cursor } = &preedit_empty {
+            assert!(text.is_empty(), "空 preedit 的 text 应为空");
+            assert!(cursor.is_none(), "空 preedit 的 cursor 应为 None");
+        } else {
+            panic!("Expected Preedit variant");
+        }
+
+        // 空字符串 Preedit 事件（带光标 (0, 0)）
+        let preedit_empty_with_cursor = ImeEvent::Preedit {
+            text: String::new(),
+            cursor: Some((0, 0)),
+        };
+        if let ImeEvent::Preedit { text, cursor } = &preedit_empty_with_cursor {
+            assert!(text.is_empty());
+            assert_eq!(*cursor, Some((0, 0)));
+        } else {
+            panic!("Expected Preedit variant");
+        }
+
+        // 通过 winit 转换路径验证空字符串
+        assert_eq!(
+            convert_ime(winit::event::Ime::Commit(String::new())),
+            ImeEvent::Commit(String::new()),
+            "winit 空 commit 转换应一致"
+        );
+        assert_eq!(
+            convert_ime(winit::event::Ime::Preedit(String::new(), None)),
+            ImeEvent::Preedit {
+                text: String::new(),
+                cursor: None,
+            },
+            "winit 空 preedit 转换应一致"
+        );
+
+        // 等价性验证
+        assert_eq!(commit_empty, ImeEvent::Commit(String::new()));
+        assert_eq!(
+            preedit_empty,
+            ImeEvent::Preedit {
+                text: String::new(),
+                cursor: None,
+            }
+        );
+
+        // 通过 BasicApp 分发路径验证空 IME 事件不 panic
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        // 分发空 Preedit
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Preedit(
+            String::new(),
+            None,
+        )));
+        // 分发空 Commit
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Commit(String::new())));
+
+        assert_eq!(received.len(), 2, "应收到两个 IME 事件");
+        match &received[0] {
+            AppEvent::Ime(ImeEvent::Preedit { text, cursor }) => {
+                assert!(text.is_empty());
+                assert!(cursor.is_none());
+            }
+            _ => panic!("Expected Ime(Preedit)"),
+        }
+        match &received[1] {
+            AppEvent::Ime(ImeEvent::Commit(s)) => {
+                assert!(s.is_empty());
+            }
+            _ => panic!("Expected Ime(Commit)"),
+        }
+    }
+
     /// 验证：所有转换函数对极端输入的鲁棒性
     #[test]
     fn test_conversion_functions_robustness() {

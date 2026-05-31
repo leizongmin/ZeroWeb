@@ -2015,4 +2015,600 @@ mod tests {
         // 所有消息已消费，再次 recv 应返回错误
         assert!(ch.recv().is_err());
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  IPC 压力测试与剩余边界条件测试
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试超大消息（1MB+ 载荷）的序列化/反序列化往返正确性。
+    /// 验证 bincode 在大载荷下不会截断或损坏数据。
+    #[test]
+    fn test_large_message_serialization() {
+        // 构造一个 1MB+ 的二进制 body（恰好 1MB + 1 字节以确保超过 1MB）
+        let large_body: Vec<u8> = (0..1_048_577).map(|i| (i % 256) as u8).collect();
+        assert!(large_body.len() > 1_048_576, "载荷必须超过 1MB");
+
+        let msg = IpcMessage {
+            id: u64::MAX,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: u64::MAX,
+                status_code: 200,
+                headers: vec![("Content-Length".into(), format!("{}", large_body.len()))],
+                body: large_body.clone(),
+            }),
+        };
+
+        let bytes = serialize(&msg).expect("序列化 1MB+ 消息应成功");
+        // 序列化后的字节长度应明显大于原始 body
+        assert!(
+            bytes.len() > large_body.len(),
+            "序列化结果应包含完整载荷，实际 {} 字节",
+            bytes.len()
+        );
+
+        let out = deserialize(&bytes).expect("反序列化 1MB+ 消息应成功");
+        assert_eq!(u64::MAX, out.id);
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(u64::MAX, p.request_id);
+            assert_eq!(200, p.status_code);
+            assert_eq!(large_body.len(), p.body.len());
+            assert_eq!(large_body, p.body, "大载荷往返后内容应完全一致");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
+
+    /// 测试多条不同类型消息的序列化/反序列化顺序保持不变。
+    /// 模拟高并发场景：连续序列化 100 条消息，反序列化后 ID 和类型顺序必须一致。
+    #[test]
+    fn test_concurrent_message_ordering() {
+        let messages: Vec<IpcMessage> = (0..100)
+            .map(|i| {
+                let kind = match i % 5 {
+                    0 => IpcMessageKind::Navigate(NavigateParams {
+                        url: format!("https://example.com/page/{i}"),
+                        referrer: if i % 2 == 0 {
+                            Some("https://referrer.com".into())
+                        } else {
+                            None
+                        },
+                    }),
+                    1 => IpcMessageKind::FetchRequest(FetchParams {
+                        request_id: i as u64,
+                        url: format!("https://api.example.com/{i}"),
+                        method: "GET".into(),
+                        headers: vec![],
+                        body: None,
+                    }),
+                    2 => IpcMessageKind::MouseEvent(MouseEventParams {
+                        x: i as f32 * 1.5,
+                        y: i as f32 * 2.5,
+                        button: (i % 3) as u8,
+                        event_type: MouseEventType::Click,
+                    }),
+                    3 => IpcMessageKind::TitleChanged(format!("页面标题 #{i}")),
+                    _ => IpcMessageKind::Heartbeat,
+                };
+                IpcMessage { id: i as u64, kind }
+            })
+            .collect();
+
+        // 连续序列化所有消息
+        let serialized: Vec<Vec<u8>> = messages.iter().map(|m| serialize(m).expect("序列化应成功")).collect();
+
+        assert_eq!(messages.len(), serialized.len());
+
+        // 逐个反序列化，验证顺序和内容
+        for (i, bytes) in serialized.iter().enumerate() {
+            let out = deserialize(bytes).expect("反序列化应成功");
+            assert_eq!(i as u64, out.id, "消息顺序不一致：期望 id={}，实际 id={}", i, out.id);
+
+            // 按消息类型验证关键字段
+            match (&messages[i].kind, &out.kind) {
+                (IpcMessageKind::Navigate(a), IpcMessageKind::Navigate(b)) => {
+                    assert_eq!(a.url, b.url, "Navigate url 不匹配，索引 {i}");
+                    assert_eq!(a.referrer, b.referrer, "Navigate referrer 不匹配，索引 {i}");
+                }
+                (IpcMessageKind::FetchRequest(a), IpcMessageKind::FetchRequest(b)) => {
+                    assert_eq!(a.request_id, b.request_id, "FetchRequest request_id 不匹配，索引 {i}");
+                    assert_eq!(a.url, b.url, "FetchRequest url 不匹配，索引 {i}");
+                }
+                (IpcMessageKind::MouseEvent(a), IpcMessageKind::MouseEvent(b)) => {
+                    assert_eq!(a.x, b.x, "MouseEvent x 不匹配，索引 {i}");
+                    assert_eq!(a.y, b.y, "MouseEvent y 不匹配，索引 {i}");
+                    assert_eq!(a.button, b.button, "MouseEvent button 不匹配，索引 {i}");
+                }
+                (IpcMessageKind::TitleChanged(a), IpcMessageKind::TitleChanged(b)) => {
+                    assert_eq!(a, b, "TitleChanged 不匹配，索引 {i}");
+                }
+                (IpcMessageKind::Heartbeat, IpcMessageKind::Heartbeat) => {}
+                _ => panic!("消息类型不匹配：索引 {i}"),
+            }
+        }
+    }
+
+    /// 测试所有可选字段均为空值时的消息序列化/反序列化。
+    /// 覆盖 None、空字符串、空 Vec 等边界情况。
+    #[test]
+    fn test_message_with_empty_fields() {
+        // Navigate：url 为空字符串，referrer 为 None
+        let msg1 = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: String::new(),
+                referrer: None,
+            }),
+        };
+        let out1 = roundtrip(msg1);
+        if let IpcMessageKind::Navigate(p) = out1.kind {
+            assert!(p.url.is_empty(), "url 应为空字符串");
+            assert!(p.referrer.is_none(), "referrer 应为 None");
+        } else {
+            panic!("期望 Navigate");
+        }
+
+        // FetchRequest：空 headers，body 为 None
+        let msg2 = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 0,
+                url: String::new(),
+                method: String::new(),
+                headers: vec![],
+                body: None,
+            }),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::FetchRequest(p) = out2.kind {
+            assert_eq!(0, p.request_id);
+            assert!(p.url.is_empty());
+            assert!(p.method.is_empty());
+            assert!(p.headers.is_empty());
+            assert!(p.body.is_none());
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // FetchResponse：空 headers，空 body
+        let msg3 = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 0,
+                status_code: 0,
+                headers: vec![],
+                body: vec![],
+            }),
+        };
+        let out3 = roundtrip(msg3);
+        if let IpcMessageKind::FetchResponse(p) = out3.kind {
+            assert_eq!(0, p.status_code);
+            assert!(p.headers.is_empty());
+            assert!(p.body.is_empty());
+        } else {
+            panic!("期望 FetchResponse");
+        }
+
+        // StorageOp：value 为 None，key 和 origin 为空字符串
+        let msg4 = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Get,
+                key: String::new(),
+                value: None,
+                origin: String::new(),
+            }),
+        };
+        let out4 = roundtrip(msg4);
+        if let IpcMessageKind::StorageOp(p) = out4.kind {
+            assert!(p.key.is_empty());
+            assert!(p.value.is_none());
+            assert!(p.origin.is_empty());
+        } else {
+            panic!("期望 StorageOp");
+        }
+
+        // MouseEvent 和 KeyboardEvent：零值坐标/按键
+        let msg5 = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: 0.0,
+                y: 0.0,
+                button: 0,
+                event_type: MouseEventType::Click,
+            }),
+        };
+        let out5 = roundtrip(msg5);
+        if let IpcMessageKind::MouseEvent(p) = out5.kind {
+            assert_eq!(0.0, p.x);
+            assert_eq!(0.0, p.y);
+            assert_eq!(0, p.button);
+        } else {
+            panic!("期望 MouseEvent");
+        }
+    }
+
+    /// 测试包含 Unicode 字符串的消息序列化/反序列化往返正确性。
+    /// 覆盖中日韩文字、emoji、组合字符、特殊 Unicode 等。
+    #[test]
+    fn test_message_with_unicode_payload() {
+        let long_ascii = "x".repeat(1000);
+        let unicode_cases: Vec<&str> = vec![
+            // 中文
+            "这是一个中文标题，包含标点符号：【】《》、。，！？",
+            // 日文
+            "こんにちは世界 🌍 日本語テスト",
+            // 韩文
+            "안녕하세요 세계",
+            // emoji 丰富文本
+            "🎉🚀💻🔒 ✓ — Unicode 测试 © 2024",
+            // 混合 RTL/LTR
+            "Hello مرحبا العالم שלום",
+            // 组合字符（é 可以是 e + ́ ）
+            "caf\u{0065}\u{0301} = café",
+            // 零宽字符
+            "abc\u{200B}\u{200C}\u{200D}def",
+            // 四字节 emoji
+            "👨‍👩‍👧‍👦 family emoji",
+            // 空字符串
+            "",
+            // 纯 ASCII 但很长的字符串
+            &long_ascii,
+        ];
+
+        for (i, text) in unicode_cases.iter().enumerate() {
+            // TitleChanged
+            let msg = IpcMessage {
+                id: i as u64,
+                kind: IpcMessageKind::TitleChanged(text.to_string()),
+            };
+            let out = roundtrip(msg);
+            if let IpcMessageKind::TitleChanged(t) = out.kind {
+                assert_eq!(text, &t, "TitleChanged Unicode 往返失败：索引 {i}");
+            } else {
+                panic!("期望 TitleChanged，索引 {i}");
+            }
+
+            // UrlChanged
+            let msg2 = IpcMessage {
+                id: i as u64 + 100,
+                kind: IpcMessageKind::UrlChanged(text.to_string()),
+            };
+            let out2 = roundtrip(msg2);
+            if let IpcMessageKind::UrlChanged(u) = out2.kind {
+                assert_eq!(text, &u, "UrlChanged Unicode 往返失败：索引 {i}");
+            } else {
+                panic!("期望 UrlChanged，索引 {i}");
+            }
+
+            // CrashNotification
+            let msg3 = IpcMessage {
+                id: i as u64 + 200,
+                kind: IpcMessageKind::CrashNotification(text.to_string()),
+            };
+            let out3 = roundtrip(msg3);
+            if let IpcMessageKind::CrashNotification(r) = out3.kind {
+                assert_eq!(text, &r, "CrashNotification Unicode 往返失败：索引 {i}");
+            } else {
+                panic!("期望 CrashNotification，索引 {i}");
+            }
+
+            // Error
+            let msg4 = IpcMessage {
+                id: i as u64 + 300,
+                kind: IpcMessageKind::Error(text.to_string()),
+            };
+            let out4 = roundtrip(msg4);
+            if let IpcMessageKind::Error(e) = out4.kind {
+                assert_eq!(text, &e, "Error Unicode 往返失败：索引 {i}");
+            } else {
+                panic!("期望 Error，索引 {i}");
+            }
+
+            // Navigate url 字段
+            let msg5 = IpcMessage {
+                id: i as u64 + 400,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: text.to_string(),
+                    referrer: Some(text.to_string()),
+                }),
+            };
+            let out5 = roundtrip(msg5);
+            if let IpcMessageKind::Navigate(p) = out5.kind {
+                assert_eq!(text, &p.url, "Navigate url Unicode 往返失败：索引 {i}");
+                assert_eq!(
+                    &Some(text.to_string()),
+                    &p.referrer,
+                    "Navigate referrer Unicode 往返失败：索引 {i}"
+                );
+            } else {
+                panic!("期望 Navigate，索引 {i}");
+            }
+
+            // FetchParams headers 中的 Unicode 键值对
+            let msg6 = IpcMessage {
+                id: i as u64 + 500,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: i as u64,
+                    url: text.to_string(),
+                    method: text.to_string(),
+                    headers: vec![
+                        (text.to_string(), text.to_string()),
+                        ("ASCII-Key".into(), text.to_string()),
+                    ],
+                    body: Some(text.as_bytes().to_vec()),
+                }),
+            };
+            let out6 = roundtrip(msg6);
+            if let IpcMessageKind::FetchRequest(p) = out6.kind {
+                assert_eq!(text, &p.url, "FetchParams url Unicode 往返失败：索引 {i}");
+                assert_eq!(text, &p.method, "FetchParams method Unicode 往返失败：索引 {i}");
+                assert_eq!(2, p.headers.len(), "FetchParams headers 长度不匹配：索引 {i}");
+                assert_eq!(
+                    text, &p.headers[0].0,
+                    "FetchParams header key Unicode 往返失败：索引 {i}"
+                );
+                assert_eq!(
+                    text, &p.headers[0].1,
+                    "FetchParams header value Unicode 往返失败：索引 {i}"
+                );
+                assert_eq!(
+                    Some(text.as_bytes().to_vec()),
+                    p.body,
+                    "FetchParams body Unicode 往返失败：索引 {i}"
+                );
+            } else {
+                panic!("期望 FetchRequest，索引 {i}");
+            }
+
+            // StorageOp key/value/origin 全部 Unicode
+            let msg7 = IpcMessage {
+                id: i as u64 + 600,
+                kind: IpcMessageKind::StorageOp(StorageOpParams {
+                    storage_type: StorageType::Session,
+                    operation: StorageOperation::Set,
+                    key: text.to_string(),
+                    value: Some(text.to_string()),
+                    origin: text.to_string(),
+                }),
+            };
+            let out7 = roundtrip(msg7);
+            if let IpcMessageKind::StorageOp(p) = out7.kind {
+                assert_eq!(text, &p.key, "StorageOp key Unicode 往返失败：索引 {i}");
+                assert_eq!(
+                    &Some(text.to_string()),
+                    &p.value,
+                    "StorageOp value Unicode 往返失败：索引 {i}"
+                );
+                assert_eq!(text, &p.origin, "StorageOp origin Unicode 往返失败：索引 {i}");
+            } else {
+                panic!("期望 StorageOp，索引 {i}");
+            }
+        }
+    }
+
+    /// 测试包含多层嵌套结构的消息序列化/反序列化往返。
+    /// IpcMessage 本身包含嵌套的 params 结构体（含 Vec<(String, String)> 等），
+    /// 验证这些嵌套层级在 bincode 编码/解码后完整还原。
+    #[test]
+    fn test_nested_message_round_trip() {
+        // 构造具有多层嵌套的消息：
+        // IpcMessage -> FetchRequest -> headers: Vec<(String, String)> (多层嵌套)
+        //                                  body: Option<Vec<u8>>
+        let nested_headers: Vec<(String, String)> = (0..20)
+            .map(|i| {
+                let nested_value = format!(
+                    "level0={i}; level1={{nested_{i}: {{deep: true}}}}; arr=[{},{},{}]",
+                    i,
+                    i + 1,
+                    i + 2
+                );
+                (format!("X-Nested-Key-{i}"), nested_value)
+            })
+            .collect();
+
+        // 嵌套的二进制 body，内部包含一个模拟的 JSON 结构
+        let nested_body: Vec<u8> = format!(
+            "{{\"outer\":{{\"inner\":[{}]}}}}",
+            (0..10)
+                .map(|i| format!("{{\"id\":{i},\"value\":\"nested_{i}\"}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes();
+
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 12345,
+                url: "https://example.com/api/v1/deeply/nested/endpoint".into(),
+                method: "POST".into(),
+                headers: nested_headers.clone(),
+                body: Some(nested_body.clone()),
+            }),
+        };
+
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(12345, p.request_id);
+            assert_eq!("POST", p.method);
+            assert_eq!(20, p.headers.len(), "嵌套 headers 长度应保持一致");
+            assert_eq!(nested_headers, p.headers, "嵌套 headers 内容应完全一致");
+            assert_eq!(Some(nested_body), p.body, "嵌套 body 内容应完全一致");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // 测试更深层的嵌套：StorageOp 中 value 包含嵌套 JSON 字符串
+        // 手动构造嵌套 JSON 字符串（不依赖 serde_json，直接拼字符串）
+        let deeply_nested_value = format!(
+            "{{\"users\":[{}]}}",
+            (0..5)
+                .map(|i| format!(
+                    "{{\"name\":\"user_{i}\",\"settings\":{{\"theme\":\"dark\",\"lang\":\"zh\",\"tags\":[\"a\",\"b\",\"c\"]}}}}"
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        let msg2 = IpcMessage {
+            id: 43,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Set,
+                key: "deeply_nested_key".into(),
+                value: Some(deeply_nested_value.clone()),
+                origin: "https://example.com".into(),
+            }),
+        };
+
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::StorageOp(p) = out2.kind {
+            assert_eq!(Some(deeply_nested_value), p.value, "深层嵌套 value 往返应一致");
+        } else {
+            panic!("期望 StorageOp");
+        }
+
+        // 测试 FetchResponse 中 headers 嵌套元组的往返
+        let response_headers: Vec<(String, String)> = vec![
+            ("Content-Type".into(), "text/html; charset=utf-8".into()),
+            ("Set-Cookie".into(), "session=abc123; Path=/; HttpOnly; Secure".into()),
+            ("X-Forwarded-For".into(), "10.0.0.1, 172.16.0.1, 192.168.1.1".into()),
+            ("Link".into(), "</api/page/2>; rel=\"next\"; title=\"下一页\"".into()),
+        ];
+
+        let msg3 = IpcMessage {
+            id: 44,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 99999,
+                status_code: 206,
+                headers: response_headers.clone(),
+                body: vec![0u8; 1024], // 1KB 零填充 body
+            }),
+        };
+
+        let out3 = roundtrip(msg3);
+        if let IpcMessageKind::FetchResponse(p) = out3.kind {
+            assert_eq!(99999, p.request_id);
+            assert_eq!(206, p.status_code);
+            assert_eq!(response_headers, p.headers, "嵌套响应 headers 往返应一致");
+            assert_eq!(1024, p.body.len());
+            assert!(p.body.iter().all(|&b| b == 0), "body 应全为零");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
+
+    /// 测试同一消息多次序列化产生完全相同的二进制输出（bincode 确定性）。
+    /// 对于 IPC 协议的可靠性和幂等性至关重要。
+    #[test]
+    fn test_binary_round_trip_determinism() {
+        let test_messages: Vec<IpcMessage> = vec![
+            // 简单变体
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Ok,
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::Heartbeat,
+            },
+            // 带字符串的变体
+            IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::TitleChanged("确定性测试标题".into()),
+            },
+            IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::Error("错误信息 123!@#".into()),
+            },
+            // 带可选字段的变体
+            IpcMessage {
+                id: 5,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://example.com/path?q=hello&lang=zh".into(),
+                    referrer: Some("https://google.com".into()),
+                }),
+            },
+            IpcMessage {
+                id: 6,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://example.com".into(),
+                    referrer: None,
+                }),
+            },
+            // 带复杂数据结构的变体
+            IpcMessage {
+                id: 7,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: 42,
+                    url: "https://api.example.com/v1/data".into(),
+                    method: "POST".into(),
+                    headers: vec![
+                        ("Content-Type".into(), "application/json".into()),
+                        ("Authorization".into(), "Bearer token123".into()),
+                        ("X-Request-Id".into(), "abc-def-ghi".into()),
+                    ],
+                    body: Some(b"{\"key\":\"value\",\"nested\":{\"a\":1}}".to_vec()),
+                }),
+            },
+            // 带枚举字段的变体
+            IpcMessage {
+                id: 8,
+                kind: IpcMessageKind::StorageOp(StorageOpParams {
+                    storage_type: StorageType::Session,
+                    operation: StorageOperation::Set,
+                    key: "test_key".into(),
+                    value: Some("test_value".into()),
+                    origin: "https://example.com".into(),
+                }),
+            },
+            // 带浮点数的变体
+            IpcMessage {
+                id: 9,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: 123.456,
+                    y: 789.012,
+                    button: 2,
+                    event_type: MouseEventType::DblClick,
+                }),
+            },
+            IpcMessage {
+                id: 10,
+                kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                    delta_x: -3.14,
+                    delta_y: 2.718,
+                }),
+            },
+        ];
+
+        for msg in &test_messages {
+            // 序列化 3 次，验证每次输出完全一致
+            let bytes1 = serialize(msg).expect("第一次序列化应成功");
+            let bytes2 = serialize(msg).expect("第二次序列化应成功");
+            let bytes3 = serialize(msg).expect("第三次序列化应成功");
+
+            assert_eq!(
+                bytes1, bytes2,
+                "确定性违反：同一消息 (id={}) 的两次序列化结果不同",
+                msg.id
+            );
+            assert_eq!(
+                bytes2, bytes3,
+                "确定性违反：同一消息 (id={}) 的第三次序列化与前两次不同",
+                msg.id
+            );
+
+            // 反序列化后重新序列化，验证也产生相同字节（完整的往返确定性）
+            let roundtrip_bytes = {
+                let deserialized = deserialize(&bytes1).expect("反序列化应成功");
+                serialize(&deserialized).expect("重新序列化应成功")
+            };
+            assert_eq!(
+                bytes1, roundtrip_bytes,
+                "往返确定性违反：消息 (id={}) 反序列化后重新序列化的结果与原始不同",
+                msg.id
+            );
+        }
+    }
 }

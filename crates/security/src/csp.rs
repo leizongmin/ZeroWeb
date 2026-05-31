@@ -970,4 +970,36 @@ mod tests {
         // 'strict-dynamic' 本身不影响 URL 匹配，URL 匹配仍按源列表
         assert!(csp.is_resource_allowed("script", "https://trusted.com/app.js", None));
     }
+
+    /// 测试 img-src 'none' 阻止所有图片加载。
+    #[test]
+    fn test_csp_img_src_restricts_image() {
+        let csp = ContentSecurityPolicy::parse("img-src 'none'");
+        // 'none' 应阻止所有图片加载
+        assert!(!csp.is_resource_allowed("img", "https://cdn.com/photo.jpg", None));
+        assert!(!csp.is_resource_allowed("img", "photo.jpg", None));
+    }
+
+    /// 测试 CSP nonce 不匹配时内联脚本被阻止。
+    #[test]
+    fn test_csp_script_nonce_mismatch() {
+        // 策略要求 nonce-abc123，但脚本使用不同 nonce → 应被阻止
+        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
+        assert!(!csp.is_inline_script_allowed(Some("xyz789"), None));
+        // 正确 nonce → 允许
+        assert!(csp.is_inline_script_allowed(Some("abc123"), None));
+    }
+
+    /// 测试没有具体指令时回退到 default-src。
+    #[test]
+    fn test_csp_default_src_fallback() {
+        // 只有 default-src 'self'，没有 script-src / img-src 等具体指令
+        let csp = ContentSecurityPolicy::parse("default-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+        // script 和 img 都应回退到 default-src 'self'
+        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
+        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", Some(&doc_origin)));
+        assert!(csp.is_resource_allowed("img", "https://example.com/logo.png", Some(&doc_origin)));
+        assert!(!csp.is_resource_allowed("img", "https://evil.com/logo.png", Some(&doc_origin)));
+    }
 }

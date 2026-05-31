@@ -1037,6 +1037,61 @@ mod tests {
         assert_eq!(zh_cookies[0].value, "zh");
     }
 
+    /// 第三方 Cookie：SameSite=None 且 Secure=true，可在所有请求上下文中发送。
+    #[test]
+    fn test_cookie_third_party_attribute() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("tracking=xyz; SameSite=None; Secure; Domain=example.com").unwrap());
+
+        assert_eq!(store.len(), 1);
+        let cookie = &store.cookies[0];
+        assert_eq!(cookie.same_site, SameSite::None);
+        assert!(cookie.secure, "第三方 Cookie 必须标记 Secure");
+
+        // HTTPS 下所有请求上下文均发送
+        let url = parse_url("https://example.com/").unwrap();
+        for ctx in [
+            RequestContext::SameSite,
+            RequestContext::CrossSiteTopLevel,
+            RequestContext::CrossSiteSubresource,
+        ] {
+            let header = store.cookie_header_with_context(&url, ctx, false);
+            assert!(
+                header.contains("tracking=xyz"),
+                "SameSite=None 应在 {ctx:?} 上下文中发送"
+            );
+        }
+
+        // HTTP 下不发送（Secure 限制）
+        let http_url = parse_url("http://example.com/").unwrap();
+        assert!(
+            store.get_for_url(&http_url).is_empty(),
+            "Secure cookie 不应通过 HTTP 发送"
+        );
+    }
+
+    /// 会话 Cookie：无 Max-Age 和 Expires 的 Cookie 永不过期，且 expires 为 None。
+    #[test]
+    fn test_cookie_session_cookie_no_expiry() {
+        let cookie = CookieStore::parse_set_cookie("sess=abc123; Path=/").unwrap();
+
+        // 无 Max-Age 和 Expires → expires 应为 None（会话 Cookie）
+        assert!(cookie.expires.is_none(), "会话 Cookie 的 expires 应为 None");
+        assert!(!cookie.is_expired(), "会话 Cookie 不应过期");
+        assert!(!cookie.is_expired_at(u64::MAX), "会话 Cookie 在任意时间点都不应过期");
+
+        // 能正常存储和检索
+        let mut store = CookieStore::new();
+        store.add(cookie);
+        assert_eq!(store.len(), 1, "会话 Cookie 应被存储");
+
+        let url = parse_url("http://example.com/").unwrap();
+        // cookie 没设 domain，不会匹配 example.com，所以这里再测一个有 domain 的
+        let mut store2 = CookieStore::new();
+        store2.add(CookieStore::parse_set_cookie("sess=abc; Domain=example.com").unwrap());
+        assert_eq!(store2.get_for_url(&url).len(), 1, "会话 Cookie 应能被检索");
+    }
+
     // ── 高优先级 SameSite 完整组合测试 ──
 
     /// 验证三种 SameSite 模式 × 三种请求上下文的完整组合行为。

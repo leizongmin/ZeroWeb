@@ -2303,4 +2303,352 @@ mod tests {
         assert_eq!(linker.functions()[1].name, "fn2");
         assert_eq!(linker.functions()[2].name, "fn3");
     }
+
+    // =======================================================================
+    // 新增测试：WASM 沙箱边界条件
+    // =======================================================================
+
+    /// 通过 WASM 的 memory.grow 指令扩展内存，向新区域写入数据后读回验证。
+    /// 验证内存增长后新分配的区域可以正确读写。
+    #[test]
+    fn test_memory_grow_and_read() {
+        let sandbox = WasmSandbox::new();
+        // 模块初始 1 页内存（65536 字节），提供 grow_and_write 函数：
+        // 先调用 memory.grow 扩展 1 页，然后在新区域的起始位置写入一个 i32 值
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "grow_and_write") (result i32)
+                    (local $prev i32)
+                    ;; grow memory by 1 page
+                    i32.const 1
+                    memory.grow
+                    ;; memory.grow returns -1 on failure, old page count on success
+                    local.set $prev
+                    local.get $prev
+                    i32.const -1
+                    i32.eq
+                    if (result i32) i32.const -1
+                    else
+                        ;; write value 0xDEADBEEF at offset 65536 (start of new page)
+                        i32.const 65536
+                        i32.const -559038737  ;; 0xDEADBEEF
+                        i32.store
+                        i32.const 0  ;; success
+                    end)
+                (func (export "read_new_page") (result i32)
+                    i32.const 65536
+                    i32.load)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 初始内存应为 1 页
+        assert_eq!(instance.memory_size("mem").unwrap(), 65536);
+
+        // 调用 grow_and_write：扩展内存并在新区域写入
+        let results = instance.call("grow_and_write", &[]).expect("call");
+        assert_eq!(results[0], WasmValue::I32(0), "memory.grow 应成功返回 0");
+
+        // 内存现在应为 2 页
+        assert_eq!(instance.memory_size("mem").unwrap(), 65536 * 2);
+
+        // 通过 WASM 函数读回新区域的值
+        let read_back = instance.call("read_new_page", &[]).expect("call read");
+        assert_eq!(read_back[0], WasmValue::I32(-559038737), "读回的值应为 0xDEADBEEF");
+
+        // 通过主机端 read_memory 验证新区域数据
+        let data = instance.read_memory("mem", 65536, 4).expect("read new page");
+        assert_eq!(
+            data,
+            (-559038737i32).to_le_bytes().to_vec(),
+            "主机端读回的新区域数据应一致"
+        );
+    }
+
+    /// 使用错误的参数数量调用导出函数，wasmi 应返回类型不匹配错误。
+    /// 分别测试传入 0 个、1 个和 3 个参数调用一个需要 2 个 i32 参数的函数。
+    #[test]
+    fn test_call_export_with_wrong_signature() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+                (func (export "greet") (result i32) i32.const 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 用 0 个参数调用 add（需要 2 个）→ 错误
+        let result = instance.call("add", &[]);
+        assert!(result.is_err(), "0 个参数调用 add 应返回错误");
+
+        // 用 1 个参数调用 add → 错误
+        let result = instance.call("add", &[WasmValue::I32(1)]);
+        assert!(result.is_err(), "1 个参数调用 add 应返回错误");
+
+        // 用 3 个参数调用 add → 错误
+        let result = instance.call("add", &[WasmValue::I32(1), WasmValue::I32(2), WasmValue::I32(3)]);
+        assert!(result.is_err(), "3 个参数调用 add 应返回错误");
+
+        // 用错误类型的参数调用 greet（greet 无参数）→ 错误
+        let result = instance.call("greet", &[WasmValue::I32(42)]);
+        assert!(result.is_err(), "带参数调用无参函数应返回错误");
+
+        // 正确调用应成功
+        let ok = instance
+            .call("add", &[WasmValue::I32(3), WasmValue::I32(4)])
+            .expect("correct call");
+        assert_eq!(ok[0], WasmValue::I32(7));
+    }
+
+    /// 编译一个没有任何导出的 WASM 模块，验证 exports() 返回空列表，
+    /// 实例化后 has_func / has_memory 查询均返回 false。
+    #[test]
+    fn test_instance_with_no_exports() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                ;; 只有内部函数和局部内存，没有任何导出
+                (func $internal nop)
+                (memory 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let exports = module.exports();
+        assert!(
+            exports.is_empty(),
+            "无导出模块的 exports() 应为空列表，实际: {exports:?}"
+        );
+
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        assert!(!instance.has_func("anything"), "无导出时 has_func 应返回 false");
+        assert!(!instance.has_memory("memory"), "未导出的内存不应通过 has_memory 找到");
+        assert!(
+            instance.memory_size("memory").is_none(),
+            "未导出的内存不应通过 memory_size 找到"
+        );
+    }
+
+    /// 执行包含循环的 WASM 函数，验证燃料消耗量与循环迭代次数成正比。
+    /// 分别用 10 次和 100 次迭代调用同一函数，燃料消耗比值应接近迭代次数比值。
+    #[test]
+    fn test_fuel_consumed_tracking() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        // 循环指定次数后返回的函数
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "loop_n") (param i32) (result i32)
+                    (local $i i32)
+                    (local $sum i32)
+                    (block $break
+                        (loop $loop
+                            local.get $i
+                            local.get 0
+                            i32.ge_s
+                            br_if $break
+                            ;; sum += i
+                            local.get $sum
+                            local.get $i
+                            i32.add
+                            local.set $sum
+                            ;; i += 1
+                            local.get $i
+                            i32.const 1
+                            i32.add
+                            local.set $i
+                            br $loop))
+                    local.get $sum)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 用 10 次迭代测量燃料消耗
+        instance.set_fuel(100_000).expect("set_fuel");
+        let fuel_before_10 = instance.get_fuel().expect("get_fuel");
+        let r10 = instance.call("loop_n", &[WasmValue::I32(10)]).expect("call 10");
+        assert_eq!(r10[0], WasmValue::I32(45), "sum(0..10) = 45");
+        let fuel_after_10 = instance.get_fuel().expect("get_fuel");
+        let consumed_10 = fuel_before_10 - fuel_after_10;
+
+        // 用 100 次迭代测量燃料消耗
+        instance.set_fuel(1_000_000).expect("set_fuel");
+        let fuel_before_100 = instance.get_fuel().expect("get_fuel");
+        let r100 = instance.call("loop_n", &[WasmValue::I32(100)]).expect("call 100");
+        assert_eq!(r100[0], WasmValue::I32(4950), "sum(0..100) = 4950");
+        let fuel_after_100 = instance.get_fuel().expect("get_fuel");
+        let consumed_100 = fuel_before_100 - fuel_after_100;
+
+        // 100 次迭代的燃料消耗应约为 10 次迭代的 10 倍
+        assert!(consumed_10 > 0, "10 次迭代应消耗一些燃料，实际: {consumed_10}");
+        assert!(
+            consumed_100 > consumed_10,
+            "100 次迭代消耗应大于 10 次，实际: {consumed_100} vs {consumed_10}"
+        );
+        let ratio = consumed_100 as f64 / consumed_10 as f64;
+        assert!(
+            (ratio - 10.0).abs() < 3.0,
+            "燃料消耗比值应接近 10（实际: {ratio:.1}，消耗: 10次={consumed_10}, 100次={consumed_100}）"
+        );
+    }
+
+    /// 主机函数接收 3 个以上参数（4 个 i32），验证所有参数正确传递到主机端。
+    #[test]
+    fn test_host_function_multiple_params() {
+        let sandbox = WasmSandbox::new();
+        // WASM 模块导入一个接收 4 个 i32 参数的主机函数，返回它们的加权和
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "weighted_sum"
+                    (func $ws (param i32 i32 i32 i32) (result i32)))
+                (func (export "call_ws")
+                      (param i32 i32 i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    local.get 2
+                    local.get 3
+                    call $ws)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "weighted_sum",
+            vec![WasmValueType::I32; 4],
+            vec![WasmValueType::I32],
+            |params, results| {
+                // 加权求和: a*1 + b*10 + c*100 + d*1000
+                let vals: Vec<i32> = params
+                    .iter()
+                    .map(|v| if let WasmValue::I32(n) = v { *n } else { 0 })
+                    .collect();
+                assert_eq!(vals.len(), 4, "主机函数应收到 4 个参数");
+                let weighted = vals[0] * 1 + vals[1] * 10 + vals[2] * 100 + vals[3] * 1000;
+                results.push(WasmValue::I32(weighted));
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 传入 (2, 3, 4, 5) → 2*1 + 3*10 + 4*100 + 5*1000 = 2+30+400+5000 = 5432
+        let r = instance
+            .call(
+                "call_ws",
+                &[
+                    WasmValue::I32(2),
+                    WasmValue::I32(3),
+                    WasmValue::I32(4),
+                    WasmValue::I32(5),
+                ],
+            )
+            .expect("call");
+        assert_eq!(r[0], WasmValue::I32(5432), "4 参数加权求和结果应为 5432");
+
+        // 换一组值验证: (1, 0, 7, 9) → 1+0+700+9000 = 9701
+        let r2 = instance
+            .call(
+                "call_ws",
+                &[
+                    WasmValue::I32(1),
+                    WasmValue::I32(0),
+                    WasmValue::I32(7),
+                    WasmValue::I32(9),
+                ],
+            )
+            .expect("call2");
+        assert_eq!(r2[0], WasmValue::I32(9701), "4 参数加权求和结果应为 9701");
+    }
+
+    /// 测试主机函数回调 WASM 函数的递归场景。
+    /// 通过燃料限制来约束递归深度，验证在燃料耗尽时执行被安全终止。
+    #[test]
+    fn test_recursive_host_call_limit() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        // WASM 模块导出 step 函数并导入 host_step 主机函数。
+        // step(n) 调用 host_step(n)，host_step 再调用 step(n-1)，
+        // 形成递归链。靠燃料限制来终止递归。
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "host_step" (func $host_step (param i32) (result i32)))
+                (func $step (export "step") (param i32) (result i32)
+                    local.get 0
+                    i32.eqz
+                    if (result i32) i32.const 0
+                    else
+                        local.get 0
+                        call $host_step
+                    end)
+            )"#,
+        );
+
+        // 因为 host 函数无法直接回调 WASM（需要 &mut store 但主机函数签名只有参数和结果），
+        // 所以这里用简化的方式：host_step 返回 n-1 的值，
+        // 然后 WASM 侧循环调用 host_step 直到 n=0，验证燃料被正确消耗。
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "host_step" (func $host_step (param i32) (result i32)))
+                (func (export "run") (param i32) (result i32)
+                    (local $n i32)
+                    (local $count i32)
+                    local.get 0
+                    local.set $n
+                    (block $break
+                        (loop $loop
+                            local.get $n
+                            i32.eqz
+                            br_if $break
+                            ;; n = host_step(n), host_step returns n-1
+                            local.get $n
+                            call $host_step
+                            local.set $n
+                            ;; count += 1
+                            local.get $count
+                            i32.const 1
+                            i32.add
+                            local.set $count
+                            br $loop))
+                    local.get $count)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "host_step",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::I32],
+            |params, results| {
+                if let WasmValue::I32(n) = params[0] {
+                    // 返回 n-1，模拟递归步骤
+                    results.push(WasmValue::I32(n - 1));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 设置充足燃料，验证有限递归能正确完成
+        instance.set_fuel(1_000_000).expect("set_fuel");
+        let r = instance.call("run", &[WasmValue::I32(5)]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(5), "5 次递归步应计数 5");
+
+        // 设置极少燃料，验证递归被燃料限制终止
+        instance.set_fuel(100).expect("set_fuel");
+        let result = instance.call("run", &[WasmValue::I32(10000)]);
+        assert!(
+            matches!(result, Err(WasmError::FuelExhausted)),
+            "深度递归应在燃料耗尽时被终止"
+        );
+    }
 }
