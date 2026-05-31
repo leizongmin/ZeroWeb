@@ -268,4 +268,32 @@ mod tests {
         // worker 不在可选阻塞列表中，应为 Blockable
         assert_eq!(status, MixedContentStatus::Blockable);
     }
+
+    /// 测试 upgrade-insecure-requests 将 HTTP 图片资源升级为 HTTPS。
+    ///
+    /// 当页面使用 CSP upgrade-insecure-requests 指令时，
+    /// OptionallyBlockable 类型的混合内容（如 img）应通过
+    /// upgrade_to_https 自动升级为 HTTPS。
+    #[test]
+    fn test_mixed_content_upgrade_image() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let http_img_url = "http://cdn.example.com/photo.jpg";
+
+        // 1. 检测到混合内容（HTTPS 页面加载 HTTP 图片）
+        assert!(is_mixed_content(&page, http_img_url));
+
+        // 2. 图片属于 OptionallyBlockable（可升级类型）
+        let status = check_mixed_content(&page, http_img_url, "img");
+        assert_eq!(status, MixedContentStatus::OptionallyBlockable);
+
+        // 3. upgrade_to_https 将 HTTP URL 转换为 HTTPS
+        let upgraded = upgrade_to_https(http_img_url);
+        assert_eq!(upgraded, Some("https://cdn.example.com/photo.jpg".to_string()));
+
+        // 4. 升级后的 HTTPS URL 不再是混合内容
+        let upgraded_url = upgraded.unwrap();
+        assert!(!is_mixed_content(&page, &upgraded_url));
+        let upgraded_status = check_mixed_content(&page, &upgraded_url, "img");
+        assert_eq!(upgraded_status, MixedContentStatus::NotMixedContent);
+    }
 }

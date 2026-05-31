@@ -2859,4 +2859,187 @@ mod tests {
         // 无容器上下文，@container 不应用，color 保持默认黑色
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scroll Snap 端到端测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// scroll-snap-type: none 产生默认值（strictness=None, axis=Both）。
+    fn test_scroll_snap_type_none() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-type".to_string(),
+                    value: "none".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(
+            div_style.scroll_snap_type.strictness,
+            property::ScrollSnapStrictness::None
+        );
+        assert_eq!(
+            div_style.scroll_snap_type.axis,
+            zero_css_parser::values::ScrollSnapAxis::Both
+        );
+    }
+
+    #[test]
+    /// scroll-snap-type: x mandatory 存储 strictness=Mandatory, axis=X。
+    fn test_scroll_snap_type_mandatory() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-type".to_string(),
+                    value: "x mandatory".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(
+            div_style.scroll_snap_type.strictness,
+            property::ScrollSnapStrictness::Mandatory
+        );
+        assert_eq!(
+            div_style.scroll_snap_type.axis,
+            zero_css_parser::values::ScrollSnapAxis::X
+        );
+    }
+
+    #[test]
+    /// scroll-snap-type: y proximity 存储 strictness=Proximity, axis=Y。
+    fn test_scroll_snap_type_proximity() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-type".to_string(),
+                    value: "y proximity".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(
+            div_style.scroll_snap_type.strictness,
+            property::ScrollSnapStrictness::Proximity
+        );
+        assert_eq!(
+            div_style.scroll_snap_type.axis,
+            zero_css_parser::values::ScrollSnapAxis::Y
+        );
+    }
+
+    #[test]
+    /// scroll-snap-align 的 start/center/end 值端到端存储验证。
+    fn test_scroll_snap_align_values() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // start
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-align".to_string(),
+                    value: "start".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style.scroll_snap_align, property::ScrollSnapAlign::Start);
+
+        // center
+        let mut sys2 = StyleSystem::new();
+        let stylesheets2 = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-align".to_string(),
+                    value: "center".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+        let styles2 = sys2.compute_styles(&doc, &stylesheets2);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style2.scroll_snap_align, property::ScrollSnapAlign::Center);
+
+        // end
+        let mut sys3 = StyleSystem::new();
+        let stylesheets3 = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-align".to_string(),
+                    value: "end".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+        let styles3 = sys3.compute_styles(&doc, &stylesheets3);
+        let div_style3 = styles3.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style3.scroll_snap_align, property::ScrollSnapAlign::End);
+    }
+
+    #[test]
+    /// scroll-snap-stop: normal 和 always 两个值的端到端存储验证。
+    fn test_scroll_snap_stop_normal_always() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+
+        // normal（默认值）
+        let mut sys = StyleSystem::new();
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-stop".to_string(),
+                    value: "normal".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style.scroll_snap_stop, property::ScrollSnapStop::Normal);
+
+        // always
+        let mut sys2 = StyleSystem::new();
+        let stylesheets2 = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "scroll-snap-stop".to_string(),
+                    value: "always".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+        let styles2 = sys2.compute_styles(&doc, &stylesheets2);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style2.scroll_snap_stop, property::ScrollSnapStop::Always);
+    }
 }

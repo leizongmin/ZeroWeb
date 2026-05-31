@@ -1516,6 +1516,62 @@ mod tests {
         assert_eq!(runtime.config.height, 300);
     }
 
+    /// 验证窗口 resize 后回调中维护的状态保持一致性。
+    ///
+    /// 模拟窗口从 800x600 resize 到 1024x768 再到 400x300，
+    /// 回调中累积所有尺寸变更事件，验证：
+    /// 1. 每次事件携带正确的尺寸
+    /// 2. 事件数量与 resize 次数匹配
+    /// 3. 最终记录的尺寸为最后一次 resize 的值
+    #[test]
+    fn test_window_resize_preserves_state() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| {
+            received.push(e);
+        };
+        let mut app = make_basic_app(&mut callback);
+
+        // 第一次 resize：800x600
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            800, 600,
+        )));
+
+        // 第二次 resize：1024x768
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            1024, 768,
+        )));
+
+        // 第三次 resize：400x300
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            400, 300,
+        )));
+
+        // 验证完整历史：3 次 resize，每次尺寸正确
+        assert_eq!(received.len(), 3, "应记录 3 次 resize 事件");
+
+        match &received[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 800);
+                assert_eq!(*height, 600);
+            }
+            _ => panic!("第 1 个事件应为 Resized"),
+        }
+        match &received[1] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 1024);
+                assert_eq!(*height, 768);
+            }
+            _ => panic!("第 2 个事件应为 Resized"),
+        }
+        match &received[2] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 400, "最终 resize 宽度应为 400");
+                assert_eq!(*height, 300, "最终 resize 高度应为 300");
+            }
+            _ => panic!("第 3 个事件应为 Resized"),
+        }
+    }
+
     /// Window minimize/maximize event fields.
     /// 验证窗口 resize 到 0x0（最小化）和恢复/最大化时事件字段正确。
     #[test]

@@ -5587,3 +5587,157 @@ fn test_document_create_element_invalid_name() {
         assert_eq!(e.local_name(), "123invalid", "元素 local_name 应为 '123invalid'");
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 39. DOM 序列化与解析边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 br、hr、img、input 等空元素序列化时不带闭合标签。
+/// 空元素（void elements）序列化为 `<br>` 而非 `<br></br>`。
+#[test]
+fn test_serialize_self_closing_void_elements() {
+    let mut doc = Document::new();
+
+    let br = doc.create_element("br");
+    let hr = doc.create_element("hr");
+    let img = doc.create_element("img");
+    let input = doc.create_element("input");
+
+    // br 序列化不含 </br>
+    let html_br = doc.outer_html(br);
+    assert!(html_br.contains("<br>"), "br 应序列化为 <br>");
+    assert!(!html_br.contains("</br>"), "br 不应有闭合标签");
+
+    // hr 序列化不含 </hr>
+    let html_hr = doc.outer_html(hr);
+    assert!(html_hr.contains("<hr>"), "hr 应序列化为 <hr>");
+    assert!(!html_hr.contains("</hr>"), "hr 不应有闭合标签");
+
+    // img 序列化不含 </img>
+    let html_img = doc.outer_html(img);
+    assert!(html_img.contains("<img>"), "img 应序列化为 <img>");
+    assert!(!html_img.contains("</img>"), "img 不应有闭合标签");
+
+    // input 序列化不含 </input>
+    let html_input = doc.outer_html(input);
+    assert!(html_input.contains("<input>"), "input 应序列化为 <input>");
+    assert!(!html_input.contains("</input>"), "input 不应有闭合标签");
+
+    // input 带属性时序列化正确
+    doc.set_attribute(input, "type", "text");
+    doc.set_attribute(input, "disabled", "");
+    let html_input_attr = doc.outer_html(input);
+    assert!(html_input_attr.contains("type=\"text\""), "input 应包含 type 属性");
+    assert!(html_input_attr.contains("disabled=\"\""), "input 应包含 disabled 属性");
+    assert!(!html_input_attr.contains("</input>"), "带属性的 input 也不应有闭合标签");
+}
+
+/// 测试 5 层嵌套 div 的序列化结构正确。
+/// 验证嵌套层级：div1 > div2 > div3 > div4 > div5，每层包含文本。
+#[test]
+fn test_serialize_nested_elements() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 构建 5 层嵌套：div1 > div2 > div3 > div4 > div5
+    let mut levels = Vec::new();
+    let mut current = doc.create_element("div");
+    doc.set_attribute(current, "class", "level-1");
+    doc.append_child(root, current).unwrap();
+    levels.push(current);
+
+    for i in 2..=5 {
+        let inner = doc.create_element("div");
+        doc.set_attribute(inner, "class", &format!("level-{i}"));
+        doc.append_child(current, inner).unwrap();
+        current = inner;
+        levels.push(current);
+    }
+
+    // 最内层添加文本
+    doc.set_text_content(current, "deepest");
+
+    // 序列化最外层
+    let html = doc.outer_html(levels[0]);
+
+    // 验证每层都存在
+    for i in 1..=5 {
+        assert!(html.contains(&format!("class=\"level-{i}\"")), "序列化应包含 level-{i}");
+    }
+
+    // 验证最内层文本
+    assert!(html.contains("deepest"), "序列化应包含最内层文本");
+
+    // 验证闭合标签数量正确（5 个 </div>）
+    let closing_count = html.matches("</div>").count();
+    assert_eq!(closing_count, 5, "应有 5 个 </div> 闭合标签");
+
+    // 验证 text_content 正确
+    assert_eq!(doc.text_content(levels[0]), Some("deepest".to_string()));
+}
+
+/// 测试 script 标签内容不被当作 HTML 解析。
+/// `<script>` 内的 `<div>` 应作为文本内容保留，不被解析为 DOM 元素。
+#[test]
+fn test_parser_script_tag_content() {
+    let doc = parse_html(
+        "<html><body><script>var x = '<div>not a real div</div>'; if (a < b) {}</script><p>after</p></body></html>",
+    );
+
+    // script 元素存在
+    let scripts = doc.get_elements_by_tag_name("script");
+    assert_eq!(scripts.len(), 1, "应有一个 script 元素");
+
+    // script 内容作为纯文本保留，不解析为 HTML
+    let script_content = doc.text_content(scripts[0]);
+    assert!(script_content.is_some(), "script 应有文本内容");
+    let content = script_content.unwrap();
+    assert!(
+        content.contains("<div>not a real div</div>"),
+        "script 内的 HTML 标签应作为文本保留"
+    );
+    assert!(content.contains("var x ="), "script 应包含 JavaScript 代码");
+    assert!(content.contains("if (a < b)"), "script 内的小于号应作为文本保留");
+
+    // script 内的 div 不应出现在 DOM 查询中
+    let divs = doc.get_elements_by_tag_name("div");
+    assert!(divs.is_empty(), "script 内的 div 不应被解析为 DOM 元素");
+
+    // script 之后的 p 元素正常解析
+    let ps = doc.get_elements_by_tag_name("p");
+    assert_eq!(ps.len(), 1, "script 后的 p 应正常解析");
+    assert_eq!(doc.text_content(ps[0]), Some("after".to_string()));
+}
+
+/// 测试 input 元素的 disabled 属性（无值属性）解析正确。
+/// HTML 中 `<input disabled>` 的 disabled 属性值为空字符串。
+#[test]
+fn test_parser_attribute_without_value() {
+    let doc = parse_html("<html><body><input disabled /><input type=\"text\" /></body></html>");
+
+    let inputs = doc.get_elements_by_tag_name("input");
+    assert_eq!(inputs.len(), 2, "应有 2 个 input 元素");
+
+    // 第一个 input 有 disabled 属性（值为空字符串）
+    let disabled_input = inputs[0];
+    assert!(
+        doc.has_attribute(disabled_input, "disabled"),
+        "input 应有 disabled 属性"
+    );
+    let disabled_val = doc.get_attribute(disabled_input, "disabled");
+    assert!(disabled_val.is_some(), "disabled 属性值应存在");
+    // html5ever 将无值属性解析为空字符串
+    assert_eq!(disabled_val.as_deref(), Some(""), "disabled 属性值应为空字符串");
+
+    // 第二个 input 没有 disabled 属性
+    let normal_input = inputs[1];
+    assert!(
+        !doc.has_attribute(normal_input, "disabled"),
+        "无 disabled 的 input 不应有该属性"
+    );
+    assert_eq!(
+        doc.get_attribute(normal_input, "type"),
+        Some("text".to_string()),
+        "第二个 input 应有 type=\"text\""
+    );
+}

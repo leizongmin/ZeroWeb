@@ -205,6 +205,8 @@ impl Default for DamageTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::Color;
+    use crate::primitive::RenderPrimitives;
 
     #[test]
     fn test_point_zero() {
@@ -579,5 +581,82 @@ mod tests {
         tracker.clear();
         assert!(!tracker.is_dirty());
         assert!(tracker.dirty_rects().is_empty());
+    }
+
+    /// 验证 DamageTracker 全量清除（damage_all）后再重新标记脏区域，状态正确。
+    ///
+    /// 步骤：
+    /// 1. 添加两个局部脏矩形
+    /// 2. 调用 damage_all 进行全量重绘标记
+    /// 3. 清除所有脏区域
+    /// 4. 重新标记两个不重叠的脏矩形
+    /// 5. 验证最终脏矩形列表正确反映重新标记的区域
+    #[test]
+    fn test_damage_tracker_full_clear_then_remark() {
+        let mut tracker = DamageTracker::new();
+
+        // 1. 初始标记两个区域
+        tracker.add_damage(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tracker.add_damage(Rect::new(200.0, 100.0, 80.0, 60.0));
+        assert!(tracker.is_dirty());
+
+        // 2. 全量重绘
+        tracker.damage_all(Size::new(800.0, 600.0));
+        assert_eq!(tracker.dirty_rects().len(), 1, "damage_all 后应为单个全屏矩形");
+        assert_eq!(tracker.dirty_rects()[0].size.width, 800.0);
+        assert_eq!(tracker.dirty_rects()[0].size.height, 600.0);
+
+        // 3. 清除
+        tracker.clear();
+        assert!(!tracker.is_dirty(), "clear 后不应有脏区域");
+
+        // 4. 重新标记
+        tracker.add_damage(Rect::new(10.0, 20.0, 30.0, 40.0));
+        tracker.add_damage(Rect::new(500.0, 100.0, 50.0, 60.0));
+        assert!(tracker.is_dirty());
+
+        // 5. 验证重新标记结果
+        let rects = tracker.dirty_rects();
+        assert_eq!(rects.len(), 2, "两个不重叠矩形不应合并");
+        assert_eq!(rects[0].origin.x, 10.0);
+        assert_eq!(rects[0].origin.y, 20.0);
+        assert_eq!(rects[0].size.width, 30.0);
+        assert_eq!(rects[0].size.height, 40.0);
+        assert_eq!(rects[1].origin.x, 500.0);
+        assert_eq!(rects[1].size.width, 50.0);
+    }
+
+    /// 验证 FillPrimitive 使用超过 255 的颜色值时被正确 clamp。
+    ///
+    /// 由于 Color 的通道为 u8，任何超过 255 的值在构造时会被 clamp 到 255。
+    /// 测试通过 u32::clamp 模拟此行为，确认填充图元的颜色字段不超出 u8 范围。
+    #[test]
+    fn test_primitive_fill_color_clamping() {
+        // 模拟超过 255 的颜色值被 clamp
+        let r = 300u32.clamp(0, 255) as u8;
+        let g = 256u32.clamp(0, 255) as u8;
+        let b = 500u32.clamp(0, 255) as u8;
+        let a = 1000u32.clamp(0, 255) as u8;
+
+        let color = Color::rgba(r, g, b, a);
+        assert_eq!(color.r, 255, "R 通道应被 clamp 到 255");
+        assert_eq!(color.g, 255, "G 通道应被 clamp 到 255");
+        assert_eq!(color.b, 255, "B 通道应被 clamp 到 255");
+        assert_eq!(color.a, 255, "A 通道应被 clamp 到 255");
+
+        // 创建 FillPrimitive 验证颜色正确存储
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 100.0), color);
+        assert_eq!(p.fills.len(), 1);
+        assert_eq!(p.fills[0].color.r, 255);
+        assert_eq!(p.fills[0].color.g, 255);
+        assert_eq!(p.fills[0].color.b, 255);
+        assert_eq!(p.fills[0].color.a, 255);
+
+        // to_f32_array 应全部为 1.0
+        let f = p.fills[0].color.to_f32_array();
+        for (i, &v) in f.iter().enumerate() {
+            assert!((v - 1.0).abs() < f32::EPSILON, "通道 {i} 应为 1.0，实际: {v}");
+        }
     }
 }

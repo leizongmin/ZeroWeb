@@ -77,6 +77,12 @@ impl HttpRequest {
         self.headers.push((name.to_string(), value.to_string()));
         self
     }
+
+    /// 修改请求方法（builder 风格）。
+    pub fn with_method(mut self, method: HttpMethod) -> Self {
+        self.method = method;
+        self
+    }
 }
 
 /// HTTP 响应。
@@ -103,6 +109,16 @@ impl HttpResponse {
     /// 是否为重定向 (3xx)。
     pub fn is_redirect(&self) -> bool {
         (300..=399).contains(&self.status_code)
+    }
+
+    /// 是否为客户端错误 (4xx)。
+    pub fn is_client_error(&self) -> bool {
+        (400..=499).contains(&self.status_code)
+    }
+
+    /// 是否为服务端错误 (5xx)。
+    pub fn is_server_error(&self) -> bool {
+        (500..=599).contains(&self.status_code)
     }
 
     /// 获取 Content-Type header。
@@ -483,5 +499,86 @@ mod tests {
         assert_eq!(req.headers[1], ("X-Request-Id".into(), "abc-123".into()));
         assert_eq!(req.headers[2], ("Cache-Control".into(), "no-cache".into()));
         assert_eq!(req.headers[3], ("Authorization".into(), "Bearer tok".into()));
+    }
+
+    /// 测试 HttpRequest 通过 builder 方法链从 GET 切换为 POST，验证方法变更和 body 设定。
+    ///
+    /// 验证 with_method 可以改变请求方法，且 builder 链式调用保持 header 和 body 正确。
+    #[test]
+    fn test_http_request_builder_method_chaining() {
+        // 从 GET 请求开始
+        let req = HttpRequest::get("http://example.com/api")
+            .header("Accept", "application/json")
+            .with_method(HttpMethod::Post)
+            .header("Content-Type", "application/json");
+
+        // 方法已从 GET 变为 POST
+        assert_eq!(req.method, HttpMethod::Post);
+        // URL 不变
+        assert_eq!(req.url, "http://example.com/api");
+        // header 按添加顺序保留
+        assert_eq!(req.headers.len(), 2);
+        assert_eq!(req.headers[0], ("Accept".into(), "application/json".into()));
+        assert_eq!(req.headers[1], ("Content-Type".into(), "application/json".into()));
+        // GET 构造器不设 body
+        assert!(req.body.is_none());
+
+        // 也可以从 POST 开始切换为 PUT
+        let req_put = HttpRequest::post("http://example.com/api", b"data".to_vec()).with_method(HttpMethod::Put);
+        assert_eq!(req_put.method, HttpMethod::Put);
+        assert_eq!(req_put.body, Some(b"data".to_vec()));
+    }
+
+    /// 测试 HttpResponse 状态码分类：2xx/3xx/4xx/5xx 各类别的判断方法。
+    ///
+    /// 验证 is_success、is_redirect、is_client_error、is_server_error
+    /// 在各类状态码上的正确性。
+    #[test]
+    fn test_http_response_status_code_categories() {
+        // 2xx — 成功
+        assert!(test_response(200, vec![], "").is_success());
+        assert!(test_response(201, vec![], "").is_success());
+        assert!(test_response(204, vec![], "").is_success());
+        assert!(!test_response(200, vec![], "").is_redirect());
+        assert!(!test_response(200, vec![], "").is_client_error());
+        assert!(!test_response(200, vec![], "").is_server_error());
+
+        // 3xx — 重定向
+        assert!(test_response(301, vec![], "").is_redirect());
+        assert!(test_response(302, vec![], "").is_redirect());
+        assert!(test_response(304, vec![], "").is_redirect());
+        assert!(!test_response(301, vec![], "").is_success());
+        assert!(!test_response(301, vec![], "").is_client_error());
+        assert!(!test_response(301, vec![], "").is_server_error());
+
+        // 4xx — 客户端错误
+        assert!(test_response(400, vec![], "").is_client_error());
+        assert!(test_response(401, vec![], "").is_client_error());
+        assert!(test_response(403, vec![], "").is_client_error());
+        assert!(test_response(404, vec![], "").is_client_error());
+        assert!(!test_response(404, vec![], "").is_success());
+        assert!(!test_response(404, vec![], "").is_redirect());
+        assert!(!test_response(404, vec![], "").is_server_error());
+
+        // 5xx — 服务端错误
+        assert!(test_response(500, vec![], "").is_server_error());
+        assert!(test_response(502, vec![], "").is_server_error());
+        assert!(test_response(503, vec![], "").is_server_error());
+        assert!(!test_response(500, vec![], "").is_success());
+        assert!(!test_response(500, vec![], "").is_redirect());
+        assert!(!test_response(500, vec![], "").is_client_error());
+
+        // 边界值验证
+        assert!(!test_response(199, vec![], "").is_success());
+        assert!(!test_response(300, vec![], "").is_success());
+        assert!(test_response(299, vec![], "").is_success());
+        assert!(test_response(399, vec![], "").is_redirect());
+        assert!(!test_response(400, vec![], "").is_redirect());
+        assert!(!test_response(399, vec![], "").is_client_error());
+        assert!(test_response(400, vec![], "").is_client_error());
+        assert!(!test_response(499, vec![], "").is_server_error());
+        assert!(test_response(500, vec![], "").is_server_error());
+        assert!(test_response(599, vec![], "").is_server_error());
+        assert!(!test_response(600, vec![], "").is_server_error());
     }
 }
