@@ -513,4 +513,176 @@ mod tests {
         );
         assert!(!result.allowed, "application/json 非简单 Content-Type 应被 CORS 阻止");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Edge-case tests
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// 测试 CSP connect-src 指令限制 XHR/Fetch 请求。
+    #[test]
+    fn test_csp_connect_src() {
+        let csp = ContentSecurityPolicy::parse("connect-src https://api.example.com");
+        assert!(csp.is_resource_allowed("connect", "https://api.example.com/data", None));
+        assert!(!csp.is_resource_allowed("connect", "https://evil.com/data", None));
+        // 其他资源类型不受 connect-src 影响，回退到 default-src（无则允许）
+        assert!(csp.is_resource_allowed("img", "https://any.com/photo.jpg", None));
+    }
+
+    /// 测试 CSP media-src 指令限制音视频资源加载。
+    #[test]
+    fn test_csp_media_src() {
+        let csp = ContentSecurityPolicy::parse("media-src https://media.example.com");
+        assert!(csp.is_resource_allowed("media", "https://media.example.com/video.mp4", None));
+        assert!(!csp.is_resource_allowed("media", "https://evil.com/video.mp4", None));
+        // media-src 'none' 阻止所有媒体
+        let csp_none = ContentSecurityPolicy::parse("media-src 'none'");
+        assert!(!csp_none.is_resource_allowed("media", "https://media.example.com/video.mp4", None));
+        assert!(!csp_none.is_resource_allowed("media", "video.mp4", None));
+    }
+
+    /// 测试 CORS max-age=0 时不缓存预检结果。
+    #[test]
+    fn test_cors_max_age_zero() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(0),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        // max-age=0 表示不缓存
+        assert_eq!(headers.max_age, Some("0".to_string()));
+        assert!(headers.allow_origin.is_some(), "请求本身仍应被允许");
+    }
+
+    /// 测试 http 与 https 同域名不同协议不是同源。
+    #[test]
+    fn test_same_origin_different_protocol() {
+        let http = Origin::parse("http://example.com").unwrap();
+        let https = Origin::parse("https://example.com").unwrap();
+        assert_ne!(http.scheme, https.scheme, "scheme 应不同");
+        assert_ne!(http.port, https.port, "默认端口应不同（80 vs 443）");
+        assert!(!http.is_same_origin(&https), "http 与 https 不是同源");
+        assert!(!check_same_origin(&http, &https));
+    }
+
+    /// 测试 HTTPS 页面加载 HTTPS 资源（非混合内容）。
+    #[test]
+    fn test_mixed_content_upgrade_https() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let https_resource = "https://cdn.example.com/script.js";
+        // HTTPS 页面加载 HTTPS 资源 → 不是混合内容
+        assert!(!is_mixed_content(&page, https_resource));
+        assert_eq!(
+            check_mixed_content(&page, https_resource, "script"),
+            MixedContentStatus::NotMixedContent
+        );
+    }
+
+    /// 测试 COOP+COEP 所有组合中仅 SameOrigin+RequireCorp 为跨源隔离。
+    #[test]
+    fn test_cross_origin_isolated_all_combinations() {
+        // 唯一返回 true 的组合
+        assert!(is_cross_origin_isolated(
+            CoopPolicy::SameOrigin,
+            CoepPolicy::RequireCorp
+        ));
+
+        // SameOriginIncludingPopups 不是 SameOrigin → 不隔离
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::SameOriginIncludingPopups,
+            CoepPolicy::RequireCorp
+        ));
+
+        // Credentialless 不是 RequireCorp → 不隔离
+        assert!(!is_cross_origin_isolated(
+            CoopPolicy::SameOrigin,
+            CoepPolicy::Credentialless
+        ));
+    }
+
+    /// 测试 CSP frame-ancestors 对非默认端口源的匹配。
+    ///
+    /// frame-ancestors 指令对源的匹配需要正确处理端口号。
+    /// 当嵌入方使用非默认端口（如 8443）时，格式化的源字符串
+    /// 应包含端口号（https://example.com:8443），与策略中的值匹配。
+    #[test]
+    fn test_csp_frame_ancestors_custom_port() {
+        let csp = ContentSecurityPolicy::parse("frame-ancestors https://example.com:8443");
+        let allowed = Origin::parse("https://example.com:8443").unwrap();
+        let blocked_default = Origin::parse("https://example.com").unwrap();
+        let blocked_other = Origin::parse("https://example.com:9443").unwrap();
+
+        assert!(csp.is_frame_ancestor_allowed(&allowed), "匹配非默认端口应允许");
+        assert!(
+            !csp.is_frame_ancestor_allowed(&blocked_default),
+            "默认端口 443 不匹配 8443"
+        );
+        assert!(!csp.is_frame_ancestor_allowed(&blocked_other), "不同端口不匹配");
+    }
+
+    /// 测试 HTTP 页面加载任何资源都不是混合内容。
+    ///
+    /// 混合内容检测仅在页面为 HTTPS 时触发。
+    /// HTTP 页面加载 HTTP 资源不是混合内容（虽然不安全，但不是混合内容）。
+    #[test]
+    fn test_mixed_content_http_page_never_flagged() {
+        let http_page = Origin::parse("http://example.com").unwrap();
+        // HTTP 页面加载 HTTP 资源 → 不是混合内容
+        assert!(!is_mixed_content(&http_page, "http://evil.com/script.js"));
+        // HTTP 页面加载 HTTPS 资源 → 也不是混合内容
+        assert!(!is_mixed_content(&http_page, "https://safe.com/script.js"));
+        // HTTP 页面加载相对 URL → 也不是混合内容
+        assert!(!is_mixed_content(&http_page, "app.js"));
+        // check_mixed_content 对 HTTP 页面一律返回 NotMixedContent
+        assert_eq!(
+            check_mixed_content(&http_page, "http://evil.com/script.js", "script"),
+            MixedContentStatus::NotMixedContent
+        );
+    }
+
+    /// 测试 CSP 解析仅含空白字符的策略字符串不产生任何指令。
+    ///
+    /// 空格、制表符、换行符组成的字符串应被解析为空策略，
+    /// 不产生任何指令，且不阻止任何资源加载。
+    #[test]
+    fn test_csp_parse_whitespace_only() {
+        let csp = ContentSecurityPolicy::parse("   \t  \n  ");
+        assert!(csp.directives.is_empty(), "仅含空白字符的策略不应产生指令");
+        // 空策略不阻止任何资源
+        assert!(csp.is_resource_allowed("script", "https://evil.com/bad.js", None));
+        assert!(csp.is_inline_script_allowed(None, None));
+        assert!(csp.is_inline_style_allowed(None, None));
+    }
+
+    /// 测试 CORS 空源列表时 check_cors 和 generate_preflight_response 均拒绝。
+    ///
+    /// 当 allow_origins 为空 Vec 时，任何源都无法通过 CORS 检查，
+    /// 预检响应也不应返回 allow_origin。
+    #[test]
+    fn test_cors_empty_origins_blocks_everything() {
+        let policy = CorsPolicy {
+            allow_origins: vec![],
+            allow_methods: vec!["GET".to_string(), "POST".to_string(), "DELETE".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(3600),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // check_cors 应拒绝
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(!result.allowed, "空源列表应拒绝所有请求");
+        assert!(result.reason.contains("origin"), "拒绝原因应提及 origin");
+
+        // generate_preflight_response 也应拒绝
+        let headers = generate_preflight_response(&policy, &origin, "DELETE", &[]);
+        assert!(
+            headers.allow_origin.is_none(),
+            "空源列表的预检响应不应包含 allow_origin"
+        );
+        assert!(headers.allow_methods.is_none());
+    }
 }

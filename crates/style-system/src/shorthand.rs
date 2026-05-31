@@ -144,6 +144,27 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             }
         }
 
+        // ── overscroll-behavior ──
+        // 单值：同时应用于 overscroll-behavior-x 和 overscroll-behavior-y
+        // 双值：第一个为 x，第二个为 y
+        "overscroll-behavior" => {
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            match parts.len() {
+                1 => vec![
+                    mk("overscroll-behavior-x", parts[0]),
+                    mk("overscroll-behavior-y", parts[0]),
+                ],
+                2 => vec![
+                    mk("overscroll-behavior-x", parts[0]),
+                    mk("overscroll-behavior-y", parts[1]),
+                ],
+                _ => vec![
+                    mk("overscroll-behavior-x", value.trim()),
+                    mk("overscroll-behavior-y", value.trim()),
+                ],
+            }
+        }
+
         // ── border-radius ──
         "border-radius" => expand_border_radius(value, important, specificity),
 
@@ -2100,5 +2121,29 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.iter().all(|(_, _, imp, _)| *imp));
         assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
+    }
+
+    // ── overscroll-behavior 简写测试 ──
+
+    #[test]
+    /// overscroll-behavior 单值：contain → x=contain, y=contain
+    fn test_overscroll_behavior_single_value() {
+        let result = expand_one("overscroll-behavior", "contain", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overscroll-behavior-x");
+        assert_eq!(result[0].1, "contain");
+        assert_eq!(result[1].0, "overscroll-behavior-y");
+        assert_eq!(result[1].1, "contain");
+    }
+
+    #[test]
+    /// overscroll-behavior 双值：auto none → x=auto, y=none
+    fn test_overscroll_behavior_two_values() {
+        let result = expand_one("overscroll-behavior", "auto none", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "overscroll-behavior-x");
+        assert_eq!(result[0].1, "auto");
+        assert_eq!(result[1].0, "overscroll-behavior-y");
+        assert_eq!(result[1].1, "none");
     }
 }

@@ -2925,4 +2925,420 @@ mod tests {
             );
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    // 边界条件测试：所有枚举变体序列化、可选字段、Vec 字段
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试所有 IpcMessageKind 枚举变体都能正确序列化和反序列化。
+    /// 构造每种变体的消息，序列化后反序列化，验证类型和 ID 保持一致。
+    #[test]
+    fn test_ipc_enum_variants() {
+        let variants: Vec<(u64, IpcMessageKind)> = vec![
+            (
+                1,
+                IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://a.com".into(),
+                    referrer: Some("https://b.com".into()),
+                }),
+            ),
+            (2, IpcMessageKind::GoBack),
+            (3, IpcMessageKind::GoForward),
+            (4, IpcMessageKind::StopLoading),
+            (5, IpcMessageKind::Reload),
+            (6, IpcMessageKind::TitleChanged("title".into())),
+            (7, IpcMessageKind::UrlChanged("https://c.com".into())),
+            (8, IpcMessageKind::LoadComplete),
+            (9, IpcMessageKind::LoadFailed("timeout".into())),
+            (
+                10,
+                IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: 1,
+                    url: "https://d.com".into(),
+                    method: "GET".into(),
+                    headers: vec![],
+                    body: None,
+                }),
+            ),
+            (
+                11,
+                IpcMessageKind::FetchResponse(FetchResponseParams {
+                    request_id: 1,
+                    status_code: 200,
+                    headers: vec![],
+                    body: vec![42],
+                }),
+            ),
+            (
+                12,
+                IpcMessageKind::StorageOp(StorageOpParams {
+                    storage_type: StorageType::Local,
+                    operation: StorageOperation::Get,
+                    key: "k".into(),
+                    value: None,
+                    origin: "o".into(),
+                }),
+            ),
+            (
+                13,
+                IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: 1.0,
+                    y: 2.0,
+                    button: 0,
+                    event_type: MouseEventType::Click,
+                }),
+            ),
+            (
+                14,
+                IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key: "a".into(),
+                    code: "KeyA".into(),
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                    meta: false,
+                    event_type: KeyboardEventType::Down,
+                }),
+            ),
+            (
+                15,
+                IpcMessageKind::ScrollEvent(ScrollEventParams {
+                    delta_x: 1.0,
+                    delta_y: -1.0,
+                }),
+            ),
+            (16, IpcMessageKind::Heartbeat),
+            (17, IpcMessageKind::CrashNotification("segfault".into())),
+            (18, IpcMessageKind::Ok),
+            (19, IpcMessageKind::Error("failure".into())),
+        ];
+        for (id, kind) in variants {
+            let msg = IpcMessage { id, kind };
+            let bytes = serialize(&msg).expect("serialize");
+            let out = deserialize(&bytes).expect("deserialize");
+            assert_eq!(id, out.id, "variant id={} should round-trip correctly", id);
+            // Re-serialize to verify kind preserved
+            let bytes2 = serialize(&out).expect("re-serialize");
+            assert_eq!(
+                bytes, bytes2,
+                "variant id={} bytes should be identical after round-trip",
+                id
+            );
+        }
+    }
+
+    /// 测试 IPC 消息中的可选字段（Option<T>）在 None 和 Some 两种情况下正确序列化。
+    #[test]
+    fn test_ipc_optional_fields() {
+        // NavigateParams.referrer: None
+        let msg_none = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: None,
+            }),
+        };
+        let out_none = roundtrip(msg_none);
+        if let IpcMessageKind::Navigate(p) = out_none.kind {
+            assert!(p.referrer.is_none(), "referrer 应为 None");
+        } else {
+            panic!("期望 Navigate");
+        }
+
+        // NavigateParams.referrer: Some
+        let msg_some = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some("https://referrer.com".into()),
+            }),
+        };
+        let out_some = roundtrip(msg_some);
+        if let IpcMessageKind::Navigate(p) = out_some.kind {
+            assert_eq!(Some("https://referrer.com".into()), p.referrer, "referrer 应为 Some");
+        } else {
+            panic!("期望 Navigate");
+        }
+
+        // FetchParams.body: None vs Some
+        let msg_body_none = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://api.com".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            }),
+        };
+        let out_body_none = roundtrip(msg_body_none);
+        if let IpcMessageKind::FetchRequest(p) = out_body_none.kind {
+            assert!(p.body.is_none(), "body 应为 None");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        let msg_body_some = IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 2,
+                url: "https://api.com".into(),
+                method: "POST".into(),
+                headers: vec![],
+                body: Some(vec![1, 2, 3]),
+            }),
+        };
+        let out_body_some = roundtrip(msg_body_some);
+        if let IpcMessageKind::FetchRequest(p) = out_body_some.kind {
+            assert_eq!(Some(vec![1, 2, 3]), p.body, "body 应为 Some([1,2,3])");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // StorageOpParams.value: None vs Some
+        let msg_val_none = IpcMessage {
+            id: 5,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Get,
+                key: "k".into(),
+                value: None,
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out_val_none = roundtrip(msg_val_none);
+        if let IpcMessageKind::StorageOp(p) = out_val_none.kind {
+            assert!(p.value.is_none(), "value 应为 None");
+        } else {
+            panic!("期望 StorageOp");
+        }
+    }
+
+    /// 测试 IPC 消息中的 Vec 字段（headers、body）正确序列化。
+    #[test]
+    fn test_ipc_vec_field() {
+        // FetchParams.headers: 多个键值对
+        let headers: Vec<(String, String)> = vec![
+            ("Accept".into(), "text/html".into()),
+            ("Accept-Language".into(), "en-US".into()),
+            ("Authorization".into(), "Bearer token".into()),
+        ];
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 42,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: headers.clone(),
+                body: Some(vec![0xDE, 0xAD, 0xBE, 0xEF]),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(p.headers.len(), 3, "headers 应有 3 个元素");
+            assert_eq!(p.headers, headers, "headers 内容应完全一致");
+            assert_eq!(p.body, Some(vec![0xDE, 0xAD, 0xBE, 0xEF]), "body 应完全一致");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // FetchResponse.headers: 空列表 vs 多个
+        let msg_empty = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 1,
+                status_code: 200,
+                headers: vec![],
+                body: vec![],
+            }),
+        };
+        let out_empty = roundtrip(msg_empty);
+        if let IpcMessageKind::FetchResponse(p) = out_empty.kind {
+            assert!(p.headers.is_empty(), "空 headers 应保持为空");
+            assert!(p.body.is_empty(), "空 body 应保持为空");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+
+        // FetchResponse.body: 大体积二进制
+        let large_body: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+        let msg_large = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 1,
+                status_code: 200,
+                headers: vec![("Content-Length".into(), "1024".into())],
+                body: large_body.clone(),
+            }),
+        };
+        let out_large = roundtrip(msg_large);
+        if let IpcMessageKind::FetchResponse(p) = out_large.kind {
+            assert_eq!(p.body.len(), 1024, "body 应有 1024 字节");
+            assert_eq!(p.body, large_body, "大体积 body 应完全一致");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  更多边界条件测试
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 f32 特殊浮点值（NaN、Infinity、负 Infinity）在鼠标和滚动事件中的往返正确性。
+    /// 验证 bincode 能正确编码/解码 IEEE 754 特殊值。
+    #[test]
+    fn test_mouse_and_scroll_special_float_values() {
+        // 鼠标事件使用 NaN 和 Infinity
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: f32::NAN,
+                y: f32::INFINITY,
+                button: 0,
+                event_type: MouseEventType::Move,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::MouseEvent(p) = out.kind {
+            assert!(p.x.is_nan(), "x 应为 NaN");
+            assert!(p.x.is_sign_positive(), "NaN 应为正号");
+            assert_eq!(f32::INFINITY, p.y);
+        } else {
+            panic!("期望 MouseEvent");
+        }
+
+        // 滚动事件使用负 Infinity
+        let msg2 = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x: f32::NEG_INFINITY,
+                delta_y: f32::NAN,
+            }),
+        };
+        let out2 = roundtrip(msg2);
+        if let IpcMessageKind::ScrollEvent(p) = out2.kind {
+            assert_eq!(f32::NEG_INFINITY, p.delta_x);
+            assert!(p.delta_y.is_nan(), "delta_y 应为 NaN");
+        } else {
+            panic!("期望 ScrollEvent");
+        }
+    }
+
+    /// 测试 NavigateParams 中 referrer 为 Some("")（空字符串）的情况。
+    /// 验证 Some 包裹空字符串与 None 在序列化后不混淆。
+    #[test]
+    fn test_navigate_referrer_some_empty_string() {
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: Some(String::new()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!("https://example.com", p.url);
+            // referrer 必须是 Some("")，不能变成 None
+            assert!(p.referrer.is_some(), "referrer 不应为 None");
+            assert_eq!("", p.referrer.unwrap(), "referrer 应为空字符串");
+        } else {
+            panic!("期望 Navigate");
+        }
+    }
+
+    /// 测试 FetchRequest 中 request_id 为 0（最小值）且 HTTP 方法含特殊字符时的序列化正确性。
+    #[test]
+    fn test_fetch_request_zero_request_id_special_method() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 0,
+                url: "https://example.com/api".into(),
+                method: "PATCH".into(),
+                headers: vec![
+                    ("X-Custom".into(), "a=b&c=d".into()),
+                    ("Content-Type".into(), "application/x-www-form-urlencoded".into()),
+                ],
+                body: Some(vec![]), // 空但非 None 的 body
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(0, p.request_id, "request_id 应为 0");
+            assert_eq!("PATCH", p.method);
+            assert_eq!(2, p.headers.len());
+            assert_eq!("a=b&c=d", p.headers[0].1);
+            assert!(p.body.is_some(), "body 应为 Some");
+            assert!(p.body.as_ref().unwrap().is_empty(), "body 内容应为空 Vec");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+    }
+
+    /// 测试 StorageOp 中 value 为 Some("")（空字符串）与 None 的区分。
+    /// 验证 Option<String> 在 None 和 Some("") 两种状态下序列化后不会混淆。
+    #[test]
+    fn test_storage_op_value_some_empty_vs_none() {
+        // value = Some("")
+        let msg_some_empty = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Set,
+                key: "empty_key".into(),
+                value: Some(String::new()),
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out_some_empty = roundtrip(msg_some_empty);
+        if let IpcMessageKind::StorageOp(p) = out_some_empty.kind {
+            assert!(p.value.is_some(), "value 不应为 None");
+            assert_eq!("", p.value.unwrap(), "value 应为空字符串");
+        } else {
+            panic!("期望 StorageOp");
+        }
+
+        // value = None
+        let msg_none = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Get,
+                key: "empty_key".into(),
+                value: None,
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out_none = roundtrip(msg_none);
+        if let IpcMessageKind::StorageOp(p) = out_none.kind {
+            assert!(p.value.is_none(), "value 应为 None");
+        } else {
+            panic!("期望 StorageOp");
+        }
+
+        // 两条消息的序列化结果应不同（Some("") 和 None 编码不同）
+        let bytes_some_empty = serialize(&IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Set,
+                key: "k".into(),
+                value: Some(String::new()),
+                origin: "o".into(),
+            }),
+        })
+        .expect("serialize");
+        let bytes_none = serialize(&IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Set,
+                key: "k".into(),
+                value: None,
+                origin: "o".into(),
+            }),
+        })
+        .expect("serialize");
+        assert_ne!(bytes_some_empty, bytes_none, "Some(\"\") 和 None 的序列化结果应不同");
+    }
 }

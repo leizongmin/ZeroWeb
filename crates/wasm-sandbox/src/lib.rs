@@ -2929,6 +2929,109 @@ mod tests {
         );
     }
 
+    // =======================================================================
+    // 边界条件测试：多导出函数、内存页数、返回类型、默认配置
+    // =======================================================================
+
+    /// 测试 WASM 模块包含多个导出函数，所有导出都能正确调用。
+    #[test]
+    fn test_wasm_multiple_exports() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.add)
+                (func (export "sub") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.sub)
+                (func (export "mul") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.mul)
+                (func (export "div") (param i32 i32) (result i32)
+                    local.get 0 local.get 1 i32.div_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let exports = module.exports();
+        assert_eq!(exports.len(), 4, "应有 4 个导出函数");
+        assert!(exports.contains(&"add".to_string()));
+        assert!(exports.contains(&"sub".to_string()));
+        assert!(exports.contains(&"mul".to_string()));
+        assert!(exports.contains(&"div".to_string()));
+
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        // 调用每个导出函数
+        let r = instance
+            .call("add", &[WasmValue::I32(10), WasmValue::I32(3)])
+            .expect("add");
+        assert_eq!(r[0], WasmValue::I32(13));
+        let r = instance
+            .call("sub", &[WasmValue::I32(10), WasmValue::I32(3)])
+            .expect("sub");
+        assert_eq!(r[0], WasmValue::I32(7));
+        let r = instance
+            .call("mul", &[WasmValue::I32(10), WasmValue::I32(3)])
+            .expect("mul");
+        assert_eq!(r[0], WasmValue::I32(30));
+        let r = instance
+            .call("div", &[WasmValue::I32(10), WasmValue::I32(3)])
+            .expect("div");
+        assert_eq!(r[0], WasmValue::I32(3)); // 10/3 = 3 (整数除法)
+    }
+
+    /// 测试 WASM 函数的不同返回类型（i32, i64, f32, f64）。
+    #[test]
+    fn test_wasm_call_return_types() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "ret_i32") (result i32) i32.const 42)
+                (func (export "ret_i64") (result i64) i64.const 1000000000)
+                (func (export "ret_f32") (result f32) f32.const 3.14)
+                (func (export "ret_f64") (result f64) f64.const 2.718281828)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // i32
+        let r = instance.call("ret_i32", &[]).expect("call i32");
+        assert_eq!(r[0], WasmValue::I32(42));
+
+        // i64
+        let r = instance.call("ret_i64", &[]).expect("call i64");
+        assert_eq!(r[0], WasmValue::I64(1_000_000_000));
+
+        // f32
+        let r = instance.call("ret_f32", &[]).expect("call f32");
+        if let WasmValue::F32(v) = r[0] {
+            assert!((v - 3.14).abs() < 0.01, "f32 应接近 3.14，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+
+        // f64
+        let r = instance.call("ret_f64", &[]).expect("call f64");
+        if let WasmValue::F64(v) = r[0] {
+            assert!((v - 2.718281828).abs() < 0.0001, "f64 应接近 2.718281828，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+    }
+
+    /// 测试 SandboxConfig 默认配置值。
+    #[test]
+    fn test_wasm_instance_config_default() {
+        let config = SandboxConfig::default();
+        assert!(!config.is_consume_fuel(), "默认 consume_fuel 应为 false");
+        let sandbox = WasmSandbox::with_config(config);
+        assert!(!sandbox.config().is_consume_fuel());
+        // 默认配置应能正常编译和运行模块
+        let wasm = wat_to_wasm(r#"(module (func (export "answer") (result i32) i32.const 42))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+        let r = instance.call("answer", &[]).expect("call");
+        assert_eq!(r[0], WasmValue::I32(42));
+    }
+
     /// 尝试编译无效的 WASM 字节，验证返回错误而非 panic。
     #[test]
     fn test_wasm_error_on_invalid_module() {

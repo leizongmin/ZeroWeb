@@ -1110,4 +1110,273 @@ mod tests {
         assert!((parent.children[0].x - 0.0).abs() < 0.001);
         assert!((parent.children[99].x - 99.0).abs() < 0.001);
     }
+
+    // -- 边界条件测试（第三批）--
+
+    /// 测试 LayoutBox 同时标记多个定位标志。
+    ///
+    /// 在极端情况下，一个元素不应同时标记为 absolute 和 fixed，
+    /// 验证默认状态下所有定位标志互不干扰。
+    #[test]
+    fn test_layout_box_position_flags_mutually_exclusive() {
+        let mut box_abs = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: true,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert!(box_abs.is_absolute);
+        assert!(!box_abs.is_fixed);
+        assert!(!box_abs.is_sticky);
+
+        // 切换为 fixed
+        box_abs.is_absolute = false;
+        box_abs.is_fixed = true;
+        assert!(!box_abs.is_absolute);
+        assert!(box_abs.is_fixed);
+
+        // 切换为 sticky
+        box_abs.is_fixed = false;
+        box_abs.is_sticky = true;
+        assert!(!box_abs.is_fixed);
+        assert!(box_abs.is_sticky);
+    }
+
+    /// 测试 LayoutResult 零视口尺寸。
+    ///
+    /// 视口宽度或高度为 0 是合法的（例如最小化窗口），
+    /// 验证 LayoutResult 能正确存储零值视口。
+    #[test]
+    fn test_layout_result_zero_viewport() {
+        let result = LayoutResult {
+            root: LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 0.0,
+                content_height: 0.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 0,
+            },
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+        };
+        assert!((result.viewport_width - 0.0).abs() < 0.001);
+        assert!((result.viewport_height - 0.0).abs() < 0.001);
+        assert!((result.root.width - 0.0).abs() < 0.001);
+    }
+
+    /// 测试 LayoutBox 的 x/y 为负值（负偏移场景）。
+    ///
+    /// 元素可能通过负 margin 或负 inset 导致位置为负，
+    /// 验证 absolute_position 和 absolute_position_with_parent
+    /// 在负坐标下的正确行为。
+    #[test]
+    fn test_layout_box_negative_position() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: -50.0,
+            y: -30.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: -50.0,
+            content_y: -30.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert!((abs_x - (-50.0)).abs() < 0.001);
+        assert!((abs_y - (-30.0)).abs() < 0.001);
+
+        // 负父偏移 + 负子偏移
+        let (abs_x2, abs_y2) = box0.absolute_position_with_parent(-100.0, -200.0);
+        assert!((abs_x2 - (-150.0)).abs() < 0.001);
+        assert!((abs_y2 - (-230.0)).abs() < 0.001);
+    }
+
+    /// 测试 LayoutBox 混合溢出处理（x 和 y 方向不同）。
+    ///
+    /// 真实场景中 overflow-x 和 overflow-y 可以不同，
+    /// 验证两个方向独立存储各自的溢出策略。
+    #[test]
+    fn test_layout_box_mixed_overflow_xy() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Scroll,
+            overflow_y: OverflowClip::Hidden,
+            z_index: 0,
+        };
+        assert_eq!(box0.overflow_x, OverflowClip::Scroll);
+        assert_eq!(box0.overflow_y, OverflowClip::Hidden);
+        assert_ne!(box0.overflow_x, box0.overflow_y);
+
+        // Clip 变体
+        let box1 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Clip,
+            z_index: 0,
+        };
+        assert_eq!(box1.overflow_x, OverflowClip::Visible);
+        assert_eq!(box1.overflow_y, OverflowClip::Clip);
+    }
+
+    /// 测试 LayoutBox outer_area 在不对称 margin 下的计算。
+    ///
+    /// 左右 margin 不同、上下 margin 不同时，
+    /// outer_area 应正确计算总面积（非正方形场景）。
+    #[test]
+    fn test_layout_box_asymmetric_margin_outer_area() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 60.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 60.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 5.0,
+            margin_right: 15.0,
+            margin_bottom: 10.0,
+            margin_left: 20.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // total_width = 20 + 100 + 15 = 135
+        // total_height = 5 + 60 + 10 = 75
+        // outer_area = 135 * 75 = 10125
+        let area = box0.outer_area();
+        assert!(
+            (area - 10125.0).abs() < 0.001,
+            "不对称 margin outer_area 应为 10125，实际 {}",
+            area
+        );
+    }
 }

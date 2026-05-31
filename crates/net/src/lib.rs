@@ -427,4 +427,62 @@ mod tests {
         let resolved = base.join("http://other.com/").unwrap();
         assert_eq!(resolved.as_str(), "http://other.com/");
     }
+
+    /// 测试 WebSocket 在空消息队列上调用 receive() 返回 None。
+    #[test]
+    fn test_websocket_receive_empty() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+        assert_eq!(ws.receive(), None, "空队列上 receive 应返回 None");
+        // 状态不受影响
+        assert_eq!(ws.state(), &WebSocketState::Connecting);
+    }
+
+    /// 测试 WebSocket 从 Connecting 状态直接关闭，不经过 Open 状态。
+    #[test]
+    fn test_websocket_close_from_connecting() {
+        let mut ws = WebSocket::new("ws://example.com/socket");
+        assert_eq!(ws.state(), &WebSocketState::Connecting);
+        ws.close();
+        assert_eq!(ws.state(), &WebSocketState::Closed, "直接关闭应变为 Closed");
+        // Closing 状态不会被触发
+    }
+
+    /// 测试 URL 解析包含 userinfo 和非默认端口时各字段正确提取。
+    #[test]
+    fn test_url_parse_userinfo_with_port() {
+        let parsed = parse_url("https://admin:secret@api.example.com:9090/v2/data").unwrap();
+        assert_eq!(parsed.username, "admin");
+        assert_eq!(parsed.password.as_deref(), Some("secret"));
+        assert_eq!(parsed.host.as_deref(), Some("api.example.com"));
+        assert_eq!(parsed.port, Some(9090));
+        assert_eq!(parsed.path, "/v2/data");
+        assert!(parsed.is_secure());
+    }
+
+    /// 测试 CookieStore 添加同名同域 cookie 后旧值被替换，总数不变。
+    #[test]
+    fn test_cookie_store_replace_identical_key() {
+        let mut store = crate::CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("token=old; Domain=example.com").unwrap());
+        assert_eq!(store.len(), 1);
+        store.add(CookieStore::parse_set_cookie("token=new; Domain=example.com").unwrap());
+        assert_eq!(store.len(), 1, "同名同域 cookie 应替换而非追加");
+        let url = parse_url("http://example.com/").unwrap();
+        let cookies = store.get_for_url(&url);
+        assert_eq!(cookies[0].value, "new", "值应为最新的 'new'");
+    }
+
+    /// 测试 HttpResponse::content_type_mime 对含尾随空格的 Content-Type 正确提取。
+    #[test]
+    fn test_http_response_content_type_mime_trailing_whitespace() {
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "application/json ".into())],
+            body: vec![],
+            url: String::new(),
+            redirect_count: 0,
+        };
+        // content_type_mime 通过 trim() 去除尾部空格
+        assert_eq!(resp.content_type_mime(), Some("application/json"));
+    }
 }

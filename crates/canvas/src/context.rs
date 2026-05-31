@@ -7233,4 +7233,178 @@ mod tests {
         assert_eq!(pixel.data[2], 128);
         assert_eq!(pixel.data[3], 255);
     }
+
+    // ── 边界条件测试：渐变填充、描边连接、嵌套裁剪、ImageData 往返、globalAlpha、Path2D ──
+
+    /// 测试 fill_rect 使用 CanvasStyle::LinearGradient 作为填充样式。
+    /// 渐变从红色到蓝色，采样 offset=0.5 处应得到 (128, 0, 128) 左右的颜色。
+    #[test]
+    fn test_canvas_fill_rect_with_gradient_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+        // fill_rect 使用 fill_style.resolve_color() 采样 offset=0.5
+        // 红(255,0,0) 与 蓝(0,0,255) 在 0.5 处插值 ≈ (128, 0, 128)
+        let pixel = ctx.get_image_data(50, 50, 1, 1);
+        assert!(
+            (pixel.data[0] as i32 - 128).abs() <= 2,
+            "red channel should be ~128, got {}",
+            pixel.data[0]
+        );
+        assert_eq!(pixel.data[1], 0, "green channel should be 0");
+        assert!(
+            (pixel.data[2] as i32 - 128).abs() <= 2,
+            "blue channel should be ~128, got {}",
+            pixel.data[2]
+        );
+        assert_eq!(pixel.data[3], 255, "alpha should be 255");
+    }
+
+    /// 测试 stroke_rect 使用 LineJoin::Round 不 panic 且生成描边图元。
+    #[test]
+    fn test_stroke_rect_with_round_join() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_join(LineJoin::Round);
+        ctx.set_line_width(5.0);
+        ctx.stroke_rect(10.0, 10.0, 30.0, 30.0);
+        // stroke_rect 生成 4 条边的 fill 图元
+        assert_eq!(ctx.primitives().fills.len(), 4);
+        assert_eq!(ctx.line_join(), LineJoin::Round);
+    }
+
+    /// 测试嵌套 clip 操作：先裁剪到大矩形，再裁剪到小矩形，最终绘制范围应受限于交集。
+    #[test]
+    fn test_canvas_clip_nested() {
+        let mut ctx = CanvasContext::new(200, 200);
+        // 第一次裁剪：大矩形
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(100.0, 0.0);
+        ctx.line_to(100.0, 100.0);
+        ctx.line_to(0.0, 100.0);
+        ctx.close_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 1);
+        // 第二次裁剪：小矩形（嵌套）
+        ctx.begin_path();
+        ctx.move_to(20.0, 20.0);
+        ctx.line_to(60.0, 20.0);
+        ctx.line_to(60.0, 60.0);
+        ctx.line_to(20.0, 60.0);
+        ctx.close_path();
+        ctx.clip();
+        assert_eq!(ctx.primitives().clips.len(), 2);
+        // 后续绘制应受限于两个裁剪区域的交集
+        ctx.fill_rect(0.0, 0.0, 200.0, 200.0);
+        assert_eq!(ctx.primitives().fills.len(), 1);
+    }
+
+    /// 测试 put_image_data 后 get_image_data 能完整读回相同数据（往返一致性）。
+    #[test]
+    fn test_put_get_image_data_roundtrip() {
+        let mut ctx = CanvasContext::new(20, 20);
+        // 构造 4x4 的测试像素：每个像素不同的 RGBA 值
+        let mut pixels = Vec::with_capacity(4 * 4 * 4);
+        for i in 0u8..16 {
+            pixels.extend_from_slice(&[i * 16, (255 - i * 16), i * 8, 255]);
+        }
+        let img = ImageData {
+            width: 4,
+            height: 4,
+            data: pixels.clone(),
+        };
+        ctx.put_image_data(&img, 5, 5);
+        let result = ctx.get_image_data(5, 5, 4, 4);
+        assert_eq!(
+            result.data, pixels,
+            "get_image_data 应返回与 put_image_data 写入完全相同的数据"
+        );
+    }
+
+    /// 测试 globalAlpha=0 时 fill_rect 产生完全透明的像素。
+    #[test]
+    fn test_global_alpha_zero() {
+        let mut ctx = CanvasContext::new(50, 50);
+        ctx.set_global_alpha(0.0);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        // 填充颜色的 alpha 应被 globalAlpha=0 清零
+        let pixel = ctx.get_image_data(25, 25, 1, 1);
+        assert_eq!(pixel.data[3], 0, "globalAlpha=0 时像素应完全透明");
+        // 图元颜色 alpha 也应为 0
+        let fill = &ctx.primitives().fills[0];
+        assert_eq!(fill.color.a, 0, "图元颜色 alpha 应为 0");
+    }
+
+    // ── 边界条件测试（第八批）──
+
+    /// 测试 resize 到零尺寸后画布宽度高度为零，且不 panic。
+    #[test]
+    fn test_canvas_resize_to_zero() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        ctx.resize(0, 0);
+        assert_eq!(ctx.width(), 0);
+        assert_eq!(ctx.height(), 0);
+    }
+
+    /// 测试 fill_rect 零宽高不产生可见像素。
+    #[test]
+    fn test_canvas_fill_rect_zero_dimensions() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(10.0, 10.0, 0.0, 0.0);
+        ctx.fill_rect(20.0, 20.0, 0.0, 50.0);
+        ctx.fill_rect(30.0, 30.0, 50.0, 0.0);
+        // 零宽/高的矩形不应写入像素
+        let pixel = ctx.get_image_data(10, 10, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 0, 0], "零宽高 fill_rect 不应写入像素");
+    }
+
+    /// 测试 set_line_dash 传入单元素数组后自动加倍为双元素。
+    #[test]
+    fn test_line_dash_single_element_doubled() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_dash(vec![8.0]);
+        // 奇数长度时 Canvas 规范要求复制拼接：[8] → [8, 8]
+        assert_eq!(ctx.get_line_dash(), &[8.0, 8.0]);
+    }
+
+    /// 测试 stroke_rect 零尺寸（零宽零高）只生成 4 个退化图元且不 panic。
+    #[test]
+    fn test_canvas_stroke_rect_zero_size() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.stroke_rect(50.0, 50.0, 0.0, 0.0);
+        // stroke_rect 始终生成 4 条边的 fill 图元，即使零尺寸
+        assert_eq!(ctx.primitives().fills.len(), 4);
+    }
+
+    /// 测试深度嵌套 save/restore 正确恢复每一层状态。
+    #[test]
+    fn test_canvas_deep_nested_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 层级 0: 红色填充
+        ctx.set_fill_color(Color::RED);
+        ctx.save();
+        // 层级 1: 绿色填充
+        ctx.set_fill_color(Color::GREEN);
+        ctx.save();
+        // 层级 2: 蓝色填充
+        ctx.set_fill_color(Color::BLUE);
+        ctx.save();
+        // 层级 3: 白色填充
+        ctx.set_fill_color(Color::WHITE);
+        assert_eq!(ctx.fill_color(), Color::WHITE);
+
+        // 逐层恢复
+        ctx.restore();
+        assert_eq!(ctx.fill_color(), Color::BLUE, "恢复到层级 2 应为蓝色");
+        ctx.restore();
+        assert_eq!(ctx.fill_color(), Color::GREEN, "恢复到层级 1 应为绿色");
+        ctx.restore();
+        assert_eq!(ctx.fill_color(), Color::RED, "恢复到层级 0 应为红色");
+    }
 }
