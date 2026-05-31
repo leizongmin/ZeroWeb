@@ -270,6 +270,34 @@ pub enum WritingModeValue {
     VerticalLr,
 }
 
+/// CSS text-decoration-line 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextDecorationLineValue {
+    /// none。
+    None,
+    /// underline。
+    Underline,
+    /// overline。
+    Overline,
+    /// line-through。
+    LineThrough,
+    /// blink。
+    Blink,
+}
+
+/// CSS text-transform 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextTransformValue {
+    /// none。
+    None,
+    /// uppercase。
+    Uppercase,
+    /// lowercase。
+    Lowercase,
+    /// capitalize。
+    Capitalize,
+}
+
 /// CSS font-weight 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontWeightValue {
@@ -1498,6 +1526,39 @@ pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
         "vertical-lr" => Some(WritingModeValue::VerticalLr),
         _ => None,
     }
+}
+
+/// 解析 CSS text-decoration-line 值。
+pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue> {
+    match value.to_ascii_lowercase().as_str() {
+        "none" => Some(TextDecorationLineValue::None),
+        "underline" => Some(TextDecorationLineValue::Underline),
+        "overline" => Some(TextDecorationLineValue::Overline),
+        "line-through" => Some(TextDecorationLineValue::LineThrough),
+        "blink" => Some(TextDecorationLineValue::Blink),
+        _ => None,
+    }
+}
+
+/// 解析 CSS text-transform 值。
+pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
+    match value.to_ascii_lowercase().as_str() {
+        "none" => Some(TextTransformValue::None),
+        "uppercase" => Some(TextTransformValue::Uppercase),
+        "lowercase" => Some(TextTransformValue::Lowercase),
+        "capitalize" => Some(TextTransformValue::Capitalize),
+        _ => None,
+    }
+}
+
+/// 解析 CSS letter-spacing / word-spacing 值。
+/// "normal" 映射为 LengthValue::Px(0.0)。
+pub fn parse_spacing(value: &str) -> Option<LengthValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("normal") {
+        return Some(LengthValue::Px(0.0));
+    }
+    parse_length(v)
 }
 
 /// 解析 CSS font-weight 属性值。
