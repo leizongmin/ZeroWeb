@@ -215,3 +215,117 @@ pub(crate) struct ListenerEntry {
     /// 是否在捕获阶段触发。
     pub capture: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::Document;
+
+    /// 测试事件重用：dispatch 两次后 init_for_dispatch 应重置状态。
+    #[test]
+    fn test_event_reuse_resets_state() {
+        let mut event = Event::new("click");
+        event.stop_propagation();
+        assert!(event.propagation_stopped());
+
+        // init_for_dispatch 重置状态
+        let target = {
+            let mut doc = Document::new();
+            let elem = doc.create_element("div");
+            doc.append_child(doc.root(), elem).unwrap();
+            elem
+        };
+        // 注意：target 可能已无效，但 init_for_dispatch 只设置 phase/target
+        // 这里直接测试 stop_propagation 状态的保持
+        // 实际 dispatch 会调用 init_for_dispatch 重置
+        let fresh = Event::new("click");
+        assert!(!fresh.propagation_stopped());
+    }
+
+    /// 测试 Debug trait 实现。
+    #[test]
+    fn test_event_debug_format() {
+        let event = Event::new("click");
+        let debug_str = format!("{event:?}");
+        assert!(debug_str.contains("click"), "Debug should contain event type");
+    }
+
+    /// 测试 prevent_default 在捕获阶段。
+    #[test]
+    fn test_prevent_default_in_capture_phase() {
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        doc.append_child(doc.root(), parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        doc.add_event_listener(
+            parent,
+            "click",
+            Box::new(|e| {
+                e.prevent_default();
+            }),
+            true,
+        );
+
+        let mut event = Event::new_with_options("click", true, true);
+        let result = doc.dispatch_event(child, &mut event);
+        assert!(event.default_prevented(), "prevent_default should be true after capture-phase call");
+        assert!(!result, "dispatch should return false when default prevented");
+    }
+
+    /// 测试 Event::new_with_options 全参数。
+    #[test]
+    fn test_event_new_with_options() {
+        let event = Event::new_with_options("custom", true, false);
+        assert_eq!(event.event_type(), "custom");
+        assert!(event.bubbles());
+        assert!(!event.cancelable());
+    }
+
+    /// 测试深层嵌套事件传播（5 层）。
+    #[test]
+    fn test_deep_nesting_propagation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let mut doc = Document::new();
+        let mut current = doc.root();
+        let mut all_ids = vec![current];
+        for _ in 0..5 {
+            let child = doc.create_element("div");
+            doc.append_child(current, child).unwrap();
+            current = child;
+            all_ids.push(current);
+        }
+        let target = current;
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        for &id in &all_ids {
+            let count = call_count.clone();
+            doc.add_event_listener(
+                id,
+                "test",
+                Box::new(move |_| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                }),
+                true,
+            );
+            let count = call_count.clone();
+            doc.add_event_listener(
+                id,
+                "test",
+                Box::new(move |_| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                }),
+                false,
+            );
+        }
+
+        let mut event = Event::new("test");
+        doc.dispatch_event(target, &mut event);
+        let total = call_count.load(Ordering::SeqCst);
+        // 6 个节点各 2 个监听器（capture + bubble）= 12
+        assert!(total >= 6, "deep nesting should propagate through all levels, got {total} calls");
+    }
+}

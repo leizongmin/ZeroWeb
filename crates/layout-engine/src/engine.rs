@@ -154,7 +154,8 @@ fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
 mod tests {
     use super::*;
     use zero_css_parser::values::{
-        AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue, PositionValue,
+        AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue,
+        PositionValue,
     };
     use zero_dom::Document;
     use zero_style_system::FlexBasisValue;
@@ -2959,6 +2960,109 @@ mod tests {
             (child_box.height - expected_height).abs() < 1.0,
             "aspect-ratio 16/9 时高度应为 {}px，实际 {}",
             expected_height,
+            child_box.height
+        );
+    }
+
+    // ── box-sizing: border-box 布局测试 ──
+
+    /// 测试 box-sizing: border-box 时，width 包含 padding 和 border。
+    #[test]
+    fn test_box_sizing_border_box_with_padding() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(400.0);
+        styles.insert(container, container_style);
+
+        // border-box: width=200px 包含 padding 和 border
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(200.0);
+        child_style.height = LengthValue::Px(100.0);
+        child_style.box_sizing = BoxSizingValue::BorderBox;
+        child_style.padding_top = LengthValue::Px(20.0);
+        child_style.padding_bottom = LengthValue::Px(20.0);
+        child_style.border_top_width = LengthValue::Px(5.0);
+        child_style.border_bottom_width = LengthValue::Px(5.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // root = html, children[0] = body, children[0] = container, children[0] = child
+        let body_box = &result.root.children[0];
+        let container_box = &body_box.children[0];
+        let child_box = &container_box.children[0];
+
+        // border-box: 总宽度=200（包含 padding 和 border）
+        assert!(
+            (child_box.width - 200.0).abs() < 1.0,
+            "border-box width 应为 200px，实际 {}",
+            child_box.width
+        );
+        // border-box: 总高度=100（包含 padding(40) + border(10) + content(50)）
+        assert!(
+            (child_box.height - 100.0).abs() < 1.0,
+            "border-box height 应为 100px，实际 {}",
+            child_box.height
+        );
+    }
+
+    /// 测试 box-sizing: content-box 时，width 不包含 padding 和 border。
+    #[test]
+    fn test_box_sizing_content_box_with_padding() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(400.0);
+        styles.insert(container, container_style);
+
+        // content-box (默认): width=200px 是内容宽度
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(200.0);
+        child_style.height = LengthValue::Px(100.0);
+        child_style.box_sizing = BoxSizingValue::ContentBox;
+        child_style.padding_top = LengthValue::Px(20.0);
+        child_style.padding_bottom = LengthValue::Px(20.0);
+        child_style.padding_left = LengthValue::Px(10.0);
+        child_style.padding_right = LengthValue::Px(10.0);
+        child_style.border_top_width = LengthValue::Px(5.0);
+        child_style.border_bottom_width = LengthValue::Px(5.0);
+        child_style.border_left_width = LengthValue::Px(5.0);
+        child_style.border_right_width = LengthValue::Px(5.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let body_box = &result.root.children[0];
+        let container_box = &body_box.children[0];
+        let child_box = &container_box.children[0];
+
+        // content-box: 总宽度 = content(200) + padding(20) + border(10) = 230
+        assert!(
+            (child_box.width - 230.0).abs() < 1.0,
+            "content-box 总宽度应为 230px，实际 {}",
+            child_box.width
+        );
+        // content-box: 总高度 = content(100) + padding(40) + border(10) = 150
+        assert!(
+            (child_box.height - 150.0).abs() < 1.0,
+            "content-box 总高度应为 150px，实际 {}",
             child_box.height
         );
     }

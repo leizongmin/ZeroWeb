@@ -170,3 +170,90 @@ impl Document {
         serialize_node(self, id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::Document;
+
+    /// 测试 ProcessingInstruction 序列化。
+    #[test]
+    fn test_serialize_processing_instruction() {
+        let mut doc = Document::new();
+        let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"style.css\"");
+        let html = doc.outer_html(pi);
+        assert_eq!(html, "<?xml-stylesheet href=\"style.css\"?>");
+    }
+
+    /// 测试 DocumentFragment 序列化。
+    #[test]
+    fn test_serialize_document_fragment() {
+        let mut doc = Document::new();
+        let frag = doc.create_document_fragment();
+        let child1 = doc.create_text_node("hello ");
+        doc.append_child(frag, child1).unwrap();
+        let child2 = doc.create_element("span");
+        doc.append_child(frag, child2).unwrap();
+        let html = doc.outer_html(frag);
+        assert_eq!(html, "hello <span></span>");
+    }
+
+    /// 测试 DocumentType 带 public_id 和 system_id 的序列化。
+    #[test]
+    fn test_serialize_doctype_public_system() {
+        let mut doc = Document::new();
+        let dt = doc.create_document_type("html", Some("pubid".to_string()), Some("sysid".to_string()));
+        let html = doc.outer_html(dt);
+        assert_eq!(html, "<!DOCTYPE html PUBLIC \"pubid\" \"sysid\">");
+    }
+
+    /// 测试 DocumentType 仅带 system_id 的序列化。
+    #[test]
+    fn test_serialize_doctype_system_only() {
+        let mut doc = Document::new();
+        let dt = doc.create_document_type("html", None, Some("sysid".to_string()));
+        let html = doc.outer_html(dt);
+        assert_eq!(html, "<!DOCTYPE html SYSTEM \"sysid\">");
+    }
+
+    /// 测试空 innerHTML。
+    #[test]
+    fn test_inner_html_empty() {
+        let mut doc = Document::new();
+        let div = doc.create_element("div");
+        assert_eq!(doc.inner_html(div), "");
+    }
+
+    /// 测试所有 void 元素的序列化（不应有闭合标签）。
+    #[test]
+    fn test_void_elements_serialization() {
+        let void_tags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
+        for tag in &void_tags {
+            assert!(is_void_element(tag), "{tag} should be void");
+            let mut doc = Document::new();
+            let elem = doc.create_element(tag);
+            let html = doc.outer_html(elem);
+            assert!(html.starts_with(&format!("<{tag}")), "void element should start with <{tag}");
+            assert!(!html.contains("</"), "void element {tag} should not have closing tag");
+        }
+    }
+
+    /// 测试文本节点包含特殊字符（&、<、>）的转义。
+    #[test]
+    fn test_text_special_chars_escaping() {
+        let mut doc = Document::new();
+        let text = doc.create_text_node("a & b < c > d");
+        let html = doc.outer_html(text);
+        assert_eq!(html, "a &amp; b &lt; c &gt; d");
+    }
+
+    /// 测试属性值包含双引号的转义。
+    #[test]
+    fn test_attribute_value_quote_escaping() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "title", "say \"hello\"");
+        let html = doc.outer_html(elem);
+        assert!(html.contains("&quot;"), "attribute quotes should be escaped");
+    }
+}
