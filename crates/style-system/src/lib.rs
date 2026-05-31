@@ -3286,4 +3286,217 @@ mod tests {
         // 无视口信息，@media 不应用，color 保持默认黑色
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 视口单位在端到端管线中正确解析：vw/vh 设置视口后转换为 px。
+    fn test_viewport_units_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(1000.0, 500.0);
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "width".to_string(),
+                        value: "50vw".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "height".to_string(),
+                        value: "20vh".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 50vw = 50% * 1000 = 500px
+        assert_eq!(div_style.width, LengthValue::Px(500.0));
+        // 20vh = 20% * 500 = 100px
+        assert_eq!(div_style.height, LengthValue::Px(100.0));
+    }
+
+    #[test]
+    /// rem 单位在端到端管线中正确解析：rem 始终基于根字体大小 16px，
+    /// 不受父元素或自身 font-size 影响。
+    fn test_rem_unit_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // 设置父元素 font-size 为 32px
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![
+                        Declaration {
+                            property: "font-size".to_string(),
+                            value: "32px".to_string(),
+                            important: false,
+                        },
+                        Declaration {
+                            property: "width".to_string(),
+                            value: "2rem".to_string(),
+                            important: false,
+                        },
+                    ],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 2rem = 2 * 16px(root) = 32px，不受自身 font-size: 32px 影响
+        assert_eq!(div_style.width, LengthValue::Px(32.0));
+    }
+
+    #[test]
+    /// 多个样式表声明合并：不同样式表中的同一属性按出现顺序合并，
+    /// 后出现的样式表中的声明应覆盖前者（同特异性下）。
+    fn test_multiple_stylesheets_merge() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![
+            // 第一个样式表：color: red, margin-top: 10px
+            Stylesheet {
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![
+                        Declaration {
+                            property: "color".to_string(),
+                            value: "red".to_string(),
+                            important: false,
+                        },
+                        Declaration {
+                            property: "margin-top".to_string(),
+                            value: "10px".to_string(),
+                            important: false,
+                        },
+                    ],
+                })],
+            },
+            // 第二个样式表：color: green（覆盖 red），font-size: 20px
+            Stylesheet {
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![
+                        Declaration {
+                            property: "color".to_string(),
+                            value: "green".to_string(),
+                            important: false,
+                        },
+                        Declaration {
+                            property: "font-size".to_string(),
+                            value: "20px".to_string(),
+                            important: false,
+                        },
+                    ],
+                })],
+            },
+        ];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // color: 第二个样式表的 green 覆盖第一个的 red
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255));
+        // margin-top: 仅在第一个样式表中，保持 10px
+        assert_eq!(div_style.margin_top, LengthValue::Px(10.0));
+        // font-size: 仅在第二个样式表中，为 20px
+        assert_eq!(div_style.font_size, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    /// 自定义属性循环引用防护：--a 引用 --b，--b 引用 --a，
+    /// 系统应通过迭代上限防止无限循环，不会 panic。
+    fn test_custom_property_circular_reference() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--a".to_string(),
+                        value: "var(--b)".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "--b".to_string(),
+                        value: "var(--a)".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "var(--a)".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        // 不应 panic，循环引用被迭代上限保护
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 循环引用无法解析到具体颜色值，color 保持默认黑色
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    /// 两个 !important 声明冲突时，特异性更高的胜出。
+    /// div { color: red !important } #main { color: blue !important }
+    /// 两个都是 !important，ID 选择器 (1,0,0) > 标签选择器 (0,0,1)。
+    fn test_dual_important_higher_specificity_wins() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("main".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // 标签选择器 + !important → color: red
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: true,
+                    }],
+                }),
+                // ID 选择器 + !important → color: blue
+                Rule::Style(StyleRule {
+                    selectors: vec![id_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: true,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 同为 !important 时，ID 选择器特异性 (1,0,0) 高于标签 (0,0,1)，blue 胜出
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    }
 }

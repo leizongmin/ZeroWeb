@@ -1357,4 +1357,95 @@ mod tests {
             "未分配到任何 slot 的 footer 不应在布局树中"
         );
     }
+
+    // -- 边界条件测试（第五批）--
+
+    /// 测试独立设置 row-gap 的布局树构建。
+    ///
+    /// 当 ComputedStyle 中只设置 row_gap 而不设置 gap 时，
+    /// 验证 row-gap 正确传递到 taffy 样式中，且构建不 panic。
+    #[test]
+    fn test_build_with_row_gap_only() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let flex = doc.create_element("div");
+        doc.append_child(html, flex).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(flex, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(flex, item2).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.flex_direction = FlexDirectionValue::Column;
+        // 仅设置 row_gap，gap 保持默认 Px(0.0)
+        flex_style.row_gap = LengthValue::Px(15.0);
+        styles.insert(flex, flex_style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
+        let style = taffy_tree.style(flex_taffy).unwrap();
+        // gap.width（column-gap）应为默认 0.0
+        assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(0.0));
+        // gap.height（row-gap）应为 15.0
+        assert_eq!(style.gap.height, taffy::style::LengthPercentage::Length(15.0));
+    }
+
+    /// 测试 grid 容器子元素全部使用 Span 放置时的布局树构建。
+    ///
+    /// 所有子元素通过 GridLineValue::Span 定位，不使用命名引用，
+    /// 验证布局树成功构建且不 panic。
+    #[test]
+    fn test_build_grid_items_all_span_placement() {
+        use zero_style_system::GridLineValue;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let grid = doc.create_element("div");
+        doc.append_child(html, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("1fr 1fr".to_string());
+        grid_style.grid_template_rows = Some("50px".to_string());
+        styles.insert(grid, grid_style);
+
+        // item1: column span 2
+        let mut item1_style = ComputedStyle::default();
+        item1_style.grid_column_start = GridLineValue::Line(1);
+        item1_style.grid_column_end = GridLineValue::Span(2);
+        item1_style.grid_row_start = GridLineValue::Line(1);
+        item1_style.grid_row_end = GridLineValue::Line(2);
+        styles.insert(item1, item1_style);
+
+        // item2: column span 1, 下一行（会溢出到隐式行）
+        let mut item2_style = ComputedStyle::default();
+        item2_style.grid_column_start = GridLineValue::Line(1);
+        item2_style.grid_column_end = GridLineValue::Span(1);
+        item2_style.grid_row_start = GridLineValue::Line(2);
+        item2_style.grid_row_end = GridLineValue::Line(3);
+        styles.insert(item2, item2_style);
+
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 两个 item 都应在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == item1), "item1 应在布局树中");
+        assert!(taffy_to_dom.values().any(|id| *id == item2), "item2 应在布局树中");
+
+        // grid 容器应有 2 个 taffy 子节点
+        let grid_taffy = find_taffy_for_dom(&taffy_to_dom, grid);
+        let children = taffy_tree.children(grid_taffy).unwrap();
+        assert_eq!(children.len(), 2, "grid 容器应有 2 个子项");
+    }
 }

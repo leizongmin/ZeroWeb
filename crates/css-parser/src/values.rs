@@ -3918,6 +3918,87 @@ fn parse_quoted_string_chars(chars: &mut std::iter::Peekable<std::str::Chars>) -
     None
 }
 
+// ── CSS Contain 值类型 ──────────────────────────────────────────────
+
+/// CSS contain 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContainValue {
+    /// none（默认值）。
+    None,
+    /// strict — 等价于 layout style paint。
+    Strict,
+    /// content — 等价于 layout style paint size。
+    Content,
+    /// size。
+    Size,
+    /// layout。
+    Layout,
+    /// style。
+    Style,
+    /// paint。
+    Paint,
+    /// 多个值的位掩码组合。
+    Custom(u8),
+}
+
+/// contain 属性的位标志常量。
+impl ContainValue {
+    /// size 标志位。
+    pub const FLAG_SIZE: u8 = 0x01;
+    /// layout 标志位。
+    pub const FLAG_LAYOUT: u8 = 0x02;
+    /// style 标志位。
+    pub const FLAG_STYLE: u8 = 0x04;
+    /// paint 标志位。
+    pub const FLAG_PAINT: u8 = 0x08;
+}
+
+/// 解析 CSS contain 属性值。
+///
+/// 支持格式：
+/// - `"none"` — 无包含。
+/// - `"strict"` — 等价于 `layout style paint`。
+/// - `"content"` — 等价于 `layout style paint size`。
+/// - 单个关键字：`"size"`、`"layout"`、`"style"`、`"paint"`。
+/// - 多个空格分隔的关键字：`"layout style paint"`。
+pub fn parse_contain(value: &str) -> Option<ContainValue> {
+    let value = value.trim().to_ascii_lowercase();
+
+    match value.as_str() {
+        "none" => Some(ContainValue::None),
+        "strict" => Some(ContainValue::Strict),
+        "content" => Some(ContainValue::Content),
+        "size" => Some(ContainValue::Size),
+        "layout" => Some(ContainValue::Layout),
+        "style" => Some(ContainValue::Style),
+        "paint" => Some(ContainValue::Paint),
+        _ => {
+            // 解析空格分隔的关键字列表
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.is_empty() {
+                return None;
+            }
+
+            let mut flags: u8 = 0;
+            for part in parts {
+                match part {
+                    "size" => flags |= ContainValue::FLAG_SIZE,
+                    "layout" => flags |= ContainValue::FLAG_LAYOUT,
+                    "style" => flags |= ContainValue::FLAG_STYLE,
+                    "paint" => flags |= ContainValue::FLAG_PAINT,
+                    _ => return None,
+                }
+            }
+
+            if flags == 0 {
+                None
+            } else {
+                Some(ContainValue::Custom(flags))
+            }
+        }
+    }
+}
+
 // ── CSS Column 值类型 ──────────────────────────────────────────────
 
 /// CSS column-count 属性值。

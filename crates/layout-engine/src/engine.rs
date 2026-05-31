@@ -5723,4 +5723,103 @@ mod tests {
             constrained_box.width
         );
     }
+
+    // -- 边界条件测试（第五批）--
+
+    /// 测试非标准视口尺寸（极小视口 1x1 和极大视口 10000x10000）。
+    ///
+    /// 验证布局引擎在极端视口尺寸下不 panic，
+    /// 且 LayoutResult 中正确存储视口尺寸。
+    #[test]
+    fn test_extreme_viewport_dimensions() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let mut styles = HashMap::new();
+        styles.insert(div, make_style_with_display(DisplayValue::Block, 100.0, 50.0));
+
+        // 极小视口
+        let engine_tiny = LayoutEngine::new(1.0, 1.0);
+        let result_tiny = engine_tiny.compute(&doc, &styles);
+        assert!((result_tiny.viewport_width - 1.0).abs() < 0.001, "极小视口宽度应为 1.0");
+        assert!(
+            (result_tiny.viewport_height - 1.0).abs() < 0.001,
+            "极小视口高度应为 1.0"
+        );
+        // 布局不 panic，尺寸有限
+        assert!(result_tiny.root.width.is_finite(), "极小视口布局宽度应有限");
+
+        // 极大视口
+        let engine_huge = LayoutEngine::new(10000.0, 10000.0);
+        let result_huge = engine_huge.compute(&doc, &styles);
+        assert!(
+            (result_huge.viewport_width - 10000.0).abs() < 0.001,
+            "极大视口宽度应为 10000.0"
+        );
+        assert!(
+            (result_huge.viewport_height - 10000.0).abs() < 0.001,
+            "极大视口高度应为 10000.0"
+        );
+
+        // div 在极大视口中尺寸应保持不变
+        let div_box = find_child_by_node_id(&result_huge.root, div).expect("div found");
+        assert_eq!(div_box.width, 100.0, "div 宽度不应受视口尺寸影响");
+        assert_eq!(div_box.height, 50.0, "div 高度不应受视口尺寸影响");
+    }
+
+    /// 测试 flex 容器中 align-self 覆盖 align-items 的行为。
+    ///
+    /// 容器设置 align-items: flex-start，但某个子元素使用 align-self: flex-end，
+    /// 验证子元素的垂直位置受 align-self 控制而非 align-items。
+    #[test]
+    fn test_flex_align_self_overrides_align_items() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let item_start = doc.create_element("span");
+        doc.append_child(container, item_start).unwrap();
+        let item_end = doc.create_element("span");
+        doc.append_child(container, item_end).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.align_items = AlignmentValue::FlexStart;
+        container_style.width = LengthValue::Px(300.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        // item_start: 继承 align-items: flex-start
+        let mut s1 = ComputedStyle::default();
+        s1.width = LengthValue::Px(80.0);
+        s1.height = LengthValue::Px(40.0);
+        styles.insert(item_start, s1);
+
+        // item_end: align-self: flex-end 覆盖容器的 align-items
+        let mut s2 = ComputedStyle::default();
+        s2.width = LengthValue::Px(80.0);
+        s2.height = LengthValue::Px(40.0);
+        s2.align_self = AlignmentValue::FlexEnd;
+        styles.insert(item_end, s2);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b_start = find_child_by_node_id(&result.root, item_start).expect("item_start found");
+        let b_end = find_child_by_node_id(&result.root, item_end).expect("item_end found");
+
+        // item_start 在容器顶部（flex-start），item_end 在容器底部（flex-end）
+        // item_start.y 应接近 0，item_end.y 应接近 200 - 40 = 160
+        assert!(
+            b_start.y < b_end.y,
+            "flex-start 项 (y={}) 应在 flex-end 项 (y={}) 上方",
+            b_start.y,
+            b_end.y
+        );
+        assert!(
+            b_end.y + b_end.height > b_start.y + b_start.height + 50.0,
+            "flex-end 项应明显在 flex-start 项下方（容器 200px 高）"
+        );
+    }
 }

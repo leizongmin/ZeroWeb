@@ -4898,3 +4898,140 @@ fn test_parse_resize_block_inline() {
 fn test_parse_resize_invalid() {
     assert_eq!(parse_resize("auto"), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 29. 未覆盖的边界条件测试 — word-break / contain / grid-area / length-shorthand / length-vw
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_word_break 所有关键字：normal、break-all、keep-all、break-word，
+/// 以及大小写不敏感和无效输入。此前 parse_word_break 无任何测试。
+fn test_parse_word_break_all_values() {
+    use crate::values::{WordBreakValue, parse_word_break};
+    assert_eq!(parse_word_break("normal"), Some(WordBreakValue::Normal));
+    assert_eq!(parse_word_break("break-all"), Some(WordBreakValue::BreakAll));
+    assert_eq!(parse_word_break("keep-all"), Some(WordBreakValue::KeepAll));
+    assert_eq!(parse_word_break("break-word"), Some(WordBreakValue::BreakWord));
+    // 大小写不敏感
+    assert_eq!(parse_word_break("BREAK-ALL"), Some(WordBreakValue::BreakAll));
+    assert_eq!(parse_word_break("  Keep-All  "), Some(WordBreakValue::KeepAll));
+    // 无效输入
+    assert_eq!(parse_word_break("invalid"), None);
+    assert_eq!(parse_word_break(""), None);
+    assert_eq!(parse_word_break("inherit"), None);
+}
+
+#[test]
+/// 测试 parse_contain 所有关键字和自定义标志位组合。
+/// 验证 none/strict/content/单关键字/多关键字组合的正确解析，
+/// 以及无效输入返回 None。此前 parse_contain 无任何测试。
+fn test_parse_contain_strict_and_custom_flags() {
+    use crate::values::{ContainValue, parse_contain};
+    // 单关键字
+    assert_eq!(parse_contain("none"), Some(ContainValue::None));
+    assert_eq!(parse_contain("strict"), Some(ContainValue::Strict));
+    assert_eq!(parse_contain("content"), Some(ContainValue::Content));
+    assert_eq!(parse_contain("size"), Some(ContainValue::Size));
+    assert_eq!(parse_contain("layout"), Some(ContainValue::Layout));
+    assert_eq!(parse_contain("style"), Some(ContainValue::Style));
+    assert_eq!(parse_contain("paint"), Some(ContainValue::Paint));
+    // 多关键字组合 — layout paint → FLAG_LAYOUT | FLAG_PAINT = 0x0A
+    assert!(
+        matches!(parse_contain("layout paint"), Some(ContainValue::Custom(f)) if f == ContainValue::FLAG_LAYOUT | ContainValue::FLAG_PAINT)
+    );
+    // size layout style paint → 全部标志位
+    assert!(matches!(
+        parse_contain("size layout style paint"),
+        Some(ContainValue::Custom(f)) if f == ContainValue::FLAG_SIZE | ContainValue::FLAG_LAYOUT | ContainValue::FLAG_STYLE | ContainValue::FLAG_PAINT
+    ));
+    // 大小写不敏感
+    assert_eq!(parse_contain("STRICT"), Some(ContainValue::Strict));
+    assert_eq!(parse_contain("  LAYOUT PAINT  "), parse_contain("layout paint"));
+    // 无效输入
+    assert_eq!(parse_contain("invalid"), None);
+    assert_eq!(parse_contain(""), None);
+}
+
+#[test]
+/// 测试 parse_grid_area 各种斜杠分割格式：
+/// 单值、2 值（row-start / col-start）、3 值、4 值，
+/// 以及空输入和无效格式。此前 parse_grid_area 无任何测试。
+fn test_parse_grid_area_slash_separated() {
+    use crate::values::parse_grid_area;
+    // 单值：所有四项相同
+    let result = parse_grid_area("header");
+    assert_eq!(
+        result,
+        Some(("header".into(), "header".into(), "header".into(), "header".into()))
+    );
+
+    // 2 值：row-start / col-start，row-end 和 col-end 为 "auto"
+    let result = parse_grid_area("1 / 3");
+    assert_eq!(result, Some(("1".into(), "auto".into(), "3".into(), "auto".into())));
+
+    // 3 值：row-start / row-end / col-start，col-end 为 "auto"
+    let result = parse_grid_area("1 / 3 / 5");
+    assert_eq!(result, Some(("1".into(), "3".into(), "5".into(), "auto".into())));
+
+    // 4 值：row-start / row-end / col-start / col-end
+    let result = parse_grid_area("1 / 3 / 5 / span 2");
+    assert_eq!(result, Some(("1".into(), "3".into(), "5".into(), "span 2".into())));
+
+    // 命名区域
+    let result = parse_grid_area("sidebar");
+    assert_eq!(
+        result,
+        Some(("sidebar".into(), "sidebar".into(), "sidebar".into(), "sidebar".into()))
+    );
+
+    // auto 关键字
+    let result = parse_grid_area("auto");
+    assert_eq!(
+        result,
+        Some(("auto".into(), "auto".into(), "auto".into(), "auto".into()))
+    );
+
+    // 空输入
+    assert_eq!(parse_grid_area(""), None);
+    assert_eq!(parse_grid_area("   "), None);
+}
+
+#[test]
+/// 测试 parse_length_shorthand 空输入、超过 4 个值、无效值等边界情况。
+/// 此前 parse_length_shorthand 仅测试了有效输入。
+fn test_parse_length_shorthand_empty_and_invalid() {
+    // 空输入：split_whitespace 收集为空 → 0 个部分 → None
+    assert_eq!(parse_length_shorthand(""), None);
+    assert_eq!(parse_length_shorthand("   "), None);
+
+    // 超过 4 个值：应返回 None
+    assert_eq!(parse_length_shorthand("1px 2px 3px 4px 5px"), None);
+
+    // 无效值（非长度字符串）：parse_length 返回 None → 整体返回 None
+    assert_eq!(parse_length_shorthand("abc 2px"), None);
+    assert_eq!(parse_length_shorthand("10px invalid"), None);
+}
+
+#[test]
+/// 测试 parse_length 对 vw 和 vh 单位的直接解析（不依赖 calc 上下文），
+/// 以及负数百分比和极端大数。此前缺少 vw/vh 的直接 parse_length 测试。
+fn test_parse_length_vw_vh_and_edge_cases() {
+    // vw 单位
+    assert_eq!(parse_length("100vw"), Some(LengthValue::Vw(100.0)));
+    assert_eq!(parse_length("50vw"), Some(LengthValue::Vw(50.0)));
+
+    // vh 单位
+    assert_eq!(parse_length("100vh"), Some(LengthValue::Vh(100.0)));
+    assert_eq!(parse_length("25vh"), Some(LengthValue::Vh(25.0)));
+
+    // 负数百分比
+    assert_eq!(parse_length("-10%"), Some(LengthValue::Percentage(-10.0)));
+
+    // 极端大数
+    let result = parse_length("999999px");
+    assert_eq!(result, Some(LengthValue::Px(999999.0)));
+
+    // 极小浮点数
+    let result = parse_length("0.001em");
+    assert_eq!(result, Some(LengthValue::Em(0.001)));
+}
