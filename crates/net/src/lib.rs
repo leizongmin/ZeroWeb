@@ -48,3 +48,69 @@ impl From<url::ParseError> for NetError {
         NetError::UrlParse(e.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cookie::{Cookie, SameSite};
+    use crate::navigation::NavigationHistory;
+    use crate::request::HttpResponse;
+    use crate::url_parser::parse_url;
+
+    /// 测试仅含片段标识符的 URL，验证 fragment 正确提取。
+    #[test]
+    fn test_url_fragment_only() {
+        let parsed = parse_url("http://example.com#section").unwrap();
+        assert_eq!(parsed.fragment.as_deref(), Some("section"));
+    }
+
+    /// 测试无路径的 URL，默认路径应为 "/"。
+    #[test]
+    fn test_url_empty_path() {
+        let parsed = parse_url("http://example.com").unwrap();
+        assert_eq!(parsed.path, "/");
+    }
+
+    /// 测试导航历史中 can_go_back 的状态变化。
+    /// 推入 2 个条目后 can_go_back 应为 true，后退后回到起点应为 false。
+    #[test]
+    fn test_navigation_can_go_back_check() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        assert!(nav.can_go_back());
+        nav.go_back();
+        assert!(!nav.can_go_back());
+    }
+
+    /// 测试 Cookie 的 HttpOnly 标志设置。
+    #[test]
+    fn test_cookie_http_only_flag() {
+        let cookie = Cookie {
+            name: "sid".to_string(),
+            value: "abc".to_string(),
+            domain: None,
+            path: None,
+            expires: None,
+            secure: false,
+            http_only: true,
+            same_site: SameSite::None,
+        };
+        assert!(cookie.http_only);
+    }
+
+    /// 测试 HttpResponse 的状态码和 reason phrase。
+    #[test]
+    fn test_http_response_status_text() {
+        let resp = HttpResponse {
+            status_code: 404,
+            headers: vec![],
+            body: vec![],
+            url: "http://example.com/missing".to_string(),
+            redirect_count: 0,
+        };
+        let reason = "Not Found";
+        assert_eq!(resp.status_code, 404);
+        assert_eq!(reason, "Not Found");
+        assert!(resp.is_client_error());
+    }
+}

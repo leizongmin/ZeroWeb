@@ -61,6 +61,8 @@ pub fn resolve_length(
             };
             zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
         }
+        // fit-content() 递归解析内部值
+        LengthValue::FitContent(inner) => resolve_length(inner, font_size, viewport_width, viewport_height),
     }
 }
 

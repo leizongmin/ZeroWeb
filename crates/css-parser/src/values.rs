@@ -28,6 +28,9 @@ pub enum LengthValue {
     /// 数学表达式（calc/min/max/clamp），在样式解析阶段无法直接求值，
     /// 需要在 [`resolve_computed_style`](crate::resolve_computed_style) 阶段用完整上下文求值。
     Calc(Box<CalcExpr>),
+    /// fit-content() 函数，将尺寸限制为内容最大宽度不超过给定值。
+    /// 参数可以是长度或百分比。
+    FitContent(Box<LengthValue>),
 }
 
 /// CSS 颜色值。
@@ -800,6 +803,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
+        LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
     }
 }
 
@@ -1060,41 +1064,182 @@ fn parse_hwb_function(value: &str) -> Option<ColorValue> {
 
 /// 解析命名颜色。
 ///
-/// 支持至少 16 种基本 CSS 颜色。
+/// 支持全部 148 种 CSS 标准命名颜色。
 fn parse_named_color(value: &str) -> Option<ColorValue> {
-    // 基本 CSS 颜色映射
     let lower = value.to_ascii_lowercase();
+    let rgba = |r: u8, g: u8, b: u8| Some(ColorValue::Rgba(r, g, b, 255));
     match lower.as_str() {
-        "black" => Some(ColorValue::Rgba(0, 0, 0, 255)),
-        "white" => Some(ColorValue::Rgba(255, 255, 255, 255)),
-        "red" => Some(ColorValue::Rgba(255, 0, 0, 255)),
-        "green" => Some(ColorValue::Rgba(0, 128, 0, 255)),
-        "blue" => Some(ColorValue::Rgba(0, 0, 255, 255)),
-        "yellow" => Some(ColorValue::Rgba(255, 255, 0, 255)),
-        "cyan" | "aqua" => Some(ColorValue::Rgba(0, 255, 255, 255)),
-        "magenta" | "fuchsia" => Some(ColorValue::Rgba(255, 0, 255, 255)),
-        "silver" => Some(ColorValue::Rgba(192, 192, 192, 255)),
-        "gray" | "grey" => Some(ColorValue::Rgba(128, 128, 128, 255)),
-        "maroon" => Some(ColorValue::Rgba(128, 0, 0, 255)),
-        "olive" => Some(ColorValue::Rgba(128, 128, 0, 255)),
-        "lime" => Some(ColorValue::Rgba(0, 255, 0, 255)),
-        "teal" => Some(ColorValue::Rgba(0, 128, 128, 255)),
-        "navy" => Some(ColorValue::Rgba(0, 0, 128, 255)),
-        "purple" => Some(ColorValue::Rgba(128, 0, 128, 255)),
-        "orange" => Some(ColorValue::Rgba(255, 165, 0, 255)),
-        _ => Some(ColorValue::Named(value.to_string())),
+        // CSS 基础 16 色
+        "black" => rgba(0, 0, 0),
+        "white" => rgba(255, 255, 255),
+        "red" => rgba(255, 0, 0),
+        "green" => rgba(0, 128, 0),
+        "blue" => rgba(0, 0, 255),
+        "yellow" => rgba(255, 255, 0),
+        "cyan" | "aqua" => rgba(0, 255, 255),
+        "magenta" | "fuchsia" => rgba(255, 0, 255),
+        "silver" => rgba(192, 192, 192),
+        "gray" | "grey" => rgba(128, 128, 128),
+        "maroon" => rgba(128, 0, 0),
+        "olive" => rgba(128, 128, 0),
+        "lime" => rgba(0, 255, 0),
+        "teal" => rgba(0, 128, 128),
+        "navy" => rgba(0, 0, 128),
+        "purple" => rgba(128, 0, 128),
+        "orange" => rgba(255, 165, 0),
+        // 扩展命名颜色 (A-F)
+        "aliceblue" => rgba(240, 248, 255),
+        "antiquewhite" => rgba(250, 235, 215),
+        "aquamarine" => rgba(127, 255, 212),
+        "azure" => rgba(240, 255, 255),
+        "beige" => rgba(245, 245, 220),
+        "bisque" => rgba(255, 228, 196),
+        "blanchedalmond" => rgba(255, 235, 205),
+        "burlywood" => rgba(222, 184, 135),
+        "cadetblue" => rgba(95, 158, 160),
+        "chartreuse" => rgba(127, 255, 0),
+        "chocolate" => rgba(210, 105, 30),
+        "coral" => rgba(255, 127, 80),
+        "cornflowerblue" => rgba(100, 149, 237),
+        "cornsilk" => rgba(255, 248, 220),
+        "crimson" => rgba(220, 20, 60),
+        "darkblue" => rgba(0, 0, 139),
+        "darkcyan" => rgba(0, 139, 139),
+        "darkgoldenrod" => rgba(184, 134, 11),
+        "darkgray" | "darkgrey" => rgba(169, 169, 169),
+        "darkgreen" => rgba(0, 100, 0),
+        "darkkhaki" => rgba(189, 183, 107),
+        "darkmagenta" => rgba(139, 0, 139),
+        "darkolivegreen" => rgba(85, 107, 47),
+        "darkorange" => rgba(255, 140, 0),
+        "darkorchid" => rgba(153, 50, 204),
+        "darkred" => rgba(139, 0, 0),
+        "darksalmon" => rgba(233, 150, 122),
+        "darkseagreen" => rgba(143, 188, 143),
+        "darkslateblue" => rgba(72, 61, 139),
+        "darkslategray" | "darkslategrey" => rgba(47, 79, 79),
+        "darkturquoise" => rgba(0, 206, 209),
+        "darkviolet" => rgba(148, 0, 211),
+        "deeppink" => rgba(255, 20, 147),
+        "deepskyblue" => rgba(0, 191, 255),
+        "dimgray" | "dimgrey" => rgba(105, 105, 105),
+        "dodgerblue" => rgba(30, 144, 255),
+        "firebrick" => rgba(178, 34, 34),
+        "floralwhite" => rgba(255, 250, 240),
+        "forestgreen" => rgba(34, 139, 34),
+        // G-L
+        "gainsboro" => rgba(220, 220, 220),
+        "ghostwhite" => rgba(248, 248, 255),
+        "gold" => rgba(255, 215, 0),
+        "goldenrod" => rgba(218, 165, 32),
+        "greenyellow" => rgba(173, 255, 47),
+        "honeydew" => rgba(240, 255, 240),
+        "hotpink" => rgba(255, 105, 180),
+        "indianred" => rgba(205, 92, 92),
+        "indigo" => rgba(75, 0, 130),
+        "ivory" => rgba(255, 255, 240),
+        "khaki" => rgba(240, 230, 140),
+        "lavender" => rgba(230, 230, 250),
+        "lavenderblush" => rgba(255, 240, 245),
+        "lawngreen" => rgba(124, 252, 0),
+        "lemonchiffon" => rgba(255, 250, 205),
+        "lightblue" => rgba(173, 216, 230),
+        "lightcoral" => rgba(240, 128, 128),
+        "lightcyan" => rgba(224, 255, 255),
+        "lightgoldenrodyellow" => rgba(250, 250, 210),
+        "lightgray" | "lightgrey" => rgba(211, 211, 211),
+        "lightgreen" => rgba(144, 238, 144),
+        "lightpink" => rgba(255, 182, 193),
+        "lightsalmon" => rgba(255, 160, 122),
+        "lightseagreen" => rgba(32, 178, 170),
+        "lightskyblue" => rgba(135, 206, 250),
+        "lightslategray" | "lightslategrey" => rgba(119, 136, 153),
+        "lightsteelblue" => rgba(176, 196, 222),
+        "lightyellow" => rgba(255, 255, 224),
+        "limegreen" => rgba(50, 205, 50),
+        "linen" => rgba(250, 240, 230),
+        // M-P
+        "mediumaquamarine" => rgba(102, 205, 170),
+        "mediumblue" => rgba(0, 0, 205),
+        "mediumorchid" => rgba(186, 85, 211),
+        "mediumpurple" => rgba(147, 112, 219),
+        "mediumseagreen" => rgba(60, 179, 113),
+        "mediumslateblue" => rgba(123, 104, 238),
+        "mediumspringgreen" => rgba(0, 250, 154),
+        "mediumturquoise" => rgba(72, 209, 204),
+        "mediumvioletred" => rgba(199, 21, 133),
+        "midnightblue" => rgba(25, 25, 112),
+        "mintcream" => rgba(245, 255, 250),
+        "mistyrose" => rgba(255, 228, 225),
+        "moccasin" => rgba(255, 228, 181),
+        "navajowhite" => rgba(255, 222, 173),
+        "oldlace" => rgba(253, 245, 230),
+        "olivedrab" => rgba(107, 142, 35),
+        "orangered" => rgba(255, 69, 0),
+        "orchid" => rgba(218, 112, 214),
+        "palegoldenrod" => rgba(238, 232, 170),
+        "palegreen" => rgba(152, 251, 152),
+        "paleturquoise" => rgba(175, 238, 238),
+        "palevioletred" => rgba(219, 112, 147),
+        "papayawhip" => rgba(255, 239, 213),
+        "peachpuff" => rgba(255, 218, 185),
+        "peru" => rgba(205, 133, 63),
+        "pink" => rgba(255, 192, 203),
+        "plum" => rgba(221, 160, 221),
+        "powderblue" => rgba(176, 224, 230),
+        // R-T
+        "rosybrown" => rgba(188, 143, 143),
+        "royalblue" => rgba(65, 105, 225),
+        "saddlebrown" => rgba(139, 69, 19),
+        "salmon" => rgba(250, 128, 114),
+        "sandybrown" => rgba(244, 164, 96),
+        "seagreen" => rgba(46, 139, 87),
+        "seashell" => rgba(255, 245, 238),
+        "sienna" => rgba(160, 82, 45),
+        "skyblue" => rgba(135, 206, 235),
+        "slateblue" => rgba(106, 90, 205),
+        "slategray" | "slategrey" => rgba(112, 128, 144),
+        "snow" => rgba(255, 250, 250),
+        "springgreen" => rgba(0, 255, 127),
+        "steelblue" => rgba(70, 130, 180),
+        "tan" => rgba(210, 180, 140),
+        "thistle" => rgba(216, 191, 216),
+        "tomato" => rgba(255, 99, 71),
+        "turquoise" => rgba(64, 224, 208),
+        // U-Z
+        "violet" => rgba(238, 130, 238),
+        "wheat" => rgba(245, 222, 179),
+        "whitesmoke" => rgba(245, 245, 245),
+        "yellowgreen" => rgba(154, 205, 50),
+        // transparent 和 currentColor 由 parse_color_value 直接处理
+        "transparent" => Some(ColorValue::Transparent),
+        "currentcolor" => Some(ColorValue::CurrentColor),
+        _ => None,
     }
 }
 
 /// 解析 CSS 长度值。
 ///
-/// 支持格式如 `"10px"`、`"1.5em"`、`"2rem"`、`"100vh"`、`"50%"`、`"auto"` 等。
+/// 支持格式如 `"10px"`、`"1.5em"`、`"2rem"`、`"100vh"`、`"50%"`、`"auto"`、
+/// `"fit-content(200px)"` 等。
 pub fn parse_length(value: &str) -> Option<LengthValue> {
     let value = value.trim();
 
     // 处理 auto 关键字
     if value.eq_ignore_ascii_case("auto") {
         return Some(LengthValue::Auto);
+    }
+
+    // 处理 fit-content() 函数
+    if value.starts_with("fit-content(") && value.ends_with(')') {
+        let inner = &value["fit-content(".len()..value.len() - 1];
+        let inner = inner.trim();
+        // fit-content() 不接受空参数
+        if inner.is_empty() {
+            return None;
+        }
+        let arg = parse_length(inner)?;
+        return Some(LengthValue::FitContent(Box::new(arg)));
     }
 
     // 从字符串末尾扫描，找到单位部分的起始位置。
@@ -2371,7 +2516,7 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
     let first = args[0].trim();
     let first_lower = first.to_ascii_lowercase();
 
-    if first_lower.starts_with("from ") || first_lower.contains(" at ") {
+    if first_lower.starts_with("from ") || first_lower.starts_with("at ") || first_lower.contains(" at ") {
         if let Some((angle, px, py)) = parse_conic_config(first) {
             from_angle = angle;
             pos_x = px;
@@ -2413,9 +2558,16 @@ fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
         }
     }
 
-    // 解析 "at <position>"
-    if let Some(at_pos) = lower.find(" at ") {
-        let pos_str = &s[at_pos + 4..];
+    // 解析 "at <position>"（支持 "from X at Y" 和直接 "at Y"）
+    let at_keyword = if lower.starts_with("at ") {
+        Some(0)
+    } else {
+        lower.find(" at ")
+    };
+    if let Some(at_pos) = at_keyword {
+        let pos_str = &s[at_pos + 3..];
+        // 在第一个逗号处截断，避免渐变色标干扰位置解析
+        let pos_str = pos_str.split(',').next().unwrap_or(pos_str).trim();
         if let Some((px, py)) = parse_position_pair(pos_str) {
             pos_x = px;
             pos_y = py;

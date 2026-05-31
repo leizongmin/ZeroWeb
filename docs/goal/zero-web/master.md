@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3409 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3444 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3409 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3444 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -23,18 +23,18 @@
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 344 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns** |
-| css-parser | 384 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var** |
+| dom | 371 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains** |
+| css-parser | 400 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复** |
 | style-system | 494 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear**、**grid-area/grid-column/grid-row 简写**、**cursor/opacity 管线集成** |
 | layout-engine | 285 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套** |
-| engine | 230 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty**、**嵌套 overflow/hsla 极端值**、**inline style/script tag 渲染** |
+| engine | 237 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复**、**paint_in_rect overflow+dirty**、**嵌套 overflow/hsla 极端值**、**inline style/script tag 渲染**、**paint 空文档/composite 单盒/recompute/hsla 命名颜色** |
 | render-foundation | 243 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零** |
 | host-runtime | 143 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize** |
-| net | 202 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出** |
-| security | 213 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard** |
+| net | 209 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本** |
+| security | 221 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET** |
 | protocol | 94 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序** |
-| storage | 186 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range** |
-| canvas | 227 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled** |
+| storage | 193 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has** |
+| canvas | 255 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp** |
 | webview | 114 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口** |
 | wasm-sandbox | 92 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制** |
 
@@ -63,7 +63,25 @@
 
 ## 最近完成的改进
 
-### -12. br 元素 + Path2D closePath/isPointInPath + scroll-snap 集成 + 字符宽度优化 + 43 个新测试（本轮，3409 测试）
+### -13. CSS 148 命名颜色 + fit-content() + conic-gradient 修复 + 35 个新测试（本轮，3444 测试）
+
+扩展 CSS 命名颜色至完整 148 种标准颜色、新增 fit-content() CSS 函数解析、
+修复 conic-gradient(at position) 解析 bug，以及 6 个 crate 的 33 个边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **148 种 CSS 标准命名颜色**：从 17 种扩展至完整标准集（含 transparent/currentColor、grey/gray 别名）；**fit-content() 函数**：LengthValue::FitContent 变体、解析 px/em/%/0 参数；**conic-gradient(at position) 修复**：支持无 from 前缀的 at 位置、位置在逗号处截断 | 2 |
+| dom | **has_attribute/remove_attribute**：属性存在检查和删除；**split_text**：文本节点分割；**class_list replace**：类名替换；**contains**：节点包含检查 | 6 |
+| canvas | **resize/clear_entire/stroke_zero_width**：Canvas 生命周期边界；**negative_translate/restore_without_save/globalAlpha_clamp**：变换和状态边界 | 6 |
+| engine | **paint 空文档/composite 单盒/recompute_style**：管线边界；**named_color_crimson/hsla_pure_red**：颜色转换验证 | 5 |
+| net | **URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**：网络边界 | 5 |
+| security | **CSP 同源脚本/内联样式/data URI/简单请求 GET/sandbox same-origin**：安全策略边界 | 5 |
+| storage | **delete_object_store/update_existing/clear/空 store cursor/cache has**：存储边界 | 6 |
+
+同时更新 layout-engine converter 和 style-system computed 中的 LengthValue 穷尽匹配，
+以及 engine paint 中的 ColorValue::Named 兼容处理。
+
+### -12. br 元素 + Path2D closePath/isPointInPath + scroll-snap 集成 + 字符宽度优化 + 43 个新测试（前轮，3409 测试）
 
 实现 <br> 元素行内换行、Path2D 闭合路径和点击检测、scroll-snap 管线集成、
 逐字符宽度估算替代固定 0.6 系数，以及 12 个 crate 的 43 个边界条件测试：
@@ -335,7 +353,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | 盒模型 | ✅ 100%（含 **box-sizing: border-box** 布局测试） |
 | Block/Inline/Flexbox 布局 | ✅ 已实现（行内格式化上下文已实现） |
 | Grid 布局 | ⚠️ ~65%（display + auto-flow + 项放置 + grid-area + repeat() + auto-rows/cols；缺 auto-fill 真实支持、命名区域） |
-| 颜色 | ✅ ~95% |
+| 颜色 | ✅ ~98%（含 **148 种标准命名颜色**、hwb/hsl/rgb/rgba/hex 全格式） |
 | 字体 | ✅ 100% |
 | 定位 | ✅ 100% |
 | Overflow | ✅ 100% |
