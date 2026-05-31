@@ -659,12 +659,18 @@ impl Default for ContainerContext {
 
 /// 评估 @container 条件。
 ///
-/// 骨架实现：简化条件评估。
-/// 完整实现需要布局引擎提供容器尺寸，此处通过 ContainerContext 评估。
+/// 基于 ContainerContext 中的容器尺寸评估容器查询条件。
+/// 没有容器上下文时，@container 规则不应用。
 fn evaluate_container_condition(
     container_rule: &zero_css_parser::ast::ContainerRule,
+    container_ctx: Option<&ContainerContext>,
 ) -> bool {
     use zero_css_parser::values::parse_length;
+
+    let Some(ctx) = container_ctx else {
+        // 无容器上下文，不应用 @container 规则
+        return false;
+    };
 
     let condition = &container_rule.condition;
     let size_cond = match condition {
@@ -675,16 +681,41 @@ fn evaluate_container_condition(
     let feature = size_cond.feature.to_ascii_lowercase();
     let value_str = size_cond.value.trim();
 
-    // 尝试解析条件值为长度
-    let cond_px: Option<f64> = parse_length(value_str).map(|l| match l {
+    // 解析条件值为像素
+    let Some(cond_px) = parse_length(value_str).map(|l| match l {
         zero_css_parser::values::LengthValue::Px(n) => n,
         _ => 0.0,
-    });
+    }) else {
+        return false;
+    };
 
-    // 骨架实现：如果没有容器上下文信息，保守返回 true
-    // 让规则参与级联。完整实现需要在 collect_from_rules 中传递 ContainerContext。
-    let _ = (feature, cond_px);
-    true
+    // 根据特性名称和比较运算符评估条件
+    let container_size = match feature.as_str() {
+        "min-width" | "min-inline-size" => {
+            // min-width: 容器宽度 >= 条件值
+            ctx.container_width.map(|w| w >= cond_px)
+        }
+        "max-width" | "max-inline-size" => {
+            // max-width: 容器宽度 <= 条件值
+            ctx.container_width.map(|w| w <= cond_px)
+        }
+        "width" | "inline-size" => {
+            // width: 容器宽度 == 条件值（精确匹配极少使用，按相等判断）
+            ctx.container_width.map(|w| (w - cond_px).abs() < f64::EPSILON)
+        }
+        "min-height" | "min-block-size" => {
+            ctx.container_height.map(|h| h >= cond_px)
+        }
+        "max-height" | "max-block-size" => {
+            ctx.container_height.map(|h| h <= cond_px)
+        }
+        "height" | "block-size" => {
+            ctx.container_height.map(|h| (h - cond_px).abs() < f64::EPSILON)
+        }
+        _ => None,
+    };
+
+    container_size.unwrap_or(false)
 }
 
 /// 评估 @supports 条件。
@@ -783,7 +814,7 @@ pub fn collect_matching_declarations(
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
 ) -> Vec<MatchingDecl> {
-    collect_matching_declarations_with_media(doc, element, stylesheets, None)
+    collect_matching_declarations_with_media(doc, element, stylesheets, None, None)
 }
 
 /// 从样式表中收集匹配指定元素的声明（带媒体查询评估）。
@@ -797,6 +828,7 @@ pub fn collect_matching_declarations_with_media(
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    container_ctx: Option<&ContainerContext>,
 ) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
     let mut layer_counter: usize = 0;
@@ -808,6 +840,7 @@ pub fn collect_matching_declarations_with_media(
             &stylesheet.rules,
             &mut results,
             media_ctx,
+            container_ctx,
             None,
             &mut layer_counter,
         );
@@ -820,12 +853,14 @@ pub fn collect_matching_declarations_with_media(
 ///
 /// `current_layer` 为 `None` 表示未分层的声明，`Some(idx)` 表示当前级联层索引。
 /// `layer_counter` 在遇到 `@layer` 规则时递增，用于分配层索引。
+#[allow(clippy::too_many_arguments)]
 fn collect_from_rules(
     doc: &Document,
     element: NodeId,
     rules: &[zero_css_parser::ast::Rule],
     results: &mut Vec<MatchingDecl>,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    container_ctx: Option<&ContainerContext>,
     current_layer: Option<usize>,
     layer_counter: &mut usize,
 ) {
@@ -864,6 +899,7 @@ fn collect_from_rules(
                                 inner_rules,
                                 results,
                                 media_ctx,
+                                container_ctx,
                                 current_layer,
                                 layer_counter,
                             );
@@ -877,6 +913,7 @@ fn collect_from_rules(
                             inner_rules,
                             results,
                             media_ctx,
+                            container_ctx,
                             current_layer,
                             layer_counter,
                         );
@@ -896,6 +933,7 @@ fn collect_from_rules(
                     &layer_rule.rules,
                     results,
                     media_ctx,
+                    container_ctx,
                     Some(layer_idx),
                     layer_counter,
                 );
@@ -912,22 +950,22 @@ fn collect_from_rules(
                         &supports_rule.rules,
                         results,
                         media_ctx,
+                        container_ctx,
                         current_layer,
                         layer_counter,
                     );
                 }
             }
             zero_css_parser::ast::Rule::Container(container_rule) => {
-                // @container 规则：骨架实现
-                // 完整评估需要布局信息（容器尺寸），此处始终递归进入
-                // 让规则中的声明参与级联。引擎层在实际应用时会过滤。
-                if evaluate_container_condition(container_rule) {
+                // @container 规则：基于 ContainerContext 评估容器条件
+                if evaluate_container_condition(container_rule, container_ctx) {
                     collect_from_rules(
                         doc,
                         element,
                         &container_rule.rules,
                         results,
                         media_ctx,
+                        container_ctx,
                         current_layer,
                         layer_counter,
                     );
@@ -2173,11 +2211,25 @@ mod tests {
             rules: vec![zero_css_parser::ast::Rule::Container(container_rule)],
         }];
 
+        // 无容器上下文时，@container 规则不应用
         let results = collect_matching_declarations(&doc, p, &stylesheets);
-        // 骨架实现：@container 规则应该应用（保守返回 true）
+        assert_eq!(results.len(), 0, "@container should not apply without context");
+
+        // 容器宽度 >= 400px 时，规则应用
+        let ctx = ContainerContext::with_size(500.0, 600.0);
+        let results = collect_matching_declarations_with_media(
+            &doc, p, &stylesheets, None, Some(&ctx),
+        );
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "color");
         assert_eq!(results[0].1, "red");
+
+        // 容器宽度 < 400px 时，规则不应用
+        let ctx_small = ContainerContext::with_size(300.0, 600.0);
+        let results = collect_matching_declarations_with_media(
+            &doc, p, &stylesheets, None, Some(&ctx_small),
+        );
+        assert_eq!(results.len(), 0, "@container min-width:400px should not apply at 300px");
     }
 
     // ═══════════════════════════════════════════════════════════════════
