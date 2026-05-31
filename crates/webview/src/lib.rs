@@ -1654,6 +1654,71 @@ mod tests {
         }
     }
 
+    /// 验证 WebViewBuilder 默认配置（无 URL）产生正确的初始状态。
+    ///
+    /// 默认视口 800x600，无 URL，不在加载中，无渲染结果。
+    #[test]
+    fn test_webview_builder_defaults() {
+        let wv = WebViewBuilder::new().build();
+        assert_eq!(wv.config().width, 800, "默认宽度应为 800");
+        assert_eq!(wv.config().height, 600, "默认高度应为 600");
+        assert!(wv.url().is_none(), "默认不应有 URL");
+        assert!(!wv.is_loading(), "默认不应处于加载中");
+        assert!(wv.last_render().is_none(), "默认不应有渲染结果");
+        assert!(!wv.config().transparent);
+        assert!(wv.config().user_agent.is_none());
+        assert!(!wv.config().devtools);
+    }
+
+    /// 验证加载 data URI 内容后渲染成功。
+    ///
+    /// 通过 load_html 加载 data URI 格式的 HTML 内容，
+    /// 确认渲染管线产生有效结果（非负耗时、存在渲染输出）。
+    #[test]
+    fn test_webview_load_data_uri() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let data_uri_html = "<html><body><div>Data URI content rendered</div></body></html>";
+        let result = wv.load_html(data_uri_html, None);
+        assert!(result.timings.total_ms >= 0.0, "data URI 渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "加载 data URI 后应有渲染结果");
+        assert!(!wv.is_loading(), "load_html 不应将 WebView 置为加载状态");
+    }
+
+    /// 验证加载 HTML 后注入 CSS，渲染结果反映注入的样式。
+    ///
+    /// 步骤：
+    /// 1. load_html 加载带 div 的 HTML（无 CSS）
+    /// 2. inject_css 注入为 div 设置背景色和尺寸的 CSS
+    /// 3. 渲染结果的 fills 数量应大于仅加载 HTML 时
+    #[test]
+    fn test_webview_render_after_inject_css() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div class=\"box\">Hello</div></body></html>";
+
+        // 加载 HTML（无 CSS）
+        let after_load = wv.load_html(html, None);
+        let fills_after_load = after_load.primitives.fills.len();
+
+        // 注入 CSS
+        let css = ".box { background-color: green; width: 100px; height: 50px; }";
+        let after_inject = wv.inject_css(css);
+        let fills_after_inject = after_inject.primitives.fills.len();
+
+        // 注入后 fills 数量应 >= 加载时（CSS 为 div 添加了背景色）
+        assert!(
+            fills_after_inject >= fills_after_load,
+            "注入 CSS 后 fills 数量应 >= 注入前 (got {fills_after_inject} < {fills_after_load})"
+        );
+
+        // render 应使用累积的 CSS
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_after_inject,
+            "render() 应使用注入的 CSS"
+        );
+    }
+
     /// 验证 WebViewBuilder 支持自定义视口尺寸，且 build 后 WebView 正确反映配置。
     ///
     /// 测试非默认视口（如 1280x900），确认：

@@ -1028,4 +1028,31 @@ mod tests {
         // 内联脚本受 script-src 控制（不含 'unsafe-inline'）
         assert!(!csp.is_inline_script_allowed(None, None));
     }
+
+    /// 测试 CSP form-action 'self' 限制表单只能提交到同源地址。
+    ///
+    /// form-action 指令不回退到 default-src，仅在其显式存在时生效。
+    /// 'self' 值限制表单只能提交到与文档源相同的地址。
+    #[test]
+    fn test_csp_form_action_restriction() {
+        // 策略：form-action 'self' — 只允许提交到同源
+        let csp = ContentSecurityPolicy::parse("form-action 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+
+        // 同源 URL → 允许
+        assert!(csp.is_form_action_allowed("https://example.com/submit", Some(&doc_origin)));
+
+        // 跨源 URL → 拒绝
+        assert!(!csp.is_form_action_allowed("https://evil.com/steal", Some(&doc_origin)));
+
+        // 相对 URL → 视为同源，允许
+        assert!(csp.is_form_action_allowed("/submit", Some(&doc_origin)));
+
+        // 无 document_origin 时，绝对 URL 无法匹配 'self' → 拒绝
+        assert!(!csp.is_form_action_allowed("https://example.com/submit", None));
+
+        // 没有 form-action 指令时，表单提交不受限制
+        let csp_no_form = ContentSecurityPolicy::parse("default-src 'none'");
+        assert!(csp_no_form.is_form_action_allowed("https://evil.com/submit", None));
+    }
 }

@@ -2722,6 +2722,65 @@ mod tests {
         assert!(!instance.has_table("f"), "函数导出不应被 has_table 匹配");
     }
 
+    /// 验证 WASM 模块声明初始内存后，实例的内存页数正确。
+    ///
+    /// 创建声明初始 3 页内存的模块，实例化后验证 memory_size 返回
+    /// 3 * 65536 = 196608 字节。
+    #[test]
+    fn test_wasm_memory_initial_pages() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "memory") 3)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        assert!(instance.has_memory("memory"), "应存在 memory 导出");
+        let size = instance.memory_size("memory").expect("size");
+        let expected = 3 * 65536;
+        assert_eq!(size, expected, "3 页初始内存应为 {expected} 字节，实际: {size}");
+    }
+
+    /// 验证导出函数接收 4 个 i32 参数，所有参数正确传递。
+    ///
+    /// 创建一个接收 4 个 i32 参数并返回它们之和的函数，
+    /// 传入 (100, 200, 300, 400) 验证结果为 1000。
+    #[test]
+    fn test_wasm_exported_function_params() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "sum4") (param i32 i32 i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    i32.add
+                    local.get 2
+                    i32.add
+                    local.get 3
+                    i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let result = instance
+            .call(
+                "sum4",
+                &[
+                    WasmValue::I32(100),
+                    WasmValue::I32(200),
+                    WasmValue::I32(300),
+                    WasmValue::I32(400),
+                ],
+            )
+            .expect("call sum4");
+
+        assert_eq!(result.len(), 1, "应返回一个结果");
+        assert_eq!(result[0], WasmValue::I32(1000), "100 + 200 + 300 + 400 应为 1000");
+    }
+
     /// 从同一模块创建两个实例 → 各自拥有独立的可变全局变量状态。
     #[test]
     fn test_multiple_instances_same_module() {

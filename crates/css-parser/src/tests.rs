@@ -4185,3 +4185,220 @@ fn test_parse_supports_complex_condition() {
         _ => panic!("Expected Supports rule"),
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 28. 媒体查询范围语法与选择器边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试媒体查询 Level 4 范围语法：200px <= width <= 800px。
+/// 组合范围展开为两个条件（width >= 200 且 width <= 800），
+/// 并在不同视口宽度下正确评估。
+#[test]
+fn test_parse_media_query_range_syntax() {
+    use crate::media_query::{MediaCondition, MediaContext, MediaFeatureOp, evaluate_media_query, parse_media_query};
+
+    // 解析组合范围
+    let q = parse_media_query("(200px <= width <= 800px)").unwrap();
+    assert_eq!(q.conditions.len(), 2, "组合范围应展开为 2 个条件");
+    assert_eq!(
+        q.conditions[0],
+        MediaCondition::Width(MediaFeatureOp::GreaterEqual, 200.0),
+        "第一个条件应为 width >= 200"
+    );
+    assert_eq!(
+        q.conditions[1],
+        MediaCondition::Width(MediaFeatureOp::LessEqual, 800.0),
+        "第二个条件应为 width <= 800"
+    );
+
+    // 评估：500 在范围内通过
+    let ctx_inside = MediaContext::new(500.0, 400.0);
+    assert!(
+        evaluate_media_query(&q, &ctx_inside),
+        "500px 在 [200, 800] 范围内应通过"
+    );
+
+    // 评估：200 恰好下界通过
+    let ctx_lower = MediaContext::new(200.0, 400.0);
+    assert!(evaluate_media_query(&q, &ctx_lower), "200px 恰好下界应通过（>=）");
+
+    // 评估：800 恰好上界通过
+    let ctx_upper = MediaContext::new(800.0, 400.0);
+    assert!(evaluate_media_query(&q, &ctx_upper), "800px 恰好上界应通过（<=）");
+
+    // 评估：100 在范围外不通过
+    let ctx_below = MediaContext::new(100.0, 400.0);
+    assert!(!evaluate_media_query(&q, &ctx_below), "100px 低于下界不应通过");
+
+    // 评估：900 在范围外不通过
+    let ctx_above = MediaContext::new(900.0, 400.0);
+    assert!(!evaluate_media_query(&q, &ctx_above), "900px 超过上限不应通过");
+}
+
+/// 测试 :has(> .child) 选择器解析正确。
+/// :has() 内部使用子组合器（>）时，解析器应正确识别 Child 组合器。
+#[test]
+fn test_parse_selector_has_with_combinator() {
+    let stylesheet = Parser::parse_stylesheet("article:has(> .summary) { display: block; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        // 验证主体类型选择器
+        assert!(matches!(
+            &compound.type_selector,
+            Some(TypeSelector::Tag(t)) if t == "article"
+        ));
+        // 验证 :has() 内部有子组合器
+        let has_inner = compound.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Has(selectors)) => Some(selectors),
+            _ => None,
+        });
+        assert!(has_inner.is_some(), "应有 :has() 伪类");
+        let inner = has_inner.unwrap();
+        assert_eq!(inner.len(), 1);
+        let inner_parts = &inner[0].complex.parts;
+        assert_eq!(inner_parts.len(), 2, ":has(> .summary) 应有 2 个组合部分");
+        assert_eq!(
+            inner_parts[0].1,
+            Some(Combinator::Child),
+            ":has() 内部应有 Child 组合器"
+        );
+        // 验证内部 .summary 类选择器
+        let summary_compound = &inner_parts[1].0;
+        assert!(
+            summary_compound.subclass_selectors.iter().any(|s| matches!(
+                s,
+                SubclassSelector::Class(c) if c == "summary"
+            )),
+            ":has() 内部应有 .summary 类选择器"
+        );
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+/// 测试 :not(.a, .b, .c) 多参数否定伪类解析。
+/// :not() 内部有 3 个选择器，解析器应正确识别所有参数。
+#[test]
+fn test_parse_selector_not_multiple() {
+    let stylesheet = Parser::parse_stylesheet("div:not(.a, .b, .c) { color: red; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        assert_eq!(sr.selectors.len(), 1);
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        // 验证类型选择器
+        assert!(matches!(
+            &compound.type_selector,
+            Some(TypeSelector::Tag(t)) if t == "div"
+        ));
+        // 验证 :not() 内部有 3 个选择器
+        let not_inner = compound.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Not(selectors)) => Some(selectors),
+            _ => None,
+        });
+        assert!(not_inner.is_some(), "应有 :not() 伪类");
+        let selectors = not_inner.unwrap();
+        assert_eq!(selectors.len(), 3, ":not(.a, .b, .c) 应有 3 个参数");
+
+        // 验证每个参数是类选择器
+        let class_names: Vec<&str> = selectors
+            .iter()
+            .map(|sel| {
+                sel.complex.parts[0]
+                    .0
+                    .subclass_selectors
+                    .iter()
+                    .find_map(|s| match s {
+                        SubclassSelector::Class(c) => Some(c.as_str()),
+                        _ => None,
+                    })
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(class_names, vec!["a", "b", "c"], ":not() 参数应为 .a, .b, .c");
+    } else {
+        panic!("Expected Style rule");
+    }
+}
+
+/// 测试 :is(.a, #b) 和 :where(div, span) 都被正确解析。
+/// :is() 和 :where() 都支持多选择器参数，解析器应正确识别。
+#[test]
+fn test_parse_selector_is_where() {
+    // 测试 :is(.a, #b)
+    let stylesheet_is = Parser::parse_stylesheet("p:is(.a, #b) { font-size: 14px; }");
+    assert_eq!(stylesheet_is.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet_is.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        let is_inner = compound.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Is(selectors)) => Some(selectors),
+            _ => None,
+        });
+        assert!(is_inner.is_some(), "应有 :is() 伪类");
+        let selectors = is_inner.unwrap();
+        assert_eq!(selectors.len(), 2, ":is(.a, #b) 应有 2 个参数");
+
+        // 第一个参数 .a 是类选择器
+        assert!(
+            selectors[0].complex.parts[0]
+                .0
+                .subclass_selectors
+                .iter()
+                .any(|s| matches!(
+                    s,
+                    SubclassSelector::Class(c) if c == "a"
+                )),
+            "第一个 :is() 参数应为 .a"
+        );
+
+        // 第二个参数 #b 是 ID 选择器
+        assert!(
+            selectors[1].complex.parts[0]
+                .0
+                .subclass_selectors
+                .iter()
+                .any(|s| matches!(
+                    s,
+                    SubclassSelector::Id(id) if id == "b"
+                )),
+            "第二个 :is() 参数应为 #b"
+        );
+    } else {
+        panic!("Expected Style rule for :is()");
+    }
+
+    // 测试 :where(div, span)
+    let stylesheet_where = Parser::parse_stylesheet("p:where(div, span) { margin: 0; }");
+    assert_eq!(stylesheet_where.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet_where.rules[0] {
+        let compound = &sr.selectors[0].complex.parts[0].0;
+        let where_inner = compound.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::PseudoClass(PseudoClassSelector::Where(selectors)) => Some(selectors),
+            _ => None,
+        });
+        assert!(where_inner.is_some(), "应有 :where() 伪类");
+        let selectors = where_inner.unwrap();
+        assert_eq!(selectors.len(), 2, ":where(div, span) 应有 2 个参数");
+
+        // 第一个参数 div 是标签选择器
+        assert!(
+            matches!(
+                &selectors[0].complex.parts[0].0.type_selector,
+                Some(TypeSelector::Tag(t)) if t == "div"
+            ),
+            "第一个 :where() 参数应为 div"
+        );
+
+        // 第二个参数 span 是标签选择器
+        assert!(
+            matches!(
+                &selectors[1].complex.parts[0].0.type_selector,
+                Some(TypeSelector::Tag(t)) if t == "span"
+            ),
+            "第二个 :where() 参数应为 span"
+        );
+    } else {
+        panic!("Expected Style rule for :where()");
+    }
+}

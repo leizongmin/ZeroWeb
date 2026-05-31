@@ -634,7 +634,7 @@ mod cross_crate_integration {
     };
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
     use zero_css_parser::{Parser as CssParser, Selector};
-    use zero_dom::{Document, ShadowRootMode};
+    use zero_dom::{Document, ShadowRootMode, parse_html};
     use zero_layout_engine::LayoutEngine;
     use zero_render_foundation::color::Color;
     use zero_style_system::{ComputedStyle, GridLineValue, StyleSystem};
@@ -941,6 +941,58 @@ mod cross_crate_integration {
             (header_box.width - 300.0).abs() < 1.0,
             "header 宽度应约 300px，实际 {}",
             header_box.width
+        );
+    }
+
+    /// Scroll-snap 管线集成测试。
+    ///
+    /// 解析包含 scroll-snap-type、scroll-snap-align、scroll-snap-stop 的 CSS，
+    /// 通过样式系统计算后验证计算样式中的 scroll-snap 值正确存储。
+    #[test]
+    fn test_scroll_snap_pipeline() {
+        let html = r#"<html><body>
+            <div class="scroll-container">
+                <div class="snap-item">A</div>
+                <div class="snap-item">B</div>
+            </div>
+        </body></html>"#;
+        let css = r#"
+            .scroll-container { scroll-snap-type: y mandatory; overflow-y: auto; }
+            .snap-item { scroll-snap-align: start; scroll-snap-stop: always; }
+        "#;
+
+        let doc = parse_html(html);
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证至少有样式被计算
+        assert!(!styles.is_empty(), "应为 DOM 节点计算样式");
+
+        // 查找 scroll-container 的样式 — 验证 scroll-snap-type 为 y mandatory
+        let mut found_container = false;
+        let mut found_item = false;
+        for (_node_id, style) in &styles {
+            // scroll-container 应该有 scroll-snap-type: y mandatory
+            if style.scroll_snap_type.strictness == zero_style_system::ScrollSnapStrictness::Mandatory
+                && style.scroll_snap_type.axis == zero_css_parser::values::ScrollSnapAxis::Y
+            {
+                found_container = true;
+            }
+            // snap-item 应该有 scroll-snap-align: start 和 scroll-snap-stop: always
+            if style.scroll_snap_align == zero_style_system::ScrollSnapAlign::Start
+                && style.scroll_snap_stop == zero_style_system::ScrollSnapStop::Always
+            {
+                found_item = true;
+            }
+        }
+
+        assert!(found_container, "scroll-container 的 scroll-snap-type 应为 y mandatory");
+        assert!(
+            found_item,
+            "snap-item 的 scroll-snap-align 应为 start 且 scroll-snap-stop 应为 always"
         );
     }
 }

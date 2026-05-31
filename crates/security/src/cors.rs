@@ -1050,4 +1050,84 @@ mod tests {
         // 验证 max-age
         assert_eq!(hdr_put.max_age, Some("3600".to_string()));
     }
+
+    /// 测试 CORS 请求头验证：自定义请求头必须在 allow_headers 中列出才能通过。
+    ///
+    /// 验证三种场景：
+    /// 1. 非简单头（如 X-Custom）不在 allow_headers 中 → 拒绝
+    /// 2. 非简单头在 allow_headers 中 → 允许
+    /// 3. Content-Type 为非简单类型（如 application/json）不在 allow_headers 中 → 拒绝
+    #[test]
+    fn test_cors_request_header_validation() {
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // 场景 1：自定义头 X-Api-Key 未在 allow_headers 中 → 应被拒绝
+        let policy_strict = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result = check_cors(
+            &policy_strict,
+            &origin,
+            "GET",
+            &[("X-Api-Key".to_string(), "secret123".to_string())],
+        );
+        assert!(!result.allowed, "未在 allow_headers 中的自定义头应被拒绝");
+        assert!(result.reason.contains("X-Api-Key"), "拒绝原因应包含头部名称");
+
+        // 场景 2：自定义头在 allow_headers 中 → 应通过
+        let policy_permissive = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec!["X-Api-Key".to_string(), "Authorization".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result = check_cors(
+            &policy_permissive,
+            &origin,
+            "POST",
+            &[
+                ("X-Api-Key".to_string(), "secret123".to_string()),
+                ("Authorization".to_string(), "Bearer token".to_string()),
+            ],
+        );
+        assert!(result.allowed, "allow_headers 中的自定义头应被允许");
+
+        // 场景 3：Content-Type: application/json 不在 allow_headers 中 → 应被拒绝
+        // application/json 不是简单 Content-Type，需要在 allow_headers 中显式允许
+        let result_json = check_cors(
+            &policy_strict,
+            &origin,
+            "POST",
+            &[("Content-Type".to_string(), "application/json".to_string())],
+        );
+        assert!(
+            !result_json.allowed,
+            "application/json 不是简单 Content-Type，未在 allow_headers 中应被拒绝"
+        );
+
+        // 场景 4：Content-Type: text/plain 是简单类型 → 不需要 allow_headers 也应通过
+        // 注意：需要使用允许 POST 的策略
+        let policy_post = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result_plain = check_cors(
+            &policy_post,
+            &origin,
+            "POST",
+            &[("Content-Type".to_string(), "text/plain".to_string())],
+        );
+        assert!(
+            result_plain.allowed,
+            "text/plain 是简单 Content-Type，不需要在 allow_headers 中"
+        );
+    }
 }

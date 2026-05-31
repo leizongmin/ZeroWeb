@@ -420,6 +420,25 @@ impl IdbDatabase {
         Ok(())
     }
 
+    /// 重命名 Object Store。
+    ///
+    /// 将指定名称的 store 重命名为新名称。
+    pub fn rename_object_store(&mut self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
+        let mut store = self
+            .stores
+            .remove(old_name)
+            .ok_or_else(|| StorageError::StoreNotFound(old_name.to_string()))?;
+        store.name = new_name.to_string();
+        if self.stores.contains_key(new_name) {
+            return Err(StorageError::Database(format!(
+                "Object store '{}' already exists",
+                new_name
+            )));
+        }
+        self.stores.insert(new_name.to_string(), store);
+        Ok(())
+    }
+
     /// 获取 Object Store 名称列表。
     pub fn store_names(&self) -> Vec<&str> {
         self.stores.keys().map(|s| s.as_str()).collect()
@@ -3374,5 +3393,146 @@ mod tests {
         assert_eq!(record.value, serde_json::json!("v1"));
         assert!(db.get("store", &IdbKey::String("new_key".into())).is_none());
         assert_eq!(db.count("store").unwrap(), 1);
+    }
+
+    /// 测试重命名 Object Store 后数据仍可通过新名称访问。
+    ///
+    /// 验证：
+    /// 1. 旧名称不再存在
+    /// 2. 新名称可用
+    /// 3. 数据和索引在重命名后保持完整
+    #[test]
+    fn test_idb_object_store_rename() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("old_store", Some("id"), false).unwrap();
+
+        // 插入数据并创建索引
+        db.add(
+            "old_store",
+            serde_json::json!({"id": 1, "name": "Alice"}),
+            Some(IdbKey::Number(1.0)),
+        )
+        .unwrap();
+        db.add(
+            "old_store",
+            serde_json::json!({"id": 2, "name": "Bob"}),
+            Some(IdbKey::Number(2.0)),
+        )
+        .unwrap();
+        db.create_index("old_store", "name_idx", "name", false, false).unwrap();
+
+        // 重命名
+        db.rename_object_store("old_store", "new_store").unwrap();
+
+        // 旧名称不再存在
+        assert!(!db.has_store("old_store"), "旧名称应不再存在");
+        // 新名称可用
+        assert!(db.has_store("new_store"), "新名称应可用");
+        assert!(db.store_names().contains(&"new_store"));
+
+        // 数据完整：可以通过新名称访问记录
+        let record = db.get("new_store", &IdbKey::Number(1.0)).unwrap();
+        assert_eq!(record.value["name"], "Alice");
+        assert_eq!(db.count("new_store").unwrap(), 2);
+
+        // 索引完整：可以通过新名称使用索引查询
+        let results = db
+            .get_from_index("new_store", "name_idx", &IdbKey::String("Bob".into()))
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].value["id"], 2);
+
+        // 可以在新名称上继续添加数据
+        db.add(
+            "new_store",
+            serde_json::json!({"id": 3, "name": "Charlie"}),
+            Some(IdbKey::Number(3.0)),
+        )
+        .unwrap();
+        assert_eq!(db.count("new_store").unwrap(), 3);
+
+        // 重命名不存在的 store 应报错
+        let result = db.rename_object_store("nonexistent", "another");
+        assert!(result.is_err());
+
+        // 重命名为已存在的名称应报错
+        db.create_object_store("other", None, false).unwrap();
+        let result = db.rename_object_store("new_store", "other");
+        assert!(result.is_err(), "重命名为已存在的 store 名称应报错");
+    }
+
+    /// 测试 multi-entry 索引在数组值上的行为。
+    ///
+    /// multiEntry 索引将数组中的每个元素作为独立的索引键。
+    /// 验证：
+    /// 1. 数组值中的每个元素都能通过索引查到对应记录
+    /// 2. 不同记录中的相同数组元素都能被查到
+    /// 3. 非数组值在 multiEntry 索引中作为单一键处理
+    /// 4. 范围查询在 multi-entry 索引上正确工作
+    #[test]
+    fn test_idb_index_multi_entry() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("articles", None, false).unwrap();
+
+        // 插入多条记录，tags 字段为数组
+        db.add(
+            "articles",
+            serde_json::json!({"title": "Rust Guide", "tags": ["rust", "programming", "tutorial"]}),
+            Some(IdbKey::String("a1".into())),
+        )
+        .unwrap();
+        db.add(
+            "articles",
+            serde_json::json!({"title": "Web Dev", "tags": ["javascript", "html", "programming"]}),
+            Some(IdbKey::String("a2".into())),
+        )
+        .unwrap();
+        db.add(
+            "articles",
+            serde_json::json!({"title": "CSS Tips", "tags": ["css", "html"]}),
+            Some(IdbKey::String("a3".into())),
+        )
+        .unwrap();
+
+        // 创建 multiEntry 索引
+        db.create_index("articles", "tags_idx", "tags", false, true).unwrap();
+
+        // 场景 1：查询 "programming" 标签 → 应找到 2 条记录（a1 和 a2）
+        let programming = db
+            .get_from_index("articles", "tags_idx", &IdbKey::String("programming".into()))
+            .unwrap();
+        assert_eq!(programming.len(), 2, "programming 标签应匹配 2 条记录");
+
+        // 场景 2：查询 "rust" 标签 → 应找到 1 条记录（a1）
+        let rust = db
+            .get_from_index("articles", "tags_idx", &IdbKey::String("rust".into()))
+            .unwrap();
+        assert_eq!(rust.len(), 1);
+        assert_eq!(rust[0].value["title"], "Rust Guide");
+
+        // 场景 3：查询 "html" 标签 → 应找到 2 条记录（a2 和 a3）
+        let html = db
+            .get_from_index("articles", "tags_idx", &IdbKey::String("html".into()))
+            .unwrap();
+        assert_eq!(html.len(), 2);
+
+        // 场景 4：查询不存在的标签 → 0 条记录
+        let unknown = db
+            .get_from_index("articles", "tags_idx", &IdbKey::String("python".into()))
+            .unwrap();
+        assert!(unknown.is_empty());
+
+        // 场景 5：索引计数正确
+        // multiEntry 索引条目数 = 所有数组元素总数 = 3 + 3 + 2 = 8
+        assert_eq!(db.count_from_index("articles", "tags_idx", None).unwrap(), 8);
+
+        // 场景 6：范围查询在 multi-entry 索引上正确工作
+        // 查询标签 >= "html" 的记录（html, javascript, programming, rust, tutorial）
+        let range = IdbKeyRange::lower_bound(IdbKey::String("html".into()), false);
+        let range_results = db
+            .get_all_from_index_with_range("articles", "tags_idx", &range)
+            .unwrap();
+        // 应该包含所有记录（所有标签 >= "html"）
+        assert_eq!(range_results.len(), 3, "范围查询应返回包含匹配标签的 3 条记录");
     }
 }

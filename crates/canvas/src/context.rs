@@ -1679,11 +1679,15 @@ impl CanvasContext {
         let mut vertices = Vec::new();
         let mut current_x = 0.0f32;
         let mut current_y = 0.0f32;
+        let mut subpath_start_x = 0.0f32;
+        let mut subpath_start_y = 0.0f32;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in self.current_path.commands() {
             match *cmd {
                 PathCommand::MoveTo(x, y) => {
+                    subpath_start_x = x;
+                    subpath_start_y = y;
                     current_x = x;
                     current_y = y;
                 }
@@ -1812,7 +1816,17 @@ impl CanvasContext {
                     current_y = ny;
                 }
                 PathCommand::ClosePath => {
-                    // ClosePath 不产生额外线段（路径自动闭合由渲染器处理）
+                    // 从当前点画线回到子路径起点
+                    if (current_x - subpath_start_x).abs() > f32::EPSILON
+                        || (current_y - subpath_start_y).abs() > f32::EPSILON
+                    {
+                        vertices.push(current_x);
+                        vertices.push(current_y);
+                        vertices.push(subpath_start_x);
+                        vertices.push(subpath_start_y);
+                    }
+                    current_x = subpath_start_x;
+                    current_y = subpath_start_y;
                 }
             }
         }
@@ -1824,11 +1838,15 @@ impl CanvasContext {
         let mut vertices = Vec::new();
         let mut current_x = 0.0f32;
         let mut current_y = 0.0f32;
+        let mut subpath_start_x = 0.0f32;
+        let mut subpath_start_y = 0.0f32;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in path.commands() {
             match *cmd {
                 PathCommand::MoveTo(x, y) => {
+                    subpath_start_x = x;
+                    subpath_start_y = y;
                     current_x = x;
                     current_y = y;
                 }
@@ -1950,7 +1968,18 @@ impl CanvasContext {
                     current_x = nx;
                     current_y = ny;
                 }
-                PathCommand::ClosePath => {}
+                PathCommand::ClosePath => {
+                    if (current_x - subpath_start_x).abs() > f32::EPSILON
+                        || (current_y - subpath_start_y).abs() > f32::EPSILON
+                    {
+                        vertices.push(current_x);
+                        vertices.push(current_y);
+                        vertices.push(subpath_start_x);
+                        vertices.push(subpath_start_y);
+                    }
+                    current_x = subpath_start_x;
+                    current_y = subpath_start_y;
+                }
             }
         }
         vertices
@@ -5942,5 +5971,91 @@ mod tests {
         };
         ctx.draw_image(&img_no_data, 0.0, 0.0);
         // 不 panic 即可
+    }
+
+    // ── Path2D closePath 和 is_point_in_path 测试 ──
+
+    /// 测试 Path2D close_path 后形成闭合三角形，顶点包含回到起点的线段。
+    #[test]
+    fn test_path2d_close_path_triangle() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 0.0);
+        p.line_to(50.0, 100.0);
+        p.close_path();
+        // close_path 应添加 ClosePath 命令
+        assert!(matches!(p.commands().last(), Some(PathCommand::ClosePath)));
+        // 扁平化后应包含从 (50,100) 回到 (0,0) 的闭合线段
+        let ctx = CanvasContext::new(200, 200);
+        let vertices = ctx.flatten_path_for(&p);
+        // 3 条线段: (0,0)->(100,0), (100,0)->(50,100), (50,100)->(0,0)
+        // 每条 4 floats = 12 floats
+        assert_eq!(vertices.len(), 12);
+        // 最后一条线段应回到起点
+        assert!((vertices[8] - 50.0).abs() < f32::EPSILON);
+        assert!((vertices[9] - 100.0).abs() < f32::EPSILON);
+        assert!((vertices[10]).abs() < f32::EPSILON);
+        assert!((vertices[11]).abs() < f32::EPSILON);
+    }
+
+    /// 测试闭合路径 fill 产生非空 path_fills。
+    #[test]
+    fn test_path2d_close_path_creates_fill() {
+        let mut p = Path2D::new();
+        p.move_to(10.0, 10.0);
+        p.line_to(100.0, 10.0);
+        p.line_to(100.0, 100.0);
+        p.close_path();
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.fill_with_path(&p);
+        assert!(
+            !ctx.primitives().path_fills.is_empty(),
+            "闭合路径 fill 应产生 path_fill 图元"
+        );
+    }
+
+    /// 测试 Path2D is_point_in_path 在矩形内部返回 true。
+    #[test]
+    fn test_path2d_is_point_in_path_inside() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 0.0);
+        p.line_to(100.0, 100.0);
+        p.line_to(0.0, 100.0);
+        p.close_path();
+        // 矩形内部点应返回 true
+        assert!(p.is_point_in_path(50.0, 50.0));
+        assert!(p.is_point_in_path(10.0, 10.0));
+    }
+
+    /// 测试 Path2D is_point_in_path 在矩形外部返回 false。
+    #[test]
+    fn test_path2d_is_point_in_path_outside() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 0.0);
+        p.line_to(100.0, 100.0);
+        p.line_to(0.0, 100.0);
+        p.close_path();
+        // 矩形外部点应返回 false
+        assert!(!p.is_point_in_path(200.0, 200.0));
+        assert!(!p.is_point_in_path(-10.0, -10.0));
+        assert!(!p.is_point_in_path(150.0, 50.0));
+    }
+
+    /// 测试 Path2D is_point_in_path 在边界上不 panic。
+    #[test]
+    fn test_path2d_is_point_in_path_edge() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 0.0);
+        p.line_to(100.0, 100.0);
+        p.line_to(0.0, 100.0);
+        p.close_path();
+        // 边界上的点不应 panic（结果不确定，只验证不崩溃）
+        let _ = p.is_point_in_path(0.0, 0.0);
+        let _ = p.is_point_in_path(100.0, 100.0);
+        let _ = p.is_point_in_path(50.0, 0.0);
+        let _ = p.is_point_in_path(0.0, 50.0);
     }
 }

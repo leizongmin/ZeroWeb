@@ -56,15 +56,18 @@ pub struct InlineBlockBox {
 
 /// 行内级条目 — 行内格式化上下文中的原子单位。
 ///
-/// 区分文本运行和 inline-block 盒：
+/// 区分文本运行、inline-block 盒和强制换行：
 /// - `Text` — 可按单词拆分的文本运行
 /// - `InlineBlock` — 不可拆分的原子行内级盒
+/// - `Br` — 强制换行（`<br>` 元素）
 #[derive(Debug, Clone)]
 pub enum InlineItem {
     /// 可按单词拆分的文本运行。
     Text(TextRun),
     /// 不可拆分的 inline-block 盒（原子行内级盒）。
     InlineBlock(InlineBlockBox),
+    /// 强制换行 — 由 `<br>` 元素产生。
+    Br,
 }
 
 /// 行盒 — 一行中的所有行内内容。
@@ -101,6 +104,69 @@ pub struct TextFragment {
 
 /// 默认字体大小（px）。
 const DEFAULT_FONT_SIZE: f32 = 16.0;
+
+/// 根据字符类别估算单个字符的宽度。
+///
+/// 不同类别的字符具有不同的典型宽度比例：
+/// - CJK 字符（中日韩统一表意文字）：全宽，约等于 font_size
+/// - ASCII 字母：约 font_size × 0.55
+/// - 空格：约 font_size × 0.25
+/// - 标点符号：约 font_size × 0.4
+/// - 数字：约 font_size × 0.5
+/// - 其他字符（默认）：约 font_size × 0.5
+pub fn estimate_char_width(c: char, font_size: f32) -> f32 {
+    if c.is_ascii_whitespace() {
+        // 空格类字符：较窄
+        font_size * 0.25
+    } else if is_cjk_character(c) {
+        // CJK 全角字符：宽度约等于字体大小
+        font_size
+    } else if c.is_ascii_punctuation() {
+        // ASCII 标点：比字母窄
+        font_size * 0.4
+    } else if c.is_ascii_digit() {
+        // 数字：略窄于字母
+        font_size * 0.5
+    } else if c.is_ascii_alphabetic() {
+        // ASCII 字母
+        font_size * 0.55
+    } else {
+        // 其他 Unicode 字符（非 CJK）：默认宽度
+        font_size * 0.5
+    }
+}
+
+/// 判断字符是否属于 CJK（中日韩）范围。
+///
+/// 覆盖常见 CJK Unicode 区块：
+/// - U+4E00..=U+9FFF — CJK 统一表意文字（基本区）
+/// - U+3400..=U+4DBF — CJK 统一表意文字扩展 A
+/// - U+F900..=U+FAFF — CJK 兼容表意文字
+/// - U+3000..=U+303F — CJK 符号和标点
+/// - U+FF00..=U+FFEF — 半角及全角形式
+/// - U+2E80..=U+2EFF — CJK 部首补充
+/// - U+3040..=U+309F — 平假名
+/// - U+30A0..=U+30FF — 片假名
+/// - U+AC00..=U+D7AF — 韩文音节
+fn is_cjk_character(c: char) -> bool {
+    matches!(
+        c,
+        '\u{4E00}'..='\u{9FFF}'
+        | '\u{3400}'..='\u{4DBF}'
+        | '\u{F900}'..='\u{FAFF}'
+        | '\u{3000}'..='\u{303F}'
+        | '\u{FF00}'..='\u{FFEF}'
+        | '\u{2E80}'..='\u{2EFF}'
+        | '\u{3040}'..='\u{309F}'
+        | '\u{30A0}'..='\u{30FF}'
+        | '\u{AC00}'..='\u{D7AF}'
+    )
+}
+
+/// 估算字符串的总宽度，按每个字符逐一计算。
+fn estimate_string_width(text: &str, font_size: f32) -> f32 {
+    text.chars().map(|c| estimate_char_width(c, font_size)).sum()
+}
 
 /// 默认行高倍数（用于 line-height: normal）。
 const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.2;
@@ -176,20 +242,19 @@ impl InlineFormattingContext {
     /// - `container` — 行内格式化上下文的容器节点
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn layout(&mut self, doc: &Document, container: NodeId, styles: &HashMap<NodeId, ComputedStyle>) {
-        let runs = self.collect_inline_runs(doc, container, styles);
-        let items: Vec<InlineItem> = runs.into_iter().map(InlineItem::Text).collect();
+        let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
     }
 
-    /// 收集容器中所有行内级内容（文本节点 + inline 元素），
+    /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
-    fn collect_inline_runs(
+    fn collect_inline_items(
         &self,
         doc: &Document,
         container: NodeId,
         styles: &HashMap<NodeId, ComputedStyle>,
-    ) -> Vec<TextRun> {
-        let mut runs = Vec::new();
+    ) -> Vec<InlineItem> {
+        let mut items = Vec::new();
         let children = doc.child_nodes(container);
 
         for &child_id in &children {
@@ -204,17 +269,22 @@ impl InlineFormattingContext {
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
-                            runs.push(TextRun {
+                            items.push(InlineItem::Text(TextRun {
                                 text,
                                 node_id: child_id,
                                 font_size,
                                 line_height,
                                 vertical_align,
-                            });
+                            }));
                         }
                     }
-                    NodeKind::Element(_) => {
-                        // inline 元素的文本内容也收集进来
+                    NodeKind::Element(elem_data) => {
+                        // `<br>` 元素产生强制换行条目
+                        if elem_data.local_name() == "br" {
+                            items.push(InlineItem::Br);
+                            continue;
+                        }
+                        // 其他 inline 元素的文本内容也收集进来
                         let text = doc.text_content(child_id).unwrap_or_default();
                         let trimmed = text.trim().to_string();
                         if !trimmed.is_empty() {
@@ -223,13 +293,13 @@ impl InlineFormattingContext {
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
-                            runs.push(TextRun {
+                            items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
                                 node_id: child_id,
                                 font_size,
                                 line_height,
                                 vertical_align,
-                            });
+                            }));
                         }
                     }
                     _ => {}
@@ -237,7 +307,7 @@ impl InlineFormattingContext {
             }
         }
 
-        runs
+        items
     }
 
     /// 将文本运行按可用宽度分割成行盒。
@@ -250,7 +320,8 @@ impl InlineFormattingContext {
 
     /// 将行内级条目按可用宽度分割成行盒。
     ///
-    /// 支持 `InlineItem::Text`（按单词拆分行）和 `InlineItem::InlineBlock`（原子盒，不可拆分）。
+    /// 支持 `InlineItem::Text`（按单词拆分行）、`InlineItem::InlineBlock`（原子盒，不可拆分）
+    /// 和 `InlineItem::Br`（强制换行）。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
 
@@ -264,12 +335,11 @@ impl InlineFormattingContext {
         for item in items {
             match item {
                 InlineItem::Text(run) => {
-                    // 估算文本宽度：字符数 × 字体大小的 0.6 倍（近似平均字符宽度）
-                    let estimated_char_width = run.font_size * 0.6;
+                    // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(&run.text);
 
                     for word in words {
-                        let word_width = word.len() as f32 * estimated_char_width;
+                        let word_width = estimate_string_width(&word, run.font_size);
 
                         // 检查当前行是否放得下
                         if current_x + word_width > self.container_width && !current_line.runs.is_empty() {
@@ -330,6 +400,17 @@ impl InlineFormattingContext {
 
                     current_x += box_width;
                     current_line.height = current_line.height.max(box_height);
+                }
+                InlineItem::Br => {
+                    // 强制换行：将当前行推入结果，开始新行
+                    // Br 总是产生一个换行，即使当前行为空
+                    self.lines.push(current_line);
+                    current_line = LineBox {
+                        y: 0.0,
+                        height: 0.0,
+                        runs: Vec::new(),
+                    };
+                    current_x = 0.0;
                 }
             }
         }
@@ -1147,6 +1228,9 @@ mod tests {
     }
 
     /// 测试 center 对齐在多行中每行都居中。
+    ///
+    /// 验证每行的第一个片段 x 坐标等于 (container_width - 总宽度) / 2。
+    /// 总宽度通过所有片段宽度之和计算（不含对齐偏移）。
     #[test]
     fn test_text_align_center_multiline() {
         let mut ctx = InlineFormattingContext::new(60.0).with_text_align(TextAlign::Center);
@@ -1161,14 +1245,16 @@ mod tests {
 
         assert!(ctx.lines.len() > 1, "应产生多行");
         for (i, line) in ctx.lines.iter().enumerate() {
-            let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            // 总宽度 = 所有片段宽度之和（对齐前的内容宽度）
+            let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
             let expected_x = (60.0 - content_width) / 2.0;
             assert!(
                 (line.runs[0].x - expected_x).abs() < 1.0,
-                "center 第 {} 行: x 应约 {}，实际 {}",
+                "center 第 {} 行: x 应约 {}，实际 {} (content_width={})",
                 i,
                 expected_x,
-                line.runs[0].x
+                line.runs[0].x,
+                content_width
             );
         }
     }
@@ -2447,6 +2533,397 @@ mod tests {
             (ctx.total_height() - 40.0).abs() < 0.01,
             "总高度应为 40，实际 {}",
             ctx.total_height()
+        );
+    }
+
+    // ── 按字符宽度估算测试 ──
+
+    /// CJK 字符宽度约为 ASCII 字母的 2 倍。
+    ///
+    /// CJK 全角字符宽度 ≈ font_size，ASCII 字母宽度 ≈ font_size × 0.55，
+    /// 比值约 1.0 / 0.55 ≈ 1.8，接近 2 倍。
+    #[test]
+    fn test_cjk_char_wider_than_ascii() {
+        let font_size = 16.0;
+        let cjk_width = estimate_char_width('中', font_size);
+        let ascii_width = estimate_char_width('A', font_size);
+
+        assert!(
+            cjk_width > ascii_width * 1.5,
+            "CJK 字符宽度 ({}) 应至少为 ASCII 字母宽度 ({}) 的 1.5 倍",
+            cjk_width,
+            ascii_width
+        );
+        // CJK 宽度应约为 font_size
+        assert!(
+            (cjk_width - font_size).abs() < 0.01,
+            "CJK 字符宽度应约为 font_size ({})，实际 {}",
+            font_size,
+            cjk_width
+        );
+    }
+
+    /// 空格宽度比字母 W 窄。
+    #[test]
+    fn test_space_narrower_than_letter() {
+        let font_size = 16.0;
+        let space_width = estimate_char_width(' ', font_size);
+        let w_width = estimate_char_width('W', font_size);
+
+        assert!(
+            space_width < w_width,
+            "空格宽度 ({}) 应小于字母 W 宽度 ({})",
+            space_width,
+            w_width
+        );
+        // 空格应为 font_size * 0.25
+        assert!(
+            (space_width - font_size * 0.25).abs() < 0.01,
+            "空格宽度应为 {}，实际 {}",
+            font_size * 0.25,
+            space_width
+        );
+    }
+
+    /// 混合 ASCII/CJK 文本在窄容器中正确换行。
+    ///
+    /// CJK 字符较宽，应比纯 ASCII 文本更早触发换行。
+    #[test]
+    fn test_mixed_ascii_cjk_line_breaking() {
+        let font_size = 16.0;
+        // 纯 ASCII 文本
+        let mut ctx_ascii = InlineFormattingContext::new(100.0);
+        let runs_ascii = vec![TextRun {
+            text: "Hello World Foo Bar".to_string(),
+            node_id: NodeId::default(),
+            font_size,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx_ascii.break_into_lines(runs_ascii);
+
+        // 混合 CJK 文本（CJK 字符更宽，应产生更多行）
+        let mut ctx_mixed = InlineFormattingContext::new(100.0);
+        let runs_mixed = vec![TextRun {
+            text: "Hello 世界 Foo 测试 Bar".to_string(),
+            node_id: NodeId::default(),
+            font_size,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx_mixed.break_into_lines(runs_mixed);
+
+        // 混合 CJK 文本应产生至少和纯 ASCII 相同或更多的行数
+        assert!(
+            ctx_mixed.lines.len() >= ctx_ascii.lines.len(),
+            "混合 CJK 文本行数 ({}) 应不少于纯 ASCII 行数 ({})",
+            ctx_mixed.lines.len(),
+            ctx_ascii.lines.len()
+        );
+    }
+
+    /// 验证各类字符的具体宽度估算值。
+    ///
+    /// - 'W' (ASCII 字母): font_size × 0.55
+    /// - 'i' (ASCII 字母): font_size × 0.55
+    /// - '中' (CJK): font_size × 1.0
+    /// - ' ' (空格): font_size × 0.25
+    /// - '.' (标点): font_size × 0.4
+    #[test]
+    fn test_estimate_char_width_various_chars() {
+        let font_size = 16.0;
+
+        // ASCII 字母
+        let w = estimate_char_width('W', font_size);
+        assert!(
+            (w - font_size * 0.55).abs() < 0.01,
+            "'W' 宽度应为 {}，实际 {}",
+            font_size * 0.55,
+            w
+        );
+
+        let i = estimate_char_width('i', font_size);
+        assert!(
+            (i - font_size * 0.55).abs() < 0.01,
+            "'i' 宽度应为 {}，实际 {}",
+            font_size * 0.55,
+            i
+        );
+
+        // CJK 字符
+        let cjk = estimate_char_width('中', font_size);
+        assert!(
+            (cjk - font_size).abs() < 0.01,
+            "CJK '中' 宽度应为 {}，实际 {}",
+            font_size,
+            cjk
+        );
+
+        // 空格
+        let space = estimate_char_width(' ', font_size);
+        assert!(
+            (space - font_size * 0.25).abs() < 0.01,
+            "空格宽度应为 {}，实际 {}",
+            font_size * 0.25,
+            space
+        );
+
+        // 标点
+        let period = estimate_char_width('.', font_size);
+        assert!(
+            (period - font_size * 0.4).abs() < 0.01,
+            "'.' 宽度应为 {}，实际 {}",
+            font_size * 0.4,
+            period
+        );
+    }
+
+    // ── br 元素测试 ──
+
+    /// 测试两个文本运行之间插入 Br 产生两行。
+    ///
+    /// "Hello" + Br + "World" 应产生两行：
+    /// 第一行包含 "Hello "，第二行包含 "World "。
+    #[test]
+    fn test_br_forces_line_break() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "Hello".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::Br,
+            InlineItem::Text(TextRun {
+                text: "World".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        assert_eq!(
+            ctx.lines.len(),
+            2,
+            "Hello + Br + World 应产生 2 行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 第一行应包含 "Hello "
+        assert!(
+            ctx.lines[0].runs[0].text.contains("Hello"),
+            "第一行应包含 'Hello'，实际 {}",
+            ctx.lines[0].runs[0].text
+        );
+
+        // 第二行应包含 "World "
+        assert!(
+            ctx.lines[1].runs[0].text.contains("World"),
+            "第二行应包含 'World'，实际 {}",
+            ctx.lines[1].runs[0].text
+        );
+
+        // 第二行 y 应在第一行之后
+        assert!(
+            ctx.lines[1].y >= ctx.lines[0].y + ctx.lines[0].height - 0.01,
+            "第二行 y({}) 应在第一行 (y={}, h={}) 之后",
+            ctx.lines[1].y,
+            ctx.lines[0].y,
+            ctx.lines[0].height
+        );
+    }
+
+    /// 测试 Br 作为首个条目产生空的第一行。
+    ///
+    /// Br + "Hello" 应产生两行：第一行为空（height=0），第二行包含 "Hello "。
+    /// 第一行被 Br 强制推入，此时 current_line.runs 为空但仍然被 push。
+    #[test]
+    fn test_br_at_start_of_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Br,
+            InlineItem::Text(TextRun {
+                text: "Hello".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        // Br 强制换行产生第一行（空行），然后 "Hello" 在第二行
+        assert!(
+            ctx.lines.len() >= 2,
+            "Br + Hello 应产生至少 2 行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 第一行应为空（由 Br 强制产生）
+        assert!(
+            ctx.lines[0].runs.is_empty(),
+            "第一行（Br 产生）应为空，实际有 {} 个片段",
+            ctx.lines[0].runs.len()
+        );
+
+        // 第二行应包含 "Hello "
+        assert!(
+            ctx.lines[1].runs[0].text.contains("Hello"),
+            "第二行应包含 'Hello'，实际 {}",
+            ctx.lines[1].runs[0].text
+        );
+    }
+
+    /// 测试文本后跟 Br 产生换行。
+    ///
+    /// "Hello" + Br 应产生一行（包含 "Hello "），Br 强制将该行推入结果。
+    /// 最终行列表只有 1 行（Br 之后没有更多内容，空行不会被推入）。
+    #[test]
+    fn test_br_at_end_of_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "Hello".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::Br,
+        ];
+        ctx.break_items_into_lines(items);
+
+        // "Hello" 被放入行，然后 Br 强制推入该行。
+        // Br 之后没有内容，空行不会被推入。
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "Hello + Br 应产生 1 行（Br 之后无内容不产生空行），实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 该行应包含 "Hello "
+        assert!(
+            ctx.lines[0].runs[0].text.contains("Hello"),
+            "第一行应包含 'Hello'，实际 {}",
+            ctx.lines[0].runs[0].text
+        );
+    }
+
+    /// 测试连续三个 Br 产生空行。
+    ///
+    /// Br + Br + Br 产生三行空行：第一个 Br 推入空行1，
+    /// 第二个 Br 推入空行2，第三个 Br 推入空行3。
+    /// 最后无内容，不会再推入一行。
+    #[test]
+    fn test_multiple_br_elements() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![InlineItem::Br, InlineItem::Br, InlineItem::Br];
+        ctx.break_items_into_lines(items);
+
+        // 每个 Br 推入一行（当前行），然后开启新行。
+        // 3 个 Br → 3 行被推入，第 4 行（空）不被推入。
+        assert_eq!(
+            ctx.lines.len(),
+            3,
+            "3 个连续 Br 应产生 3 行空行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 所有行都应为空
+        for (i, line) in ctx.lines.iter().enumerate() {
+            assert!(
+                line.runs.is_empty(),
+                "第 {} 行应为空，实际有 {} 个片段",
+                i,
+                line.runs.len()
+            );
+        }
+
+        // 所有行高度应为 0（无内容）
+        for (i, line) in ctx.lines.iter().enumerate() {
+            assert!(line.height.abs() < 0.01, "第 {} 行高度应为 0，实际 {}", i, line.height);
+        }
+    }
+
+    /// 测试文本 + inline-block + Br + 文本的正确布局。
+    ///
+    /// "Hello" + inline-block(50x50) + Br + "World" 应产生两行：
+    /// 第一行包含 "Hello " 和 inline-block，第二行包含 "World "。
+    #[test]
+    fn test_br_with_inline_blocks() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "Hello".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 50.0,
+                height: 50.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::Br,
+            InlineItem::Text(TextRun {
+                text: "World".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        assert_eq!(
+            ctx.lines.len(),
+            2,
+            "Text + InlineBlock + Br + Text 应产生 2 行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 第一行应有 "Hello " 片段和 inline-block 片段
+        assert!(
+            ctx.lines[0].runs.len() >= 2,
+            "第一行应至少有 2 个片段（文本 + inline-block），实际 {}",
+            ctx.lines[0].runs.len()
+        );
+
+        // 第一行应包含 inline-block（font_size=0, width=50）
+        let has_ib = ctx.lines[0]
+            .runs
+            .iter()
+            .any(|r| r.font_size < 0.01 && (r.width - 50.0).abs() < 0.01);
+        assert!(has_ib, "第一行应包含 inline-block 片段");
+
+        // 第一行高度应取 max(20, 50) = 50
+        assert!(
+            (ctx.lines[0].height - 50.0).abs() < 0.01,
+            "第一行高度应取 max(文本行高20, inline-block高度50) = 50，实际 {}",
+            ctx.lines[0].height
+        );
+
+        // 第二行应包含 "World "
+        assert!(
+            ctx.lines[1].runs[0].text.contains("World"),
+            "第二行应包含 'World'，实际 {}",
+            ctx.lines[1].runs[0].text
+        );
+
+        // 第二行 y 应在第一行之后
+        assert!(
+            ctx.lines[1].y >= ctx.lines[0].y + ctx.lines[0].height - 0.01,
+            "第二行 y({}) 应在第一行 (y={}, h={}) 之后",
+            ctx.lines[1].y,
+            ctx.lines[0].y,
+            ctx.lines[0].height
         );
     }
 }
