@@ -337,4 +337,20 @@ mod tests {
         let sandbox = IframeSandbox::strict();
         assert!(!check_sandbox_popup(&sandbox));
     }
+
+    /// 测试带有 allow-forms 标志的沙箱允许表单提交，
+    /// 但仍阻止其他功能（脚本、弹窗、同源）。
+    #[test]
+    fn test_sandbox_allows_forms() {
+        let sandbox = IframeSandbox::parse("allow-forms");
+        assert!(sandbox.allows_forms(), "allow-forms 应允许表单提交");
+        assert!(!sandbox.allows_scripts(), "仅有 allow-forms 不应允许脚本");
+        assert!(!sandbox.allows_popups(), "仅有 allow-forms 不应允许弹窗");
+        assert!(!sandbox.allows_same_origin(), "仅有 allow-forms 不应允许同源");
+        assert!(!sandbox.allows_top_navigation(), "仅有 allow-forms 不应允许顶层导航");
+
+        // 最严格沙箱（无标志）应阻止表单提交
+        let strict = IframeSandbox::strict();
+        assert!(!strict.allows_forms(), "严格沙箱应阻止表单提交");
+    }
 }

@@ -1120,4 +1120,77 @@ mod tests {
         // 图元顺序应一致
         assert_eq!(fills1, fills2, "多次渲染应产生相同顺序的填充图元");
     }
+
+    /// 测试完整 HTML 文档（包含 <head> 和 <body>）的渲染。
+    ///
+    /// 验证管线能正确处理含 <head>（含 <title>）和 <body> 的标准 HTML 结构，
+    /// 两个部分的内容都应参与布局和渲染，生成有效的图元。
+    #[test]
+    fn test_render_html_with_head_and_body() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html>
+            <head><title>测试页面</title></head>
+            <body>
+                <div class="header">标题</div>
+                <div class="content">正文内容</div>
+                <div class="footer">页脚</div>
+            </body>
+        </html>"#;
+        let css = r#"
+            .header { background-color: #333333; width: 100%; height: 60px; }
+            .content { background-color: #ffffff; width: 100%; height: 400px; }
+            .footer { background-color: #666666; width: 100%; height: 40px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        // 渲染应正常完成
+        assert!(result.timings.total_ms >= 0.0, "渲染应正常完成");
+        assert!(pipeline.layout().is_some(), "布局结果应存在");
+
+        // CSS 为三个 div 生成背景填充
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "带 head/body 的完整文档应生成填充图元"
+        );
+
+        // 布局树应有有效的视口
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+        assert!(result.layout.viewport_height > 0.0, "视口高度应为正");
+
+        // 布局树的根应有子节点（body 内的 div）
+        assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
+    }
+
+    /// 测试 HTML 表格结构的渲染。
+    ///
+    /// 验证含 <table><tr><td> 元素的 HTML 能正常通过管线，
+    /// 生成布局树，且布局树包含嵌套的结构。
+    #[test]
+    fn test_render_html_table_structure() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <table>
+                <tr><td>A1</td><td>B1</td></tr>
+                <tr><td>A2</td><td>B2</td></tr>
+            </table>
+        </body></html>"#;
+        let css = r#"
+            table { background-color: #f0f0f0; width: 400px; }
+            td { background-color: #ffffff; border: 1px solid #cccccc; padding: 8px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        // 渲染应正常完成
+        assert!(result.timings.total_ms >= 0.0, "表格渲染应正常完成");
+        assert!(pipeline.layout().is_some(), "布局结果应存在");
+
+        // CSS 应为 table 和 td 生成填充图元
+        assert!(!result.primitives.fills.is_empty(), "表格结构应生成填充图元");
+
+        // 布局树应已生成
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+
+        // 布局树应有嵌套结构（body → table → rows → cells）
+        assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
+    }
 }

@@ -672,6 +672,45 @@ mod tests {
         assert!(cache.ref_count(&k1).is_none(), "较旧的 k1 应被淘汰");
     }
 
+    /// 测试连续插入相同内容的数据产生不同的缓存键，缓存中两个条目并存。
+    ///
+    /// 对 ImageCache 调用两次 insert 传入相同像素数据，应返回不同的 key，
+    /// 缓存中两个条目独立存在，可通过各自的 key 分别访问。
+    #[test]
+    fn test_image_cache_double_insert_same_key() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+
+        let data1 = make_image(2, 2, 128);
+        let data2 = make_image(2, 2, 128); // 相同尺寸和填充值
+
+        let key1 = cache.insert(data1);
+        let key2 = cache.insert(data2);
+
+        // 两次插入应返回不同的 key
+        assert_ne!(key1, key2, "两次插入应返回不同的 key");
+        assert_eq!(cache.len(), 2, "缓存中应有 2 个条目");
+
+        // 两个 key 都能独立获取
+        let img1 = cache.get(&key1);
+        assert!(img1.is_some(), "key1 应能获取到图片");
+        assert_eq!(img1.unwrap().width, 2);
+
+        let img2 = cache.get(&key2);
+        assert!(img2.is_some(), "key2 应能获取到图片");
+        assert_eq!(img2.unwrap().width, 2);
+
+        // 引用计数各被增加（insert=1 + get=1 = 2）
+        assert_eq!(cache.ref_count(&key1), Some(2));
+        assert_eq!(cache.ref_count(&key2), Some(2));
+
+        // 释放 key1 后 GC，key1 被移除，key2 保留
+        cache.release(&key1);
+        cache.release(&key1); // release the extra ref from get
+        cache.gc();
+        assert!(cache.ref_count(&key1).is_none(), "key1 应被 GC 移除");
+        assert!(cache.ref_count(&key2).is_some(), "key2 应保留");
+    }
+
     /// 测试 max_entries=0 时 GC 会清除所有条目
     ///
     /// 当 max_entries 设置为 0 时，每次 GC 都会淘汰所有条目，

@@ -1515,4 +1515,34 @@ mod tests {
         assert_eq!(runtime.config.width, 400);
         assert_eq!(runtime.config.height, 300);
     }
+
+    /// Window minimize/maximize event fields.
+    /// 验证窗口 resize 到 0x0（最小化）和恢复/最大化时事件字段正确。
+    #[test]
+    fn test_window_event_min_max() {
+        // 模拟最小化：resize 到 0x0
+        let mut received: Vec<(u32, u32)> = Vec::new();
+        let mut callback = |e: AppEvent| {
+            if let AppEvent::Resized { width, height } = e {
+                received.push((width, height));
+            }
+        };
+        let mut app = make_basic_app(&mut callback);
+
+        // 最小化：0x0
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(0, 0)));
+        // 最大化：1920x1080
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            1920, 1080,
+        )));
+        // 恢复：800x600
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            800, 600,
+        )));
+
+        assert_eq!(received.len(), 3, "应收到 3 个 Resized 事件");
+        assert_eq!(received[0], (0, 0), "最小化尺寸应为 0x0");
+        assert_eq!(received[1], (1920, 1080), "最大化尺寸应为 1920x1080");
+        assert_eq!(received[2], (800, 600), "恢复尺寸应为 800x600");
+    }
 }

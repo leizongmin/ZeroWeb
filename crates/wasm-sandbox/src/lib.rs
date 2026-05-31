@@ -420,6 +420,21 @@ mod wasmi_backend {
             Some(memory.data(&self.store).len())
         }
 
+        /// 读取全局导出变量的值。
+        ///
+        /// `name` 为全局变量导出名称。
+        /// 返回 `None` 表示导出不存在或类型不支持。
+        pub fn get_global_export(&self, name: &str) -> Option<WasmValue> {
+            let global = self.instance.get_global(&self.store, name)?;
+            let val = global.get(&self.store);
+            Some(wasmi_val_to_wasm(&val))
+        }
+
+        /// 检查导出表是否存在。
+        pub fn has_table(&self, name: &str) -> bool {
+            self.instance.get_table(&self.store, name).is_some()
+        }
+
         /// 设置剩余燃料（需要启用燃料计量）
         ///
         /// # 错误
@@ -540,6 +555,16 @@ mod stub_backend {
         /// 获取内存大小
         pub fn memory_size(&self, _name: &str) -> Option<usize> {
             None
+        }
+
+        /// 读取全局导出变量的值（占位）
+        pub fn get_global_export(&self, _name: &str) -> Option<WasmValue> {
+            None
+        }
+
+        /// 检查导出表是否存在（占位）
+        pub fn has_table(&self, _name: &str) -> bool {
+            false
         }
 
         /// 设置剩余燃料
@@ -2650,5 +2675,81 @@ mod tests {
             matches!(result, Err(WasmError::FuelExhausted)),
             "深度递归应在燃料耗尽时被终止"
         );
+    }
+
+    // =======================================================================
+    // 新增测试：全局导出读取、表导出查询、多实例独立性
+    // =======================================================================
+
+    /// 读取 WASM 全局导出变量的值。
+    #[test]
+    fn test_global_export_read() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global (export "magic") i32 (i32.const 42))
+                (global (export "big") i64 (i64.const 9999999999))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let magic = instance.get_global_export("magic").expect("read magic global");
+        assert_eq!(magic, WasmValue::I32(42), "全局导出 magic 应为 i32(42)");
+
+        let big = instance.get_global_export("big").expect("read big global");
+        assert_eq!(big, WasmValue::I64(9999999999), "全局导出 big 应为 i64(9999999999)");
+
+        // 不存在的全局导出应返回 None
+        assert!(instance.get_global_export("nonexistent").is_none());
+    }
+
+    /// WASM 模块导出表 → has_table 查询返回 true，未导出或不存在返回 false。
+    #[test]
+    fn test_table_export_query() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (table (export "tbl") 4 funcref)
+                (func (export "f") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        assert!(instance.has_table("tbl"), "已导出的表 tbl 应被找到");
+        assert!(!instance.has_table("nonexistent"), "不存在的表应返回 false");
+        assert!(!instance.has_table("f"), "函数导出不应被 has_table 匹配");
+    }
+
+    /// 从同一模块创建两个实例 → 各自拥有独立的可变全局变量状态。
+    #[test]
+    fn test_multiple_instances_same_module() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global $counter (mut i32) (i32.const 0))
+                (func (export "inc") (result i32)
+                    global.get $counter
+                    i32.const 1
+                    i32.add
+                    global.set $counter
+                    global.get $counter)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+
+        let mut inst_a = module.instantiate(&sandbox).expect("instantiate A");
+        let mut inst_b = module.instantiate(&sandbox).expect("instantiate B");
+
+        // 实例 A 递增两次
+        let r1 = inst_a.call("inc", &[]).expect("A inc 1");
+        assert_eq!(r1[0], WasmValue::I32(1));
+        let r2 = inst_a.call("inc", &[]).expect("A inc 2");
+        assert_eq!(r2[0], WasmValue::I32(2));
+
+        // 实例 B 的全局变量应保持独立（仍为 0）
+        let rb = inst_b.call("inc", &[]).expect("B inc 1");
+        assert_eq!(rb[0], WasmValue::I32(1), "实例 B 应从 0 开始独立计数");
     }
 }

@@ -5098,3 +5098,226 @@ fn test_resolve_slots_text_node_default_slot() {
     assert_eq!(assigned.len(), 1, "文本节点应分配到默认 slot");
     assert_eq!(assigned[0], text);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 37. compare_document_position 跨文档测试及 DOM 边界用例
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 compare_document_position 对来自不同 Document 实例的节点行为。
+///
+/// 当前实现中，slotmap 的 NodeId 是 (index, version) 对。
+/// 两个全新的 Document 实例会从相同的初始状态分配 key，
+/// 因此 doc1 的 root 和 doc2 的 root 拥有相同的 NodeId 值。
+/// 这意味着 doc1.contains(doc2_elem) 返回 true（key 碰撞），
+/// compare_document_position 会把跨文档节点视为同一棵树中的节点。
+///
+/// 此测试记录该已知行为：同构 Document 的 NodeId 会冲突。
+/// 真正的跨文档隔离需要未来引入 Document 级别的命名空间。
+#[test]
+fn test_compare_document_position_disconnected_documents() {
+    let mut doc1 = Document::new();
+    let mut doc2 = Document::new();
+
+    let root1 = doc1.root();
+    let elem1 = doc1.create_element("div");
+    doc1.append_child(root1, elem1).unwrap();
+
+    let root2 = doc2.root();
+    let elem2 = doc2.create_element("span");
+    doc2.append_child(root2, elem2).unwrap();
+
+    // 由于 slotmap key 碰撞，doc1 的 root 与 doc2 的 root 拥有相同 NodeId
+    // compare_document_position 在当前实现中会将跨文档节点视为同树节点
+    let result = doc1.compare_document_position(root1, elem2);
+    // 实际结果是 Some(非零)，因为 key 碰撞导致跨文档节点被视为同一棵树
+    assert!(
+        result.is_some(),
+        "slotmap key 碰撞时 compare_document_position 返回 Some"
+    );
+
+    // 同文档内节点应正常工作
+    let same_doc_result = doc1.compare_document_position(root1, elem1);
+    assert!(same_doc_result.is_some(), "同文档节点比较应返回 Some");
+    assert!(same_doc_result.unwrap().contains(DocumentPosition::CONTAINED_BY));
+}
+
+/// 测试 compare_document_position 各种节点关系的标志组合。
+///
+/// 验证 PRECEDING、FOLLOWING、CONTAINS、CONTAINED_BY 标志
+/// 在祖先-后代、兄弟、深层嵌套等场景下的正确性。
+#[test]
+fn test_compare_document_position_ancestor_flags() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // 结构：root > div > span > p
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(span, p).unwrap();
+
+    // 兄弟节点 c1、c2、c3
+    let c1 = doc.create_element("a");
+    let c2 = doc.create_element("b");
+    let c3 = doc.create_element("i");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    // 1) 同一节点 → 0
+    let pos = doc.compare_document_position(div, div).unwrap();
+    assert_eq!(pos.bits(), 0, "同一节点应返回 0");
+
+    // 2) div 包含 span → CONTAINED_BY | FOLLOWING
+    let pos = doc.compare_document_position(div, span).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::CONTAINED_BY),
+        "div 包含 span → CONTAINED_BY"
+    );
+    assert!(
+        pos.contains(DocumentPosition::FOLLOWING),
+        "span 在 div 之后 → FOLLOWING"
+    );
+
+    // 3) span 被 div 包含 → CONTAINS | PRECEDING
+    let pos = doc.compare_document_position(span, div).unwrap();
+    assert!(pos.contains(DocumentPosition::CONTAINS), "span 被 div 包含 → CONTAINS");
+    assert!(
+        pos.contains(DocumentPosition::PRECEDING),
+        "div 在 span 之前 → PRECEDING"
+    );
+
+    // 4) c1 在 c2 之前 → c2 在 c1 之后 → FOLLOWING
+    let pos = doc.compare_document_position(c1, c2).unwrap();
+    assert!(pos.contains(DocumentPosition::FOLLOWING), "c2 在 c1 之后 → FOLLOWING");
+
+    // 5) c3 在 c2 之后 → c2 在 c3 之前 → PRECEDING
+    let pos = doc.compare_document_position(c3, c2).unwrap();
+    assert!(pos.contains(DocumentPosition::PRECEDING), "c2 在 c3 之前 → PRECEDING");
+
+    // 6) 跨分支：div 与 c1（不同分支的兄弟子树）→ 纯树位置比较
+    let pos = doc.compare_document_position(div, c1).unwrap();
+    // div 在 c1 之前（div 是 root 的第一个子节点）
+    assert!(pos.contains(DocumentPosition::FOLLOWING), "c1 在 div 之后 → FOLLOWING");
+}
+
+/// 测试 Document::new() 创建有效文档，根节点存在且类型正确。
+#[test]
+fn test_node_is_default_document() {
+    let doc = Document::new();
+
+    // 根节点有效
+    let root = doc.root();
+    assert!(root.is_valid(), "文档根节点应有效");
+
+    // 根节点是 Document 类型
+    assert!(
+        matches!(doc.get(root).map(|n| &n.kind), Some(NodeKind::Document(_))),
+        "根节点类型应为 Document"
+    );
+
+    // 初始时只有一个节点（根节点自身）
+    assert_eq!(doc.node_count(), 1, "新文档应只有 1 个根节点");
+
+    // 根节点没有子节点
+    assert!(!doc.has_child_nodes(root), "新文档根节点不应有子节点");
+
+    // 根节点深度为 0
+    assert_eq!(doc.depth(root), Some(0), "文档根节点深度应为 0");
+}
+
+/// 测试新创建的元素没有属性，has_attribute 返回 false。
+#[test]
+fn test_element_has_attributes_empty() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    // 新元素没有任何属性
+    assert!(!doc.has_attribute(elem, "class"), "新元素不应有 class 属性");
+    assert!(!doc.has_attribute(elem, "id"), "新元素不应有 id 属性");
+    assert!(!doc.has_attribute(elem, "data-x"), "新元素不应有 data-x 属性");
+
+    // attribute_names 应为空
+    let names = doc.attribute_names(elem);
+    assert!(names.is_empty(), "新元素的属性名列表应为空");
+
+    // get_attribute 应返回 None
+    assert_eq!(doc.get_attribute(elem, "class"), None);
+
+    // 设置属性后 has_attribute 变为 true
+    doc.set_attribute(elem, "class", "active");
+    assert!(doc.has_attribute(elem, "class"), "设置属性后应返回 true");
+}
+
+/// 测试通过 set_attribute 添加和移除多个 class。
+///
+/// 当前实现通过 set_attribute("class", ...) 管理 class 列表，
+/// 值按空白分隔后存储到 ElementData.class_list。
+/// get_elements_by_class_name 依赖此缓存进行匹配。
+#[test]
+fn test_element_class_list_toggle() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+
+    // 添加多个 class
+    doc.set_attribute(elem, "class", "foo bar baz");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("foo bar baz".to_string()));
+
+    // 通过 get_elements_by_class_name 验证每个 class 都可查到
+    assert_eq!(doc.get_elements_by_class_name("foo"), vec![elem]);
+    assert_eq!(doc.get_elements_by_class_name("bar"), vec![elem]);
+    assert_eq!(doc.get_elements_by_class_name("baz"), vec![elem]);
+    assert!(doc.get_elements_by_class_name("qux").is_empty());
+
+    // 移除某个 class：替换为只包含剩余 class 的字符串
+    doc.set_attribute(elem, "class", "foo baz");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("foo baz".to_string()));
+    assert_eq!(doc.get_elements_by_class_name("bar").len(), 0, "移除 bar 后不应再匹配");
+    assert_eq!(doc.get_elements_by_class_name("foo"), vec![elem], "foo 仍应匹配");
+    assert_eq!(doc.get_elements_by_class_name("baz"), vec![elem], "baz 仍应匹配");
+
+    // 清空所有 class
+    doc.set_attribute(elem, "class", "");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("".to_string()));
+    assert!(
+        doc.get_elements_by_class_name("foo").is_empty(),
+        "清空后不应匹配任何 class"
+    );
+}
+
+/// 测试 DocumentFragment 添加子节点后 children count 正确。
+#[test]
+fn test_document_fragment_child_count() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+
+    // 初始无子节点
+    assert_eq!(doc.child_count(frag), 0, "空 fragment 应有 0 个子节点");
+    assert!(!doc.has_child_nodes(frag));
+
+    // 逐个追加子节点，验证 count 递增
+    let c1 = doc.create_element("div");
+    doc.append_child(frag, c1).unwrap();
+    assert_eq!(doc.child_count(frag), 1);
+
+    let c2 = doc.create_text_node("hello");
+    doc.append_child(frag, c2).unwrap();
+    assert_eq!(doc.child_count(frag), 2);
+
+    let c3 = doc.create_comment("note");
+    doc.append_child(frag, c3).unwrap();
+    assert_eq!(doc.child_count(frag), 3);
+
+    // child_nodes 与 child_count 一致
+    assert_eq!(doc.child_nodes(frag).len(), 3);
+    assert_eq!(doc.child_nodes(frag), vec![c1, c2, c3]);
+
+    // 移除中间子节点后 count 减 1
+    doc.remove_child(frag, c2).unwrap();
+    assert_eq!(doc.child_count(frag), 2, "移除一个子节点后 count 应为 2");
+    assert_eq!(doc.child_nodes(frag), vec![c1, c3]);
+}

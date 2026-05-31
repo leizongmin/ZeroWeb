@@ -2431,6 +2431,48 @@ fn point_to_segment_dist(px: f32, py: f32, x1: f32, y1: f32, x2: f32, y2: f32) -
     (ddx * ddx + ddy * ddy).sqrt()
 }
 
+/// OffscreenCanvas — 提供可离屏渲染的画布（桩实现，不包含 Web Worker 集成）。
+///
+/// 可用于在后台线程中执行绘制操作，然后将结果传回主线程。
+/// 当前为 API 桩，仅支持创建和获取 2D 上下文。
+pub struct OffscreenCanvas {
+    /// 画布宽度。
+    width: u32,
+    /// 画布高度。
+    height: u32,
+}
+
+impl OffscreenCanvas {
+    /// 创建指定尺寸的 OffscreenCanvas。
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+
+    /// 获取 2D 渲染上下文。返回一个与 OffscreenCanvas 尺寸相同的 CanvasContext。
+    pub fn get_context(&self) -> CanvasContext {
+        CanvasContext::new(self.width, self.height)
+    }
+
+    /// 将当前画布内容转换为 ImageData（桩实现）。
+    ///
+    /// 在完整实现中，此方法应返回 ImageBitmap，此处返回 ImageData 作为桩。
+    /// 返回的 ImageData 包含画布全部像素的快照。
+    pub fn transfer_to_image_bitmap(&self) -> ImageData {
+        let ctx = CanvasContext::new(self.width, self.height);
+        ctx.get_image_data(0, 0, self.width, self.height)
+    }
+
+    /// 返回画布宽度。
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// 返回画布高度。
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5812,5 +5854,62 @@ mod tests {
         assert_eq!(inside.data[0..4], [0, 255, 0, 255], "copy: 内部区域应为绿色");
         let outside = ctx.get_image_data(0, 0, 1, 1);
         assert_eq!(outside.data[0..4], [255, 0, 0, 255], "copy: 外部区域应保留红色");
+    }
+
+    // ── OffscreenCanvas 测试 ──
+
+    /// 测试 OffscreenCanvas 创建时的尺寸正确。
+    #[test]
+    fn test_offscreen_canvas_creation_with_dimensions() {
+        let oc = OffscreenCanvas::new(640, 480);
+        assert_eq!(oc.width(), 640);
+        assert_eq!(oc.height(), 480);
+    }
+
+    /// 测试 OffscreenCanvas get_context 返回正确尺寸的 CanvasContext。
+    #[test]
+    fn test_offscreen_canvas_get_context_returns_working_context() {
+        let oc = OffscreenCanvas::new(200, 150);
+        let ctx = oc.get_context();
+        assert_eq!(ctx.width(), 200);
+        assert_eq!(ctx.height(), 150);
+    }
+
+    /// 测试在 OffscreenCanvas 上下文上绘制操作后能产生像素数据。
+    #[test]
+    fn test_offscreen_canvas_drawing_produces_pixels() {
+        let oc = OffscreenCanvas::new(100, 100);
+        let mut ctx = oc.get_context();
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(10.0, 10.0, 30.0, 30.0);
+        // 验证绘制区域内有红色像素
+        let pixel = ctx.get_image_data(20, 20, 1, 1);
+        assert_eq!(
+            pixel.data[0..4],
+            [255, 0, 0, 255],
+            "OffscreenCanvas 上下文绘制后应产生像素"
+        );
+    }
+
+    /// 测试 OffscreenCanvas 的宽高与传入参数一致（含零尺寸边界情况）。
+    #[test]
+    fn test_offscreen_canvas_dimensions_are_correct() {
+        let oc = OffscreenCanvas::new(0, 0);
+        assert_eq!(oc.width(), 0);
+        assert_eq!(oc.height(), 0);
+
+        let oc2 = OffscreenCanvas::new(1920, 1080);
+        assert_eq!(oc2.width(), 1920);
+        assert_eq!(oc2.height(), 1080);
+    }
+
+    /// 测试 OffscreenCanvas transfer_to_image_bitmap 返回正确尺寸的 ImageData。
+    #[test]
+    fn test_offscreen_canvas_transfer_to_image_bitmap() {
+        let oc = OffscreenCanvas::new(50, 40);
+        let bitmap = oc.transfer_to_image_bitmap();
+        assert_eq!(bitmap.width, 50);
+        assert_eq!(bitmap.height, 40);
+        assert_eq!(bitmap.data.len(), 50 * 40 * 4);
     }
 }

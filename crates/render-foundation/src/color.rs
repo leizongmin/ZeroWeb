@@ -117,6 +117,25 @@ impl Color {
         }
     }
 
+    /// 线性插值两个颜色。
+    ///
+    /// `t` 的范围为 `[0.0, 1.0]`：0.0 返回 `self`，1.0 返回 `other`。
+    /// 每个通道独立进行浮点插值后四舍五入为 u8。
+    pub fn lerp(self, other: Color, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        let lerp_channel = |a: u8, b: u8| -> u8 {
+            let a = a as f32;
+            let b = b as f32;
+            (a + (b - a) * t).round() as u8
+        };
+        Color::rgba(
+            lerp_channel(self.r, other.r),
+            lerp_channel(self.g, other.g),
+            lerp_channel(self.b, other.b),
+            lerp_channel(self.a, other.a),
+        )
+    }
+
     /// 预乘 alpha
     pub fn premultiplied(&self) -> [f32; 4] {
         let a = self.a as f32 / 255.0;
@@ -367,6 +386,44 @@ mod tests {
         let c_max = Color::rgba(255, 255, 255, 255);
         let f_max = c_max.to_f32_array();
         assert!(f_max.iter().all(|&v| (v - 1.0).abs() < f32::EPSILON));
+    }
+
+    /// 测试两个颜色之间的线性插值。
+    ///
+    /// 验证 t=0 时返回起始颜色、t=1 时返回目标颜色、t=0.5 时为中间值。
+    #[test]
+    fn test_color_lerp() {
+        let black = Color::BLACK;
+        let white = Color::WHITE;
+
+        // t=0 → black
+        let at_start = black.lerp(white, 0.0);
+        assert_eq!(at_start, black, "t=0 应返回起始颜色");
+
+        // t=1 → white
+        let at_end = black.lerp(white, 1.0);
+        assert_eq!(at_end, white, "t=1 应返回目标颜色");
+
+        // t=0.5 → 中间灰（128, 128, 128, 255）
+        let at_mid = black.lerp(white, 0.5);
+        assert_eq!(at_mid.r, 128, "中间 R 应为 128");
+        assert_eq!(at_mid.g, 128, "中间 G 应为 128");
+        assert_eq!(at_mid.b, 128, "中间 B 应为 128");
+        assert_eq!(at_mid.a, 255, "中间 A 应为 255（不透明）");
+
+        // 不同颜色插值
+        let red = Color::RED;
+        let blue = Color::BLUE;
+        let mid_rb = red.lerp(blue, 0.5);
+        assert_eq!(mid_rb.r, 128);
+        assert_eq!(mid_rb.g, 0);
+        assert_eq!(mid_rb.b, 128);
+
+        // t 超出范围时被 clamp
+        let clamped_neg = black.lerp(white, -1.0);
+        assert_eq!(clamped_neg, black, "t<0 应被 clamp 到起始颜色");
+        let clamped_over = black.lerp(white, 2.0);
+        assert_eq!(clamped_over, white, "t>1 应被 clamp 到目标颜色");
     }
 
     /// 测试 RGBA 各通道超出范围时的 clamp 行为

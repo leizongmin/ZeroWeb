@@ -506,6 +506,31 @@ mod tests {
         );
     }
 
+    /// 测试 URL 同时包含端口和路径。
+    /// http://example.com:8080/path/to/page → port=8080, path=/path/to/page
+    #[test]
+    fn test_url_with_port_and_path() {
+        let parsed = parse_url("http://example.com:8080/path/to/page").unwrap();
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(parsed.port, Some(8080), "端口应为 8080");
+        assert_eq!(parsed.path, "/path/to/page", "路径应为 /path/to/page");
+    }
+
+    /// 测试 URL 包含查询参数时 query string 被正确保留。
+    /// http://example.com?key=value&foo=bar → query string preserved
+    #[test]
+    fn test_url_with_query_params() {
+        let parsed = parse_url("http://example.com?key=value&foo=bar").unwrap();
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        assert_eq!(
+            parsed.query.as_deref(),
+            Some("key=value&foo=bar"),
+            "查询字符串应被完整保留"
+        );
+    }
+
     /// 测试 to_url_string 对包含用户名和密码的 URL 正确输出 userinfo 部分。
     #[test]
     fn test_parsed_url_to_url_string_with_credentials() {
