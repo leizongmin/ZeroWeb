@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，2591 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，2661 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 2591 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 2661 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -24,11 +24,11 @@
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
 | dom | 258 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试** |
-| css-parser | 353 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、**min()/max()/clamp() 数学函数** |
-| style-system | 396 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、**calc/min/max/clamp 管线集成**、**aspect-ratio** |
-| layout-engine | 149 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、**aspect-ratio 布局**、**box-sizing:border-box 测试** |
-| engine | 147 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染 |
-| render-foundation | 190 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色 RGBA clamping**、**image cache eviction**、**surface resize** |
+| css-parser | 356 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear** |
+| style-system | 400 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear** |
+| layout-engine | 188 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align** |
+| engine | 155 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强** |
+| render-foundation | 205 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
 | security | 155 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、**COOP/COEP** |
@@ -63,7 +63,20 @@
 
 ## 最近完成的改进
 
-### -2. CSS 数学函数 + aspect-ratio + DOM 模块测试（本轮，2591 测试）
+### -3. z-index/is_sticky + 字体整形器 + 行内格式化增强（本轮，2661 测试）
+
+| 模块 | 实现内容 | 新增测试 |
+|------|----------|----------|
+| layout-engine | **z_index/is_sticky 字段**：LayoutBox 新增 z_index 和 is_sticky 字段，engine 提取 z_index | 2 |
+| layout-engine | **fixed 视口坐标调整**：adjust_fixed_to_viewport 递归修正 fixed 元素坐标 | 0 |
+| layout-engine | **text-align center/right/justify**：InlineFormattingContext 支持居中、右对齐、两端对齐 | 30+ |
+| layout-engine | **vertical_align**：TextRun 新增 vertical_align 字段，DOM 布局集成 | 多处 |
+| render-foundation | **文本整形器（TextShaper）**：单行/多行整形，空格处换行，显式换行符支持 | 15 |
+| css-parser | **float/clear 属性**：FloatValue/ClearValue 枚举，不区分大小写解析 | 4 |
+| style-system | **float/clear 管线集成**：ComputedStyle、apply_property_value、PropertyRegistry | 4 |
+| engine | **inline paint 增强**：paint 集成 InlineFormattingContext | 8 |
+
+### -2. CSS 数学函数 + aspect-ratio + DOM 模块测试（前轮，2591 测试）
 
 | 模块 | 实现内容 | 新增测试 |
 |------|----------|----------|
@@ -193,8 +206,9 @@
 | **@import** | ✅ 已实现 |
 | **@container** | ✅ 已实现（解析 + 骨架评估） |
 | **scroll-snap** | ✅ 已实现（scroll-snap-type/align/stop + scroll-margin/scroll-padding） |
-| **CSS 数学函数** | ✅ 已实现（**calc()/min()/max()/clamp()** 解析、求值、样式管线集成） |
+| **CSS 数学函数** | ✅ 已实现（calc()/min()/max()/clamp() 解析、求值、样式管线集成） |
 | **aspect-ratio** | ✅ 已实现（属性解析 + 布局引擎集成） |
+| **float/clear** | ✅ 已实现（属性解析 + 样式管线集成） |
 
 ---
 
