@@ -26,8 +26,8 @@
 | dom | 233 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、**Shadow DOM**、**slot**、**id_map 自动清理** |
 | css-parser | 336 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、**calc() 嵌套**、**媒体查询 range syntax**、**Token 源位置追踪** |
 | style-system | 382 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、**var() 解析集成**、**revert 关键字**、**grid-template-areas** |
-| layout-engine | 139 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、**auto-fill/minmax()**、**零尺寸容器**、**深层嵌套** |
-| engine | 144 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**overflow 嵌套裁剪**、**z-index 排序** |
+| layout-engine | 147 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、**auto-fill/minmax()**、**grid-template-areas**、**零尺寸容器**、**深层嵌套** |
+| engine | 145 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**内联文本渲染** |
 | render-foundation | 190 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、**颜色 RGBA clamping**、**image cache eviction**、**surface resize** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 176 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界** |
