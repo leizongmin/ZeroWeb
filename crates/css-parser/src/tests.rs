@@ -1061,6 +1061,23 @@ fn test_parse_fit_content() {
 }
 
 #[test]
+/// 测试 min-content/max-content 关键字解析
+fn test_parse_min_max_content() {
+    // min-content
+    assert_eq!(parse_length("min-content"), Some(LengthValue::MinContent));
+    assert_eq!(parse_length("MIN-CONTENT"), Some(LengthValue::MinContent));
+    assert_eq!(parse_length("Min-Content"), Some(LengthValue::MinContent));
+
+    // max-content
+    assert_eq!(parse_length("max-content"), Some(LengthValue::MaxContent));
+    assert_eq!(parse_length("MAX-CONTENT"), Some(LengthValue::MaxContent));
+    assert_eq!(parse_length("Max-Content"), Some(LengthValue::MaxContent));
+
+    // 不是关键字
+    assert_eq!(parse_length("content"), None);
+}
+
+#[test]
 /// 测试 ch 单位
 fn test_parse_length_ch() {
     let result = parse_length("2ch");

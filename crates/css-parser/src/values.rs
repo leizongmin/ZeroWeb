@@ -25,6 +25,10 @@ pub enum LengthValue {
     Percentage(f64),
     /// auto 关键字。
     Auto,
+    /// min-content 关键字 — 最小内容宽度。
+    MinContent,
+    /// max-content 关键字 — 最大内容宽度。
+    MaxContent,
     /// 数学表达式（calc/min/max/clamp），在样式解析阶段无法直接求值，
     /// 需要在 [`resolve_computed_style`](crate::resolve_computed_style) 阶段用完整上下文求值。
     Calc(Box<CalcExpr>),
@@ -804,6 +808,8 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
+        // min-content/max-content 需要内容信息才能计算，此处返回 None
+        LengthValue::MinContent | LengthValue::MaxContent => None,
     }
 }
 
@@ -1228,6 +1234,14 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     // 处理 auto 关键字
     if value.eq_ignore_ascii_case("auto") {
         return Some(LengthValue::Auto);
+    }
+
+    // 处理 min-content/max-content 关键字
+    if value.eq_ignore_ascii_case("min-content") {
+        return Some(LengthValue::MinContent);
+    }
+    if value.eq_ignore_ascii_case("max-content") {
+        return Some(LengthValue::MaxContent);
     }
 
     // 处理 fit-content() 函数

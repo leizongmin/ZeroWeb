@@ -63,6 +63,8 @@ pub fn resolve_length(
         }
         // fit-content() 递归解析内部值
         LengthValue::FitContent(inner) => resolve_length(inner, font_size, viewport_width, viewport_height),
+        // min-content/max-content 需要内容信息，此处返回 0.0
+        LengthValue::MinContent | LengthValue::MaxContent => 0.0,
     }
 }
 
