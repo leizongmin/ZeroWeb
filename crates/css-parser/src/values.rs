@@ -4508,6 +4508,157 @@ pub fn parse_line_clamp(value: &str) -> Option<LineClampValue> {
     if n > 0 { Some(LineClampValue::Count(n)) } else { None }
 }
 
+// ── CSS Background 值类型 ──────────────────────────────────────────────
+
+/// CSS background-image 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundImageValue {
+    /// none（默认值）— 无背景图片。
+    None,
+    /// url(<string>) — 指定背景图片 URL。
+    Url(String),
+}
+
+/// 解析 CSS background-image 属性值。
+///
+/// 支持格式如 `"none"`、`"url(image.png)"`。
+pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
+    let value = value.trim();
+
+    if value.eq_ignore_ascii_case("none") {
+        return Some(BackgroundImageValue::None);
+    }
+
+    // 解析 url(...) 函数
+    if value.starts_with("url(") && value.ends_with(')') {
+        let inner = value.get(4..value.len() - 1)?;
+        let url = inner.trim();
+        // 去除可选的引号
+        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
+            url.get(1..url.len() - 1)?
+        } else {
+            url
+        };
+        if url.is_empty() {
+            return None;
+        }
+        return Some(BackgroundImageValue::Url(url.to_string()));
+    }
+
+    None
+}
+
+/// CSS background-position 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundPositionValue {
+    /// center。
+    Center,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// top。
+    Top,
+    /// bottom。
+    Bottom,
+    /// 长度值（如 10px）。
+    Length(f32),
+    /// 百分比值（如 50%）。
+    Percent(f32),
+    /// 两个值组合（水平 垂直）。
+    TwoValue(Box<BackgroundPositionValue>, Box<BackgroundPositionValue>),
+}
+
+/// 解析 CSS background-position 属性值。
+///
+/// 支持单个关键字、长度/百分比，以及两个值的组合（水平 垂直）。
+pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue> {
+    let value = value.trim();
+    let lower = value.to_ascii_lowercase();
+
+    // 先检查是否为两个值组合
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    if parts.len() == 2 {
+        let first = parse_position_component(parts[0])?;
+        let second = parse_position_component(parts[1])?;
+        return Some(BackgroundPositionValue::TwoValue(Box::new(first), Box::new(second)));
+    }
+
+    // 单个关键字
+    match lower.as_str() {
+        "center" => return Some(BackgroundPositionValue::Center),
+        "left" => return Some(BackgroundPositionValue::Left),
+        "right" => return Some(BackgroundPositionValue::Right),
+        "top" => return Some(BackgroundPositionValue::Top),
+        "bottom" => return Some(BackgroundPositionValue::Bottom),
+        _ => {}
+    }
+
+    // 单个百分比
+    if lower.ends_with('%') {
+        let pct: f32 = lower.trim_end_matches('%').parse().ok()?;
+        return Some(BackgroundPositionValue::Percent(pct));
+    }
+
+    // 单个长度值
+    if let Some(LengthValue::Px(px)) = parse_length(&lower) {
+        return Some(BackgroundPositionValue::Length(px as f32));
+    }
+
+    None
+}
+
+/// 解析 background-position 的单个分量。
+fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
+    match s {
+        "center" => Some(BackgroundPositionValue::Center),
+        "left" => Some(BackgroundPositionValue::Left),
+        "right" => Some(BackgroundPositionValue::Right),
+        "top" => Some(BackgroundPositionValue::Top),
+        "bottom" => Some(BackgroundPositionValue::Bottom),
+        _ => {
+            if s.ends_with('%') {
+                let pct: f32 = s.trim_end_matches('%').parse().ok()?;
+                Some(BackgroundPositionValue::Percent(pct))
+            } else if let Some(LengthValue::Px(px)) = parse_length(s) {
+                Some(BackgroundPositionValue::Length(px as f32))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// CSS background-repeat 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundRepeatValue {
+    /// repeat — 水平和垂直方向都重复。
+    Repeat,
+    /// repeat-x — 仅水平方向重复。
+    RepeatX,
+    /// repeat-y — 仅垂直方向重复。
+    RepeatY,
+    /// no-repeat — 不重复。
+    NoRepeat,
+    /// space — 均匀分布。
+    Space,
+    /// round — 缩放后重复。
+    Round,
+}
+
+/// 解析 CSS background-repeat 属性值。
+pub fn parse_background_repeat(value: &str) -> Option<BackgroundRepeatValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "repeat" => Some(BackgroundRepeatValue::Repeat),
+        "repeat-x" => Some(BackgroundRepeatValue::RepeatX),
+        "repeat-y" => Some(BackgroundRepeatValue::RepeatY),
+        "no-repeat" => Some(BackgroundRepeatValue::NoRepeat),
+        "space" => Some(BackgroundRepeatValue::Space),
+        "round" => Some(BackgroundRepeatValue::Round),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6443,5 +6594,178 @@ mod tests {
         assert_eq!(parse_line_clamp("1.5"), None);
         assert_eq!(parse_line_clamp("auto"), None);
         assert_eq!(parse_line_clamp(""), None);
+    }
+
+    // ── background-image 解析测试 ──
+
+    #[test]
+    fn test_parse_background_image_none() {
+        assert_eq!(parse_background_image("none"), Some(BackgroundImageValue::None));
+    }
+
+    #[test]
+    fn test_parse_background_image_url() {
+        assert_eq!(
+            parse_background_image("url(image.png)"),
+            Some(BackgroundImageValue::Url("image.png".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_background_image_url_quoted() {
+        assert_eq!(
+            parse_background_image("url(\"image.png\")"),
+            Some(BackgroundImageValue::Url("image.png".to_string()))
+        );
+        assert_eq!(
+            parse_background_image("url('image.png')"),
+            Some(BackgroundImageValue::Url("image.png".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_background_image_url_with_path() {
+        assert_eq!(
+            parse_background_image("url(/path/to/image.png)"),
+            Some(BackgroundImageValue::Url("/path/to/image.png".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_background_image_case_insensitive() {
+        assert_eq!(parse_background_image("NONE"), Some(BackgroundImageValue::None));
+        assert_eq!(parse_background_image("None"), Some(BackgroundImageValue::None));
+    }
+
+    #[test]
+    fn test_parse_background_image_invalid() {
+        assert_eq!(parse_background_image(""), None);
+        assert_eq!(parse_background_image("invalid"), None);
+        assert_eq!(parse_background_image("url()"), None);
+    }
+
+    // ── background-position 解析测试 ──
+
+    #[test]
+    fn test_parse_background_position_keywords() {
+        assert_eq!(
+            parse_background_position("center"),
+            Some(BackgroundPositionValue::Center)
+        );
+        assert_eq!(parse_background_position("left"), Some(BackgroundPositionValue::Left));
+        assert_eq!(parse_background_position("right"), Some(BackgroundPositionValue::Right));
+        assert_eq!(parse_background_position("top"), Some(BackgroundPositionValue::Top));
+        assert_eq!(
+            parse_background_position("bottom"),
+            Some(BackgroundPositionValue::Bottom)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_position_percent() {
+        assert_eq!(
+            parse_background_position("50%"),
+            Some(BackgroundPositionValue::Percent(50.0))
+        );
+        assert_eq!(
+            parse_background_position("0%"),
+            Some(BackgroundPositionValue::Percent(0.0))
+        );
+        assert_eq!(
+            parse_background_position("100%"),
+            Some(BackgroundPositionValue::Percent(100.0))
+        );
+    }
+
+    #[test]
+    fn test_parse_background_position_length() {
+        assert_eq!(
+            parse_background_position("10px"),
+            Some(BackgroundPositionValue::Length(10.0))
+        );
+        assert_eq!(
+            parse_background_position("0px"),
+            Some(BackgroundPositionValue::Length(0.0))
+        );
+    }
+
+    #[test]
+    fn test_parse_background_position_two_values() {
+        let result = parse_background_position("left top");
+        assert!(result.is_some());
+        if let Some(BackgroundPositionValue::TwoValue(h, v)) = result {
+            assert_eq!(*h, BackgroundPositionValue::Left);
+            assert_eq!(*v, BackgroundPositionValue::Top);
+        } else {
+            panic!("Expected TwoValue");
+        }
+    }
+
+    #[test]
+    fn test_parse_background_position_two_values_mixed() {
+        let result = parse_background_position("center 50%");
+        assert!(result.is_some());
+        if let Some(BackgroundPositionValue::TwoValue(h, v)) = result {
+            assert_eq!(*h, BackgroundPositionValue::Center);
+            assert_eq!(*v, BackgroundPositionValue::Percent(50.0));
+        } else {
+            panic!("Expected TwoValue");
+        }
+    }
+
+    #[test]
+    fn test_parse_background_position_case_insensitive() {
+        assert_eq!(
+            parse_background_position("Center"),
+            Some(BackgroundPositionValue::Center)
+        );
+        assert_eq!(parse_background_position("LEFT"), Some(BackgroundPositionValue::Left));
+    }
+
+    #[test]
+    fn test_parse_background_position_invalid() {
+        assert_eq!(parse_background_position(""), None);
+        assert_eq!(parse_background_position("invalid"), None);
+    }
+
+    // ── background-repeat 解析测试 ──
+
+    #[test]
+    fn test_parse_background_repeat_values() {
+        assert_eq!(parse_background_repeat("repeat"), Some(BackgroundRepeatValue::Repeat));
+        assert_eq!(
+            parse_background_repeat("repeat-x"),
+            Some(BackgroundRepeatValue::RepeatX)
+        );
+        assert_eq!(
+            parse_background_repeat("repeat-y"),
+            Some(BackgroundRepeatValue::RepeatY)
+        );
+        assert_eq!(
+            parse_background_repeat("no-repeat"),
+            Some(BackgroundRepeatValue::NoRepeat)
+        );
+        assert_eq!(parse_background_repeat("space"), Some(BackgroundRepeatValue::Space));
+        assert_eq!(parse_background_repeat("round"), Some(BackgroundRepeatValue::Round));
+    }
+
+    #[test]
+    fn test_parse_background_repeat_case_insensitive() {
+        assert_eq!(parse_background_repeat("REPEAT"), Some(BackgroundRepeatValue::Repeat));
+        assert_eq!(
+            parse_background_repeat("No-Repeat"),
+            Some(BackgroundRepeatValue::NoRepeat)
+        );
+        assert_eq!(
+            parse_background_repeat("REPEAT-X"),
+            Some(BackgroundRepeatValue::RepeatX)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_repeat_invalid() {
+        assert_eq!(parse_background_repeat(""), None);
+        assert_eq!(parse_background_repeat("invalid"), None);
+        assert_eq!(parse_background_repeat("repeat z"), None);
     }
 }

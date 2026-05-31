@@ -1192,4 +1192,194 @@ mod tests {
             "xmlhttprequest 应为阻塞型"
         );
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Additional edge-case tests (round 15)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// 测试 CORS check_cors 对 allow_origins 列表中大小写不同的源字符串的匹配。
+    ///
+    /// check_cors 使用 eq_ignore_ascii_case 进行源字符串匹配，
+    /// 因此 "HTTP://EXAMPLE.COM" 应与 "http://example.com" 匹配。
+    /// 验证 Origin 格式化后的源字符串与 allow_origins 中的不同大小写
+    /// 仍能通过 CORS 检查。
+    #[test]
+    fn test_cors_origin_case_insensitive_matching() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["HTTP://EXAMPLE.COM".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        // check_cors 使用 eq_ignore_ascii_case → 大写 allow_origins 应匹配
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed, "allow_origins 中大写的源字符串应忽略大小写匹配");
+
+        // 反向：allow_origins 为小写，Origin 格式化也为小写 → 应匹配
+        let policy_lower = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result_lower = check_cors(&policy_lower, &origin, "GET", &[]);
+        assert!(result_lower.allowed, "小写 allow_origins 应正常匹配");
+    }
+
+    /// 测试 CSP navigate-to 指令在存在时正确限制导航目标。
+    ///
+    /// navigate-to 指令限制页面可以导航到哪些地址。
+    /// 当指令存在且值为 'self' 时，只有同源地址允许导航。
+    /// 当指令不存在时，导航不受限制（不回退到 default-src）。
+    #[test]
+    fn test_csp_navigate_to_restriction_with_self() {
+        let csp = ContentSecurityPolicy::parse("navigate-to 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+
+        // 同源 URL → 允许
+        assert!(
+            csp.is_navigate_to_allowed("https://example.com/page", Some(&doc_origin)),
+            "navigate-to 'self' 应允许同源导航"
+        );
+        // 跨源 URL → 拒绝
+        assert!(
+            !csp.is_navigate_to_allowed("https://evil.com/page", Some(&doc_origin)),
+            "navigate-to 'self' 应阻止跨源导航"
+        );
+        // 相对 URL → 视为同源
+        assert!(
+            csp.is_navigate_to_allowed("/local", Some(&doc_origin)),
+            "相对 URL 在 navigate-to 'self' 下应视为同源"
+        );
+        // 无 navigate-to 指令 → 不限制
+        let csp_no_nav = ContentSecurityPolicy::parse("default-src 'none'");
+        assert!(
+            csp_no_nav.is_navigate_to_allowed("https://evil.com", None),
+            "无 navigate-to 指令时导航不受限制"
+        );
+    }
+
+    /// 测试沙箱 allow-popups-to-escape-sandbox 标志：弹窗不受父沙箱限制。
+    ///
+    /// 当 iframe 沙箱设置了 allow-popups-to-escape-sandbox 时，
+    /// 从该 iframe 打开的弹窗不继承沙箱限制。
+    /// 该标志本身不影响当前 iframe 的权限（脚本、表单等仍需各自标志）。
+    #[test]
+    fn test_sandbox_popups_escape_flag() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-popups allow-popups-to-escape-sandbox");
+
+        // 核心权限不受此标志影响
+        assert!(sandbox.allows_scripts(), "allow-scripts 应允许脚本");
+        assert!(sandbox.allows_popups(), "allow-popups 应允许弹窗");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPopupsToEscapeSandbox));
+
+        // 其他权限仍被禁止
+        assert!(!sandbox.allows_same_origin(), "不应允许同源访问");
+        assert!(!sandbox.allows_forms(), "不应允许表单提交");
+        assert!(!sandbox.allows_top_navigation(), "不应允许顶层导航");
+
+        // 缺少 allow-same-origin → 不透明源
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(sandbox.effective_origin(&origin), SandboxOrigin::Opaque);
+
+        // 对比：无此标志的弹窗沙箱
+        let sandbox_no_escape = IframeSandbox::parse("allow-popups");
+        assert!(!sandbox_no_escape.has_flag(IframeSandboxFlag::AllowPopupsToEscapeSandbox));
+    }
+
+    /// 测试 COOP 跨源场景下 SameOriginIncludingPopups 与 UnsafeNone 的组合。
+    ///
+    /// 当响应方为 SameOriginIncludingPopups 时，跨源请求始终被阻止。
+    /// 当导航方为 SameOriginIncludingPopups 且响应方为 SameOrigin 时，
+    /// 跨源也始终被阻止。
+    #[test]
+    fn test_coop_same_origin_including_popups_cross_origin_variants() {
+        // 跨源 + 导航方 UnsafeNone + 响应方 SameOriginIncludingPopups → 阻止
+        assert_eq!(
+            evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOriginIncludingPopups, false),
+            CoopResult::Blocked,
+            "跨源 + 响应方 SameOriginIncludingPopups 应阻止"
+        );
+
+        // 跨源 + 导航方 SameOriginIncludingPopups + 响应方 SameOrigin → 阻止
+        assert_eq!(
+            evaluate_coop(CoopPolicy::SameOriginIncludingPopups, CoopPolicy::SameOrigin, false),
+            CoopResult::Blocked,
+            "跨源 + 导航方 SameOriginIncludingPopups + 响应方 SameOrigin 应阻止"
+        );
+
+        // 跨源 + 双方均为 SameOriginIncludingPopups → 阻止
+        assert_eq!(
+            evaluate_coop(
+                CoopPolicy::SameOriginIncludingPopups,
+                CoopPolicy::SameOriginIncludingPopups,
+                false
+            ),
+            CoopResult::Blocked,
+            "跨源 + 双方 SameOriginIncludingPopups 应阻止"
+        );
+
+        // 同源 + SameOriginIncludingPopups → 始终允许
+        assert_eq!(
+            evaluate_coop(CoopPolicy::SameOriginIncludingPopups, CoopPolicy::SameOrigin, true),
+            CoopResult::Allowed,
+            "同源应始终允许"
+        );
+
+        // parse_coop 验证
+        assert_eq!(
+            parse_coop("same-origin-including-popups"),
+            CoopPolicy::SameOriginIncludingPopups
+        );
+    }
+
+    /// 测试混合内容 upgrade_to_https 对带查询参数和片段的 URL 的处理。
+    ///
+    /// HTTP URL 包含查询字符串（?key=value）或片段（#section）时，
+    /// upgrade_to_https 应仅替换 scheme 前缀，保留其余部分完整。
+    /// 带认证信息的 URL（user:pass@host）也应正确升级。
+    #[test]
+    fn test_mixed_content_upgrade_preserves_query_and_fragment() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // 带查询参数的 HTTP URL → 升级后保留查询参数
+        let url_with_query = "http://api.example.com/data?key=value&sort=asc";
+        assert!(
+            is_mixed_content(&page, url_with_query),
+            "带查询参数的 HTTP URL 应为混合内容"
+        );
+        let upgraded = upgrade_to_https(url_with_query);
+        assert_eq!(
+            upgraded,
+            Some("https://api.example.com/data?key=value&sort=asc".to_string()),
+            "升级后应保留查询参数"
+        );
+
+        // 带片段的 HTTP URL → 升级后保留片段
+        let url_with_fragment = "http://example.com/page#section-1";
+        assert!(is_mixed_content(&page, url_with_fragment));
+        let upgraded_frag = upgrade_to_https(url_with_fragment);
+        assert_eq!(
+            upgraded_frag,
+            Some("https://example.com/page#section-1".to_string()),
+            "升级后应保留片段标识符"
+        );
+
+        // 带查询参数和片段的 HTTP URL → 两者均保留
+        let url_full = "http://cdn.example.com/api/v2?key=val#result";
+        let upgraded_full = upgrade_to_https(url_full);
+        assert_eq!(
+            upgraded_full,
+            Some("https://cdn.example.com/api/v2?key=val#result".to_string()),
+            "升级后应同时保留查询参数和片段"
+        );
+
+        // 升级后的 URL 不再是混合内容
+        if let Some(upgraded_url) = upgraded_full {
+            assert!(!is_mixed_content(&page, &upgraded_url));
+        }
+    }
 }

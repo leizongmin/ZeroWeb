@@ -740,4 +740,22 @@ mod tests {
         assert!(cache.is_empty(), "再次 GC 后缓存仍应为空");
         assert!(cache.ref_count(&k4).is_none());
     }
+
+    /// 测试 ImageData::from_rgba 使用 0x0 尺寸的空数据创建成功
+    ///
+    /// 当 width=0、height=0 时，expected 字节数为 0，
+    /// 传入空 Vec 应成功创建一个零尺寸图片。
+    /// 验证零尺寸图片的 size() 返回 (0,0)，byte_size() 返回 0。
+    #[test]
+    fn test_image_data_from_rgba_zero_dimensions() {
+        let img = ImageData::from_rgba(vec![], 0, 0).expect("0x0 应创建成功");
+        assert_eq!(img.width, 0);
+        assert_eq!(img.height, 0);
+        assert!(img.pixels.is_empty());
+        assert_eq!(img.byte_size(), 0);
+
+        let size = img.size();
+        assert_eq!(size.width, 0.0);
+        assert_eq!(size.height, 0.0);
+    }
 }

@@ -2562,4 +2562,185 @@ mod cross_crate_pipeline {
             "div 的 column-width 应为 Length(Px(200.0))"
         );
     }
+
+    /// CSS text-wrap 管线集成测试。
+    ///
+    /// 解析含 text-wrap: balance 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.text_wrap 为 Balance。
+    #[test]
+    fn test_text_wrap_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "balanced");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .balanced { text-wrap: balance; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_wrap,
+            zero_style_system::property::TextWrapComputedValue::Balance,
+            "div 的 text-wrap 应为 Balance"
+        );
+    }
+
+    /// CSS hyphens 管线集成测试。
+    ///
+    /// 解析含 hyphens: auto 的 CSS，通过 style-system 计算样式，
+    /// 验证父元素 hyphens 为 Auto，且子元素继承了该值。
+    #[test]
+    fn test_hyphens_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 父元素设置 hyphens: auto
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "hyphenated");
+        doc.append_child(body, parent).unwrap();
+
+        // 子元素不显式设置，应继承 hyphens
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "hyphen-text");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .hyphenated { hyphens: auto; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素的 hyphens 为 Auto
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.hyphens,
+            zero_style_system::property::HyphensComputedValue::Auto,
+            "parent 的 hyphens 应为 Auto"
+        );
+
+        // 验证子元素继承了 hyphens: auto
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.hyphens,
+            zero_style_system::property::HyphensComputedValue::Auto,
+            "child 应继承 parent 的 hyphens: Auto"
+        );
+    }
+
+    /// CSS line-clamp 管线集成测试。
+    ///
+    /// 解析含 line-clamp: 3 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.line_clamp 为 Count(3)。
+    #[test]
+    fn test_line_clamp_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "clamped");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .clamped { line-clamp: 3; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.line_clamp,
+            zero_style_system::property::LineClampComputedValue::Count(3),
+            "div 的 line-clamp 应为 Count(3)"
+        );
+    }
+
+    /// CSS background-image 管线集成测试。
+    ///
+    /// 解析含 background-image: url(bg.png) 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_image 为 Url("bg.png")。
+    #[test]
+    fn test_background_image_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "bg-img");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .bg-img { background-image: url(bg.png); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_image,
+            zero_style_system::property::BackgroundImageComputedValue::Url("bg.png".to_string()),
+            "div 的 background-image 应为 Url(\"bg.png\")"
+        );
+    }
+
+    /// CSS background-repeat 管线集成测试。
+    ///
+    /// 解析含 background-repeat: no-repeat 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.background_repeat 为 NoRepeat。
+    #[test]
+    fn test_background_repeat_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "no-repeat-bg");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .no-repeat-bg { background-repeat: no-repeat; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.background_repeat,
+            zero_style_system::property::BackgroundRepeatComputedValue::NoRepeat,
+            "div 的 background-repeat 应为 NoRepeat"
+        );
+    }
 }

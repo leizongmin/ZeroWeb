@@ -220,4 +220,32 @@ mod tests {
         assert!(manager.session_storage("https://alpha.com").is_empty());
         assert_eq!(manager.session_storage("https://beta.com").get("token"), Some("bbb"));
     }
+
+    /// 测试 StorageManager 对同一源同时存在 localStorage 和 sessionStorage 时，
+    /// clear_all_local 只清 localStorage，sessionStorage 不受影响。
+    #[test]
+    fn test_manager_clear_all_local_preserves_session_data() {
+        let mut manager = StorageManager::new();
+        let origin = "https://app.example.com";
+
+        manager.local_storage(origin).set("theme", "dark").unwrap();
+        manager.local_storage(origin).set("lang", "zh").unwrap();
+        manager.session_storage(origin).set("draft", "unsaved").unwrap();
+        manager.session_storage(origin).set("tab", "editor").unwrap();
+
+        assert_eq!(manager.local_storage(origin).len(), 2);
+        assert_eq!(manager.session_storage(origin).len(), 2);
+
+        // 只清除所有 localStorage
+        manager.clear_all_local();
+
+        // localStorage 被清空
+        assert!(manager.local_storage(origin).is_empty());
+        assert_eq!(manager.local_storage(origin).get("theme"), None);
+
+        // sessionStorage 完好
+        assert_eq!(manager.session_storage(origin).len(), 2);
+        assert_eq!(manager.session_storage(origin).get("draft"), Some("unsaved"));
+        assert_eq!(manager.session_storage(origin).get("tab"), Some("editor"));
+    }
 }

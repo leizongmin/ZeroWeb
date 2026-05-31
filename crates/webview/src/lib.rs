@@ -2320,4 +2320,161 @@ mod tests {
         wv.complete_load("<html><body><div>Final</div></body></html>", None);
         assert!(!wv.is_loading(), "complete_load 后不应处于加载状态");
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：连续失败、回调移除后验证、Builder 空 URL、超长 CSS、渲染幂等
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证连续调用 fail_load 两次不会 panic，且 loading 始终为 false。
+    ///
+    /// 边界场景：第一次 fail_load 将 loading 从 true 置为 false，
+    /// 第二次 fail_load 在 loading 已经为 false 的状态下调用，
+    /// 不应导致状态异常或 panic，且每次调用都应触发 LoadFailed 事件。
+    #[test]
+    fn test_webview_consecutive_fail_load_calls() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // 第一次加载并失败
+        wv.load_url("https://first-fail.com");
+        assert!(wv.is_loading());
+        wv.fail_load("timeout");
+        assert!(!wv.is_loading());
+
+        // 第二次连续失败（未重新 load_url）
+        wv.fail_load("second error");
+        assert!(!wv.is_loading(), "连续 fail_load 后 loading 应仍为 false");
+
+        // 验证两次 LoadFailed 事件都被触发
+        let recorded = events.borrow();
+        let fail_count = recorded.iter().filter(|e| e.starts_with("LoadFailed")).count();
+        assert_eq!(fail_count, 2, "应有 2 次 LoadFailed 事件");
+    }
+
+    /// 验证移除事件回调后，后续操作不再触发该回调。
+    ///
+    /// 场景：注册回调 A -> 触发操作（回调 A 被调用）-> 移除回调 A -> 触发操作（回调 A 不再被调用）。
+    /// 通过引用计数验证回调被调用次数精确匹配预期值。
+    #[test]
+    fn test_webview_callback_removed_no_longer_fires() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let call_count: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+        let cc = call_count.clone();
+        let idx = wv.on_event(move |_| {
+            *cc.borrow_mut() += 1;
+        });
+
+        // 第一次 set_title — 回调应被触发
+        wv.set_title("First");
+        assert_eq!(*call_count.borrow(), 1, "注册后回调应被触发 1 次");
+
+        // 移除回调
+        assert!(wv.remove_event_callback(idx));
+
+        // 第二次 set_title — 已移除的回调不应再被触发
+        wv.set_title("Second");
+        assert_eq!(*call_count.borrow(), 1, "移除后回调不应再被触发，计数应保持 1");
+
+        // 第三次 set_title — 确认回调持续不触发
+        wv.set_title("Third");
+        assert_eq!(*call_count.borrow(), 1, "多次操作后回调仍不应被触发");
+    }
+
+    /// 验证 WebViewBuilder 传入空字符串 URL 后，build 产生正确的初始状态。
+    ///
+    /// 边界场景：url("") 是合法的链式调用（非 None），
+    /// build 应自动调用 load_url("")，将 WebView 置为加载状态，
+    /// current_url 应为 Some("")（空字符串，与 None 语义不同）。
+    #[test]
+    fn test_webview_builder_with_empty_url_string() {
+        let wv = WebViewBuilder::new().url("").build();
+        // url("") 设置了 config.url = Some("")，build 时会调用 load_url("")
+        assert_eq!(wv.url(), Some(""), "空字符串 URL 应为 Some(\"\")，而非 None");
+        assert!(wv.is_loading(), "空 URL 仍应触发加载状态");
+        assert!(wv.last_render().is_none(), "仅有 load_url 不应有渲染结果");
+
+        // 后续 complete_load 应正常工作
+        let mut wv = wv;
+        wv.complete_load("<html><body><div>Empty URL page</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+        assert_eq!(wv.url(), Some(""), "complete_load 后 URL 应保持为空字符串");
+    }
+
+    /// 验证加载包含超长 CSS 属性值的 HTML 不会 panic，且渲染管线返回有效结果。
+    ///
+    /// 边界场景：CSS 属性值长度达到数千字符（如超长 gradient 定义），
+    /// 确保 CSS 解析器和渲染管线不会因字符串过长而崩溃或内存溢出。
+    #[test]
+    fn test_webview_load_html_with_very_long_css_value() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 构造一个超长的 CSS background 属性值（重复 linear-gradient 段）
+        let long_gradient = "linear-gradient(red, blue)".repeat(200);
+        let css = format!("div {{ background: {long_gradient}; width: 100px; height: 50px; }}");
+        let html = "<html><body><div>Long CSS test</div></body></html>";
+
+        let result = wv.load_html(html, Some(&css));
+        assert!(result.timings.total_ms >= 0.0, "超长 CSS 渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "超长 CSS 加载后应有渲染结果");
+
+        // 后续操作不应崩溃
+        let inject_result = wv.inject_css("span { color: red; }");
+        assert!(inject_result.timings.total_ms >= 0.0);
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0);
+    }
+
+    /// 验证 complete_load 后连续多次 render 产生完全相同的 fills 数量（渲染幂等性）。
+    ///
+    /// 边界场景：相同输入（cached_html + cached_css）多次调用 render，
+    /// 渲染结果应在 fills 数量上保持一致（幂等），
+    /// 不应因内部状态变化而产生不同输出。
+    #[test]
+    fn test_webview_render_idempotent_after_complete_load() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body>\
+            <div class=\"box-a\">Box A</div>\
+            <div class=\"box-b\">Box B</div>\
+            </body></html>";
+        let css = ".box-a { background-color: red; width: 100px; height: 50px; }\
+                   .box-b { background-color: blue; width: 200px; height: 80px; }";
+
+        wv.load_url("https://idempotent.com");
+        let _complete = wv.complete_load(html, Some(css));
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+
+        // 第一次 render
+        let first = wv.render();
+        let first_fills = first.primitives.fills.len();
+
+        // 第二次 render — 应产生相同的 fills 数量
+        let second = wv.render();
+        let second_fills = second.primitives.fills.len();
+
+        // 第三次 render — 进一步确认幂等性
+        let third = wv.render();
+        let third_fills = third.primitives.fills.len();
+
+        assert_eq!(
+            first_fills, second_fills,
+            "连续 render 的 fills 数量应一致（第一次 vs 第二次）"
+        );
+        assert_eq!(
+            second_fills, third_fills,
+            "连续 render 的 fills 数量应一致（第二次 vs 第三次）"
+        );
+        assert!(first_fills > 0, "带背景色 CSS 的 HTML 应产生至少一个 fill 图元");
+    }
 }

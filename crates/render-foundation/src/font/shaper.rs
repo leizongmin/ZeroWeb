@@ -507,4 +507,39 @@ mod tests {
             assert!(line.width > 0.0, "每行宽度应为正");
         }
     }
+
+    /// 测试负 font_size 时 shape_single_line 不 panic 且 advance 为负值或零。
+    ///
+    /// 无字体时 advance = font_size * 0.6，当 font_size 为负时 advance 也为负。
+    /// 验证整形器在极端输入下不崩溃。
+    #[test]
+    fn test_shape_negative_font_size() {
+        let shaper = make_empty_shaper();
+        let glyphs = shaper.shape_single_line("A", -16.0);
+        assert_eq!(glyphs.len(), 1, "负 font_size 仍应产生 glyph");
+        // advance = -16.0 * 0.6 = -9.6
+        let expected_advance = -16.0 * 0.6;
+        assert!(
+            (glyphs[0].advance_x - expected_advance).abs() < 0.01,
+            "负 font_size 的 advance 应为 {expected_advance}，实际 {}",
+            glyphs[0].advance_x
+        );
+    }
+
+    /// 测试仅含空格的文本在换行模式下产生正确的 glyph 数量。
+    ///
+    /// shape_single_line 会为每个空格字符生成 glyph，
+    /// 但 shape_with_line_wrap 在宽度不足时会尝试在空格处折行。
+    /// 验证纯空格文本不会导致无限循环或空结果。
+    #[test]
+    fn test_shape_with_line_wrap_spaces_only() {
+        let shaper = make_empty_shaper();
+        let lines = shaper.shape_with_line_wrap("   ", 16.0, 1000.0);
+        assert_eq!(lines.len(), 1, "纯空格文本应产生单行");
+        assert_eq!(lines[0].glyphs.len(), 3, "纯空格文本应有 3 个空格 glyph");
+        // 每个空格 glyph 的 code_point 应为 ' '
+        for glyph in &lines[0].glyphs {
+            assert_eq!(glyph.code_point, ' ');
+        }
+    }
 }

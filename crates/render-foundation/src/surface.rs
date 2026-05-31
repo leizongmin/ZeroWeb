@@ -369,4 +369,29 @@ mod tests {
         fb.set_pixel(final_w - 1, final_h - 1, [255, 128, 64, 200]);
         assert_eq!(fb.get_pixel(final_w - 1, final_h - 1), [255, 128, 64, 200]);
     }
+
+    /// 测试 FrameBuffer::from_rgba 使用恰好 1x1 像素（4 字节）的数据
+    ///
+    /// 验证最小有效帧缓冲的创建、读写和清除操作均正确，
+    /// 确保单个像素边界条件下无越界访问。
+    #[test]
+    fn test_frame_buffer_single_pixel_from_rgba() {
+        let data = vec![10, 20, 30, 40];
+        let mut fb = FrameBuffer::from_rgba(data, 1, 1).expect("1x1 应创建成功");
+        assert_eq!(fb.width, 1);
+        assert_eq!(fb.height, 1);
+        assert_eq!(fb.data.len(), 4);
+        assert_eq!(fb.get_pixel(0, 0), [10, 20, 30, 40]);
+
+        // 覆写并回读
+        fb.set_pixel(0, 0, [255, 255, 255, 255]);
+        assert_eq!(fb.get_pixel(0, 0), [255, 255, 255, 255]);
+
+        // 清除
+        fb.clear(0, 0, 0, 0);
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 0]);
+
+        // pixel_count 应为 1
+        assert_eq!(fb.pixel_count(), 1);
+    }
 }

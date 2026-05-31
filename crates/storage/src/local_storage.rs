@@ -431,4 +431,27 @@ mod tests {
         assert_eq!(storage.get("theme"), None);
         assert_eq!(storage.get("lang"), None);
     }
+
+    /// 测试 sessionStorage 在 max_size 限制下，用更短值覆盖已满的存储后可以再添加新键。
+    #[test]
+    fn test_storage_shrink_then_add_within_quota() {
+        let mut storage = WebStorage::new_with_max_size(StorageType::Session, "https://example.com", 20);
+
+        // "k" (1) + "1234567890123456789" (19) = 20 → 恰好填满
+        storage.set("k", "1234567890123456789").unwrap();
+        assert_eq!(storage.used_size(), 20);
+
+        // 再添加任何新键都会超出配额
+        assert!(storage.set("x", "y").is_err());
+
+        // 用更短的值覆盖 → 释放空间
+        let old = storage.set("k", "ab").unwrap();
+        assert_eq!(old, Some("1234567890123456789".to_string()));
+        assert_eq!(storage.used_size(), 3); // "k"(1) + "ab"(2) = 3
+
+        // 现在可以添加新键了
+        storage.set("x", "y").unwrap(); // 1 + 1 = 2，合计 5
+        assert_eq!(storage.len(), 2);
+        assert_eq!(storage.used_size(), 5);
+    }
 }
