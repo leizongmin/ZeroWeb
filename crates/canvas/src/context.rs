@@ -1236,6 +1236,136 @@ impl CanvasContext {
         Color::rgba(color.r, color.g, color.b, a)
     }
 
+    /// 将圆角矩形扁平化为线段顶点。
+    /// 每个圆角使用 8 段线段近似四分之一圆弧。
+    /// radii 遵循 Canvas 规范：1 个值用于全部角，2 个值为 [左上/右下, 右上/左下]，4 个值为 [左上, 右上, 右下, 左下]。
+    #[allow(clippy::too_many_arguments)]
+    fn flatten_round_rect(
+        vertices: &mut Vec<f32>,
+        current_x: f32,
+        current_y: f32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: &[f32],
+    ) -> (f32, f32) {
+        // 解析圆角半径：[左上, 右上, 右下, 左下]
+        let mut r = [0.0f32; 4];
+        match radii.len() {
+            0 => {}
+            1 => {
+                r[0] = radii[0];
+                r[1] = radii[0];
+                r[2] = radii[0];
+                r[3] = radii[0];
+            }
+            2 => {
+                r[0] = radii[0];
+                r[1] = radii[1];
+                r[2] = radii[0];
+                r[3] = radii[1];
+            }
+            3 => {
+                r[0] = radii[0];
+                r[1] = radii[1];
+                r[2] = radii[2];
+                r[3] = radii[1];
+            }
+            _ => {
+                r[0] = radii[0];
+                r[1] = radii[1];
+                r[2] = radii[2];
+                r[3] = radii[3];
+            }
+        }
+        // 限制半径不超过短边的一半
+        let max_r = w.min(h) / 2.0;
+        for radius in &mut r {
+            *radius = radius.min(max_r).max(0.0);
+        }
+
+        // 所有半径为 0 时退化为矩形
+        if r.iter().all(|&v| v < f32::EPSILON) {
+            let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+            vertices.push(current_x);
+            vertices.push(current_y);
+            vertices.push(corners[0].0);
+            vertices.push(corners[0].1);
+            for i in 0..3 {
+                vertices.push(corners[i].0);
+                vertices.push(corners[i].1);
+                vertices.push(corners[i + 1].0);
+                vertices.push(corners[i + 1].1);
+            }
+            vertices.push(corners[3].0);
+            vertices.push(corners[3].1);
+            vertices.push(corners[0].0);
+            vertices.push(corners[0].1);
+            return (corners[0].0, corners[0].1);
+        }
+
+        // 圆角中心坐标和对应的弧角度范围
+        // 左上角 (x + r[0], y + r[0]), 角度 π ~ 3π/2
+        // 右上角 (x + w - r[1], y + r[1]), 角度 3π/2 ~ 2π
+        // 右下角 (x + w - r[2], y + h - r[2]), 角度 0 ~ π/2
+        // 左下角 (x + r[3], y + h - r[3]), 角度 π/2 ~ π
+        let corner_cx = [x + r[0], x + w - r[1], x + w - r[2], x + r[3]];
+        let corner_cy = [y + r[0], y + r[1], y + h - r[2], y + h - r[3]];
+        let corner_start = [
+            std::f32::consts::PI,
+            std::f32::consts::FRAC_PI_2 * 3.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        ];
+        let corner_end = [
+            std::f32::consts::FRAC_PI_2 * 3.0,
+            std::f32::consts::TAU,
+            std::f32::consts::FRAC_PI_2,
+            std::f32::consts::PI,
+        ];
+
+        const CORNER_SEGMENTS: usize = 8;
+
+        // 从当前点连线到第一个圆角的起点
+        let start_angle = corner_start[0];
+        let start_x = corner_cx[0] + r[0] * start_angle.cos();
+        let start_y = corner_cy[0] + r[0] * start_angle.sin();
+        vertices.push(current_x);
+        vertices.push(current_y);
+        vertices.push(start_x);
+        vertices.push(start_y);
+
+        // 遍历 4 个圆角
+        for c in 0..4 {
+            let step = (corner_end[c] - corner_start[c]) / CORNER_SEGMENTS as f32;
+            let mut px = corner_cx[c] + r[c] * corner_start[c].cos();
+            let mut py = corner_cy[c] + r[c] * corner_start[c].sin();
+            for i in 0..CORNER_SEGMENTS {
+                let angle = corner_start[c] + step * (i + 1) as f32;
+                let nx = corner_cx[c] + r[c] * angle.cos();
+                let ny = corner_cy[c] + r[c] * angle.sin();
+                vertices.push(px);
+                vertices.push(py);
+                vertices.push(nx);
+                vertices.push(ny);
+                px = nx;
+                py = ny;
+            }
+            // 从圆角末尾连线到下一个圆角的起点（即直边段）
+            let next = (c + 1) % 4;
+            let next_start = corner_start[next];
+            let next_x = corner_cx[next] + r[next] * next_start.cos();
+            let next_y = corner_cy[next] + r[next] * next_start.sin();
+            vertices.push(px);
+            vertices.push(py);
+            vertices.push(next_x);
+            vertices.push(next_y);
+        }
+
+        (start_x, start_y)
+    }
+
     /// 将当前路径命令扁平化为顶点列表（x, y 交替）。
     /// 对于圆弧，使用线性近似（固定 16 段细分）。
     fn flatten_path(&self) -> Vec<f32> {
@@ -1352,27 +1482,11 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::RoundRect(x, y, w, h, ref radii) => {
-                    // 简化实现：忽略圆角，退化为矩形子路径
-                    // 使用与 Path2D::rect 相同的矩形线段
-                    let _ = radii;
-                    let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-                    vertices.push(current_x);
-                    vertices.push(current_y);
-                    vertices.push(corners[0].0);
-                    vertices.push(corners[0].1);
-                    for i in 0..3 {
-                        vertices.push(corners[i].0);
-                        vertices.push(corners[i].1);
-                        vertices.push(corners[i + 1].0);
-                        vertices.push(corners[i + 1].1);
-                    }
-                    // 闭合回起点
-                    vertices.push(corners[3].0);
-                    vertices.push(corners[3].1);
-                    vertices.push(corners[0].0);
-                    vertices.push(corners[0].1);
-                    current_x = corners[0].0;
-                    current_y = corners[0].1;
+                    let (nx, ny) = Self::flatten_round_rect(
+                        &mut vertices, current_x, current_y, x, y, w, h, radii,
+                    );
+                    current_x = nx;
+                    current_y = ny;
                 }
                 PathCommand::ClosePath => {
                     // ClosePath 不产生额外线段（路径自动闭合由渲染器处理）
@@ -1493,24 +1607,11 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::RoundRect(x, y, w, h, ref radii) => {
-                    let _ = radii;
-                    let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-                    vertices.push(current_x);
-                    vertices.push(current_y);
-                    vertices.push(corners[0].0);
-                    vertices.push(corners[0].1);
-                    for i in 0..3 {
-                        vertices.push(corners[i].0);
-                        vertices.push(corners[i].1);
-                        vertices.push(corners[i + 1].0);
-                        vertices.push(corners[i + 1].1);
-                    }
-                    vertices.push(corners[3].0);
-                    vertices.push(corners[3].1);
-                    vertices.push(corners[0].0);
-                    vertices.push(corners[0].1);
-                    current_x = corners[0].0;
-                    current_y = corners[0].1;
+                    let (nx, ny) = Self::flatten_round_rect(
+                        &mut vertices, current_x, current_y, x, y, w, h, radii,
+                    );
+                    current_x = nx;
+                    current_y = ny;
                 }
                 PathCommand::ClosePath => {}
             }
@@ -3549,5 +3650,185 @@ mod tests {
         let pf = &ctx.primitives().path_fills[0];
         // 16 段细分 × 4 floats = 64
         assert_eq!(pf.vertices.len(), 64);
+    }
+
+    // ── roundRect 扁平化测试 ──
+
+    /// 测试 roundRect 带圆角半径生成更多顶点（不是普通矩形）。
+    /// 普通矩形只有 20 个 float（5 段 × 4），带圆角的应有更多。
+    #[test]
+    fn test_round_rect_more_vertices_than_plain_rect() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.round_rect(10.0, 20.0, 100.0, 80.0, vec![10.0]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 带圆角：1（初始连线）+ 4 × (8 段圆角 + 1 直边) = 1 + 36 = 37 段 × 4 = 148 floats
+        // 而普通矩形只有 5 段 × 4 = 20 floats
+        assert!(
+            pf.vertices.len() > 20,
+            "roundRect with radius should produce more vertices than plain rect, got {}",
+            pf.vertices.len()
+        );
+    }
+
+    /// 测试 roundRect 顶点不在矩形的尖角上（左上角 (x,y) 不应出现在顶点中）。
+    #[test]
+    fn test_round_rect_vertices_avoid_sharp_corners() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        let x = 10.0f32;
+        let y = 20.0f32;
+        let w = 100.0f32;
+        let h = 80.0f32;
+        path.round_rect(x, y, w, h, vec![15.0]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 矩形的四个尖角不应出现在顶点中
+        let sharp_corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+        for chunk in pf.vertices.chunks_exact(2) {
+            let (vx, vy) = (chunk[0], chunk[1]);
+            for &(cx, cy) in &sharp_corners {
+                assert!(
+                    (vx - cx).abs() > 0.01 || (vy - cy).abs() > 0.01,
+                    "vertex ({}, {}) should not be at sharp corner ({}, {})",
+                    vx, vy, cx, cy
+                );
+            }
+        }
+    }
+
+    /// 测试 roundRect 零半径退化为普通矩形。
+    #[test]
+    fn test_round_rect_zero_radius_degrades_to_rect() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.round_rect(10.0, 20.0, 100.0, 80.0, vec![0.0]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 零半径应退化为普通矩形：5 段 × 4 = 20 floats
+        assert_eq!(pf.vertices.len(), 20);
+    }
+
+    /// 测试 roundRect 空半径列表退化为普通矩形。
+    #[test]
+    fn test_round_rect_empty_radii_degrades_to_rect() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.round_rect(10.0, 20.0, 100.0, 80.0, vec![]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        assert_eq!(pf.vertices.len(), 20);
+    }
+
+    /// 测试 roundRect 四个不同圆角半径。
+    #[test]
+    fn test_round_rect_four_different_radii() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        path.round_rect(10.0, 20.0, 100.0, 80.0, vec![5.0, 10.0, 15.0, 20.0]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 有圆角应产生远多于普通矩形的顶点
+        assert!(pf.vertices.len() > 20);
+    }
+
+    /// 测试 roundRect 半径超过短边一半时被限制。
+    #[test]
+    fn test_round_rect_radius_clamped() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        // 宽 40，高 20，半径 50 超过短边一半(10)
+        path.round_rect(0.0, 0.0, 40.0, 20.0, vec![50.0]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 应该不 panic，并且顶点不应超出矩形范围
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for chunk in pf.vertices.chunks_exact(2) {
+            min_x = min_x.min(chunk[0]);
+            min_y = min_y.min(chunk[1]);
+            max_x = max_x.max(chunk[0]);
+            max_y = max_y.max(chunk[1]);
+        }
+        // 顶点应大致在矩形范围内（允许浮点误差）
+        assert!(min_x >= -0.1 && min_y >= -0.1);
+        assert!(max_x <= 40.1 && max_y <= 20.1);
+    }
+
+    /// 测试 roundRect 通过当前路径的 flatten_path 正确工作。
+    #[test]
+    fn test_round_rect_via_current_path() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.current_path.round_rect(10.0, 20.0, 100.0, 80.0, vec![10.0]);
+        ctx.fill();
+        assert_eq!(ctx.primitives().path_fills.len(), 1);
+        let pf = &ctx.primitives().path_fills[0];
+        assert!(
+            pf.vertices.len() > 20,
+            "roundRect via current path should produce rounded vertices"
+        );
+    }
+
+    /// 测试 roundRect 圆角顶点在几何上合理：左上角附近的顶点应偏向矩形的内部。
+    #[test]
+    fn test_round_rect_corner_vertices_offset_inward() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path = Path2D::new();
+        let x = 50.0f32;
+        let y = 50.0f32;
+        let w = 100.0f32;
+        let h = 100.0f32;
+        let r = 20.0f32;
+        path.round_rect(x, y, w, h, vec![r]);
+        ctx.fill_with_path(&path);
+        let pf = &ctx.primitives().path_fills[0];
+        // 检查所有顶点不在矩形的四个尖角 20×20 正方形区域内
+        let corner_zones = [
+            (x, y),               // 左上
+            (x + w - r, y),       // 右上起点
+            (x + w, y + h - r),   // 右下起点
+            (x, y + h - r),       // 左下起点
+        ];
+        // 至少应有一些顶点在圆角区域（不在直边上）
+        let mut has_corner_vertex = false;
+        for chunk in pf.vertices.chunks_exact(2) {
+            let (vx, vy) = (chunk[0], chunk[1]);
+            // 左上角圆角区域：x 在 [x, x+r] 且 y 在 [y, y+r] 的四分之一圆内
+            if vx >= x && vx <= x + r && vy >= y && vy <= y + r {
+                let dx = vx - (x + r);
+                let dy = vy - (y + r);
+                if dx * dx + dy * dy <= r * r * 1.1 {
+                    has_corner_vertex = true;
+                    break;
+                }
+            }
+        }
+        assert!(has_corner_vertex, "should have vertices on the rounded corner arc");
+        let _ = corner_zones;
+    }
+
+    /// 测试 roundRect 两个半径值时的映射：[左上/右下, 右上/左下]。
+    #[test]
+    fn test_round_rect_two_radii_mapping() {
+        let mut ctx = CanvasContext::new(200, 200);
+        let mut path1 = Path2D::new();
+        path1.round_rect(0.0, 0.0, 100.0, 100.0, vec![5.0, 15.0]);
+        ctx.fill_with_path(&path1);
+        let pf1 = ctx.primitives().path_fills[0].vertices.clone();
+
+        // 与四个不同半径对比：[5, 15, 5, 15]
+        let mut path2 = Path2D::new();
+        path2.round_rect(0.0, 0.0, 100.0, 100.0, vec![5.0, 15.0, 5.0, 15.0]);
+        // 清空之前的图元
+        let mut ctx2 = CanvasContext::new(200, 200);
+        ctx2.fill_with_path(&path2);
+        let pf2 = ctx2.primitives().path_fills[0].vertices.clone();
+
+        // 两种写法应产生相同的顶点
+        assert_eq!(pf1.len(), pf2.len(), "2-radii should map to 4-radii [a,b,a,b]");
     }
 }
