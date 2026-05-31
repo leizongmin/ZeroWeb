@@ -1736,4 +1736,147 @@ mod tests {
             assert!(matches!(received[0], AppEvent::Focused), "应为 Focused 事件");
         }
     }
+
+    /// 验证 GpuApp 分发 IME Enabled/Disabled 事件时，事件和窗口引用均正确传递。
+    /// 模拟输入法激活和停用的完整生命周期，确保 GpuApp 回调接收到正确的 Ime 变体。
+    #[test]
+    fn test_gpu_app_ime_enabled_disabled_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+
+        // IME 激活
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Enabled), None);
+        // IME 停用
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Disabled), None);
+
+        assert_eq!(received.len(), 2, "应收到 2 个 IME 事件");
+        assert!(
+            matches!(&received[0], AppEvent::Ime(ImeEvent::Enabled)),
+            "第 1 个事件应为 Ime(Enabled)"
+        );
+        assert!(
+            matches!(&received[1], AppEvent::Ime(ImeEvent::Disabled)),
+            "第 2 个事件应为 Ime(Disabled)"
+        );
+    }
+
+    /// 验证 WindowConfig::with_resizable 连续多次调用时，最后一次调用生效。
+    /// 模拟用户先设置 resizable=true 再覆盖为 false 再覆盖为 true，
+    /// 最终 resizable 标志应为 true。
+    #[test]
+    fn test_window_config_with_resizable_chained_overwrite() {
+        let config = WindowConfig::new("Resizable")
+            .with_resizable(true)
+            .with_resizable(false)
+            .with_resizable(true);
+        assert!(config.resizable, "连续多次 with_resizable 调用后，最终值应为 true");
+
+        let config2 = WindowConfig::new("R2").with_resizable(false).with_resizable(true);
+        assert!(config2.resizable, "先 false 后 true，最终应为 true");
+    }
+
+    /// 验证 GpuApp 分发鼠标滚轮事件时，LineDelta 为零值的边界情况正确传递。
+    /// 零值滚动增量可能在触控板恰好回到静止位置时产生。
+    #[test]
+    fn test_gpu_app_mouse_wheel_zero_line_delta() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+
+        app.handle_window_event(
+            winit::event::WindowEvent::MouseWheel {
+                device_id: winit::event::DeviceId::dummy(),
+                delta: winit::event::MouseScrollDelta::LineDelta(0.0, 0.0),
+                phase: winit::event::TouchPhase::Moved,
+            },
+            None,
+        );
+
+        assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
+        match &received[0] {
+            AppEvent::MouseWheel { delta } => {
+                assert_eq!(
+                    *delta,
+                    MouseScrollDelta::LineDelta(0.0, 0.0),
+                    "零值 LineDelta 应精确传递"
+                );
+            }
+            _ => panic!("应为 MouseWheel 事件"),
+        }
+    }
+
+    /// 验证 BasicApp 分发 IME Enabled 和 Disabled 事件的正确性。
+    /// 这两个事件变体没有额外数据字段，确保通过分发路径正确传递变体类型。
+    #[test]
+    fn test_basic_app_ime_enabled_disabled_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Enabled));
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Disabled));
+
+        assert_eq!(received.len(), 2, "应收到 2 个 IME 事件");
+        assert!(
+            matches!(&received[0], AppEvent::Ime(ImeEvent::Enabled)),
+            "第 1 个事件应为 Ime(Enabled)"
+        );
+        assert!(
+            matches!(&received[1], AppEvent::Ime(ImeEvent::Disabled)),
+            "第 2 个事件应为 Ime(Disabled)"
+        );
+    }
+
+    /// 验证 GpuApp 分发 Other(u16::MAX) 鼠标按钮事件时正确传递。
+    /// Other 变体携带 u16 值，测试边界值 u16::MAX 确保不发生截断。
+    #[test]
+    fn test_gpu_app_mouse_input_other_max_button() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+            received.push(e);
+        };
+        let mut app = make_gpu_app(&mut callback);
+
+        app.handle_window_event(
+            winit::event::WindowEvent::MouseInput {
+                device_id: winit::event::DeviceId::dummy(),
+                state: winit::event::ElementState::Pressed,
+                button: winit::event::MouseButton::Other(u16::MAX),
+            },
+            None,
+        );
+        app.handle_window_event(
+            winit::event::WindowEvent::MouseInput {
+                device_id: winit::event::DeviceId::dummy(),
+                state: winit::event::ElementState::Released,
+                button: winit::event::MouseButton::Other(u16::MAX),
+            },
+            None,
+        );
+
+        assert_eq!(received.len(), 2, "应收到 2 个 MouseInput 事件");
+        match &received[0] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Other(u16::MAX), "按钮应为 Other(u16::MAX)");
+                assert!(*pressed, "应为按下状态");
+            }
+            _ => panic!("第 1 个事件应为 MouseInput"),
+        }
+        match &received[1] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(
+                    *button,
+                    MouseButton::Other(u16::MAX),
+                    "释放事件的按钮应为 Other(u16::MAX)"
+                );
+                assert!(!pressed, "应为释放状态");
+            }
+            _ => panic!("第 2 个事件应为 MouseInput"),
+        }
+    }
 }

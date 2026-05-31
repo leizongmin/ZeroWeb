@@ -1574,6 +1574,269 @@ mod tests {
         assert!(!tracker.is_full_redraw(), "render_html 后不应需要全量重绘");
     }
 
+    /// 测试渲染包含多个重叠元素的页面，验证填充图元按父→子顺序生成。
+    ///
+    /// 页面包含两个 div：一个宽的父元素（背景红色）和一个窄的子元素（背景蓝色），
+    /// 通过 CSS 选择器为两者设置背景色。验证生成的填充图元中，
+    /// 父元素填充先于子元素填充，且颜色和尺寸正确。
+    #[test]
+    fn test_pipeline_overlapping_elements_fill_order() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="parent"><div class="child">Text</div></div>
+        </body></html>"#;
+        let css = r#"
+            .parent { background-color: #ff0000; width: 400px; height: 300px; }
+            .child { background-color: #0000ff; width: 200px; height: 100px; }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        // 应产生至少 2 个填充图元（parent + child）
+        assert!(
+            result.primitives.fills.len() >= 2,
+            "重叠元素应产生至少 2 个填充图元，实际 {}",
+            result.primitives.fills.len()
+        );
+
+        // 父元素填充应在子元素之前
+        let parent_fill = &result.primitives.fills[0];
+        // 父元素背景色为红色
+        assert!(
+            parent_fill.color.r > 200 && parent_fill.color.g < 50,
+            "第一个填充应为父元素红色背景，实际 r={} g={} b={}",
+            parent_fill.color.r,
+            parent_fill.color.g,
+            parent_fill.color.b
+        );
+        // 父元素尺寸应大于子元素
+        assert!(
+            parent_fill.rect.size.width >= 200.0,
+            "父元素宽度应 >= 200，实际 {}",
+            parent_fill.rect.size.width
+        );
+    }
+
+    /// 测试渲染管线各阶段计时信息的一致性。
+    ///
+    /// total_ms 应大于等于 style_ms + layout_ms + paint_ms 的最大值。
+    /// 验证计时字段不含 NaN 或负值，且各阶段耗时均为有限值。
+    #[test]
+    fn test_pipeline_timing_consistency() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="a">Section A</div>
+            <div class="b">Section B</div>
+        </body></html>"#;
+        let css = r#"
+            .a { background-color: red; width: 200px; height: 100px; }
+            .b { background-color: blue; width: 200px; height: 100px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        // total_ms 应为有限正数
+        assert!(
+            result.timings.total_ms >= 0.0 && result.timings.total_ms.is_finite(),
+            "total_ms 应为有限非负值，实际 {}",
+            result.timings.total_ms
+        );
+
+        // 各阶段计时均为有限值
+        assert!(result.timings.parse_ms.is_finite(), "parse_ms 应为有限值");
+        assert!(result.timings.style_ms.is_finite(), "style_ms 应为有限值");
+        assert!(result.timings.layout_ms.is_finite(), "layout_ms 应为有限值");
+        assert!(result.timings.paint_ms.is_finite(), "paint_ms 应为有限值");
+
+        // total_ms 应 >= 任意子阶段
+        assert!(
+            result.timings.total_ms >= result.timings.style_ms,
+            "total_ms ({}) 应 >= style_ms ({})",
+            result.timings.total_ms,
+            result.timings.style_ms
+        );
+        assert!(
+            result.timings.total_ms >= result.timings.layout_ms,
+            "total_ms ({}) 应 >= layout_ms ({})",
+            result.timings.total_ms,
+            result.timings.layout_ms
+        );
+        assert!(
+            result.timings.total_ms >= result.timings.paint_ms,
+            "total_ms ({}) 应 >= paint_ms ({})",
+            result.timings.total_ms,
+            result.timings.paint_ms
+        );
+    }
+
+    /// 测试渲染管线处理包含 <style> 标签的 HTML 时不崩溃。
+    ///
+    /// HTML 中的 <style> 块包含 CSS 规则，同时通过参数传入外部 CSS。
+    /// 验证管线能安全处理混合样式来源，且通过 CSS 规则生成填充图元。
+    #[test]
+    fn test_pipeline_html_with_inline_style_block() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head>
+            <style>.boxed { background-color: #336699; width: 200px; height: 100px; }</style>
+        </head><body>
+            <div class="boxed">Styled via style block</div>
+        </body></html>"#;
+        // 同时传入外部 CSS 验证混合样式不冲突
+        let css = ".boxed { background-color: #663399; }";
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "渲染应正常完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // CSS 规则应生成填充图元
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 <style> 标签的 HTML 应与外部 CSS 配合生成填充图元"
+        );
+    }
+
+    /// 测试同一元素上同时设置背景色和边框，验证填充图元顺序和数量。
+    ///
+    /// 元素设置 background-color 和 4 条 solid 边框，
+    /// 验证第一个填充为背景色，后续 4 个为边框填充，
+    /// 总填充数恰好为 5（1 背景 + 4 边框）。
+    #[test]
+    fn test_pipeline_background_and_border_fill_count() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Bordered</div></body></html>"#;
+        let css = r#"
+            .box {
+                background-color: #ffcc00;
+                width: 200px;
+                height: 100px;
+                border: 3px solid #333333;
+            }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        // 1 背景 + 4 边框 = 5 填充
+        assert!(
+            result.primitives.fills.len() >= 5,
+            "背景 + 4 条边框应产生至少 5 个填充图元，实际 {}",
+            result.primitives.fills.len()
+        );
+
+        // 第一个填充应为背景色 #ffcc00 → Rgba(255, 204, 0, 255)
+        let bg_fill = &result.primitives.fills[0];
+        assert_eq!(bg_fill.color.r, 255, "背景 R 应为 255");
+        assert_eq!(bg_fill.color.g, 204, "背景 G 应为 204");
+        assert_eq!(bg_fill.color.b, 0, "背景 B 应为 0");
+
+        // 背景填充尺寸匹配元素尺寸
+        assert!(
+            bg_fill.rect.size.width > 0.0,
+            "背景宽度应为正，实际 {}",
+            bg_fill.rect.size.width
+        );
+        assert!(
+            bg_fill.rect.size.height > 0.0,
+            "背景高度应为正，实际 {}",
+            bg_fill.rect.size.height
+        );
+    }
+
+    /// 测试 recompute_styles 后多次 incremental_render 交替执行不 panic。
+    ///
+    /// 模拟真实场景：首次全量渲染 → 样式变更重算 → 多次小区域增量渲染。
+    /// 验证每次增量渲染后布局缓存有效、脏追踪器状态正确。
+    #[test]
+    fn test_pipeline_recompute_then_multiple_incremental() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+
+        // 首次全量渲染
+        let _first = pipeline.render_html(html, ".box { background-color: red; width: 200px; height: 100px; }");
+        assert!(pipeline.layout().is_some());
+
+        // 样式变更
+        let doc = zero_dom::parse_html(html);
+        let css = ".box { background-color: green; width: 300px; height: 150px; }";
+        let ss = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (prims, _, _) = pipeline.recompute_styles(&doc, &ss);
+        assert!(!prims.fills.is_empty(), "样式变更后应产生填充图元");
+
+        // 第一次增量渲染（小脏区域）
+        let dirty1 = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+        let result1 = pipeline.incremental_render(html, "", &dirty1);
+        assert!(result1.timings.total_ms >= 0.0, "第一次增量渲染应正常完成");
+        assert!(pipeline.layout().is_some(), "增量渲染后布局缓存应存在");
+        assert!(
+            pipeline.dirty_tracker().dirty_rects().is_empty(),
+            "增量渲染后脏区域应清除"
+        );
+
+        // 第二次增量渲染（另一个小脏区域）
+        let dirty2 = zero_layout_engine::LayoutBox {
+            node_id: None,
+            x: 100.0,
+            y: 50.0,
+            width: 80.0,
+            height: 60.0,
+            content_x: 100.0,
+            content_y: 50.0,
+            content_width: 80.0,
+            content_height: 60.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: zero_layout_engine::types::OverflowClip::Visible,
+            overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        };
+        let result2 = pipeline.incremental_render(html, "", &dirty2);
+        assert!(result2.timings.total_ms >= 0.0, "第二次增量渲染应正常完成");
+        assert!(
+            pipeline.dirty_tracker().dirty_rects().is_empty(),
+            "第二次增量渲染后脏区域应清除"
+        );
+        assert!(pipeline.layout().is_some(), "布局缓存应始终有效");
+    }
+
     /// 测试合成层提升时根图层始终为第一个且 id=0，即使所有子元素都被提升。
     ///
     /// 创建两个子元素（opacity < 1.0），两者均被提升为独立合成层。

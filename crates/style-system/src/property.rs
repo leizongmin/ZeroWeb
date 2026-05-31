@@ -441,6 +441,65 @@ pub enum CaretColorComputedValue {
     Color(ColorValue),
 }
 
+/// CSS mix-blend-mode 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MixBlendModeComputedValue {
+    /// normal（默认值）。
+    Normal,
+    /// multiply。
+    Multiply,
+    /// screen。
+    Screen,
+    /// overlay。
+    Overlay,
+    /// darken。
+    Darken,
+    /// lighten。
+    Lighten,
+    /// color-dodge。
+    ColorDodge,
+    /// color-burn。
+    ColorBurn,
+    /// hard-light。
+    HardLight,
+    /// soft-light。
+    SoftLight,
+    /// difference。
+    Difference,
+    /// exclusion。
+    Exclusion,
+    /// hue。
+    Hue,
+    /// saturation。
+    Saturation,
+    /// color。
+    Color,
+    /// luminosity。
+    Luminosity,
+}
+
+/// CSS scrollbar-width 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollbarWidthComputedValue {
+    /// auto（默认值）。
+    Auto,
+    /// thin。
+    Thin,
+    /// none。
+    None,
+}
+
+/// CSS scrollbar-gutter 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollbarGutterComputedValue {
+    /// auto（默认值）。
+    Auto,
+    /// stable。
+    Stable,
+    /// stable both-edges。
+    StableBothEdges,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -985,6 +1044,12 @@ pub enum PropertyValue {
     AccentColor(AccentColorComputedValue),
     /// caret-color 值。
     CaretColor(CaretColorComputedValue),
+    /// mix-blend-mode 值。
+    MixBlendMode(MixBlendModeComputedValue),
+    /// scrollbar-width 值。
+    ScrollbarWidth(ScrollbarWidthComputedValue),
+    /// scrollbar-gutter 值。
+    ScrollbarGutter(ScrollbarGutterComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1467,6 +1532,12 @@ pub struct ComputedStyle {
     pub accent_color: AccentColorComputedValue,
     /// caret-color 属性。
     pub caret_color: CaretColorComputedValue,
+    /// mix-blend-mode 属性。
+    pub mix_blend_mode: MixBlendModeComputedValue,
+    /// scrollbar-width 属性。
+    pub scrollbar_width: ScrollbarWidthComputedValue,
+    /// scrollbar-gutter 属性。
+    pub scrollbar_gutter: ScrollbarGutterComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1704,6 +1775,11 @@ impl Default for ComputedStyle {
             appearance: AppearanceComputedValue::Auto,
             accent_color: AccentColorComputedValue::Auto,
             caret_color: CaretColorComputedValue::Auto,
+
+            // Compositing / Scrolling
+            mix_blend_mode: MixBlendModeComputedValue::Normal,
+            scrollbar_width: ScrollbarWidthComputedValue::Auto,
+            scrollbar_gutter: ScrollbarGutterComputedValue::Auto,
         }
     }
 }
@@ -1927,6 +2003,11 @@ impl PropertyRegistry {
             "accent-color" => Some(AccentColor(AccentColorComputedValue::Auto)),
             "caret-color" => Some(CaretColor(CaretColorComputedValue::Auto)),
 
+            // Compositing / Scrolling
+            "mix-blend-mode" => Some(MixBlendMode(MixBlendModeComputedValue::Normal)),
+            "scrollbar-width" => Some(ScrollbarWidth(ScrollbarWidthComputedValue::Auto)),
+            "scrollbar-gutter" => Some(ScrollbarGutter(ScrollbarGutterComputedValue::Auto)),
+
             _ => None,
         }
     }
@@ -2126,6 +2207,9 @@ impl PropertyRegistry {
             "appearance",
             "accent-color",
             "caret-color",
+            "mix-blend-mode",
+            "scrollbar-width",
+            "scrollbar-gutter",
         ]
     }
 }
@@ -3973,6 +4057,52 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Compositing / Scrolling 属性 ──
+        "mix-blend-mode" => {
+            if let Some(v) = values::parse_mix_blend_mode(value) {
+                style.mix_blend_mode = match v {
+                    zero_css_parser::values::MixBlendModeValue::Normal => MixBlendModeComputedValue::Normal,
+                    zero_css_parser::values::MixBlendModeValue::Multiply => MixBlendModeComputedValue::Multiply,
+                    zero_css_parser::values::MixBlendModeValue::Screen => MixBlendModeComputedValue::Screen,
+                    zero_css_parser::values::MixBlendModeValue::Overlay => MixBlendModeComputedValue::Overlay,
+                    zero_css_parser::values::MixBlendModeValue::Darken => MixBlendModeComputedValue::Darken,
+                    zero_css_parser::values::MixBlendModeValue::Lighten => MixBlendModeComputedValue::Lighten,
+                    zero_css_parser::values::MixBlendModeValue::ColorDodge => MixBlendModeComputedValue::ColorDodge,
+                    zero_css_parser::values::MixBlendModeValue::ColorBurn => MixBlendModeComputedValue::ColorBurn,
+                    zero_css_parser::values::MixBlendModeValue::HardLight => MixBlendModeComputedValue::HardLight,
+                    zero_css_parser::values::MixBlendModeValue::SoftLight => MixBlendModeComputedValue::SoftLight,
+                    zero_css_parser::values::MixBlendModeValue::Difference => MixBlendModeComputedValue::Difference,
+                    zero_css_parser::values::MixBlendModeValue::Exclusion => MixBlendModeComputedValue::Exclusion,
+                    zero_css_parser::values::MixBlendModeValue::Hue => MixBlendModeComputedValue::Hue,
+                    zero_css_parser::values::MixBlendModeValue::Saturation => MixBlendModeComputedValue::Saturation,
+                    zero_css_parser::values::MixBlendModeValue::Color => MixBlendModeComputedValue::Color,
+                    zero_css_parser::values::MixBlendModeValue::Luminosity => MixBlendModeComputedValue::Luminosity,
+                };
+                return true;
+            }
+        }
+        "scrollbar-width" => {
+            if let Some(v) = values::parse_scrollbar_width(value) {
+                style.scrollbar_width = match v {
+                    zero_css_parser::values::ScrollbarWidthValue::Auto => ScrollbarWidthComputedValue::Auto,
+                    zero_css_parser::values::ScrollbarWidthValue::Thin => ScrollbarWidthComputedValue::Thin,
+                    zero_css_parser::values::ScrollbarWidthValue::None => ScrollbarWidthComputedValue::None,
+                };
+                return true;
+            }
+        }
+        "scrollbar-gutter" => {
+            if let Some(v) = values::parse_scrollbar_gutter(value) {
+                style.scrollbar_gutter = match v {
+                    zero_css_parser::values::ScrollbarGutterValue::Auto => ScrollbarGutterComputedValue::Auto,
+                    zero_css_parser::values::ScrollbarGutterValue::Stable => ScrollbarGutterComputedValue::Stable,
+                    zero_css_parser::values::ScrollbarGutterValue::StableBothEdges => {
+                        ScrollbarGutterComputedValue::StableBothEdges
+                    }
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -4777,6 +4907,19 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "caret-color" => {
             style.caret_color = default_style.caret_color;
+            true
+        }
+        // Compositing / Scrolling
+        "mix-blend-mode" => {
+            style.mix_blend_mode = default_style.mix_blend_mode;
+            true
+        }
+        "scrollbar-width" => {
+            style.scrollbar_width = default_style.scrollbar_width;
+            true
+        }
+        "scrollbar-gutter" => {
+            style.scrollbar_gutter = default_style.scrollbar_gutter;
             true
         }
         _ => false,
@@ -8936,5 +9079,248 @@ mod tests {
         style.caret_color = CaretColorComputedValue::Color(ColorValue::Rgba(255, 0, 0, 255));
         assert!(apply_initial_value(&mut style, "caret-color"));
         assert_eq!(style.caret_color, CaretColorComputedValue::Auto);
+    }
+
+    // ── mix-blend-mode 属性测试 ──
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_normal() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "normal"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Normal);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_multiply() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "multiply"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Multiply);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_screen() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "screen"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Screen);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_overlay() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "overlay"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Overlay);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_darken() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "darken"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Darken);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_lighten() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "lighten"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Lighten);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_color_dodge() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "color-dodge"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::ColorDodge);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_color_burn() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "color-burn"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::ColorBurn);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_hard_light() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "hard-light"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::HardLight);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_soft_light() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "soft-light"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::SoftLight);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_difference() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "difference"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Difference);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_exclusion() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "exclusion"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Exclusion);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_hue() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "hue"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Hue);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_saturation() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "saturation"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Saturation);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_color() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "color"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Color);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_luminosity() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "mix-blend-mode", "luminosity"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Luminosity);
+    }
+
+    #[test]
+    fn test_apply_property_mix_blend_mode_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "mix-blend-mode", "invalid"));
+    }
+
+    #[test]
+    fn test_mix_blend_mode_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("mix-blend-mode"));
+    }
+
+    #[test]
+    fn test_mix_blend_mode_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"mix-blend-mode"));
+    }
+
+    #[test]
+    fn test_mix_blend_mode_initial_value() {
+        assert!(PropertyRegistry::initial_value("mix-blend-mode").is_some());
+        let mut style = ComputedStyle::default();
+        style.mix_blend_mode = MixBlendModeComputedValue::Multiply;
+        assert!(apply_initial_value(&mut style, "mix-blend-mode"));
+        assert_eq!(style.mix_blend_mode, MixBlendModeComputedValue::Normal);
+    }
+
+    // ── scrollbar-width 属性测试 ──
+
+    #[test]
+    fn test_apply_property_scrollbar_width_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scrollbar-width", "auto"));
+        assert_eq!(style.scrollbar_width, ScrollbarWidthComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_width_thin() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scrollbar-width", "thin"));
+        assert_eq!(style.scrollbar_width, ScrollbarWidthComputedValue::Thin);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_width_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scrollbar-width", "none"));
+        assert_eq!(style.scrollbar_width, ScrollbarWidthComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_width_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "scrollbar-width", "thick"));
+    }
+
+    #[test]
+    fn test_scrollbar_width_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("scrollbar-width"));
+    }
+
+    #[test]
+    fn test_scrollbar_width_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"scrollbar-width"));
+    }
+
+    #[test]
+    fn test_scrollbar_width_initial_value() {
+        assert!(PropertyRegistry::initial_value("scrollbar-width").is_some());
+        let mut style = ComputedStyle::default();
+        style.scrollbar_width = ScrollbarWidthComputedValue::Thin;
+        assert!(apply_initial_value(&mut style, "scrollbar-width"));
+        assert_eq!(style.scrollbar_width, ScrollbarWidthComputedValue::Auto);
+    }
+
+    // ── scrollbar-gutter 属性测试 ──
+
+    #[test]
+    fn test_apply_property_scrollbar_gutter_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scrollbar-gutter", "auto"));
+        assert_eq!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_gutter_stable() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "scrollbar-gutter", "stable"));
+        assert_eq!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Stable);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_gutter_stable_both_edges() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "scrollbar-gutter",
+            "stable both-edges"
+        ));
+        assert_eq!(style.scrollbar_gutter, ScrollbarGutterComputedValue::StableBothEdges);
+    }
+
+    #[test]
+    fn test_apply_property_scrollbar_gutter_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "scrollbar-gutter", "both-edges"));
+        assert!(!apply_property_value(&mut style, "scrollbar-gutter", "invalid"));
+    }
+
+    #[test]
+    fn test_scrollbar_gutter_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("scrollbar-gutter"));
+    }
+
+    #[test]
+    fn test_scrollbar_gutter_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"scrollbar-gutter"));
+    }
+
+    #[test]
+    fn test_scrollbar_gutter_initial_value() {
+        assert!(PropertyRegistry::initial_value("scrollbar-gutter").is_some());
+        let mut style = ComputedStyle::default();
+        style.scrollbar_gutter = ScrollbarGutterComputedValue::Stable;
+        assert!(apply_initial_value(&mut style, "scrollbar-gutter"));
+        assert_eq!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto);
     }
 }

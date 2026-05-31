@@ -5822,4 +5822,316 @@ mod tests {
             "flex-end 项应明显在 flex-start 项下方（容器 200px 高）"
         );
     }
+
+    // ── 边缘场景补充测试（第七批）──
+
+    /// 测试百分比宽度相对于父容器计算。
+    ///
+    /// 父容器 400px，子元素宽度 50%（200px）。
+    /// 验证 taffy 正确解析百分比宽度并计算出精确的像素值。
+    #[test]
+    fn test_layout_percentage_width_with_parent() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(parent, child).unwrap();
+
+        let mut styles = HashMap::new();
+        // 父容器固定宽度 400px
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.width = LengthValue::Px(400.0);
+        parent_style.height = LengthValue::Px(200.0);
+        styles.insert(parent, parent_style);
+
+        // 子元素宽度 50%
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Percentage(50.0);
+        child_style.height = LengthValue::Px(80.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let child_box = find_child_by_node_id(&result.root, child).expect("child 应找到");
+        // 50% of 400px = 200px
+        assert!(
+            (child_box.width - 200.0).abs() < 1.0,
+            "子元素宽度应为 200px（400 * 50%），实际 {}",
+            child_box.width
+        );
+        assert_eq!(child_box.height, 80.0, "子元素高度应为 80");
+    }
+
+    /// 测试 flex 容器中同时包含 flex-grow 和固定尺寸子元素。
+    ///
+    /// 容器 400px：一个 flex-grow=1 的自适应项 + 一个固定 120px 的项。
+    /// 自适应项应占据剩余 280px。
+    #[test]
+    fn test_flex_grow_coexists_with_fixed_item() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let grow_item = doc.create_element("span");
+        doc.append_child(container, grow_item).unwrap();
+        let fixed_item = doc.create_element("span");
+        doc.append_child(container, fixed_item).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(100.0);
+        styles.insert(container, container_style);
+
+        // grow_item: 无固定宽度，flex-grow=1
+        let mut grow_style = ComputedStyle::default();
+        grow_style.flex_grow = 1.0;
+        grow_style.height = LengthValue::Px(50.0);
+        styles.insert(grow_item, grow_style);
+
+        // fixed_item: 固定宽度 120px，无 grow
+        let mut fixed_style = ComputedStyle::default();
+        fixed_style.width = LengthValue::Px(120.0);
+        fixed_style.height = LengthValue::Px(50.0);
+        styles.insert(fixed_item, fixed_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let grow_box = find_child_by_node_id(&result.root, grow_item).expect("grow_item found");
+        let fixed_box = find_child_by_node_id(&result.root, fixed_item).expect("fixed_item found");
+
+        // 固定项宽度不变
+        assert!(
+            (fixed_box.width - 120.0).abs() < 1.0,
+            "固定项宽度应为 120px，实际 {}",
+            fixed_box.width
+        );
+
+        // grow 项占据剩余空间: 400 - 120 = 280px
+        assert!(
+            (grow_box.width - 280.0).abs() < 1.0,
+            "grow 项宽度应为 280px（400-120），实际 {}",
+            grow_box.width
+        );
+
+        // 总宽度应约 400px
+        let total = grow_box.width + fixed_box.width;
+        assert!((total - 400.0).abs() < 1.0, "两项总宽度应约 400px，实际 {}", total);
+    }
+
+    /// 测试相对定位元素 top/left 偏移后仍占据原始空间。
+    ///
+    /// 三个 block 元素：div1 正常，div2 position:relative + top:20px + left:10px，div3 正常。
+    /// div3 的 y 位置不应受 div2 的相对偏移影响（相对定位不脱离文档流）。
+    #[test]
+    fn test_relative_position_preserves_flow_space() {
+        let (mut doc, body) = make_doc_with_body();
+        let div1 = doc.create_element("div");
+        doc.append_child(body, div1).unwrap();
+        let div2 = doc.create_element("div");
+        doc.append_child(body, div2).unwrap();
+        let div3 = doc.create_element("div");
+        doc.append_child(body, div3).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // div1: 正常块级元素
+        styles.insert(div1, make_style_with_display(DisplayValue::Block, 200.0, 50.0));
+
+        // div2: 相对定位，有偏移
+        let mut rel_style = ComputedStyle::default();
+        rel_style.display = DisplayValue::Block;
+        rel_style.position = PositionValue::Relative;
+        rel_style.top = LengthValue::Px(20.0);
+        rel_style.left = LengthValue::Px(10.0);
+        rel_style.width = LengthValue::Px(200.0);
+        rel_style.height = LengthValue::Px(60.0);
+        styles.insert(div2, rel_style);
+
+        // div3: 正常块级元素
+        styles.insert(div3, make_style_with_display(DisplayValue::Block, 200.0, 40.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
+        let b2 = find_child_by_node_id(&result.root, div2).expect("div2 found");
+        let b3 = find_child_by_node_id(&result.root, div3).expect("div3 found");
+
+        // div2 的视觉位置受 top/left 偏移影响
+        // div2.y 在 taffy 布局中应包含 top 偏移
+        // 相对定位不脱离文档流：div3.y 应基于 div2 的正常流位置计算
+        // 即 div3.y ≈ div1.y + div1.height + div2.height（忽略 div2 的偏移）
+        let expected_div3_y = b1.y + b1.height + 60.0; // div2.height = 60
+        assert!(
+            (b3.y - expected_div3_y).abs() < 1.0,
+            "div3.y ({}) 应约等于 div1.y({}) + div1.height({}) + div2.normal_height(60) = {}，\
+             相对定位不影响后续元素流位置",
+            b3.y,
+            b1.y,
+            b1.height,
+            expected_div3_y
+        );
+
+        // div2 不应是 absolute 或 fixed
+        assert!(!b2.is_absolute, "relative 不应是 absolute");
+        assert!(!b2.is_fixed, "relative 不应是 fixed");
+    }
+
+    /// 测试多个 fixed 定位元素在非 fixed 祖先内的视口坐标调整。
+    ///
+    /// 结构：body > div(relative, margin:20px) > fixed1 + fixed2
+    /// 两个 fixed 元素应被 adjust_fixed_to_viewport 正确调整为视口坐标。
+    /// fixed1 和 fixed2 应各自独立调整，互不影响。
+    #[test]
+    fn test_multiple_fixed_elements_viewport_adjustment() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let fixed1 = doc.create_element("span");
+        doc.append_child(container, fixed1).unwrap();
+        let fixed2 = doc.create_element("span");
+        doc.append_child(container, fixed2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 容器有偏移（margin 造成祖先累积偏移）
+        let mut container_style = ComputedStyle::default();
+        container_style.position = PositionValue::Relative;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(300.0);
+        container_style.margin_top = LengthValue::Px(30.0);
+        container_style.margin_left = LengthValue::Px(20.0);
+        styles.insert(container, container_style);
+
+        // fixed1: top=10, left=15
+        let mut f1_style = ComputedStyle::default();
+        f1_style.position = PositionValue::Fixed;
+        f1_style.top = LengthValue::Px(10.0);
+        f1_style.left = LengthValue::Px(15.0);
+        f1_style.width = LengthValue::Px(80.0);
+        f1_style.height = LengthValue::Px(60.0);
+        styles.insert(fixed1, f1_style);
+
+        // fixed2: top=100, left=200
+        let mut f2_style = ComputedStyle::default();
+        f2_style.position = PositionValue::Fixed;
+        f2_style.top = LengthValue::Px(100.0);
+        f2_style.left = LengthValue::Px(200.0);
+        f2_style.width = LengthValue::Px(120.0);
+        f2_style.height = LengthValue::Px(80.0);
+        styles.insert(fixed2, f2_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let fb1 = find_child_by_node_id(&result.root, fixed1).expect("fixed1 found");
+        let fb2 = find_child_by_node_id(&result.root, fixed2).expect("fixed2 found");
+
+        // 两个都应标记为 fixed
+        assert!(fb1.is_fixed, "fixed1 应标记为 fixed");
+        assert!(fb2.is_fixed, "fixed2 应标记为 fixed");
+
+        // 坐标应为有限值
+        assert!(fb1.x.is_finite(), "fixed1 x 应为有限值");
+        assert!(fb1.y.is_finite(), "fixed1 y 应为有限值");
+        assert!(fb2.x.is_finite(), "fixed2 x 应为有限值");
+        assert!(fb2.y.is_finite(), "fixed2 y 应为有限值");
+
+        // 尺寸正确
+        assert_eq!(fb1.width, 80.0, "fixed1 宽度应为 80");
+        assert_eq!(fb1.height, 60.0, "fixed1 高度应为 60");
+        assert_eq!(fb2.width, 120.0, "fixed2 宽度应为 120");
+        assert_eq!(fb2.height, 80.0, "fixed2 高度应为 80");
+
+        // fixed2 应在 fixed1 下方（top=100 > top=10）
+        assert!(fb2.y > fb1.y, "fixed2 (y={}) 应在 fixed1 (y={}) 下方", fb2.y, fb1.y);
+
+        // fixed2 应在 fixed1 右侧（left=200 > left=15）
+        assert!(fb2.x > fb1.x, "fixed2 (x={}) 应在 fixed1 (x={}) 右侧", fb2.x, fb1.x);
+    }
+
+    /// 测试 grid 容器使用 grid-auto-rows 显式指定隐式行高度，
+    /// 当子元素超过显式模板行数时，隐式行使用 auto-rows 定义的高度。
+    #[test]
+    fn test_grid_auto_rows_implicit_track_height() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        // 放 4 个子元素，但只定义 1 行（显式模板）
+        let mut item_ids = Vec::new();
+        for _ in 0..4 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px".to_string());
+        grid_style.grid_template_rows = Some("80px".to_string());
+        // 隐式行高度 40px
+        grid_style.grid_auto_rows = Some("40px".to_string());
+        grid_style.width = LengthValue::Px(100.0);
+        grid_style.height = LengthValue::Px(400.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+        let b3 = find_child_by_node_id(&result.root, item_ids[3]).expect("item3 found");
+
+        // 第一个元素在显式行中（80px）
+        assert!(
+            (b0.height - 80.0).abs() < 1.0,
+            "显式行 item0 高度应约 80px，实际 {}",
+            b0.height
+        );
+
+        // 后续元素在隐式行中（40px）
+        assert!(
+            (b1.height - 40.0).abs() < 1.0,
+            "隐式行 item1 高度应约 40px（grid-auto-rows），实际 {}",
+            b1.height
+        );
+        assert!(
+            (b2.height - 40.0).abs() < 1.0,
+            "隐式行 item2 高度应约 40px（grid-auto-rows），实际 {}",
+            b2.height
+        );
+        assert!(
+            (b3.height - 40.0).abs() < 1.0,
+            "隐式行 item3 高度应约 40px（grid-auto-rows），实际 {}",
+            b3.height
+        );
+
+        // 所有元素应垂直排列
+        assert!(b1.y > b0.y, "item1 应在 item0 下方");
+        assert!(b2.y > b1.y, "item2 应在 item1 下方");
+        assert!(b3.y > b2.y, "item3 应在 item2 下方");
+
+        // 所有元素宽度应约 100px
+        for (i, &id) in item_ids.iter().enumerate() {
+            let b = find_child_by_node_id(&result.root, id).unwrap();
+            assert!(
+                (b.width - 100.0).abs() < 1.0,
+                "item{} 宽度应约 100px，实际 {}",
+                i,
+                b.width
+            );
+        }
+    }
 }

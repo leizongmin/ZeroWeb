@@ -2163,4 +2163,161 @@ mod tests {
         wv.complete_load("<html><body><div>Final content</div></body></html>", None);
         assert!(!wv.is_loading(), "complete_load 后不应处于加载状态");
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：空标题、CSS 累积链、空白 HTML、无 URL 失败、inject 不干扰 loading
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证将标题设置为空字符串后，title() 返回 Some("") 而非 None。
+    ///
+    /// 边界场景：空字符串在语义上与 None 不同，
+    /// set_title("") 应将内部 title 字段设为 Some("")，
+    /// 后续 title() 应精确返回 Some("") 而非 None。
+    #[test]
+    fn test_webview_set_title_empty_string() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 初始状态：标题为 None
+        assert!(wv.title().is_none(), "初始标题应为 None");
+
+        // 设置空字符串标题
+        wv.set_title("");
+        assert_eq!(wv.title(), Some(""), "空字符串标题应为 Some(\"\")，而非 None");
+
+        // 覆盖为非空标题后再次设为空字符串
+        wv.set_title("Real Title");
+        assert_eq!(wv.title(), Some("Real Title"));
+        wv.set_title("");
+        assert_eq!(wv.title(), Some(""), "再次设为空字符串应为 Some(\"\")");
+    }
+
+    /// 验证 complete_load 传入 CSS 后，再 inject_css 追加的样式被正确累积。
+    ///
+    /// 场景：load_url -> complete_load(html, Some(css_a)) -> inject_css(css_b)。
+    /// complete_load 内部调用 load_html 会缓存 css_a，
+    /// inject_css 在 cached_css 后追加 css_b，
+    /// render() 应使用包含 css_a + css_b 的累积 CSS。
+    #[test]
+    fn test_webview_complete_load_with_css_then_inject_more_css() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body>\
+            <div class=\"original\">A</div>\
+            <div class=\"extra\">B</div>\
+            </body></html>";
+
+        // 通过 load_url + complete_load 加载带 CSS 的内容
+        wv.load_url("https://styled.com");
+        let after_complete = wv.complete_load(
+            html,
+            Some(".original { background-color: red; width: 100px; height: 50px; }"),
+        );
+        let fills_after_complete = after_complete.primitives.fills.len();
+        assert!(fills_after_complete > 0, "complete_load 带 CSS 应产生 fills");
+
+        // 注入额外 CSS
+        let after_inject = wv.inject_css(".extra { background-color: blue; width: 80px; height: 40px; }");
+        let fills_after_inject = after_inject.primitives.fills.len();
+        assert!(
+            fills_after_inject >= fills_after_complete,
+            "inject_css 应追加到 complete_load 的 CSS 上，fills 应 >= 注入前 (got {fills_after_inject} < {fills_after_complete})"
+        );
+
+        // render() 应保留累积的 CSS
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_after_inject,
+            "render() 应使用 complete_load CSS + inject CSS 的累积结果"
+        );
+    }
+
+    /// 验证加载仅含空白字符的 HTML 不会 panic，且返回有效渲染结果。
+    ///
+    /// 边界场景：传入 "   \n\t  " 等纯空白字符串，
+    /// 渲染管线应能处理无有效 HTML 标签的输入，
+    /// 不会因缺少根元素或内容为空而崩溃。
+    #[test]
+    fn test_webview_load_html_with_only_whitespace() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let whitespace_html = "   \n\t  \r\n   ";
+        let result = wv.load_html(whitespace_html, None);
+        assert!(result.timings.total_ms >= 0.0, "纯空白 HTML 渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "纯空白 HTML 加载后应有渲染结果");
+        assert!(!wv.is_loading(), "load_html 不应将 WebView 置为加载状态");
+        assert!(wv.url().is_none(), "load_html 不应设置 URL");
+
+        // 后续操作应正常工作
+        let inject_result = wv.inject_css("div { color: red; }");
+        assert!(inject_result.timings.total_ms >= 0.0, "空白 HTML 上注入 CSS 不应 panic");
+
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0, "空白 HTML 上重新渲染不应 panic");
+    }
+
+    /// 验证在未先调用 load_url 的情况下直接调用 fail_load 不会 panic。
+    ///
+    /// 边界场景：current_url 为 None 时调用 fail_load，
+    /// 内部 current_url.unwrap_or_default() 应返回空字符串，
+    /// LoadFailed 事件的 URL 字段应为空字符串。
+    /// loading 状态应从 false 变为 false（无变化）。
+    #[test]
+    fn test_webview_fail_load_without_prior_load_url_uses_empty_url() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<WebViewEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            ec.borrow_mut().push(e.clone());
+        });
+
+        // 初始状态：无 URL，不在加载中
+        assert!(wv.url().is_none());
+        assert!(!wv.is_loading());
+
+        // 直接调用 fail_load，未先调用 load_url
+        wv.fail_load("unexpected error");
+        assert!(!wv.is_loading(), "fail_load 后 loading 应为 false");
+
+        // 验证 LoadFailed 事件的 URL 为空字符串
+        let recorded = events.borrow();
+        assert_eq!(recorded.len(), 1, "应有 1 个 LoadFailed 事件");
+        assert!(
+            matches!(&recorded[0], WebViewEvent::LoadFailed(url, msg) if url.is_empty() && msg.contains("unexpected error")),
+            "LoadFailed 事件的 URL 应为空字符串，实际: {:?}",
+            recorded[0]
+        );
+    }
+
+    /// 验证在 loading 状态下调用 inject_css 不会重置 loading 标志。
+    ///
+    /// 边界场景：load_url 将 loading 置为 true 后，
+    /// 调用 inject_css 进行样式注入（如加载指示器的 CSS 动画），
+    /// inject_css 不应干扰导航状态，loading 应保持为 true。
+    /// 适用于异步加载过程中动态更新样式的场景。
+    #[test]
+    fn test_webview_inject_css_after_load_url_preserves_loading_state() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 先加载 HTML 内容到缓存
+        wv.load_html(
+            "<html><body><div class=\"spinner\">Loading...</div></body></html>",
+            None,
+        );
+        assert!(!wv.is_loading());
+
+        // 发起 URL 加载
+        wv.load_url("https://async-page.com");
+        assert!(wv.is_loading(), "load_url 后应处于加载状态");
+        assert_eq!(wv.url(), Some("https://async-page.com"));
+
+        // 在 loading 状态下注入 CSS（如加载动画样式）
+        let result = wv.inject_css(".spinner { animation: spin 1s linear infinite; }");
+        assert!(result.timings.total_ms >= 0.0, "inject_css 渲染耗时应为非负");
+
+        // 关键断言：inject_css 不应重置 loading 状态
+        assert!(wv.is_loading(), "inject_css 不应改变 loading 状态，应仍为 true");
+        assert_eq!(wv.url(), Some("https://async-page.com"), "URL 不应被 inject_css 改变");
+
+        // 后续 complete_load 应正常完成加载
+        wv.complete_load("<html><body><div>Final</div></body></html>", None);
+        assert!(!wv.is_loading(), "complete_load 后不应处于加载状态");
+    }
 }

@@ -435,4 +435,154 @@ mod tests {
         assert!(bb.size.width > 0.0, "包围盒宽度应为正");
         assert!(bb.size.height > 0.0, "包围盒高度应为正");
     }
+
+    /// 测试 FrameBuffer::new 在大尺寸下数据长度正确（无 u32 溢出）
+    ///
+    /// 当 width * height * 4 接近 u32 边界时，确保不会因整数溢出
+    /// 而产生错误的缓冲区大小。使用适中的尺寸验证分配正确。
+    #[test]
+    fn test_frame_buffer_large_size_no_overflow() {
+        // 使用 4096x4096 = 67,108,864 字节，在 u32 范围内安全
+        let w = 4096u32;
+        let h = 4096u32;
+        let fb = FrameBuffer::new(w, h);
+        assert_eq!(fb.width, w);
+        assert_eq!(fb.height, h);
+        let expected_len = (w as usize) * (h as usize) * 4;
+        assert_eq!(fb.data.len(), expected_len, "数据长度应为 width*height*4");
+        // 验证首尾像素可读
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 0]);
+        assert_eq!(fb.get_pixel(w - 1, h - 1), [0, 0, 0, 0]);
+    }
+
+    /// 测试 DamageTracker 添加负宽度和负高度矩形时被忽略
+    ///
+    /// Rect::is_empty 对 width <= 0 或 height <= 0 返回 true，
+    /// add_damage 在 rect.is_empty() 时直接返回不添加。
+    /// 验证负尺寸矩形不会进入脏列表。
+    #[test]
+    fn test_damage_tracker_negative_width_rect_ignored() {
+        let mut tracker = DamageTracker::new();
+
+        // 负宽度矩形 — is_empty 返回 true，应被忽略
+        tracker.add_damage(Rect::new(0.0, 0.0, -10.0, 50.0));
+        assert!(!tracker.is_dirty(), "负宽度矩形不应被添加");
+
+        // 负高度矩形
+        tracker.add_damage(Rect::new(0.0, 0.0, 50.0, -10.0));
+        assert!(!tracker.is_dirty(), "负高度矩形不应被添加");
+
+        // 两者都为负
+        tracker.add_damage(Rect::new(0.0, 0.0, -5.0, -5.0));
+        assert!(!tracker.is_dirty(), "全负尺寸矩形不应被添加");
+    }
+
+    /// 测试 RenderPrimitives 仅包含 path_stroke 时的 bounding_box 正确性
+    ///
+    /// 验证 path_stroke 的顶点坐标正确参与 bounding_box 计算，
+    /// 且闭合路径与非闭合路径的 bounding_box 结果一致（仅取决于顶点坐标）。
+    #[test]
+    fn test_bounding_box_path_stroke_only() {
+        use crate::primitive::*;
+
+        let mut p = RenderPrimitives::new();
+
+        // 仅添加 path_stroke，不含其他图元
+        p.add_path_stroke(vec![10.0, 20.0, 30.0, 40.0, 50.0, 10.0], Color::BLACK, 2.0, false);
+
+        let bb = p.bounding_box().expect("仅 path_stroke 应返回包围盒");
+        // 顶点: (10,20), (30,40), (50,10)
+        assert_eq!(bb.left(), 10.0, "left 应为最小 x=10");
+        assert_eq!(bb.top(), 10.0, "top 应为最小 y=10");
+        assert_eq!(bb.right(), 50.0, "right 应为最大 x=50");
+        assert_eq!(bb.bottom(), 40.0, "bottom 应为最大 y=40");
+
+        // 验证闭合路径产生相同的 bounding_box
+        let mut p2 = RenderPrimitives::new();
+        p2.add_path_stroke(
+            vec![10.0, 20.0, 30.0, 40.0, 50.0, 10.0],
+            Color::BLACK,
+            4.0,
+            true, // closed — 不影响 bounding_box（只看顶点坐标）
+        );
+        let bb2 = p2.bounding_box().expect("闭合 path_stroke 也应有包围盒");
+        assert_eq!(bb2.origin, bb.origin, "闭合路径包围盒起点应相同");
+        assert_eq!(bb2.size, bb.size, "闭合路径包围盒尺寸应相同");
+    }
+
+    /// 测试 ImageCache 交替 release 和 get 后 ref_count 保持一致
+    ///
+    /// 在 insert → get → release → get → release 循环后，
+    /// 验证 ref_count 在每一步都正确反映操作历史，
+    /// 且最终 release 到 0 后 GC 能正确清除条目。
+    #[test]
+    fn test_image_cache_alternating_release_get_consistency() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(ImageData::new_empty(1, 1));
+        assert_eq!(cache.ref_count(&key), Some(1));
+
+        // 第一次 get → ref_count = 2
+        let _ = cache.get(&key);
+        assert_eq!(cache.ref_count(&key), Some(2));
+
+        // 第一次 release → ref_count = 1
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(1));
+
+        // 第二次 get → ref_count = 2
+        let _ = cache.get(&key);
+        assert_eq!(cache.ref_count(&key), Some(2));
+
+        // 两次 release → ref_count = 0
+        cache.release(&key);
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(0), "两次 release 后 ref_count 应为 0");
+
+        // 数据仍可获取（条目还在，ref_count=0 不阻止 get）
+        let img = cache.get(&key);
+        assert!(img.is_some(), "ref_count=0 时 get 仍应返回数据");
+        assert_eq!(cache.ref_count(&key), Some(1), "get 后 ref_count 应回升到 1");
+
+        // 最终 release 到 0 并 GC 清除
+        cache.release(&key);
+        assert_eq!(cache.ref_count(&key), Some(0));
+        cache.gc();
+        assert!(cache.ref_count(&key).is_none(), "GC 后条目应被移除");
+    }
+
+    /// 测试 Color::lerp 在极小 t 值下的浮点精度
+    ///
+    /// 验证 lerp 在 t 接近 0 和 1 时不会产生溢出或意外结果，
+    /// 且对于非常小的 epsilon 值，结果仍正确偏向起始颜色。
+    #[test]
+    fn test_color_lerp_extreme_float_precision() {
+        let black = Color::BLACK;
+        let white = Color::WHITE;
+
+        // t 接近 0 — 应几乎等于起始颜色
+        let near_zero = black.lerp(white, 0.001);
+        assert_eq!(near_zero.r, 0, "t=0.001 时 R 应为 0");
+        assert_eq!(near_zero.g, 0, "t=0.001 时 G 应为 0");
+        assert_eq!(near_zero.b, 0, "t=0.001 时 B 应为 0");
+
+        // t 接近 1 — 应几乎等于目标颜色
+        let near_one = black.lerp(white, 0.999);
+        assert_eq!(near_one.r, 255, "t=0.999 时 R 应为 255");
+        assert_eq!(near_one.g, 255, "t=0.999 时 G 应为 255");
+        assert_eq!(near_one.b, 255, "t=0.999 时 B 应为 255");
+
+        // t=0.5 精确中间值（非黑非白颜色测试）
+        let red = Color::RED;
+        let blue = Color::BLUE;
+        let mid = red.lerp(blue, 0.5);
+        assert_eq!(mid.r, 128, "红→蓝 t=0.5 R 应为 128");
+        assert_eq!(mid.g, 0, "红→蓝 t=0.5 G 应为 0");
+        assert_eq!(mid.b, 128, "红→蓝 t=0.5 B 应为 128");
+        assert_eq!(mid.a, 255, "红→蓝 t=0.5 A 应为 255");
+
+        // 同色 lerp 在任意 t 下不变
+        let c = Color::rgba(42, 84, 126, 200);
+        assert_eq!(c.lerp(c, 0.3), c, "同色 lerp 任意 t 应返回原色");
+        assert_eq!(c.lerp(c, 0.7), c, "同色 lerp 任意 t 应返回原色");
+    }
 }
