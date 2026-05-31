@@ -313,6 +313,52 @@ mod tests {
         assert_eq!(storage.get("k"), Some("a".repeat(48).as_str()));
     }
 
+    /// key(index) 当 index >= length 时应返回 None
+    #[test]
+    fn test_web_storage_key_out_of_bounds() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("a", "1").unwrap();
+        storage.set("b", "2").unwrap();
+        assert_eq!(storage.len(), 2);
+        // 索引等于长度 → None
+        assert_eq!(storage.key(2), None);
+        // 索引远超长度 → None
+        assert_eq!(storage.key(100), None);
+        // 空存储时索引 0 → None
+        storage.clear();
+        assert_eq!(storage.key(0), None);
+    }
+
+    /// 设置多个键、删除其中一个后，used_size 应准确反映剩余数据
+    #[test]
+    fn test_web_storage_used_size_accuracy() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("key1", "aaaa").unwrap(); // 4 + 4 = 8
+        storage.set("key2", "bbbbb").unwrap(); // 4 + 5 = 9
+        storage.set("key3", "cccccc").unwrap(); // 4 + 6 = 10
+        assert_eq!(storage.used_size(), 27); // 8 + 9 + 10
+
+        storage.remove("key2");
+        assert_eq!(storage.used_size(), 18); // 8 + 10
+        assert_eq!(storage.len(), 2);
+    }
+
+    /// 设置一个恰好填满 max_size 的键值对应成功
+    #[test]
+    fn test_web_storage_set_exactly_at_limit() {
+        let max_size = 100;
+        let mut storage = WebStorage::new_with_max_size(StorageType::Local, "https://example.com", max_size);
+        // key 长度 3，value 长度 97，合计 100，恰好等于 max_size
+        let value = "x".repeat(97);
+        let result = storage.set("key", &value);
+        assert!(result.is_ok(), "恰好等于 max_size 时应成功");
+        assert_eq!(storage.used_size(), 100);
+
+        // 超出 1 字节应失败
+        let result2 = storage.set("k2", "y");
+        assert!(result2.is_err(), "超出 max_size 时应失败");
+    }
+
     /// 测试 localStorage clear() 操作：设置多个项，调用 clear()，验证全部被清除。
     #[test]
     fn test_local_storage_clear() {

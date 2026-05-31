@@ -3699,4 +3699,170 @@ mod tests {
             "visibility:hidden 在 paint_in_rect 中应跳过节点绘制"
         );
     }
+
+    /// 测试 paint_in_rect 中 overflow:hidden 裁剪子节点超出父内容区域的部分。
+    ///
+    /// 父节点设置 overflow_x/overflow_y 为 OverflowClip::Hidden，
+    /// 子节点（200x200）超出父内容区域（100x100）。
+    /// paint_in_rect 以覆盖父节点的脏区域调用后，
+    /// 子节点的填充矩形应被裁剪到 100x100 或更小。
+    #[test]
+    fn test_paint_in_rect_overflow_hidden_clips_children() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        // 子节点 200x200 超出父节点的 100x100 内容区域
+        let child_box = make_box(Some(child), 0.0, 0.0, 200.0, 200.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Hidden,
+            overflow_y: OverflowClip::Hidden,
+        };
+
+        let mut styles = HashMap::new();
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(child, child_style);
+
+        // 脏区域覆盖整个父节点
+        let dirty_rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&parent_box, &styles, &dirty_rect, None);
+
+        // 子节点填充应被裁剪到父节点的 100x100 内容区域
+        let fill = &painter.primitives().fills[0];
+        assert!(
+            fill.rect.size.width <= 100.0,
+            "子节点宽度应被裁剪到 100 或更小，实际 {}",
+            fill.rect.size.width
+        );
+        assert!(
+            fill.rect.size.height <= 100.0,
+            "子节点高度应被裁剪到 100 或更小，实际 {}",
+            fill.rect.size.height
+        );
+    }
+
+    /// 测试 paint_in_rect 中与脏区域部分相交的节点会被绘制。
+    ///
+    /// 节点位于 (50, 50)，大小 100x100，脏区域为 (0, 0, 100, 100)。
+    /// 节点与脏区域部分相交（重叠区域为 [50,100] x [50,100]），
+    /// 因此应生成图元。
+    #[test]
+    fn test_paint_in_rect_partially_intersecting_node_drawn() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        // 节点在 (50, 50) 大小 100x100，与脏区域部分重叠
+        let layout = make_box(Some(elem), 50.0, 50.0, 100.0, 100.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(0, 128, 255, 255);
+        styles.insert(elem, style);
+
+        // 脏区域 (0, 0, 100, 100)，节点区域 (50, 50, 100, 100)
+        // 交集为 (50, 50) 到 (100, 100)，部分相交
+        let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
+
+        // 部分相交的节点应产生填充图元
+        assert_eq!(painter.primitives().fills.len(), 1, "部分相交的节点应被绘制");
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(0, 128, 255));
+    }
+
+    /// 测试 paint_in_rect 中兄弟节点独立性：只有与脏区域相交的节点被绘制。
+    ///
+    /// 两个兄弟节点，一个与脏区域相交（在 (10, 10) 大小 50x50），
+    /// 另一个完全在脏区域外（在 (300, 300) 大小 50x50）。
+    /// 只有相交的兄弟应产生图元，不相交的兄弟不应产生任何图元。
+    #[test]
+    fn test_paint_in_rect_siblings_independent() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let sibling1 = doc.create_element("span");
+        let sibling2 = doc.create_element("span");
+
+        // 兄弟1：在脏区域内 (10, 10, 50x50)
+        let s1_box = make_box(Some(sibling1), 10.0, 10.0, 50.0, 50.0);
+        // 兄弟2：完全在脏区域外 (300, 300, 50x50)
+        let s2_box = make_box(Some(sibling2), 300.0, 300.0, 50.0, 50.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 400.0,
+            height: 400.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 400.0,
+            content_height: 400.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![s1_box, s2_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s1_style = ComputedStyle::default();
+        s1_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(sibling1, s1_style);
+
+        let mut s2_style = ComputedStyle::default();
+        s2_style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+        styles.insert(sibling2, s2_style);
+
+        // 脏区域只覆盖 (0, 0, 100, 100)
+        let dirty_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&parent_box, &styles, &dirty_rect, None);
+
+        // 只有兄弟1（相交）应产生填充，兄弟2（不相交）不应产生
+        assert_eq!(painter.primitives().fills.len(), 1, "只有与脏区域相交的兄弟应被绘制");
+        assert_eq!(painter.primitives().fills[0].color, Color::rgb(255, 0, 0));
+    }
 }

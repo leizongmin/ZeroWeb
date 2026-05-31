@@ -1931,4 +1931,231 @@ mod tests {
             ctx.total_height()
         );
     }
+
+    // ── 新增边界测试：行内格式化上下文边界场景 ──
+
+    /// 测试同一行中混合不同字体大小的 TextRun。
+    ///
+    /// 两个 TextRun 分别使用 10px 和 20px 字体大小放在同一行，
+    /// 验证行盒高度取两者行高的最大值，且两个片段都被正确放置。
+    #[test]
+    fn test_mixed_font_sizes_on_same_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![
+            TextRun {
+                text: "Small".to_string(),
+                node_id: NodeId::default(),
+                font_size: 10.0,
+                line_height: 12.0,
+                vertical_align: VA::Baseline,
+            },
+            TextRun {
+                text: "Large".to_string(),
+                node_id: NodeId::default(),
+                font_size: 20.0,
+                line_height: 24.0,
+                vertical_align: VA::Baseline,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        // 两个短词应在同一行
+        assert_eq!(ctx.lines.len(), 1, "两个短词应在同一行");
+
+        // 行盒高度应取最大行高 24.0
+        assert!(
+            (ctx.lines[0].height - 24.0).abs() < 0.01,
+            "行盒高度应取 max(12.0, 24.0) = 24.0，实际 {}",
+            ctx.lines[0].height
+        );
+
+        // 应有 2 个片段
+        let fragments = ctx.all_fragments();
+        assert_eq!(fragments.len(), 2, "应有 2 个片段");
+
+        // 第一个片段（10px）x 从 0 开始，第二个片段紧随其后
+        assert!(
+            fragments[0].x.abs() < 0.01,
+            "第一个片段 x 应为 0，实际 {}",
+            fragments[0].x
+        );
+        assert!(
+            fragments[1].x >= fragments[0].x + fragments[0].width - 0.01,
+            "第二个片段 x 应在第一个片段之后"
+        );
+
+        // 两个片段的 font_size 各自保留
+        assert!(
+            (fragments[0].font_size - 10.0).abs() < 0.01,
+            "第一个片段 font_size 应为 10.0"
+        );
+        assert!(
+            (fragments[1].font_size - 20.0).abs() < 0.01,
+            "第二个片段 font_size 应为 20.0"
+        );
+    }
+
+    /// 测试单个超长单词超过容器宽度时仍被放置在第一行。
+    ///
+    /// 行内格式化的首单词总是放入当前行，即使宽度超过 container_width
+    /// （因为 current_line.runs 为空，不会触发换行条件）。
+    #[test]
+    fn test_single_word_exceeds_container_width() {
+        let mut ctx = InlineFormattingContext::new(100.0);
+        // 构造一个超长单词：50 个字符 × 16×0.6 = 480px，远超 100px
+        let long_word = "supercalifragilisticexpialidocious_and_then_some";
+        let runs = vec![TextRun {
+            text: long_word.to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 首单词总是放置在第一行（即使溢出）
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "单个超长单词应在第一行，实际 {} 行",
+            ctx.lines.len()
+        );
+        assert_eq!(ctx.lines[0].runs.len(), 1, "应只有 1 个片段");
+
+        let fragment = &ctx.lines[0].runs[0];
+        // 片段宽度应超过容器宽度
+        assert!(
+            fragment.width > ctx.container_width,
+            "片段宽度 {} 应超过容器宽度 {}",
+            fragment.width,
+            ctx.container_width
+        );
+
+        // 片段 x 应为 0（行首）
+        assert!(fragment.x.abs() < 0.01, "首单词片段 x 应为 0，实际 {}", fragment.x);
+    }
+
+    /// 测试 container_width=0.0 时不会 panic，且首单词仍被放置。
+    ///
+    /// 零宽度容器下，第一个单词因 current_line.runs 为空而总是放入当前行，
+    /// 后续每个单词因 current_x + word_width > 0.0 且行非空而触发换行。
+    #[test]
+    fn test_empty_container_width_first_word_still_placed() {
+        let mut ctx = InlineFormattingContext::new(0.0);
+        let runs = vec![TextRun {
+            text: "Hello World Foo".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        // 不应 panic
+        ctx.break_into_lines(runs);
+
+        // 至少有一行（首单词总是放置）
+        assert!(!ctx.lines.is_empty(), "container_width=0 时仍应产生行盒");
+
+        // 首单词应被放置
+        assert!(!ctx.lines[0].runs.is_empty(), "第一行应至少有一个片段");
+        assert!(
+            ctx.lines[0].runs[0].text.contains("Hello"),
+            "首单词应为 'Hello'，实际 {}",
+            ctx.lines[0].runs[0].text
+        );
+
+        // 多个单词应产生多行（每个后续单词都溢出零宽度容器）
+        assert!(
+            ctx.lines.len() >= 2,
+            "零宽度容器中多个单词应产生多行，实际 {} 行",
+            ctx.lines.len()
+        );
+    }
+
+    /// 测试同一行中多个不同行高的 TextRun，行盒高度取最大值。
+    ///
+    /// 三个 TextRun：font_size=12 line_height=16、font_size=20 line_height=28、
+    /// font_size=14 line_height=18。在宽容器中放入同一行时，
+    /// 行盒高度应取 max(16, 28, 18) = 28。
+    #[test]
+    fn test_multiple_lines_line_height_max_per_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![
+            TextRun {
+                text: "Small".to_string(),
+                node_id: NodeId::default(),
+                font_size: 12.0,
+                line_height: 16.0,
+                vertical_align: VA::Baseline,
+            },
+            TextRun {
+                text: "Big".to_string(),
+                node_id: NodeId::default(),
+                font_size: 20.0,
+                line_height: 28.0,
+                vertical_align: VA::Baseline,
+            },
+            TextRun {
+                text: "Med".to_string(),
+                node_id: NodeId::default(),
+                font_size: 14.0,
+                line_height: 18.0,
+                vertical_align: VA::Baseline,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        // 宽容器中三个短词应在同一行
+        assert_eq!(ctx.lines.len(), 1, "三个短词应在同一行，实际 {} 行", ctx.lines.len());
+
+        // 行盒高度应取 max(16, 28, 18) = 28
+        assert!(
+            (ctx.lines[0].height - 28.0).abs() < 0.01,
+            "行盒高度应取 max(16, 28, 18) = 28.0，实际 {}",
+            ctx.lines[0].height
+        );
+
+        // 所有片段都应存在
+        let fragments = ctx.all_fragments();
+        assert_eq!(fragments.len(), 3, "应有 3 个片段");
+    }
+
+    /// 测试纯空白文本不产生任何行盒。
+    ///
+    /// TextRun 的文本为 "   "（仅空格），break_into_lines 通过
+    /// split_into_words → split_whitespace 得到零个单词，
+    /// 因此不应产生任何行盒或片段。
+    #[test]
+    fn test_whitespace_only_text_no_lines() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "   ".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 纯空白文本不应产生行盒
+        assert!(
+            ctx.lines.is_empty(),
+            "纯空白文本不应产生行盒，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 不应有任何片段
+        let fragments = ctx.all_fragments();
+        assert!(
+            fragments.is_empty(),
+            "纯空白文本不应有片段，实际 {} 个",
+            fragments.len()
+        );
+
+        // 总高度应为 0
+        assert!(
+            ctx.total_height().abs() < 0.01,
+            "纯空白文本总高度应为 0，实际 {}",
+            ctx.total_height()
+        );
+    }
 }
