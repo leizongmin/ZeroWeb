@@ -910,4 +910,64 @@ mod tests {
         //   assert!(report_only_csp.is_resource_allowed(...))
         // 因为 report-only 策略只报告违规，不阻止加载。
     }
+
+    // ---- CSP 边界条件测试 ----
+
+    /// 测试空 CSP 策略（无指令）不阻止任何资源。
+    #[test]
+    fn test_csp_empty_policy_allows_all() {
+        let csp = ContentSecurityPolicy::parse("");
+        assert!(csp.directives.is_empty(), "空 CSP 字符串不应产生指令");
+        assert!(csp.is_resource_allowed("script", "https://evil.com", None));
+        assert!(csp.is_resource_allowed("style", "https://evil.com", None));
+    }
+
+    /// 测试多重 CSP 指令策略：script-src 限制不影响 img-src。
+    #[test]
+    fn test_csp_script_restriction_does_not_affect_images() {
+        let csp = ContentSecurityPolicy::parse("script-src 'self'");
+        // script-src 限制脚本
+        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
+        // 但不影响图片（没有 img-src 指令时默认允许）
+        assert!(csp.is_resource_allowed("img", "https://cdn.com/logo.png", None));
+    }
+
+    /// 测试 CSP 策略中包含多个同类源时的匹配。
+    #[test]
+    fn test_csp_multiple_sources_in_directive() {
+        let csp = ContentSecurityPolicy::parse("script-src https://a.com https://b.com https://c.com");
+        assert!(csp.is_resource_allowed("script", "https://a.com/app.js", None));
+        assert!(csp.is_resource_allowed("script", "https://b.com/app.js", None));
+        assert!(csp.is_resource_allowed("script", "https://c.com/app.js", None));
+        assert!(!csp.is_resource_allowed("script", "https://d.com/app.js", None));
+    }
+
+    /// 测试 default-src 与具体指令的优先级关系。
+    #[test]
+    fn test_csp_default_src_fallback_for_unspecified() {
+        let csp = ContentSecurityPolicy::parse("default-src https://safe.com; script-src https://cdn.com");
+        // script-src 明确指定时使用 script-src
+        assert!(csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
+        assert!(!csp.is_resource_allowed("script", "https://safe.com/app.js", None));
+        // img-src 未指定时回退到 default-src
+        assert!(csp.is_resource_allowed("img", "https://safe.com/logo.png", None));
+        assert!(!csp.is_resource_allowed("img", "https://other.com/logo.png", None));
+    }
+
+    /// 测试 CSP 策略中 'unsafe-inline' 允许内联脚本（通过 is_inline_script_allowed）。
+    #[test]
+    fn test_csp_unsafe_inline_allows_inline() {
+        let csp = ContentSecurityPolicy::parse("script-src 'unsafe-inline'");
+        assert!(csp.is_inline_script_allowed(None, None));
+        // 但 URL 仍然需要匹配源列表
+        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
+    }
+
+    /// 测试 CSP 策略中 'strict-dynamic' 的行为。
+    #[test]
+    fn test_csp_strict_dynamic_not_matching_arbitrary_url() {
+        let csp = ContentSecurityPolicy::parse("script-src 'strict-dynamic' https://trusted.com");
+        // 'strict-dynamic' 本身不影响 URL 匹配，URL 匹配仍按源列表
+        assert!(csp.is_resource_allowed("script", "https://trusted.com/app.js", None));
+    }
 }

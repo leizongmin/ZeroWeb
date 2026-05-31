@@ -1368,4 +1368,155 @@ mod tests {
         assert!(!convert_float(&style.float));
         assert!(!convert_clear(&style.clear));
     }
+
+    // ── 新增补充测试 ──
+
+    /// 测试 grid area name resolution — resolve_grid_placement 将 Name 解析为 Line。
+    ///
+    /// 当 grid-template-areas 定义了 "nav" 区域时，
+    /// 子元素设置 grid-area: "nav" 应被解析为具体的行号和列号。
+    #[test]
+    fn test_grid_area_name_resolution() {
+        use zero_style_system::GridLineValue;
+
+        let areas = parse_grid_template_areas("\"header header\" \"nav main\" \"footer footer\"");
+
+        // nav 区域应为 (2, 3, 1, 2) — row 2-3, col 1-2
+        assert_eq!(areas.get("nav"), Some(&(2, 3, 1, 2)));
+
+        // 创建一个 ComputedStyle 并验证 resolve_grid_placement
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Name("nav".to_string());
+        style.grid_row_end = GridLineValue::Name("nav".to_string());
+        style.grid_column_start = GridLineValue::Name("nav".to_string());
+        style.grid_column_end = GridLineValue::Name("nav".to_string());
+
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, Some(&areas));
+        assert_eq!(rs, GridLineValue::Line(2), "row-start should be 2");
+        assert_eq!(re, GridLineValue::Line(3), "row-end should be 3");
+        assert_eq!(cs, GridLineValue::Line(1), "col-start should be 1");
+        assert_eq!(ce, GridLineValue::Line(2), "col-end should be 2");
+    }
+
+    /// 测试 minmax() 中 auto 作为最小值和最大值。
+    #[test]
+    fn test_minmax_with_auto() {
+        // minmax(auto, 1fr) — min=auto, max=1fr
+        let tracks = parse_grid_tracks(&Some("minmax(auto, 1fr)".to_string()));
+        assert_eq!(tracks.len(), 1, "应产生 1 个轨道");
+
+        // minmax(50px, auto) — min=50px, max=auto
+        let tracks = parse_grid_tracks(&Some("minmax(50px, auto)".to_string()));
+        assert_eq!(tracks.len(), 1, "应产生 1 个轨道");
+
+        // 混合使用：minmax(auto, 1fr) minmax(100px, auto)
+        let tracks = parse_grid_tracks(&Some("minmax(auto, 1fr) minmax(100px, auto)".to_string()));
+        assert_eq!(tracks.len(), 2, "应产生 2 个轨道");
+    }
+
+    /// 测试复杂的 grid-template-areas 模式。
+    ///
+    /// 3x3 区域布局：
+    ///   "header header header"
+    ///   "nav    main   aside"
+    ///   "footer footer footer"
+    /// 验证每个区域的坐标范围正确。
+    #[test]
+    fn test_complex_grid_template_areas_pattern() {
+        let areas = parse_grid_template_areas("\"header header header\" \"nav main aside\" \"footer footer footer\"");
+
+        assert_eq!(areas.len(), 5, "应有 5 个区域");
+
+        // header: row 1-2, col 1-4（跨 3 列）
+        assert_eq!(areas.get("header"), Some(&(1, 2, 1, 4)));
+
+        // nav: row 2-3, col 1-2
+        assert_eq!(areas.get("nav"), Some(&(2, 3, 1, 2)));
+
+        // main: row 2-3, col 2-3
+        assert_eq!(areas.get("main"), Some(&(2, 3, 2, 3)));
+
+        // aside: row 2-3, col 3-4
+        assert_eq!(areas.get("aside"), Some(&(2, 3, 3, 4)));
+
+        // footer: row 3-4, col 1-4（跨 3 列）
+        assert_eq!(areas.get("footer"), Some(&(3, 4, 1, 4)));
+    }
+
+    /// 测试 aspect-ratio 在 taffy Style 中的传递。
+    #[test]
+    fn test_aspect_ratio_in_taffy_style() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Px(200.0);
+        style.aspect_ratio = Some(1.5); // 宽/高比 = 1.5
+
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.aspect_ratio, Some(1.5));
+    }
+
+    /// 测试 aspect-ratio 为 None 时 taffy Style 中也为 None。
+    #[test]
+    fn test_aspect_ratio_none_in_taffy_style() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.aspect_ratio, None);
+
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.aspect_ratio, None);
+    }
+
+    /// 测试 float 元素在 flex 容器中的转换 — float 在 flex 上下文中应仍返回 true。
+    #[test]
+    fn test_float_in_mixed_layout_context() {
+        // float: left
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.float = FloatValue::Left;
+        let taffy_style = computed_style_to_taffy(&style, None);
+
+        // taffy 中 float 不影响 flex 容器本身
+        assert_eq!(taffy_style.display, taffy::style::Display::Flex);
+
+        // 但 convert_float 应返回 true
+        assert!(convert_float(&FloatValue::Left));
+
+        // clear: both 也应返回 true
+        assert!(convert_clear(&ClearValue::Both));
+    }
+
+    /// 测试 repeat(auto-fill, minmax(auto, 1fr)) 解析。
+    ///
+    /// min 侧为 auto，max 侧为 1fr，验证解析不 panic 且生成 Repeat 变体。
+    #[test]
+    fn test_parse_repeat_auto_fill_minmax_auto() {
+        use taffy::style::GridTrackRepetition;
+
+        let tracks = parse_grid_tracks(&Some("repeat(auto-fill, minmax(auto, 1fr))".to_string()));
+        assert_eq!(tracks.len(), 1);
+        assert!(
+            matches!(
+                &tracks[0],
+                taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)
+            ),
+            "auto-fill + minmax(auto, 1fr) 应生成 Repeat 变体"
+        );
+    }
+
+    /// 测试 grid-auto-rows 使用固定值和 fr 单位。
+    #[test]
+    fn test_grid_auto_rows_with_various_values() {
+        let mut style = ComputedStyle::default();
+        style.grid_auto_rows = Some("50px auto".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.grid_auto_rows.len(), 2);
+
+        // 单值
+        style.grid_auto_rows = Some("100px".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.grid_auto_rows.len(), 1);
+
+        // fr 单位
+        style.grid_auto_rows = Some("1fr".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.grid_auto_rows.len(), 1);
+    }
 }

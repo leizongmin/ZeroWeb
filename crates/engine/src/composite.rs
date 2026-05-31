@@ -1267,4 +1267,436 @@ mod tests {
             );
         }
     }
+
+    // ── 新增测试：重叠元素堆叠顺序与合成原因 ──────────────────────
+
+    /// 测试多个重叠元素按 z-index 升序绘制，保证高 z-index 覆盖低 z-index。
+    ///
+    /// 构建五个重叠元素：z-index 分别为 -3, 0, 5, 10, 100。
+    /// 验证合成排序后 layers[1..] 严格按 z_index 升序排列。
+    #[test]
+    fn test_overlapping_elements_stacking_order() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+        let e3 = doc.create_element("div");
+        let e4 = doc.create_element("div");
+        let e5 = doc.create_element("div");
+
+        // 所有元素重叠在同一位置
+        let c1 = make_box(Some(e1), 0.0, 0.0, 200.0, 200.0, false);
+        let c2 = make_box(Some(e2), 10.0, 10.0, 200.0, 200.0, false);
+        let c3 = make_box(Some(e3), 20.0, 20.0, 200.0, 200.0, false);
+        let c4 = make_box(Some(e4), 30.0, 30.0, 200.0, 200.0, false);
+        let c5 = make_box(Some(e5), 40.0, 40.0, 200.0, 200.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2, c3, c4, c5],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+
+        let mut s1 = ComputedStyle::default();
+        s1.z_index = ZIndexValue::Integer(10);
+        styles.insert(e1, s1);
+
+        let mut s2 = ComputedStyle::default();
+        s2.z_index = ZIndexValue::Integer(-3);
+        styles.insert(e2, s2);
+
+        let mut s3 = ComputedStyle::default();
+        s3.z_index = ZIndexValue::Integer(100);
+        styles.insert(e3, s3);
+
+        let mut s4 = ComputedStyle::default();
+        s4.z_index = ZIndexValue::Integer(0);
+        styles.insert(e4, s4);
+
+        let mut s5 = ComputedStyle::default();
+        s5.z_index = ZIndexValue::Integer(5);
+        styles.insert(e5, s5);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 6, "root + 5 promoted layers");
+
+        // 验证严格升序
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, -3);
+        assert_eq!(layers[2].z_index, 0);
+        assert_eq!(layers[3].z_index, 5);
+        assert_eq!(layers[4].z_index, 10);
+        assert_eq!(layers[5].z_index, 100);
+    }
+
+    /// 测试 opacity < 1.0 是提升合成层的唯一原因。
+    ///
+    /// 元素仅有 opacity: 0.3（无 z-index，无 fixed），
+    /// 验证被提升且 opacity 正确传播到图层。
+    #[test]
+    fn test_compositing_reason_opacity_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.3;
+        // z_index 保持 Auto，position 保持默认
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 2, "opacity < 1.0 should promote to own layer");
+        assert!(layers[0].is_root);
+        assert!(!layers[1].is_root);
+        assert!((layers[1].opacity - 0.3).abs() < 0.001, "layer opacity should be 0.3");
+        // z_index 应为 0（auto）
+        assert_eq!(layers[1].z_index, 0, "z_index should be 0 when not explicitly set");
+    }
+
+    /// 测试显式 z-index 是提升合成层的原因。
+    ///
+    /// 元素仅有 z-index: 42（opacity=1.0, 非 fixed），
+    /// 验证被提升且 z_index 正确记录。
+    #[test]
+    fn test_compositing_reason_z_index_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.z_index = ZIndexValue::Integer(42);
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 2, "explicit z-index should promote to own layer");
+        assert_eq!(layers[1].z_index, 42, "layer z_index should be 42");
+        assert!((layers[1].opacity - 1.0).abs() < 0.001, "opacity should remain 1.0");
+    }
+
+    /// 测试负 z-index 元素被提升为独立图层且排在正 z-index 之前。
+    ///
+    /// 构建三个元素：z=-10, z=0, z=5。
+    /// 验证负 z-index 图层在根图层之后、正 z-index 图层之前。
+    #[test]
+    fn test_negative_z_index_layer_assignment() {
+        let mut doc = zero_dom::Document::new();
+        let e_neg = doc.create_element("div");
+        let e_zero = doc.create_element("div");
+        let e_pos = doc.create_element("div");
+
+        let c_neg = make_box(Some(e_neg), 0.0, 0.0, 50.0, 50.0, false);
+        let c_zero = make_box(Some(e_zero), 0.0, 0.0, 50.0, 50.0, false);
+        let c_pos = make_box(Some(e_pos), 0.0, 0.0, 50.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c_neg, c_zero, c_pos],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut s_neg = ComputedStyle::default();
+        s_neg.z_index = ZIndexValue::Integer(-10);
+        styles.insert(e_neg, s_neg);
+
+        let mut s_zero = ComputedStyle::default();
+        s_zero.z_index = ZIndexValue::Integer(0);
+        styles.insert(e_zero, s_zero);
+
+        let mut s_pos = ComputedStyle::default();
+        s_pos.z_index = ZIndexValue::Integer(5);
+        styles.insert(e_pos, s_pos);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 4, "root + 3 promoted layers");
+
+        // 负 z-index 在最前面（除根图层外）
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, -10, "negative z-index layer should come first");
+        assert_eq!(layers[2].z_index, 0);
+        assert_eq!(layers[3].z_index, 5);
+    }
+
+    /// 测试 z-index 排序稳定性：相同 z-index 的元素保持原始顺序。
+    ///
+    /// 三个元素 z-index 都为 10，验证合成后仍为 3 个独立图层。
+    #[test]
+    fn test_layer_priority_sorting_stability() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+        let e3 = doc.create_element("div");
+
+        let c1 = make_box(Some(e1), 0.0, 0.0, 50.0, 50.0, false);
+        let c2 = make_box(Some(e2), 0.0, 50.0, 50.0, 50.0, false);
+        let c3 = make_box(Some(e3), 0.0, 100.0, 50.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2, c3],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        // 三个元素都设置 z-index: 10（相同值）
+        for id in [e1, e2, e3] {
+            let mut s = ComputedStyle::default();
+            s.z_index = ZIndexValue::Integer(10);
+            styles.insert(id, s);
+        }
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // root + 3 promoted layers（相同 z-index 不应合并）
+        assert_eq!(layers.len(), 4, "each element with z-index should be a separate layer");
+        assert!(layers[0].is_root);
+
+        // 所有提升的图层 z-index 应相同
+        assert_eq!(layers[1].z_index, 10);
+        assert_eq!(layers[2].z_index, 10);
+        assert_eq!(layers[3].z_index, 10);
+    }
+
+    /// 测试 opacity + position:fixed + z-index 三重原因只创建一个图层。
+    ///
+    /// 一个元素同时满足三个提升条件，应只创建一个合成层。
+    #[test]
+    fn test_triple_compositing_reason_single_layer() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.5;
+        style.position = PositionValue::Fixed;
+        style.z_index = ZIndexValue::Integer(20);
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // root + 1 promoted (not 3: all conditions on same element)
+        assert_eq!(layers.len(), 2);
+        assert!((layers[1].opacity - 0.5).abs() < 0.001);
+        assert_eq!(layers[1].z_index, 20);
+    }
+
+    /// 测试根图层包含多个未提升子元素时包围盒计算正确。
+    #[test]
+    fn test_root_layer_bounding_box_with_unpromoted_children() {
+        let mut doc = zero_dom::Document::new();
+        let e1 = doc.create_element("div");
+        let e2 = doc.create_element("div");
+
+        // 两个普通子元素（不被提升）
+        let c1 = make_box(Some(e1), 0.0, 0.0, 300.0, 200.0, false);
+        let c2 = make_box(Some(e2), 100.0, 50.0, 400.0, 300.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![c1, c2],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        styles.insert(e1, ComputedStyle::default());
+        styles.insert(e2, ComputedStyle::default());
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        assert_eq!(layers.len(), 1, "only root layer");
+        // root layer width 应取最远右边界 max(800, 300, 500) = 800
+        assert_eq!(layers[0].width, 800.0);
+        // root layer height 应取最远底边界 max(600, 200, 350) = 600
+        assert_eq!(layers[0].height, 600.0);
+    }
 }
