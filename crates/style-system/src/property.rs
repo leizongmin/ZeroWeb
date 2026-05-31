@@ -585,6 +585,32 @@ pub enum BackgroundRepeatComputedValue {
     Round,
 }
 
+/// CSS background-size 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundSizeComputedValue {
+    /// auto（默认值）— 背景图片保持原始尺寸。
+    Auto,
+    /// cover — 缩放图片以完全覆盖容器。
+    Cover,
+    /// contain — 缩放图片以完整显示在容器内。
+    Contain,
+    /// 长度值（px）。
+    Length(f32),
+    /// 百分比值（0-100）。
+    Percent(f32),
+}
+
+/// CSS background-attachment 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundAttachmentComputedValue {
+    /// scroll（默认值）— 背景随元素内容滚动。
+    Scroll,
+    /// fixed — 背景相对于视口固定。
+    Fixed,
+    /// local — 背景随元素本地内容滚动。
+    Local,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1147,6 +1173,10 @@ pub enum PropertyValue {
     BackgroundPosition(BackgroundPositionComputedValue),
     /// background-repeat 值。
     BackgroundRepeat(BackgroundRepeatComputedValue),
+    /// background-size 值。
+    BackgroundSize(BackgroundSizeComputedValue),
+    /// background-attachment 值。
+    BackgroundAttachment(BackgroundAttachmentComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1644,13 +1674,17 @@ pub struct ComputedStyle {
     /// line-clamp 属性。
     pub line_clamp: LineClampComputedValue,
 
-    // ── Background Image / Position / Repeat ──
+    // ── Background Image / Position / Repeat / Size / Attachment ──
     /// background-image 属性。
     pub background_image: BackgroundImageComputedValue,
     /// background-position 属性。
     pub background_position: BackgroundPositionComputedValue,
     /// background-repeat 属性。
     pub background_repeat: BackgroundRepeatComputedValue,
+    /// background-size 属性。
+    pub background_size: BackgroundSizeComputedValue,
+    /// background-attachment 属性。
+    pub background_attachment: BackgroundAttachmentComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1899,10 +1933,12 @@ impl Default for ComputedStyle {
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
 
-            // Background Image / Position / Repeat
+            // Background Image / Position / Repeat / Size / Attachment
             background_image: BackgroundImageComputedValue::None,
             background_position: BackgroundPositionComputedValue::Percent(0.0),
             background_repeat: BackgroundRepeatComputedValue::Repeat,
+            background_size: BackgroundSizeComputedValue::Auto,
+            background_attachment: BackgroundAttachmentComputedValue::Scroll,
         }
     }
 }
@@ -2137,10 +2173,12 @@ impl PropertyRegistry {
             "hyphens" => Some(Hyphens(HyphensComputedValue::None)),
             "line-clamp" => Some(LineClamp(LineClampComputedValue::None)),
 
-            // Background Image / Position / Repeat
+            // Background Image / Position / Repeat / Size / Attachment
             "background-image" => Some(BackgroundImage(BackgroundImageComputedValue::None)),
             "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Percent(0.0))),
             "background-repeat" => Some(BackgroundRepeat(BackgroundRepeatComputedValue::Repeat)),
+            "background-size" => Some(BackgroundSize(BackgroundSizeComputedValue::Auto)),
+            "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),
 
             _ => None,
         }
@@ -2353,6 +2391,8 @@ impl PropertyRegistry {
             "background-image",
             "background-position",
             "background-repeat",
+            "background-size",
+            "background-attachment",
         ]
     }
 }
@@ -4421,6 +4461,34 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "background-size" => {
+            if let Some(v) = values::parse_background_size(value) {
+                style.background_size = match v {
+                    zero_css_parser::values::BackgroundSizeValue::Auto => BackgroundSizeComputedValue::Auto,
+                    zero_css_parser::values::BackgroundSizeValue::Cover => BackgroundSizeComputedValue::Cover,
+                    zero_css_parser::values::BackgroundSizeValue::Contain => BackgroundSizeComputedValue::Contain,
+                    zero_css_parser::values::BackgroundSizeValue::Length(n) => BackgroundSizeComputedValue::Length(n),
+                    zero_css_parser::values::BackgroundSizeValue::Percent(n) => BackgroundSizeComputedValue::Percent(n),
+                };
+                return true;
+            }
+        }
+        "background-attachment" => {
+            if let Some(v) = values::parse_background_attachment(value) {
+                style.background_attachment = match v {
+                    zero_css_parser::values::BackgroundAttachmentValue::Scroll => {
+                        BackgroundAttachmentComputedValue::Scroll
+                    }
+                    zero_css_parser::values::BackgroundAttachmentValue::Fixed => {
+                        BackgroundAttachmentComputedValue::Fixed
+                    }
+                    zero_css_parser::values::BackgroundAttachmentValue::Local => {
+                        BackgroundAttachmentComputedValue::Local
+                    }
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -5275,6 +5343,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "background-repeat" => {
             style.background_repeat = default_style.background_repeat;
+            true
+        }
+        "background-size" => {
+            style.background_size = default_style.background_size;
+            true
+        }
+        "background-attachment" => {
+            style.background_attachment = default_style.background_attachment;
             true
         }
         _ => false,
@@ -10058,5 +10134,117 @@ mod tests {
         style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
         assert!(apply_initial_value(&mut style, "background-repeat"));
         assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Repeat);
+    }
+
+    // ── background-size 属性测试 ──
+
+    #[test]
+    fn test_apply_property_background_size_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-size", "auto"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_background_size_cover() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-size", "cover"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Cover);
+    }
+
+    #[test]
+    fn test_apply_property_background_size_contain() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-size", "contain"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Contain);
+    }
+
+    #[test]
+    fn test_apply_property_background_size_length() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-size", "100px"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Length(100.0));
+    }
+
+    #[test]
+    fn test_apply_property_background_size_percent() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-size", "50%"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Percent(50.0));
+    }
+
+    #[test]
+    fn test_apply_property_background_size_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-size", "invalid"));
+    }
+
+    #[test]
+    fn test_background_size_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-size"));
+    }
+
+    #[test]
+    fn test_background_size_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-size"));
+    }
+
+    #[test]
+    fn test_background_size_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-size").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_size = BackgroundSizeComputedValue::Cover;
+        assert!(apply_initial_value(&mut style, "background-size"));
+        assert_eq!(style.background_size, BackgroundSizeComputedValue::Auto);
+    }
+
+    // ── background-attachment 属性测试 ──
+
+    #[test]
+    fn test_apply_property_background_attachment_scroll() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-attachment", "scroll"));
+        assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Scroll);
+    }
+
+    #[test]
+    fn test_apply_property_background_attachment_fixed() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-attachment", "fixed"));
+        assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed);
+    }
+
+    #[test]
+    fn test_apply_property_background_attachment_local() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-attachment", "local"));
+        assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Local);
+    }
+
+    #[test]
+    fn test_apply_property_background_attachment_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "background-attachment", "invalid"));
+    }
+
+    #[test]
+    fn test_background_attachment_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("background-attachment"));
+    }
+
+    #[test]
+    fn test_background_attachment_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"background-attachment"));
+    }
+
+    #[test]
+    fn test_background_attachment_initial_value() {
+        assert!(PropertyRegistry::initial_value("background-attachment").is_some());
+        let mut style = ComputedStyle::default();
+        style.background_attachment = BackgroundAttachmentComputedValue::Fixed;
+        assert!(apply_initial_value(&mut style, "background-attachment"));
+        assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Scroll);
     }
 }

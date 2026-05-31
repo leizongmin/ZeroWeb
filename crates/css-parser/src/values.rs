@@ -4659,6 +4659,69 @@ pub fn parse_background_repeat(value: &str) -> Option<BackgroundRepeatValue> {
     }
 }
 
+/// CSS background-size 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundSizeValue {
+    /// auto（默认值）— 背景图片保持原始尺寸。
+    Auto,
+    /// cover — 缩放图片以完全覆盖容器。
+    Cover,
+    /// contain — 缩放图片以完整显示在容器内。
+    Contain,
+    /// 长度值（如 100px）。
+    Length(f32),
+    /// 百分比值（如 50%）。
+    Percent(f32),
+}
+
+/// 解析 CSS background-size 属性值。
+///
+/// 支持关键字（auto、cover、contain）和带单位的长度/百分比值。
+pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "auto" => Some(BackgroundSizeValue::Auto),
+        "cover" => Some(BackgroundSizeValue::Cover),
+        "contain" => Some(BackgroundSizeValue::Contain),
+        _ => {
+            if v.ends_with('%') {
+                let pct: f32 = v.trim_end_matches('%').parse().ok()?;
+                Some(BackgroundSizeValue::Percent(pct))
+            } else if let Some(lv) = parse_length(&v) {
+                match lv {
+                    LengthValue::Px(n) => Some(BackgroundSizeValue::Length(n as f32)),
+                    LengthValue::Em(n) => Some(BackgroundSizeValue::Length(n as f32)),
+                    LengthValue::Rem(n) => Some(BackgroundSizeValue::Length(n as f32)),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// CSS background-attachment 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundAttachmentValue {
+    /// scroll（默认值）— 背景随元素内容滚动。
+    Scroll,
+    /// fixed — 背景相对于视口固定。
+    Fixed,
+    /// local — 背景随元素本地内容滚动。
+    Local,
+}
+
+/// 解析 CSS background-attachment 属性值。
+pub fn parse_background_attachment(value: &str) -> Option<BackgroundAttachmentValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "scroll" => Some(BackgroundAttachmentValue::Scroll),
+        "fixed" => Some(BackgroundAttachmentValue::Fixed),
+        "local" => Some(BackgroundAttachmentValue::Local),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6767,5 +6830,81 @@ mod tests {
         assert_eq!(parse_background_repeat(""), None);
         assert_eq!(parse_background_repeat("invalid"), None);
         assert_eq!(parse_background_repeat("repeat z"), None);
+    }
+
+    // ── background-size 解析测试 ──
+
+    #[test]
+    fn test_parse_background_size_keywords() {
+        assert_eq!(parse_background_size("auto"), Some(BackgroundSizeValue::Auto));
+        assert_eq!(parse_background_size("cover"), Some(BackgroundSizeValue::Cover));
+        assert_eq!(parse_background_size("contain"), Some(BackgroundSizeValue::Contain));
+    }
+
+    #[test]
+    fn test_parse_background_size_length() {
+        assert_eq!(parse_background_size("100px"), Some(BackgroundSizeValue::Length(100.0)));
+        assert_eq!(parse_background_size("1.5em"), Some(BackgroundSizeValue::Length(1.5)));
+        assert_eq!(parse_background_size("2rem"), Some(BackgroundSizeValue::Length(2.0)));
+    }
+
+    #[test]
+    fn test_parse_background_size_percent() {
+        assert_eq!(parse_background_size("50%"), Some(BackgroundSizeValue::Percent(50.0)));
+        assert_eq!(parse_background_size("100%"), Some(BackgroundSizeValue::Percent(100.0)));
+    }
+
+    #[test]
+    fn test_parse_background_size_case_insensitive() {
+        assert_eq!(parse_background_size("AUTO"), Some(BackgroundSizeValue::Auto));
+        assert_eq!(parse_background_size("Cover"), Some(BackgroundSizeValue::Cover));
+        assert_eq!(parse_background_size("CONTAIN"), Some(BackgroundSizeValue::Contain));
+    }
+
+    #[test]
+    fn test_parse_background_size_invalid() {
+        assert_eq!(parse_background_size(""), None);
+        assert_eq!(parse_background_size("invalid"), None);
+    }
+
+    // ── background-attachment 解析测试 ──
+
+    #[test]
+    fn test_parse_background_attachment_values() {
+        assert_eq!(
+            parse_background_attachment("scroll"),
+            Some(BackgroundAttachmentValue::Scroll)
+        );
+        assert_eq!(
+            parse_background_attachment("fixed"),
+            Some(BackgroundAttachmentValue::Fixed)
+        );
+        assert_eq!(
+            parse_background_attachment("local"),
+            Some(BackgroundAttachmentValue::Local)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_attachment_case_insensitive() {
+        assert_eq!(
+            parse_background_attachment("SCROLL"),
+            Some(BackgroundAttachmentValue::Scroll)
+        );
+        assert_eq!(
+            parse_background_attachment("Fixed"),
+            Some(BackgroundAttachmentValue::Fixed)
+        );
+        assert_eq!(
+            parse_background_attachment("LOCAL"),
+            Some(BackgroundAttachmentValue::Local)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_attachment_invalid() {
+        assert_eq!(parse_background_attachment(""), None);
+        assert_eq!(parse_background_attachment("invalid"), None);
+        assert_eq!(parse_background_attachment("scroll fixed"), None);
     }
 }

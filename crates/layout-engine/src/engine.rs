@@ -6443,4 +6443,278 @@ mod tests {
         assert_eq!(sibling_box.width, 200.0);
         assert_eq!(sibling_box.height, 50.0);
     }
+
+    // -- 边界条件测试（第六批）--
+
+    /// 测试 Flex 容器内窄项换行后的多行布局。
+    ///
+    /// 5 个宽度为 200px 的子项放在 500px 宽的 flex 容器中，
+    /// 每行应放 2 个（200+200=400 < 500），第 5 个换到第三行。
+    /// 验证换行后各行 y 偏移正确递增。
+    #[test]
+    fn test_flex_wrap_with_narrow_items() {
+        let (mut doc, body) = make_doc_with_body();
+        let flex_container = doc.create_element("div");
+        doc.append_child(body, flex_container).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // flex 容器：row, wrap, 宽度 500px
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_wrap = FlexWrapValue::Wrap;
+        container_style.width = LengthValue::Px(500.0);
+        styles.insert(flex_container, container_style);
+
+        // 5 个子项，每个 200px 宽
+        let mut children = Vec::new();
+        for _ in 0..5 {
+            let child = doc.create_element("div");
+            doc.append_child(flex_container, child).unwrap();
+            styles.insert(child, make_style_with_display(DisplayValue::Block, 200.0, 60.0));
+            children.push(child);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let container_box = find_child_by_node_id(&result.root, flex_container).expect("flex found");
+        assert_eq!(container_box.children.len(), 5);
+
+        // 前 2 个子项 y 相同（第一行）
+        assert!(
+            (container_box.children[0].y - container_box.children[1].y).abs() < 0.01,
+            "同一行的子项 y 应相同"
+        );
+
+        // 第 3 个子项 y 大于第 1 个（第二行）
+        assert!(
+            container_box.children[2].y > container_box.children[0].y,
+            "第三项应换到第二行，y 应更大"
+        );
+
+        // 第 5 个子项 y 大于第 3 个（第三行）
+        assert!(
+            container_box.children[4].y > container_box.children[2].y,
+            "第五项应换到第三行，y 应更大"
+        );
+    }
+
+    /// 测试绝对定位仅设置 right/bottom（无 top/left）的布局。
+    ///
+    /// 绝对定位子元素仅指定 right: 20px, bottom: 10px，
+    /// top/left 默认为 auto，taffy 应根据 right/bottom 定位元素。
+    /// 验证元素尺寸正确，坐标为有限值。
+    #[test]
+    fn test_absolute_position_with_only_right_bottom() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // relative 父容器
+        let mut parent_style = ComputedStyle::default();
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(400.0);
+        parent_style.height = LengthValue::Px(300.0);
+        styles.insert(parent, parent_style);
+
+        // 绝对定位：仅 right + bottom，无 top/left
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.right = LengthValue::Px(20.0);
+        abs_style.bottom = LengthValue::Px(10.0);
+        abs_style.width = LengthValue::Px(100.0);
+        abs_style.height = LengthValue::Px(50.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
+
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+        assert_eq!(abs_box.width, 100.0, "宽度应为 100");
+        assert_eq!(abs_box.height, 50.0, "高度应为 50");
+
+        // right=20 + width=100 在 400px 父容器中 → x ≈ 400-100-20 = 280
+        assert!(abs_box.x.is_finite(), "abs x 应为有限值，实际 {}", abs_box.x);
+
+        // bottom=10 + height=50 在 300px 父容器中 → y ≈ 300-50-10 = 240
+        assert!(abs_box.y.is_finite(), "abs y 应为有限值，实际 {}", abs_box.y);
+    }
+
+    /// 测试 Block 布局中零高度兄弟元素不影响后续元素堆叠位置。
+    ///
+    /// 三个块级子元素：第一个正常高度，第二个高度为 0，
+    /// 第三个正常高度。第三个元素的 y 应紧接第一个元素，
+    /// 不因零高度元素产生多余偏移。
+    #[test]
+    fn test_block_siblings_with_zero_height() {
+        let (mut doc, body) = make_doc_with_body();
+        let mut children = Vec::new();
+        for _ in 0..3 {
+            let child = doc.create_element("div");
+            doc.append_child(body, child).unwrap();
+            children.push(child);
+        }
+
+        let mut styles = HashMap::new();
+        // 第一个：100px 高
+        styles.insert(children[0], make_style_with_display(DisplayValue::Block, 200.0, 100.0));
+        // 第二个：0px 高
+        styles.insert(children[1], make_style_with_display(DisplayValue::Block, 200.0, 0.0));
+        // 第三个：50px 高
+        styles.insert(children[2], make_style_with_display(DisplayValue::Block, 200.0, 50.0));
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let body_box = &result.root.children[0]; // body
+
+        // 第二个元素的 y 应等于第一个元素的 y + height
+        let first_bottom = body_box.children[0].y + body_box.children[0].height;
+        assert!(
+            (body_box.children[1].y - first_bottom).abs() < 0.01,
+            "第二个元素的 y 应紧接第一个元素底部，实际 first_bottom={} child1.y={}",
+            first_bottom,
+            body_box.children[1].y
+        );
+
+        // 第三个元素的 y 应等于第二个元素的 y + 0 = 第二个元素的 y
+        let second_bottom = body_box.children[1].y + body_box.children[1].height;
+        assert!(
+            (body_box.children[2].y - second_bottom).abs() < 0.01,
+            "第三个元素的 y 应紧接第二个元素底部（高度为 0）"
+        );
+
+        // 验证零高度元素的尺寸
+        assert!(body_box.children[1].height.abs() < 0.01, "第二个元素高度应为 0");
+    }
+
+    /// 测试 flex-basis: auto 和 flex-basis: 0px 在有固定宽度时产生不同结果。
+    ///
+    /// 同样宽度的子元素，flex-basis: auto 时尺寸由内容/width 决定，
+    /// flex-basis: 0 时初始尺寸为 0，剩余空间由 flex-grow 分配。
+    #[test]
+    fn test_flex_basis_auto_vs_zero() {
+        let (mut doc, body) = make_doc_with_body();
+        let flex = doc.create_element("div");
+        doc.append_child(body, flex).unwrap();
+
+        let child_auto = doc.create_element("div");
+        doc.append_child(flex, child_auto).unwrap();
+        let child_zero = doc.create_element("div");
+        doc.append_child(flex, child_zero).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // flex 容器
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.width = LengthValue::Px(400.0);
+        styles.insert(flex, flex_style);
+
+        // child_auto: flex-basis: auto, flex-grow: 1, width: 100px
+        let mut style_auto = ComputedStyle::default();
+        style_auto.width = LengthValue::Px(100.0);
+        style_auto.height = LengthValue::Px(50.0);
+        style_auto.flex_grow = 1.0;
+        style_auto.flex_basis = FlexBasisValue::Auto;
+        styles.insert(child_auto, style_auto);
+
+        // child_zero: flex-basis: 0px, flex-grow: 1, width: 100px
+        let mut style_zero = ComputedStyle::default();
+        style_zero.width = LengthValue::Px(100.0);
+        style_zero.height = LengthValue::Px(50.0);
+        style_zero.flex_grow = 1.0;
+        style_zero.flex_basis = FlexBasisValue::Length(LengthValue::Px(0.0));
+        styles.insert(child_zero, style_zero);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let flex_box = find_child_by_node_id(&result.root, flex).expect("flex found");
+        assert_eq!(flex_box.children.len(), 2);
+
+        let auto_box = &flex_box.children[0];
+        let zero_box = &flex_box.children[1];
+
+        // flex-basis: auto 时，初始尺寸为 width (100px)
+        // flex-basis: 0 时，初始尺寸为 0
+        // 两者 flex-grow 都是 1，剩余空间 = 400 - 100 - 0 = 300
+        // auto 项: 100 + 150 = 250
+        // zero 项: 0 + 150 = 150
+        // 所以 auto 项应比 zero 项更宽
+        assert!(
+            auto_box.width > zero_box.width,
+            "flex-basis:auto 子项宽度 ({}) 应大于 flex-basis:0 子项宽度 ({})",
+            auto_box.width,
+            zero_box.width
+        );
+
+        // 两项总宽度应等于容器宽度
+        let total_width = auto_box.width + zero_box.width;
+        assert!(
+            (total_width - 400.0).abs() < 1.0,
+            "两项总宽度应约等于容器宽度 400，实际 {}",
+            total_width
+        );
+    }
+
+    /// 测试 Grid 布局中 auto-fill 配合窄容器仅产生一个轨道。
+    ///
+    /// grid-template-columns: repeat(auto-fill, 300px)，
+    /// 容器宽度仅 400px，应只容纳 1 个 300px 轨道。
+    #[test]
+    fn test_grid_auto_fill_narrow_single_track() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut children = Vec::new();
+        for _ in 0..3 {
+            let child = doc.create_element("div");
+            doc.append_child(grid, child).unwrap();
+            children.push(child);
+        }
+
+        let mut styles = HashMap::new();
+
+        // grid 容器：auto-fill 300px，容器宽度仅 400px
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.width = LengthValue::Px(400.0);
+        grid_style.grid_template_columns = Some("repeat(auto-fill, 300px)".to_string());
+        styles.insert(grid, grid_style);
+
+        for &child in &children {
+            styles.insert(child, make_style_with_display(DisplayValue::Block, 100.0, 40.0));
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let grid_box = find_child_by_node_id(&result.root, grid).expect("grid found");
+
+        // 400px 容器只能放 1 个 300px 轨道，3 个子项应纵向堆叠
+        // 所有子项 x 应相同（单列）
+        assert!(
+            (grid_box.children[0].x - grid_box.children[1].x).abs() < 0.01,
+            "单列布局中所有子项 x 应相同"
+        );
+        assert!(
+            (grid_box.children[1].x - grid_box.children[2].x).abs() < 0.01,
+            "单列布局中所有子项 x 应相同"
+        );
+
+        // 子项应纵向排列，y 递增
+        assert!(
+            grid_box.children[1].y >= grid_box.children[0].y,
+            "第二项 y 应 >= 第一项 y"
+        );
+    }
 }

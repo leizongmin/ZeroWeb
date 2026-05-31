@@ -7101,3 +7101,222 @@ fn test_event_current_target_bubbling_phase() {
     // 第二个触发的是 div（冒泡阶段），current_target 应为 div
     assert_eq!(targets[1], Some(div), "div 监听器的 current_target 应为 div");
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 43. NodeIterator / TreeWalker 边界测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 NodeIterator 遍历混合节点类型（元素、文本、注释）的完整树。
+///
+/// 结构：div > [span, text("hello"), comment("note"), p]
+/// 验证 next_node 按深度优先前序遍历顺序访问所有后代节点，
+/// 最终回到根节点时 is_done 为 true。
+#[test]
+fn test_node_iterator_mixed_node_types() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("hello");
+    let comment = doc.create_comment("note");
+    let p = doc.create_element("p");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(div, text).unwrap();
+    doc.append_child(div, comment).unwrap();
+    doc.append_child(div, p).unwrap();
+
+    let mut iter = NodeIterator::new(div, 0xFFFFFFFF);
+
+    // 深度优先前序遍历：span → text → comment → p
+    let n1 = iter.next_node(&doc);
+    assert_eq!(n1, Some(span), "第一个子节点应为 span");
+
+    let n2 = iter.next_node(&doc);
+    assert_eq!(n2, Some(text), "第二个子节点应为文本节点");
+
+    let n3 = iter.next_node(&doc);
+    assert_eq!(n3, Some(comment), "第三个子节点应为注释节点");
+
+    let n4 = iter.next_node(&doc);
+    assert_eq!(n4, Some(p), "第四个子节点应为 p");
+
+    // 所有后代已遍历完毕
+    let n5 = iter.next_node(&doc);
+    assert_eq!(n5, None, "遍历完毕后应返回 None");
+    assert!(iter.is_done(), "遍历完毕后 is_done 应为 true");
+}
+
+/// 测试 NodeIterator 遍历空元素（无子节点）。
+///
+/// 没有后代的元素，next_node 应立即返回 None 且 is_done 为 true。
+#[test]
+fn test_node_iterator_empty_subtree() {
+    let mut doc = Document::new();
+    let empty = doc.create_element("div");
+
+    let mut iter = NodeIterator::new(empty, 0xFFFFFFFF);
+
+    let result = iter.next_node(&doc);
+    assert_eq!(result, None, "空元素没有子节点，next_node 应返回 None");
+    assert!(iter.is_done(), "空元素遍历应立即标记为 done");
+
+    // current_node 仍为根节点
+    assert_eq!(iter.current_node(), empty);
+    assert_eq!(iter.root(), empty);
+}
+
+/// 测试 NodeIterator 从深层节点回退到浅层再前进。
+///
+/// 构建两层树后，先前进到最深处，再回退到中间节点，
+/// 然后再次前进验证遍历位置正确。
+#[test]
+fn test_node_iterator_forward_backward_alternating() {
+    let mut doc = Document::new();
+    let root = doc.create_element("div");
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    doc.append_child(root, a).unwrap();
+    doc.append_child(a, b).unwrap();
+    doc.append_child(b, c).unwrap();
+
+    let mut iter = NodeIterator::new(root, 0xFFFFFFFF);
+
+    // root → a → b → c
+    assert_eq!(iter.next_node(&doc), Some(a));
+    assert_eq!(iter.next_node(&doc), Some(b));
+    assert_eq!(iter.next_node(&doc), Some(c));
+
+    // 回退：c → b
+    let prev = iter.previous_node(&doc);
+    assert_eq!(prev, Some(b), "从 c 回退应为 b");
+    assert_eq!(iter.current_node(), b);
+
+    // 再前进：b → c
+    let next = iter.next_node(&doc);
+    assert_eq!(next, Some(c), "从 b 前进应为 c");
+    assert_eq!(iter.current_node(), c);
+
+    // 回退两次：c → b → a
+    iter.previous_node(&doc);
+    let prev2 = iter.previous_node(&doc);
+    assert_eq!(prev2, Some(a), "回退两次后应为 a");
+}
+
+/// 测试 import_node 对 DocumentFragment 的深拷贝。
+///
+/// import_node 深拷贝一个 DocumentFragment 应递归复制所有子节点，
+/// 产生的新 fragment 与原始节点结构相同但 NodeId 不同。
+#[test]
+fn test_import_node_document_fragment_deep() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let frag = doc.create_document_fragment();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "item");
+    let text = doc.create_text_node("fragment content");
+    doc.append_child(frag, span).unwrap();
+    doc.append_child(frag, text).unwrap();
+
+    // 先将 frag 追加到文档中以验证 import_node
+    doc.append_child(root, frag).unwrap();
+
+    let imported = doc.import_node(frag, true);
+
+    // 导入的 fragment 是新的
+    assert_ne!(imported, frag, "import_node 应创建新节点");
+    assert!(matches!(
+        doc.get(imported).map(|n| &n.kind),
+        Some(NodeKind::DocumentFragment)
+    ));
+
+    // 深拷贝应包含子节点
+    assert_eq!(doc.child_count(imported), 2, "导入的 fragment 应有 2 个子节点");
+
+    // 子节点是新的（NodeId 不同）
+    let orig_children = doc.child_nodes(frag);
+    let imported_children = doc.child_nodes(imported);
+    assert_ne!(orig_children[0], imported_children[0], "导入的子节点应是新节点");
+    assert_ne!(orig_children[1], imported_children[1]);
+
+    // 导入的 span 保留了属性
+    assert_eq!(
+        doc.get_attribute(imported_children[0], "class"),
+        Some("item".to_string()),
+        "导入的元素应保留属性"
+    );
+
+    // 导入的文本内容正确
+    assert_eq!(
+        doc.text_content(imported),
+        Some("fragment content".to_string()),
+        "导入的 fragment 的 textContent 应正确"
+    );
+}
+
+/// 测试 resolve_slots 在动态添加新 light DOM 子节点后重新解析。
+///
+/// 初始状态：host 有一个带 slot="header" 的子节点和一个默认 slot。
+/// 动态追加新的带 slot="footer" 的子节点后，再次调用 resolve_slots，
+/// 验证新的 slot 分配生效，旧分配保持不变。
+#[test]
+fn test_resolve_slots_dynamic_add_light_dom() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-comp");
+    doc.append_child(root, host).unwrap();
+
+    // 初始 light DOM：一个带 slot="header" 的子节点和一个无 slot 的子节点
+    let header = doc.create_element("h1");
+    doc.set_attribute(header, "slot", "header");
+    doc.append_child(host, header).unwrap();
+
+    let default_content = doc.create_element("p");
+    doc.append_child(host, default_content).unwrap();
+
+    // shadow DOM
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let header_slot = doc.create_element("slot");
+    doc.set_attribute(header_slot, "name", "header");
+    doc.append_child(shadow, header_slot).unwrap();
+
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    let footer_slot = doc.create_element("slot");
+    doc.set_attribute(footer_slot, "name", "footer");
+    doc.append_child(shadow, footer_slot).unwrap();
+
+    // 第一次解析
+    doc.resolve_slots(host);
+    assert_eq!(doc.get_assigned_nodes(header_slot).len(), 1);
+    assert_eq!(doc.get_assigned_nodes(default_slot).len(), 1);
+    assert!(
+        doc.get_assigned_nodes(footer_slot).is_empty(),
+        "初始时 footer slot 应为空"
+    );
+
+    // 动态添加新的 light DOM 子节点带 slot="footer"
+    let footer = doc.create_element("footer");
+    doc.set_attribute(footer, "slot", "footer");
+    doc.append_child(host, footer).unwrap();
+
+    // 再次解析
+    doc.resolve_slots(host);
+
+    // 新的 footer 子节点应分配到 footer slot
+    let footer_assigned = doc.get_assigned_nodes(footer_slot);
+    assert_eq!(footer_assigned.len(), 1, "重新解析后 footer slot 应有 1 个分配");
+    assert_eq!(footer_assigned[0], footer, "分配的节点应为新添加的 footer 元素");
+
+    // 旧的分配仍然有效
+    let header_assigned = doc.get_assigned_nodes(header_slot);
+    assert_eq!(header_assigned.len(), 1, "重新解析后 header slot 分配应保持");
+    assert_eq!(header_assigned[0], header);
+
+    let default_assigned = doc.get_assigned_nodes(default_slot);
+    assert_eq!(default_assigned.len(), 1, "重新解析后默认 slot 分配应保持");
+    assert_eq!(default_assigned[0], default_content);
+}

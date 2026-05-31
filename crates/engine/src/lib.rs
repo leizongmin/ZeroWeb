@@ -31,6 +31,7 @@ mod tests {
     use zero_layout_engine::LayoutBox;
     use zero_layout_engine::types::OverflowClip;
     use zero_render_foundation::color::Color;
+    use zero_render_foundation::geometry::Rect;
     use zero_style_system::ComputedStyle;
 
     use crate::composite::promote_compositing_layers;
@@ -2182,5 +2183,198 @@ mod tests {
         assert!(tracker.dirty_rects().is_empty(), "增量渲染后 dirty_rects 应为空");
         assert!(!tracker.is_full_redraw(), "小脏区域不应触发全量重绘");
         assert_eq!(tracker.dirty_area(), 0.0, "增量渲染后 dirty_area 应为 0.0");
+    }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试渲染管线处理含非 ASCII 字符 CSS 类名的 HTML 文档不 panic。
+    ///
+    /// CSS 选择器包含 Unicode 字符（如中文类名），浏览器引擎应容错处理。
+    /// 验证渲染管线能安全完成，且布局缓存有效。
+    #[test]
+    fn test_pipeline_render_non_ascii_class_name() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="标题">内容</div></body></html>"#;
+        let css = r#".标题 { background-color: #336699; width: 200px; height: 100px; }"#;
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "非 ASCII 类名 HTML 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+    }
+
+    /// 测试连续多次 recompute_styles 后渲染结果保持稳定。
+    ///
+    /// 对同一文档执行 5 次 recompute_styles，每次使用相同的 CSS，
+    /// 验证每次产生的填充图元数量完全一致，确保管线无累积副作用。
+    #[test]
+    fn test_pipeline_recompute_multiple_cycles_stable() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Content</div></body></html>"#;
+        let css = r#".box { background-color: #336699; width: 200px; height: 100px; }"#;
+
+        // 首次渲染
+        let first = pipeline.render_html(html, css);
+        let first_fill_count = first.primitives.fills.len();
+        assert!(first_fill_count > 0, "首次渲染应产生填充图元");
+
+        // 连续 5 次 recompute
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        for i in 0..5 {
+            let (prims, _, layout) = pipeline.recompute_styles(&doc, &stylesheets);
+            assert_eq!(
+                prims.fills.len(),
+                first_fill_count,
+                "第 {} 次 recompute 应产生相同数量的填充图元",
+                i + 1
+            );
+            assert!(
+                layout.viewport_width > 0.0,
+                "第 {} 次 recompute 后 viewport_width 应有效",
+                i + 1
+            );
+            assert!(pipeline.layout().is_some(), "缓存布局应始终存在");
+        }
+    }
+
+    /// 测试渲染管线在不同阶段操作后视口尺寸始终不变。
+    ///
+    /// 依次执行：全量渲染 → 样式重算 → 增量渲染 → 再次全量渲染，
+    /// 验证每次操作后 viewport_width 和 viewport_height 均保持初始值。
+    #[test]
+    fn test_pipeline_viewport_dimensions_preserved() {
+        let mut pipeline = RenderPipeline::new(1024.0, 768.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+        let css = ".box { background-color: red; width: 200px; height: 100px; }";
+
+        // 步骤 1：全量渲染
+        let r1 = pipeline.render_html(html, css);
+        assert_eq!(r1.layout.viewport_width, 1024.0);
+        assert_eq!(r1.layout.viewport_height, 768.0);
+
+        // 步骤 2：样式重算
+        let doc = zero_dom::parse_html(html);
+        let ss = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let (_, _, layout2) = pipeline.recompute_styles(&doc, &ss);
+        assert_eq!(layout2.viewport_width, 1024.0, "recompute 后 viewport_width 不应变");
+        assert_eq!(layout2.viewport_height, 768.0, "recompute 后 viewport_height 不应变");
+
+        // 步骤 3：增量渲染
+        let dirty_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let r3 = pipeline.incremental_render(html, "", &dirty_box);
+        assert_eq!(r3.layout.viewport_width, 1024.0, "增量渲染后 viewport_width 不应变");
+        assert_eq!(r3.layout.viewport_height, 768.0, "增量渲染后 viewport_height 不应变");
+
+        // 步骤 4：再次全量渲染
+        let r4 = pipeline.render_html(html, "");
+        assert_eq!(r4.layout.viewport_width, 1024.0, "二次全量渲染后 viewport_width 不应变");
+        assert_eq!(
+            r4.layout.viewport_height, 768.0,
+            "二次全量渲染后 viewport_height 不应变"
+        );
+
+        // viewport 访问器始终一致
+        assert_eq!(pipeline.viewport_width(), 1024.0);
+        assert_eq!(pipeline.viewport_height(), 768.0);
+    }
+
+    /// 测试渲染管线处理包含嵌套表格的 HTML 文档不 panic。
+    ///
+    /// 嵌套 <table> 结构是复杂的 DOM 场景，内层表格在外层表格的 <td> 中。
+    /// 验证管线安全完成渲染，且布局树包含嵌套结构。
+    #[test]
+    fn test_pipeline_render_nested_table_structure() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <table class="outer">
+                <tr>
+                    <td>
+                        <table class="inner">
+                            <tr><td>Inner A</td><td>Inner B</td></tr>
+                        </table>
+                    </td>
+                    <td>Outer Cell</td>
+                </tr>
+            </table>
+        </body></html>"#;
+        let css = r#"
+            .outer { background-color: #f0f0f0; width: 600px; }
+            .inner { background-color: #e0e0e0; width: 300px; }
+            td { border: 1px solid #cccccc; padding: 4px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "嵌套表格渲染应正常完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+        assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
+        // 嵌套表格应产生填充图元（背景 + 边框）
+        assert!(!result.primitives.fills.is_empty(), "嵌套表格应产生填充图元");
+    }
+
+    /// 测试 incremental_paint 传入零尺寸脏矩形时不产生图元。
+    ///
+    /// Rect::new(0, 0, 0, 0) 的 is_empty() 返回 true，
+    /// 任何节点都不与之相交，因此应跳过所有绘制，产生零图元。
+    #[test]
+    fn test_pipeline_incremental_paint_zero_size_dirty_rect() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+        let css = ".box { background-color: red; width: 200px; height: 100px; }";
+
+        // 先做全量渲染
+        let full_result = pipeline.render_html(html, css);
+        let full_fill_count = full_result.primitives.fills.len();
+        assert!(full_fill_count > 0, "全量渲染应产生填充图元");
+
+        // 增量绘制零尺寸脏矩形
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+        let dirty_rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+        let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
+
+        assert!(inc_primitives.is_some(), "incremental_paint 应返回 Some");
+        let inc = inc_primitives.unwrap();
+        // 零尺寸脏矩形与任何节点都不相交，应产生零图元
+        assert!(
+            inc.fills.is_empty(),
+            "零尺寸脏矩形不应产生填充图元，实际 {}",
+            inc.fills.len()
+        );
+        assert!(
+            inc.glyphs.is_empty(),
+            "零尺寸脏矩形不应产生文本图元，实际 {}",
+            inc.glyphs.len()
+        );
     }
 }
