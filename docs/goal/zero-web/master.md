@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-05-31
-**执行状态**: 14/16 crate 已实现，3079 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，3094 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 3079 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 3094 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -26,8 +26,8 @@
 | dom | 324 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone** |
 | css-parser | 365 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc** |
 | style-system | 478 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、aspect-ratio、**float/clear** |
-| layout-engine | 257 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align**、**converter 全变体覆盖** |
-| engine | 210 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层** |
+| layout-engine | 266 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖** |
+| engine | 216 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、内联文本渲染、**inline paint 增强**、**clip_fills/clip_glyphs 直接测试**、**composite 父子层**、**visibility:collapse 修复** |
 | render-foundation | 232 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）** |
 | host-runtime | 135 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键** |
 | net | 193 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin** |
@@ -63,16 +63,19 @@
 
 ## 最近完成的改进
 
-### -6. 全 crate 测试覆盖率提升：102 个新测试（本轮，3079 测试）
+### -6. 全 crate 测试覆盖率提升：119 个新测试 + visibility:collapse 修复（本轮，3094 测试）
 
-系统性分析 14 个 crate 的测试缺口，聚焦最低密度的 layout-engine（26→32 tests/K lines）和 engine（27→33 tests/K lines），
-同时覆盖 dom、css-parser、security、storage、net、canvas 共 10 个 crate：
+系统性分析 14 个 crate 的测试缺口，聚焦最低密度的 layout-engine 和 engine crate，
+同时覆盖 dom、css-parser、security、storage、net、canvas 共 10 个 crate。
+发现并修复 `visibility:collapse` 在 paint 中未按 CSS 规范隐藏元素的 bug。
 
 | 模块 | 新增内容 | 新增测试 |
 |------|----------|----------|
 | layout-engine | **converter 全变体覆盖**：InlineFlex/InlineGrid display、Em/Rem/Vw/Vh/Vmin/Vmax/Ch 单位、Calc fallback、max-length infinity、WrapReverse、FlexBasis Content、align_content 9 变体、justify_content 6 变体、align_self 6 变体、float/clear 全变体、overflow Auto/Clip、tokenize 嵌套括号、malformed minmax | 24 |
+| layout-engine | **inline 格式化边界**：vertical_align Sub/Super y 偏移、TextTop/TextBottom 与 Top/Bottom 等价、resolve_font_metrics Em/Rem 回退、非 Px font-size 回退、break_into_lines 重置状态、零 font_size/line_height | 9 |
 | engine | **clip_fills/clip_glyphs 直接测试**：partial overlap、outside each side、start index、empty slice、exact match；**hsla hue≥300 fallback**；**CurrentColor**；**length_to_f32 non-Px**；**named_color 扩展** | 15 |
-| engine | **composite 父子层路由**：promoted parent + non-promoted child → root layer、promoted parent + promoted child → 2 layers、single box bounding_box、grandchildren encompass；**dirty 150% merge boundary**、50 rect stress、negative size；**pipeline malformed CSS**、50% threshold boundary、recompute without render、mixed render ops | 12 |
+| engine | **composite 父子层路由**：promoted parent + non-promoted child、promoted parent + promoted child、single box bounding_box、grandchildren encompass；**dirty 150% merge boundary**、50 rect stress、negative size、100 non-overlapping、full_redraw merge；**pipeline malformed CSS**、50% threshold、recompute without render、mixed render ops | 14 |
+| engine | **visibility 修复 + 测试**：visibility:collapse 按 CSS 规范隐藏元素（修复 bug）；child visible 覆盖 parent hidden；doc=Some+node_id=None fallback；paint_in_rect hidden skip | 4 |
 | dom | **Range API**：select_node、select_node invalid (Document)、text_content partial、to_debug_string、set_start/set_end invalid offset、clone_contents partial text、insert_node mid text | 7 |
 | css-parser | **5 个零覆盖 parse 函数**：parse_vertical_align (8 关键字+长度)、parse_list_style_type (15 关键字)、parse_list_style_position、parse_float、parse_clear；**eval_calc_with_context viewport** | 6 |
 | security | **CORS 安全边界**：credentials+wildcard rejected、is_simple_request (GET/POST/PUT/自定义 header/content-type)、generate_preflight_response 字段验证；**sandbox 导航/弹窗**：effective_origin opaque/preserve、导航有/无 activation、弹窗允许/阻止 | 13 |
