@@ -1391,3 +1391,118 @@ pub enum DomError {
     #[error("该元素已有 ShadowRoot")]
     AlreadyHasShadowRoot,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试 ProcessingInstruction 内容可正确读取。
+    #[test]
+    fn test_processing_instruction_content() {
+        let mut doc = Document::new();
+        let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"style.css\"");
+        assert_eq!(doc.node_type(pi), Some(7));
+        // 验证 text_content 返回 data 字段
+        assert_eq!(doc.text_content(pi), Some("href=\"style.css\"".to_string()));
+    }
+
+    /// 测试 set_text_content 在 Comment 节点上。
+    #[test]
+    fn test_set_text_content_on_comment() {
+        let mut doc = Document::new();
+        let comment = doc.create_comment("original");
+        assert_eq!(doc.text_content(comment), Some("original".to_string()));
+        doc.set_text_content(comment, "updated");
+        assert_eq!(doc.text_content(comment), Some("updated".to_string()));
+    }
+
+    /// 测试 set_text_content 在 DocumentFragment 上（应替换子节点为文本）。
+    #[test]
+    fn test_set_text_content_on_fragment() {
+        let mut doc = Document::new();
+        let frag = doc.create_document_fragment();
+        let child = doc.create_element("div");
+        doc.append_child(frag, child).unwrap();
+        assert!(doc.has_child_nodes(frag));
+
+        doc.set_text_content(frag, "new text");
+        assert_eq!(doc.text_content(frag), Some("new text".to_string()));
+        // 子元素应被替换为文本节点
+        assert_eq!(doc.child_count(frag), 1);
+    }
+
+    /// 测试 text_content 在 DocumentType 上返回 None。
+    #[test]
+    fn test_text_content_doctype_returns_none() {
+        let mut doc = Document::new();
+        let dt = doc.create_document_type("html", None, None);
+        assert_eq!(doc.text_content(dt), None);
+    }
+
+    /// 测试 get_elements_by_class_name 支持多 class 元素。
+    #[test]
+    fn test_get_elements_by_class_name_multi_class() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "class", "foo bar baz");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        // 搜索任意一个 class 都应匹配
+        let results = doc.get_elements_by_class_name("bar");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], elem);
+    }
+
+    /// 测试 set_attribute id 为空字符串不加入 id_map。
+    #[test]
+    fn test_set_attribute_empty_id_not_in_id_map() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "id", "");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        // 通过非空 id 查找应返回 None
+        let found = doc.get_element_by_id("nonexistent");
+        assert!(found.is_none(), "nonexistent id should not be in id_map");
+    }
+
+    /// 测试 compare_document_position 同一节点。
+    #[test]
+    fn test_compare_document_position_same_node() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        let pos = doc.compare_document_position(elem, elem);
+        assert!(pos.is_some(), "same node should return Some");
+        // 同一节点的位标志应为 0
+        assert_eq!(pos.unwrap().bits(), 0, "same node should have zero position bits");
+    }
+
+    /// 测试 quirks_mode 设置和获取。
+    #[test]
+    fn test_quirks_mode_set_get() {
+        let mut doc = Document::new();
+        assert_eq!(doc.quirks_mode(), QuirksMode::NoQuirks);
+        doc.set_quirks_mode(QuirksMode::Quirks);
+        assert_eq!(doc.quirks_mode(), QuirksMode::Quirks);
+        doc.set_quirks_mode(QuirksMode::LimitedQuirks);
+        assert_eq!(doc.quirks_mode(), QuirksMode::LimitedQuirks);
+    }
+
+    /// 测试 remove_attribute 在非元素节点上不 panic。
+    #[test]
+    fn test_remove_attribute_on_text_node() {
+        let mut doc = Document::new();
+        let text = doc.create_text_node("hello");
+        doc.remove_attribute(text, "id");
+    }
+
+    /// 测试 attribute_names 在非元素节点返回空。
+    #[test]
+    fn test_attribute_names_on_text_node() {
+        let mut doc = Document::new();
+        let text = doc.create_text_node("hello");
+        assert!(doc.attribute_names(text).is_empty());
+    }
+}
