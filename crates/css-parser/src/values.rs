@@ -1936,6 +1936,98 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
     }
 }
 
+// ── CSS Page Break 值类型 ──────────────────────────────────────────────
+
+/// CSS page-break 属性值（page-break-before、page-break-after、page-break-inside）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PageBreakValue {
+    /// auto。
+    Auto,
+    /// always。
+    Always,
+    /// avoid。
+    Avoid,
+    /// left。
+    Left,
+    /// right。
+    Right,
+}
+
+/// 解析 CSS page-break 属性值。
+pub fn parse_page_break(value: &str) -> Option<PageBreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(PageBreakValue::Auto),
+        "always" => Some(PageBreakValue::Always),
+        "avoid" => Some(PageBreakValue::Avoid),
+        "left" => Some(PageBreakValue::Left),
+        "right" => Some(PageBreakValue::Right),
+        _ => None,
+    }
+}
+
+/// CSS box-decoration-break 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoxDecorationBreakValue {
+    /// slice。
+    Slice,
+    /// clone。
+    Clone,
+}
+
+/// 解析 CSS box-decoration-break 属性值。
+pub fn parse_box_decoration_break(value: &str) -> Option<BoxDecorationBreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "slice" => Some(BoxDecorationBreakValue::Slice),
+        "clone" => Some(BoxDecorationBreakValue::Clone),
+        _ => None,
+    }
+}
+
+/// CSS image-rendering 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImageRenderingValue {
+    /// auto。
+    Auto,
+    /// smooth。
+    Smooth,
+    /// high-quality。
+    HighQuality,
+    /// pixelated。
+    Pixelated,
+    /// crisp-edges。
+    CrispEdges,
+}
+
+/// 解析 CSS image-rendering 属性值。
+pub fn parse_image_rendering(value: &str) -> Option<ImageRenderingValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(ImageRenderingValue::Auto),
+        "smooth" => Some(ImageRenderingValue::Smooth),
+        "high-quality" => Some(ImageRenderingValue::HighQuality),
+        "pixelated" => Some(ImageRenderingValue::Pixelated),
+        "crisp-edges" => Some(ImageRenderingValue::CrispEdges),
+        _ => None,
+    }
+}
+
+/// CSS isolation 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum IsolationValue {
+    /// auto。
+    Auto,
+    /// isolate。
+    Isolate,
+}
+
+/// 解析 CSS isolation 属性值。
+pub fn parse_isolation(value: &str) -> Option<IsolationValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(IsolationValue::Auto),
+        "isolate" => Some(IsolationValue::Isolate),
+        _ => None,
+    }
+}
+
 // ── CSS Transition 值类型 ──────────────────────────────────────────────
 
 /// CSS transition-timing-function / animation-timing-function 值。
@@ -4343,5 +4435,75 @@ mod tests {
     fn test_parse_quotes_invalid() {
         assert_eq!(parse_quotes(""), None);
         assert_eq!(parse_quotes("random"), None);
+    }
+
+    // ── Page Break 测试 ──
+
+    #[test]
+    fn test_parse_page_break_auto() {
+        assert_eq!(parse_page_break("auto"), Some(PageBreakValue::Auto));
+    }
+
+    #[test]
+    fn test_parse_page_break_always() {
+        assert_eq!(parse_page_break("always"), Some(PageBreakValue::Always));
+    }
+
+    #[test]
+    fn test_parse_page_break_avoid() {
+        assert_eq!(parse_page_break("avoid"), Some(PageBreakValue::Avoid));
+    }
+
+    #[test]
+    fn test_parse_page_break_left_right() {
+        assert_eq!(parse_page_break("left"), Some(PageBreakValue::Left));
+        assert_eq!(parse_page_break("right"), Some(PageBreakValue::Right));
+    }
+
+    #[test]
+    fn test_parse_page_break_invalid() {
+        assert_eq!(parse_page_break("invalid"), None);
+    }
+
+    // ── BoxDecorationBreak 测试 ──
+
+    #[test]
+    fn test_parse_box_decoration_break() {
+        assert_eq!(
+            parse_box_decoration_break("slice"),
+            Some(BoxDecorationBreakValue::Slice)
+        );
+        assert_eq!(
+            parse_box_decoration_break("clone"),
+            Some(BoxDecorationBreakValue::Clone)
+        );
+        assert_eq!(parse_box_decoration_break("invalid"), None);
+    }
+
+    // ── ImageRendering 测试 ──
+
+    #[test]
+    fn test_parse_image_rendering() {
+        assert_eq!(parse_image_rendering("auto"), Some(ImageRenderingValue::Auto));
+        assert_eq!(parse_image_rendering("smooth"), Some(ImageRenderingValue::Smooth));
+        assert_eq!(
+            parse_image_rendering("high-quality"),
+            Some(ImageRenderingValue::HighQuality)
+        );
+        assert_eq!(parse_image_rendering("pixelated"), Some(ImageRenderingValue::Pixelated));
+        assert_eq!(
+            parse_image_rendering("crisp-edges"),
+            Some(ImageRenderingValue::CrispEdges)
+        );
+        assert_eq!(parse_image_rendering("invalid"), None);
+    }
+
+    // ── Isolation 测试 ──
+
+    #[test]
+    fn test_parse_isolation() {
+        assert_eq!(parse_isolation("auto"), Some(IsolationValue::Auto));
+        assert_eq!(parse_isolation("isolate"), Some(IsolationValue::Isolate));
+        assert_eq!(parse_isolation("invalid"), None);
     }
 }

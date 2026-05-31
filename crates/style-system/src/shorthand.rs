@@ -206,6 +206,9 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── Grid template 简写 ──
         "grid-template" => expand_grid_template(value, important, specificity),
 
+        // ── list-style 简写 ──
+        "list-style" => expand_list_style(value, important, specificity),
+
         // ── outline 简写 ──
         "outline" => expand_outline(value, important, specificity),
 
@@ -884,6 +887,58 @@ fn extract_quoted_areas(rows_part: &str) -> (String, String) {
     flush_row_token(&mut current_row_token, &mut rows_tokens);
 
     (areas, rows_tokens.join(" "))
+}
+
+/// 展开 list-style 简写。
+///
+/// CSS `list-style` 简写格式为：
+/// `list-style: [type] [position] [image]`
+///
+/// 识别每个部分：type 是关键字，position 是 inside/outside，其余视为 image。
+/// 未指定的部分保持初始值。
+fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // 特殊值 "none" 同时设置 type 和 image
+    if value.eq_ignore_ascii_case("none") {
+        return vec![mk("list-style-type", "none"), mk("list-style-position", "outside")];
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mut list_type = "disc"; // 默认
+    let mut position = "outside"; // 默认
+
+    let is_position = |s: &str| s.eq_ignore_ascii_case("inside") || s.eq_ignore_ascii_case("outside");
+
+    let is_type = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "disc"
+                | "circle"
+                | "square"
+                | "decimal"
+                | "decimal-leading-zero"
+                | "lower-roman"
+                | "upper-roman"
+                | "lower-alpha"
+                | "lower-latin"
+                | "upper-alpha"
+                | "upper-latin"
+                | "none"
+        )
+    };
+
+    for part in &parts {
+        if is_position(part) {
+            position = *part;
+        } else if is_type(part) {
+            list_type = *part;
+        }
+        // 其他值（如 url(...)）为 image，暂不处理
+    }
+
+    vec![mk("list-style-type", list_type), mk("list-style-position", position)]
 }
 
 /// 展开 outline 简写。
@@ -1983,5 +2038,67 @@ mod tests {
     fn test_place_too_many_values() {
         let result = expand_one("place-items", "start end center", false, (0, 0, 1));
         assert!(result.is_empty());
+    }
+
+    // ── list-style 简写测试 ──
+
+    #[test]
+    /// list-style: none → type=none, position=outside
+    fn test_list_style_none() {
+        let result = expand_one("list-style", "none", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "list-style-type");
+        assert_eq!(result[0].1, "none");
+        assert_eq!(result[1].0, "list-style-position");
+        assert_eq!(result[1].1, "outside");
+    }
+
+    #[test]
+    /// list-style: inside → type=disc(默认), position=inside
+    fn test_list_style_position_only() {
+        let result = expand_one("list-style", "inside", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "list-style-type");
+        assert_eq!(result[0].1, "disc");
+        assert_eq!(result[1].0, "list-style-position");
+        assert_eq!(result[1].1, "inside");
+    }
+
+    #[test]
+    /// list-style: square inside → type=square, position=inside
+    fn test_list_style_type_and_position() {
+        let result = expand_one("list-style", "square inside", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "list-style-type");
+        assert_eq!(result[0].1, "square");
+        assert_eq!(result[1].0, "list-style-position");
+        assert_eq!(result[1].1, "inside");
+    }
+
+    #[test]
+    /// list-style: decimal outside → type=decimal, position=outside
+    fn test_list_style_decimal_outside() {
+        let result = expand_one("list-style", "decimal outside", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, "decimal");
+        assert_eq!(result[1].1, "outside");
+    }
+
+    #[test]
+    /// list-style: lower-roman inside → type=lower-roman, position=inside
+    fn test_list_style_lower_roman_inside() {
+        let result = expand_one("list-style", "lower-roman inside", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, "lower-roman");
+        assert_eq!(result[1].1, "inside");
+    }
+
+    #[test]
+    /// list-style 保留 important 标记
+    fn test_list_style_preserves_important() {
+        let result = expand_one("list-style", "square inside", true, (0, 1, 0));
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|(_, _, imp, _)| *imp));
+        assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
     }
 }
