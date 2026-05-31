@@ -25,6 +25,9 @@ pub enum LengthValue {
     Percentage(f64),
     /// auto 关键字。
     Auto,
+    /// 数学表达式（calc/min/max/clamp），在样式解析阶段无法直接求值，
+    /// 需要在 [`resolve_computed_style`](crate::resolve_computed_style) 阶段用完整上下文求值。
+    Calc(Box<CalcExpr>),
 }
 
 /// CSS 颜色值。
@@ -730,6 +733,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         },
         LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
         LengthValue::Auto => None,
+        LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
     }
 }
 

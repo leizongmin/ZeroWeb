@@ -50,6 +50,17 @@ pub fn resolve_length(
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
         LengthValue::Auto => 0.0,
+        // 数学表达式：使用完整上下文求值
+        LengthValue::Calc(expr) => {
+            let ctx = zero_css_parser::values::CalcContext {
+                font_size: Some(font_size),
+                root_font_size: Some(ROOT_FONT_SIZE),
+                viewport_width,
+                viewport_height,
+                ..Default::default()
+            };
+            zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
+        }
     }
 }
 

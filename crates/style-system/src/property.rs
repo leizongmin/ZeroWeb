@@ -9,6 +9,18 @@ use zero_css_parser::values::{
     ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VisibilityValue,
 };
 
+/// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
+///
+/// 先尝试简单解析（parse_length），失败时尝试数学函数（parse_math_function）。
+/// 数学函数在属性应用阶段存储为 `LengthValue::Calc`，后续由 `resolve_computed_style` 求值。
+fn parse_length_or_math(value: &str) -> Option<LengthValue> {
+    if let Some(v) = values::parse_length(value) {
+        return Some(v);
+    }
+    // 尝试解析 calc/min/max/clamp 数学表达式
+    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+}
+
 // ── 额外枚举类型 ─────────────────────────────────────────────────────
 
 /// CSS border-style 值。
@@ -1406,25 +1418,25 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.width = v;
                 return true;
             }
         }
         "height" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.height = v;
                 return true;
             }
         }
         "min-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.min_width = v;
                 return true;
             }
         }
         "min-height" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.min_height = v;
                 return true;
             }
@@ -1434,7 +1446,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 style.max_width = LengthValue::Px(f64::INFINITY);
                 return true;
             }
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.max_width = v;
                 return true;
             }
@@ -1444,55 +1456,55 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 style.max_height = LengthValue::Px(f64::INFINITY);
                 return true;
             }
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.max_height = v;
                 return true;
             }
         }
         "margin-top" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_top = v;
                 return true;
             }
         }
         "margin-right" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_right = v;
                 return true;
             }
         }
         "margin-bottom" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_bottom = v;
                 return true;
             }
         }
         "margin-left" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_left = v;
                 return true;
             }
         }
         "padding-top" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_top = v;
                 return true;
             }
         }
         "padding-right" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_right = v;
                 return true;
             }
         }
         "padding-bottom" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_bottom = v;
                 return true;
             }
         }
         "padding-left" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_left = v;
                 return true;
             }
@@ -1504,25 +1516,25 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "border-top-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_top_width = v;
                 return true;
             }
         }
         "border-right-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_right_width = v;
                 return true;
             }
         }
         "border-bottom-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_bottom_width = v;
                 return true;
             }
         }
         "border-left-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_left_width = v;
                 return true;
             }
@@ -1576,32 +1588,32 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "border-top-left-radius" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_top_left_radius = v;
                 return true;
             }
         }
         "border-top-right-radius" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_top_right_radius = v;
                 return true;
             }
         }
         "border-bottom-right-radius" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_bottom_right_radius = v;
                 return true;
             }
         }
         "border-bottom-left-radius" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.border_bottom_left_radius = v;
                 return true;
             }
         }
         // ── Outline 属性 ──
         "outline-width" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.outline_width = v;
                 return true;
             }
@@ -1619,7 +1631,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "outline-offset" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.outline_offset = v;
                 return true;
             }
@@ -1653,7 +1665,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             return true;
         }
         "font-size" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.font_size = v;
                 return true;
             }
@@ -1695,13 +1707,13 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "letter-spacing" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.letter_spacing = v;
                 return true;
             }
         }
         "word-spacing" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.word_spacing = v;
                 return true;
             }
@@ -1767,7 +1779,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "gap" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.gap = v;
                 return true;
             }
@@ -1779,25 +1791,25 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "top" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.top = v;
                 return true;
             }
         }
         "right" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.right = v;
                 return true;
             }
         }
         "bottom" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.bottom = v;
                 return true;
             }
         }
         "left" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.left = v;
                 return true;
             }
@@ -1879,7 +1891,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             return true;
         }
         "row-gap" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.row_gap = v;
                 return true;
             }
@@ -1918,73 +1930,73 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         // ── 逻辑属性 ──
         // margin-block-start → margin-top (horizontal writing-mode 映射)
         "margin-block-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_top = v;
                 return true;
             }
         }
         "margin-block-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_bottom = v;
                 return true;
             }
         }
         "margin-inline-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_left = v;
                 return true;
             }
         }
         "margin-inline-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.margin_right = v;
                 return true;
             }
         }
         "padding-block-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_top = v;
                 return true;
             }
         }
         "padding-block-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_bottom = v;
                 return true;
             }
         }
         "padding-inline-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_left = v;
                 return true;
             }
         }
         "padding-inline-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.padding_right = v;
                 return true;
             }
         }
         "inset-block-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.top = v;
                 return true;
             }
         }
         "inset-block-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.bottom = v;
                 return true;
             }
         }
         "inset-inline-start" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.left = v;
                 return true;
             }
         }
         "inset-inline-end" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.right = v;
                 return true;
             }
@@ -2075,25 +2087,25 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "scroll-margin-top" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.scroll_margin_top = resolve_length_to_px(v);
                 return true;
             }
         }
         "scroll-margin-right" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.scroll_margin_right = resolve_length_to_px(v);
                 return true;
             }
         }
         "scroll-margin-bottom" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.scroll_margin_bottom = resolve_length_to_px(v);
                 return true;
             }
         }
         "scroll-margin-left" => {
-            if let Some(v) = values::parse_length(value) {
+            if let Some(v) = parse_length_or_math(value) {
                 style.scroll_margin_left = resolve_length_to_px(v);
                 return true;
             }
