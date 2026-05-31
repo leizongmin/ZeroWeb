@@ -4,10 +4,10 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, ContainerTypeValue, ContentValue, CounterActionValue,
-    DisplayValue, FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, OverflowValue,
-    PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
-    VerticalAlignValue, VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, ColumnCountValue, ColumnWidthValue, ContainerTypeValue,
+    ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue, FontStyleValue,
+    FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PositionValue, QuotesValue, ScrollSnapAlignValue,
+    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
@@ -802,6 +802,14 @@ pub enum PropertyValue {
     UnicodeBidi(UnicodeBidiValue),
     /// tab-size 值。
     TabSize(TabSizeValue),
+    /// column-count 值。
+    ColumnCount(ColumnCountComputedValue),
+    /// column-width 值。
+    ColumnWidth(ColumnWidthComputedValue),
+    /// object-fit 值。
+    ObjectFit(ObjectFitComputedValue),
+    /// filter 值。
+    Filter(FilterComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -822,6 +830,66 @@ pub enum BackfaceVisibilityValue {
     Visible,
     /// hidden。
     Hidden,
+}
+
+/// CSS column-count 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnCountComputedValue {
+    /// auto。
+    Auto,
+    /// 正整数值。
+    Number(u32),
+}
+
+/// CSS column-width 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnWidthComputedValue {
+    /// auto。
+    Auto,
+    /// 长度值。
+    Length(LengthValue),
+}
+
+/// CSS object-fit 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjectFitComputedValue {
+    /// fill。
+    Fill,
+    /// contain。
+    Contain,
+    /// cover。
+    Cover,
+    /// none。
+    None,
+    /// scale-down。
+    ScaleDown,
+}
+
+/// CSS filter 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterComputedValue {
+    /// none。
+    None,
+    /// blur(px)。
+    Blur(f32),
+    /// brightness(number)。
+    Brightness(f32),
+    /// contrast(number)。
+    Contrast(f32),
+    /// grayscale(number)。
+    Grayscale(f32),
+    /// hue-rotate(deg)。
+    HueRotate(f32),
+    /// invert(number)。
+    Invert(f32),
+    /// opacity(number)。
+    Opacity(f32),
+    /// saturate(number)。
+    Saturate(f32),
+    /// sepia(number)。
+    Sepia(f32),
+    /// drop-shadow(x-offset, y-offset, blur-radius, color)。
+    DropShadow(f32, f32, f32, ColorValue),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -1184,6 +1252,18 @@ pub struct ComputedStyle {
     pub unicode_bidi: UnicodeBidiValue,
     /// tab-size 属性。
     pub tab_size: TabSizeValue,
+
+    // ── Columns ──
+    /// column-count 属性。
+    pub column_count: ColumnCountComputedValue,
+    /// column-width 属性。
+    pub column_width: ColumnWidthComputedValue,
+
+    // ── Object Fit / Filter ──
+    /// object-fit 属性。
+    pub object_fit: ObjectFitComputedValue,
+    /// filter 属性。
+    pub filter: FilterComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1395,6 +1475,14 @@ impl Default for ComputedStyle {
             direction: DirectionValue::Ltr,
             unicode_bidi: UnicodeBidiValue::Normal,
             tab_size: TabSizeValue::Number(8),
+
+            // Columns
+            column_count: ColumnCountComputedValue::Auto,
+            column_width: ColumnWidthComputedValue::Auto,
+
+            // Object Fit / Filter
+            object_fit: ObjectFitComputedValue::Fill,
+            filter: FilterComputedValue::None,
         }
     }
 }
@@ -1590,6 +1678,14 @@ impl PropertyRegistry {
             "unicode-bidi" => Some(UnicodeBidi(UnicodeBidiValue::Normal)),
             "tab-size" => Some(TabSize(TabSizeValue::Number(8))),
 
+            // Columns
+            "column-count" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
+            "column-width" => Some(ColumnWidth(ColumnWidthComputedValue::Auto)),
+
+            // Object Fit / Filter
+            "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
+            "filter" => Some(Filter(FilterComputedValue::None)),
+
             _ => None,
         }
     }
@@ -1773,6 +1869,10 @@ impl PropertyRegistry {
             "direction",
             "unicode-bidi",
             "tab-size",
+            "column-count",
+            "column-width",
+            "object-fit",
+            "filter",
         ]
     }
 }
@@ -3435,6 +3535,58 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── ColumnCount 属性 ──
+        "column-count" => {
+            if let Some(v) = values::parse_column_count(value) {
+                style.column_count = match v {
+                    ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
+                    ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
+                };
+                return true;
+            }
+        }
+        // ── ColumnWidth 属性 ──
+        "column-width" => {
+            if let Some(v) = values::parse_column_width(value) {
+                style.column_width = match v {
+                    ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
+                    ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
+                };
+                return true;
+            }
+        }
+        // ── ObjectFit 属性 ──
+        "object-fit" => {
+            if let Some(v) = values::parse_object_fit(value) {
+                style.object_fit = match v {
+                    ObjectFitValue::Fill => ObjectFitComputedValue::Fill,
+                    ObjectFitValue::Contain => ObjectFitComputedValue::Contain,
+                    ObjectFitValue::Cover => ObjectFitComputedValue::Cover,
+                    ObjectFitValue::None => ObjectFitComputedValue::None,
+                    ObjectFitValue::ScaleDown => ObjectFitComputedValue::ScaleDown,
+                };
+                return true;
+            }
+        }
+        // ── Filter 属性 ──
+        "filter" => {
+            if let Some(v) = values::parse_filter(value) {
+                style.filter = match v {
+                    FilterValue::None => FilterComputedValue::None,
+                    FilterValue::Blur(n) => FilterComputedValue::Blur(n),
+                    FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
+                    FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
+                    FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
+                    FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
+                    FilterValue::Invert(n) => FilterComputedValue::Invert(n),
+                    FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
+                    FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
+                    FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
+                    FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -4168,6 +4320,24 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "tab-size" => {
             style.tab_size = default_style.tab_size;
+            true
+        }
+        // Columns
+        "column-count" => {
+            style.column_count = default_style.column_count;
+            true
+        }
+        "column-width" => {
+            style.column_width = default_style.column_width;
+            true
+        }
+        // Object Fit / Filter
+        "object-fit" => {
+            style.object_fit = default_style.object_fit;
+            true
+        }
+        "filter" => {
+            style.filter = default_style.filter;
             true
         }
         _ => false,
