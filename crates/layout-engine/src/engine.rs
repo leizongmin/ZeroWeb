@@ -2890,4 +2890,76 @@ mod tests {
             content_box.width
         );
     }
+
+    /// 测试 aspect-ratio 影响布局结果。
+    #[test]
+    fn test_aspect_ratio_layout() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(400.0);
+        styles.insert(container, container_style);
+
+        // 子元素设置 width=200px, aspect-ratio=2（宽/高比=2，所以高度应为 100px）
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(200.0);
+        child_style.aspect_ratio = Some(2.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // container 是 body 的第一个子元素
+        let container_box = &result.root.children[0];
+        // child 是 container 的第一个子元素
+        let child_box = &container_box.children[0];
+        // aspect-ratio=2 意味着 width/height = 2，height = 200/2 = 100
+        assert!(
+            (child_box.height - 100.0).abs() < 1.0,
+            "aspect-ratio=2 时高度应为 100px，实际 {}",
+            child_box.height
+        );
+    }
+
+    /// 测试 aspect-ratio 使用 16/9 比例。
+    #[test]
+    fn test_aspect_ratio_16_9() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let child = doc.create_element("div");
+        doc.append_child(container, child).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(800.0);
+        styles.insert(container, container_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(320.0);
+        child_style.aspect_ratio = Some(16.0 / 9.0);
+        styles.insert(child, child_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let container_box = &result.root.children[0];
+        let child_box = &container_box.children[0];
+        let expected_height = 320.0 * 9.0 / 16.0; // = 180
+        assert!(
+            (child_box.height - expected_height).abs() < 1.0,
+            "aspect-ratio 16/9 时高度应为 {}px，实际 {}",
+            expected_height,
+            child_box.height
+        );
+    }
 }

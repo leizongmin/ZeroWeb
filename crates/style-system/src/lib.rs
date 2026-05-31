@@ -1984,4 +1984,91 @@ mod tests {
         // 2em = 2*20 = 40px, 40+10=50px
         assert_eq!(div_style.width, LengthValue::Px(50.0));
     }
+
+    // ── aspect-ratio 端到端测试 ──
+
+    /// 测试 aspect-ratio 数值解析。
+    #[test]
+    fn test_aspect_ratio_number() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "aspect-ratio".to_string(),
+                    value: "1.5".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.aspect_ratio, Some(1.5));
+    }
+
+    /// 测试 aspect-ratio 斜杠语法（16 / 9）。
+    #[test]
+    fn test_aspect_ratio_slash_syntax() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "aspect-ratio".to_string(),
+                    value: "16 / 9".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        let ratio = div_style.aspect_ratio.expect("should have aspect-ratio");
+        assert!((ratio - 16.0 / 9.0).abs() < 0.01);
+    }
+
+    /// 测试 aspect-ratio: auto 重置为 None。
+    #[test]
+    fn test_aspect_ratio_auto() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "aspect-ratio".to_string(),
+                    value: "auto".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.aspect_ratio, None);
+    }
+
+    /// 测试 aspect-ratio 默认值为 None。
+    #[test]
+    fn test_aspect_ratio_default() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.aspect_ratio, None);
+    }
 }
