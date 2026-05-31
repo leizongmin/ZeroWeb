@@ -50,7 +50,7 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
             width: convert_max_length_to_dimension(&style.max_width),
             height: convert_max_length_to_dimension(&style.max_height),
         },
-        aspect_ratio: None,
+        aspect_ratio: style.aspect_ratio,
         margin: taffy::geometry::Rect {
             left: convert_length_to_lpa(&style.margin_left),
             right: convert_length_to_lpa(&style.margin_right),

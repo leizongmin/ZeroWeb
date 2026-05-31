@@ -590,6 +590,10 @@ pub struct ComputedStyle {
     /// overflow-y 属性。
     pub overflow_y: OverflowValue,
 
+    // ── Aspect Ratio ──
+    /// aspect-ratio 属性（width / height 比值），None 表示 auto。
+    pub aspect_ratio: Option<f32>,
+
     // ── Cursor ──
     /// cursor 属性。
     pub cursor: CursorValue,
@@ -767,6 +771,9 @@ impl Default for ComputedStyle {
             overflow_x: OverflowValue::Visible,
             overflow_y: OverflowValue::Visible,
 
+            // Aspect Ratio
+            aspect_ratio: None,
+
             // Cursor
             cursor: CursorValue::Auto,
 
@@ -894,6 +901,9 @@ impl PropertyRegistry {
 
             // Overflow
             "overflow-x" | "overflow-y" => Some(Overflow(OverflowValue::Visible)),
+
+            // Aspect Ratio
+            "aspect-ratio" => Some(Number(f64::NAN)), // NaN 表示 auto
 
             // Cursor
             "cursor" => Some(Cursor(CursorValue::Auto)),
@@ -1040,6 +1050,7 @@ impl PropertyRegistry {
             "z-index",
             "overflow-x",
             "overflow-y",
+            "aspect-ratio",
             "cursor",
             "transition-property",
             "transition-duration",
@@ -1832,6 +1843,33 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Aspect Ratio 属性 ──
+        "aspect-ratio" => {
+            if value == "auto" {
+                style.aspect_ratio = None;
+                return true;
+            }
+            // 支持 "16 / 9" 或单个数值
+            let ratio: f32 = if let Some(slash_pos) = value.find('/') {
+                let w: f32 = match value[..slash_pos].trim().parse() {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                };
+                let h: f32 = match value[slash_pos + 1..].trim().parse() {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                };
+                if h == 0.0 { return false; }
+                w / h
+            } else {
+                match value.parse() {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                }
+            };
+            style.aspect_ratio = Some(ratio);
+            return true;
+        }
         // ── Cursor 属性 ──
         "cursor" => {
             if let Some(v) = parse_cursor(value) {
@@ -2554,6 +2592,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "overflow-y" => {
             style.overflow_y = default_style.overflow_y;
+            true
+        }
+        // Aspect Ratio
+        "aspect-ratio" => {
+            style.aspect_ratio = default_style.aspect_ratio;
             true
         }
         // Cursor
