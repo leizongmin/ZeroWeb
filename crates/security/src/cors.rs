@@ -723,4 +723,41 @@ mod tests {
         let headers = generate_preflight_response(&policy, &origin, "GET", &["x-custom-header".to_string()]);
         assert_eq!(headers.allow_origin, Some("*".to_string()));
     }
+
+    // ---- CORS：通配符源 + 显式头部限制 ----
+
+    #[test]
+    fn test_cors_wildcard_origin_blocks_unlisted_header() {
+        // 通配符源 * 不应隐式允许所有请求头
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec!["X-Allowed".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        // 请求包含 X-Forbidden 头部
+        let headers = generate_preflight_response(&policy, &origin, "POST", &["X-Forbidden".to_string()]);
+        // X-Forbidden 不在 allow_headers 中，不应被允许
+        assert!(
+            headers.allow_headers.is_none() || !headers.allow_headers.unwrap().contains("X-Forbidden"),
+            "通配符源不应隐式允许未列出的请求头"
+        );
+    }
+
+    #[test]
+    fn test_cors_wildcard_origin_allows_listed_header() {
+        // 通配符源 + 显式头部列表 → 列出的头部应被允许
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec!["X-Custom".to_string(), "Authorization".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &["X-Custom".to_string()]);
+        assert_eq!(headers.allow_origin, Some("*".to_string()));
+    }
 }

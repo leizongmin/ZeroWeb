@@ -3743,3 +3743,86 @@ fn test_remove_child_cleans_id_map_recursive() {
         "移除父节点后，后代的 id_map 条目也应被清理"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Shadow DOM closed 模式与 compare_document_position 深度测试
+// ═══════════════════════════════════════════════════════════════════
+
+/// 测试 closed 模式 Shadow DOM 的 shadow_root 访问。
+///
+/// 验证 attach_shadow 后，closed 模式的 shadow_root 仍可获取，
+/// 但实际使用中 closed 模式应限制外部脚本访问。
+#[test]
+fn test_shadow_root_closed_mode_access() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    doc.append_child(doc.root(), host).unwrap();
+
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Closed).unwrap();
+
+    // 当前实现中 shadow_root() 返回 Some，无论模式
+    assert!(doc.shadow_root(host).is_some(), "shadow_root 应返回 Some");
+
+    // 验证模式为 Closed
+    let mode = doc.get_shadow_root_mode(shadow).unwrap();
+    assert_eq!(mode, ShadowRootMode::Closed);
+}
+
+/// 测试 compare_document_position 在深层分支树中的行为。
+///
+/// 结构：root > div1 > span1 vs root > div2 > span2
+/// span1 和 span2 共享 root 作为祖先，但在不同分支。
+#[test]
+fn test_compare_document_position_deep_branching() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div1 = doc.create_element("div");
+    let div2 = doc.create_element("div");
+    let span1 = doc.create_element("span");
+    let span2 = doc.create_element("span");
+
+    doc.append_child(root, div1).unwrap();
+    doc.append_child(root, div2).unwrap();
+    doc.append_child(div1, span1).unwrap();
+    doc.append_child(div2, span2).unwrap();
+
+    // span1 在 span2 之前 → node2(span2) 在 node1(span1) 之后 → FOLLOWING
+    let pos = doc.compare_document_position(span1, span2).unwrap();
+    assert!(
+        pos.contains(DocumentPosition::FOLLOWING),
+        "span2 应在 span1 之后（span1 在前）"
+    );
+
+    // 反向：span2 在 span1 之后 → node1(span2) 在 node2(span1) 之前 → PRECEDING
+    let pos = doc.compare_document_position(span2, span1).unwrap();
+    assert!(pos.contains(DocumentPosition::PRECEDING), "span1 应在 span2 之前");
+}
+
+/// 测试 compare_document_position 对同一元素返回 0。
+#[test]
+fn test_compare_document_position_same_node() {
+    let mut doc = Document::new();
+    let div = doc.create_element("div");
+    doc.append_child(doc.root(), div).unwrap();
+
+    let pos = doc.compare_document_position(div, div).unwrap();
+    assert_eq!(pos.bits(), 0, "同一元素应返回 0");
+}
+
+/// 测试 compare_document_position 在直接父子关系中的行为。
+#[test]
+fn test_compare_document_position_parent_child() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(doc.root(), parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    // parent 包含 child
+    let pos = doc.compare_document_position(parent, child).unwrap();
+    assert!(pos.contains(DocumentPosition::CONTAINED_BY), "parent 应包含 child");
+
+    // child 被 parent 包含
+    let pos = doc.compare_document_position(child, parent).unwrap();
+    assert!(pos.contains(DocumentPosition::CONTAINS), "child 应被 parent 包含");
+}
