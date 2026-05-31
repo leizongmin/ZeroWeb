@@ -842,4 +842,176 @@ mod tests {
             "带特殊空白符的 same-origin 应正确解析"
         );
     }
+
+    /// 测试 CORS check_cors 和 generate_preflight_response 对非默认端口的源格式一致性。
+    ///
+    /// 当 Origin 使用非默认端口（如 http://example.com:3000）时，
+    /// check_cors 格式化的源字符串应与 generate_preflight_response 一致，
+    /// 确保 allow_origins 列表中的端口格式在两处匹配。
+    #[test]
+    fn test_cors_non_default_port_formatting_consistency() {
+        let origin_3000 = Origin::parse("http://example.com:3000").unwrap();
+        assert_eq!(origin_3000.port, 3000);
+
+        // check_cors 使用 "http://example.com:3000" 格式匹配
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com:3000".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result = check_cors(&policy, &origin_3000, "GET", &[]);
+        assert!(result.allowed, "非默认端口 3000 应在 check_cors 中匹配");
+
+        // generate_preflight_response 也应格式化为 "http://example.com:3000"
+        let headers = generate_preflight_response(&policy, &origin_3000, "GET", &[]);
+        assert_eq!(
+            headers.allow_origin,
+            Some("http://example.com:3000".to_string()),
+            "预检响应应包含完整端口号"
+        );
+
+        // 默认端口 80 的 http 源不应匹配 3000
+        let origin_80 = Origin::parse("http://example.com").unwrap();
+        let result_80 = check_cors(&policy, &origin_80, "GET", &[]);
+        assert!(!result_80.allowed, "默认端口 80 不应匹配 3000");
+    }
+
+    /// 测试 CSP font-src 指令限制字体资源加载。
+    ///
+    /// font-src 指令控制 @font-face 可加载的字体来源。
+    /// 'none' 阻止所有字体加载，指定域名仅允许该域名，
+    /// 无 font-src 指令时回退到 default-src。
+    #[test]
+    fn test_csp_font_src_restricts_fonts() {
+        // font-src 指定允许的字体域名
+        let csp = ContentSecurityPolicy::parse("font-src https://fonts.example.com");
+        assert!(
+            csp.is_resource_allowed("font", "https://fonts.example.com/roboto.woff2", None),
+            "font-src 中的域名应允许加载"
+        );
+        assert!(
+            !csp.is_resource_allowed("font", "https://evil.com/steal.woff", None),
+            "不在 font-src 中的域名应被阻止"
+        );
+
+        // font-src 'none' 阻止所有字体
+        let csp_none = ContentSecurityPolicy::parse("font-src 'none'");
+        assert!(
+            !csp_none.is_resource_allowed("font", "https://fonts.example.com/roboto.woff2", None),
+            "font-src 'none' 应阻止所有字体"
+        );
+        // 其他资源类型不受影响
+        assert!(
+            csp_none.is_resource_allowed("script", "https://any.com/app.js", None),
+            "font-src 不影响其他资源类型"
+        );
+
+        // 无 font-src → 回退到 default-src
+        let csp_default = ContentSecurityPolicy::parse("default-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+        assert!(
+            csp_default.is_resource_allowed("font", "https://example.com/font.woff", Some(&doc_origin)),
+            "无 font-src 时应回退到 default-src"
+        );
+    }
+
+    /// 测试沙箱 allow-downloads 和 allow-presentation 等不常见标志的解析。
+    ///
+    /// allow-downloads 允许下载文件，allow-presentation 允许呈现模式。
+    /// 这些标志不影响核心功能（脚本、同源、表单、弹窗、顶层导航）。
+    #[test]
+    fn test_sandbox_uncommon_flags_do_not_grant_core_permissions() {
+        let sandbox = IframeSandbox::parse(
+            "allow-downloads allow-presentation allow-orientation-lock allow-pointer-lock allow-autoplay allow-modals",
+        );
+
+        // 不常见标志不应授予核心权限
+        assert!(!sandbox.allows_scripts(), "不常见标志不应允许脚本执行");
+        assert!(!sandbox.allows_same_origin(), "不常见标志不应允许同源访问");
+        assert!(!sandbox.allows_forms(), "不常见标志不应允许表单提交");
+        assert!(!sandbox.allows_popups(), "不常见标志不应允许弹窗");
+        assert!(!sandbox.allows_top_navigation(), "不常见标志不应允许顶层导航");
+
+        // 但这些标志确实被解析并存在
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowDownloads));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPresentation));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowOrientationLock));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPointerLock));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowAutoplay));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowModals));
+
+        // 缺少 allow-same-origin → effective_origin 为不透明源
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(sandbox.effective_origin(&origin), SandboxOrigin::Opaque);
+    }
+
+    /// 测试 COEP RequireCorp 模式下 CORS 通过的跨源资源仍被允许。
+    ///
+    /// evaluate_coep 的 has_cors 参数为 true 时，即使资源为跨源且
+    /// CORP 状态为 NoPolicy，也应返回 Allowed。这是 COEP 与 CORS
+    /// 协同工作的关键：CORS 预检通过的请求不受 COEP 限制。
+    #[test]
+    fn test_coep_require_corp_allows_cors_cross_origin() {
+        // RequireCorp + 跨源 + 无 CORP + 无 CORS → 阻止
+        let blocked = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, false, false);
+        assert_eq!(
+            blocked,
+            CoepResult::Blocked,
+            "RequireCorp 应阻止无 CORP 无 CORS 的跨源资源"
+        );
+
+        // RequireCorp + 跨源 + 无 CORP + 有 CORS → 允许
+        let allowed = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, false, true);
+        assert_eq!(allowed, CoepResult::Allowed, "CORS 通过时应绕过 COEP 限制");
+
+        // RequireCorp + 同源 + 无 CORP + 无 CORS → 允许（同源始终通过）
+        let same_origin = evaluate_coep(CoepPolicy::RequireCorp, CorpStatus::NoPolicy, true, false);
+        assert_eq!(same_origin, CoepResult::Allowed, "同源资源应始终被允许");
+
+        // Credentialless + 跨源 + CrossOrigin CORP + 有 CORS → 允许
+        let credless = evaluate_coep(CoepPolicy::Credentialless, CorpStatus::CrossOrigin, false, true);
+        assert_eq!(credless, CoepResult::Allowed, "CORS 通过时 Credentialless 也应允许");
+    }
+
+    /// 测试混合内容检测对未知/非标准资源类型的分类为 Blockable。
+    ///
+    /// classify_resource_type 仅将 img、audio、video、media 列为
+    /// OptionallyBlockable，其他所有类型（包括 "link"、"xhr"、"fetch"）
+    /// 均应归类为 Blockable，即必须阻止的混合内容。
+    #[test]
+    fn test_mixed_content_unknown_resource_type_is_blockable() {
+        let page = Origin::parse("https://example.com").unwrap();
+        let http_url = "http://cdn.example.com/resource";
+
+        // 已知的 OptionallyBlockable 类型
+        assert_eq!(
+            check_mixed_content(&page, http_url, "img"),
+            MixedContentStatus::OptionallyBlockable,
+            "img 应为可升级类型"
+        );
+
+        // 未知/非标准类型均应为 Blockable
+        assert_eq!(
+            check_mixed_content(&page, http_url, "link"),
+            MixedContentStatus::Blockable,
+            "link 应为阻塞型"
+        );
+        assert_eq!(
+            check_mixed_content(&page, http_url, "xhr"),
+            MixedContentStatus::Blockable,
+            "xhr 应为阻塞型"
+        );
+        assert_eq!(
+            check_mixed_content(&page, http_url, "fetch"),
+            MixedContentStatus::Blockable,
+            "fetch 应为阻塞型"
+        );
+        assert_eq!(
+            check_mixed_content(&page, http_url, "xmlhttprequest"),
+            MixedContentStatus::Blockable,
+            "xmlhttprequest 应为阻塞型"
+        );
+    }
 }

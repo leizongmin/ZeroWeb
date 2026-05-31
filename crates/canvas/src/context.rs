@@ -7507,4 +7507,119 @@ mod tests {
         // 两次测量应不同
         assert!((m1.width - m2.width).abs() > 1.0, "不同字体大小的测量结果应不同");
     }
+
+    // ── 边界条件测试（第十批）──
+
+    /// 测试 clear_rect 使用负坐标和负尺寸时不 panic，且不破坏已有像素。
+    /// 负尺寸的 clear_rect 应视为空操作（不清除任何像素）。
+    #[test]
+    fn test_canvas_clear_rect_negative_dimensions() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+        // 负宽高的 clear_rect — 不应 panic
+        ctx.clear_rect(10.0, 10.0, -20.0, -30.0);
+        // 原有红色像素应保持不变
+        let pixel = ctx.get_image_data(50, 50, 1, 1);
+        assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "负尺寸 clear_rect 不应破坏已有像素");
+    }
+
+    /// 测试 CanvasStyle::Pattern 作为 fill_style 绘制 fill_rect 时使用黑色回退色。
+    /// Pattern 的 resolve_color() 返回黑色，因此 fill_rect 应使用黑色绘制。
+    #[test]
+    fn test_canvas_fill_rect_with_pattern_style() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        let pattern = ctx.create_pattern(img, PatternRepetition::Repeat);
+        ctx.set_fill_style(CanvasStyle::Pattern(pattern));
+        ctx.fill_rect(10.0, 10.0, 30.0, 30.0);
+        // Pattern resolve_color 回退为黑色
+        let pixel = ctx.get_image_data(20, 20, 1, 1);
+        assert_eq!(pixel.data[0], 0, "pattern fill 应使用黑色回退色 r");
+        assert_eq!(pixel.data[1], 0, "pattern fill 应使用黑色回退色 g");
+        assert_eq!(pixel.data[2], 0, "pattern fill 应使用黑色回退色 b");
+        assert_eq!(pixel.data[3], 255, "pattern fill alpha 应为 255");
+    }
+
+    /// 测试三色渐变在中间停止点偏移量处精确返回该停止点的颜色（无插值误差）。
+    #[test]
+    fn test_gradient_sample_three_stops_exact_boundary() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.5, Color::GREEN);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // 在偏移量 0.0 处应为红色
+        assert_eq!(grad.sample_color(0.0), Color::RED, "offset 0.0 应为红色");
+        // 在偏移量 0.5 处应为绿色（精确命中停止点，无需插值）
+        assert_eq!(grad.sample_color(0.5), Color::GREEN, "offset 0.5 应为绿色");
+        // 在偏移量 1.0 处应为蓝色
+        assert_eq!(grad.sample_color(1.0), Color::BLUE, "offset 1.0 应为蓝色");
+    }
+
+    /// 测试 save/restore 保存并恢复 text_align 和 text_baseline。
+    /// save 后修改文本对齐和基线，restore 后应恢复到 save 时的值。
+    #[test]
+    fn test_text_align_and_baseline_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_text_align(TextAlign::Right);
+        ctx.set_text_baseline(TextBaseline::Top);
+        ctx.save();
+        ctx.set_text_align(TextAlign::Center);
+        ctx.set_text_baseline(TextBaseline::Bottom);
+        assert_eq!(ctx.text_align(), TextAlign::Center);
+        assert_eq!(ctx.text_baseline(), TextBaseline::Bottom);
+        ctx.restore();
+        assert_eq!(ctx.text_align(), TextAlign::Right, "restore 后 text_align 应为 Right");
+        assert_eq!(
+            ctx.text_baseline(),
+            TextBaseline::Top,
+            "restore 后 text_baseline 应为 Top"
+        );
+    }
+
+    /// 测试 Path2D 连续添加多种子路径命令后 len() 正确递增。
+    /// 依次添加 move_to、line_to、quadratic_curve_to、bezier_curve_to、arc、close_path，
+    /// 验证每步后的命令数量。
+    #[test]
+    fn test_path2d_mixed_commands_count() {
+        let mut p = Path2D::new();
+        assert_eq!(p.len(), 0, "空路径应有 0 个命令");
+
+        p.move_to(10.0, 20.0);
+        assert_eq!(p.len(), 1, "move_to 后应有 1 个命令");
+
+        p.line_to(30.0, 40.0);
+        assert_eq!(p.len(), 2, "line_to 后应有 2 个命令");
+
+        p.quadratic_curve_to(50.0, 60.0, 70.0, 80.0);
+        assert_eq!(p.len(), 3, "quadratic_curve_to 后应有 3 个命令");
+
+        p.bezier_curve_to(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(p.len(), 4, "bezier_curve_to 后应有 4 个命令");
+
+        p.arc(0.0, 0.0, 10.0, 0.0, std::f32::consts::PI);
+        assert_eq!(p.len(), 5, "arc 后应有 5 个命令");
+
+        p.close_path();
+        assert_eq!(p.len(), 6, "close_path 后应有 6 个命令");
+
+        // 验证各命令类型正确
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)));
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(30.0, 40.0)));
+        assert!(matches!(
+            p.commands()[2],
+            PathCommand::QuadraticCurveTo(50.0, 60.0, 70.0, 80.0)
+        ));
+        assert!(matches!(
+            p.commands()[3],
+            PathCommand::BezierCurveTo(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        ));
+        assert!(matches!(p.commands()[4], PathCommand::Arc(0.0, 0.0, 10.0, 0.0, _)));
+        assert!(matches!(p.commands()[5], PathCommand::ClosePath));
+    }
 }

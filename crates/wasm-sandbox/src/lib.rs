@@ -3275,4 +3275,239 @@ mod tests {
             .expect("call2");
         assert_eq!(r[0], WasmValue::I32(16), "100 divmod 7 的商+余数应为 14+2=16");
     }
+
+    // =======================================================================
+    // 新增测试：更多边界条件（f64 特殊值、f32 主机函数参数、负数浮点、
+    //           i64 极值、主机函数未填充结果）
+    // =======================================================================
+
+    /// 测试 WASM 函数返回 f64 特殊值（NaN、正无穷、负无穷），
+    /// 验证沙箱在双精度浮点边界值上的正确传递。
+    #[test]
+    fn test_call_f64_special_values() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "ret_nan") (result f64)
+                    f64.const nan:0x8000000000000
+                )
+                (func (export "ret_inf") (result f64)
+                    f64.const inf
+                )
+                (func (export "ret_neg_inf") (result f64)
+                    f64.const -inf
+                )
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // NaN 值
+        let r = instance.call("ret_nan", &[]).expect("call nan");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(v.is_nan(), "f64 返回值应为 NaN，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 正无穷
+        let r = instance.call("ret_inf", &[]).expect("call inf");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(
+                v.is_infinite() && v.is_sign_positive(),
+                "f64 返回值应为正无穷，实际: {v}"
+            );
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 负无穷
+        let r = instance.call("ret_neg_inf", &[]).expect("call neg_inf");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(
+                v.is_infinite() && v.is_sign_negative(),
+                "f64 返回值应为负无穷，实际: {v}"
+            );
+        } else {
+            panic!("期望 F64 返回值");
+        }
+    }
+
+    /// 测试主机函数接收 f32 类型参数并返回 f32 结果，
+    /// 验证 f32 参数在 WASM → 主机传递路径上不丢失精度。
+    #[test]
+    fn test_host_function_f32_params() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "half" (func $half (param f32) (result f32)))
+                (func (export "call_half") (param f32) (result f32)
+                    local.get 0
+                    call $half)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "half",
+            vec![WasmValueType::F32],
+            vec![WasmValueType::F32],
+            |params, results| {
+                if let WasmValue::F32(v) = params[0] {
+                    results.push(WasmValue::F32(v / 2.0));
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 9.0 / 2 = 4.5
+        let r = instance.call("call_half", &[WasmValue::F32(9.0)]).expect("call");
+        if let WasmValue::F32(v) = r[0] {
+            assert!((v - 4.5).abs() < 0.001, "9.0 / 2 应为 4.5，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+
+        // 负数: -7.0 / 2 = -3.5
+        let r = instance.call("call_half", &[WasmValue::F32(-7.0)]).expect("call neg");
+        if let WasmValue::F32(v) = r[0] {
+            assert!((v - (-3.5)).abs() < 0.001, "-7.0 / 2 应为 -3.5，实际: {v}");
+        } else {
+            panic!("期望 F32 返回值");
+        }
+    }
+
+    /// 测试 WASM f64 运算使用负数和零作为操作数，
+    /// 验证符号在乘法和加法中正确传递。
+    #[test]
+    fn test_call_f64_negative_and_zero() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "mul_f64") (param f64 f64) (result f64)
+                    local.get 0
+                    local.get 1
+                    f64.mul)
+                (func (export "add_f64") (param f64 f64) (result f64)
+                    local.get 0
+                    local.get 1
+                    f64.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 负 × 负 = 正
+        let r = instance
+            .call("mul_f64", &[WasmValue::F64(-3.0), WasmValue::F64(-2.0)])
+            .expect("call mul neg*neg");
+        if let WasmValue::F64(v) = r[0] {
+            assert!((v - 6.0).abs() < 0.001, "(-3)*(-2) 应为 6.0，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 正 × 负 = 负
+        let r = instance
+            .call("mul_f64", &[WasmValue::F64(5.0), WasmValue::F64(-4.0)])
+            .expect("call mul pos*neg");
+        if let WasmValue::F64(v) = r[0] {
+            assert!((v - (-20.0)).abs() < 0.001, "5*(-4) 应为 -20.0，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 零 + 零 = 0
+        let r = instance
+            .call("add_f64", &[WasmValue::F64(0.0), WasmValue::F64(0.0)])
+            .expect("call add zero+zero");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(v == 0.0, "0.0 + 0.0 应为 0.0，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 负零 + 正零
+        let r = instance
+            .call("add_f64", &[WasmValue::F64(-0.0), WasmValue::F64(0.0)])
+            .expect("call add neg_zero+pos_zero");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(v == 0.0, "-0.0 + 0.0 应为 0.0，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+    }
+
+    /// 测试 i64 极值运算：i64::MIN + i64::MAX (wrapping) 和 i64::MAX * 2 (wrapping)，
+    /// 验证 WASM wrapping 算术在 64 位整数的极端边界上行为正确。
+    #[test]
+    fn test_i64_extreme_values() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "add64") (param i64 i64) (result i64)
+                    local.get 0 local.get 1 i64.add)
+                (func (export "mul64") (param i64 i64) (result i64)
+                    local.get 0 local.get 1 i64.mul)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // i64::MIN + i64::MAX (wrapping) = -1
+        let r = instance
+            .call("add64", &[WasmValue::I64(i64::MIN), WasmValue::I64(i64::MAX)])
+            .expect("call min+max");
+        assert_eq!(r[0], WasmValue::I64(-1), "i64::MIN + i64::MAX (wrapping) 应为 -1");
+
+        // i64::MAX * 2 (wrapping) = -2
+        let r = instance
+            .call("mul64", &[WasmValue::I64(i64::MAX), WasmValue::I64(2)])
+            .expect("call max*2");
+        assert_eq!(r[0], WasmValue::I64(-2), "i64::MAX * 2 (wrapping) 应为 -2");
+
+        // 0 + i64::MIN = i64::MIN
+        let r = instance
+            .call("add64", &[WasmValue::I64(0), WasmValue::I64(i64::MIN)])
+            .expect("call 0+min");
+        assert_eq!(r[0], WasmValue::I64(i64::MIN), "0 + i64::MIN 应为 i64::MIN");
+    }
+
+    /// 测试主机函数未向 results 缓冲区写入任何值时，
+    /// WASM 侧收到默认零值而不崩溃，验证缺少结果值时的优雅降级行为。
+    #[test]
+    fn test_host_function_empty_results_graceful() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "lazy" (func $lazy (result i32)))
+                (func (export "call_lazy") (result i32)
+                    call $lazy)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "lazy",
+            vec![],
+            vec![WasmValueType::I32],
+            |_params, _results| {
+                // 故意不向 results 写入任何值
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 主机函数未写入结果 → wasmi 使用默认值 i32(0) 填充
+        let r = instance.call("call_lazy", &[]).expect("call");
+        assert_eq!(r.len(), 1, "应返回一个结果");
+        assert_eq!(r[0], WasmValue::I32(0), "主机函数未写入结果时应为默认值 i32(0)");
+    }
 }
