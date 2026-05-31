@@ -246,6 +246,19 @@ pub enum VisibilityValue {
     Collapse,
 }
 
+/// CSS word-break 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WordBreakValue {
+    /// normal。
+    Normal,
+    /// break-all。
+    BreakAll,
+    /// keep-all。
+    KeepAll,
+    /// break-word。
+    BreakWord,
+}
+
 /// CSS font-weight 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontWeightValue {
@@ -1451,6 +1464,17 @@ pub fn parse_visibility(value: &str) -> Option<VisibilityValue> {
         "visible" => Some(VisibilityValue::Visible),
         "hidden" => Some(VisibilityValue::Hidden),
         "collapse" => Some(VisibilityValue::Collapse),
+        _ => None,
+    }
+}
+
+/// 解析 CSS word-break 属性值。
+pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(WordBreakValue::Normal),
+        "break-all" => Some(WordBreakValue::BreakAll),
+        "keep-all" => Some(WordBreakValue::KeepAll),
+        "break-word" => Some(WordBreakValue::BreakWord),
         _ => None,
     }
 }
@@ -3349,5 +3373,27 @@ mod tests {
     fn test_parse_grid_area_invalid() {
         assert_eq!(parse_grid_area(""), None);
         assert_eq!(parse_grid_area("   "), None);
+    }
+
+    // ── parse_word_break 测试 ──
+
+    #[test]
+    fn test_parse_word_break_normal() {
+        assert_eq!(parse_word_break("normal"), Some(WordBreakValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_word_break_break_all() {
+        assert_eq!(parse_word_break("break-all"), Some(WordBreakValue::BreakAll));
+    }
+
+    #[test]
+    fn test_parse_word_break_keep_all() {
+        assert_eq!(parse_word_break("keep-all"), Some(WordBreakValue::KeepAll));
+    }
+
+    #[test]
+    fn test_parse_word_break_invalid() {
+        assert_eq!(parse_word_break("invalid"), None);
     }
 }
