@@ -1005,4 +1005,49 @@ mod tests {
         let headers_get = generate_preflight_response(&policy, &origin, "GET", &[]);
         assert!(headers_get.allow_origin.is_none(), "GET 不匹配字面量 '*'");
     }
+
+    /// 预检请求请求 PUT、PATCH、DELETE 三种自定义方法，
+    /// 验证策略允许所有三种方法时预检响应正确，不允许时被拒绝。
+    #[test]
+    fn test_corspreflight_with_custom_methods() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec![
+                "GET".to_string(),
+                "PUT".to_string(),
+                "PATCH".to_string(),
+                "DELETE".to_string(),
+            ],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(3600),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // PUT 预检通过
+        let hdr_put = generate_preflight_response(&policy, &origin, "PUT", &[]);
+        assert!(hdr_put.allow_origin.is_some(), "PUT 预检应通过");
+        assert_eq!(hdr_put.allow_origin.as_deref(), Some("http://example.com"));
+
+        // PATCH 预检通过
+        let hdr_patch = generate_preflight_response(&policy, &origin, "PATCH", &[]);
+        assert!(hdr_patch.allow_origin.is_some(), "PATCH 预检应通过");
+
+        // DELETE 预检通过
+        let hdr_del = generate_preflight_response(&policy, &origin, "DELETE", &[]);
+        assert!(hdr_del.allow_origin.is_some(), "DELETE 预检应通过");
+
+        // allow_methods 列表应包含所有四种方法
+        let methods = hdr_put.allow_methods.as_ref().expect("methods");
+        assert!(methods.contains("PUT"));
+        assert!(methods.contains("PATCH"));
+        assert!(methods.contains("DELETE"));
+
+        // POST 不在 allow_methods 中，预检应被拒绝
+        let hdr_post = generate_preflight_response(&policy, &origin, "POST", &[]);
+        assert!(hdr_post.allow_origin.is_none(), "POST 预检应被拒绝");
+
+        // 验证 max-age
+        assert_eq!(hdr_put.max_age, Some("3600".to_string()));
+    }
 }

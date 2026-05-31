@@ -1002,4 +1002,30 @@ mod tests {
         assert!(csp.is_resource_allowed("img", "https://example.com/logo.png", Some(&doc_origin)));
         assert!(!csp.is_resource_allowed("img", "https://evil.com/logo.png", Some(&doc_origin)));
     }
+
+    /// 测试 CSP 包含 default-src + script-src + style-src 组合时的联合行为。
+    /// default-src 作为未指定资源类型的回退，script-src 和 style-src 覆盖各自类型。
+    #[test]
+    fn test_csp_multiple_directives_combined() {
+        let csp = ContentSecurityPolicy::parse(
+            "default-src 'self'; script-src https://cdn.example.com; style-src 'unsafe-inline'",
+        );
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+
+        // script-src 明确指定：仅允许 cdn.example.com
+        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
+        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", None));
+        // 同源也不允许（script-src 不含 'self'）
+        assert!(!csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
+
+        // style-src 明确指定 'unsafe-inline'：内联样式允许
+        assert!(csp.is_inline_style_allowed(None, None));
+
+        // img-src 未指定 → 回退到 default-src 'self'
+        assert!(csp.is_resource_allowed("img", "https://example.com/logo.png", Some(&doc_origin)));
+        assert!(!csp.is_resource_allowed("img", "https://evil.com/logo.png", Some(&doc_origin)));
+
+        // 内联脚本受 script-src 控制（不含 'unsafe-inline'）
+        assert!(!csp.is_inline_script_allowed(None, None));
+    }
 }

@@ -520,6 +520,18 @@ mod tests {
 
     // ── 新增边界条件测试 ──
 
+    /// Fresh NavigationHistory → can_go_back=false, can_go_forward=false.
+    /// 验证新创建的导航历史管理器初始状态正确。
+    #[test]
+    fn test_navigation_initial_state() {
+        let nav = NavigationHistory::new(50);
+        assert!(!nav.can_go_back(), "初始状态不应能后退");
+        assert!(!nav.can_go_forward(), "初始状态不应能前进");
+        assert!(nav.is_empty(), "初始状态应为空");
+        assert_eq!(nav.len(), 0, "初始长度应为 0");
+        assert!(nav.current().is_none(), "初始状态当前条目应为 None");
+    }
+
     /// 测试 replace_current 在无历史条目时为 no-op，不产生任何副作用。
     #[test]
     fn test_navigation_replace_current_when_empty() {

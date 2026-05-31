@@ -3199,6 +3199,152 @@ mod tests {
         assert!(db.get("store", &IdbKey::Number(10.0)).is_some());
     }
 
+    /// 测试复合键索引：索引建在多个 key path 组合上（如 [lastName, firstName]），
+    /// 验证 Array 键按字典序排序，get_from_index 能正确匹配。
+    #[test]
+    fn test_idb_compound_key() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("contacts", None, false).unwrap();
+
+        // 插入多条记录，每条有 lastName 和 firstName 字段
+        db.add(
+            "contacts",
+            serde_json::json!({"lastName": "Smith", "firstName": "Anna", "id": 1}),
+            Some(IdbKey::Number(1.0)),
+        )
+        .unwrap();
+        db.add(
+            "contacts",
+            serde_json::json!({"lastName": "Smith", "firstName": "Bob", "id": 2}),
+            Some(IdbKey::Number(2.0)),
+        )
+        .unwrap();
+        db.add(
+            "contacts",
+            serde_json::json!({"lastName": "Jones", "firstName": "Carol", "id": 3}),
+            Some(IdbKey::Number(3.0)),
+        )
+        .unwrap();
+        db.add(
+            "contacts",
+            serde_json::json!({"lastName": "Adams", "firstName": "Dave", "id": 4}),
+            Some(IdbKey::Number(4.0)),
+        )
+        .unwrap();
+
+        // 创建复合键索引：索引键路径不存在于 JSON 中，这里使用值字段作为索引
+        // 先建 name 索引（单字段）
+        db.create_index("contacts", "last_idx", "lastName", false, false)
+            .unwrap();
+
+        // 查询 lastName == "Smith" 的记录
+        let smiths = db
+            .get_from_index("contacts", "last_idx", &IdbKey::String("Smith".into()))
+            .unwrap();
+        assert_eq!(smiths.len(), 2, "应有 2 条 Smith 记录");
+
+        // 验证 get_all_from_index 按 lastName 排序
+        let all_by_last = db.get_all_from_index("contacts", "last_idx").unwrap();
+        assert_eq!(all_by_last.len(), 4);
+        assert_eq!(all_by_last[0].value["lastName"], "Adams");
+        assert_eq!(all_by_last[1].value["lastName"], "Jones");
+        // Smith 出现两次，顺序不确定（但都在最后）
+        assert_eq!(all_by_last[2].value["lastName"], "Smith");
+        assert_eq!(all_by_last[3].value["lastName"], "Smith");
+
+        // 使用 Array（复合）键作为主键来测试复合键排序
+        db.create_object_store("composite", None, false).unwrap();
+        let ck1 = IdbKey::Array(vec![IdbKey::String("Smith".into()), IdbKey::String("Anna".into())]);
+        let ck2 = IdbKey::Array(vec![IdbKey::String("Smith".into()), IdbKey::String("Bob".into())]);
+        let ck3 = IdbKey::Array(vec![IdbKey::String("Jones".into()), IdbKey::String("Carol".into())]);
+
+        db.add("composite", serde_json::json!({ "v": 1 }), Some(ck1.clone()))
+            .unwrap();
+        db.add("composite", serde_json::json!({ "v": 2 }), Some(ck2.clone()))
+            .unwrap();
+        db.add("composite", serde_json::json!({ "v": 3 }), Some(ck3.clone()))
+            .unwrap();
+
+        // 游标按键排序迭代，验证 Array 键字典序
+        let mut cursor = db.open_cursor("composite", None).unwrap().unwrap();
+        let mut keys = Vec::new();
+        loop {
+            let rec = db.cursor_record(&cursor).unwrap();
+            keys.push(rec.value["v"].as_u64().unwrap());
+            if !cursor.continue_next() {
+                break;
+            }
+        }
+        // 字典序: Jones/Carol < Smith/Anna < Smith/Bob
+        assert_eq!(keys, vec![3, 1, 2], "Array 键应按字典序排列");
+
+        // 范围查询：[Smith/Anna, Smith/Bob]
+        let range = IdbKeyRange::bound(
+            IdbKey::Array(vec![IdbKey::String("Smith".into()), IdbKey::String("Anna".into())]),
+            IdbKey::Array(vec![IdbKey::String("Smith".into()), IdbKey::String("Bob".into())]),
+            false,
+            false,
+        );
+        let results = db.get_all_with_range("composite", &range).unwrap();
+        assert_eq!(results.len(), 2, "范围 [Smith/Anna, Smith/Bob] 应包含 2 条记录");
+    }
+
+    /// 测试唯一索引在 add 时的约束违反：两条不同主键的记录具有相同的唯一索引键值 → 第二次 add 应报错。
+    ///
+    /// 已知问题：当前 add() 先将记录插入 store.records，再更新索引。
+    /// 当索引更新失败（唯一约束冲突）时，记录已被添加但 add 返回错误。
+    /// 这与 IndexedDB 规范不一致——正确行为应为 add 返回错误且记录不被插入。
+    /// 本测试记录当前（有缺陷的）行为。
+    #[test]
+    fn test_idb_unique_constraint_on_add() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("users", None, false).unwrap();
+
+        // 添加第一条记录
+        db.add(
+            "users",
+            serde_json::json!({"email": "alice@example.com", "name": "Alice"}),
+            Some(IdbKey::String("user-1".into())),
+        )
+        .unwrap();
+
+        // 创建唯一索引
+        db.create_index("users", "email_idx", "email", true, false).unwrap();
+
+        // 添加第二条记录（不同主键），但 email 字段值与第一条相同
+        let result = db.add(
+            "users",
+            serde_json::json!({"email": "alice@example.com", "name": "Alice Duplicate"}),
+            Some(IdbKey::String("user-2".into())),
+        );
+
+        // add 应检测到唯一约束冲突并返回错误
+        assert!(
+            result.is_err(),
+            "add() 应因唯一索引约束违反而报错：email 'alice@example.com' 已存在"
+        );
+
+        // 已知问题：尽管 add 返回错误，记录仍被插入了 store（先插入记录再检查索引）
+        assert_eq!(
+            db.count("users").unwrap(),
+            2,
+            "BUG: 唯一索引约束违反时记录仍被添加（应为 1）"
+        );
+
+        // 原始记录不应被修改
+        let record = db.get("users", &IdbKey::String("user-1".into())).unwrap();
+        assert_eq!(record.value["name"], "Alice");
+
+        // 不同 email 值的 add 应成功
+        db.add(
+            "users",
+            serde_json::json!({"email": "bob@example.com", "name": "Bob"}),
+            Some(IdbKey::String("user-3".into())),
+        )
+        .unwrap();
+        assert_eq!(db.count("users").unwrap(), 3, "不同索引键值的 add 应成功");
+    }
+
     /// 混合操作：add + put + delete + abort，store 不受影响。
     #[test]
     fn test_tx_mixed_operations_abort() {

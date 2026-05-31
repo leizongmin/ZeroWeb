@@ -1650,6 +1650,71 @@ mod tests {
         }
     }
 
+    /// 验证：Touch event with multiple touch points.
+    /// 多个触摸点事件各自携带独立的 id、phase 和坐标。
+    #[test]
+    fn test_touch_event_coordinates() {
+        let touch1 = TouchEvent {
+            id: 0,
+            phase: TouchPhase::Started,
+            x: 100.0,
+            y: 200.0,
+        };
+        let touch2 = TouchEvent {
+            id: 1,
+            phase: TouchPhase::Started,
+            x: 300.0,
+            y: 400.0,
+        };
+        let touch3 = TouchEvent {
+            id: 2,
+            phase: TouchPhase::Moved,
+            x: 150.0,
+            y: 250.0,
+        };
+
+        // 验证每个触摸点的坐标独立
+        assert!((touch1.x - 100.0).abs() < f64::EPSILON);
+        assert!((touch1.y - 200.0).abs() < f64::EPSILON);
+        assert!((touch2.x - 300.0).abs() < f64::EPSILON);
+        assert!((touch2.y - 400.0).abs() < f64::EPSILON);
+        assert!((touch3.x - 150.0).abs() < f64::EPSILON);
+        assert!((touch3.y - 250.0).abs() < f64::EPSILON);
+
+        // 验证每个触摸点的 id 独立
+        assert_eq!(touch1.id, 0);
+        assert_eq!(touch2.id, 1);
+        assert_eq!(touch3.id, 2);
+
+        // 验证 phase 正确
+        assert_eq!(touch1.phase, TouchPhase::Started);
+        assert_eq!(touch2.phase, TouchPhase::Started);
+        assert_eq!(touch3.phase, TouchPhase::Moved);
+
+        // 模拟多点触发的结束：touch1 结束，touch2 移动，touch3 取消
+        let touch1_end = TouchEvent {
+            id: 0,
+            phase: TouchPhase::Ended,
+            x: 110.0,
+            y: 210.0,
+        };
+        let touch2_move = TouchEvent {
+            id: 1,
+            phase: TouchPhase::Moved,
+            x: 310.0,
+            y: 410.0,
+        };
+        let touch3_cancel = TouchEvent {
+            id: 2,
+            phase: TouchPhase::Cancelled,
+            x: 150.0,
+            y: 250.0,
+        };
+        assert_eq!(touch1_end.phase, TouchPhase::Ended);
+        assert_eq!(touch2_move.phase, TouchPhase::Moved);
+        assert_eq!(touch3_cancel.phase, TouchPhase::Cancelled);
+    }
+
     /// 验证：所有转换函数对极端输入的鲁棒性
     #[test]
     fn test_conversion_functions_robustness() {

@@ -650,6 +650,30 @@ mod tests {
         assert!(cache.match_request(&post_req).is_none(), "方法不匹配时不应返回缓存");
     }
 
+    /// 测试 put 同一请求两次，第二次应覆盖第一次的响应。
+    #[test]
+    fn test_cache_put_overwrites() {
+        let mut cache = Cache::new("v1");
+        let req = CacheRequest::new("https://example.com/page");
+
+        // 第一次 put
+        cache
+            .put(req.clone(), CacheResponse::ok(b"response-v1".to_vec()))
+            .unwrap();
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.match_request(&req).unwrap().body, b"response-v1".to_vec());
+
+        // 第二次 put 同一请求 → 覆盖
+        cache
+            .put(req.clone(), CacheResponse::new(200, b"response-v2".to_vec()))
+            .unwrap();
+        assert_eq!(cache.len(), 1, "覆盖后条目数应仍为 1");
+
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.body, b"response-v2".to_vec(), "应返回第二次 put 的响应");
+        assert_eq!(matched.status, 200);
+    }
+
     /// 测试 Cache API keys()：存入多个条目，验证 keys() 返回所有 URL。
     #[test]
     fn test_cache_api_keys() {

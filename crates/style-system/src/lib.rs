@@ -2240,4 +2240,426 @@ mod tests {
             other => panic!("transform 应为 List，实际为 {:?}", other),
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // @layer 排序与级联验证端到端测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 后 @layer 的声明在特异性相等时覆盖前 @layer 的声明。
+    ///
+    /// 场景：@layer base { div { color: red } } @layer theme { div { color: green } }
+    /// 两个选择器特异性都是 (0,0,1)，theme 层索引更大，应胜出。
+    fn test_layer_ordering_specificity() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // @layer base — color: red
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "red".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+                // @layer theme — color: green（同特异性，后层胜出）
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "theme".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "green".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 后层（theme=green）在特异性相等时胜过前层（base=red）
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255)); // green
+    }
+
+    #[test]
+    /// 未分层样式覆盖分层样式，无论特异性高低。
+    ///
+    /// 场景：@layer base { #main { color: blue } } div { color: red }
+    /// 分层内用 ID 选择器 (1,0,0)，未分层用标签选择器 (0,0,1)。
+    /// 未分层仍应胜出。
+    fn test_unlayered_overrides_layered() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("main".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // @layer base — #main { color: blue }，高特异性但在层内
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![id_sel],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "blue".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+                // 未分层 — div { color: red }，低特异性但未分层
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 未分层声明胜过分层声明（无论特异性）
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
+
+    #[test]
+    /// !important 声明在级联中胜过 normal 声明，即使前者在更早的 @layer。
+    ///
+    /// 场景：@layer base { div { color: blue !important } }
+    ///        @layer theme { div { color: green } }
+    /// blue 的 !important 使其胜过 green 的 normal。
+    fn test_important_overrides_layer_order() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // @layer base — color: blue !important
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "base".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "blue".to_string(),
+                            important: true,
+                        }],
+                    })],
+                }),
+                // @layer theme — color: green（后层但 normal）
+                Rule::Layer(zero_css_parser::ast::LayerRule {
+                    name: "theme".to_string(),
+                    rules: vec![Rule::Style(StyleRule {
+                        selectors: vec![make_tag_selector("div")],
+                        declarations: vec![Declaration {
+                            property: "color".to_string(),
+                            value: "green".to_string(),
+                            important: false,
+                        }],
+                    })],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // !important 胜过后层的 normal 声明
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
+    }
+
+    #[test]
+    /// 验证特异性优先级：内联 > ID > class > element > universal。
+    ///
+    /// 为 div#main 同时应用多个不同特异性的 color 声明，
+    /// 级联应选择特异性最高的胜出者。
+    /// 注意：本测试不使用内联样式（引擎不支持 style 属性），
+    /// 只验证 ID > class > element > universal。
+    fn test_cascade_specificity_order() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let universal_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Universal),
+                        subclass_selectors: vec![],
+                    },
+                    None,
+                )],
+            },
+        };
+        let class_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Class("nonexistent".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+        let id_sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Id("main".to_string())],
+                    },
+                    None,
+                )],
+            },
+        };
+
+        // 通用选择器 (0,0,0) → purple
+        // 标签选择器 (0,0,1) → red
+        // class 选择器 (0,1,0) → yellow（不匹配 div，仅用于对比）
+        // ID 选择器 (1,0,0) → blue
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                Rule::Style(StyleRule {
+                    selectors: vec![universal_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "purple".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![class_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "yellow".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![id_sel],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // ID 选择器 (1,0,0) 特异性最高，blue 胜出
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
+
+        // 额外验证：去掉 ID 选择器后，标签选择器应胜过通用选择器
+        let stylesheets_no_id = vec![Stylesheet {
+            rules: vec![
+                Rule::Style(StyleRule {
+                    selectors: vec![Selector {
+                        complex: ComplexSelector {
+                            parts: vec![(
+                                CompoundSelector {
+                                    type_selector: Some(TypeSelector::Universal),
+                                    subclass_selectors: vec![],
+                                },
+                                None,
+                            )],
+                        },
+                    }],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "purple".to_string(),
+                        important: false,
+                    }],
+                }),
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let mut sys2 = StyleSystem::new();
+        let styles2 = sys2.compute_styles(&doc, &stylesheets_no_id);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        // 标签选择器 (0,0,1) > 通用选择器 (0,0,0)
+        assert_eq!(div_style2.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+    }
+
+    #[test]
+    /// 验证 !important 声明对同一属性的优先级高于 normal 声明。
+    ///
+    /// 场景：div { color: red !important } div { color: blue }
+    /// 即使两个声明同源同特异性，!important 胜出。
+    fn test_cascade_importance_order() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // normal 声明 — color: blue
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+                // !important 声明 — color: red
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: true,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // !important 的 red 胜过 normal 的 blue
+        assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)); // red
+
+        // 额外验证：即使 !important 声明在前，仍然胜出
+        let stylesheets_important_first = vec![Stylesheet {
+            rules: vec![
+                // !important 在前 — color: green
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: true,
+                    }],
+                }),
+                // normal 在后 — color: blue
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let mut sys2 = StyleSystem::new();
+        let styles2 = sys2.compute_styles(&doc, &stylesheets_important_first);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        // !important 在前仍然胜过后面的 normal
+        assert_eq!(div_style2.color, ColorValue::Rgba(0, 128, 0, 255)); // green
+    }
+
+    #[test]
+    /// 验证在特异性和重要性相等时，后出现的声明胜出。
+    ///
+    /// 场景：div { color: red } div { color: green } div { color: blue }
+    /// 三个声明同源、同重要性、同特异性，位置靠后的 blue 胜出。
+    fn test_cascade_origin_order() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![
+                // 第一个声明 — color: red
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                }),
+                // 第二个声明 — color: green
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    }],
+                }),
+                // 第三个声明 — color: blue（最后出现）
+                Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                }),
+            ],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // 同特异性同重要性时，最后出现的声明胜出
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
+
+        // 额外验证：不同样式表中同样遵循后出现胜出规则
+        let mut sys2 = StyleSystem::new();
+        let stylesheets_multi = vec![
+            Stylesheet {
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            },
+            Stylesheet {
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    }],
+                })],
+            },
+        ];
+
+        let styles2 = sys2.compute_styles(&doc, &stylesheets_multi);
+        let div_style2 = styles2.get(&div).expect("div 应该有样式");
+        // 第二个样式表的 green 胜过第一个的 red
+        assert_eq!(div_style2.color, ColorValue::Rgba(0, 128, 0, 255)); // green
+    }
 }

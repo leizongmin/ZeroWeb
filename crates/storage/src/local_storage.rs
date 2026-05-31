@@ -393,6 +393,25 @@ mod tests {
         assert_eq!(storage.used_size(), (5 + 5) + (5 + 4)); // "new_a"+"alpha" + "new_b"+"beta"
     }
 
+    /// 测试移除不存在的键 → 不应报错，返回 None。
+    #[test]
+    fn test_web_storage_remove_nonexistent() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        // 移除从未设置过的键
+        let result = storage.remove("nonexistent_key");
+        assert_eq!(result, None, "移除不存在的键应返回 None，不应 panic");
+
+        // 设置后移除，再移除一次
+        storage.set("temp", "value").unwrap();
+        assert_eq!(storage.remove("temp"), Some("value".to_string()));
+        // 第二次移除同一键（已不存在）
+        assert_eq!(storage.remove("temp"), None, "重复移除已删除的键应返回 None");
+
+        // 空存储上移除
+        storage.clear();
+        assert_eq!(storage.remove("any_key"), None, "清空后移除应返回 None");
+    }
+
     /// 测试 localStorage clear() 操作：设置多个项，调用 clear()，验证全部被清除。
     #[test]
     fn test_local_storage_clear() {

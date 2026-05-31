@@ -234,4 +234,34 @@ mod tests {
         assert!(!a.is_same_origin(&b), "不同端口不应为同源");
         assert!(!check_same_origin(&a, &b), "check_same_origin 对不同端口应返回 false");
     }
+
+    /// 测试相同 scheme + host + port 的 Origin 应判定为相等（tuple equality）。
+    #[test]
+    fn test_origin_tuple_equality() {
+        // 不同 URL 路径 → 相同 origin
+        let a = Origin::parse("https://example.com/page1").unwrap();
+        let b = Origin::parse("https://example.com/page2").unwrap();
+        assert_eq!(a, b, "相同 scheme+host+port 的 Origin 应相等");
+        assert!(a.is_same_origin(&b));
+        assert!(check_same_origin(&a, &b));
+
+        // 相同的完整 URL → 相等
+        let c = Origin::parse("https://example.com").unwrap();
+        assert_eq!(a, c);
+
+        // 显式指定默认端口 → 仍相等
+        let d = Origin::parse("https://example.com:443/page3").unwrap();
+        assert_eq!(a, d, "显式默认端口应与隐式默认端口相等");
+        assert!(a.is_same_origin(&d));
+
+        // HTTP 默认端口 80
+        let e = Origin::parse("http://example.com").unwrap();
+        let f = Origin::parse("http://example.com:80").unwrap();
+        assert_eq!(e, f, "http 默认端口 80 应相等");
+
+        // 验证三个字段分别不同的比较
+        let g = Origin::parse("http://other.com").unwrap();
+        assert_ne!(a, g, "不同 host 的 Origin 不应相等");
+        assert!(!a.is_same_origin(&g));
+    }
 }

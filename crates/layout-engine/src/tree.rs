@@ -56,7 +56,7 @@ pub fn build_layout_tree(
     let root = doc.root();
     let first_element = find_first_element(doc, root);
 
-    let root_taffy_id = build_subtree(&mut ctx, doc, styles, first_element, None);
+    let root_taffy_id = build_subtree(&mut ctx, doc, styles, first_element, None, false);
 
     (ctx.taffy, root_taffy_id, ctx.taffy_to_dom)
 }
@@ -89,12 +89,15 @@ fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
 /// 返回创建的 taffy 节点 ID。如果元素为 display:none 则不创建节点。
 /// `parent_grid_areas` 为父级 grid 容器的区域映射（如果有），
 /// 用于解析子元素的 grid-area 命名引用。
+/// `in_shadow` 为 true 时表示当前节点处于 shadow 树内部，需要将 <slot>
+/// 元素替换为已分配的 light DOM 节点。
 fn build_subtree(
     ctx: &mut BuildContext,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
     parent_grid_areas: Option<&GridAreaMap>,
+    in_shadow: bool,
 ) -> taffy::NodeId {
     // 获取计算样式（或使用默认值）
     let computed = styles.get(&dom_id).cloned().unwrap_or_default();
@@ -122,17 +125,28 @@ fn build_subtree(
     let taffy_style = computed_style_to_taffy(&computed, parent_grid_areas);
 
     // 收集需要创建 taffy 节点的子元素
-    let node_data = doc.get(dom_id);
-    let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
-
-    // 先收集子元素
+    // 当元素有 ShadowRoot 时，遍历 shadow 树而非 light DOM 子节点；
+    // shadow 树中的 <slot> 元素替换为已分配的 light DOM 节点（或回退内容）。
     let mut child_taffy_ids: Vec<taffy::NodeId> = Vec::new();
-    for &child_dom in &children_dom {
-        let child_data = doc.get(child_dom);
-        // 只处理元素节点
-        if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-            let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref());
-            child_taffy_ids.push(child_taffy);
+
+    if let Some(shadow_id) = doc.shadow_root(dom_id) {
+        // 有 ShadowRoot → 遍历 shadow 树，slot 解析在任意深度生效
+        collect_shadow_children(ctx, doc, styles, shadow_id, grid_areas.as_ref(), &mut child_taffy_ids);
+        // 注意：未分配到任何 slot 的 light DOM 子节点不会出现在布局树中
+    } else if in_shadow {
+        // 在 shadow 树内部，需要检查子元素是否为 <slot> 以进行替换
+        collect_shadow_slot_children(ctx, doc, styles, dom_id, grid_areas.as_ref(), &mut child_taffy_ids);
+    } else {
+        // 无 ShadowRoot，不在 shadow 树中 → 正常遍历 light DOM 子节点
+        let node_data = doc.get(dom_id);
+        let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
+
+        for &child_dom in &children_dom {
+            let child_data = doc.get(child_dom);
+            if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
+                let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref(), false);
+                child_taffy_ids.push(child_taffy);
+            }
         }
     }
 
@@ -148,6 +162,127 @@ fn build_subtree(
     ctx.taffy_to_dom.insert(taffy_id, dom_id);
 
     taffy_id
+}
+
+/// 递归遍历 shadow 树，收集 taffy 子节点。
+///
+/// 遇到 `<slot>` 元素时：
+/// - 有已分配节点 → 用分配的 light DOM 节点替换
+/// - 无已分配节点 → 使用 slot 的回退子元素
+///
+/// 非 slot 元素正常递归调用 `build_subtree`（该元素自身可能有嵌套 shadow root）。
+fn collect_shadow_children(
+    ctx: &mut BuildContext,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    shadow_root_id: NodeId,
+    parent_grid_areas: Option<&GridAreaMap>,
+    output: &mut Vec<taffy::NodeId>,
+) {
+    let children = doc.get(shadow_root_id).map(|n| n.children.clone()).unwrap_or_default();
+    for &child_id in &children {
+        let child_data = match doc.get(child_id) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // 只处理元素节点
+        let elem_data = match &child_data.kind {
+            NodeKind::Element(elem) => elem,
+            _ => continue,
+        };
+
+        // 检查是否为 <slot> 元素
+        if elem_data.local_name() == "slot" {
+            let assigned = doc.get_assigned_nodes(child_id);
+            if !assigned.is_empty() {
+                // 有分配的 light DOM 节点 → 替换 slot
+                for &assigned_id in &assigned {
+                    if doc
+                        .get(assigned_id)
+                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                    {
+                        let taffy_id = build_subtree(ctx, doc, styles, assigned_id, parent_grid_areas, false);
+                        output.push(taffy_id);
+                    }
+                }
+            } else {
+                // 无分配 → 使用 slot 的回退内容（slot 自身的子元素）
+                let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
+                for &fallback_id in &slot_children {
+                    if doc
+                        .get(fallback_id)
+                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                    {
+                        let taffy_id = build_subtree(ctx, doc, styles, fallback_id, parent_grid_areas, true);
+                        output.push(taffy_id);
+                    }
+                }
+            }
+        } else {
+            // 非 slot 元素，递归进入 shadow 树子节点（in_shadow=true）
+            let taffy_id = build_subtree(ctx, doc, styles, child_id, parent_grid_areas, true);
+            output.push(taffy_id);
+        }
+    }
+}
+
+/// 在 shadow 树内部遍历元素的子节点，处理 <slot> 替换。
+///
+/// 与 `collect_shadow_children` 类似，但起点是普通元素（非 ShadowRoot）。
+/// 用于 shadow 树内部嵌套元素遍历其子节点时检查是否有 <slot> 需要替换。
+fn collect_shadow_slot_children(
+    ctx: &mut BuildContext,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_id: NodeId,
+    parent_grid_areas: Option<&GridAreaMap>,
+    output: &mut Vec<taffy::NodeId>,
+) {
+    let children = doc.get(parent_id).map(|n| n.children.clone()).unwrap_or_default();
+    for &child_id in &children {
+        let child_data = match doc.get(child_id) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // 只处理元素节点
+        let elem_data = match &child_data.kind {
+            NodeKind::Element(elem) => elem,
+            _ => continue,
+        };
+
+        // 检查是否为 <slot> 元素
+        if elem_data.local_name() == "slot" {
+            let assigned = doc.get_assigned_nodes(child_id);
+            if !assigned.is_empty() {
+                for &assigned_id in &assigned {
+                    if doc
+                        .get(assigned_id)
+                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                    {
+                        let taffy_id = build_subtree(ctx, doc, styles, assigned_id, parent_grid_areas, false);
+                        output.push(taffy_id);
+                    }
+                }
+            } else {
+                let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
+                for &fallback_id in &slot_children {
+                    if doc
+                        .get(fallback_id)
+                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                    {
+                        let taffy_id = build_subtree(ctx, doc, styles, fallback_id, parent_grid_areas, true);
+                        output.push(taffy_id);
+                    }
+                }
+            }
+        } else {
+            // 非 slot 元素，继续在 shadow 树中递归
+            let taffy_id = build_subtree(ctx, doc, styles, child_id, parent_grid_areas, true);
+            output.push(taffy_id);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1008,6 +1143,218 @@ mod tests {
             nav_taffy_style.grid_column.end,
             taffy::style::GridPlacement::from_line_index(2),
             "nav 应解析到 col end = 2"
+        );
+    }
+
+    // -- Shadow DOM slot 解析测试 --
+
+    /// 有 shadow root 的元素，shadow 树中包含 <slot name="header">，
+    /// light DOM 中有 slot="header" 的子元素 → 布局树应包含该 slotted 子元素。
+    #[test]
+    fn test_shadow_dom_slot_flattened_into_layout() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 宿主元素
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // 附加 shadow root
+        let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+        // shadow 树内容：<div><slot name="header"></slot></div>
+        let shadow_wrapper = doc.create_element("div");
+        doc.append_child(shadow, shadow_wrapper).unwrap();
+        let slot_header = doc.create_element("slot");
+        doc.set_attribute(slot_header, "name", "header");
+        doc.append_child(shadow_wrapper, slot_header).unwrap();
+
+        // light DOM 子元素：<h1 slot="header">Title</h1>
+        let header_elem = doc.create_element("h1");
+        doc.set_attribute(header_elem, "slot", "header");
+        doc.append_child(host, header_elem).unwrap();
+
+        // 解析 slot 分配
+        doc.resolve_slots(host);
+
+        let styles = HashMap::new();
+        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // host 应在映射中
+        assert!(taffy_to_dom.values().any(|id| *id == host), "宿主元素应在布局树中");
+
+        // slotted 子元素 (h1) 应在布局树中
+        assert!(
+            taffy_to_dom.values().any(|id| *id == header_elem),
+            "slotted h1 元素应在布局树中"
+        );
+
+        // shadow 树中的 wrapper div 应在布局树中
+        assert!(
+            taffy_to_dom.values().any(|id| *id == shadow_wrapper),
+            "shadow wrapper div 应在布局树中"
+        );
+
+        // 验证 shadow_wrapper 是 host 的 taffy 子节点
+        // host 在 taffy 中的子节点应该是 shadow_wrapper（而非 light DOM 子节点）
+        let host_taffy = find_taffy_for_dom(&taffy_to_dom, host);
+        let host_children = taffy_tree.children(host_taffy).unwrap();
+        assert_eq!(host_children.len(), 1, "host 应有 1 个 taffy 子节点（shadow wrapper）");
+
+        // shadow_wrapper 的子节点应该是 slotted 的 header_elem
+        let wrapper_taffy = find_taffy_for_dom(&taffy_to_dom, shadow_wrapper);
+        let wrapper_children = taffy_tree.children(wrapper_taffy).unwrap();
+        assert_eq!(wrapper_children.len(), 1, "wrapper 应有 1 个子节点（slotted h1）");
+
+        // 验证那个子节点对应的是 header_elem
+        let child_dom_id = taffy_to_dom.get(&wrapper_children[0]).copied();
+        assert_eq!(child_dom_id, Some(header_elem), "wrapper 子节点应为 slotted h1");
+    }
+
+    /// 未命名的默认 <slot> 接收没有 slot 属性的 light DOM 子节点。
+    #[test]
+    fn test_shadow_dom_default_slot_uses_light_children() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 宿主元素
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // 附加 shadow root，包含默认 <slot>（无 name 属性）
+        let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.append_child(shadow, wrapper).unwrap();
+        let default_slot = doc.create_element("slot");
+        doc.append_child(wrapper, default_slot).unwrap();
+
+        // light DOM：两个没有 slot 属性的子元素
+        let child1 = doc.create_element("p");
+        doc.append_child(host, child1).unwrap();
+        let child2 = doc.create_element("span");
+        doc.append_child(host, child2).unwrap();
+
+        // 解析 slot 分配
+        doc.resolve_slots(host);
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 两个 light DOM 子元素都应出现在布局树中（通过默认 slot）
+        assert!(
+            taffy_to_dom.values().any(|id| *id == child1),
+            "默认 slot 中的 p 元素应在布局树中"
+        );
+        assert!(
+            taffy_to_dom.values().any(|id| *id == child2),
+            "默认 slot 中的 span 元素应在布局树中"
+        );
+    }
+
+    /// <slot> 有回退子元素，且没有 light DOM 分配 → 布局树使用回退内容。
+    #[test]
+    fn test_shadow_dom_fallback_content_when_no_assignment() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 宿主元素（无 light DOM 子节点）
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // 附加 shadow root
+        let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.append_child(shadow, wrapper).unwrap();
+
+        // <slot name="sidebar"> 带回退子元素
+        let slot = doc.create_element("slot");
+        doc.set_attribute(slot, "name", "sidebar");
+        doc.append_child(wrapper, slot).unwrap();
+
+        // 回退内容
+        let fallback_div = doc.create_element("div");
+        doc.set_attribute(fallback_div, "class", "fallback");
+        doc.append_child(slot, fallback_div).unwrap();
+
+        // 解析 slot 分配（无 light DOM 匹配 "sidebar" slot）
+        doc.resolve_slots(host);
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 回退 div 应在布局树中
+        assert!(
+            taffy_to_dom.values().any(|id| *id == fallback_div),
+            "slot 回退内容（div.fallback）应在布局树中"
+        );
+    }
+
+    /// 未分配到任何 slot 的 light DOM 子节点不应出现在布局树中。
+    #[test]
+    fn test_shadow_dom_unassigned_light_children_hidden() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 宿主元素
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // 附加 shadow root，只有一个具名 slot
+        let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.append_child(shadow, wrapper).unwrap();
+        let slot = doc.create_element("slot");
+        doc.set_attribute(slot, "name", "header");
+        doc.append_child(wrapper, slot).unwrap();
+
+        // light DOM：一个匹配 slot="header"，一个不匹配任何 slot
+        let header_elem = doc.create_element("h1");
+        doc.set_attribute(header_elem, "slot", "header");
+        doc.append_child(host, header_elem).unwrap();
+        let orphan_elem = doc.create_element("footer");
+        // footer 没有 slot 属性，且 shadow 树中没有默认 slot
+        doc.append_child(host, orphan_elem).unwrap();
+
+        // 解析 slot 分配
+        doc.resolve_slots(host);
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+
+        // 已分配的 h1 应在布局树中
+        assert!(
+            taffy_to_dom.values().any(|id| *id == header_elem),
+            "已分配到 slot 的 h1 应在布局树中"
+        );
+
+        // 未分配的 footer 不应在布局树中
+        assert!(
+            !taffy_to_dom.values().any(|id| *id == orphan_elem),
+            "未分配到任何 slot 的 footer 不应在布局树中"
         );
     }
 }

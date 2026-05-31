@@ -451,4 +451,60 @@ mod tests {
         assert!(width_16 > 0.0, "16px 文本宽度应为正");
         assert!(width_32 > width_16, "32px 应比 16px 宽: {} vs {}", width_32, width_16);
     }
+
+    /// 测试混合 ASCII 与 CJK 字符的整形。
+    ///
+    /// ASCII 字符和 CJK 字符混合时，每个字符都应产生对应的 glyph，
+    /// 且所有 glyph 的 advance_x 均为正值。
+    #[test]
+    fn test_shaper_mixed_ascii_cjk() {
+        let shaper = make_empty_shaper();
+        let text = "Hello世界";
+        let glyphs = shaper.shape_single_line(text, 16.0);
+        assert_eq!(glyphs.len(), 7, "应为 7 个字符产生 7 个 glyph");
+
+        // 无字体时 glyph_id 等于 code_point
+        assert_eq!(glyphs[0].code_point, 'H');
+        assert_eq!(glyphs[0].glyph_id, 'H' as u32);
+        assert_eq!(glyphs[4].code_point, 'o');
+        // CJK 字符
+        assert_eq!(glyphs[5].code_point, '世');
+        assert_eq!(glyphs[5].glyph_id, '世' as u32);
+        assert_eq!(glyphs[6].code_point, '界');
+        assert_eq!(glyphs[6].glyph_id, '界' as u32);
+
+        // 所有 advance_x 应为正
+        for glyph in &glyphs {
+            assert!(glyph.advance_x > 0.0, "advance_x 应为正数");
+        }
+    }
+
+    /// 测试显式换行符 \\n 产生多行输出。
+    ///
+    /// 文本中包含多个 \n 时，应产生对应数量的行，且换行符本身不出现在 glyph 中。
+    #[test]
+    fn test_shaper_explicit_newline() {
+        let shaper = make_empty_shaper();
+        let text = "第一行\n第二行\n第三行";
+        let lines = shaper.shape_with_line_wrap(text, 16.0, 1000.0);
+        assert_eq!(lines.len(), 3, "应在 \\n 处产生 3 行");
+
+        // 每行应包含对应的 CJK 字符
+        assert_eq!(lines[0].glyphs.len(), 3, "第一行应有 3 个字符");
+        assert_eq!(lines[1].glyphs.len(), 3, "第二行应有 3 个字符");
+        assert_eq!(lines[2].glyphs.len(), 3, "第三行应有 3 个字符");
+
+        // 换行符不应出现在任何行的 glyph 中
+        for line in &lines {
+            assert!(
+                !line.glyphs.iter().any(|g| g.code_point == '\n'),
+                "换行符不应出现在 glyph 中"
+            );
+        }
+
+        // 每行宽度应为正
+        for line in &lines {
+            assert!(line.width > 0.0, "每行宽度应为正");
+        }
+    }
 }

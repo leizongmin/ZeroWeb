@@ -1070,6 +1070,32 @@ mod tests {
         );
     }
 
+    /// Cookie with Secure attribute → only sent over HTTPS.
+    /// 验证 Secure 属性的 Cookie 仅通过 HTTPS 发送，通过 HTTP 时不发送。
+    #[test]
+    fn test_cookie_secure_attribute() {
+        let cookie = CookieStore::parse_set_cookie("token=secret; Secure; Domain=example.com").unwrap();
+        assert!(cookie.secure, "Secure 属性应被正确解析");
+
+        let mut store = CookieStore::new();
+        store.add(cookie);
+
+        // HTTP 请求：Secure cookie 不应发送
+        let http_url = parse_url("http://example.com/page").unwrap();
+        assert!(
+            store.get_for_url(&http_url).is_empty(),
+            "Secure cookie 不应通过 HTTP 发送"
+        );
+
+        // HTTPS 请求：Secure cookie 应发送
+        let https_url = parse_url("https://example.com/page").unwrap();
+        assert_eq!(
+            store.get_for_url(&https_url).len(),
+            1,
+            "Secure cookie 应通过 HTTPS 发送"
+        );
+    }
+
     /// 会话 Cookie：无 Max-Age 和 Expires 的 Cookie 永不过期，且 expires 为 None。
     #[test]
     fn test_cookie_session_cookie_no_expiry() {
