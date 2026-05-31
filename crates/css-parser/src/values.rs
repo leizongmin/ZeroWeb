@@ -4722,6 +4722,51 @@ pub fn parse_background_attachment(value: &str) -> Option<BackgroundAttachmentVa
     }
 }
 
+/// CSS background-clip 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundClipValue {
+    /// border-box（默认值）— 背景绘制到边框区域外边界。
+    BorderBox,
+    /// padding-box — 背景绘制到内边距区域外边界。
+    PaddingBox,
+    /// content-box — 背景绘制到内容区域外边界。
+    ContentBox,
+    /// text — 背景绘制到文本区域内。
+    Text,
+}
+
+/// 解析 CSS background-clip 属性值。
+pub fn parse_background_clip(value: &str) -> Option<BackgroundClipValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "border-box" => Some(BackgroundClipValue::BorderBox),
+        "padding-box" => Some(BackgroundClipValue::PaddingBox),
+        "content-box" => Some(BackgroundClipValue::ContentBox),
+        "text" => Some(BackgroundClipValue::Text),
+        _ => None,
+    }
+}
+
+/// CSS background-origin 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BackgroundOriginValue {
+    /// padding-box（默认值）— 背景定位从内边距区域开始。
+    PaddingBox,
+    /// border-box — 背景定位从边框区域开始。
+    BorderBox,
+    /// content-box — 背景定位从内容区域开始。
+    ContentBox,
+}
+
+/// 解析 CSS background-origin 属性值。
+pub fn parse_background_origin(value: &str) -> Option<BackgroundOriginValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "padding-box" => Some(BackgroundOriginValue::PaddingBox),
+        "border-box" => Some(BackgroundOriginValue::BorderBox),
+        "content-box" => Some(BackgroundOriginValue::ContentBox),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6906,5 +6951,90 @@ mod tests {
         assert_eq!(parse_background_attachment(""), None);
         assert_eq!(parse_background_attachment("invalid"), None);
         assert_eq!(parse_background_attachment("scroll fixed"), None);
+    }
+
+    // ── parse_background_clip ──
+
+    #[test]
+    fn test_parse_background_clip_values() {
+        assert_eq!(
+            parse_background_clip("border-box"),
+            Some(BackgroundClipValue::BorderBox)
+        );
+        assert_eq!(
+            parse_background_clip("padding-box"),
+            Some(BackgroundClipValue::PaddingBox)
+        );
+        assert_eq!(
+            parse_background_clip("content-box"),
+            Some(BackgroundClipValue::ContentBox)
+        );
+        assert_eq!(parse_background_clip("text"), Some(BackgroundClipValue::Text));
+    }
+
+    #[test]
+    fn test_parse_background_clip_case_insensitive() {
+        assert_eq!(
+            parse_background_clip("BORDER-BOX"),
+            Some(BackgroundClipValue::BorderBox)
+        );
+        assert_eq!(
+            parse_background_clip("Padding-Box"),
+            Some(BackgroundClipValue::PaddingBox)
+        );
+        assert_eq!(
+            parse_background_clip("CONTENT-BOX"),
+            Some(BackgroundClipValue::ContentBox)
+        );
+        assert_eq!(parse_background_clip("TEXT"), Some(BackgroundClipValue::Text));
+    }
+
+    #[test]
+    fn test_parse_background_clip_invalid() {
+        assert_eq!(parse_background_clip(""), None);
+        assert_eq!(parse_background_clip("invalid"), None);
+        assert_eq!(parse_background_clip("border-box padding-box"), None);
+    }
+
+    // ── parse_background_origin ──
+
+    #[test]
+    fn test_parse_background_origin_values() {
+        assert_eq!(
+            parse_background_origin("padding-box"),
+            Some(BackgroundOriginValue::PaddingBox)
+        );
+        assert_eq!(
+            parse_background_origin("border-box"),
+            Some(BackgroundOriginValue::BorderBox)
+        );
+        assert_eq!(
+            parse_background_origin("content-box"),
+            Some(BackgroundOriginValue::ContentBox)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_origin_case_insensitive() {
+        assert_eq!(
+            parse_background_origin("PADDING-BOX"),
+            Some(BackgroundOriginValue::PaddingBox)
+        );
+        assert_eq!(
+            parse_background_origin("Border-Box"),
+            Some(BackgroundOriginValue::BorderBox)
+        );
+        assert_eq!(
+            parse_background_origin("CONTENT-BOX"),
+            Some(BackgroundOriginValue::ContentBox)
+        );
+    }
+
+    #[test]
+    fn test_parse_background_origin_invalid() {
+        assert_eq!(parse_background_origin(""), None);
+        assert_eq!(parse_background_origin("invalid"), None);
+        assert_eq!(parse_background_origin("text"), None);
+        assert_eq!(parse_background_origin("padding-box border-box"), None);
     }
 }

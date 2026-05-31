@@ -2035,4 +2035,141 @@ mod tests {
             _ => panic!("第 2 个事件应为 MouseInput"),
         }
     }
+
+    /// 验证 WindowConfig::new 接受 &str 字面量（impl Into<String> 的零拷贝路径）。
+    /// 确保字符串字面量无需显式 .to_string() 即可传入构造函数。
+    #[test]
+    fn test_window_config_new_from_str_literal() {
+        let config = WindowConfig::new("PlainLiteral");
+        assert_eq!(config.title, "PlainLiteral", "&str 字面量应通过 Into<String> 正确转换");
+
+        // 验证默认字段不变
+        assert_eq!(config.width, 800, "默认宽度应为 800");
+        assert_eq!(config.height, 600, "默认高度应为 600");
+        assert!(config.resizable, "默认 resizable 应为 true");
+    }
+
+    /// 验证 GpuApp 在忽略事件后继续分发现觉焦点事件的正确性。
+    /// 某些平台在窗口生命周期中会产生 ScaleFactorChanged 等未处理事件，
+    /// 确保这些事件不会影响后续 Focused 事件的分发。
+    #[test]
+    fn test_gpu_app_ignored_then_focused_dispatch() {
+        // 阶段 1：忽略事件不产生回调
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+                received.push(e);
+            };
+            let mut app = make_gpu_app(&mut callback);
+            app.handle_window_event(winit::event::WindowEvent::Destroyed, None);
+            assert!(received.is_empty(), "Destroyed 事件应被忽略");
+        }
+
+        // 阶段 2：忽略事件与正常事件交替分发
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+                received.push(e);
+            };
+            let mut app = make_gpu_app(&mut callback);
+            app.handle_window_event(winit::event::WindowEvent::Destroyed, None);
+            app.handle_window_event(winit::event::WindowEvent::Focused(true), None);
+            app.handle_window_event(winit::event::WindowEvent::Destroyed, None);
+            app.handle_window_event(winit::event::WindowEvent::Focused(false), None);
+
+            assert_eq!(received.len(), 2, "应只收到 2 个焦点事件（忽略的事件不产生回调）");
+            assert!(matches!(received[0], AppEvent::Focused), "第 1 个应为 Focused");
+            assert!(matches!(received[1], AppEvent::Unfocused), "第 2 个应为 Unfocused");
+        }
+    }
+
+    /// 验证鼠标光标移动事件在 f64 次正规（subnormal）极小坐标值下的精确传递。
+    /// 次正规浮点数具有降低的精度特征，某些高 DPI 输入设备可能产生此类值。
+    #[test]
+    fn test_basic_app_cursor_moved_subnormal_coordinates() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        let subnormal_x = f64::from_bits(1u64); // 最小正次正规数 ~4.9e-324
+        let subnormal_y = f64::from_bits(0x8000_0000_0000_0001u64); // 最小负次正规数
+
+        app.handle_window_event(winit::event::WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(subnormal_x, subnormal_y),
+        });
+
+        assert_eq!(received.len(), 1, "应收到 1 个 MouseMoved 事件");
+        match &received[0] {
+            AppEvent::MouseMoved { x, y } => {
+                assert_eq!(*x, subnormal_x, "次正规 x 坐标应精确传递");
+                assert_eq!(*y, subnormal_y, "次正规 y 坐标应精确传递");
+                assert!(x.is_subnormal(), "x 应为次正规数");
+                assert!(y.is_subnormal(), "y 应为次正规数");
+            }
+            _ => panic!("应为 MouseMoved 事件"),
+        }
+    }
+
+    /// 验证连续快速交替的焦点事件（Focused/Unfocused）不会丢失事件。
+    /// 模拟用户快速在窗口间切换的场景，每次切换都应独立产生正确的事件。
+    #[test]
+    fn test_basic_app_rapid_focus_toggle() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        // 模拟快速交替 20 次
+        for i in 0..20 {
+            let focused = i % 2 == 0;
+            app.handle_window_event(winit::event::WindowEvent::Focused(focused));
+        }
+
+        assert_eq!(received.len(), 20, "应收到 20 个焦点事件");
+        for (i, event) in received.iter().enumerate() {
+            let expected_focused = i % 2 == 0;
+            if expected_focused {
+                assert!(
+                    matches!(event, AppEvent::Focused),
+                    "第 {} 个事件应为 Focused（偶数索引）",
+                    i + 1
+                );
+            } else {
+                assert!(
+                    matches!(event, AppEvent::Unfocused),
+                    "第 {} 个事件应为 Unfocused（奇数索引）",
+                    i + 1
+                );
+            }
+        }
+    }
+
+    /// 验证通过 BasicApp 分发触摸事件时，f64::INFINITY 坐标的正确传递。
+    /// 某些平台或驱动在触摸屏校准异常时可能报告无穷大坐标，
+    /// 确保分发路径不会因无穷值而产生 panic 或数据截断。
+    #[test]
+    fn test_basic_app_touch_infinity_coordinates_dispatch() {
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let mut app = make_basic_app(&mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            phase: winit::event::TouchPhase::Moved,
+            location: winit::dpi::PhysicalPosition::new(f64::INFINITY, f64::NEG_INFINITY),
+            id: 100,
+            force: None,
+        }));
+
+        assert_eq!(received.len(), 1, "应收到 1 个 Touch 事件");
+        match &received[0] {
+            AppEvent::Touch(te) => {
+                assert_eq!(te.id, 100, "触摸点 id 应为 100");
+                assert_eq!(te.phase, TouchPhase::Moved, "阶段应为 Moved");
+                assert!(te.x.is_infinite() && te.x.is_sign_positive(), "x 应为正无穷");
+                assert!(te.y.is_infinite() && te.y.is_sign_negative(), "y 应为负无穷");
+            }
+            _ => panic!("应为 Touch 事件"),
+        }
+    }
 }

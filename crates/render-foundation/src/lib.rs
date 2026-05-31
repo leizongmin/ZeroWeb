@@ -585,4 +585,128 @@ mod tests {
         assert_eq!(c.lerp(c, 0.3), c, "同色 lerp 任意 t 应返回原色");
         assert_eq!(c.lerp(c, 0.7), c, "同色 lerp 任意 t 应返回原色");
     }
+
+    /// 测试 RenderPrimitives::bounding_box 在 path_stroke 顶点为奇数时静默忽略多余元素
+    ///
+    /// bounding_box 使用 chunks_exact(2) 解析顶点坐标对，因此奇数长度的 vertices
+    /// 最后一个元素不会构成完整的坐标对，将被静默忽略。验证此边界条件下
+    /// bounding_box 只使用完整坐标对进行计算，不会 panic。
+    #[test]
+    fn test_bounding_box_path_stroke_odd_vertex_count() {
+        use crate::primitive::*;
+
+        let mut p = RenderPrimitives::new();
+
+        // 5 个元素：只有前 4 个构成 (10,20) 和 (50,60)，第 5 个被忽略
+        p.add_path_stroke(vec![10.0, 20.0, 50.0, 60.0, 99.0], Color::BLACK, 2.0, false);
+
+        let bb = p.bounding_box().expect("奇数顶点仍应返回包围盒");
+        // 仅使用前两对：(10,20) 和 (50,60)
+        assert_eq!(bb.left(), 10.0, "left 应为第一个顶点 x=10");
+        assert_eq!(bb.top(), 20.0, "top 应为第一个顶点 y=20");
+        assert_eq!(bb.right(), 50.0, "right 应为第二个顶点 x=50");
+        assert_eq!(bb.bottom(), 60.0, "bottom 应为第二个顶点 y=60");
+        // 验证多余的 99.0 没有被计入
+        assert!(bb.right() < 99.0, "多余的奇数元素不应参与计算");
+    }
+
+    /// 测试 DamageTracker::try_merge 在合并面积恰好等于 1.5 倍个体面积之和时的合并行为
+    ///
+    /// try_merge 的条件为 union_area <= individual_area * 1.5。
+    /// 构造两个矩形，使其合并后的并集面积恰好等于两者面积之和的 1.5 倍，
+    /// 验证在该阈值边界处矩形能够成功合并。
+    #[test]
+    fn test_damage_tracker_merge_at_exact_threshold() {
+        let mut tracker = DamageTracker::new();
+
+        // 矩形 A: 50x50 = 2500，位于 (0,0)
+        // 矩形 B: 50x50 = 2500，位于 (75,0)
+        // 个体面积之和 = 5000
+        // 并集: (0,0) 到 (125,50) → 125x50 = 6250
+        // 6250 / 5000 = 1.25 < 1.5 → 应合并
+        let a = Rect::new(0.0, 0.0, 50.0, 50.0);
+        let b = Rect::new(75.0, 0.0, 50.0, 50.0);
+
+        tracker.add_damage(a);
+        tracker.add_damage(b);
+
+        // 1.25 < 1.5，应合并为单个矩形
+        assert_eq!(tracker.dirty_rects().len(), 1, "合并比 1.25 ≤ 1.5 应成功合并为一个矩形");
+        let merged = &tracker.dirty_rects()[0];
+        assert_eq!(merged.origin.x, 0.0);
+        assert_eq!(merged.origin.y, 0.0);
+        assert_eq!(merged.size.width, 125.0);
+        assert_eq!(merged.size.height, 50.0);
+    }
+
+    /// 测试 FrameBuffer::from_rgba 在宽度为零但高度非零时的行为
+    ///
+    /// 当 width=0 时，expected = 0 * height * 4 = 0，因此传入空 Vec 应创建成功。
+    /// 验证零宽度帧缓冲的各种属性（data 长度、pixel_count、size）正确反映零尺寸。
+    #[test]
+    fn test_frame_buffer_from_rgba_zero_width_nonzero_height() {
+        let fb = FrameBuffer::from_rgba(vec![], 0, 100).expect("width=0, height=100 应创建成功");
+        assert_eq!(fb.width, 0);
+        assert_eq!(fb.height, 100);
+        assert!(fb.data.is_empty(), "零宽度帧缓冲的数据应为空");
+        assert_eq!(fb.pixel_count(), 0, "零宽度像素数应为 0");
+        let size = fb.size();
+        assert_eq!(size.width, 0.0);
+        assert_eq!(size.height, 100.0);
+
+        // 反向：非零宽度但零高度
+        let fb2 = FrameBuffer::from_rgba(vec![], 200, 0).expect("width=200, height=0 应创建成功");
+        assert_eq!(fb2.width, 200);
+        assert_eq!(fb2.height, 0);
+        assert!(fb2.data.is_empty());
+    }
+
+    /// 测试 ImageData::from_rgba 在数据为空但尺寸非零时返回错误
+    ///
+    /// 当 width=1, height=1 但 data 为空 Vec 时，期望 4 字节但实际为 0 字节，
+    /// from_rgba 应返回明确的错误信息，而非 panic 或静默成功。
+    #[test]
+    fn test_image_data_from_rgba_empty_data_nonzero_dims() {
+        let result = ImageData::from_rgba(vec![], 1, 1);
+        assert!(result.is_err(), "空数据 + 1x1 尺寸应返回错误");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("expected") || err.contains("期望") || err.contains("mismatch"),
+            "错误信息应包含大小不匹配描述: {err}"
+        );
+
+        // 2x3 图片需要 24 字节，传入 5 字节也应失败
+        let result2 = ImageData::from_rgba(vec![0u8; 5], 2, 3);
+        assert!(result2.is_err(), "5 字节不足以构建 2x3 图片");
+    }
+
+    /// 测试 RenderPrimitives::bounding_box 在 shadow 的 blur 和 spread 都为零时
+    /// 阴影包围盒仅受 rect 和 offset 影响
+    ///
+    /// 当 blur_radius=0 且 spread_radius=0 时，阴影的 bounding_box 扩展
+    /// 仅由 offset 决定，不再额外扩展 blur/spread 像素。
+    /// 验证此边界条件下 bounding_box 精确匹配 offset 后的矩形。
+    #[test]
+    fn test_bounding_box_shadow_zero_blur_spread() {
+        use crate::primitive::*;
+
+        let mut p = RenderPrimitives::new();
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(100.0, 200.0, 50.0, 80.0),
+            color: Color::BLACK,
+            offset_x: 10.0,
+            offset_y: 20.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+        });
+
+        let bb = p.bounding_box().expect("shadow 应产生包围盒");
+        // rect: (100,200)-(150,280)，offset: (10,20)
+        // 无 blur/spread 扩展，包围盒为 (110,220)-(160,300)
+        assert_eq!(bb.left(), 110.0, "left 应为 rect.left + offset_x = 110");
+        assert_eq!(bb.top(), 220.0, "top 应为 rect.top + offset_y = 220");
+        assert_eq!(bb.right(), 160.0, "right 应为 rect.right + offset_x = 160");
+        assert_eq!(bb.bottom(), 300.0, "bottom 应为 rect.bottom + offset_y = 300");
+    }
 }

@@ -4111,6 +4111,159 @@ mod tests {
         }
     }
 
+    /// 测试 NavigateParams 中 referrer 包含 URL 编码特殊字符时的序列化/反序列化。
+    /// URL 中的百分号编码、查询参数、锚点、认证信息等特殊字符在 IPC 传输中应完整保留。
+    #[test]
+    fn test_navigate_with_url_encoded_referrer() {
+        let referrer = "https://example.com/path?q=%E4%B8%AD%E6%96%87&lang=zh#frag%20ment";
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://target.com/page".into(),
+                referrer: Some(referrer.into()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!("https://target.com/page", p.url);
+            assert_eq!(
+                Some(referrer.to_string()),
+                p.referrer,
+                "含 URL 编码的 referrer 往返应完全一致"
+            );
+        } else {
+            panic!("期望 Navigate");
+        }
+    }
+
+    /// 测试 KeyboardEvent 中 key 和 code 为超长字符串时的序列化/反序列化。
+    /// 验证大体积字符串字段不会在 bincode 编码中被截断。
+    #[test]
+    fn test_keyboard_event_long_key_and_code() {
+        let long_key = "X".repeat(10_000);
+        let long_code = "Y".repeat(10_000);
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: long_key.clone(),
+                code: long_code.clone(),
+                ctrl: false,
+                shift: false,
+                alt: false,
+                meta: false,
+                event_type: KeyboardEventType::Press,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::KeyboardEvent(p) = out.kind {
+            assert_eq!(10_000, p.key.len(), "key 长度应为 10000");
+            assert_eq!(10_000, p.code.len(), "code 长度应为 10000");
+            assert_eq!(long_key, p.key, "超长 key 往返应完全一致");
+            assert_eq!(long_code, p.code, "超长 code 往返应完全一致");
+        } else {
+            panic!("期望 KeyboardEvent");
+        }
+    }
+
+    /// 测试 StorageOp 中所有 StorageType 与 StorageOperation 的笛卡尔积组合。
+    /// 确保每种存储类型与操作的搭配都能正确序列化/反序列化，不会因枚举组合产生编码冲突。
+    #[test]
+    fn test_storage_op_all_type_operation_combinations() {
+        let storage_types = vec![StorageType::Local, StorageType::Session];
+        let operations = vec![
+            StorageOperation::Get,
+            StorageOperation::Set,
+            StorageOperation::Remove,
+            StorageOperation::Clear,
+            StorageOperation::Length,
+            StorageOperation::Key,
+        ];
+
+        let mut id = 0u64;
+        for st in &storage_types {
+            for op in &operations {
+                id += 1;
+                let msg = IpcMessage {
+                    id,
+                    kind: IpcMessageKind::StorageOp(StorageOpParams {
+                        storage_type: st.clone(),
+                        operation: op.clone(),
+                        key: format!("key_{id}"),
+                        value: if matches!(op, StorageOperation::Set) {
+                            Some(format!("val_{id}"))
+                        } else {
+                            None
+                        },
+                        origin: "https://example.com".into(),
+                    }),
+                };
+                let out = roundtrip(msg);
+                if let IpcMessageKind::StorageOp(p) = out.kind {
+                    assert_eq!(*st, p.storage_type, "StorageType 不匹配，id={id}");
+                    assert_eq!(*op, p.operation, "StorageOperation 不匹配，id={id}");
+                    assert_eq!(format!("key_{id}"), p.key, "key 不匹配，id={id}");
+                } else {
+                    panic!("期望 StorageOp，id={id}");
+                }
+            }
+        }
+        assert_eq!(12, id, "应测试 2x6=12 种组合");
+    }
+
+    /// 测试 FetchResponse 的 body 仅包含 0xFF 字节（所有位置 1）时的序列化/反序列化。
+    /// 验证二进制传输不会将 0xFF 误判为填充或特殊标记而截断。
+    #[test]
+    fn test_fetch_response_body_all_0xff_bytes() {
+        let body: Vec<u8> = vec![0xFF; 256];
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 1,
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+                body: body.clone(),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchResponse(p) = out.kind {
+            assert_eq!(256, p.body.len(), "body 长度应为 256");
+            assert!(p.body.iter().all(|&b| b == 0xFF), "所有字节应为 0xFF");
+            assert_eq!(body, p.body, "全 0xFF body 往返应完全一致");
+        } else {
+            panic!("期望 FetchResponse");
+        }
+    }
+
+    /// 测试通过 MockChannel 突发发送 20 条消息后一次性全部接收。
+    /// 验证通道在突发写入场景下不丢消息、顺序不乱。
+    #[test]
+    fn test_channel_burst_send_then_receive_all() {
+        let mut ch = MockChannel::new();
+
+        // 突发发送 20 条混合类型消息
+        for i in 0..20u64 {
+            let kind = match i % 4 {
+                0 => IpcMessageKind::Navigate(NavigateParams {
+                    url: format!("https://example.com/{i}"),
+                    referrer: None,
+                }),
+                1 => IpcMessageKind::TitleChanged(format!("标题 {i}")),
+                2 => IpcMessageKind::Heartbeat,
+                _ => IpcMessageKind::Error(format!("错误 {i}")),
+            };
+            ch.send(IpcMessage { id: i, kind }).expect("发送应成功");
+        }
+
+        // 一次性全部接收，验证 FIFO 顺序
+        for i in 0..20u64 {
+            let msg = ch.recv().expect(&format!("接收第 {i} 条应成功"));
+            assert_eq!(i, msg.id, "FIFO 顺序违反：期望 id={i}，实际 id={}", msg.id);
+        }
+
+        // 通道应为空
+        assert!(ch.recv().is_err(), "所有消息已消费，recv 应返回错误");
+    }
+
     /// 测试相同 id 但不同 IpcMessageKind 的消息序列化结果必须不同。
     /// 验证 bincode 编码中枚举变体标签确实影响了输出字节，
     /// 防止不同变体因编码缺陷产生相同的二进制表示。
