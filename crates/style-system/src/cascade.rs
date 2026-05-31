@@ -336,4 +336,103 @@ mod tests {
         // important 时 UA > Author
         assert!(ua_important > author_important);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增级联特异性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// ID 选择器特异性 (1,0,0) 胜过类选择器 (0,1,0)
+    fn test_cascade_id_beats_class() {
+        let class_sel = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let id_sel = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false);
+        assert!(id_sel > class_sel);
+    }
+
+    #[test]
+    /// 多个类选择器 (0,2,0) 胜过单个类选择器 (0,1,0)
+    fn test_cascade_multiple_classes_beats_single() {
+        let single = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let double = CascadeOrder::new(Origin::Author, None, (0, 2, 0), 0, false);
+        assert!(double > single);
+    }
+
+    #[test]
+    /// !important 胜过所有选择器特异性
+    fn test_cascade_important_overrides_specificity() {
+        let high_spec = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 10, false);
+        let low_spec_important = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, true);
+        assert!(low_spec_important > high_spec);
+    }
+
+    #[test]
+    /// @layer 最后层胜过前面层（同优先级）
+    fn test_cascade_layer_ordering() {
+        let layer_0 = CascadeOrder::new(Origin::Author, Some(0), (0, 0, 1), 0, false);
+        let layer_1 = CascadeOrder::new(Origin::Author, Some(1), (0, 0, 1), 0, false);
+        let layer_2 = CascadeOrder::new(Origin::Author, Some(2), (0, 0, 1), 0, false);
+        assert!(layer_2 > layer_1);
+        assert!(layer_1 > layer_0);
+        assert!(layer_2 > layer_0);
+    }
+
+    #[test]
+    /// 属性选择器特异性 (0,1,0) 等于类选择器
+    fn test_cascade_attribute_vs_class_specificity() {
+        // 属性选择器 [type=text] 的特异性为 (0,1,0)，与 .text 相同
+        // 同特异性时，后面的声明胜出
+        let attr_sel = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let class_sel = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 1, false);
+        assert!(class_sel > attr_sel); // later position wins
+    }
+
+    #[test]
+    /// cascade 函数测试：ID 选择器胜过类选择器
+    fn test_cascade_function_id_vs_class() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("color"), Some(&"red".to_string())); // ID wins
+    }
+
+    #[test]
+    /// 同优先级下位置靠后的声明胜出
+    fn test_cascade_same_specificity_later_wins() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("color"), Some(&"green".to_string()));
+    }
+
+    #[test]
+    /// collect_declarations 带 layer_index
+    fn test_collect_declarations_with_layer() {
+        let decls = vec![
+            ("color".to_string(), "red".to_string(), false),
+        ];
+        let cascaded = collect_declarations(&decls, Origin::Author, Some(2), (0, 1, 0), 10);
+        assert_eq!(cascaded.len(), 1);
+        assert_eq!(cascaded[0].order.layer_index, Some(2));
+        assert_eq!(cascaded[0].order.position, 10);
+    }
 }

@@ -1258,4 +1258,312 @@ mod tests {
         // !important 总是胜过 normal（即使分层 vs 未分层）
         assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255)); // blue
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增端到端测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// grid-column-start/end 端到端
+    fn test_grid_column_start_end_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "grid-column-start".to_string(),
+                        value: "2".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-column-end".to_string(),
+                        value: "5".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(2));
+        assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(5));
+    }
+
+    #[test]
+    /// grid-row-start/end 端到端
+    fn test_grid_row_start_end_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "grid-row-start".to_string(),
+                        value: "1".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-row-end".to_string(),
+                        value: "3".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_row_start, property::GridLineValue::Line(1));
+        assert_eq!(div_style.grid_row_end, property::GridLineValue::Line(3));
+    }
+
+    #[test]
+    /// grid-area 简写端到端
+    fn test_grid_area_shorthand_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "grid-area".to_string(),
+                    value: "1 / 2 / 3 / 4".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_row_start, property::GridLineValue::Line(1));
+        assert_eq!(div_style.grid_row_end, property::GridLineValue::Line(3));
+        assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(2));
+        assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(4));
+    }
+
+    #[test]
+    /// span-based grid placement 端到端
+    fn test_grid_span_placement_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "grid-column-start".to_string(),
+                        value: "span 2".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "grid-column-end".to_string(),
+                        value: "5".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_column_start, property::GridLineValue::Span(2));
+        assert_eq!(div_style.grid_column_end, property::GridLineValue::Line(5));
+    }
+
+    #[test]
+    /// negative grid line numbers 端到端
+    fn test_grid_negative_line_numbers_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "grid-column-start".to_string(),
+                        value: "-1".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.grid_column_start, property::GridLineValue::Line(-1));
+    }
+
+    #[test]
+    /// transition-duration 端到端
+    fn test_transition_duration_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "transition".to_string(),
+                    value: "opacity 0.5s ease 0.1s".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.transition_property, vec!["opacity"]);
+        assert_eq!(div_style.transition_duration, vec![0.5]);
+        assert_eq!(div_style.transition_delay, vec![0.1]);
+    }
+
+    #[test]
+    /// animation-direction values 端到端
+    fn test_animation_direction_values_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "animation".to_string(),
+                    value: "fadeIn 1s linear infinite alternate".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.animation_name, vec!["fadeIn"]);
+        assert_eq!(div_style.animation_direction.len(), 1);
+    }
+
+    #[test]
+    /// animation-fill-mode forwards 端到端
+    fn test_animation_fill_mode_forwards_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "animation".to_string(),
+                    value: "slideUp 0.3s ease forwards".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.animation_fill_mode.len(), 1);
+    }
+
+    #[test]
+    /// animation-play-state paused 端到端
+    fn test_animation_play_state_paused_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "animation".to_string(),
+                    value: "spin 2s linear paused".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.animation_play_state.len(), 1);
+    }
+
+    #[test]
+    /// flex shorthand 端到端
+    fn test_flex_shorthand_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "flex".to_string(),
+                    value: "2 1 100px".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.flex_grow, 2.0);
+        assert_eq!(div_style.flex_shrink, 1.0);
+    }
+
+    #[test]
+    /// transform 端到端
+    fn test_transform_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "transform".to_string(),
+                    value: "translateX(10px)".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert!(!matches!(div_style.transform, zero_css_parser::values::TransformValue::None));
+    }
+
+    #[test]
+    /// 自定义属性与颜色端到端
+    fn test_custom_property_with_color_end_to_end() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "--main-color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    }
 }

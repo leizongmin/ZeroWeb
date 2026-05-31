@@ -611,4 +611,109 @@ mod tests {
         assert_eq!(field, LengthValue::Px(0.0));
         assert_ne!(field, LengthValue::Auto);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增计算值解析测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// em 转 px：2em * 20px font-size = 40px
+    fn test_em_to_px_conversion() {
+        let em = LengthValue::Em(2.0);
+        assert_eq!(resolve_length(&em, 20.0, None, None), 40.0);
+    }
+
+    #[test]
+    /// em 转 px：1.5em * 32px font-size = 48px
+    fn test_em_to_px_different_font_size() {
+        let em = LengthValue::Em(1.5);
+        assert_eq!(resolve_length(&em, 32.0, None, None), 48.0);
+    }
+
+    #[test]
+    /// rem 转 px：2rem * 16px (root) = 32px（忽略 font_size 参数）
+    fn test_rem_to_px_ignores_font_size() {
+        let rem = LengthValue::Rem(2.0);
+        // rem 使用 ROOT_FONT_SIZE (16.0)，不使用传入的 font_size
+        assert_eq!(resolve_length(&rem, 32.0, None, None), 32.0);
+    }
+
+    #[test]
+    /// 百分比值不在此处解析，原样返回
+    fn test_percentage_not_resolved() {
+        let pct = LengthValue::Percentage(50.0);
+        assert_eq!(resolve_length(&pct, 16.0, None, None), 50.0);
+    }
+
+    #[test]
+    /// resolve_computed_style 将 em 转换为 px（使用 font-size）
+    fn test_resolve_computed_style_em_with_font_context() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(24.0);
+        style.margin_top = LengthValue::Em(2.0); // 2 * 24 = 48
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None);
+        assert_eq!(resolved.margin_top, LengthValue::Px(48.0));
+    }
+
+    #[test]
+    /// resolve_computed_style 使用 viewport 尺寸
+    fn test_resolve_computed_style_with_viewport() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Vw(50.0);
+        style.height = LengthValue::Vh(25.0);
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, Some(1000.0), Some(800.0));
+        assert_eq!(resolved.width, LengthValue::Px(500.0)); // 50vw of 1000
+        assert_eq!(resolved.height, LengthValue::Px(200.0)); // 25vh of 800
+    }
+
+    #[test]
+    /// vmin 和 vmax 计算
+    fn test_resolve_vmin_vmax() {
+        let vmin = LengthValue::Vmin(10.0);
+        let vmax = LengthValue::Vmax(10.0);
+        // viewport: 1440 x 900, min=900, max=1440
+        assert_eq!(resolve_length(&vmin, 16.0, Some(1440.0), Some(900.0)), 90.0);
+        assert_eq!(resolve_length(&vmax, 16.0, Some(1440.0), Some(900.0)), 144.0);
+    }
+
+    #[test]
+    /// ch 单位近似为 0.5em
+    fn test_resolve_ch_approximation() {
+        let ch = LengthValue::Ch(4.0);
+        // 4ch * 20 * 0.5 = 40
+        assert_eq!(resolve_length(&ch, 20.0, None, None), 40.0);
+    }
+
+    #[test]
+    /// resolve_var 嵌套 var() 带回退值
+    fn test_resolve_var_nested_with_fallback() {
+        let mut custom = HashMap::new();
+        custom.insert("--primary".to_string(), "blue".to_string());
+
+        // var(--undefined, var(--primary)) — fallback 是 var(--primary)
+        let result = resolve_var("var(--undefined, var(--primary))", &custom);
+        assert_eq!(result, "blue");
+    }
+
+    #[test]
+    /// resolve_var 嵌入多个 var() 调用
+    fn test_resolve_var_multiple_embedded() {
+        let mut custom = HashMap::new();
+        custom.insert("--a".to_string(), "10px".to_string());
+        custom.insert("--b".to_string(), "20px".to_string());
+
+        let result = resolve_var("margin: var(--a) var(--b);", &custom);
+        assert_eq!(result, "margin: 10px 20px;");
+    }
+
+    #[test]
+    /// compute_value 返回 None 当值不含 var()
+    fn test_compute_value_plain_value() {
+        let custom = HashMap::new();
+        assert_eq!(compute_value("100px", &custom, 16.0), None);
+    }
 }

@@ -913,20 +913,20 @@ impl Document {
     /// 在 ShadowRoot 子树中查找第一个匹配选择器的元素。
     ///
     /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
-    /// 不会穿透到 light DOM。
+    /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_shadow(
         &self,
         shadow_root: NodeId,
         selector: &str,
     ) -> Option<NodeId> {
         let parsed = crate::query::parse_simple_selector(selector)?;
-        self.find_first_matching(shadow_root, &parsed)
+        self.find_first_matching_shadow(shadow_root, &parsed)
     }
 
     /// 在 ShadowRoot 子树中查找所有匹配选择器的元素。
     ///
     /// 类似 `query_selector_all`，但范围限定在 shadow DOM 树内，
-    /// 不会穿透到 light DOM。
+    /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_all_shadow(
         &self,
         shadow_root: NodeId,
@@ -937,7 +937,7 @@ impl Document {
             None => return vec![],
         };
         let mut result = Vec::new();
-        self.collect_matching(shadow_root, &parsed, &mut result);
+        self.collect_matching_shadow(shadow_root, &parsed, &mut result);
         result
     }
 
@@ -1267,6 +1267,61 @@ impl Document {
 
         for &child in &node_data.children.clone() {
             self.collect_matching(child, selector, result);
+        }
+    }
+
+    /// 在 shadow DOM 内查找第一个匹配的元素，不穿透嵌套的 ShadowRoot 边界。
+    fn find_first_matching_shadow(
+        &self,
+        id: NodeId,
+        selector: &crate::query::SimpleSelector,
+    ) -> Option<NodeId> {
+        let node_data = self.nodes.get(id)?;
+        if let NodeKind::Element(elem) = &node_data.kind
+            && selector.matches(elem)
+        {
+            return Some(id);
+        }
+        for &child in &node_data.children.clone() {
+            // 不进入嵌套的 ShadowRoot
+            if let Some(child_data) = self.nodes.get(child)
+                && matches!(child_data.kind, NodeKind::ShadowRoot(_))
+            {
+                continue;
+            }
+            if let Some(found) = self.find_first_matching_shadow(child, selector) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// 在 shadow DOM 内收集所有匹配的元素，不穿透嵌套的 ShadowRoot 边界。
+    fn collect_matching_shadow(
+        &self,
+        id: NodeId,
+        selector: &crate::query::SimpleSelector,
+        result: &mut Vec<NodeId>,
+    ) {
+        let node_data = match self.nodes.get(id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        if let NodeKind::Element(elem) = &node_data.kind
+            && selector.matches(elem)
+        {
+            result.push(id);
+        }
+
+        for &child in &node_data.children.clone() {
+            // 不进入嵌套的 ShadowRoot
+            if let Some(child_data) = self.nodes.get(child)
+                && matches!(child_data.kind, NodeKind::ShadowRoot(_))
+            {
+                continue;
+            }
+            self.collect_matching_shadow(child, selector, result);
         }
     }
 
