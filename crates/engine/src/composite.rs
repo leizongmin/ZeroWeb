@@ -2096,6 +2096,96 @@ mod tests {
         assert!((h - 60.0).abs() < f32::EPSILON, "height should be 60.0");
     }
 
+    /// 测试 10+ 层具有各种 z-index 的合成排序正确。
+    ///
+    /// 构建 12 个元素，分别设置不同的 z-index（包括负数、零、正数、
+    /// 大值、相同值），验证合成后根图层 + 12 个提升图层按 z-index 升序排列。
+    #[test]
+    fn test_composite_many_layers() {
+        let mut doc = zero_dom::Document::new();
+        let num_elements = 12;
+        let mut elements = Vec::with_capacity(num_elements);
+        let mut child_boxes = Vec::with_capacity(num_elements);
+
+        for i in 0..num_elements {
+            let elem = doc.create_element("div");
+            elements.push(elem);
+            child_boxes.push(make_box(Some(elem), (i as f32) * 10.0, 0.0, 50.0, 50.0, false));
+        }
+
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: child_boxes,
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            z_index: 0,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        // 12 个 z-index 值：负数、零、正数、大值、重复值
+        let z_indices: &[i32] = &[-100, -5, -1, 0, 0, 1, 3, 10, 10, 42, 999, i32::MAX];
+        assert_eq!(z_indices.len(), num_elements);
+
+        let mut styles = HashMap::new();
+        for (i, &z) in z_indices.iter().enumerate() {
+            let mut style = ComputedStyle::default();
+            style.z_index = ZIndexValue::Integer(z);
+            styles.insert(elements[i], style);
+        }
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // root + 12 promoted layers
+        assert_eq!(layers.len(), 13, "root + 12 promoted layers");
+        assert!(layers[0].is_root);
+
+        // 非 root 图层应按 z-index 升序排列
+        let non_root_z: Vec<i32> = layers[1..].iter().map(|l| l.z_index).collect();
+        let expected_sorted: Vec<i32> = {
+            let mut v = z_indices.to_vec();
+            v.sort();
+            v
+        };
+        assert_eq!(
+            non_root_z, expected_sorted,
+            "promoted layers should be sorted by ascending z-index"
+        );
+
+        // 验证单调递增
+        for i in 1..layers.len() - 1 {
+            assert!(
+                layers[i].z_index <= layers[i + 1].z_index,
+                "layers[{}].z_index ({}) should be <= layers[{}].z_index ({})",
+                i,
+                layers[i].z_index,
+                i + 1,
+                layers[i + 1].z_index
+            );
+        }
+    }
+
     /// 测试根图层尺寸随深层孙子元素扩展。
     ///
     /// 构建树：root(200x100) → child(0,0,100,80) → grandchild(0,0,400,300)。

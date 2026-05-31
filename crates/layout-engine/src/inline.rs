@@ -38,6 +38,35 @@ pub struct TextRun {
     pub vertical_align: VerticalAlignValue,
 }
 
+/// 行内块盒 — inline-block 元素的原子级行内盒。
+///
+/// inline-block 元素参与行内格式化上下文，但自身作为一个不可分割的整体
+/// （不能跨行拆分），宽度/高度由其自身的块级布局计算得出。
+#[derive(Debug, Clone)]
+pub struct InlineBlockBox {
+    /// inline-block 的宽度（px），由自身块级布局计算。
+    pub width: f32,
+    /// inline-block 的高度（px），由自身块级布局计算。
+    pub height: f32,
+    /// 对应的 DOM 节点。
+    pub node_id: NodeId,
+    /// vertical-align 值。
+    pub vertical_align: VerticalAlignValue,
+}
+
+/// 行内级条目 — 行内格式化上下文中的原子单位。
+///
+/// 区分文本运行和 inline-block 盒：
+/// - `Text` — 可按单词拆分的文本运行
+/// - `InlineBlock` — 不可拆分的原子行内级盒
+#[derive(Debug, Clone)]
+pub enum InlineItem {
+    /// 可按单词拆分的文本运行。
+    Text(TextRun),
+    /// 不可拆分的 inline-block 盒（原子行内级盒）。
+    InlineBlock(InlineBlockBox),
+}
+
 /// 行盒 — 一行中的所有行内内容。
 #[derive(Debug, Clone)]
 pub struct LineBox {
@@ -148,7 +177,8 @@ impl InlineFormattingContext {
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn layout(&mut self, doc: &Document, container: NodeId, styles: &HashMap<NodeId, ComputedStyle>) {
         let runs = self.collect_inline_runs(doc, container, styles);
-        self.break_into_lines(runs);
+        let items: Vec<InlineItem> = runs.into_iter().map(InlineItem::Text).collect();
+        self.break_items_into_lines(items);
     }
 
     /// 收集容器中所有行内级内容（文本节点 + inline 元素），
@@ -211,7 +241,17 @@ impl InlineFormattingContext {
     }
 
     /// 将文本运行按可用宽度分割成行盒。
-    fn break_into_lines(&mut self, runs: Vec<TextRun>) {
+    ///
+    /// 便捷方法：将 `Vec<TextRun>` 包装为 `InlineItem::Text` 后调用 [`break_items_into_lines`]。
+    pub fn break_into_lines(&mut self, runs: Vec<TextRun>) {
+        let items: Vec<InlineItem> = runs.into_iter().map(InlineItem::Text).collect();
+        self.break_items_into_lines(items);
+    }
+
+    /// 将行内级条目按可用宽度分割成行盒。
+    ///
+    /// 支持 `InlineItem::Text`（按单词拆分行）和 `InlineItem::InlineBlock`（原子盒，不可拆分）。
+    pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
 
         let mut current_line = LineBox {
@@ -221,40 +261,76 @@ impl InlineFormattingContext {
         };
         let mut current_x = 0.0;
 
-        for run in runs {
-            // 估算文本宽度：字符数 × 字体大小的 0.6 倍（近似平均字符宽度）
-            let estimated_char_width = run.font_size * 0.6;
-            let words = self.split_into_words(&run.text);
+        for item in items {
+            match item {
+                InlineItem::Text(run) => {
+                    // 估算文本宽度：字符数 × 字体大小的 0.6 倍（近似平均字符宽度）
+                    let estimated_char_width = run.font_size * 0.6;
+                    let words = self.split_into_words(&run.text);
 
-            for word in words {
-                let word_width = word.len() as f32 * estimated_char_width;
+                    for word in words {
+                        let word_width = word.len() as f32 * estimated_char_width;
 
-                // 检查当前行是否放得下
-                if current_x + word_width > self.container_width && !current_line.runs.is_empty() {
-                    // 当前行放不下，开始新行
-                    self.lines.push(current_line);
-                    current_line = LineBox {
-                        y: 0.0,
-                        height: 0.0,
-                        runs: Vec::new(),
-                    };
-                    current_x = 0.0;
+                        // 检查当前行是否放得下
+                        if current_x + word_width > self.container_width && !current_line.runs.is_empty() {
+                            // 当前行放不下，开始新行
+                            self.lines.push(current_line);
+                            current_line = LineBox {
+                                y: 0.0,
+                                height: 0.0,
+                                runs: Vec::new(),
+                            };
+                            current_x = 0.0;
+                        }
+
+                        let fragment_height = run.line_height;
+                        current_line.runs.push(TextFragment {
+                            x: current_x,
+                            y: 0.0,
+                            width: word_width,
+                            height: fragment_height,
+                            text: word,
+                            node_id: run.node_id,
+                            font_size: run.font_size,
+                            vertical_align: run.vertical_align.clone(),
+                        });
+
+                        current_x += word_width;
+                        current_line.height = current_line.height.max(fragment_height);
+                    }
                 }
+                InlineItem::InlineBlock(box_info) => {
+                    // inline-block 是原子盒，不可拆分
+                    let box_width = box_info.width;
+                    let box_height = box_info.height;
 
-                let fragment_height = run.line_height;
-                current_line.runs.push(TextFragment {
-                    x: current_x,
-                    y: 0.0,
-                    width: word_width,
-                    height: fragment_height,
-                    text: word,
-                    node_id: run.node_id,
-                    font_size: run.font_size,
-                    vertical_align: run.vertical_align.clone(),
-                });
+                    // 检查当前行是否放得下（当行非空时）
+                    if current_x + box_width > self.container_width && !current_line.runs.is_empty() {
+                        // 当前行放不下，开始新行
+                        self.lines.push(current_line);
+                        current_line = LineBox {
+                            y: 0.0,
+                            height: 0.0,
+                            runs: Vec::new(),
+                        };
+                        current_x = 0.0;
+                    }
 
-                current_x += word_width;
-                current_line.height = current_line.height.max(fragment_height);
+                    // inline-block 片段不使用 font_size，设为 0
+                    current_line.runs.push(TextFragment {
+                        x: current_x,
+                        y: 0.0,
+                        width: box_width,
+                        height: box_height,
+                        text: String::new(),
+                        node_id: box_info.node_id,
+                        font_size: 0.0,
+                        vertical_align: box_info.vertical_align.clone(),
+                    });
+
+                    current_x += box_width;
+                    current_line.height = current_line.height.max(box_height);
+                }
             }
         }
 
@@ -2155,6 +2231,221 @@ mod tests {
         assert!(
             ctx.total_height().abs() < 0.01,
             "纯空白文本总高度应为 0，实际 {}",
+            ctx.total_height()
+        );
+    }
+
+    // ── inline-block 布局测试 ──
+
+    /// 测试文本 + inline-block + 文本在同一行排列。
+    ///
+    /// 宽容器中，文本片段、一个 50x50 的 inline-block、再接文本片段，
+    /// 三者应在同一行内水平排列，x 坐标递增。
+    #[test]
+    fn test_inline_block_on_same_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "Hello".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 50.0,
+                height: 50.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::Text(TextRun {
+                text: "World".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        // 所有内容应在同一行
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "文本 + inline-block + 文本应在同一行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        let fragments = ctx.all_fragments();
+        // "Hello " (1 word) + inline-block (1) + "World " (1) = 3 fragments
+        assert!(
+            fragments.len() >= 3,
+            "应至少有 3 个片段（Hello、inline-block、World），实际 {}",
+            fragments.len()
+        );
+
+        // 验证 x 坐标递增
+        for i in 1..fragments.len() {
+            assert!(
+                fragments[i].x >= fragments[i - 1].x + fragments[i - 1].width - 0.01,
+                "片段 {} 的 x 坐标应紧随片段 {} 之后",
+                i,
+                i - 1
+            );
+        }
+
+        // inline-block 片段（font_size=0）应有 50x50 尺寸
+        let ib_fragment = fragments.iter().find(|f| f.font_size < 0.01 && f.width > 40.0);
+        assert!(
+            ib_fragment.is_some(),
+            "应包含 inline-block 片段（font_size≈0, width≈50）"
+        );
+        let ib = ib_fragment.unwrap();
+        assert!(
+            (ib.width - 50.0).abs() < 0.01,
+            "inline-block 宽度应为 50，实际 {}",
+            ib.width
+        );
+        assert!(
+            (ib.height - 50.0).abs() < 0.01,
+            "inline-block 高度应为 50，实际 {}",
+            ib.height
+        );
+    }
+
+    /// 测试 inline-block 在当前行放不下时换到下一行。
+    ///
+    /// 窄容器（80px）中，先放一个文本片段占满大部分宽度，
+    /// 再放一个 50x30 的 inline-block，它应换到第二行。
+    #[test]
+    fn test_inline_block_wraps_to_next_line() {
+        let mut ctx = InlineFormattingContext::new(80.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "WideText".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 50.0,
+                height: 30.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        // 应产生至少 2 行（文本 + inline-block 换行）
+        assert!(
+            ctx.lines.len() >= 2,
+            "inline-block 应换到下一行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 第二行应有 inline-block 片段
+        let last_line = ctx.lines.last().unwrap();
+        let has_ib = last_line.runs.iter().any(|r| r.width > 40.0 && r.font_size < 0.01);
+        assert!(has_ib, "最后一行应包含 inline-block 片段");
+
+        // 第二行 y 坐标应大于第一行
+        assert!(
+            ctx.lines[1].y > ctx.lines[0].y,
+            "第二行 y({}) 应大于第一行 y({})",
+            ctx.lines[1].y,
+            ctx.lines[0].y
+        );
+    }
+
+    /// 测试 inline-block 高度比文本高时，行盒高度增加。
+    ///
+    /// 文本行高 20px，inline-block 高度 60px，放在同一行时，
+    /// 行盒高度应取 max(20, 60) = 60。
+    #[test]
+    fn test_inline_block_height_contributes_to_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::Text(TextRun {
+                text: "Short".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 40.0,
+                height: 60.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        assert_eq!(ctx.lines.len(), 1, "应在同一行");
+
+        // 行盒高度应取 max(20, 60) = 60
+        assert!(
+            (ctx.lines[0].height - 60.0).abs() < 0.01,
+            "行盒高度应取 max(文本行高20, inline-block高度60) = 60，实际 {}",
+            ctx.lines[0].height
+        );
+    }
+
+    /// 测试两个 inline-block 在同一行并排排列。
+    ///
+    /// 两个 50x40 的 inline-block 在 800px 宽容器中，
+    /// 应在同一行水平排列，x 坐标递增。
+    #[test]
+    fn test_multiple_inline_blocks_on_same_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let items = vec![
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 50.0,
+                height: 40.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+            InlineItem::InlineBlock(InlineBlockBox {
+                width: 50.0,
+                height: 40.0,
+                node_id: NodeId::default(),
+                vertical_align: VA::Baseline,
+            }),
+        ];
+        ctx.break_items_into_lines(items);
+
+        // 两个 inline-block 应在同一行
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "两个小 inline-block 应在同一行，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        let fragments = ctx.all_fragments();
+        assert_eq!(fragments.len(), 2, "应有 2 个片段");
+
+        // x 坐标递增
+        assert!(
+            fragments[1].x >= fragments[0].x + fragments[0].width - 0.01,
+            "第二个 inline-block (x={}) 应在第一个 (x={}, w={}) 之后",
+            fragments[1].x,
+            fragments[0].x,
+            fragments[0].width
+        );
+
+        // 行盒高度应为 40（两个 inline-block 高度相同）
+        assert!(
+            (ctx.lines[0].height - 40.0).abs() < 0.01,
+            "行盒高度应为 40，实际 {}",
+            ctx.lines[0].height
+        );
+
+        // 总高度应为 40（单行）
+        assert!(
+            (ctx.total_height() - 40.0).abs() < 0.01,
+            "总高度应为 40，实际 {}",
             ctx.total_height()
         );
     }

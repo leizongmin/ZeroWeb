@@ -638,16 +638,37 @@ impl Default for ContainerContext {
     }
 }
 
+/// 解析长度字符串为像素值。
+///
+/// 辅助函数，将 parse_length 结果提取为 f64 像素值。
+fn length_to_px(value_str: &str) -> Option<f64> {
+    use zero_css_parser::values::parse_length;
+    parse_length(value_str.trim()).map(|l| match l {
+        zero_css_parser::values::LengthValue::Px(n) => n,
+        _ => 0.0,
+    })
+}
+
+/// 根据特性名获取用于比较的容器尺寸（忽略 min-/max- 前缀）。
+fn get_axis_size(ctx: &ContainerContext, feature: &str) -> Option<f64> {
+    let base = feature.trim_start_matches("min-").trim_start_matches("max-");
+    match base {
+        "width" | "inline-size" => ctx.container_width,
+        "height" | "block-size" => ctx.container_height,
+        _ => None,
+    }
+}
+
 /// 评估 @container 条件。
 ///
 /// 基于 ContainerContext 中的容器尺寸评估容器查询条件。
+/// 支持冒号语法 `(min-width: 400px)`、比较运算符 `(width > 300px)`、
+/// 范围语法 `(200px <= width <= 500px)`。
 /// 没有容器上下文时，@container 规则不应用。
 fn evaluate_container_condition(
     container_rule: &zero_css_parser::ast::ContainerRule,
     container_ctx: Option<&ContainerContext>,
 ) -> bool {
-    use zero_css_parser::values::parse_length;
-
     let Some(ctx) = container_ctx else {
         // 无容器上下文，不应用 @container 规则
         return false;
@@ -661,37 +682,61 @@ fn evaluate_container_condition(
     };
 
     let feature = size_cond.feature.to_ascii_lowercase();
-    let value_str = size_cond.value.trim();
 
-    // 解析条件值为像素
-    let Some(cond_px) = parse_length(value_str).map(|l| match l {
-        zero_css_parser::values::LengthValue::Px(n) => n,
-        _ => 0.0,
-    }) else {
-        return false;
+    // 范围语法：200px <= width <= 500px
+    if let (Some(min_str), Some(max_str)) = (&size_cond.range_min, &size_cond.range_max) {
+        let min_px = match length_to_px(min_str) {
+            Some(v) => v,
+            None => return false,
+        };
+        let max_px = match length_to_px(max_str) {
+            Some(v) => v,
+            None => return false,
+        };
+        let actual = match get_axis_size(ctx, &feature) {
+            Some(v) => v,
+            None => return false,
+        };
+        return actual >= min_px && actual <= max_px;
+    }
+
+    // 比较运算符语法：width > 300px
+    if let Some(ref op) = size_cond.operator {
+        let cond_px = match length_to_px(&size_cond.value) {
+            Some(v) => v,
+            None => return false,
+        };
+        let actual = match get_axis_size(ctx, &feature) {
+            Some(v) => v,
+            None => return false,
+        };
+        return match op.as_str() {
+            ">" => actual > cond_px,
+            ">=" => actual >= cond_px,
+            "<" => actual < cond_px,
+            "<=" => actual <= cond_px,
+            _ => false,
+        };
+    }
+
+    // 冒号语法：min-width: 400px
+    let cond_px = match length_to_px(&size_cond.value) {
+        Some(v) => v,
+        None => return false,
     };
 
-    // 根据特性名称和比较运算符评估条件
-    let container_size = match feature.as_str() {
-        "min-width" | "min-inline-size" => {
-            // min-width: 容器宽度 >= 条件值
-            ctx.container_width.map(|w| w >= cond_px)
-        }
-        "max-width" | "max-inline-size" => {
-            // max-width: 容器宽度 <= 条件值
-            ctx.container_width.map(|w| w <= cond_px)
-        }
-        "width" | "inline-size" => {
-            // width: 容器宽度 == 条件值（精确匹配极少使用，按相等判断）
-            ctx.container_width.map(|w| (w - cond_px).abs() < f64::EPSILON)
-        }
+    // 根据特性名称评估条件
+    let result = match feature.as_str() {
+        "min-width" | "min-inline-size" => ctx.container_width.map(|w| w >= cond_px),
+        "max-width" | "max-inline-size" => ctx.container_width.map(|w| w <= cond_px),
+        "width" | "inline-size" => ctx.container_width.map(|w| (w - cond_px).abs() < f64::EPSILON),
         "min-height" | "min-block-size" => ctx.container_height.map(|h| h >= cond_px),
         "max-height" | "max-block-size" => ctx.container_height.map(|h| h <= cond_px),
         "height" | "block-size" => ctx.container_height.map(|h| (h - cond_px).abs() < f64::EPSILON),
         _ => None,
     };
 
-    container_size.unwrap_or(false)
+    result.unwrap_or(false)
 }
 
 /// 评估 @supports 条件。
@@ -2195,6 +2240,9 @@ mod tests {
             condition: ContainerCondition::Size(ContainerSizeCondition {
                 feature: "min-width".to_string(),
                 value: "400px".to_string(),
+                operator: None,
+                range_min: None,
+                range_max: None,
             }),
             rules: vec![zero_css_parser::ast::Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("p")],

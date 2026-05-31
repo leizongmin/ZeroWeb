@@ -1159,6 +1159,11 @@ impl Document {
         }
     }
 
+    /// 移除所有已注册的 MutationObserver（相当于 disconnect）。
+    pub fn clear_observers(&mut self) {
+        self.observers.clear();
+    }
+
     // ── 事件系统 ─────────────────────────────────────────────────
 
     /// 为指定节点添加事件监听器。

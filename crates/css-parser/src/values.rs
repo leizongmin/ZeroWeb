@@ -808,7 +808,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
 /// 解析 CSS 颜色值。
 ///
 /// 支持命名颜色、十六进制颜色（#RGB、#RRGGBB、#RGBA、#RRGGBBAA）、
-/// `rgb()`/`rgba()` 和 `hsl()`/`hsla()` 函数。
+/// `rgb()`/`rgba()`、`hsl()`/`hsla()` 和 `hwb()` 函数。
 pub fn parse_color(value: &str) -> Option<ColorValue> {
     let value = value.trim();
 
@@ -833,6 +833,11 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
     // hsl() / hsla() 函数
     if value.starts_with("hsl(") || value.starts_with("hsla(") {
         return parse_hsl_function(value);
+    }
+
+    // hwb() 函数
+    if value.starts_with("hwb(") {
+        return parse_hwb_function(value);
     }
 
     // 命名颜色
@@ -957,6 +962,100 @@ fn parse_hsl_function(value: &str) -> Option<ColorValue> {
     };
 
     Some(ColorValue::Hsla(h, s, l, a))
+}
+
+/// 将 HWB 颜色转换为 RGBA。
+///
+/// 参数：
+/// - `h`：色相（度），0-360
+/// - `w`：白度（0-1 比例）
+/// - `b`：黑度（0-1 比例）
+/// - `a`：透明度（0-1 比例）
+///
+/// 如果 W+B > 1，两者按比例缩小使总和为 1。
+pub fn hwb_to_rgba(h: f64, w: f64, b: f64, a: f64) -> (u8, u8, u8, u8) {
+    // 钳制 W+B 到 100%
+    let mut ww = w.clamp(0.0, 1.0);
+    let mut bb = b.clamp(0.0, 1.0);
+    if ww + bb > 1.0 {
+        let scale = 1.0 / (ww + bb);
+        ww *= scale;
+        bb *= scale;
+    }
+
+    // 先将 HWB 转为 HSL 再转为 RGB
+    // HWB → RGB 标准算法：
+    // 先算出没有白度/黑度影响的纯色 RGB，再与白/黑混合
+    let h_norm = (h % 360.0) / 60.0;
+    let sector = h_norm.floor() as i32;
+    let f = h_norm - sector as f64;
+
+    // 6 个扇区的纯色分量
+    let (r_pure, g_pure, b_pure) = match sector % 6 {
+        0 => (1.0, f, 0.0),
+        1 => (1.0 - f, 1.0, 0.0),
+        2 => (0.0, 1.0, f),
+        3 => (0.0, 1.0 - f, 1.0),
+        4 => (f, 0.0, 1.0),
+        _ => (1.0, 0.0, 1.0 - f),
+    };
+
+    // 混合：result = color * (1 - W - B) + W
+    let factor = 1.0 - ww - bb;
+    let r = (r_pure * factor + ww).clamp(0.0, 1.0);
+    let g = (g_pure * factor + ww).clamp(0.0, 1.0);
+    let bv = (b_pure * factor + ww).clamp(0.0, 1.0);
+
+    let alpha = a.clamp(0.0, 1.0);
+
+    (
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (bv * 255.0).round() as u8,
+        (alpha * 255.0).round() as u8,
+    )
+}
+
+/// 解析 hwb() 颜色函数。
+///
+/// 格式：`hwb(H W B)` 或 `hwb(H W B / A)`，其中 H 为色相（数字），
+/// W 为白度（百分比），B 为黑度（百分比），A 为可选的透明度。
+fn parse_hwb_function(value: &str) -> Option<ColorValue> {
+    let start = value.find('(')?;
+    let end = value.rfind(')')?;
+    let inner = value.get(start + 1..end)?.trim();
+
+    // 检查是否有斜杠分隔的 alpha
+    let slash_pos = inner.find('/');
+    let main_part = match slash_pos {
+        Some(pos) => inner[..pos].trim(),
+        None => inner,
+    };
+    let alpha_str = slash_pos.map(|pos| inner[pos + 1..].trim());
+
+    // 按空格分割：H W B
+    let parts: Vec<&str> = main_part.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let h: f64 = parts[0].trim_end_matches("deg").parse().ok()?;
+    let w_pct: f64 = parts[1].trim_end_matches('%').parse().ok()?;
+    let b_pct: f64 = parts[2].trim_end_matches('%').parse().ok()?;
+    let w = w_pct / 100.0;
+    let b = b_pct / 100.0;
+    let a = if let Some(a_str) = alpha_str {
+        if a_str.ends_with('%') {
+            a_str.trim_end_matches('%').parse::<f64>().ok()? / 100.0
+        } else {
+            a_str.parse::<f64>().ok()?
+        }
+    } else {
+        1.0
+    };
+
+    let (r, g, bv, av) = hwb_to_rgba(h, w, b, a);
+    Some(ColorValue::Rgba(r, g, bv, av))
 }
 
 /// 解析命名颜色。

@@ -388,6 +388,131 @@ mod tests {
         assert!(f_max.iter().all(|&v| (v - 1.0).abs() < f32::EPSILON));
     }
 
+    /// 测试 Color::from_hex 解析 #RGB, #RRGGBB, #RRGGBBAA 各种格式。
+    ///
+    /// 覆盖所有三种合法长度和多种边界情况，
+    /// 验证通道值精确匹配预期结果。
+    #[test]
+    fn test_color_from_hex_various_formats() {
+        // ── #RGB 简写 ──
+        // #fff → 白色 (255,255,255,255)
+        let c = Color::from_hex("#fff").unwrap();
+        assert_eq!(c, Color::WHITE);
+
+        // #000 → 黑色 (0,0,0,255)
+        let c = Color::from_hex("#000").unwrap();
+        assert_eq!(c, Color::BLACK);
+
+        // #f00 → 红色 (255,0,0,255)
+        let c = Color::from_hex("#f00").unwrap();
+        assert_eq!(c, Color::RED);
+
+        // #0f0 → 绿色 (0,255,0,255)
+        let c = Color::from_hex("#0f0").unwrap();
+        assert_eq!(c, Color::GREEN);
+
+        // #00f → 蓝色 (0,0,255,255)
+        let c = Color::from_hex("#00f").unwrap();
+        assert_eq!(c, Color::BLUE);
+
+        // #abc → r=0xaa, g=0xbb, b=0xcc, a=255
+        let c = Color::from_hex("#abc").unwrap();
+        assert_eq!(c.r, 0xaa);
+        assert_eq!(c.g, 0xbb);
+        assert_eq!(c.b, 0xcc);
+        assert_eq!(c.a, 255);
+
+        // ── #RRGGBB ──
+        // #ff0000 → 红色
+        let c = Color::from_hex("#ff0000").unwrap();
+        assert_eq!(c, Color::RED);
+
+        // #00ff00 → 绿色
+        let c = Color::from_hex("#00ff00").unwrap();
+        assert_eq!(c, Color::GREEN);
+
+        // #0000ff → 蓝色
+        let c = Color::from_hex("#0000ff").unwrap();
+        assert_eq!(c, Color::BLUE);
+
+        // #123456 → r=0x12, g=0x34, b=0x56
+        let c = Color::from_hex("#123456").unwrap();
+        assert_eq!(c.r, 0x12);
+        assert_eq!(c.g, 0x34);
+        assert_eq!(c.b, 0x56);
+        assert_eq!(c.a, 255);
+
+        // #ffffff → 白色
+        let c = Color::from_hex("#ffffff").unwrap();
+        assert_eq!(c, Color::WHITE);
+
+        // #000000 → 黑色
+        let c = Color::from_hex("#000000").unwrap();
+        assert_eq!(c, Color::BLACK);
+
+        // ── #RRGGBBAA ──
+        // #ff0000ff → 不透明红色
+        let c = Color::from_hex("#ff0000ff").unwrap();
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 255);
+
+        // #ff000080 → 半透明红色
+        let c = Color::from_hex("#ff000080").unwrap();
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 128);
+
+        // #00ff0000 → 完全透明绿色
+        let c = Color::from_hex("#00ff0000").unwrap();
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 255);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 0);
+
+        // #ffffffff → 不透明白色
+        let c = Color::from_hex("#ffffffff").unwrap();
+        assert_eq!(c, Color::WHITE);
+
+        // #00000000 → 完全透明黑色
+        let c = Color::from_hex("#00000000").unwrap();
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 0);
+
+        // #80604020 → 灰棕色带低透明度
+        let c = Color::from_hex("#80604020").unwrap();
+        assert_eq!(c.r, 0x80);
+        assert_eq!(c.g, 0x60);
+        assert_eq!(c.b, 0x40);
+        assert_eq!(c.a, 0x20);
+
+        // ── 大小写混合 ──
+        let c_lower = Color::from_hex("#abcdef").unwrap();
+        let c_upper = Color::from_hex("#ABCDEF").unwrap();
+        assert_eq!(c_lower, c_upper, "hex parsing should be case-insensitive");
+
+        let c3_lower = Color::from_hex("#abc").unwrap();
+        let c3_upper = Color::from_hex("#ABC").unwrap();
+        assert_eq!(c3_lower, c3_upper, "#RGB parsing should be case-insensitive");
+
+        // ── 无效格式 ──
+        assert!(Color::from_hex("").is_none(), "empty string should be None");
+        assert!(Color::from_hex("#").is_none(), "just # should be None");
+        assert!(Color::from_hex("#1").is_none(), "1-digit should be None");
+        assert!(Color::from_hex("#12").is_none(), "2-digit should be None");
+        assert!(Color::from_hex("#1234").is_none(), "4-digit should be None");
+        assert!(Color::from_hex("#12345").is_none(), "5-digit should be None");
+        assert!(Color::from_hex("#1234567").is_none(), "7-digit should be None");
+        assert!(Color::from_hex("#123456789").is_none(), "9-digit should be None");
+        assert!(Color::from_hex("ffffff").is_none(), "missing # should be None");
+        assert!(Color::from_hex("#gggggg").is_none(), "invalid hex chars should be None");
+        assert!(Color::from_hex("#xyz").is_none(), "invalid #RGB chars should be None");
+    }
+
     /// 测试两个颜色之间的线性插值。
     ///
     /// 验证 t=0 时返回起始颜色、t=1 时返回目标颜色、t=0.5 时为中间值。
