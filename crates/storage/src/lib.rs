@@ -42,8 +42,9 @@ pub enum StorageError {
 #[cfg(test)]
 mod tests {
     use crate::cache_api::{CacheRequest, CacheResponse, CacheStorage};
-    use crate::indexed_db::{IdbDatabase, IdbKey, IdbTransactionMode};
+    use crate::indexed_db::{IdbDatabase, IdbKey, IdbKeyRange, IdbTransactionMode};
     use crate::local_storage::{StorageType, WebStorage};
+    use crate::storage_manager::StorageManager;
 
     /// 测试 IndexedDB 数据库名称存储是否正确。
     #[test]
@@ -603,6 +604,130 @@ mod tests {
         cs.open("real");
         assert!(cs.delete("real"), "删除已存在的缓存应返回 true");
         assert!(!cs.delete("real"), "重复删除应返回 false");
+    }
+
+    /// 测试 WebStorage 用更短的值覆盖已有键，used_size 应减少。
+    #[test]
+    fn test_web_storage_overwrite_with_shorter_value() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("token", "abcdefghij").unwrap(); // 5 + 10 = 15
+        assert_eq!(storage.used_size(), 15);
+
+        // 用更短的值覆盖
+        let old = storage.set("token", "xy").unwrap();
+        assert_eq!(old, Some("abcdefghij".to_string()));
+        assert_eq!(storage.used_size(), 5 + 2, "覆盖为更短的值后 used_size 应减少");
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.get("token"), Some("xy"));
+    }
+
+    /// 测试 IndexedDB get_all_with_range 使用一个落在记录间隙的范围，应返回空。
+    #[test]
+    fn test_idb_get_all_with_range_gap() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        db.add("items", serde_json::json!("low"), Some(IdbKey::Number(1.0)))
+            .unwrap();
+        db.add("items", serde_json::json!("high"), Some(IdbKey::Number(100.0)))
+            .unwrap();
+
+        // 范围 [10, 20] 不包含任何记录
+        let gap_range = IdbKeyRange::bound(IdbKey::Number(10.0), IdbKey::Number(20.0), false, false);
+        let results = db.get_all_with_range("items", &gap_range).unwrap();
+        assert!(results.is_empty(), "间隙范围内应无记录");
+
+        // 全范围仍返回 2 条
+        let all = db.get_all("items").unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    /// 测试 Cache 在同一 URL 上分别缓存 GET 和 POST 请求，两者互不干扰。
+    #[test]
+    fn test_cache_same_url_different_methods_isolation() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("api");
+        let url = "https://example.com/data";
+        let get_req = CacheRequest::new(url);
+        let post_req = CacheRequest::with_method(url, "POST");
+
+        cache
+            .put(get_req.clone(), CacheResponse::ok(b"get-resp".to_vec()))
+            .unwrap();
+        cache
+            .put(post_req.clone(), CacheResponse::ok(b"post-resp".to_vec()))
+            .unwrap();
+
+        // 各自匹配到各自的响应
+        assert_eq!(cache.match_request(&get_req).unwrap().body, b"get-resp".to_vec());
+        assert_eq!(cache.match_request(&post_req).unwrap().body, b"post-resp".to_vec());
+        assert_eq!(cache.len(), 2, "不同方法的请求应视为独立条目");
+
+        // keys() 返回同一 URL 两次
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 2);
+    }
+
+    /// 测试 StorageManager 同时清除所有 localStorage 和 sessionStorage 后，所有源均为空。
+    #[test]
+    fn test_storage_manager_clear_all_both_types() {
+        let mut manager = StorageManager::new();
+        manager.local_storage("https://a.com").set("lk", "lv").unwrap();
+        manager.local_storage("https://b.com").set("lk2", "lv2").unwrap();
+        manager.session_storage("https://a.com").set("sk", "sv").unwrap();
+        manager.session_storage("https://b.com").set("sk2", "sv2").unwrap();
+
+        // 清除全部
+        manager.clear_all_local();
+        manager.clear_all_session();
+
+        assert!(manager.local_storage("https://a.com").is_empty());
+        assert!(manager.local_storage("https://b.com").is_empty());
+        assert!(manager.session_storage("https://a.com").is_empty());
+        assert!(manager.session_storage("https://b.com").is_empty());
+    }
+
+    /// 测试 IndexedDB 事务跨多个 store 提交：在一个事务中操作两个 store，提交后数据均持久化。
+    #[test]
+    fn test_idb_transaction_multi_store_commit() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("users", None, false).unwrap();
+        db.create_object_store("orders", None, false).unwrap();
+
+        let mut tx = db
+            .transaction(&["users", "orders"], IdbTransactionMode::ReadWrite)
+            .unwrap();
+        db.tx_add(
+            &tx,
+            "users",
+            serde_json::json!({"name": "Alice"}),
+            Some(IdbKey::String("u1".into())),
+        )
+        .unwrap();
+        db.tx_add(
+            &tx,
+            "orders",
+            serde_json::json!({"item": "book"}),
+            Some(IdbKey::String("o1".into())),
+        )
+        .unwrap();
+
+        // 提交前两个 store 均为空
+        assert_eq!(db.count("users").unwrap(), 0);
+        assert_eq!(db.count("orders").unwrap(), 0);
+
+        db.commit_tx(&mut tx).unwrap();
+
+        // 提交后两个 store 各有 1 条记录
+        assert_eq!(db.count("users").unwrap(), 1);
+        assert_eq!(db.count("orders").unwrap(), 1);
+        assert_eq!(
+            db.get("users", &IdbKey::String("u1".into())).unwrap().value["name"],
+            "Alice"
+        );
+        assert_eq!(
+            db.get("orders", &IdbKey::String("o1".into())).unwrap().value["item"],
+            "book"
+        );
     }
 
     /// 测试 IndexedDB 在自增 store 上 put() 不提供主键时自动生成键。

@@ -1985,6 +1985,7 @@ impl PropertyRegistry {
             "tab-size" => Some(TabSize(TabSizeValue::Number(8))),
 
             // Columns
+            "columns" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-count" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-width" => Some(ColumnWidth(ColumnWidthComputedValue::Auto)),
 
@@ -2198,6 +2199,7 @@ impl PropertyRegistry {
             "direction",
             "unicode-bidi",
             "tab-size",
+            "columns",
             "column-count",
             "column-width",
             "object-fit",
@@ -3939,6 +3941,59 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Columns 简写属性 ──
+        // columns: <column-width> <column-count>
+        // 单值时按类型判断：纯数字 → column-count，带单位 → column-width
+        "columns" => {
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.len() == 2 {
+                // 尝试两种顺序
+                if let Some(v) = values::parse_column_count(parts[0]) {
+                    style.column_count = match v {
+                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
+                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
+                    };
+                    if let Some(w) = values::parse_column_width(parts[1]) {
+                        style.column_width = match w {
+                            ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
+                            ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
+                        };
+                        return true;
+                    }
+                }
+                if let Some(v) = values::parse_column_width(parts[0]) {
+                    style.column_width = match v {
+                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
+                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
+                    };
+                    if let Some(w) = values::parse_column_count(parts[1]) {
+                        style.column_count = match w {
+                            ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
+                            ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
+                        };
+                        return true;
+                    }
+                }
+            } else if parts.len() == 1 {
+                // 单值：尝试 column-width，再尝试 column-count
+                if let Some(v) = values::parse_column_width(parts[0]) {
+                    style.column_width = match v {
+                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
+                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
+                    };
+                    style.column_count = ColumnCountComputedValue::Auto;
+                    return true;
+                }
+                if let Some(v) = values::parse_column_count(parts[0]) {
+                    style.column_count = match v {
+                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
+                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
+                    };
+                    style.column_width = ColumnWidthComputedValue::Auto;
+                    return true;
+                }
+            }
+        }
         // ── ColumnCount 属性 ──
         "column-count" => {
             if let Some(v) = values::parse_column_count(value) {
@@ -4869,6 +4924,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         // Columns
+        "columns" => {
+            style.column_count = default_style.column_count;
+            style.column_width = default_style.column_width;
+            true
+        }
         "column-count" => {
             style.column_count = default_style.column_count;
             true

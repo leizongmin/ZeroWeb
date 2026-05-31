@@ -5035,3 +5035,183 @@ fn test_parse_length_vw_vh_and_edge_cases() {
     let result = parse_length("0.001em");
     assert_eq!(result, Some(LengthValue::Em(0.001)));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 30. 未测试属性值解析边界测试 — touch-action / user-select / will-change /
+//     pointer-events / counter-increment
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_touch_action 所有关键字、大小写不敏感、双向 pan 组合及无效输入。
+/// 此前 parse_touch_action 无任何测试。
+fn test_parse_touch_action_edge_cases() {
+    use crate::values::{TouchActionValue, parse_touch_action};
+    // 所有关键字
+    assert_eq!(parse_touch_action("auto"), Some(TouchActionValue::Auto));
+    assert_eq!(parse_touch_action("none"), Some(TouchActionValue::None));
+    assert_eq!(parse_touch_action("pan-x"), Some(TouchActionValue::PanX));
+    assert_eq!(parse_touch_action("pan-y"), Some(TouchActionValue::PanY));
+    assert_eq!(parse_touch_action("manipulation"), Some(TouchActionValue::Manipulation));
+    // pan-x pan-y 和 pan-y pan-x 都应解析为 PanXPanY
+    assert_eq!(parse_touch_action("pan-x pan-y"), Some(TouchActionValue::PanXPanY));
+    assert_eq!(parse_touch_action("pan-y pan-x"), Some(TouchActionValue::PanXPanY));
+    // 大小写不敏感
+    assert_eq!(parse_touch_action("PAN-X"), Some(TouchActionValue::PanX));
+    assert_eq!(
+        parse_touch_action("  Manipulation  "),
+        Some(TouchActionValue::Manipulation)
+    );
+    // 无效输入
+    assert_eq!(parse_touch_action("invalid"), None);
+    assert_eq!(parse_touch_action(""), None);
+    // 单独 pan 不是合法值
+    assert_eq!(parse_touch_action("pan"), None);
+}
+
+#[test]
+/// 测试 parse_user_select 所有关键字、大小写不敏感及无效输入。
+/// 此前 parse_user_select 无任何测试。
+fn test_parse_user_select_edge_cases() {
+    use crate::values::{UserSelectValue, parse_user_select};
+    assert_eq!(parse_user_select("auto"), Some(UserSelectValue::Auto));
+    assert_eq!(parse_user_select("text"), Some(UserSelectValue::Text));
+    assert_eq!(parse_user_select("none"), Some(UserSelectValue::None));
+    assert_eq!(parse_user_select("all"), Some(UserSelectValue::All));
+    assert_eq!(parse_user_select("contain"), Some(UserSelectValue::Contain));
+    // 大小写不敏感
+    assert_eq!(parse_user_select("TEXT"), Some(UserSelectValue::Text));
+    assert_eq!(parse_user_select("  All  "), Some(UserSelectValue::All));
+    assert_eq!(parse_user_select("CONTAIN"), Some(UserSelectValue::Contain));
+    // 无效输入
+    assert_eq!(parse_user_select("inherit"), None);
+    assert_eq!(parse_user_select(""), None);
+    assert_eq!(parse_user_select("element"), None);
+}
+
+#[test]
+/// 测试 parse_will_change 关键字、自定义属性名、大小写不敏感、空字符串及含特殊字符的无效输入。
+/// 此前 parse_will_change 无任何测试。
+fn test_parse_will_change_edge_cases() {
+    use crate::values::{WillChangeValue, parse_will_change};
+    // 关键字
+    assert_eq!(parse_will_change("auto"), Some(WillChangeValue::Auto));
+    assert_eq!(
+        parse_will_change("scroll-position"),
+        Some(WillChangeValue::ScrollPosition)
+    );
+    assert_eq!(parse_will_change("contents"), Some(WillChangeValue::Contents));
+    // 自定义属性名
+    assert!(matches!(parse_will_change("transform"), Some(WillChangeValue::Custom(s)) if s == "transform"));
+    assert!(matches!(parse_will_change("opacity"), Some(WillChangeValue::Custom(s)) if s == "opacity"));
+    assert!(matches!(parse_will_change("top"), Some(WillChangeValue::Custom(s)) if s == "top"));
+    // 大小写不敏感
+    assert!(matches!(parse_will_change("TRANSFORM"), Some(WillChangeValue::Custom(s)) if s == "transform"));
+    assert!(matches!(
+        parse_will_change("  Scroll-Position  "),
+        Some(WillChangeValue::ScrollPosition)
+    ));
+    // 无效输入
+    assert_eq!(parse_will_change(""), None);
+    assert_eq!(parse_will_change("  "), None);
+    // 含特殊字符的自定义值应返回 None
+    assert_eq!(parse_will_change("transform, opacity"), None);
+    assert_eq!(parse_will_change("top!"), None);
+}
+
+#[test]
+/// 测试 parse_pointer_events 所有关键字（含 SVG 特有值）、大小写不敏感及无效输入。
+/// 此前 parse_pointer_events 无任何测试。
+fn test_parse_pointer_events_edge_cases() {
+    use crate::values::{PointerEventsValue, parse_pointer_events};
+    // 通用关键字
+    assert_eq!(parse_pointer_events("auto"), Some(PointerEventsValue::Auto));
+    assert_eq!(parse_pointer_events("none"), Some(PointerEventsValue::None));
+    // SVG 关键字
+    assert_eq!(
+        parse_pointer_events("visiblePainted"),
+        Some(PointerEventsValue::VisiblePainted)
+    );
+    assert_eq!(
+        parse_pointer_events("visibleFill"),
+        Some(PointerEventsValue::VisibleFill)
+    );
+    assert_eq!(
+        parse_pointer_events("visibleStroke"),
+        Some(PointerEventsValue::VisibleStroke)
+    );
+    assert_eq!(parse_pointer_events("visible"), Some(PointerEventsValue::Visible));
+    assert_eq!(parse_pointer_events("painted"), Some(PointerEventsValue::Painted));
+    assert_eq!(parse_pointer_events("fill"), Some(PointerEventsValue::Fill));
+    assert_eq!(parse_pointer_events("stroke"), Some(PointerEventsValue::Stroke));
+    assert_eq!(parse_pointer_events("all"), Some(PointerEventsValue::All));
+    assert_eq!(parse_pointer_events("inherit"), Some(PointerEventsValue::Inherit));
+    // 大小写不敏感
+    assert_eq!(
+        parse_pointer_events("VISIBLEPAINTED"),
+        Some(PointerEventsValue::VisiblePainted)
+    );
+    assert_eq!(parse_pointer_events("  none  "), Some(PointerEventsValue::None));
+    // 无效输入
+    assert_eq!(parse_pointer_events("invalid"), None);
+    assert_eq!(parse_pointer_events(""), None);
+    assert_eq!(parse_pointer_events("click"), None);
+}
+
+#[test]
+/// 测试 parse_counter_action 和 parse_counter_list 的各种边界情况：
+/// 单个计数器（带值/不带值）、多个计数器、特殊值 "none"、空输入。
+/// 此前 parse_counter_action 和 parse_counter_list 无任何测试。
+fn test_parse_counter_action_and_list_edge_cases() {
+    use crate::values::{CounterActionValue, parse_counter_action, parse_counter_list};
+    // parse_counter_action：单个计数器不带值
+    let result = parse_counter_action("section");
+    assert_eq!(
+        result,
+        Some(CounterActionValue {
+            name: "section".to_string(),
+            value: None,
+        })
+    );
+    // parse_counter_action：带整数值
+    let result = parse_counter_action("section 5");
+    assert_eq!(
+        result,
+        Some(CounterActionValue {
+            name: "section".to_string(),
+            value: Some(5),
+        })
+    );
+    // parse_counter_action：负整数值
+    let result = parse_counter_action("chapter -1");
+    assert_eq!(
+        result,
+        Some(CounterActionValue {
+            name: "chapter".to_string(),
+            value: Some(-1),
+        })
+    );
+    // parse_counter_action："none" 应返回 None
+    assert_eq!(parse_counter_action("none"), None);
+    // parse_counter_action：空输入
+    assert_eq!(parse_counter_action(""), None);
+    // parse_counter_action：非整数值应返回 None
+    assert_eq!(parse_counter_action("counter abc"), None);
+
+    // parse_counter_list："none" 返回空列表
+    let result = parse_counter_list("none");
+    assert_eq!(result, Some(vec![]));
+    // parse_counter_list：多个计数器
+    let result = parse_counter_list("section 1 subsection");
+    assert!(result.is_some());
+    let list = result.unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].name, "section");
+    assert_eq!(list[0].value, Some(1));
+    assert_eq!(list[1].name, "subsection");
+    assert_eq!(list[1].value, None);
+    // parse_counter_list：空输入返回 None
+    assert_eq!(parse_counter_list(""), None);
+    assert_eq!(parse_counter_list("   "), None);
+    // parse_counter_list：中间出现 "none" 应返回 None
+    assert_eq!(parse_counter_list("section none"), None);
+}

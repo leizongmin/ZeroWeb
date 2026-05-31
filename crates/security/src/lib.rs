@@ -975,6 +975,184 @@ mod tests {
         assert_eq!(credless, CoepResult::Allowed, "CORS 通过时 Credentialless 也应允许");
     }
 
+    /// 测试 CORS check_cors 对 HTTPS 非默认端口（如 8443）的源格式化一致性。
+    ///
+    /// 当 Origin 使用 https://example.com:8443 时，check_cors 和
+    /// generate_preflight_response 应正确格式化源字符串（保留端口号），
+    /// 而非错误地省略为 "https://example.com"。
+    #[test]
+    fn test_cors_https_non_default_port_formatting() {
+        let origin = Origin::parse("https://example.com:8443").unwrap();
+        assert_eq!(origin.port, 8443);
+
+        // check_cors 使用 "https://example.com:8443" 格式匹配
+        let policy = CorsPolicy {
+            allow_origins: vec!["https://example.com:8443".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed, "HTTPS 非默认端口 8443 应在 check_cors 中匹配");
+
+        // generate_preflight_response 也应格式化为 "https://example.com:8443"
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert_eq!(
+            headers.allow_origin,
+            Some("https://example.com:8443".to_string()),
+            "预检响应应保留 HTTPS 非默认端口号"
+        );
+
+        // HTTPS 默认端口 443 不应匹配 8443
+        let origin_443 = Origin::parse("https://example.com").unwrap();
+        let result_443 = check_cors(&policy, &origin_443, "GET", &[]);
+        assert!(!result_443.allowed, "HTTPS 默认端口 443 不应匹配 8443");
+    }
+
+    /// 测试 CSP style-src 同时包含 'unsafe-inline' 和 'nonce-xxx' 时，
+    /// 'unsafe-inline' 优先——内联样式应被允许，无需匹配 nonce。
+    ///
+    /// 根据 CSP 规范，当源列表中存在 'unsafe-inline' 时，内联内容直接允许。
+    /// 这与 script-src 的行为一致，此处验证 style-src 的同等行为。
+    #[test]
+    fn test_csp_style_unsafe_inline_overrides_nonce() {
+        let csp = ContentSecurityPolicy::parse("style-src 'unsafe-inline' 'nonce-abc123'");
+        // 'unsafe-inline' 存在 → 内联样式直接允许，无需 nonce
+        assert!(
+            csp.is_inline_style_allowed(None, None),
+            "'unsafe-inline' 应允许无 nonce 的内联样式"
+        );
+        // 即使 nonce 不匹配也应允许（unsafe-inline 优先）
+        assert!(
+            csp.is_inline_style_allowed(Some("wrong-nonce"), None),
+            "'unsafe-inline' 应允许错误 nonce 的内联样式"
+        );
+        // 正确 nonce 也应允许
+        assert!(
+            csp.is_inline_style_allowed(Some("abc123"), None),
+            "正确 nonce + 'unsafe-inline' 应允许内联样式"
+        );
+
+        // 对比：仅有 nonce 无 'unsafe-inline' → 需要 nonce 匹配
+        let csp_nonce_only = ContentSecurityPolicy::parse("style-src 'nonce-abc123'");
+        assert!(
+            !csp_nonce_only.is_inline_style_allowed(None, None),
+            "仅有 nonce 时无 nonce 的内联样式应被阻止"
+        );
+        assert!(
+            csp_nonce_only.is_inline_style_allowed(Some("abc123"), None),
+            "仅有 nonce 时正确 nonce 应允许内联样式"
+        );
+    }
+
+    /// 测试 iframe sandbox 属性值包含重复标志时的行为。
+    ///
+    /// HTML sandbox 属性中重复的标志（如 "allow-scripts allow-scripts"）
+    /// 不应导致 flags 列表中出现重复项或功能异常。
+    /// 当前实现使用 Vec 存储，重复标志可能导致多次 contains 为 true，
+    /// 但功能上不应有副作用。此测试记录该行为。
+    #[test]
+    fn test_sandbox_duplicate_flags_handling() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-scripts allow-forms allow-forms allow-same-origin");
+
+        // 重复标志不应阻止功能
+        assert!(sandbox.allows_scripts(), "重复 allow-scripts 不应阻止脚本");
+        assert!(sandbox.allows_forms(), "重复 allow-forms 不应阻止表单");
+        assert!(sandbox.allows_same_origin(), "allow-same-origin 应允许同源");
+
+        // effective_origin 应为 Normal（因为 allow-same-origin 存在）
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(
+            sandbox.effective_origin(&origin),
+            SandboxOrigin::Normal(origin.clone()),
+            "有 allow-same-origin 时应保留原始源"
+        );
+
+        // 对比：严格沙箱
+        let strict = IframeSandbox::strict();
+        assert!(!strict.allows_scripts());
+        assert!(!strict.allows_forms());
+    }
+
+    /// 测试 CORS generate_preflight_response 对所有预检响应头字段
+    /// 在具体源 + 凭证 + 自定义头 + max-age 场景下的完整输出。
+    ///
+    /// 验证 PreflightResponseHeaders 的每个字段在完整配置下的正确性，
+    /// 包括 allow_origin 为具体源（非通配符）、allow_credentials 为 "true"、
+    /// allow_headers 包含多个值、max_age 正确输出。
+    #[test]
+    fn test_preflight_full_response_headers() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["https://example.com".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string(), "PUT".to_string()],
+            allow_headers: vec!["X-Custom".to_string(), "Authorization".to_string()],
+            allow_credentials: true,
+            max_age: Some(7200),
+        };
+        let origin = Origin::parse("https://example.com").unwrap();
+        let headers = generate_preflight_response(
+            &policy,
+            &origin,
+            "POST",
+            &["X-Custom".to_string(), "Authorization".to_string()],
+        );
+
+        // 所有字段均应有值
+        assert_eq!(
+            headers.allow_origin,
+            Some("https://example.com".to_string()),
+            "应为具体源（非通配符）"
+        );
+        let methods = headers.allow_methods.expect("allow_methods 应存在");
+        assert!(methods.contains("GET"));
+        assert!(methods.contains("POST"));
+        assert!(methods.contains("PUT"));
+
+        let hdrs = headers.allow_headers.expect("allow_headers 应存在");
+        assert!(hdrs.contains("X-Custom"));
+        assert!(hdrs.contains("Authorization"));
+
+        assert_eq!(headers.max_age, Some("7200".to_string()));
+        assert_eq!(headers.allow_credentials, Some("true".to_string()));
+    }
+
+    /// 测试混合内容检测对仅含 scheme 的最小 HTTP URL（"http://"）的处理。
+    ///
+    /// "http://" 无主机名和路径，is_mixed_content 仅检查 starts_with("http://")，
+    /// 因此应返回 true。upgrade_to_https 应将其升级为 "https://"。
+    /// 此测试记录对边界 URL 的行为，确保不会 panic。
+    #[test]
+    fn test_mixed_content_minimal_http_url() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // 仅 "http://" 无主机名 → starts_with("http://") 为 true
+        assert!(
+            is_mixed_content(&page, "http://"),
+            "仅 scheme 的 HTTP URL 应被检测为混合内容"
+        );
+
+        // upgrade_to_https 应能处理
+        let upgraded = upgrade_to_https("http://");
+        assert_eq!(upgraded, Some("https://".to_string()), "仅 scheme 的 HTTP URL 应能升级");
+
+        // 升级后不再是混合内容
+        if let Some(upgraded_url) = upgraded {
+            assert!(
+                !is_mixed_content(&page, &upgraded_url),
+                "升级为 https:// 后不再是混合内容"
+            );
+        }
+
+        // check_mixed_content 对未知资源类型也应返回 Blockable
+        let status = check_mixed_content(&page, "http://", "script");
+        assert_eq!(
+            status,
+            MixedContentStatus::Blockable,
+            "仅 scheme 的混合内容对 script 应为 Blockable"
+        );
+    }
+
     /// 测试混合内容检测对未知/非标准资源类型的分类为 Blockable。
     ///
     /// classify_resource_type 仅将 img、audio、video、media 列为
