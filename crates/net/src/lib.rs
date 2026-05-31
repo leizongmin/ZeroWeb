@@ -20,6 +20,77 @@ pub use url_parser::*;
 
 use thiserror::Error;
 
+/// WebSocket 连接状态。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WebSocketState {
+    /// 正在连接。
+    Connecting,
+    /// 已连接。
+    Open,
+    /// 正在关闭。
+    Closing,
+    /// 已关闭。
+    Closed,
+}
+
+/// WebSocket 连接（基础桩实现）。
+///
+/// 当前仅提供状态管理和消息队列，不含实际网络传输。
+pub struct WebSocket {
+    url: String,
+    state: WebSocketState,
+    messages: Vec<String>,
+}
+
+impl WebSocket {
+    /// 创建新的 WebSocket 实例，初始状态为 Connecting。
+    pub fn new(url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            state: WebSocketState::Connecting,
+            messages: Vec::new(),
+        }
+    }
+
+    /// 建立连接，将状态变为 Open。
+    pub fn connect(&mut self) {
+        self.state = WebSocketState::Open;
+    }
+
+    /// 发送消息。仅在 Open 状态下成功，否则返回错误。
+    pub fn send(&mut self, message: &str) -> Result<(), String> {
+        if self.state != WebSocketState::Open {
+            return Err("WebSocket is not open".to_string());
+        }
+        self.messages.push(message.to_string());
+        Ok(())
+    }
+
+    /// 接收下一条消息，若无消息则返回 None。
+    pub fn receive(&mut self) -> Option<String> {
+        if self.messages.is_empty() {
+            None
+        } else {
+            Some(self.messages.remove(0))
+        }
+    }
+
+    /// 关闭连接，将状态变为 Closed。
+    pub fn close(&mut self) {
+        self.state = WebSocketState::Closed;
+    }
+
+    /// 返回当前连接状态。
+    pub fn state(&self) -> &WebSocketState {
+        &self.state
+    }
+
+    /// 返回连接的 URL。
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
 /// 网络错误类型。
 #[derive(Error, Debug)]
 pub enum NetError {
@@ -112,5 +183,47 @@ mod tests {
         assert_eq!(resp.status_code, 404);
         assert_eq!(reason, "Not Found");
         assert!(resp.is_client_error());
+    }
+
+    /// 测试 WebSocket 初始状态为 Connecting，URL 正确。
+    #[test]
+    fn test_websocket_new_state() {
+        let ws = super::WebSocket::new("ws://example.com/socket");
+        assert_eq!(ws.state(), &super::WebSocketState::Connecting);
+        assert_eq!(ws.url(), "ws://example.com/socket");
+    }
+
+    /// 测试 WebSocket connect() 将状态变为 Open。
+    #[test]
+    fn test_websocket_connect_open() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        ws.connect();
+        assert_eq!(ws.state(), &super::WebSocketState::Open);
+    }
+
+    /// 测试 WebSocket 发送和接收消息。
+    #[test]
+    fn test_websocket_send_receive() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        ws.connect();
+        ws.send("hello").unwrap();
+        assert_eq!(ws.receive(), Some("hello".to_string()));
+    }
+
+    /// 测试 WebSocket 在 Closed 状态下发送返回错误。
+    #[test]
+    fn test_websocket_send_when_closed() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        ws.close();
+        let result = ws.send("hello");
+        assert!(result.is_err());
+    }
+
+    /// 测试 WebSocket close() 将状态变为 Closed。
+    #[test]
+    fn test_websocket_close_state() {
+        let mut ws = super::WebSocket::new("ws://example.com/socket");
+        ws.close();
+        assert_eq!(ws.state(), &super::WebSocketState::Closed);
     }
 }

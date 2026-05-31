@@ -163,6 +163,17 @@ pub enum WordBreakValue {
     BreakWord,
 }
 
+/// CSS writing-mode 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WritingModeValue {
+    /// horizontal-tb。
+    HorizontalTb,
+    /// vertical-rl。
+    VerticalRl,
+    /// vertical-lr。
+    VerticalLr,
+}
+
 /// CSS flex-basis 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlexBasisValue {
@@ -421,6 +432,8 @@ pub enum PropertyValue {
     VerticalAlign(VerticalAlignValue),
     /// word-break 值。
     WordBreak(WordBreakValue),
+    /// writing-mode 值。
+    WritingMode(WritingModeValue),
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
@@ -441,6 +454,8 @@ pub struct ComputedStyle {
     pub list_style_type: zero_css_parser::values::ListStyleTypeValue,
     /// list-style-position 属性。
     pub list_style_position: zero_css_parser::values::ListStylePositionValue,
+    /// writing-mode 属性。
+    pub writing_mode: WritingModeValue,
     /// width 属性。
     pub width: LengthValue,
     /// height 属性。
@@ -714,6 +729,7 @@ impl Default for ComputedStyle {
             clear: zero_css_parser::values::ClearValue::None,
             list_style_type: zero_css_parser::values::ListStyleTypeValue::Disc,
             list_style_position: zero_css_parser::values::ListStylePositionValue::Outside,
+            writing_mode: WritingModeValue::HorizontalTb,
             width: auto_length.clone(),
             height: auto_length.clone(),
             min_width: LengthValue::Px(0.0),
@@ -935,6 +951,9 @@ impl PropertyRegistry {
             "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
             "word-break" => Some(WordBreak(WordBreakValue::Normal)),
 
+            // Writing Mode
+            "writing-mode" => Some(WritingMode(WritingModeValue::HorizontalTb)),
+
             // Flexbox
             "flex-direction" => Some(FlexDirection(FlexDirectionValue::Row)),
             "flex-wrap" => Some(FlexWrap(FlexWrapValue::Nowrap)),
@@ -1145,6 +1164,7 @@ impl PropertyRegistry {
             "scroll-padding-left",
             "container-type",
             "container-name",
+            "writing-mode",
         ]
     }
 }
@@ -1370,6 +1390,16 @@ pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
         "break-all" => Some(WordBreakValue::BreakAll),
         "keep-all" => Some(WordBreakValue::KeepAll),
         "break-word" => Some(WordBreakValue::BreakWord),
+        _ => None,
+    }
+}
+
+/// 解析 CSS writing-mode 值。
+pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
+    match value.trim() {
+        "horizontal-tb" => Some(WritingModeValue::HorizontalTb),
+        "vertical-rl" => Some(WritingModeValue::VerticalRl),
+        "vertical-lr" => Some(WritingModeValue::VerticalLr),
         _ => None,
     }
 }
@@ -1898,6 +1928,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "word-break" => {
             if let Some(v) = parse_word_break(value) {
                 style.word_break = v;
+                return true;
+            }
+        }
+        "writing-mode" => {
+            if let Some(v) = parse_writing_mode(value) {
+                style.writing_mode = v;
                 return true;
             }
         }
@@ -2947,6 +2983,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "container-name" => {
             style.container_name = default_style.container_name;
+            true
+        }
+        // Writing Mode
+        "writing-mode" => {
+            style.writing_mode = default_style.writing_mode;
             true
         }
         _ => false,
@@ -5305,5 +5346,68 @@ mod tests {
         style.word_break = WordBreakValue::BreakAll;
         assert!(apply_initial_value(&mut style, "word-break"));
         assert_eq!(style.word_break, WordBreakValue::Normal);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // writing-mode 属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试 apply_property_value 对 writing-mode: vertical-rl
+    fn test_apply_writing_mode_vertical_rl() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
+        assert_eq!(style.writing_mode, WritingModeValue::VerticalRl);
+
+        // 无效值返回 false
+        assert!(!apply_property_value(&mut style, "writing-mode", "invalid"));
+        assert_eq!(style.writing_mode, WritingModeValue::VerticalRl);
+    }
+
+    #[test]
+    /// 测试 apply_property_value 对 writing-mode: vertical-lr
+    fn test_apply_writing_mode_vertical_lr() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "writing-mode", "vertical-lr"));
+        assert_eq!(style.writing_mode, WritingModeValue::VerticalLr);
+    }
+
+    #[test]
+    /// 测试 writing-mode 默认值为 horizontal-tb
+    fn test_writing_mode_default_is_horizontal_tb() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.writing_mode, WritingModeValue::HorizontalTb);
+
+        // 验证注册表初始值
+        assert!(PropertyRegistry::initial_value("writing-mode").is_some());
+        assert!(!PropertyRegistry::is_inherited("writing-mode"));
+
+        // 验证 known_properties 包含
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"writing-mode"));
+
+        // 验证 apply_initial_value 重置
+        let mut style = ComputedStyle::default();
+        style.writing_mode = WritingModeValue::VerticalRl;
+        assert!(apply_initial_value(&mut style, "writing-mode"));
+        assert_eq!(style.writing_mode, WritingModeValue::HorizontalTb);
+    }
+
+    #[test]
+    /// 测试 writing-mode 不继承：父元素 vertical-rl，子元素不继承
+    fn test_writing_mode_not_inherited() {
+        // writing-mode 不是继承属性
+        assert!(!PropertyRegistry::is_inherited("writing-mode"));
+
+        let mut parent = ComputedStyle::default();
+        parent.writing_mode = WritingModeValue::VerticalRl;
+
+        let mut child = ComputedStyle::default();
+        assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
+
+        // inherit_property 对 writing-mode 应返回 false
+        assert!(!inherit_property(&parent, &mut child, "writing-mode"));
+        // 子元素值不变
+        assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
     }
 }
