@@ -2730,3 +2730,740 @@ fn test_query_selector_shadow_not_found() {
     let results = doc.query_selector_all_shadow(shadow, ".missing");
     assert!(results.is_empty());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 19. Range API advanced tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Helper: get the body node from a parsed HTML document.
+fn body_of(doc: &Document) -> NodeId {
+    let html = doc.first_child(doc.root()).unwrap();
+    doc.last_child(html).unwrap()
+}
+
+/// Range clone_contents deep clones nested children.
+#[test]
+fn test_range_clone_contents_deep_clone() {
+    let mut doc = parse_html("<div><p><span>deep</span></p><p>second</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    let mut range = Range::new(div, div);
+    range.select_node_contents(&doc, div).unwrap();
+    let fragment = range.clone_contents(&mut doc).unwrap();
+
+    // Cloned fragment should have the same structure
+    let cloned_children = doc.child_nodes(fragment);
+    assert_eq!(cloned_children.len(), 2, "cloned fragment should have 2 children");
+    // Deep clone: first child should have its own children
+    let cloned_p = cloned_children[0];
+    assert!(doc.has_child_nodes(cloned_p), "cloned <p> should have children");
+    // Original unchanged
+    assert_eq!(doc.child_nodes(div).len(), 2);
+}
+
+/// Range insert_node at different offsets.
+#[test]
+fn test_range_insert_node_at_offset() {
+    let mut doc = parse_html("<div><p>A</p><p>C</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    // Insert between the two <p> children (offset=1)
+    let new_p = doc.create_element("p");
+    doc.set_text_content(new_p, "B");
+
+    let mut range = Range::at(div, 1);
+    range.insert_node(&mut doc, new_p).unwrap();
+
+    let children = doc.child_nodes(div);
+    assert_eq!(children.len(), 3);
+    let text_b = doc.text_content(children[1]);
+    assert_eq!(text_b, Some("B".to_string()));
+}
+
+/// Range delete_contents removes correct nodes within a subrange.
+#[test]
+fn test_range_delete_contents_subrange() {
+    let mut doc = parse_html("<div><p>A</p><p>B</p><p>C</p><p>D</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    // Delete children at offset 1..3 (the middle two <p> elements)
+    let mut range = Range::at(div, 1);
+    range.set_end(div, 3).unwrap();
+    range.delete_contents(&mut doc).unwrap();
+
+    let children = doc.child_nodes(div);
+    assert_eq!(children.len(), 2, "should have 2 remaining children");
+    assert_eq!(doc.text_content(children[0]), Some("A".to_string()));
+    assert_eq!(doc.text_content(children[1]), Some("D".to_string()));
+}
+
+/// Range extract_contents moves nodes to fragment.
+#[test]
+fn test_range_extract_contents_partial() {
+    let mut doc = parse_html("<div><p>1</p><p>2</p><p>3</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    // Extract first two children
+    let mut range = Range::at(div, 0);
+    range.set_end(div, 2).unwrap();
+    let fragment = range.extract_contents(&mut doc).unwrap();
+
+    assert_eq!(doc.child_nodes(fragment).len(), 2, "fragment should have 2 nodes");
+    assert_eq!(doc.child_nodes(div).len(), 1, "div should have 1 remaining child");
+    assert_eq!(doc.text_content(doc.first_child(div).unwrap()), Some("3".to_string()));
+}
+
+/// Range select_node_contents on element with multiple children.
+#[test]
+fn test_range_select_node_contents_many_children() {
+    let doc = parse_html("<div><a>1</a><b>2</b><i>3</i><u>4</u></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    let mut range = Range::new(div, div);
+    range.select_node_contents(&doc, div).unwrap();
+
+    assert_eq!(range.start_container(), div);
+    assert_eq!(range.start_offset(), 0);
+    assert_eq!(range.end_container(), div);
+    assert_eq!(range.end_offset(), 4, "should cover all 4 children");
+}
+
+/// Range collapse to start vs end produces correct offsets.
+#[test]
+fn test_range_collapse_to_start_vs_end() {
+    let doc = parse_html("<div><p>A</p><p>B</p></div>");
+    let body = body_of(&doc);
+    let div = doc.first_child(body).unwrap();
+
+    let mut range = Range::new(div, div);
+    range.set_start(div, 0).unwrap();
+    range.set_end(div, 2).unwrap();
+    assert!(!range.collapsed());
+
+    // Collapse to start
+    let mut r_start = range.clone();
+    r_start.collapse(true);
+    assert!(r_start.collapsed());
+    assert_eq!(r_start.start_offset(), 0);
+
+    // Collapse to end
+    let mut r_end = range.clone();
+    r_end.collapse(false);
+    assert!(r_end.collapsed());
+    assert_eq!(r_end.start_offset(), 2);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 20. Serialization advanced tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Serialize a simple full HTML document.
+#[test]
+fn test_serialize_full_document() {
+    let doc = parse_html("<!DOCTYPE html><html><body><h1>Title</h1></body></html>");
+    let html = doc.outer_html(doc.root());
+    assert!(html.contains("<!DOCTYPE html>"), "should contain DOCTYPE");
+    assert!(html.contains("<h1>"), "should contain h1 tag");
+}
+
+/// Serialize document with multiple attributes.
+#[test]
+fn test_serialize_element_with_multiple_attributes() {
+    let mut doc = Document::new();
+    let input = doc.create_element("input");
+    doc.set_attribute(input, "type", "text");
+    doc.set_attribute(input, "name", "email");
+    doc.set_attribute(input, "placeholder", "Enter email");
+
+    let html = doc.outer_html(input);
+    assert!(html.contains("type=\"text\""));
+    assert!(html.contains("name=\"email\""));
+    assert!(html.contains("placeholder=\"Enter email\""));
+}
+
+/// Serialize document mixing text and element child nodes.
+#[test]
+fn test_serialize_mixed_text_and_elements() {
+    let mut doc = Document::new();
+    let p = doc.create_element("p");
+    let t1 = doc.create_text_node("Hello ");
+    let b = doc.create_element("b");
+    let t2 = doc.create_text_node("World");
+    let t3 = doc.create_text_node("!");
+    doc.append_child(p, t1).unwrap();
+    doc.append_child(p, b).unwrap();
+    doc.append_child(b, t2).unwrap();
+    doc.append_child(p, t3).unwrap();
+
+    let html = doc.outer_html(p);
+    assert_eq!(html, "<p>Hello <b>World</b>!</p>");
+}
+
+/// Serialize document with comment nodes.
+#[test]
+fn test_serialize_with_comments() {
+    let mut doc = Document::new();
+    let div = doc.create_element("div");
+    let comment = doc.create_comment("this is a comment");
+    let text = doc.create_text_node("content");
+    doc.append_child(div, comment).unwrap();
+    doc.append_child(div, text).unwrap();
+
+    let html = doc.outer_html(div);
+    assert!(html.contains("<!--this is a comment-->"));
+    assert!(html.contains("content"));
+}
+
+/// Serialize deeply nested elements.
+#[test]
+fn test_serialize_deeply_nested() {
+    let mut doc = Document::new();
+    let mut current = doc.create_element("div");
+    doc.append_child(doc.root(), current).unwrap();
+    for _ in 0..5 {
+        let inner = doc.create_element("section");
+        doc.append_child(current, inner).unwrap();
+        current = inner;
+    }
+    doc.set_text_content(current, "leaf");
+
+    let html = doc.outer_html(doc.root());
+    let leaf = doc.first_child(doc.root()).unwrap();
+    let leaf_html = doc.outer_html(leaf);
+    // Should contain nested sections ending with "leaf"
+    assert!(leaf_html.contains("<section>"));
+    assert!(leaf_html.contains("leaf"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 21. Shadow DOM integration tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Append multiple children to a shadow root and verify ordering.
+#[test]
+fn test_shadow_root_append_multiple_children() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+    let c1 = doc.create_element("header");
+    let c2 = doc.create_element("main");
+    let c3 = doc.create_element("footer");
+    doc.append_child(shadow, c1).unwrap();
+    doc.append_child(shadow, c2).unwrap();
+    doc.append_child(shadow, c3).unwrap();
+
+    assert_eq!(doc.child_nodes(shadow), vec![c1, c2, c3]);
+    assert_eq!(doc.parent_node(c2), Some(shadow));
+}
+
+/// Shadow root text content collection gathers text from nested children.
+#[test]
+fn test_shadow_root_text_content_collection() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let p = doc.create_element("p");
+    doc.append_child(shadow, p).unwrap();
+    let t1 = doc.create_text_node("Hello ");
+    let t2 = doc.create_text_node("Shadow");
+    doc.append_child(p, t1).unwrap();
+    doc.append_child(p, t2).unwrap();
+
+    assert_eq!(doc.text_content(shadow), Some("Hello Shadow".to_string()));
+}
+
+/// Multiple elements can each have their own shadow roots.
+#[test]
+fn test_multiple_elements_with_shadow_roots() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let host1 = doc.create_element("comp-a");
+    let host2 = doc.create_element("comp-b");
+    doc.append_child(root, host1).unwrap();
+    doc.append_child(root, host2).unwrap();
+
+    let shadow1 = doc.attach_shadow(host1, ShadowRootMode::Open).unwrap();
+    let shadow2 = doc.attach_shadow(host2, ShadowRootMode::Closed).unwrap();
+
+    let s1_inner = doc.create_element("span");
+    doc.set_attribute(s1_inner, "class", "a-content");
+    doc.append_child(shadow1, s1_inner).unwrap();
+
+    let s2_inner = doc.create_element("div");
+    doc.set_attribute(s2_inner, "class", "b-content");
+    doc.append_child(shadow2, s2_inner).unwrap();
+
+    // Each shadow root has its own content
+    assert_eq!(doc.query_selector_shadow(shadow1, ".a-content"), Some(s1_inner));
+    assert_eq!(doc.query_selector_shadow(shadow2, ".b-content"), Some(s2_inner));
+    // Cross-query returns nothing
+    assert_eq!(doc.query_selector_shadow(shadow1, ".b-content"), None);
+    assert_eq!(doc.query_selector_shadow(shadow2, ".a-content"), None);
+}
+
+/// Shadow root node_type returns 11 (same as DocumentFragment).
+#[test]
+fn test_shadow_root_node_type_is_11() {
+    let mut doc = Document::new();
+    let host = doc.create_element("div");
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let host2 = doc.create_element("span");
+    let shadow2 = doc.attach_shadow(host2, ShadowRootMode::Closed).unwrap();
+
+    assert_eq!(doc.node_type(shadow), Some(11));
+    assert_eq!(doc.node_type(shadow2), Some(11));
+}
+
+/// Slot assignment with multiple nodes preserves order.
+#[test]
+fn test_slot_assignment_multiple_nodes_order() {
+    let mut doc = Document::new();
+    let slot = doc.create_element("slot");
+    doc.set_attribute(slot, "name", "list");
+
+    let n1 = doc.create_element("li");
+    doc.set_attribute(n1, "class", "first");
+    let n2 = doc.create_element("li");
+    doc.set_attribute(n2, "class", "second");
+    let n3 = doc.create_element("li");
+    doc.set_attribute(n3, "class", "third");
+
+    doc.assign_slot(slot, "list", n1);
+    doc.assign_slot(slot, "list", n2);
+    doc.assign_slot(slot, "list", n3);
+
+    let assigned = doc.assigned_nodes(slot, "list");
+    assert_eq!(assigned.len(), 3);
+    assert_eq!(assigned[0], n1);
+    assert_eq!(assigned[1], n2);
+    assert_eq!(assigned[2], n3);
+}
+
+/// Nested shadow DOM: shadow root inside another shadow root's subtree.
+#[test]
+fn test_nested_shadow_dom() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    // Outer component
+    let outer_host = doc.create_element("outer-comp");
+    doc.append_child(root, outer_host).unwrap();
+    let outer_shadow = doc.attach_shadow(outer_host, ShadowRootMode::Open).unwrap();
+
+    // Inner component inside outer shadow
+    let inner_host = doc.create_element("inner-comp");
+    doc.append_child(outer_shadow, inner_host).unwrap();
+    let inner_shadow = doc.attach_shadow(inner_host, ShadowRootMode::Open).unwrap();
+
+    let deep_elem = doc.create_element("span");
+    doc.set_attribute(deep_elem, "id", "deep");
+    doc.set_text_content(deep_elem, "nested");
+    doc.append_child(inner_shadow, deep_elem).unwrap();
+
+    // Query from outer shadow finds inner_host but not deep content
+    let found = doc.query_selector_shadow(outer_shadow, "inner-comp");
+    assert_eq!(found, Some(inner_host));
+    assert_eq!(doc.query_selector_shadow(outer_shadow, "#deep"), None);
+
+    // Query from inner shadow finds deep content
+    let found_deep = doc.query_selector_shadow(inner_shadow, "#deep");
+    assert_eq!(found_deep, Some(deep_elem));
+    assert_eq!(doc.text_content(deep_elem), Some("nested".to_string()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 22. Event system edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Event stopImmediatePropagation during bubbling prevents ancestor listeners.
+#[test]
+fn test_immediate_propagation_stops_bubbling_to_ancestors() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    doc.append_child(root, div).unwrap();
+    doc.append_child(div, span).unwrap();
+
+    let call_log = Arc::new(Mutex::new(Vec::new()));
+    let log_span = call_log.clone();
+    let log_div = call_log.clone();
+
+    // span: stopImmediatePropagation
+    doc.add_event_listener(span, "click", Box::new(move |e| {
+        log_span.lock().unwrap().push("span");
+        e.stop_immediate_propagation();
+    }), false);
+
+    // div bubble: should not fire
+    doc.add_event_listener(div, "click", Box::new(move |_| {
+        log_div.lock().unwrap().push("div");
+    }), false);
+
+    let mut event = Event::new_with_options("click", true, false);
+    doc.dispatch_event(span, &mut event);
+
+    let log = call_log.lock().unwrap();
+    assert_eq!(*log, vec!["span"], "immediate stop should prevent bubbling to div");
+}
+
+/// Dispatching event on a node with no listeners does not panic.
+#[test]
+fn test_dispatch_no_listeners_no_panic() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // Not even attached to the document
+
+    let mut event = Event::new("click");
+    let result = doc.dispatch_event(elem, &mut event);
+    assert!(result, "dispatch with no listeners should return true");
+}
+
+/// Event on a disconnected (non-attached) node sets target correctly.
+#[test]
+fn test_event_on_disconnected_node() {
+    let mut doc = Document::new();
+    let orphan = doc.create_element("div");
+
+    let target_seen = Arc::new(Mutex::new(None));
+    let target_clone = target_seen.clone();
+    let mut doc2 = Document::new();
+    doc2.add_event_listener(orphan, "custom", Box::new(move |e| {
+        *target_clone.lock().unwrap() = e.target();
+    }), false);
+
+    let mut event = Event::new("custom");
+    doc2.dispatch_event(orphan, &mut event);
+
+    assert_eq!(*target_seen.lock().unwrap(), Some(orphan));
+}
+
+/// Multiple event types on same node fire independently.
+#[test]
+fn test_multiple_event_types_independent() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    let flags = Arc::new(Mutex::new((false, false, false)));
+    let f1 = flags.clone();
+    let f2 = flags.clone();
+    let f3 = flags.clone();
+
+    doc.add_event_listener(elem, "click", Box::new(move |_| {
+        f1.lock().unwrap().0 = true;
+    }), false);
+    doc.add_event_listener(elem, "focus", Box::new(move |_| {
+        f2.lock().unwrap().1 = true;
+    }), false);
+    doc.add_event_listener(elem, "blur", Box::new(move |_| {
+        f3.lock().unwrap().2 = true;
+    }), false);
+
+    assert_eq!(doc.listener_count(elem, "click"), 1);
+    assert_eq!(doc.listener_count(elem, "focus"), 1);
+    assert_eq!(doc.listener_count(elem, "blur"), 1);
+
+    // Dispatch focus only
+    let mut event = Event::new("focus");
+    doc.dispatch_event(elem, &mut event);
+
+    let guard = flags.lock().unwrap();
+    assert!(!guard.0, "click should not fire");
+    assert!(guard.1, "focus should fire");
+    assert!(!guard.2, "blur should not fire");
+}
+
+/// Listener count tracking: add, add, remove, verify count.
+#[test]
+fn test_listener_count_tracking() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    assert_eq!(doc.listener_count(elem, "click"), 0);
+
+    doc.add_event_listener(elem, "click", Box::new(|_| {}), false);
+    assert_eq!(doc.listener_count(elem, "click"), 1);
+
+    doc.add_event_listener(elem, "click", Box::new(|_| {}), false);
+    assert_eq!(doc.listener_count(elem, "click"), 2);
+
+    let removed = doc.remove_event_listener(elem, "click");
+    assert_eq!(removed, 2);
+    assert_eq!(doc.listener_count(elem, "click"), 0);
+}
+
+/// Remove all listeners for a node clears all event types.
+#[test]
+fn test_remove_all_listeners_clears_all_types() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    doc.add_event_listener(elem, "click", Box::new(|_| {}), false);
+    doc.add_event_listener(elem, "input", Box::new(|_| {}), false);
+    doc.add_event_listener(elem, "keydown", Box::new(|_| {}), false);
+    doc.add_event_listener(elem, "keyup", Box::new(|_| {}), false);
+
+    assert_eq!(doc.listener_count(elem, "click"), 1);
+    assert_eq!(doc.listener_count(elem, "input"), 1);
+    assert_eq!(doc.listener_count(elem, "keydown"), 1);
+    assert_eq!(doc.listener_count(elem, "keyup"), 1);
+
+    doc.remove_all_event_listeners(elem);
+
+    assert_eq!(doc.listener_count(elem, "click"), 0);
+    assert_eq!(doc.listener_count(elem, "input"), 0);
+    assert_eq!(doc.listener_count(elem, "keydown"), 0);
+    assert_eq!(doc.listener_count(elem, "keyup"), 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 23. MutationObserver advanced tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Observe attribute changes records correct old_value.
+#[test]
+fn test_observe_attribute_changes_old_value() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "v1");
+    doc.take_mutation_records(); // clear
+
+    doc.set_attribute(elem, "class", "v2");
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].mutation_type, MutationType::Attributes);
+    assert_eq!(records[0].attribute_name, Some("class".to_string()));
+    assert_eq!(records[0].old_value, Some("v1".to_string()));
+}
+
+/// Observe child list changes records added and removed nodes.
+#[test]
+fn test_observe_child_list_add_and_remove() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+    doc.take_mutation_records(); // clear
+
+    let c1 = doc.create_element("span");
+    doc.append_child(parent, c1).unwrap();
+    let c2 = doc.create_element("p");
+    doc.append_child(parent, c2).unwrap();
+    doc.remove_child(parent, c1).unwrap();
+
+    let records = doc.take_mutation_records();
+    // 3 operations: append c1, append c2, remove c1
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0].added_nodes, vec![c1]);
+    assert!(records[0].removed_nodes.is_empty());
+    assert_eq!(records[2].removed_nodes, vec![c1]);
+    assert!(records[2].added_nodes.is_empty());
+}
+
+/// Take records clears pending, second call returns empty.
+#[test]
+fn test_take_records_clears_then_empty() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "data-x", "1");
+    doc.set_attribute(elem, "data-y", "2");
+    doc.set_attribute(elem, "data-z", "3");
+
+    let first = doc.take_mutation_records();
+    assert_eq!(first.len(), 3);
+
+    let second = doc.take_mutation_records();
+    assert!(second.is_empty(), "second take should return empty");
+}
+
+/// Process mutations notifies all registered observers.
+#[test]
+fn test_process_mutations_notifies_observers() {
+    let count1 = Arc::new(Mutex::new(0usize));
+    let count2 = Arc::new(Mutex::new(0usize));
+    let c1 = count1.clone();
+    let c2 = count2.clone();
+
+    let mut doc = Document::new();
+    doc.add_observer(MutationObserver::new(Box::new(move |records| {
+        *c1.lock().unwrap() += records.len();
+    })));
+    doc.add_observer(MutationObserver::new(Box::new(move |records| {
+        *c2.lock().unwrap() += records.len();
+    })));
+
+    let root = doc.root();
+    let child = doc.create_element("div");
+    doc.append_child(root, child).unwrap();
+    doc.process_mutations();
+
+    assert_eq!(*count1.lock().unwrap(), 1, "first observer should be notified");
+    assert_eq!(*count2.lock().unwrap(), 1, "second observer should be notified");
+}
+
+/// Multiple observers on same document each get all records.
+#[test]
+fn test_multiple_observers_same_document() {
+    let received_a = Arc::new(Mutex::new(Vec::new()));
+    let received_b = Arc::new(Mutex::new(Vec::new()));
+    let ra = received_a.clone();
+    let rb = received_b.clone();
+
+    let mut doc = Document::new();
+    doc.add_observer(MutationObserver::new(Box::new(move |records| {
+        for r in records {
+            ra.lock().unwrap().push(r.mutation_type.clone());
+        }
+    })));
+    doc.add_observer(MutationObserver::new(Box::new(move |records| {
+        for r in records {
+            rb.lock().unwrap().push(r.mutation_type.clone());
+        }
+    })));
+
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "test");
+
+    doc.process_mutations();
+
+    assert_eq!(*received_a.lock().unwrap(), vec![MutationType::Attributes]);
+    assert_eq!(*received_b.lock().unwrap(), vec![MutationType::Attributes]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 24. Query API advanced tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/// query_selector with ID selector finds correct element.
+#[test]
+fn test_query_selector_id_finds_correct() {
+    let doc = parse_html("<html><body><div id=\"first\">a</div><div id=\"second\">b</div></body></html>");
+    let root = doc.root();
+
+    let found = doc.query_selector(root, "#second").unwrap();
+    assert_eq!(doc.text_content(found), Some("b".to_string()));
+}
+
+/// query_selector with class selector finds first match.
+#[test]
+fn test_query_selector_class_first_match() {
+    let doc = parse_html("<html><body><span class=\"x\">1</span><span class=\"x\">2</span></body></html>");
+    let root = doc.root();
+
+    let found = doc.query_selector(root, ".x").unwrap();
+    assert_eq!(doc.text_content(found), Some("1".to_string()));
+}
+
+/// query_selector with tag selector is case-insensitive.
+#[test]
+fn test_query_selector_tag_case_insensitive() {
+    let doc = parse_html("<html><body><DIV>content</DIV></body></html>");
+    let root = doc.root();
+
+    let found = doc.query_selector(root, "div");
+    assert!(found.is_some());
+    assert_eq!(doc.text_content(found.unwrap()), Some("content".to_string()));
+}
+
+/// query_selector_all returns all matching elements in document order.
+#[test]
+fn test_query_selector_all_document_order() {
+    let doc = parse_html("<html><body><p>1</p><div><p>2</p></div><p>3</p></body></html>");
+    let root = doc.root();
+
+    let all_p = doc.query_selector_all(root, "p");
+    assert_eq!(all_p.len(), 3, "should find all 3 <p> elements");
+    assert_eq!(doc.text_content(all_p[0]), Some("1".to_string()));
+    assert_eq!(doc.text_content(all_p[1]), Some("2".to_string()));
+    assert_eq!(doc.text_content(all_p[2]), Some("3".to_string()));
+}
+
+/// query_selector with attribute selector [attr=value].
+#[test]
+fn test_query_selector_attribute_value() {
+    let doc = parse_html("<html><body><input type=\"text\" /><input type=\"checkbox\" /></body></html>");
+    let root = doc.root();
+
+    let text_input = doc.query_selector(root, "[type=text]");
+    assert!(text_input.is_some());
+    assert_eq!(doc.get_attribute(text_input.unwrap(), "type"), Some("text".to_string()));
+
+    let checkbox = doc.query_selector(root, "[type=checkbox]");
+    assert!(checkbox.is_some());
+}
+
+/// Nested element queries: searching from a subtree root.
+#[test]
+fn test_nested_element_queries() {
+    let doc = parse_html("<html><body><div class=\"outer\"><span id=\"target\"><em>deep</em></span></div><span id=\"sibling\">outside</span></body></html>");
+    let root = doc.root();
+    let outer = doc.query_selector(root, ".outer").unwrap();
+
+    // From outer, find span#target
+    let target = doc.query_selector(outer, "#target").unwrap();
+    assert_eq!(doc.text_content(target), Some("deep".to_string()));
+
+    // From outer, should NOT find span#sibling (it's outside outer)
+    assert!(doc.query_selector(outer, "#sibling").is_none());
+
+    // From root, find both
+    assert!(doc.query_selector(root, "#target").is_some());
+    assert!(doc.query_selector(root, "#sibling").is_some());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 25. Parser edge cases
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Parse HTML with script tags.
+#[test]
+fn test_parse_script_tags() {
+    let doc = parse_html("<html><body><script>var x = 1;</script><p>after</p></body></html>");
+    let scripts = doc.get_elements_by_tag_name("script");
+    assert_eq!(scripts.len(), 1, "should have one script element");
+    let text = doc.text_content(scripts[0]);
+    assert!(text.is_some());
+    assert!(text.unwrap().contains("var x = 1;"));
+}
+
+/// Parse HTML with style tags.
+#[test]
+fn test_parse_style_tags() {
+    let doc = parse_html("<html><head><style>body { color: red; }</style></head><body></body></html>");
+    let styles = doc.get_elements_by_tag_name("style");
+    assert_eq!(styles.len(), 1, "should have one style element");
+    let text = doc.text_content(styles[0]);
+    assert!(text.is_some());
+    assert!(text.unwrap().contains("color: red"));
+}
+
+/// Parse HTML with self-closing tags (void elements).
+#[test]
+fn test_parse_self_closing_tags() {
+    let doc = parse_html("<html><body><br/><hr/><img src=\"test.png\"/></body></html>");
+    let brs = doc.get_elements_by_tag_name("br");
+    let hrs = doc.get_elements_by_tag_name("hr");
+    let imgs = doc.get_elements_by_tag_name("img");
+    assert_eq!(brs.len(), 1);
+    assert_eq!(hrs.len(), 1);
+    assert_eq!(imgs.len(), 1);
+    assert_eq!(doc.get_attribute(imgs[0], "src"), Some("test.png".to_string()));
+}
+
+/// Parse HTML with nested lists.
+#[test]
+fn test_parse_nested_lists() {
+    let doc = parse_html("<html><body><ul><li>a<ul><li>b1</li><li>b2</li></ul></li><li>c</li></ul></body></html>");
+    let uls = doc.get_elements_by_tag_name("ul");
+    assert_eq!(uls.len(), 2, "should have outer and inner <ul>");
+
+    let lis = doc.get_elements_by_tag_name("li");
+    assert_eq!(lis.len(), 4, "should have 4 <li> elements total");
+}

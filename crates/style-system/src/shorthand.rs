@@ -1717,4 +1717,146 @@ mod tests {
         assert!(result.iter().all(|(_, _, imp, _)| *imp));
         assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增简写边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// border 简写只含 width 和 color（无 style）
+    fn test_border_shorthand_width_and_color_no_style() {
+        let result = expand_one("border", "2px green", false, (0, 0, 1));
+        assert_eq!(result.len(), 12);
+        assert_eq!(result[0].1, "2px"); // top-width
+        assert_eq!(result[1].1, "none"); // top-style default
+        assert_eq!(result[2].1, "green"); // top-color
+    }
+
+    #[test]
+    /// border-radius 4 个不同值
+    fn test_border_radius_4_different_values() {
+        let result = expand_one("border-radius", "1px 2px 3px 4px", false, (0, 0, 1));
+        assert_eq!(result[0].1, "1px"); // top-left
+        assert_eq!(result[1].1, "2px"); // top-right
+        assert_eq!(result[2].1, "3px"); // bottom-right
+        assert_eq!(result[3].1, "4px"); // bottom-left
+    }
+
+    #[test]
+    /// border-radius 3 值：top-left top-right/bottom-left bottom-right
+    fn test_border_radius_3_values() {
+        let result = expand_one("border-radius", "5px 10px 15px", false, (0, 0, 1));
+        assert_eq!(result[0].1, "5px"); // top-left
+        assert_eq!(result[1].1, "10px"); // top-right
+        assert_eq!(result[2].1, "15px"); // bottom-right
+        assert_eq!(result[3].1, "10px"); // bottom-left = top-right
+    }
+
+    #[test]
+    /// flex: initial 关键字展开
+    fn test_flex_initial_keyword() {
+        let result = expand_one("flex", "initial", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1, "0"); // grow
+        assert_eq!(result[1].1, "1"); // shrink
+        assert_eq!(result[2].1, "auto"); // basis
+    }
+
+    #[test]
+    /// animation 简写含全部 8 个子属性
+    fn test_animation_shorthand_all_8_sub_properties() {
+        let result = expand_one(
+            "animation",
+            "fadeIn 1s ease-in 0.5s 3 reverse forwards paused",
+            false,
+            (0, 0, 1),
+        );
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "fadeIn"); // name
+        assert_eq!(result[1].1, "1s"); // duration
+        assert_eq!(result[2].1, "ease-in"); // timing
+        assert_eq!(result[3].1, "0.5s"); // delay
+        assert_eq!(result[4].1, "3"); // iteration-count
+        assert_eq!(result[5].1, "reverse"); // direction
+        assert_eq!(result[6].1, "forwards"); // fill-mode
+        assert_eq!(result[7].1, "paused"); // play-state
+    }
+
+    #[test]
+    /// animation 简写含 steps() timing function
+    fn test_animation_shorthand_with_steps() {
+        let result = expand_one(
+            "animation",
+            "bounce 0.5s steps(4) infinite",
+            false,
+            (0, 0, 1),
+        );
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0].1, "bounce");
+        assert_eq!(result[2].1, "steps(4)");
+        assert_eq!(result[4].1, "infinite");
+    }
+
+    #[test]
+    /// inset 简写 2 值展开
+    fn test_inset_2_values() {
+        let result = expand_one("inset", "10px 20px", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "10px"); // top
+        assert_eq!(result[1].1, "20px"); // right
+        assert_eq!(result[2].1, "10px"); // bottom = top
+        assert_eq!(result[3].1, "20px"); // left = right
+    }
+
+    #[test]
+    /// inset 简写 3 值展开
+    fn test_inset_3_values() {
+        let result = expand_one("inset", "1px 2px 3px", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "1px"); // top
+        assert_eq!(result[1].1, "2px"); // right
+        assert_eq!(result[2].1, "3px"); // bottom
+        assert_eq!(result[3].1, "2px"); // left = right
+    }
+
+    #[test]
+    /// grid-area 3 值展开
+    fn test_grid_area_shorthand_3_values() {
+        let result = expand_one("grid-area", "1 / 2 / 3", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "1"); // row-start
+        assert_eq!(result[1].1, "3"); // row-end
+        assert_eq!(result[2].1, "2"); // col-start
+        assert_eq!(result[3].1, "auto"); // col-end
+    }
+
+    #[test]
+    /// transition 简写含 ease-in-out
+    fn test_transition_shorthand_ease_in_out() {
+        let result = expand_one("transition", "all 0.5s ease-in-out 0.2s", false, (0, 0, 1));
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].1, "all");
+        assert_eq!(result[1].1, "0.5s");
+        assert_eq!(result[2].1, "ease-in-out");
+        assert_eq!(result[3].1, "0.2s");
+    }
+
+    #[test]
+    /// border 简写仅含 style
+    fn test_border_shorthand_only_style_dotted() {
+        let result = expand_one("border", "dotted", false, (0, 0, 1));
+        assert_eq!(result.len(), 12);
+        assert_eq!(result[0].1, "medium"); // top-width default
+        assert_eq!(result[1].1, "dotted"); // top-style
+        assert_eq!(result[2].1, "currentcolor"); // top-color default
+    }
+
+    #[test]
+    /// overflow 简写 visible
+    fn test_overflow_shorthand_visible() {
+        let result = expand_one("overflow", "visible", false, (0, 0, 1));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, "visible");
+        assert_eq!(result[1].1, "visible");
+    }
 }
