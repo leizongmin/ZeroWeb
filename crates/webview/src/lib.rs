@@ -1368,4 +1368,170 @@ mod tests {
         // 主要验证不会崩溃，且 CSS 被正确清空
         assert!(after.timings.total_ms >= 0.0);
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：空输入、CSS 累积、状态机转换
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证加载空 HTML 字符串不会 panic，且返回有效的渲染结果。
+    ///
+    /// 边界场景：传入完全为空的字符串而非有效 HTML 文档，
+    /// 确保渲染管线不会因缺少根元素而崩溃。
+    #[test]
+    fn test_webview_load_empty_html() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.load_html("", None);
+        assert!(result.timings.total_ms >= 0.0, "渲染空 HTML 应返回非负耗时");
+        assert!(wv.last_render().is_some(), "加载空 HTML 后应存在渲染结果");
+        assert!(!wv.is_loading(), "load_html 不应将 WebView 置为加载状态");
+        assert!(wv.url().is_none(), "load_html 不应设置 URL");
+    }
+
+    /// 验证执行空脚本字符串不会 panic，且仍返回 NotImplemented 错误。
+    ///
+    /// 边界场景：传入空字符串作为脚本内容，
+    /// 确保 JS 引擎尚未集成时代码路径仍然安全。
+    #[test]
+    fn test_webview_execute_script_empty_string() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script("");
+        assert!(result.is_err(), "空脚本应返回错误（JS 引擎未集成）");
+        match result.unwrap_err() {
+            WebViewError::NotImplemented(msg) => {
+                assert!(
+                    msg.contains("V8") || msg.contains("QuickJS"),
+                    "错误信息应提及所需的 JS 引擎，实际: {msg}"
+                );
+            }
+            other => panic!("预期 NotImplemented 错误，实际: {other}"),
+        }
+    }
+
+    /// 验证多次注入 CSS 会累积而非替换。
+    ///
+    /// 每次调用 inject_css 应将新 CSS 追加到已有 CSS 之后，
+    /// 渲染结果应反映所有已注入样式的叠加效果。
+    #[test]
+    fn test_webview_multiple_css_injections() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body>\
+            <div class=\"first\">A</div>\
+            <div class=\"second\">B</div>\
+            <div class=\"third\">C</div>\
+            </body></html>";
+        let initial = wv.load_html(html, None);
+        let fills_after_load = initial.primitives.fills.len();
+
+        // 第一次注入：为 .first 添加背景
+        let after_first = wv.inject_css(".first { background-color: red; width: 50px; height: 50px; }");
+        let fills_after_first = after_first.primitives.fills.len();
+        assert!(
+            fills_after_first >= fills_after_load,
+            "第一次注入后 fills 数量应 >= 初始值"
+        );
+
+        // 第二次注入：为 .second 添加背景
+        let after_second = wv.inject_css(".second { background-color: green; width: 50px; height: 50px; }");
+        let fills_after_second = after_second.primitives.fills.len();
+        assert!(
+            fills_after_second >= fills_after_first,
+            "第二次注入后 fills 数量应 >= 第一次注入后（CSS 累积，不替换）"
+        );
+
+        // 第三次注入：为 .third 添加背景
+        let after_third = wv.inject_css(".third { background-color: blue; width: 50px; height: 50px; }");
+        let fills_after_third = after_third.primitives.fills.len();
+        assert!(
+            fills_after_third >= fills_after_second,
+            "第三次注入后 fills 数量应 >= 第二次注入后（CSS 持续累积）"
+        );
+
+        // render() 也应保留所有累积的 CSS
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_after_third,
+            "render() 应使用累积的所有 CSS"
+        );
+    }
+
+    /// 验证 WebView 状态机转换：Created -> Loading -> Loaded -> Error。
+    ///
+    /// 测试完整的状态生命周期：
+    /// 1. 初始 Created 状态（无 URL，未加载）
+    /// 2. load_url 进入 Loading 状态
+    /// 3. complete_load 进入 Loaded 状态
+    /// 4. 再次 load_url 进入 Loading 状态
+    /// 5. fail_load 进入 Error（恢复到非加载状态）
+    /// 6. 重试后再次进入 Loaded 状态
+    #[test]
+    fn test_webview_state_transitions() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // ── 状态 1: Created ──
+        assert!(!wv.is_loading(), "初始状态: 不应处于加载中");
+        assert!(wv.url().is_none(), "初始状态: URL 应为 None");
+        assert!(wv.last_render().is_none(), "初始状态: 不应有渲染结果");
+
+        // ── 状态 2: Loading（通过 load_url）──
+        wv.load_url("https://state-test.com");
+        assert!(wv.is_loading(), "Loading 状态: 应处于加载中");
+        assert_eq!(wv.url(), Some("https://state-test.com"), "Loading 状态: URL 应已设置");
+        assert!(wv.last_render().is_none(), "Loading 状态: 尚未有渲染结果");
+
+        // ── 状态 3: Loaded（通过 complete_load）──
+        wv.complete_load("<html><body><div>Content</div></body></html>", None);
+        assert!(!wv.is_loading(), "Loaded 状态: 不应处于加载中");
+        assert_eq!(wv.url(), Some("https://state-test.com"), "Loaded 状态: URL 应保持不变");
+        assert!(wv.last_render().is_some(), "Loaded 状态: 应有渲染结果");
+
+        // ── 状态 4: 再次 Loading（导航到新 URL）──
+        wv.load_url("https://error-test.com");
+        assert!(wv.is_loading(), "再次 Loading: 应处于加载中");
+        assert_eq!(wv.url(), Some("https://error-test.com"), "再次 Loading: URL 应已更新");
+
+        // ── 状态 5: Error（通过 fail_load）──
+        wv.fail_load("network timeout");
+        assert!(!wv.is_loading(), "Error 状态: 加载应已停止");
+        assert_eq!(wv.url(), Some("https://error-test.com"), "Error 状态: URL 应保留");
+        assert!(wv.last_render().is_some(), "Error 状态: 上次成功的渲染结果应保留");
+
+        // ── 状态 6: 重试 Loading -> Loaded ──
+        wv.load_url("https://retry-test.com");
+        assert!(wv.is_loading(), "重试 Loading: 应处于加载中");
+        assert_eq!(wv.url(), Some("https://retry-test.com"), "重试 Loading: URL 应已更新");
+        wv.complete_load("<html><body><div>Retry OK</div></body></html>", None);
+        assert!(!wv.is_loading(), "重试 Loaded: 不应处于加载中");
+        assert_eq!(wv.url(), Some("https://retry-test.com"), "重试 Loaded: URL 应保持");
+        assert!(wv.last_render().is_some(), "重试 Loaded: 应有渲染结果");
+
+        // ── 验证完整事件序列 ──
+        let recorded = events.borrow();
+        assert_eq!(
+            recorded.len(),
+            9,
+            "应有 9 个事件: 2(LoadStart+UrlChanged) + 1(LoadEnd) + 2(LoadStart+UrlChanged) + 1(LoadFailed) + 2(LoadStart+UrlChanged) + 1(LoadEnd)"
+        );
+        assert_eq!(recorded[0], "LoadStart(https://state-test.com)");
+        assert_eq!(recorded[1], "UrlChanged(https://state-test.com)");
+        assert_eq!(recorded[2], "LoadEnd(https://state-test.com)");
+        assert_eq!(recorded[3], "LoadStart(https://error-test.com)");
+        assert_eq!(recorded[4], "UrlChanged(https://error-test.com)");
+        assert!(recorded[5].starts_with("LoadFailed(https://error-test.com"));
+        assert_eq!(recorded[6], "LoadStart(https://retry-test.com)");
+        assert_eq!(recorded[7], "UrlChanged(https://retry-test.com)");
+        assert_eq!(recorded[8], "LoadEnd(https://retry-test.com)");
+    }
 }

@@ -1824,4 +1824,195 @@ mod tests {
             assert_eq!(i as u64, out.id);
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  IPC 消息边界条件测试
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试大载荷（100KB 字符串）消息的序列化/反序列化往返正确性。
+    #[test]
+    fn test_ipc_message_large_payload() {
+        let large_string: String = "A".repeat(100 * 1024); // 100KB
+        let msg = IpcMessage {
+            id: 999,
+            kind: IpcMessageKind::TitleChanged(large_string.clone()),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(999, out.id);
+        if let IpcMessageKind::TitleChanged(t) = out.kind {
+            assert_eq!(100 * 1024, t.len());
+            assert_eq!(large_string, t);
+        } else {
+            panic!("expected TitleChanged");
+        }
+    }
+
+    /// 测试空字符串和零值字段的消息序列化/反序列化。
+    #[test]
+    fn test_ipc_message_empty_fields() {
+        let msg = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Clear,
+                key: String::new(),
+                value: Some(String::new()),
+                origin: String::new(),
+            }),
+        };
+        let out = roundtrip(msg);
+        assert_eq!(0, out.id);
+        if let IpcMessageKind::StorageOp(p) = out.kind {
+            assert!(p.key.is_empty());
+            assert_eq!(Some(String::new()), p.value);
+            assert!(p.origin.is_empty());
+            assert_eq!(StorageOperation::Clear, p.operation);
+        } else {
+            panic!("expected StorageOp");
+        }
+    }
+
+    /// 测试连续序列化多条不同消息后逐个反序列化，验证每条消息还原正确。
+    #[test]
+    fn test_ipc_message_concurrent_serialization() {
+        let messages: Vec<IpcMessage> = vec![
+            IpcMessage {
+                id: 10,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://example.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 20,
+                kind: IpcMessageKind::TitleChanged("测试标题".into()),
+            },
+            IpcMessage {
+                id: 30,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: 42.0,
+                    y: 99.5,
+                    button: 2,
+                    event_type: MouseEventType::DblClick,
+                }),
+            },
+            IpcMessage {
+                id: 40,
+                kind: IpcMessageKind::Error("未知错误".into()),
+            },
+            IpcMessage {
+                id: 50,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: 7,
+                    url: "https://api.example.com/data".into(),
+                    method: "POST".into(),
+                    headers: vec![("Content-Type".into(), "application/json".into())],
+                    body: Some(b"{\"key\":\"value\"}".to_vec()),
+                }),
+            },
+        ];
+
+        // 连续序列化所有消息
+        let serialized: Vec<Vec<u8>> = messages.iter().map(|m| serialize(m).expect("serialize")).collect();
+
+        // 逐个反序列化并验证
+        for (i, bytes) in serialized.iter().enumerate() {
+            let out = deserialize(bytes).expect("deserialize");
+            assert_eq!(messages[i].id, out.id, "消息 id 不匹配：索引 {i}");
+
+            // 对每条消息按类型验证字段
+            match (&messages[i].kind, &out.kind) {
+                (IpcMessageKind::Navigate(a), IpcMessageKind::Navigate(b)) => {
+                    assert_eq!(a.url, b.url);
+                    assert_eq!(a.referrer, b.referrer);
+                }
+                (IpcMessageKind::TitleChanged(a), IpcMessageKind::TitleChanged(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::MouseEvent(a), IpcMessageKind::MouseEvent(b)) => {
+                    assert_eq!(a.x, b.x);
+                    assert_eq!(a.y, b.y);
+                    assert_eq!(a.button, b.button);
+                    assert_eq!(a.event_type, b.event_type);
+                }
+                (IpcMessageKind::Error(a), IpcMessageKind::Error(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::FetchRequest(a), IpcMessageKind::FetchRequest(b)) => {
+                    assert_eq!(a.request_id, b.request_id);
+                    assert_eq!(a.url, b.url);
+                    assert_eq!(a.method, b.method);
+                    assert_eq!(a.headers, b.headers);
+                    assert_eq!(a.body, b.body);
+                }
+                _ => panic!("消息类型不匹配：索引 {i}"),
+            }
+        }
+    }
+
+    /// 测试通过 mock 通道发送多条消息后按 FIFO 顺序接收。
+    #[test]
+    fn test_ipc_channel_ordering() {
+        let mut ch = MockChannel::new();
+
+        let messages: Vec<IpcMessage> = vec![
+            IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Navigate(NavigateParams {
+                    url: "https://a.com".into(),
+                    referrer: None,
+                }),
+            },
+            IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::LoadComplete,
+            },
+            IpcMessage {
+                id: 3,
+                kind: IpcMessageKind::TitleChanged("页面标题".into()),
+            },
+            IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::Heartbeat,
+            },
+            IpcMessage {
+                id: 5,
+                kind: IpcMessageKind::Error("超时".into()),
+            },
+        ];
+
+        // 按顺序发送所有消息
+        for msg in &messages {
+            ch.send(msg.clone()).expect("send");
+        }
+
+        // 按 FIFO 顺序接收并验证
+        for (i, expected) in messages.iter().enumerate() {
+            let received = ch.recv().expect("recv");
+            assert_eq!(
+                expected.id, received.id,
+                "FIFO 顺序违反：期望 id={}，实际 id={}（索引 {}）",
+                expected.id, received.id, i
+            );
+
+            // 验证消息类型匹配
+            match (&expected.kind, &received.kind) {
+                (IpcMessageKind::Navigate(a), IpcMessageKind::Navigate(b)) => {
+                    assert_eq!(a.url, b.url);
+                }
+                (IpcMessageKind::TitleChanged(a), IpcMessageKind::TitleChanged(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::Error(a), IpcMessageKind::Error(b)) => {
+                    assert_eq!(a, b);
+                }
+                (IpcMessageKind::LoadComplete, IpcMessageKind::LoadComplete)
+                | (IpcMessageKind::Heartbeat, IpcMessageKind::Heartbeat) => {}
+                _ => panic!("消息类型不匹配：索引 {i}"),
+            }
+        }
+
+        // 所有消息已消费，再次 recv 应返回错误
+        assert!(ch.recv().is_err());
+    }
 }

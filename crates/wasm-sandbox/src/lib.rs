@@ -1984,4 +1984,179 @@ mod tests {
             panic!("expected MemoryError for offset overflow, got: {result:?}");
         }
     }
+
+    // =======================================================================
+    // 新增测试：WASM 运行时边界情况
+    // =======================================================================
+
+    /// 在已分配内存的边界位置进行读写，验证最后一个字节可以正确写入和读回，
+    /// 而越过边界恰好一个字节的读写会失败。
+    #[test]
+    fn test_wasm_memory_read_write_boundary() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let size = instance.memory_size("mem").expect("size");
+        assert_eq!(size, 65536, "一页 WASM 内存应为 65536 字节");
+
+        // 在边界内最后一个字节写入并读回
+        instance
+            .write_memory("mem", size - 1, b"\xAB")
+            .expect("写入最后一个字节应成功");
+        let data = instance
+            .read_memory("mem", size - 1, 1)
+            .expect("读取最后一个字节应成功");
+        assert_eq!(data, b"\xAB", "读回的数据应与写入一致");
+
+        // 越界写入（起始位置合法，但数据长度越过边界）应失败
+        let write_result = instance.write_memory("mem", size - 1, b"\x00\x00");
+        assert!(write_result.is_err(), "越过内存边界的写入应返回错误");
+
+        // 越界读取（起始位置合法，但长度越过边界）应返回 None
+        let read_result = instance.read_memory("mem", size - 1, 2);
+        assert!(read_result.is_none(), "越过内存边界的读取应返回 None");
+
+        // 边界内起始位置 0 写满整页应成功
+        let full_page = vec![0x42u8; size];
+        instance.write_memory("mem", 0, &full_page).expect("写入整页应成功");
+        let read_back = instance.read_memory("mem", 0, size).expect("读取整页应成功");
+        assert_eq!(read_back.len(), size, "读回长度应等于整页大小");
+        assert!(read_back.iter().all(|&b| b == 0x42), "整页内容应全部为 0x42");
+    }
+
+    /// 调用具有大量参数（16 个 i32）的主机函数，验证所有参数正确传递、计算结果正确返回。
+    #[test]
+    fn test_wasm_call_with_many_args() {
+        let sandbox = WasmSandbox::new();
+        // WASM 函数接收 16 个 i32 参数，全部传给主机函数求和
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "sum16" (func $sum16 (param i32 i32 i32 i32 i32 i32 i32 i32
+                                                      i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
+                (func (export "call_sum16")
+                      (param i32 i32 i32 i32 i32 i32 i32 i32
+                       i32 i32 i32 i32 i32 i32 i32 i32) (result i32)
+                    local.get 0  local.get 1  local.get 2  local.get 3
+                    local.get 4  local.get 5  local.get 6  local.get 7
+                    local.get 8  local.get 9  local.get 10 local.get 11
+                    local.get 12 local.get 13 local.get 14 local.get 15
+                    call $sum16)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "sum16",
+            vec![WasmValueType::I32; 16],
+            vec![WasmValueType::I32],
+            |params, results| {
+                let sum: i32 = params
+                    .iter()
+                    .map(|v| if let WasmValue::I32(n) = v { *n } else { 0 })
+                    .sum();
+                results.push(WasmValue::I32(sum));
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        let args: Vec<WasmValue> = (1..=16).map(WasmValue::I32).collect();
+        let r = instance.call("call_sum16", &args).expect("call");
+        assert_eq!(r.len(), 1, "应返回一个结果");
+        // 1+2+...+16 = 136
+        assert_eq!(r[0], WasmValue::I32(136), "16 个参数求和结果应为 136");
+    }
+
+    /// 使用无效的 WASM 字节实例化模块时，应返回 InvalidBinary 错误而非 panic。
+    /// 覆盖多种无效输入：空字节、随机垃圾数据、截断的 WASM 头。
+    #[test]
+    fn test_wasm_module_instantiate_invalid() {
+        let sandbox = WasmSandbox::new();
+
+        // 空字节
+        let result = sandbox.compile(&[]);
+        assert!(result.is_err(), "空字节应编译失败");
+        assert!(
+            matches!(result, Err(WasmError::InvalidBinary(_))),
+            "空字节应返回 InvalidBinary 错误"
+        );
+
+        // 随机垃圾数据
+        let garbage: Vec<u8> = (0..64).map(|i| (i * 37 + 0xA5) as u8).collect();
+        let result = sandbox.compile(&garbage);
+        assert!(result.is_err(), "随机垃圾数据应编译失败");
+        assert!(
+            matches!(result, Err(WasmError::InvalidBinary(_))),
+            "垃圾数据应返回 InvalidBinary 错误"
+        );
+
+        // 截断的 WASM 魔数头（仅 3 字节，缺少版本号）
+        let truncated_magic = &[0x00, 0x61, 0x73];
+        let result = sandbox.compile(truncated_magic);
+        assert!(result.is_err(), "截断的 WASM 头应编译失败");
+
+        // 合法魔数但非法版本号
+        let bad_version = &[0x00, 0x61, 0x73, 0x6D, 0x0A, 0x00, 0x00, 0x00];
+        let result = sandbox.compile(bad_version);
+        assert!(result.is_err(), "非法版本号应编译失败");
+
+        // 确认所有情况都不会 panic——如果执行到这里说明没有 panic
+    }
+
+    /// 验证燃料计量能正确终止无限循环的 WASM 模块执行。
+    /// 设置有限燃料后调用包含无限循环的函数，应返回 FuelExhausted 错误。
+    #[test]
+    fn test_wasm_fuel_consumption() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+
+        // 包含无限递增循环的模块
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "count_forever") (result i32)
+                    (local $i i32)
+                    (loop $inf
+                        local.get $i
+                        i32.const 1
+                        i32.add
+                        local.set $i
+                        br $inf)
+                    local.get $i)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 设置少量燃料
+        instance.set_fuel(500).expect("set_fuel");
+        let initial_fuel = instance.get_fuel().expect("get_fuel");
+        assert_eq!(initial_fuel, 500, "设置后燃料应为 500");
+
+        // 调用无限循环函数，应在燃料耗尽时停止
+        let result = instance.call("count_forever", &[]);
+        assert!(
+            matches!(result, Err(WasmError::FuelExhausted)),
+            "无限循环应在燃料耗尽时返回 FuelExhausted"
+        );
+
+        // 燃料耗尽后剩余应接近 0（wasmi 可能留下微小残余）
+        let remaining = instance.get_fuel().expect("get_fuel");
+        assert!(remaining <= 10, "燃料耗尽后剩余应接近 0，实际: {remaining}");
+
+        // 不补充燃料再次调用，仍应立即返回 FuelExhausted
+        let result2 = instance.call("count_forever", &[]);
+        assert!(
+            matches!(result2, Err(WasmError::FuelExhausted)),
+            "燃料为零时调用应立即返回 FuelExhausted"
+        );
+    }
 }

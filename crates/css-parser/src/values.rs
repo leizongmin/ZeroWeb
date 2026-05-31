@@ -136,6 +136,40 @@ pub enum OverflowValue {
     Clip,
 }
 
+/// CSS list-style-type 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStyleTypeValue {
+    /// disc（默认值）。
+    Disc,
+    /// circle。
+    Circle,
+    /// square。
+    Square,
+    /// decimal。
+    Decimal,
+    /// decimal-leading-zero。
+    DecimalLeadingZero,
+    /// lower-roman。
+    LowerRoman,
+    /// upper-roman。
+    UpperRoman,
+    /// lower-alpha / lower-latin。
+    LowerAlpha,
+    /// upper-alpha / upper-latin。
+    UpperAlpha,
+    /// none。
+    None,
+}
+
+/// CSS list-style-position 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStylePositionValue {
+    /// outside（默认值）。
+    Outside,
+    /// inside。
+    Inside,
+}
+
 /// CSS flex-direction 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlexDirectionValue {
@@ -1076,6 +1110,32 @@ pub fn parse_clear(value: &str) -> Option<ClearValue> {
         "both" => Some(ClearValue::Both),
         "inline-start" => Some(ClearValue::InlineStart),
         "inline-end" => Some(ClearValue::InlineEnd),
+        _ => None,
+    }
+}
+
+/// 解析 CSS list-style-type 属性值。
+pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
+    match value.trim().to_lowercase().as_str() {
+        "disc" => Some(ListStyleTypeValue::Disc),
+        "circle" => Some(ListStyleTypeValue::Circle),
+        "square" => Some(ListStyleTypeValue::Square),
+        "decimal" => Some(ListStyleTypeValue::Decimal),
+        "decimal-leading-zero" => Some(ListStyleTypeValue::DecimalLeadingZero),
+        "lower-roman" => Some(ListStyleTypeValue::LowerRoman),
+        "upper-roman" => Some(ListStyleTypeValue::UpperRoman),
+        "lower-alpha" | "lower-latin" => Some(ListStyleTypeValue::LowerAlpha),
+        "upper-alpha" | "upper-latin" => Some(ListStyleTypeValue::UpperAlpha),
+        "none" => Some(ListStyleTypeValue::None),
+        _ => None,
+    }
+}
+
+/// 解析 CSS list-style-position 属性值。
+pub fn parse_list_style_position(value: &str) -> Option<ListStylePositionValue> {
+    match value.trim().to_lowercase().as_str() {
+        "outside" => Some(ListStylePositionValue::Outside),
+        "inside" => Some(ListStylePositionValue::Inside),
         _ => None,
     }
 }
@@ -2691,5 +2751,60 @@ mod tests {
     #[test]
     fn test_parse_clear_whitespace() {
         assert_eq!(parse_clear("  both  "), Some(ClearValue::Both));
+    }
+
+    // ── list-style 解析测试 ──
+
+    #[test]
+    fn test_parse_list_style_type_values() {
+        assert_eq!(parse_list_style_type("disc"), Some(ListStyleTypeValue::Disc));
+        assert_eq!(parse_list_style_type("circle"), Some(ListStyleTypeValue::Circle));
+        assert_eq!(parse_list_style_type("square"), Some(ListStyleTypeValue::Square));
+        assert_eq!(parse_list_style_type("decimal"), Some(ListStyleTypeValue::Decimal));
+        assert_eq!(
+            parse_list_style_type("decimal-leading-zero"),
+            Some(ListStyleTypeValue::DecimalLeadingZero)
+        );
+        assert_eq!(
+            parse_list_style_type("lower-roman"),
+            Some(ListStyleTypeValue::LowerRoman)
+        );
+        assert_eq!(
+            parse_list_style_type("upper-roman"),
+            Some(ListStyleTypeValue::UpperRoman)
+        );
+        assert_eq!(
+            parse_list_style_type("lower-alpha"),
+            Some(ListStyleTypeValue::LowerAlpha)
+        );
+        assert_eq!(
+            parse_list_style_type("lower-latin"),
+            Some(ListStyleTypeValue::LowerAlpha)
+        );
+        assert_eq!(
+            parse_list_style_type("upper-alpha"),
+            Some(ListStyleTypeValue::UpperAlpha)
+        );
+        assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
+        assert_eq!(parse_list_style_type("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_list_style_type_case_insensitive() {
+        assert_eq!(parse_list_style_type("DISC"), Some(ListStyleTypeValue::Disc));
+        assert_eq!(parse_list_style_type("Decimal"), Some(ListStyleTypeValue::Decimal));
+    }
+
+    #[test]
+    fn test_parse_list_style_position_values() {
+        assert_eq!(
+            parse_list_style_position("outside"),
+            Some(ListStylePositionValue::Outside)
+        );
+        assert_eq!(
+            parse_list_style_position("inside"),
+            Some(ListStylePositionValue::Inside)
+        );
+        assert_eq!(parse_list_style_position("center"), None);
     }
 }
