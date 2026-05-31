@@ -1652,4 +1652,283 @@ mod tests {
             fragment.y
         );
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 vertical-align: sub — 片段基线下移 font_size × 0.3。
+    ///
+    /// 公式: y = baseline_y - height + (font_size * 0.3)
+    /// baseline_y = line_height * 0.8
+    #[test]
+    fn test_vertical_align_sub_in_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let font_size = 16.0_f32;
+        let line_height = 30.0_f32;
+        let runs = vec![TextRun {
+            text: "sub".to_string(),
+            node_id: NodeId::default(),
+            font_size,
+            line_height,
+            vertical_align: VA::Sub,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let fragment = &ctx.lines[0].runs[0];
+        let baseline_y = line_height * 0.8;
+        let offset = font_size * 0.3;
+        let expected_y = baseline_y - fragment.height + offset;
+        assert!(
+            (fragment.y - expected_y).abs() < 0.01,
+            "vertical-align: sub 片段 y 应为 {}，实际 {}",
+            expected_y,
+            fragment.y
+        );
+    }
+
+    /// 测试 vertical-align: super — 片段基线上移 font_size × 0.3。
+    ///
+    /// 公式: y = baseline_y - height - (font_size * 0.3)
+    #[test]
+    fn test_vertical_align_super_in_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let font_size = 16.0_f32;
+        let line_height = 30.0_f32;
+        let runs = vec![TextRun {
+            text: "super".to_string(),
+            node_id: NodeId::default(),
+            font_size,
+            line_height,
+            vertical_align: VA::Super,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let fragment = &ctx.lines[0].runs[0];
+        let baseline_y = line_height * 0.8;
+        let offset = font_size * 0.3;
+        let expected_y = baseline_y - fragment.height - offset;
+        assert!(
+            (fragment.y - expected_y).abs() < 0.01,
+            "vertical-align: super 片段 y 应为 {}，实际 {}",
+            expected_y,
+            fragment.y
+        );
+    }
+
+    /// 测试 vertical-align: text-top 与 top 行为一致 — y = 0.0。
+    #[test]
+    fn test_vertical_align_text_top_same_as_top() {
+        let mut ctx_text_top = InlineFormattingContext::new(800.0);
+        let runs_text_top = vec![TextRun {
+            text: "Text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+            vertical_align: VA::TextTop,
+        }];
+        ctx_text_top.break_into_lines(runs_text_top);
+
+        let mut ctx_top = InlineFormattingContext::new(800.0);
+        let runs_top = vec![TextRun {
+            text: "Text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+            vertical_align: VA::Top,
+        }];
+        ctx_top.break_into_lines(runs_top);
+
+        let y_text_top = ctx_text_top.lines[0].runs[0].y;
+        let y_top = ctx_top.lines[0].runs[0].y;
+        assert!(
+            (y_text_top - y_top).abs() < 0.01,
+            "text-top y ({}) 应与 top y ({}) 一致",
+            y_text_top,
+            y_top
+        );
+        assert!(y_text_top.abs() < 0.01, "text-top 片段 y 应为 0.0，实际 {}", y_text_top);
+    }
+
+    /// 测试 vertical-align: text-bottom 与 bottom 行为一致 — y = line_height - height。
+    #[test]
+    fn test_vertical_align_text_bottom_same_as_bottom() {
+        let line_height = 30.0_f32;
+        let mut ctx_text_bottom = InlineFormattingContext::new(800.0);
+        let runs_text_bottom = vec![TextRun {
+            text: "Text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height,
+            vertical_align: VA::TextBottom,
+        }];
+        ctx_text_bottom.break_into_lines(runs_text_bottom);
+
+        let mut ctx_bottom = InlineFormattingContext::new(800.0);
+        let runs_bottom = vec![TextRun {
+            text: "Text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height,
+            vertical_align: VA::Bottom,
+        }];
+        ctx_bottom.break_into_lines(runs_bottom);
+
+        let y_text_bottom = ctx_text_bottom.lines[0].runs[0].y;
+        let y_bottom = ctx_bottom.lines[0].runs[0].y;
+        assert!(
+            (y_text_bottom - y_bottom).abs() < 0.01,
+            "text-bottom y ({}) 应与 bottom y ({}) 一致",
+            y_text_bottom,
+            y_bottom
+        );
+        // text-bottom: y = line_height - fragment_height
+        let height = ctx_text_bottom.lines[0].runs[0].height;
+        let expected = line_height - height;
+        assert!(
+            (y_text_bottom - expected).abs() < 0.01,
+            "text-bottom y 应为 {}，实际 {}",
+            expected,
+            y_text_bottom
+        );
+    }
+
+    /// 测试 resolve_font_metrics 中 LineHeightValue::Length(LengthValue::Em(1.5)) 回退到 font_size × 1.2。
+    ///
+    /// 非 Px 长度在 resolve 阶段未转换时做防御性回退。
+    #[test]
+    fn test_resolve_font_metrics_line_height_em_fallback() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.line_height = LineHeightValue::Length(LengthValue::Em(1.5));
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        assert!((font_size - 20.0).abs() < 0.01, "font_size 应为 20.0，实际 {font_size}");
+        // Em 长度回退到 font_size * 1.2 = 24.0
+        let expected = 20.0 * 1.2;
+        assert!(
+            (line_height - expected).abs() < 0.01,
+            "line_height 应回退到 {}，实际 {}",
+            expected,
+            line_height
+        );
+    }
+
+    /// 测试 resolve_font_metrics 中非 Px font_size 回退到 DEFAULT_FONT_SIZE (16.0)。
+    #[test]
+    fn test_resolve_font_metrics_non_px_font_size() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Em(2.0);
+        // line-height 默认 Normal
+
+        let (font_size, line_height) = resolve_font_metrics(Some(&style));
+        // 非 Px font_size 回退到 16.0
+        assert!(
+            (font_size - 16.0).abs() < 0.01,
+            "非 Px font_size 应回退到 16.0，实际 {font_size}"
+        );
+        // line_height = 16.0 * 1.2 = 19.2
+        assert!(
+            (line_height - 19.2).abs() < 0.01,
+            "line_height 应为 19.2，实际 {line_height}"
+        );
+    }
+
+    /// 测试 break_into_lines 调用两次后状态完全重置，不残留第一次调用的结果。
+    #[test]
+    fn test_break_into_lines_called_twice_resets_state() {
+        // 使用窄容器确保第一次调用产生多行
+        let mut ctx = InlineFormattingContext::new(60.0);
+
+        // 第一次调用：产生多行的长文本
+        let first_runs = vec![TextRun {
+            text: "alpha beta gamma delta epsilon zeta eta theta".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx.break_into_lines(first_runs);
+        let first_line_count = ctx.lines.len();
+        assert!(first_line_count > 1, "第一次调用应产生多行");
+
+        // 切换到宽容器，第二次调用：短文本，只产生单行
+        ctx.container_width = 800.0;
+        let second_runs = vec![TextRun {
+            text: "Short".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        ctx.break_into_lines(second_runs);
+
+        // 第二次调用后应只有 1 行，无第一次调用的残留
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "第二次调用后应只有 1 行，无残留，实际 {} 行",
+            ctx.lines.len()
+        );
+        assert_eq!(ctx.lines[0].runs.len(), 1, "应只有 1 个片段");
+        assert!(
+            ctx.lines[0].runs[0].text.contains("Short"),
+            "片段文本应为 'Short'，实际 {}",
+            ctx.lines[0].runs[0].text
+        );
+    }
+
+    /// 测试 font_size=0.0 时不会 panic。
+    ///
+    /// 零字体大小意味着估算字符宽度为 0，所有单词放入单行。
+    #[test]
+    fn test_zero_font_size_no_panic() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 0.0,
+            line_height: 20.0,
+            vertical_align: VA::Baseline,
+        }];
+        // 不应 panic
+        ctx.break_into_lines(runs);
+
+        // 零字体大小 → 零字符宽度 → 所有单词放入单行
+        assert_eq!(ctx.lines.len(), 1, "零字体大小应产生 1 行");
+        // 片段宽度应为 0
+        for f in ctx.all_fragments() {
+            assert!(f.width.abs() < 0.01, "零字体大小片段宽度应为 0，实际 {}", f.width);
+        }
+    }
+
+    /// 测试 line_height=0.0 时不会 panic。
+    ///
+    /// 零行高意味着行盒高度为 0，y 坐标不会递增。
+    #[test]
+    fn test_zero_line_height_no_panic() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "Hello World".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 0.0,
+            vertical_align: VA::Baseline,
+        }];
+        // 不应 panic
+        ctx.break_into_lines(runs);
+
+        // 行盒高度应为 0.0（所有片段 line_height 为 0）
+        assert_eq!(ctx.lines.len(), 1, "零行高应产生 1 行");
+        assert!(
+            ctx.lines[0].height.abs() < 0.01,
+            "零行高行盒高度应为 0，实际 {}",
+            ctx.lines[0].height
+        );
+        assert!(
+            ctx.total_height().abs() < 0.01,
+            "零行高总高度应为 0，实际 {}",
+            ctx.total_height()
+        );
+    }
 }

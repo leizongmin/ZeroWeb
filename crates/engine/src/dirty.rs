@@ -829,4 +829,47 @@ mod tests {
         tracker.mark_dirty(Rect::new(0.0, 0.0, -10.0, -10.0));
         assert!(tracker.dirty_rects().is_empty(), "both negative rect should be ignored");
     }
+
+    /// 测试 100 个互不重叠且距离很远的矩形合并后数量不变。
+    ///
+    /// 每个矩形之间间距很大，并集面积远超个体面积之和的 150%，因此不应合并。
+    #[test]
+    fn test_merge_many_non_overlapping_rects_no_merge() {
+        let mut tracker = DirtyTracker::new();
+        // 100 个 10x10 的小矩形，每个间距 1000px，确保完全不可能合并
+        for i in 0..100 {
+            let x = i as f32 * 1000.0;
+            let y = i as f32 * 1000.0;
+            tracker.mark_dirty(Rect::new(x, y, 10.0, 10.0));
+        }
+        assert_eq!(tracker.dirty_rects().len(), 100);
+
+        tracker.merge_overlapping();
+
+        // 100 个互不重叠且距离很远的矩形不应合并
+        assert_eq!(
+            tracker.dirty_rects().len(),
+            100,
+            "100 non-overlapping distant rects should not merge"
+        );
+    }
+
+    /// 测试在 full_redraw=true 时调用 merge_overlapping 不会 panic，且状态不变。
+    #[test]
+    fn test_merge_overlapping_during_full_redraw_noop() {
+        let mut tracker = DirtyTracker::new();
+        tracker.mark_full_redraw();
+        assert!(tracker.is_full_redraw());
+        assert!(tracker.dirty_rects().is_empty());
+
+        // 在 full_redraw 状态下调用 merge_overlapping，不应 panic
+        tracker.merge_overlapping();
+
+        // 状态应保持不变
+        assert!(tracker.is_full_redraw(), "full_redraw flag should remain true");
+        assert!(
+            tracker.dirty_rects().is_empty(),
+            "dirty_rects should still be empty after merge during full_redraw"
+        );
+    }
 }
