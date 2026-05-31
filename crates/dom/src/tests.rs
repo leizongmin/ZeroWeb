@@ -5709,6 +5709,176 @@ fn test_parser_script_tag_content() {
     assert_eq!(doc.text_content(ps[0]), Some("after".to_string()));
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 39. Edge case 补充测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 Document 实现验证：创建文档后根节点有效且节点数为 1。
+#[test]
+fn test_document_implementation() {
+    let doc = Document::new();
+    let root = doc.root();
+    assert!(root.is_valid(), "document root should be valid");
+    assert_eq!(doc.node_count(), 1, "new document should have exactly 1 node");
+    assert!(matches!(doc.get(root).map(|n| &n.kind), Some(NodeKind::Document(_))));
+}
+
+/// 测试 has_attribute 对多属性元素返回正确结果。
+#[test]
+fn test_element_has_attribute_multi() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    doc.set_attribute(elem, "id", "main");
+    doc.set_attribute(elem, "class", "container");
+    doc.set_attribute(elem, "data-role", "button");
+
+    assert!(doc.has_attribute(elem, "id"), "should have id attribute");
+    assert!(doc.has_attribute(elem, "class"), "should have class attribute");
+    assert!(doc.has_attribute(elem, "data-role"), "should have data-role attribute");
+    assert!(!doc.has_attribute(elem, "title"), "should not have title attribute");
+    assert!(
+        !doc.has_attribute(elem, "data-missing"),
+        "should not have data-missing attribute"
+    );
+
+    doc.remove_attribute(elem, "class");
+    assert!(!doc.has_attribute(elem, "class"), "after removal should not have class");
+}
+
+/// 测试 remove_attribute 后 get_attribute 返回 None。
+#[test]
+fn test_element_remove_attribute() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    doc.set_attribute(elem, "data-test", "value");
+    assert_eq!(doc.get_attribute(elem, "data-test"), Some("value".to_string()));
+
+    doc.remove_attribute(elem, "data-test");
+    assert_eq!(
+        doc.get_attribute(elem, "data-test"),
+        None,
+        "after removal get_attribute should return None"
+    );
+    assert!(
+        !doc.has_attribute(elem, "data-test"),
+        "after removal has_attribute should return false"
+    );
+
+    // 移除不存在的属性不 panic
+    doc.remove_attribute(elem, "nonexistent");
+}
+
+/// 测试文本节点分割：创建 "Hello World"，分割为 "Hello" 和 " World"。
+#[test]
+fn test_text_node_split_text() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let root = doc.root();
+    doc.append_child(root, parent).unwrap();
+
+    let text = doc.create_text_node("Hello World");
+    doc.append_child(parent, text).unwrap();
+
+    // split_text 语义：在 offset 5 处分割，原始节点保留前半部分，新节点保存后半部分
+    let original_content = doc.text_content(text).unwrap();
+    let (first, second) = original_content.split_at(5);
+    assert_eq!(first, "Hello");
+    assert_eq!(second, " World");
+
+    // 修改原始节点为前半部分
+    doc.set_text_content(text, first);
+
+    // 创建新节点保存后半部分并追加到父节点
+    let new_text = doc.create_text_node(second);
+    doc.append_child(parent, new_text).unwrap();
+
+    // 验证两个节点的文本内容
+    assert_eq!(doc.text_content(text), Some("Hello".to_string()));
+    assert_eq!(doc.text_content(new_text), Some(" World".to_string()));
+
+    // 验证父节点包含两个文本子节点
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0], text);
+    assert_eq!(children[1], new_text);
+
+    // 验证父节点 textContent 为两段拼接
+    assert_eq!(doc.text_content(parent), Some("Hello World".to_string()));
+}
+
+/// 测试 class 列表替换：将 "foo bar" 中的 "foo" 替换为 "baz"。
+#[test]
+fn test_element_class_list_replace() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+
+    doc.set_attribute(elem, "class", "foo bar");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("foo bar".to_string()));
+
+    // 替换 "foo" 为 "baz"
+    let current = doc.get_attribute(elem, "class").unwrap();
+    let replaced = current
+        .split_whitespace()
+        .map(|c| if c == "foo" { "baz" } else { c })
+        .collect::<Vec<_>>()
+        .join(" ");
+    doc.set_attribute(elem, "class", &replaced);
+
+    assert_eq!(
+        doc.get_attribute(elem, "class"),
+        Some("baz bar".to_string()),
+        "className should be 'baz bar' after replacing foo with baz"
+    );
+    assert_eq!(
+        doc.get_elements_by_class_name("baz"),
+        vec![elem],
+        "baz class should be found"
+    );
+    assert_eq!(
+        doc.get_elements_by_class_name("bar"),
+        vec![elem],
+        "bar class should still be found"
+    );
+    assert!(
+        doc.get_elements_by_class_name("foo").is_empty(),
+        "foo class should no longer match"
+    );
+}
+
+/// 测试 node_contains 对祖先/后代关系返回正确结果。
+#[test]
+fn test_node_contains() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    let grandchild = doc.create_element("p");
+    let root = doc.root();
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(child, grandchild).unwrap();
+
+    assert!(doc.node_contains(parent, child), "parent should contain child");
+    assert!(
+        doc.node_contains(parent, grandchild),
+        "parent should contain grandchild"
+    );
+    assert!(doc.node_contains(child, grandchild), "child should contain grandchild");
+    assert!(!doc.node_contains(child, parent), "child should not contain parent");
+    assert!(
+        !doc.node_contains(grandchild, parent),
+        "grandchild should not contain parent"
+    );
+    assert!(
+        !doc.node_contains(grandchild, child),
+        "grandchild should not contain child"
+    );
+}
+
 /// 测试 input 元素的 disabled 属性（无值属性）解析正确。
 /// HTML 中 `<input disabled>` 的 disabled 属性值为空字符串。
 #[test]

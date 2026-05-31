@@ -991,6 +991,15 @@ impl CanvasContext {
         self.height
     }
 
+    /// 调整画布尺寸。会清空像素缓冲区并重新分配。
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        let buffer_size = (width as usize) * (height as usize) * 4;
+        self.pixel_buffer = vec![0u8; buffer_size];
+        self.primitives = RenderPrimitives::new();
+    }
+
     // ── Shadow properties ──
 
     /// 设置阴影颜色。
@@ -6057,5 +6066,90 @@ mod tests {
         let _ = p.is_point_in_path(100.0, 100.0);
         let _ = p.is_point_in_path(50.0, 0.0);
         let _ = p.is_point_in_path(0.0, 50.0);
+    }
+
+    // ── 新增边界条件测试 ──
+
+    /// 测试 resize 后画布尺寸和像素缓冲区正确更新。
+    #[test]
+    fn test_canvas_create_resize() {
+        let mut ctx = CanvasContext::new(100, 200);
+        assert_eq!(ctx.width(), 100);
+        assert_eq!(ctx.height(), 200);
+        ctx.resize(400, 300);
+        assert_eq!(ctx.width(), 400);
+        assert_eq!(ctx.height(), 300);
+        // resize 后像素缓冲区应全部为零
+        let pixel = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 0, 0]);
+    }
+
+    /// 测试 clearRect(0,0,w,h) 将整个画布清为透明。
+    #[test]
+    fn test_canvas_clear_entire() {
+        let mut ctx = CanvasContext::new(50, 50);
+        // 先填充红色
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        // 验证 (0,0) 为红色
+        let before = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(before.data[0..4], [255, 0, 0, 255]);
+        // 清除整个画布
+        ctx.clear_rect(0.0, 0.0, 50.0, 50.0);
+        // 验证 (0,0) 为透明
+        let after = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(
+            after.data[0..4],
+            [0, 0, 0, 0],
+            "clearRect(0,0,w,h) should make pixel transparent"
+        );
+    }
+
+    /// 测试 lineWidth 为 0 时 stroke 不 panic。
+    #[test]
+    fn test_canvas_stroke_zero_width() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_width(0.0);
+        ctx.stroke_rect(10.0, 10.0, 50.0, 50.0);
+        // 不应 panic
+        assert_eq!(ctx.primitives().fills.len(), 4);
+    }
+
+    /// 测试负值平移后变换矩阵正确。
+    #[test]
+    fn test_canvas_negative_translate() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.translate(-10.0, -20.0);
+        let t = ctx.transform;
+        assert!((t.e - (-10.0)).abs() < f32::EPSILON, "translate tx should be -10");
+        assert!((t.f - (-20.0)).abs() < f32::EPSILON, "translate ty should be -20");
+        assert!((t.a - 1.0).abs() < f32::EPSILON);
+        assert!((t.d - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试无 save 时 restore 不 panic，状态保持默认。
+    #[test]
+    fn test_canvas_restore_without_save() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.restore(); // 不应 panic
+        assert_eq!(*ctx.fill_color(), Color::BLACK);
+        assert!((ctx.global_alpha() - 1.0).abs() < f32::EPSILON);
+        assert!((ctx.line_width() - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 globalAlpha 超出 [0,1] 时被 clamp。
+    #[test]
+    fn test_canvas_set_global_alpha_clamp() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_global_alpha(2.0);
+        assert!(
+            (ctx.global_alpha() - 1.0).abs() < f32::EPSILON,
+            "alpha > 1 should clamp to 1.0"
+        );
+        ctx.set_global_alpha(-0.5);
+        assert!(
+            (ctx.global_alpha()).abs() < f32::EPSILON,
+            "alpha < 0 should clamp to 0.0"
+        );
     }
 }

@@ -987,8 +987,37 @@ fn test_parse_color_named_all() {
     assert_eq!(parse_color("fuchsia"), Some(ColorValue::Rgba(255, 0, 255, 255)));
     // orange
     assert_eq!(parse_color("orange"), Some(ColorValue::Rgba(255, 165, 0, 255)));
-    // 未知命名颜色应返回 Named
-    assert!(matches!(parse_color("customcolor"), Some(ColorValue::Named(_))));
+    // 未知命名颜色应返回 None（非标准名称无法解析）
+    assert_eq!(parse_color("customcolor"), None);
+}
+
+#[test]
+/// 测试扩展命名颜色（coral、darkred、tomato、crimson 等 CSS 标准颜色）
+fn test_parse_color_extended_named() {
+    // coral
+    assert_eq!(parse_color("coral"), Some(ColorValue::Rgba(255, 127, 80, 255)));
+    // darkred
+    assert_eq!(parse_color("darkred"), Some(ColorValue::Rgba(139, 0, 0, 255)));
+    // tomato — 之前会返回 Named(String)，现在正确返回 Rgba
+    assert_eq!(parse_color("tomato"), Some(ColorValue::Rgba(255, 99, 71, 255)));
+    // crimson — 验证大小写不敏感
+    assert_eq!(parse_color("Crimson"), Some(ColorValue::Rgba(220, 20, 60, 255)));
+    assert_eq!(parse_color("CRIMSON"), Some(ColorValue::Rgba(220, 20, 60, 255)));
+    // 更多扩展颜色抽样
+    assert_eq!(
+        parse_color("cornflowerblue"),
+        Some(ColorValue::Rgba(100, 149, 237, 255))
+    );
+    assert_eq!(parse_color("dodgerblue"), Some(ColorValue::Rgba(30, 144, 255, 255)));
+    assert_eq!(parse_color("steelblue"), Some(ColorValue::Rgba(70, 130, 180, 255)));
+    assert_eq!(parse_color("chartreuse"), Some(ColorValue::Rgba(127, 255, 0, 255)));
+    // darkgray 和 darkgrey 别名
+    assert_eq!(parse_color("darkgray"), Some(ColorValue::Rgba(169, 169, 169, 255)));
+    assert_eq!(parse_color("darkgrey"), Some(ColorValue::Rgba(169, 169, 169, 255)));
+    // transparent 和 currentcolor
+    assert_eq!(parse_color("transparent"), Some(ColorValue::Transparent));
+    assert_eq!(parse_color("currentColor"), Some(ColorValue::CurrentColor));
+    assert_eq!(parse_color("TRANSPARENT"), Some(ColorValue::Transparent));
 }
 
 #[test]
@@ -1002,6 +1031,33 @@ fn test_parse_length_zero() {
 /// 测试无效长度值
 fn test_parse_length_invalid() {
     assert_eq!(parse_length("abc"), None);
+}
+
+#[test]
+/// 测试 fit-content() CSS 函数解析
+fn test_parse_fit_content() {
+    // fit-content(200px)
+    let result = parse_length("fit-content(200px)");
+    assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Px(200.0)));
+
+    // fit-content(50%)
+    let result = parse_length("fit-content(50%)");
+    assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Percentage(50.0)));
+
+    // fit-content(0)
+    let result = parse_length("fit-content(0)");
+    assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Px(0.0)));
+
+    // fit-content() 空参数应返回 None
+    assert_eq!(parse_length("fit-content()"), None);
+
+    // fit-content(10em)
+    let result = parse_length("fit-content(10em)");
+    assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Em(10.0)));
+
+    // 大小写不敏感
+    let result = parse_length("FIT-CONTENT(100px)");
+    assert!(result.is_none()); // starts_with 是大小写敏感的，当前实现要求小写
 }
 
 #[test]

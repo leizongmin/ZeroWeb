@@ -95,4 +95,50 @@ mod tests {
             CoepPolicy::Credentialless
         ));
     }
+
+    /// 测试 CSP script-src 'self' 允许同源脚本加载。
+    #[test]
+    fn test_csp_allows_same_origin_script() {
+        let csp = ContentSecurityPolicy::parse("script-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
+    }
+
+    /// 测试 CSP style-src 'none' 阻止内联样式。
+    #[test]
+    fn test_csp_blocks_inline_style() {
+        let csp = ContentSecurityPolicy::parse("style-src 'none'");
+        assert!(!csp.is_inline_style_allowed(None, None));
+    }
+
+    /// 测试 data: URI 的源为 null（不透明源），无法解析为有效 Origin。
+    #[test]
+    fn test_same_origin_data_uri() {
+        let result = Origin::parse("data:text/html,<h1>Hello</h1>");
+        assert!(
+            result.is_err(),
+            "data: URI 的源应为不透明源（null），无法解析为有效 Origin"
+        );
+    }
+
+    /// 测试 CORS 简单请求：GET 方法且无自定义头为简单请求。
+    #[test]
+    fn test_cors_simple_request_get() {
+        assert!(is_simple_request("GET", None, &[]));
+        assert!(is_simple_request(
+            "GET",
+            None,
+            &[("Accept".to_string(), "*/*".to_string())]
+        ));
+    }
+
+    /// 测试沙箱带 allow-same-origin 标志时，effective_origin 保留原始源。
+    #[test]
+    fn test_sandbox_allows_same_origin() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-same-origin");
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert!(sandbox.allows_same_origin());
+        let effective = sandbox.effective_origin(&iframe_origin);
+        assert_eq!(effective, SandboxOrigin::Normal(iframe_origin.clone()));
+    }
 }
