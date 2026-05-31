@@ -4,10 +4,11 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, ColumnCountValue, ColumnWidthValue, ContainerTypeValue,
-    ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue, FontStyleValue,
-    FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PositionValue, QuotesValue, ScrollSnapAlignValue,
-    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue, VisibilityValue,
+    self, AlignmentValue, BoxSizingValue, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
+    ContainerTypeValue, ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue,
+    FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PositionValue, QuotesValue,
+    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue,
+    VisibilityValue,
 };
 
 /// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
@@ -352,6 +353,39 @@ pub enum ColumnRuleStyleComputedValue {
     Inset,
     /// outset。
     Outset,
+}
+
+/// CSS contain 属性计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContainComputedValue {
+    /// none（默认值）。
+    None,
+    /// strict — 等价于 layout + style + paint。
+    Strict,
+    /// content — 等价于 layout + style + paint + size。
+    Content,
+    /// size。
+    Size,
+    /// layout。
+    Layout,
+    /// style。
+    Style,
+    /// paint。
+    Paint,
+    /// 多个值的位掩码组合。
+    Custom(u8),
+}
+
+/// contain 属性的位标志常量。
+impl ContainComputedValue {
+    /// size 标志位。
+    pub const FLAG_SIZE: u8 = 0x01;
+    /// layout 标志位。
+    pub const FLAG_LAYOUT: u8 = 0x02;
+    /// style 标志位。
+    pub const FLAG_STYLE: u8 = 0x04;
+    /// paint 标志位。
+    pub const FLAG_PAINT: u8 = 0x08;
 }
 
 /// CSS overflow-wrap 属性值。
@@ -888,6 +922,10 @@ pub enum PropertyValue {
     ObjectFit(ObjectFitComputedValue),
     /// filter 值。
     Filter(FilterComputedValue),
+    /// contain 值。
+    Contain(ContainComputedValue),
+    /// column-rule-color 值。
+    ColumnRuleColor(ColorValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1314,6 +1352,12 @@ pub struct ComputedStyle {
     pub column_rule_width: ColumnRuleWidthComputedValue,
     /// column-rule-style 属性。
     pub column_rule_style: ColumnRuleStyleComputedValue,
+    /// column-rule-color 属性。
+    pub column_rule_color: ColorValue,
+
+    // ── Contain ──
+    /// contain 属性。
+    pub contain: ContainComputedValue,
 
     // ── Interaction / Performance Hint ──
     /// overscroll-behavior-x 属性。
@@ -1558,6 +1602,10 @@ impl Default for ComputedStyle {
             // Column Rule
             column_rule_width: ColumnRuleWidthComputedValue::Medium,
             column_rule_style: ColumnRuleStyleComputedValue::None,
+            column_rule_color: ColorValue::Rgba(0, 0, 0, 255), // currentColor 解析后默认黑色
+
+            // Contain
+            contain: ContainComputedValue::None,
 
             // Interaction / Performance Hint
             overscroll_behavior_x: OverscrollBehaviorValue::Auto,
@@ -1796,6 +1844,12 @@ impl PropertyRegistry {
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
             "filter" => Some(Filter(FilterComputedValue::None)),
 
+            // Column Rule Color
+            "column-rule-color" => Some(ColumnRuleColor(ColorValue::Rgba(0, 0, 0, 255))),
+
+            // Contain
+            "contain" => Some(Contain(ContainComputedValue::None)),
+
             _ => None,
         }
     }
@@ -1988,6 +2042,8 @@ impl PropertyRegistry {
             "column-width",
             "object-fit",
             "filter",
+            "column-rule-color",
+            "contain",
         ]
     }
 }
@@ -3769,6 +3825,29 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        // ── Column Rule Color 属性 ──
+        "column-rule-color" => {
+            if let Some(v) = values::parse_color(value) {
+                style.column_rule_color = v;
+                return true;
+            }
+        }
+        // ── Contain 属性 ──
+        "contain" => {
+            if let Some(v) = values::parse_contain(value) {
+                style.contain = match v {
+                    ContainValue::None => ContainComputedValue::None,
+                    ContainValue::Strict => ContainComputedValue::Strict,
+                    ContainValue::Content => ContainComputedValue::Content,
+                    ContainValue::Size => ContainComputedValue::Size,
+                    ContainValue::Layout => ContainComputedValue::Layout,
+                    ContainValue::Style => ContainComputedValue::Style,
+                    ContainValue::Paint => ContainComputedValue::Paint,
+                    ContainValue::Custom(flags) => ContainComputedValue::Custom(flags),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -4542,6 +4621,16 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "filter" => {
             style.filter = default_style.filter;
+            true
+        }
+        // Column Rule Color
+        "column-rule-color" => {
+            style.column_rule_color = default_style.column_rule_color;
+            true
+        }
+        // Contain
+        "contain" => {
+            style.contain = default_style.contain;
             true
         }
         _ => false,
@@ -8351,5 +8440,148 @@ mod tests {
         assert!(props.contains(&"direction"));
         assert!(props.contains(&"unicode-bidi"));
         assert!(props.contains(&"tab-size"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // contain + column-rule-color 属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// contain 默认值为 None
+    fn test_contain_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.contain, ContainComputedValue::None);
+    }
+
+    #[test]
+    /// contain 应用关键字值
+    fn test_apply_contain_keywords() {
+        let mut style = ComputedStyle::default();
+
+        assert!(apply_property_value(&mut style, "contain", "strict"));
+        assert_eq!(style.contain, ContainComputedValue::Strict);
+
+        assert!(apply_property_value(&mut style, "contain", "content"));
+        assert_eq!(style.contain, ContainComputedValue::Content);
+
+        assert!(apply_property_value(&mut style, "contain", "none"));
+        assert_eq!(style.contain, ContainComputedValue::None);
+
+        assert!(apply_property_value(&mut style, "contain", "size"));
+        assert_eq!(style.contain, ContainComputedValue::Size);
+
+        assert!(apply_property_value(&mut style, "contain", "layout"));
+        assert_eq!(style.contain, ContainComputedValue::Layout);
+
+        assert!(apply_property_value(&mut style, "contain", "style"));
+        assert_eq!(style.contain, ContainComputedValue::Style);
+
+        assert!(apply_property_value(&mut style, "contain", "paint"));
+        assert_eq!(style.contain, ContainComputedValue::Paint);
+
+        assert!(!apply_property_value(&mut style, "contain", "invalid"));
+    }
+
+    #[test]
+    /// contain 支持多值空格分隔
+    fn test_apply_contain_multi_value() {
+        let mut style = ComputedStyle::default();
+
+        assert!(apply_property_value(&mut style, "contain", "layout style paint"));
+        match &style.contain {
+            ContainComputedValue::Custom(flags) => {
+                let expected = ContainComputedValue::FLAG_LAYOUT
+                    | ContainComputedValue::FLAG_STYLE
+                    | ContainComputedValue::FLAG_PAINT;
+                assert_eq!(*flags, expected);
+            }
+            _ => panic!("expected Custom, got {:?}", style.contain),
+        }
+
+        // "layout style paint size" 等价于 content 的位组合
+        assert!(apply_property_value(&mut style, "contain", "layout style paint size"));
+        match &style.contain {
+            ContainComputedValue::Custom(flags) => {
+                let expected = ContainComputedValue::FLAG_LAYOUT
+                    | ContainComputedValue::FLAG_STYLE
+                    | ContainComputedValue::FLAG_PAINT
+                    | ContainComputedValue::FLAG_SIZE;
+                assert_eq!(*flags, expected);
+            }
+            _ => panic!("expected Custom, got {:?}", style.contain),
+        }
+    }
+
+    #[test]
+    /// contain 不继承
+    fn test_contain_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("contain"));
+    }
+
+    #[test]
+    /// contain 在 known_properties 中
+    fn test_contain_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"contain"));
+    }
+
+    #[test]
+    /// contain 有 initial_value
+    fn test_contain_initial_value() {
+        assert!(PropertyRegistry::initial_value("contain").is_some());
+        let mut style = ComputedStyle::default();
+        style.contain = ContainComputedValue::Strict;
+        assert!(apply_initial_value(&mut style, "contain"));
+        assert_eq!(style.contain, ContainComputedValue::None);
+    }
+
+    #[test]
+    /// column-rule-color 默认值为黑色
+    fn test_column_rule_color_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 0, 0, 255));
+    }
+
+    #[test]
+    /// column-rule-color 应用颜色值
+    fn test_apply_column_rule_color() {
+        let mut style = ComputedStyle::default();
+
+        assert!(apply_property_value(&mut style, "column-rule-color", "red"));
+        assert_eq!(style.column_rule_color, ColorValue::Rgba(255, 0, 0, 255));
+
+        assert!(apply_property_value(&mut style, "column-rule-color", "#00ff00"));
+        assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 255, 0, 255));
+
+        assert!(apply_property_value(&mut style, "column-rule-color", "transparent"));
+        assert_eq!(style.column_rule_color, ColorValue::Transparent);
+
+        assert!(apply_property_value(&mut style, "column-rule-color", "currentColor"));
+        assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
+
+        assert!(!apply_property_value(&mut style, "column-rule-color", "not-a-color"));
+    }
+
+    #[test]
+    /// column-rule-color 不继承
+    fn test_column_rule_color_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("column-rule-color"));
+    }
+
+    #[test]
+    /// column-rule-color 在 known_properties 中
+    fn test_column_rule_color_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"column-rule-color"));
+    }
+
+    #[test]
+    /// column-rule-color 有 initial_value
+    fn test_column_rule_color_initial_value() {
+        assert!(PropertyRegistry::initial_value("column-rule-color").is_some());
+        let mut style = ComputedStyle::default();
+        style.column_rule_color = ColorValue::Rgba(255, 0, 0, 255);
+        assert!(apply_initial_value(&mut style, "column-rule-color"));
+        assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 0, 0, 255));
     }
 }

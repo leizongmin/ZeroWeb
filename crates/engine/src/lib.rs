@@ -1397,4 +1397,313 @@ mod tests {
         assert_eq!(fill.rect.size.width, 300.0);
         assert_eq!(fill.rect.size.height, 200.0);
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 visibility:collapse 的元素在集成层面不产生渲染图元。
+    ///
+    /// visibility:collapse 在非表格元素上与 hidden 行为一致，
+    /// 元素保留布局空间但不绘制。通过 Painter 完整管线验证：
+    /// 设置 collapse 后，背景填充和文本 glyph 均不应生成。
+    #[test]
+    fn test_visibility_collapse_no_primitives() {
+        use zero_css_parser::values::VisibilityValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 10.0,
+            y: 20.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.visibility = VisibilityValue::Collapse;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // visibility:collapse 不绘制背景和文本
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "visibility:collapse 不应产生填充图元"
+        );
+        assert!(
+            painter.primitives().glyphs.is_empty(),
+            "visibility:collapse 不应产生文本图元"
+        );
+    }
+
+    /// 测试 recompute_styles 使用空样式表时布局缓存仍然有效。
+    ///
+    /// 首次用 CSS 渲染文档产生背景填充，然后传空样式表重新计算。
+    /// 验证管线不 panic、布局缓存仍然存在、viewport 尺寸不变。
+    #[test]
+    fn test_recompute_with_empty_stylesheets() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Content</div></body></html>"#;
+        let css = r#".box { background-color: #336699; width: 200px; height: 100px; }"#;
+
+        // 首次渲染：带 CSS
+        let first = pipeline.render_html(html, css);
+        assert!(first.primitives.fills.len() > 0, "首次渲染应产生填充");
+        let first_vp = first.layout.viewport_width;
+
+        // 重新计算：空样式表
+        let doc = zero_dom::parse_html(html);
+        let (_, _styles, layout) = pipeline.recompute_styles(&doc, &[]);
+
+        // 布局缓存仍有效
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // viewport 不变
+        assert_eq!(layout.viewport_width, first_vp, "空样式表重新计算后 viewport 不应变");
+    }
+
+    /// 测试负 outline-offset 使 outline 向内偏移，与元素背景重叠。
+    ///
+    /// 正常 outline 在 border 外侧，负 outline-offset 使 outline 向内移动。
+    /// 验证 outline 图元的起始 y 坐标反映负偏移量。
+    #[test]
+    fn test_negative_outline_offset_inward() {
+        use zero_style_system::property::OutlineStyleValue;
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_width = zero_css_parser::values::LengthValue::Px(3.0);
+        // 负偏移：outline 向内移动 5px
+        style.outline_offset = zero_css_parser::values::LengthValue::Px(-5.0);
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // outline 生成 4 个填充图元
+        assert_eq!(painter.primitives().fills.len(), 4, "outline 应生成 4 个填充图元");
+
+        // 验证上 outline 向内偏移：total_offset = outline_width(3) + offset(-5) = -2
+        // 上 outline y = abs_y(0) - total_offset(-2) = 2
+        let top = &painter.primitives().fills[0];
+        assert_eq!(top.rect.origin.y, 2.0, "负 outline-offset 应使上 outline 向内偏移");
+        // 上 outline 宽度 = w + 2 * total_offset = 200 + 2*(-2) = 196
+        assert_eq!(top.rect.size.width, 196.0, "上 outline 宽度应反映负偏移");
+    }
+
+    /// 测试 RenderPipeline 首次渲染前脏区域追踪器为空。
+    ///
+    /// 新建的管线脏区域追踪器应处于初始状态：
+    /// 无脏矩形、不需要全量重绘、脏面积为 0。
+    #[test]
+    fn test_pipeline_initial_dirty_tracker_state() {
+        let mut pipeline = RenderPipeline::new(1024.0, 768.0);
+
+        // 初始状态
+        let tracker = pipeline.dirty_tracker();
+        assert!(tracker.dirty_rects().is_empty(), "新建管线脏矩形列表应为空");
+        assert!(!tracker.is_full_redraw(), "新建管线不应需要全量重绘");
+        assert_eq!(tracker.dirty_area(), 0.0, "新建管线脏面积应为 0");
+
+        // 渲染后脏区域追踪器仍为空（render_html 不标记脏区域）
+        let html = "<html><body><div>Test</div></body></html>";
+        let _result = pipeline.render_html(html, "");
+        let tracker = pipeline.dirty_tracker();
+        assert!(tracker.dirty_rects().is_empty(), "render_html 后脏矩形列表应仍为空");
+        assert!(!tracker.is_full_redraw(), "render_html 后不应需要全量重绘");
+    }
+
+    /// 测试合成层提升时根图层始终为第一个且 id=0，即使所有子元素都被提升。
+    ///
+    /// 创建两个子元素（opacity < 1.0），两者均被提升为独立合成层。
+    /// 验证根图层仍然排在最前，且根图层只包含根布局盒自身。
+    #[test]
+    fn test_composite_root_layer_first_when_all_children_promoted() {
+        use zero_style_system::property::ZIndexValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem1 = doc.create_element("div");
+        let elem2 = doc.create_element("div");
+
+        let child1 = LayoutBox {
+            node_id: Some(elem1),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let child2 = LayoutBox {
+            node_id: Some(elem2),
+            x: 100.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 100.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child1, child2],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+
+        // 两个子元素都有 opacity < 1.0，都会被提升
+        let mut style1 = ComputedStyle::default();
+        style1.opacity = 0.5;
+        style1.z_index = ZIndexValue::Integer(1);
+        styles.insert(elem1, style1);
+
+        let mut style2 = ComputedStyle::default();
+        style2.opacity = 0.7;
+        style2.z_index = ZIndexValue::Integer(2);
+        styles.insert(elem2, style2);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // 根图层 + 2 个提升图层
+        assert_eq!(layers.len(), 3, "应有根图层 + 2 个提升图层");
+
+        // 根图层始终为第一个
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+        assert_eq!(layers[0].id, 0, "根图层 id 应为 0");
+
+        // 提升的图层按 z-index 升序排列
+        assert_eq!(layers[1].z_index, 1);
+        assert_eq!(layers[2].z_index, 2);
+
+        // 根图层只包含根布局盒（子元素都被提升了）
+        assert_eq!(layers[0].boxes.len(), 1, "根图层应只包含根布局盒自身");
+    }
 }

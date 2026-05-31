@@ -2053,4 +2053,80 @@ mod tests {
         assert_eq!(areas.get("b"), Some(&(1, 2, 2, 3)));
         assert_eq!(areas.get("c"), Some(&(1, 2, 3, 4)));
     }
+
+    // -- 边界条件测试（第五批）--
+
+    /// 测试 parse_grid_tracks 传入 Some("") 空字符串时返回空轨道列表。
+    ///
+    /// Some("") 与 None 不同：None 返回空列表，Some("") 也应返回空列表
+    /// （tokenize 后没有有效 token）。
+    #[test]
+    fn test_parse_grid_tracks_empty_some_string() {
+        let tracks = parse_grid_tracks(&Some("".to_string()));
+        assert!(
+            tracks.is_empty(),
+            "Some(\"\") 应返回空轨道列表，实际 {} 个",
+            tracks.len()
+        );
+
+        // 纯空白字符串同样应返回空列表
+        let tracks_ws = parse_grid_tracks(&Some("   ".to_string()));
+        assert!(
+            tracks_ws.is_empty(),
+            "纯空白字符串应返回空轨道列表，实际 {} 个",
+            tracks_ws.len()
+        );
+    }
+
+    /// 测试 parse_grid_tracks 解析百分比轨道值。
+    ///
+    /// "25% 50% 25%" 应解析为三个轨道，验证轨道数量和基本属性。
+    #[test]
+    fn test_parse_grid_tracks_percentage_values() {
+        let tracks = parse_grid_tracks(&Some("25% 50% 25%".to_string()));
+        assert_eq!(tracks.len(), 3, "应有 3 个轨道");
+
+        // 验证每个轨道都是 Single 变体（不是 Repeat）
+        for (i, track) in tracks.iter().enumerate() {
+            assert!(
+                matches!(track, taffy::style::TrackSizingFunction::Single(_)),
+                "第 {} 个轨道应为 Single 变体",
+                i
+            );
+        }
+
+        // 将轨道转换为 taffy Style 并验证 gap 设置正确
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_template_columns = Some("25% 50% 25%".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(
+            taffy_style.grid_template_columns.len(),
+            3,
+            "taffy Style 中应有 3 列轨道"
+        );
+    }
+
+    /// 测试 resolve_grid_placement 在无 parent_areas 时将所有 Name 转为 Auto。
+    ///
+    /// 当子元素引用 grid-area 名称但父级容器没有定义 grid-template-areas 时，
+    /// 所有命名引用应安全降级为 Auto，不会 panic。
+    #[test]
+    fn test_resolve_grid_placement_no_parent_areas() {
+        use zero_style_system::GridLineValue;
+
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Name("missing".to_string());
+        style.grid_row_end = GridLineValue::Name("missing".to_string());
+        style.grid_column_start = GridLineValue::Name("missing".to_string());
+        style.grid_column_end = GridLineValue::Name("missing".to_string());
+
+        // parent_areas = None
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
+
+        assert_eq!(rs, GridLineValue::Auto, "row-start 无 area map 时应为 Auto");
+        assert_eq!(re, GridLineValue::Auto, "row-end 无 area map 时应为 Auto");
+        assert_eq!(cs, GridLineValue::Auto, "col-start 无 area map 时应为 Auto");
+        assert_eq!(ce, GridLineValue::Auto, "col-end 无 area map 时应为 Auto");
+    }
 }

@@ -6545,3 +6545,214 @@ fn test_clone_node_shallow_text_content_empty() {
     // 原始节点不受影响
     assert_eq!(doc.text_content(elem), Some("original content".to_string()));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 41. 边界条件补充测试：Unicode、节点重排、深层 normalize、Range、序列化
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 set_text_content 处理包含多字节 Unicode 字符的文本。
+///
+/// 验证 CJK 字符、emoji、混合 ASCII 与 Unicode 的文本内容
+/// 在设置和获取之间保持完整，不会因编码问题截断或丢失字符。
+#[test]
+fn test_text_content_unicode_multibyte() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+
+    // 纯 CJK 文本
+    doc.set_text_content(elem, "你好世界");
+    assert_eq!(doc.text_content(elem), Some("你好世界".to_string()));
+
+    // 包含 emoji 的文本
+    doc.set_text_content(elem, "Hello 🌍🦀🚀");
+    assert_eq!(doc.text_content(elem), Some("Hello 🌍🦀🚀".to_string()));
+
+    // 混合 ASCII、CJK、emoji、特殊符号
+    doc.set_text_content(elem, "abc你好🔥\u{00A0}\u{200B}xyz");
+    assert_eq!(
+        doc.text_content(elem),
+        Some("abc你好🔥\u{00A0}\u{200B}xyz".to_string()),
+        "混合 Unicode 文本应完整保留"
+    );
+
+    // 验证通过解析器解析的 Unicode 内容也能正确提取
+    let parsed = parse_html("<html><body><p>日本語テスト 🎌</p></body></html>");
+    let ps = parsed.get_elements_by_tag_name("p");
+    assert_eq!(ps.len(), 1);
+    let text = parsed.text_content(ps[0]).unwrap();
+    assert!(text.contains("日本語テスト"), "解析后的 CJK 文本应正确");
+    assert!(text.contains("🎌"), "解析后的 emoji 应正确");
+}
+
+/// 测试 insert_before 将父节点已有的子节点重新排序（移到更前位置）。
+///
+/// 当 new_node 已经是 parent 的子节点时，insert_before 应先将其
+/// 从当前位置移除，再插入到 ref_node 之前。
+#[test]
+fn test_insert_before_reorder_existing_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("a");
+    let c2 = doc.create_element("b");
+    let c3 = doc.create_element("c");
+    let c4 = doc.create_element("d");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+    doc.append_child(root, c4).unwrap();
+    // 顺序: [c1, c2, c3, c4]
+
+    // 将 c4 移到 c2 之前
+    doc.insert_before(root, c4, c2).unwrap();
+    assert_eq!(doc.child_nodes(root), vec![c1, c4, c2, c3]);
+
+    // 将 c3 移到 c1 之前（移到最前面）
+    doc.insert_before(root, c3, c1).unwrap();
+    assert_eq!(doc.child_nodes(root), vec![c3, c1, c4, c2]);
+
+    // 验证兄弟关系正确
+    assert_eq!(doc.previous_sibling(c1), Some(c3));
+    assert_eq!(doc.next_sibling(c1), Some(c4));
+    assert_eq!(doc.previous_sibling(c2), Some(c4));
+    assert_eq!(doc.next_sibling(c3), Some(c1));
+}
+
+/// 测试 normalize 递归处理嵌套层级中的相邻文本节点。
+///
+/// 在嵌套的父 > 子 > 孙结构中，每层都有相邻文本节点需要合并。
+/// normalize 应递归进入每一层，合并所有相邻文本节点，
+/// 同时保持元素子节点的边界不被跨越。
+#[test]
+fn test_normalize_deeply_nested_text_merge() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    // parent 层：文本 + 文本 + child + 文本 + 文本
+    let pt1 = doc.create_text_node("outer-");
+    let pt2 = doc.create_text_node("a ");
+    let pt3 = doc.create_text_node(" outer-");
+    let pt4 = doc.create_text_node("b");
+    doc.append_child(parent, pt1).unwrap();
+    doc.append_child(parent, pt2).unwrap();
+    doc.append_child(child, pt3).unwrap(); // 这里 pt2 后面是 child，不是文本
+    // 需要把 child 放在 pt2 后面
+    // 重新构建：parent > [pt1, pt2, child, pt3, pt4]
+    // 当前 child 在 pt2 前面，需要调整
+    // 先移除 child 再按正确顺序添加
+    doc.remove_child(parent, child).unwrap();
+    doc.append_child(parent, pt3).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(parent, pt4).unwrap();
+
+    // child 层：文本 + 文本
+    let ct1 = doc.create_text_node("inner-");
+    let ct2 = doc.create_text_node("data");
+    doc.append_child(child, ct1).unwrap();
+    doc.append_child(child, ct2).unwrap();
+
+    // 结构: parent > [pt1("outer-"), pt2("a "), pt3(" outer-"), child, pt4("b")]
+    //        child > [ct1("inner-"), ct2("data")]
+    assert_eq!(doc.child_nodes(parent).len(), 5, "parent 应有 5 个子节点");
+    assert_eq!(doc.child_nodes(child).len(), 2, "child 应有 2 个子节点");
+
+    doc.normalize(parent);
+
+    // parent 层：pt1+pt2+pt3 合并为 "outer-a  outer-"，child 不变，pt4 单独
+    let parent_children = doc.child_nodes(parent);
+    assert_eq!(parent_children.len(), 3, "normalize 后 parent 应有 3 个子节点");
+    assert_eq!(
+        doc.text_content(parent_children[0]),
+        Some("outer-a  outer-".to_string()),
+        "parent 前三个文本节点应合并"
+    );
+    // 第二个子节点是 child 元素
+    assert_eq!(parent_children[1], child, "中间的元素子节点不变");
+
+    // child 层：ct1+ct2 合并为 "inner-data"
+    let child_children = doc.child_nodes(child);
+    assert_eq!(child_children.len(), 1, "normalize 后 child 应有 1 个子节点");
+    assert_eq!(
+        doc.text_content(child_children[0]),
+        Some("inner-data".to_string()),
+        "child 内的文本节点应合并"
+    );
+
+    // 整体 text_content 正确
+    assert_eq!(
+        doc.text_content(parent),
+        Some("outer-a  outer-inner-datab".to_string()),
+        "parent 整体 text_content 应包含所有合并后的文本"
+    );
+}
+
+/// 测试 Range collapsed 属性在边界条件下的行为。
+///
+/// collapsed 应在起止点完全相同时返回 true，任何偏移不同时返回 false。
+/// 验证初始创建、手动设置偏移、以及 collapse 操作后的 collapsed 状态。
+#[test]
+fn test_range_collapsed_edge_cases() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let c1 = doc.create_element("div");
+    let c2 = doc.create_element("span");
+    let c3 = doc.create_element("p");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(root, c3).unwrap();
+
+    // Range::at 创建折叠范围
+    let r1 = Range::at(root, 0);
+    assert!(r1.collapsed(), "Range::at 创建的范围应折叠");
+
+    // 设置相同起止点仍折叠
+    let mut r2 = Range::at(root, 1);
+    r2.set_end(root, 1).unwrap();
+    assert!(r2.collapsed(), "起止偏移相同时应折叠");
+
+    // 设置不同偏移后不折叠
+    r2.set_end(root, 3).unwrap();
+    assert!(!r2.collapsed(), "起止偏移不同时不应折叠");
+
+    // collapse(true) 折叠到起始
+    let mut r3 = Range::new(root, root);
+    r3.set_start(root, 0).unwrap();
+    r3.set_end(root, 2).unwrap();
+    assert!(!r3.collapsed());
+    r3.collapse(true);
+    assert!(r3.collapsed(), "collapse(true) 后应折叠");
+    assert_eq!(r3.start_offset(), 0, "折叠到起始偏移 0");
+
+    // collapse(false) 折叠到结束
+    let mut r4 = Range::new(root, root);
+    r4.set_start(root, 1).unwrap();
+    r4.set_end(root, 3).unwrap();
+    r4.collapse(false);
+    assert!(r4.collapsed(), "collapse(false) 后应折叠");
+    assert_eq!(r4.start_offset(), 3, "折叠到结束偏移 3");
+}
+
+/// 测试 ProcessingInstruction 节点的序列化输出格式。
+///
+/// PI 节点应序列化为 `<?target data?>` 格式，
+/// 验证完整的序列化输出包含正确的 XML 声明语法。
+#[test]
+fn test_serialize_processing_instruction() {
+    let mut doc = Document::new();
+    let pi = doc.create_processing_instruction("xml-stylesheet", "href=\"style.css\" type=\"text/css\"");
+    let html = doc.outer_html(pi);
+    assert!(html.starts_with("<?"), "PI 序列化应以 <? 开头，实际: {html}");
+    assert!(html.ends_with("?>"), "PI 序列化应以 ?> 结尾，实际: {html}");
+    assert!(html.contains("xml-stylesheet"), "PI 序列化应包含 target 名称");
+    assert!(html.contains("href=\"style.css\""), "PI 序列化应包含 data 内容");
+
+    // 验证短 PI 序列化
+    let short_pi = doc.create_processing_instruction("xml", "version=\"1.0\"");
+    let short_html = doc.outer_html(short_pi);
+    assert!(short_html.contains("<?xml "));
+    assert!(short_html.contains("version=\"1.0\""));
+    assert!(short_html.ends_with("?>"));
+}

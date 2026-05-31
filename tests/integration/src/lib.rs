@@ -2154,4 +2154,204 @@ mod cross_crate_pipeline {
             panic!("expected StorageOp kind for clear");
         }
     }
+
+    /// CSS break-inside 管线集成测试。
+    ///
+    /// 解析含 break-inside: avoid 的 CSS，通过 style-system 计算样式，
+    /// 验证 break-inside 值正确应用到目标元素。
+    #[test]
+    fn test_break_inside_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "no-break");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .no-break { break-inside: avoid; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.break_inside,
+            zero_style_system::property::BreakInsideValue::Avoid,
+            "div 的 break-inside 应为 Avoid"
+        );
+    }
+
+    /// CSS column-count 管线集成测试。
+    ///
+    /// 解析含 column-count: 3 的 CSS，通过 style-system 计算样式，
+    /// 验证 column-count 值正确解析和存储到计算样式中。
+    #[test]
+    fn test_column_count_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "multi-col");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .multi-col { column-count: 3; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.column_count,
+            zero_style_system::property::ColumnCountComputedValue::Number(3),
+            "div 的 column-count 应为 Number(3)"
+        );
+    }
+
+    /// CSS object-fit 管线集成测试。
+    ///
+    /// 解析含 object-fit: cover 的 CSS，通过 style-system 计算样式，
+    /// 验证 object-fit 值正确应用到 img 元素的计算样式中。
+    #[test]
+    fn test_object_fit_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let img = doc.create_element("img");
+        doc.set_attribute(img, "class", "hero");
+        doc.append_child(body, img).unwrap();
+
+        let css = r#"
+            .hero { object-fit: cover; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let img_style = styles.get(&img).expect("img 应有计算样式");
+        assert_eq!(
+            img_style.object_fit,
+            zero_style_system::property::ObjectFitComputedValue::Cover,
+            "img 的 object-fit 应为 Cover"
+        );
+    }
+
+    /// CSS direction 多级继承集成测试。
+    ///
+    /// 祖父元素设置 direction: rtl，父元素不显式设置（应继承 rtl），
+    /// 子元素显式设置 direction: ltr 覆盖继承值。
+    /// 验证三层继承链中各元素的 direction 计算值正确。
+    #[test]
+    fn test_direction_inheritance_chain() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 祖父元素：direction: rtl
+        let grandparent = doc.create_element("div");
+        doc.set_attribute(grandparent, "class", "rtl-root");
+        doc.append_child(body, grandparent).unwrap();
+
+        // 父元素：不设置 direction，应继承 rtl
+        let parent = doc.create_element("section");
+        doc.set_attribute(parent, "class", "middle");
+        doc.append_child(grandparent, parent).unwrap();
+
+        // 子元素：显式设置 direction: ltr，覆盖继承值
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "ltr-override");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .rtl-root { direction: rtl; }
+            .ltr-override { direction: ltr; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 祖父元素：显式 rtl
+        let gp_style = styles.get(&grandparent).expect("grandparent 应有计算样式");
+        assert_eq!(
+            gp_style.direction,
+            zero_style_system::property::DirectionValue::Rtl,
+            "grandparent 的 direction 应为 Rtl"
+        );
+
+        // 父元素：继承 rtl
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.direction,
+            zero_style_system::property::DirectionValue::Rtl,
+            "parent 应继承 grandparent 的 direction: Rtl"
+        );
+
+        // 子元素：显式覆盖为 ltr
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.direction,
+            zero_style_system::property::DirectionValue::Ltr,
+            "child 的 direction 应被显式覆盖为 Ltr"
+        );
+    }
+
+    /// CSS contain 管线集成测试。
+    ///
+    /// 解析含 contain: layout 的 CSS，通过 style-system 计算样式，
+    /// 验证 contain 值正确存储到计算样式中。
+    #[test]
+    fn test_contain_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "contained");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .contained { contain: layout; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.contain,
+            zero_style_system::property::ContainComputedValue::Layout,
+            "div 的 contain 应为 Layout"
+        );
+    }
 }
