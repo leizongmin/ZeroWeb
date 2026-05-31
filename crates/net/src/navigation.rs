@@ -404,4 +404,117 @@ mod tests {
         assert!(!nav.can_go_back());
         assert!(nav.can_go_forward(), "有前进历史时应能前进");
     }
+
+    /// 测试空历史记录的后退/前进行为。
+    #[test]
+    fn test_empty_history_back_forward() {
+        let mut nav = NavigationHistory::new(50);
+        assert!(!nav.can_go_back(), "空历史不应能后退");
+        assert!(!nav.can_go_forward(), "空历史不应能前进");
+        assert!(nav.current().is_none(), "空历史当前条目应为 None");
+    }
+
+    /// 测试 replace_state 在历史中间位置替换当前条目。
+    #[test]
+    fn test_replace_state_in_middle() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("A".into()));
+        nav.navigate("http://b.com", Some("B".into()));
+        nav.navigate("http://c.com", Some("C".into()));
+        nav.go_back(); // at b
+
+        nav.replace_current("http://b-new.com", Some("B-New".into()));
+        let current = nav.current().unwrap();
+        assert_eq!(current.url, "http://b-new.com");
+        assert_eq!(current.title, Some("B-New".into()));
+
+        // 前进历史不受影响
+        let fwd = nav.go_forward().unwrap();
+        assert_eq!(fwd.url, "http://c.com");
+
+        // 后退到 a 不受影响
+        nav.go_back(); // at b-new
+        nav.go_back(); // at a
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
+    }
+
+    /// 测试 max_entries=1 的极端容量限制。
+    #[test]
+    fn test_max_entries_one() {
+        let mut nav = NavigationHistory::new(1);
+        nav.navigate("http://a.com", None);
+        assert_eq!(nav.len(), 1);
+
+        nav.navigate("http://b.com", None);
+        assert_eq!(nav.len(), 1);
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        assert!(!nav.can_go_back(), "max=1 不应有后退历史");
+    }
+
+    /// 测试连续后退后前进保持状态一致。
+    #[test]
+    fn test_sequential_back_then_forward() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+
+        // 连续后退到 a
+        assert_eq!(nav.go_back().unwrap().url, "http://c.com");
+        assert_eq!(nav.go_back().unwrap().url, "http://b.com");
+        assert_eq!(nav.go_back().unwrap().url, "http://a.com");
+
+        // 连续前进到 d
+        assert_eq!(nav.go_forward().unwrap().url, "http://b.com");
+        assert_eq!(nav.go_forward().unwrap().url, "http://c.com");
+        assert_eq!(nav.go_forward().unwrap().url, "http://d.com");
+    }
+
+    /// 测试 navigate 在后退位置清除前进历史。
+    #[test]
+    fn test_navigate_clears_forward_at_middle() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.go_back(); // at b
+
+        // 新导航应清除 c
+        nav.navigate("http://d.com", Some("D".into()));
+        assert!(!nav.can_go_forward(), "新导航后不应有前进历史");
+        assert_eq!(nav.current().unwrap().url, "http://d.com");
+
+        // 后退一步到 b
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+
+        // 再后退到 a
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
+    }
+
+    /// 测试 go_back_n 和 go_forward_n 的边界值。
+    #[test]
+    fn test_go_back_forward_n_boundary() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None);
+        nav.navigate("http://d.com", None);
+
+        // 后退 3 步到 a
+        let entry = nav.go_back_n(3).unwrap();
+        assert_eq!(entry.url, "http://a.com");
+
+        // 再后退应失败
+        assert!(nav.go_back_n(1).is_none());
+
+        // 前进 3 步到 d
+        let entry = nav.go_forward_n(3).unwrap();
+        assert_eq!(entry.url, "http://d.com");
+
+        // 再前进应失败
+        assert!(nav.go_forward_n(1).is_none());
+    }
 }

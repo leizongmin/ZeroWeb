@@ -760,4 +760,123 @@ mod tests {
         let headers = generate_preflight_response(&policy, &origin, "GET", &["X-Custom".to_string()]);
         assert_eq!(headers.allow_origin, Some("*".to_string()));
     }
+
+    // ---- CORS 边界条件测试 ----
+
+    /// 测试多个请求头混合场景：部分为简单头、部分为自定义头。
+    #[test]
+    fn test_cors_mixed_simple_and_custom_headers() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["POST".to_string()],
+            allow_headers: vec!["X-Custom".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(
+            &policy,
+            &origin,
+            "POST",
+            &[
+                ("Accept".to_string(), "application/json".to_string()),
+                ("Content-Type".to_string(), "text/plain".to_string()),
+                ("X-Custom".to_string(), "value".to_string()),
+            ],
+        );
+        assert!(result.allowed, "混合简单头和已允许的自定义头应通过");
+    }
+
+    /// 测试简单请求对各种 Content-Type 的判断。
+    #[test]
+    fn test_is_simple_request_content_type_variants() {
+        assert!(is_simple_request(
+            "POST",
+            Some("application/x-www-form-urlencoded"),
+            &[]
+        ));
+        assert!(is_simple_request("POST", Some("multipart/form-data"), &[]));
+        assert!(is_simple_request("POST", Some("text/plain"), &[]));
+        assert!(!is_simple_request("POST", Some("application/json"), &[]));
+        assert!(!is_simple_request("POST", Some("text/xml"), &[]));
+    }
+
+    /// 测试 DELETE 方法不属于简单请求。
+    #[test]
+    fn test_is_not_simple_request_delete() {
+        assert!(!is_simple_request("DELETE", None, &[]));
+    }
+
+    /// 测试 PATCH 方法不属于简单请求。
+    #[test]
+    fn test_is_not_simple_request_patch() {
+        assert!(!is_simple_request("PATCH", None, &[]));
+    }
+
+    /// 测试方法大小写不敏感：POST 与 post 应等同处理。
+    #[test]
+    fn test_is_simple_request_case_insensitive() {
+        assert!(is_simple_request("post", Some("text/plain"), &[]));
+        assert!(is_simple_request("Post", Some("text/plain"), &[]));
+    }
+
+    /// 测试预检响应包含 max-age 值。
+    #[test]
+    fn test_preflight_max_age_value() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(7200),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert_eq!(headers.max_age, Some("7200".to_string()));
+    }
+
+    /// 测试 OPTIONS 方法不被视为简单请求。
+    #[test]
+    fn test_options_is_not_simple_request() {
+        assert!(!is_simple_request("OPTIONS", None, &[]));
+    }
+
+    /// 测试同源请求即使 CORS 策略严格也应通过（同源检查在 CORS 之前）。
+    /// 这里验证 CORS 策略本身对于空源列表的处理。
+    #[test]
+    fn test_cors_no_origins_configured() {
+        let policy = CorsPolicy {
+            allow_origins: vec![],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://any.com").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(!result.allowed, "空源列表应阻止所有请求");
+    }
+
+    /// 测试多个 Allow-Origin 条目中有一个匹配即可通过。
+    #[test]
+    fn test_cors_multiple_allow_origins() {
+        let policy = CorsPolicy {
+            allow_origins: vec![
+                "http://a.com".to_string(),
+                "http://b.com".to_string(),
+                "http://c.com".to_string(),
+            ],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin_b = Origin::parse("http://b.com").unwrap();
+        let result = check_cors(&policy, &origin_b, "GET", &[]);
+        assert!(result.allowed, "源列表中的第二个条目应匹配");
+
+        let origin_d = Origin::parse("http://d.com").unwrap();
+        let result = check_cors(&policy, &origin_d, "GET", &[]);
+        assert!(!result.allowed, "不在源列表中的源应被阻止");
+    }
 }

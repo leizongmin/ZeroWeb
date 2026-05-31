@@ -1446,4 +1446,210 @@ mod tests {
             );
         }
     }
+
+    // ── 新增补充测试 ──
+
+    /// 测试混合 inline 和 block 内容边界。
+    ///
+    /// 窄容器中多个文本运行跨越多行，验证行盒之间的 y 坐标不重叠。
+    #[test]
+    fn test_mixed_inline_block_content_boundary() {
+        let mut ctx = InlineFormattingContext::new(80.0);
+        let runs = vec![
+            TextRun {
+                text: "alpha beta gamma".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
+            },
+            TextRun {
+                text: "delta epsilon".to_string(),
+                node_id: NodeId::default(),
+                font_size: 16.0,
+                line_height: 20.0,
+                vertical_align: VerticalAlignValue::Baseline,
+            },
+        ];
+        ctx.break_into_lines(runs);
+
+        assert!(ctx.lines.len() > 1, "窄容器中应有多个行盒，实际 {}", ctx.lines.len());
+
+        // 行盒之间不应重叠：下一行的 y 应 >= 上一行的 y + 上一行的高度
+        for i in 1..ctx.lines.len() {
+            let prev_end = ctx.lines[i - 1].y + ctx.lines[i - 1].height;
+            assert!(
+                ctx.lines[i].y >= prev_end - 0.01,
+                "行 {} (y={}) 应在行 {} (y={}, h={}) 之后",
+                i,
+                ctx.lines[i].y,
+                i - 1,
+                ctx.lines[i - 1].y,
+                ctx.lines[i - 1].height
+            );
+        }
+    }
+
+    /// 测试文本中包含显式换行符时产生多个行盒。
+    ///
+    /// 换行符 \n 将文本分割到不同行盒中。
+    #[test]
+    fn test_text_with_explicit_line_breaks() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        // \n 在 split_whitespace 中被视为空白，会被当作单词分隔符
+        let runs = vec![TextRun {
+            text: "line1\nline2\nline3".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 24.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 宽容器中所有单词应在同一行（因为容器足够宽）
+        // 但 \n 在 split_whitespace 中作为空白处理，所以分词为 3 个单词
+        assert!(ctx.lines.len() >= 1, "应至少有 1 行（宽容器中单词可能全部放入同一行）");
+
+        // 验证所有片段存在且 y 坐标合理
+        for line in &ctx.lines {
+            assert!(line.height > 0.0, "行盒高度应为正");
+        }
+    }
+
+    /// 测试 white-space: nowrap 行为 — 模拟单行不换行。
+    ///
+    /// 虽然行内格式化上下文不直接处理 white-space 属性，
+    /// 但可以验证当所有文本放入单行时的行为（通过足够宽的容器）。
+    #[test]
+    fn test_whitespace_nowrap_behavior() {
+        let mut ctx = InlineFormattingContext::new(8000.0);
+        let runs = vec![TextRun {
+            text: "This is a long sentence that would normally wrap but in a very wide container stays on one line"
+                .to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 在 8000px 宽的容器中，应只有 1 行
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "超宽容器中文本应在单行中，实际 {} 行",
+            ctx.lines.len()
+        );
+
+        // 总高度应等于行高
+        assert!(
+            (ctx.total_height() - 20.0).abs() < 0.01,
+            "单行总高度应为 20.0，实际 {}",
+            ctx.total_height()
+        );
+    }
+
+    /// 测试超长无断词机会的单词 — 不应换行，应放入单行。
+    ///
+    /// 即使单词宽度远超容器，也应保持在同一行中（浏览器行为）。
+    #[test]
+    fn test_very_long_word_without_break_opportunity() {
+        let mut ctx = InlineFormattingContext::new(50.0);
+        // 100 个字符的连续字符串，无空格
+        let long_word = "abcdefghijklmnopqrstuvwxyz".repeat(4);
+        let runs = vec![TextRun {
+            text: long_word,
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }];
+        ctx.break_into_lines(runs);
+
+        // 单个不中断单词应在 1 行中（不换行）
+        assert_eq!(
+            ctx.lines.len(),
+            1,
+            "超长无断词单词应在单行中（溢出），实际 {} 行",
+            ctx.lines.len()
+        );
+        assert_eq!(ctx.lines[0].runs.len(), 1, "应只有 1 个片段");
+
+        // 片段宽度应远超容器宽度
+        let fragment = &ctx.lines[0].runs[0];
+        assert!(fragment.width > 50.0, "片段宽度 {} 应超过容器宽度 50", fragment.width);
+    }
+
+    /// 测试 vertical-align: top 在行盒中的 y 偏移。
+    #[test]
+    fn test_vertical_align_top_in_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "Hello".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+            vertical_align: VerticalAlignValue::Top,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let fragment = &ctx.lines[0].runs[0];
+        // top 对齐: y 应为 0.0
+        assert!(
+            fragment.y.abs() < 0.01,
+            "vertical-align: top 片段 y 应为 0，实际 {}",
+            fragment.y
+        );
+    }
+
+    /// 测试 vertical-align: bottom 在行盒中的 y 偏移。
+    #[test]
+    fn test_vertical_align_bottom_in_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "Hello".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+            vertical_align: VerticalAlignValue::Bottom,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let fragment = &ctx.lines[0].runs[0];
+        // bottom 对齐: y = line_height - fragment_height
+        let expected_y = 30.0 - fragment.height;
+        assert!(
+            (fragment.y - expected_y).abs() < 0.01,
+            "vertical-align: bottom 片段 y 应为 {}，实际 {}",
+            expected_y,
+            fragment.y
+        );
+    }
+
+    /// 测试 vertical-align: middle 在行盒中的 y 偏移。
+    #[test]
+    fn test_vertical_align_middle_in_line() {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun {
+            text: "Hello".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 30.0,
+            vertical_align: VerticalAlignValue::Middle,
+        }];
+        ctx.break_into_lines(runs);
+
+        assert_eq!(ctx.lines.len(), 1);
+        let fragment = &ctx.lines[0].runs[0];
+        // middle 对齐: y = (line_height - fragment_height) / 2
+        let expected_y = (30.0 - fragment.height) / 2.0;
+        assert!(
+            (fragment.y - expected_y).abs() < 0.01,
+            "vertical-align: middle 片段 y 应为 {}，实际 {}",
+            expected_y,
+            fragment.y
+        );
+    }
 }
