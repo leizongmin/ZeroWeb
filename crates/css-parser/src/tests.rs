@@ -5215,3 +5215,187 @@ fn test_parse_counter_action_and_list_edge_cases() {
     // parse_counter_list：中间出现 "none" 应返回 None
     assert_eq!(parse_counter_list("section none"), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 31. 未覆盖属性值解析边界测试 — overscroll-behavior / content / quotes /
+//     image-rendering / isolation
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_overscroll_behavior 所有关键字、大小写不敏感及无效输入。
+/// 此前 parse_overscroll_behavior 无任何测试。
+fn test_parse_overscroll_behavior_edge_cases() {
+    use crate::values::{OverscrollBehaviorValue, parse_overscroll_behavior};
+    // 所有关键字
+    assert_eq!(parse_overscroll_behavior("auto"), Some(OverscrollBehaviorValue::Auto));
+    assert_eq!(
+        parse_overscroll_behavior("contain"),
+        Some(OverscrollBehaviorValue::Contain)
+    );
+    assert_eq!(parse_overscroll_behavior("none"), Some(OverscrollBehaviorValue::None));
+    // 大小写不敏感
+    assert_eq!(parse_overscroll_behavior("AUTO"), Some(OverscrollBehaviorValue::Auto));
+    assert_eq!(
+        parse_overscroll_behavior("  Contain  "),
+        Some(OverscrollBehaviorValue::Contain)
+    );
+    assert_eq!(parse_overscroll_behavior("NONE"), Some(OverscrollBehaviorValue::None));
+    // 无效输入
+    assert_eq!(parse_overscroll_behavior("scroll"), None);
+    assert_eq!(parse_overscroll_behavior(""), None);
+    assert_eq!(parse_overscroll_behavior("inherit"), None);
+}
+
+#[test]
+/// 测试 parse_content 所有变体：normal、none、字符串、attr()、counter() 及 counter(name, style)，
+/// 以及空 attr()、空字符串、未闭合引号等边界输入。
+/// 此前 parse_content 无任何测试。
+fn test_parse_content_edge_cases() {
+    use crate::values::{ContentValue, parse_content};
+    // normal / none
+    assert_eq!(parse_content("normal"), Some(ContentValue::Normal));
+    assert_eq!(parse_content("none"), Some(ContentValue::None));
+    assert_eq!(parse_content("NORMAL"), Some(ContentValue::Normal));
+    assert_eq!(parse_content("  None  "), Some(ContentValue::None));
+    // 双引号字符串
+    assert_eq!(
+        parse_content("\"hello\""),
+        Some(ContentValue::String("hello".to_string()))
+    );
+    // 单引号字符串
+    assert_eq!(
+        parse_content("'world'"),
+        Some(ContentValue::String("world".to_string()))
+    );
+    // 空引号字符串
+    assert_eq!(parse_content("\"\""), Some(ContentValue::String(String::new())));
+    assert_eq!(parse_content("''"), Some(ContentValue::String(String::new())));
+    // attr(name)
+    assert_eq!(
+        parse_content("attr(href)"),
+        Some(ContentValue::Attr("href".to_string()))
+    );
+    assert_eq!(
+        parse_content("attr(data-value)"),
+        Some(ContentValue::Attr("data-value".to_string()))
+    );
+    // 空 attr() 应返回 None
+    assert_eq!(parse_content("attr()"), None);
+    // counter(name)
+    assert_eq!(
+        parse_content("counter(section)"),
+        Some(ContentValue::Counter {
+            name: "section".to_string(),
+            style: None,
+        })
+    );
+    // counter(name, style)
+    assert_eq!(
+        parse_content("counter(section, upper-roman)"),
+        Some(ContentValue::Counter {
+            name: "section".to_string(),
+            style: Some("upper-roman".to_string()),
+        })
+    );
+    // 空 counter() 应返回 None
+    assert_eq!(parse_content("counter()"), None);
+    // 无效输入
+    assert_eq!(parse_content(""), None);
+    assert_eq!(parse_content("invalid-value"), None);
+    assert_eq!(parse_content("\"unclosed"), None);
+}
+
+#[test]
+/// 测试 parse_quotes 所有关键字（none、auto）、引号对解析、
+/// 多层引号对、混合引号类型、空输入和未闭合引号。
+/// 此前 parse_quotes 无任何测试。
+fn test_parse_quotes_edge_cases() {
+    use crate::values::{QuotesValue, parse_quotes};
+    // none / auto
+    assert_eq!(parse_quotes("none"), Some(QuotesValue::None));
+    assert_eq!(parse_quotes("auto"), Some(QuotesValue::Auto));
+    assert_eq!(parse_quotes("NONE"), Some(QuotesValue::None));
+    assert_eq!(parse_quotes("  Auto  "), Some(QuotesValue::Auto));
+    // 单层引号对
+    let result = parse_quotes("\"«\" \"»\"");
+    assert!(result.is_some());
+    if let Some(QuotesValue::Pairs(pairs)) = result {
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], ("«".to_string(), "»".to_string()));
+    } else {
+        panic!("Expected Pairs");
+    }
+    // 多层引号对（CSS 规范允许嵌套级别）
+    let result = parse_quotes("\"«\" \"»\" \"‹\" \"›\"");
+    assert!(result.is_some());
+    if let Some(QuotesValue::Pairs(pairs)) = result {
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0], ("«".to_string(), "»".to_string()));
+        assert_eq!(pairs[1], ("‹".to_string(), "›".to_string()));
+    } else {
+        panic!("Expected Pairs");
+    }
+    // 单引号引号对
+    let result = parse_quotes("'\"' '\"'");
+    assert!(result.is_some());
+    if let Some(QuotesValue::Pairs(pairs)) = result {
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], ("\"".to_string(), "\"".to_string()));
+    } else {
+        panic!("Expected Pairs");
+    }
+    // 空输入返回 None
+    assert_eq!(parse_quotes(""), None);
+    assert_eq!(parse_quotes("   "), None);
+}
+
+#[test]
+/// 测试 parse_image_rendering 所有关键字（auto、smooth、high-quality、pixelated、crisp-edges）、
+/// 大小写不敏感及无效输入。此前 parse_image_rendering 无任何测试。
+fn test_parse_image_rendering_edge_cases() {
+    use crate::values::{ImageRenderingValue, parse_image_rendering};
+    // 所有关键字
+    assert_eq!(parse_image_rendering("auto"), Some(ImageRenderingValue::Auto));
+    assert_eq!(parse_image_rendering("smooth"), Some(ImageRenderingValue::Smooth));
+    assert_eq!(
+        parse_image_rendering("high-quality"),
+        Some(ImageRenderingValue::HighQuality)
+    );
+    assert_eq!(parse_image_rendering("pixelated"), Some(ImageRenderingValue::Pixelated));
+    assert_eq!(
+        parse_image_rendering("crisp-edges"),
+        Some(ImageRenderingValue::CrispEdges)
+    );
+    // 大小写不敏感
+    assert_eq!(parse_image_rendering("AUTO"), Some(ImageRenderingValue::Auto));
+    assert_eq!(
+        parse_image_rendering("  Pixelated  "),
+        Some(ImageRenderingValue::Pixelated)
+    );
+    assert_eq!(
+        parse_image_rendering("CRISP-EDGES"),
+        Some(ImageRenderingValue::CrispEdges)
+    );
+    // 无效输入
+    assert_eq!(parse_image_rendering("sharp"), None);
+    assert_eq!(parse_image_rendering(""), None);
+    assert_eq!(parse_image_rendering("inherit"), None);
+}
+
+#[test]
+/// 测试 parse_isolation 所有关键字（auto、isolate）、大小写不敏感及无效输入。
+/// 此前 parse_isolation 无任何测试。
+fn test_parse_isolation_edge_cases() {
+    use crate::values::{IsolationValue, parse_isolation};
+    // 所有关键字
+    assert_eq!(parse_isolation("auto"), Some(IsolationValue::Auto));
+    assert_eq!(parse_isolation("isolate"), Some(IsolationValue::Isolate));
+    // 大小写不敏感
+    assert_eq!(parse_isolation("AUTO"), Some(IsolationValue::Auto));
+    assert_eq!(parse_isolation("  Isolate  "), Some(IsolationValue::Isolate));
+    assert_eq!(parse_isolation("ISOLATE"), Some(IsolationValue::Isolate));
+    // 无效输入
+    assert_eq!(parse_isolation("none"), None);
+    assert_eq!(parse_isolation(""), None);
+    assert_eq!(parse_isolation("inherit"), None);
+}

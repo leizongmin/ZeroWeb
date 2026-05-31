@@ -3799,4 +3799,253 @@ mod tests {
             .expect("lt_s min<max");
         assert_eq!(r[0], WasmValue::I32(1), "i32::MIN < i32::MAX 应为 1");
     }
+
+    // =======================================================================
+    // 新增测试：链接器模块名不匹配、i64 比较运算、燃料单调递减、
+    //           memory.grow 失败、主机函数返回 f64 特殊值
+    // =======================================================================
+
+    /// 测试主机函数注册了错误的模块名（如 "wrong_env" 而非 WASM 导入的 "env"），
+    /// 实例化应因链接失败而返回错误，验证链接器对模块名的精确匹配要求。
+    #[test]
+    fn test_linker_wrong_module_name() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "helper" (func $helper (result i32)))
+                (func (export "run") (result i32) call $helper)
+            )"#,
+        );
+
+        // 注册到错误的模块名 "wrong_env"，而非 WASM 期望的 "env"
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "wrong_env",
+            "helper",
+            vec![],
+            vec![WasmValueType::I32],
+            |_params, results| {
+                results.push(WasmValue::I32(42));
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let result = module.instantiate_with_linker(&sandbox, &linker);
+        assert!(result.is_err(), "模块名不匹配时应实例化失败，实际成功了");
+        if let Err(e) = result {
+            let msg = e.to_string();
+            // 链接错误信息中应包含未找到的导入信息
+            assert!(
+                msg.contains("env") || msg.contains("helper") || msg.contains("link") || msg.contains("unresolved"),
+                "错误信息应包含未解析的导入信息，实际: {msg}"
+            );
+        }
+    }
+
+    /// 测试 WASM i64 比较运算符（i64.eq、i64.lt_s、i64.gt_s），
+    /// 验证 64 位有符号比较在正数、负数和极值之间的正确行为。
+    #[test]
+    fn test_i64_comparison_operations() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "eq64") (param i64 i64) (result i32)
+                    local.get 0 local.get 1 i64.eq)
+                (func (export "lt64") (param i64 i64) (result i32)
+                    local.get 0 local.get 1 i64.lt_s)
+                (func (export "gt64") (param i64 i64) (result i32)
+                    local.get 0 local.get 1 i64.gt_s)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // eq: 相等返回 1
+        let r = instance
+            .call("eq64", &[WasmValue::I64(123456789), WasmValue::I64(123456789)])
+            .expect("eq64 same");
+        assert_eq!(r[0], WasmValue::I32(1), "123456789 == 123456789 应为 1");
+
+        // eq: 不等返回 0
+        let r = instance
+            .call("eq64", &[WasmValue::I64(1), WasmValue::I64(2)])
+            .expect("eq64 diff");
+        assert_eq!(r[0], WasmValue::I32(0), "1 == 2 应为 0");
+
+        // lt_s: 负数 < 正数
+        let r = instance
+            .call("lt64", &[WasmValue::I64(-100), WasmValue::I64(100)])
+            .expect("lt64 neg<pos");
+        assert_eq!(r[0], WasmValue::I32(1), "-100 < 100 应为 1");
+
+        // lt_s: 正数 < 负数 → 0
+        let r = instance
+            .call("lt64", &[WasmValue::I64(100), WasmValue::I64(-100)])
+            .expect("lt64 pos>neg");
+        assert_eq!(r[0], WasmValue::I32(0), "100 < -100 应为 0");
+
+        // gt_s: 大正数 > 小正数
+        let r = instance
+            .call("gt64", &[WasmValue::I64(i64::MAX), WasmValue::I64(0)])
+            .expect("gt64 max>0");
+        assert_eq!(r[0], WasmValue::I32(1), "i64::MAX > 0 应为 1");
+
+        // 极值比较: i64::MIN < i64::MAX
+        let r = instance
+            .call("lt64", &[WasmValue::I64(i64::MIN), WasmValue::I64(i64::MAX)])
+            .expect("lt64 min<max");
+        assert_eq!(r[0], WasmValue::I32(1), "i64::MIN < i64::MAX 应为 1");
+
+        // gt_s: i64::MIN > i64::MAX → 0
+        let r = instance
+            .call("gt64", &[WasmValue::I64(i64::MIN), WasmValue::I64(i64::MAX)])
+            .expect("gt64 min>max");
+        assert_eq!(r[0], WasmValue::I32(0), "i64::MIN > i64::MAX 应为 0");
+    }
+
+    /// 测试启用燃料计量后，连续多次调用同一函数，每次调用后剩余燃料严格单调递减，
+    /// 验证燃料消耗的累加性和单调性。
+    #[test]
+    fn test_fuel_monotonically_decreasing_across_calls() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "double") (param i32) (result i32)
+                    local.get 0 local.get 0 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 设置大量燃料
+        instance.set_fuel(10_000).expect("set_fuel");
+
+        let mut prev_fuel = instance.get_fuel().expect("get_fuel initial");
+        for i in 1..=10 {
+            let r = instance.call("double", &[WasmValue::I32(i)]).expect("call");
+            assert_eq!(r[0], WasmValue::I32(i * 2), "double({i}) 应为 {}", i * 2);
+            let curr_fuel = instance.get_fuel().expect("get_fuel");
+            assert!(
+                curr_fuel < prev_fuel,
+                "第 {i} 次调用后燃料应严格小于前一次：前={prev_fuel}，后={curr_fuel}"
+            );
+            prev_fuel = curr_fuel;
+        }
+
+        // 最终剩余燃料应大于 0（10_000 足以支撑 10 次简单调用）
+        assert!(prev_fuel > 0, "10 次调用后剩余燃料应大于 0，实际: {prev_fuel}");
+    }
+
+    /// 测试 WASM memory.grow 在指定最大页数限制时，超过限制后返回 -1（失败）。
+    /// 验证内存增长限制生效，grow 失败不导致 trap，而是优雅返回错误码。
+    #[test]
+    fn test_memory_grow_exceeds_limit() {
+        let sandbox = WasmSandbox::new();
+        // 声明初始 1 页、最大 2 页的内存
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1 2)
+                (func (export "try_grow") (param i32) (result i32)
+                    local.get 0
+                    memory.grow)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 初始 1 页，grow 1 页应成功（总共 2 页，未超过最大 2 页限制）
+        let r = instance.call("try_grow", &[WasmValue::I32(1)]).expect("grow 1");
+        if let WasmValue::I32(prev) = r[0] {
+            assert_eq!(prev, 1, "第一次 grow 应返回之前的页数 1");
+        } else {
+            panic!("期望 I32 返回值");
+        }
+
+        // 现在已有 2 页，再 grow 1 页应失败（超过最大 2 页限制），返回 -1
+        let r = instance.call("try_grow", &[WasmValue::I32(1)]).expect("grow fail");
+        assert_eq!(r[0], WasmValue::I32(-1), "超过最大页数限制时 memory.grow 应返回 -1");
+
+        // 验证内存大小仍为 2 页
+        let size = instance.memory_size("mem").expect("size");
+        assert_eq!(size, 65536 * 2, "内存大小应保持 2 页不变");
+
+        // 验证 grow 0 页始终成功（无操作）
+        let r = instance.call("try_grow", &[WasmValue::I32(0)]).expect("grow 0");
+        if let WasmValue::I32(prev) = r[0] {
+            assert_eq!(prev, 2, "grow 0 页应返回当前页数 2");
+        } else {
+            panic!("期望 I32 返回值");
+        }
+    }
+
+    /// 测试主机函数返回 f64 特殊值（NaN、正无穷）给 WASM 侧，
+    /// 验证特殊浮点值在主机 → WASM 传递路径上不丢失、不截断。
+    #[test]
+    fn test_host_function_returns_f64_special() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "get_special" (func $get_special (param i32) (result f64)))
+                (func (export "call_special") (param i32) (result f64)
+                    local.get 0
+                    call $get_special)
+            )"#,
+        );
+
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "get_special",
+            vec![WasmValueType::I32],
+            vec![WasmValueType::F64],
+            |params, results| {
+                if let WasmValue::I32(code) = params[0] {
+                    match code {
+                        0 => results.push(WasmValue::F64(f64::NAN)),
+                        1 => results.push(WasmValue::F64(f64::INFINITY)),
+                        2 => results.push(WasmValue::F64(f64::NEG_INFINITY)),
+                        _ => results.push(WasmValue::F64(0.0)),
+                    }
+                }
+                Ok(())
+            },
+        ));
+
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate_with_linker(&sandbox, &linker).expect("instantiate");
+
+        // 获取 NaN
+        let r = instance.call("call_special", &[WasmValue::I32(0)]).expect("call nan");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(v.is_nan(), "主机返回的 f64 NaN 应正确传递，实际: {v}");
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 获取正无穷
+        let r = instance.call("call_special", &[WasmValue::I32(1)]).expect("call inf");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(
+                v.is_infinite() && v.is_sign_positive(),
+                "主机返回的 f64 正无穷应正确传递，实际: {v}"
+            );
+        } else {
+            panic!("期望 F64 返回值");
+        }
+
+        // 获取负无穷
+        let r = instance
+            .call("call_special", &[WasmValue::I32(2)])
+            .expect("call neg_inf");
+        if let WasmValue::F64(v) = r[0] {
+            assert!(
+                v.is_infinite() && v.is_sign_negative(),
+                "主机返回的 f64 负无穷应正确传递，实际: {v}"
+            );
+        } else {
+            panic!("期望 F64 返回值");
+        }
+    }
 }

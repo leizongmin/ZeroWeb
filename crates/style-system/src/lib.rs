@@ -3770,4 +3770,147 @@ mod tests {
         // @layer 内 @media 条件满足，color 应为红色
         assert_eq!(div_style2.color, ColorValue::Rgba(255, 0, 0, 255)); // red
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增边界条件端到端测试（round 16）
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// background-color 在端到端管线中正确应用：
+    /// div { background-color: #ff6600 } 应产生对应的 RGBA 颜色值。
+    fn test_background_color_hex_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "background-color".to_string(),
+                    value: "#ff6600".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        // #ff6600 → rgba(255, 102, 0, 255)
+        assert_eq!(div_style.background_color, ColorValue::Rgba(255, 102, 0, 255));
+    }
+
+    #[test]
+    /// visibility 是继承属性：父元素设置 visibility:hidden，
+    /// 子元素未显式设置 visibility 时应继承 hidden。
+    fn test_visibility_inheritance_e2e() {
+        let (doc, _html, _body, _div, p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "visibility".to_string(),
+                    value: "hidden".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let p_style = styles.get(&p).expect("p 应该有样式");
+        // visibility 是继承属性，p 应从 div 继承 hidden
+        assert_eq!(p_style.visibility, zero_css_parser::values::VisibilityValue::Hidden);
+    }
+
+    #[test]
+    /// position + top/left 端到端：position:absolute 配合偏移属性
+    /// 在端到端管线中正确存储。
+    fn test_position_absolute_with_offsets_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "position".to_string(),
+                        value: "absolute".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "top".to_string(),
+                        value: "10px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "left".to_string(),
+                        value: "20px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style.position, zero_css_parser::values::PositionValue::Absolute);
+        assert_eq!(div_style.top, LengthValue::Px(10.0));
+        assert_eq!(div_style.left, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    /// z-index 整数值在端到端管线中正确存储。
+    /// 验证 z-index: 100 被解析为 ZIndexValue::Integer(100)。
+    fn test_z_index_integer_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "z-index".to_string(),
+                    value: "100".to_string(),
+                    important: false,
+                }],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style.z_index, property::ZIndexValue::Integer(100));
+    }
+
+    #[test]
+    /// min-width / max-width 在端到端管线中正确应用。
+    /// min-width: 50px, max-width: 500px 应被解析为对应 Px 长度值。
+    fn test_min_max_width_e2e() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![
+                    Declaration {
+                        property: "min-width".to_string(),
+                        value: "50px".to_string(),
+                        important: false,
+                    },
+                    Declaration {
+                        property: "max-width".to_string(),
+                        value: "500px".to_string(),
+                        important: false,
+                    },
+                ],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div 应该有样式");
+        assert_eq!(div_style.min_width, LengthValue::Px(50.0));
+        assert_eq!(div_style.max_width, LengthValue::Px(500.0));
+    }
 }
