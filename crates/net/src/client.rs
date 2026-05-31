@@ -1248,4 +1248,115 @@ mod integration_tests {
         let _ = h1.join();
         let _ = h2.join();
     }
+
+    // ── 高优先级重定向链深度边界测试 ──
+
+    /// 验证恰好 N 次重定向在 max_redirects=N 时成功，N+1 次则失败。
+    /// 使用两阶段：先验证 3 次重定向在 max=3 时成功，再验证 2 次在 max=1 时失败。
+    #[test]
+    fn test_send_redirect_depth_exact_boundary() {
+        // ── 阶段 1: 3 次重定向，max=3，应成功 ──
+        let (l1, url1) = bind_server();
+        let (l2, url2) = bind_server();
+        let (l3, url3) = bind_server();
+        let (l4, url4) = bind_server();
+
+        let t2 = format!("{url2}/hop2");
+        let t3 = format!("{url3}/hop3");
+        let t4 = format!("{url4}/final");
+
+        let t2c = t2.clone();
+        let h1 = std::thread::spawn(move || {
+            let mut s = l1.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t2c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.flush();
+        });
+
+        let t3c = t3.clone();
+        let h2 = std::thread::spawn(move || {
+            let mut s = l2.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t3c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.flush();
+        });
+
+        let t4c = t4.clone();
+        let h3 = std::thread::spawn(move || {
+            let mut s = l3.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t4c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.flush();
+        });
+
+        let h4 = std::thread::spawn(move || {
+            let mut s = l4.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone".as_bytes());
+            let _ = s.flush();
+        });
+
+        let client = HttpClient::with_max_redirects(3);
+        let resp = client.send(HttpRequest::get(&url1)).unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert!(resp.url.contains("/final"));
+        assert_eq!(resp.redirect_count, 3, "3 次重定向在 max=3 时应成功");
+
+        let _ = h1.join();
+        let _ = h2.join();
+        let _ = h3.join();
+        let _ = h4.join();
+
+        // ── 阶段 2: 2 次重定向，max=1，应失败 ──
+        let (l5, url5) = bind_server();
+        let (l6, url6) = bind_server();
+        let (l7, url7) = bind_server();
+
+        let t6 = format!("{url6}/hop");
+        let t7 = format!("{url7}/final");
+
+        let t6c = t6.clone();
+        let h5 = std::thread::spawn(move || {
+            let mut s = l5.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t6c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.flush();
+        });
+
+        let t7c = t7.clone();
+        let h6 = std::thread::spawn(move || {
+            let mut s = l6.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {t7c}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+            let _ = s.flush();
+        });
+
+        let h7 = std::thread::spawn(move || {
+            // 可能不会被访问，但保险起见
+            if let Ok(mut s) = l7.incoming().next().unwrap() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".as_bytes());
+                let _ = s.flush();
+            }
+        });
+
+        let client = HttpClient::with_max_redirects(1);
+        let result = client.send(HttpRequest::get(&url5));
+        assert!(result.is_err(), "2 次重定向在 max=1 时应失败");
+        match result.unwrap_err() {
+            NetError::TooManyRedirects => {}
+            other => panic!("expected TooManyRedirects, got: {other:?}"),
+        }
+
+        let _ = h5.join();
+        let _ = h6.join();
+        let _ = h7.join();
+    }
 }
