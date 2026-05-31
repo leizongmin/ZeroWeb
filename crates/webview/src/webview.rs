@@ -84,6 +84,8 @@ pub struct WebView {
     last_render: Option<WebViewRenderResult>,
     /// 缓存的 HTML（用于 inject_css 重新渲染）。
     cached_html: String,
+    /// 缓存的 CSS（用于 render 重新渲染）。
+    cached_css: String,
     /// 事件回调列表。
     event_callbacks: Vec<EventCallback>,
 }
@@ -102,6 +104,7 @@ impl WebView {
             loading: false,
             last_render: None,
             cached_html: String::new(),
+            cached_css: String::new(),
             event_callbacks: Vec::new(),
         }
     }
@@ -140,6 +143,7 @@ impl WebView {
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
+        self.cached_css = css_str.to_string();
         let result = self.pipeline.render_html(html, css_str);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -241,8 +245,7 @@ impl WebView {
 
     /// 重新渲染（用于 resize 等场景）。
     pub fn render(&mut self) -> WebViewRenderResult {
-        let css = "";
-        let result = self.pipeline.render_html(&self.cached_html, css);
+        let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
             timings: result.timings,
@@ -309,7 +312,12 @@ impl WebView {
         } else {
             &self.cached_html
         };
-        let result = self.pipeline.render_html(html, css);
+        // 追加到缓存的 CSS，而不是替换
+        if !self.cached_css.is_empty() {
+            self.cached_css.push('\n');
+        }
+        self.cached_css.push_str(css);
+        let result = self.pipeline.render_html(html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
             timings: result.timings,

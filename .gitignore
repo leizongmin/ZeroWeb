@@ -44,3 +44,4 @@ lcov.info
 
 # Acceptance test reports and artifacts
 .acceptance/
+.claude/worktrees/

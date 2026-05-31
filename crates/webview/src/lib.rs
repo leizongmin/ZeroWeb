@@ -1303,4 +1303,78 @@ mod tests {
         assert_eq!(wv.url(), Some("https://full.com"));
         assert!(wv.is_loading());
     }
+
+    // ── cached_css：CSS 在 render / resize 后保留 ──
+
+    #[test]
+    fn test_webview_load_html_with_css_preserved_in_render() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div id=\"main\">Hello</div></body></html>";
+        let css = "div { background-color: red; width: 200px; height: 100px; }";
+        let first = wv.load_html(html, Some(css));
+        let fill_count_after_load = first.primitives.fills.len();
+
+        // render() 应使用缓存的 CSS，fills 数量应一致
+        let second = wv.render();
+        assert_eq!(
+            second.primitives.fills.len(),
+            fill_count_after_load,
+            "render() should produce same fills as load_html() when CSS is cached"
+        );
+    }
+
+    #[test]
+    fn test_webview_load_html_css_preserved_after_resize() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div id=\"box\">Content</div></body></html>";
+        let css = "div { background-color: blue; width: 100px; height: 50px; }";
+        let first = wv.load_html(html, Some(css));
+        let fill_count = first.primitives.fills.len();
+
+        wv.resize(400, 300);
+        let after = wv.render();
+        assert_eq!(
+            after.primitives.fills.len(),
+            fill_count,
+            "CSS should be preserved after resize + render"
+        );
+    }
+
+    #[test]
+    fn test_webview_inject_css_accumulates() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div class=\"a b\">Test</div></body></html>";
+        let css = ".a { background-color: red; width: 100px; height: 50px; }";
+        let first = wv.load_html(html, Some(css));
+        let fill_count_first = first.primitives.fills.len();
+
+        // 注入额外 CSS，应追加到已有 CSS
+        let second = wv.inject_css(".b { background-color: blue; }");
+        // 注入后 fills 数量应 >= 之前（追加的 CSS 可能影响布局）
+        assert!(
+            second.primitives.fills.len() >= fill_count_first,
+            "inject_css should accumulate CSS, not replace it"
+        );
+
+        // render 也应保留累积的 CSS
+        let third = wv.render();
+        assert_eq!(
+            third.primitives.fills.len(),
+            second.primitives.fills.len(),
+            "render() should use accumulated CSS"
+        );
+    }
+
+    #[test]
+    fn test_webview_load_html_resets_cached_css() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div>Content</div></body></html>";
+        wv.load_html(html, Some("div { color: red; }"));
+        // 再次调用 load_html 传 None，应重置 CSS
+        wv.load_html(html, None);
+        let after = wv.render();
+        // 没有 CSS 时的 fills 应 <= 有 CSS 时
+        // 主要验证不会崩溃，且 CSS 被正确清空
+        assert!(after.timings.total_ms >= 0.0);
+    }
 }

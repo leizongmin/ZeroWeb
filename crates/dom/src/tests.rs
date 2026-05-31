@@ -2932,7 +2932,7 @@ fn test_serialize_deeply_nested() {
     }
     doc.set_text_content(current, "leaf");
 
-    let html = doc.outer_html(doc.root());
+    let _html = doc.outer_html(doc.root());
     let leaf = doc.first_child(doc.root()).unwrap();
     let leaf_html = doc.outer_html(leaf);
     // Should contain nested sections ending with "leaf"
@@ -3466,4 +3466,135 @@ fn test_parse_nested_lists() {
 
     let lis = doc.get_elements_by_tag_name("li");
     assert_eq!(lis.len(), 4, "should have 4 <li> elements total");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 24. Node lifecycle after removal
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Removed node still allows text_content access.
+#[test]
+fn test_removed_node_text_content_accessible() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_text_content(elem, "hello");
+    doc.append_child(root, elem).unwrap();
+
+    doc.remove_child(root, elem).unwrap();
+
+    // 节点已从树中移除，但仍然可以访问 text_content
+    assert_eq!(doc.text_content(elem), Some("hello".to_string()));
+}
+
+/// Removed node can be re-attached to the tree.
+#[test]
+fn test_removed_node_can_be_reattached() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("span");
+    doc.set_attribute(elem, "id", "test");
+    doc.append_child(root, elem).unwrap();
+
+    doc.remove_child(root, elem).unwrap();
+    assert_eq!(doc.parent_node(elem), None);
+
+    // 重新挂载
+    doc.append_child(root, elem).unwrap();
+    assert_eq!(doc.parent_node(elem), Some(root));
+
+    let found = doc.get_element_by_id("test");
+    assert_eq!(found, Some(elem), "re-attached node should be findable by id");
+}
+
+/// set_attribute on a detached node still works.
+#[test]
+fn test_set_attribute_on_detached_node() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // Never attached to tree
+    doc.set_attribute(elem, "class", "orphan");
+    assert_eq!(doc.get_attribute(elem, "class"), Some("orphan".to_string()));
+}
+
+/// clone_node on a removed node produces a correct copy.
+#[test]
+fn test_clone_removed_node() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "original");
+    doc.append_child(root, elem).unwrap();
+    doc.remove_child(root, elem).unwrap();
+
+    let cloned = doc.clone_node(elem, false);
+    assert_eq!(doc.get_attribute(cloned, "class"), Some("original".to_string()));
+}
+
+/// child_nodes of a removed node returns its children (not empty).
+#[test]
+fn test_removed_node_child_nodes_still_works() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(root, parent).unwrap();
+
+    doc.remove_child(root, parent).unwrap();
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0], child);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 25. Error paths in insert_before and replace_child
+// ═══════════════════════════════════════════════════════════════════════
+
+/// insert_before with ref_node not a child of parent returns error.
+#[test]
+fn test_insert_before_ref_not_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let new_child = doc.create_element("span");
+    let wrong_ref = doc.create_element("p");
+    doc.append_child(root, parent).unwrap();
+
+    let result = doc.insert_before(parent, new_child, wrong_ref);
+    assert!(result.is_err(), "insert_before with non-child ref should fail");
+}
+
+/// replace_child where old_child is not a child of parent returns error.
+#[test]
+fn test_replace_child_old_not_child() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let new_child = doc.create_element("span");
+    let wrong_old = doc.create_element("p");
+    doc.append_child(root, parent).unwrap();
+
+    let result = doc.replace_child(parent, new_child, wrong_old);
+    assert!(result.is_err(), "replace_child with non-child old should fail");
+}
+
+/// insert_before places new node before the reference child.
+#[test]
+fn test_insert_before_places_before_ref() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let first = doc.create_element("a");
+    let second = doc.create_element("b");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, first).unwrap();
+
+    doc.insert_before(parent, second, first).unwrap();
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0], second);
+    assert_eq!(children[1], first);
 }
