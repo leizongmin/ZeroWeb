@@ -292,6 +292,156 @@ mod tests {
         }
     }
 
+    /// 测试 HostError 各变体的 Display 输出包含中文前缀。
+    /// 确保 WindowCreationFailed 包含"窗口创建失败"，
+    /// GpuRequestFailed 包含"GPU 设备请求失败"，
+    /// EventLoopError 包含"事件循环错误"。
+    #[test]
+    fn test_host_error_display_chinese_prefix() {
+        let err1 = HostError::WindowCreationFailed("reason".into());
+        let msg1 = err1.to_string();
+        assert!(
+            msg1.starts_with("窗口创建失败"),
+            "WindowCreationFailed 应以'窗口创建失败'开头，实际: {msg1}"
+        );
+
+        let err2 = HostError::GpuRequestFailed("reason".into());
+        let msg2 = err2.to_string();
+        assert!(
+            msg2.starts_with("GPU 设备请求失败"),
+            "GpuRequestFailed 应以'GPU 设备请求失败'开头，实际: {msg2}"
+        );
+
+        let err3 = HostError::EventLoopError("reason".into());
+        let msg3 = err3.to_string();
+        assert!(
+            msg3.starts_with("事件循环错误"),
+            "EventLoopError 应以'事件循环错误'开头，实际: {msg3}"
+        );
+    }
+
+    /// 测试 TouchEvent 在极端 id 值和坐标边界条件下的行为。
+    /// 验证 u64::MAX 作为 id、f64::MAX/INFINITY/负无穷 作为坐标均能正常存储和读取。
+    #[test]
+    fn test_touch_event_extreme_id_and_coordinates() {
+        use crate::event::{TouchEvent, TouchPhase};
+
+        // u64::MAX 作为 id
+        let max_id_touch = TouchEvent {
+            id: u64::MAX,
+            phase: TouchPhase::Started,
+            x: 0.0,
+            y: 0.0,
+        };
+        assert_eq!(max_id_touch.id, u64::MAX, "touch id 应为 u64::MAX");
+
+        // f64::MAX 坐标
+        let max_coord = TouchEvent {
+            id: 0,
+            phase: TouchPhase::Moved,
+            x: f64::MAX,
+            y: f64::MIN,
+        };
+        assert!((max_coord.x - f64::MAX).abs() < f64::EPSILON, "x 应为 f64::MAX");
+        assert!((max_coord.y - f64::MIN).abs() < f64::EPSILON, "y 应为 f64::MIN");
+
+        // f64::INFINITY 和 NEG_INFINITY 坐标（模拟极端触控位置）
+        let inf_touch = TouchEvent {
+            id: 1,
+            phase: TouchPhase::Ended,
+            x: f64::INFINITY,
+            y: f64::NEG_INFINITY,
+        };
+        assert!(
+            inf_touch.x.is_infinite() && inf_touch.x.is_sign_positive(),
+            "x 应为正无穷"
+        );
+        assert!(
+            inf_touch.y.is_infinite() && inf_touch.y.is_sign_negative(),
+            "y 应为负无穷"
+        );
+
+        // 零 id 和零坐标
+        let zero_touch = TouchEvent {
+            id: 0,
+            phase: TouchPhase::Cancelled,
+            x: 0.0,
+            y: 0.0,
+        };
+        assert_eq!(zero_touch.id, 0);
+        assert!((zero_touch.x - 0.0).abs() < f64::EPSILON);
+        assert!((zero_touch.y - 0.0).abs() < f64::EPSILON);
+    }
+
+    /// 测试 MouseScrollDelta::LineDelta 在极端 f32 值下的行为。
+    /// 覆盖零值、负值、f32::MAX、f32::MIN 等边界条件。
+    #[test]
+    fn test_mouse_scroll_delta_line_extreme_values() {
+        use crate::event::MouseScrollDelta;
+
+        // 零值滚动
+        let zero = MouseScrollDelta::LineDelta(0.0, 0.0);
+        assert_eq!(zero, MouseScrollDelta::LineDelta(0.0, 0.0));
+
+        // f32::MAX 和 f32::MIN
+        let extreme = MouseScrollDelta::LineDelta(f32::MAX, f32::MIN);
+        assert_eq!(extreme, MouseScrollDelta::LineDelta(f32::MAX, f32::MIN));
+
+        // 负值双向滚动
+        let negative = MouseScrollDelta::LineDelta(-100.0, -200.0);
+        assert_eq!(negative, MouseScrollDelta::LineDelta(-100.0, -200.0));
+
+        // 混合正负
+        let mixed = MouseScrollDelta::LineDelta(-1.0, 1.0);
+        assert_ne!(mixed, MouseScrollDelta::LineDelta(1.0, -1.0));
+
+        // 通过 winit 转换路径验证极端值不丢失
+        let winit_extreme =
+            crate::event::convert_scroll_delta(winit::event::MouseScrollDelta::LineDelta(f32::MAX, f32::MIN));
+        assert_eq!(winit_extreme, MouseScrollDelta::LineDelta(f32::MAX, f32::MIN));
+    }
+
+    /// 测试连续多个 CloseRequested 事件的处理。
+    /// 用户可能在窗口关闭前快速点击多次关闭按钮，
+    /// 每次点击都应独立产生一个 CloseRequested 事件。
+    #[test]
+    fn test_consecutive_close_requested_events() {
+        let mut received: Vec<crate::event::AppEvent> = Vec::new();
+        let mut callback = |e: crate::event::AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        // 模拟用户快速连续点击关闭按钮 5 次
+        for _ in 0..5 {
+            app.handle_window_event(winit::event::WindowEvent::CloseRequested);
+        }
+
+        assert_eq!(received.len(), 5, "应收到 5 个 CloseRequested 事件");
+        for (i, event) in received.iter().enumerate() {
+            assert!(
+                matches!(event, crate::event::AppEvent::CloseRequested),
+                "第 {} 个事件应为 CloseRequested",
+                i + 1
+            );
+        }
+    }
+
+    /// 测试 HostError 各变体的 source 为空（无底层错误链）。
+    /// 确保错误类型实现了 std::error::Error trait 的 source 方法返回 None。
+    #[test]
+    fn test_host_error_source_is_none() {
+        use std::error::Error;
+
+        let err1 = HostError::WindowCreationFailed("test".into());
+        assert!(err1.source().is_none(), "WindowCreationFailed source 应为 None");
+
+        let err2 = HostError::GpuRequestFailed("test".into());
+        assert!(err2.source().is_none(), "GpuRequestFailed source 应为 None");
+
+        let err3 = HostError::EventLoopError("test".into());
+        assert!(err3.source().is_none(), "EventLoopError source 应为 None");
+    }
+
     /// 测试鼠标事件的 x/y 坐标精确传递。
     #[test]
     fn test_mouse_event_coordinates() {

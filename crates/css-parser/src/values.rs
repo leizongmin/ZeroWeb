@@ -2028,6 +2028,76 @@ pub fn parse_isolation(value: &str) -> Option<IsolationValue> {
     }
 }
 
+/// CSS direction 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirectionValue {
+    /// ltr（默认值）— 从左到右。
+    Ltr,
+    /// rtl — 从右到左。
+    Rtl,
+}
+
+/// 解析 CSS direction 属性值。
+pub fn parse_direction(value: &str) -> Option<DirectionValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "ltr" => Some(DirectionValue::Ltr),
+        "rtl" => Some(DirectionValue::Rtl),
+        _ => None,
+    }
+}
+
+/// CSS unicode-bidi 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnicodeBidiValue {
+    /// normal（默认值）。
+    Normal,
+    /// embed。
+    Embed,
+    /// isolate。
+    Isolate,
+    /// bidi-override。
+    BidiOverride,
+    /// isolate-override。
+    IsolateOverride,
+    /// plaintext。
+    Plaintext,
+}
+
+/// 解析 CSS unicode-bidi 属性值。
+pub fn parse_unicode_bidi(value: &str) -> Option<UnicodeBidiValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(UnicodeBidiValue::Normal),
+        "embed" => Some(UnicodeBidiValue::Embed),
+        "isolate" => Some(UnicodeBidiValue::Isolate),
+        "bidi-override" => Some(UnicodeBidiValue::BidiOverride),
+        "isolate-override" => Some(UnicodeBidiValue::IsolateOverride),
+        "plaintext" => Some(UnicodeBidiValue::Plaintext),
+        _ => None,
+    }
+}
+
+/// CSS tab-size 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TabSizeValue {
+    /// 数字值（空格数）。
+    Number(u32),
+    /// 长度值（如 px、em）。
+    Length(LengthValue),
+}
+
+/// 解析 CSS tab-size 属性值。
+///
+/// 支持整数（如 `4`）和长度值（如 `20px`、`1em`）。
+pub fn parse_tab_size(value: &str) -> Option<TabSizeValue> {
+    let value = value.trim();
+    // 先尝试解析为整数
+    if let Ok(n) = value.parse::<u32>() {
+        return Some(TabSizeValue::Number(n));
+    }
+    // 再尝试解析为长度值
+    parse_length(value).map(TabSizeValue::Length)
+}
+
 /// CSS overflow-wrap 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -5007,5 +5077,94 @@ mod tests {
             parse_font_variant_numeric(" Lining-Nums "),
             Some(FontVariantNumericValue::LiningNums)
         );
+    }
+
+    // ── Direction 测试 ──
+
+    #[test]
+    fn test_parse_direction_ltr() {
+        assert_eq!(parse_direction("ltr"), Some(DirectionValue::Ltr));
+    }
+
+    #[test]
+    fn test_parse_direction_rtl() {
+        assert_eq!(parse_direction("rtl"), Some(DirectionValue::Rtl));
+    }
+
+    #[test]
+    fn test_parse_direction_case_insensitive() {
+        assert_eq!(parse_direction("LTR"), Some(DirectionValue::Ltr));
+        assert_eq!(parse_direction("Rtl"), Some(DirectionValue::Rtl));
+        assert_eq!(parse_direction("  ltr  "), Some(DirectionValue::Ltr));
+    }
+
+    #[test]
+    fn test_parse_direction_invalid() {
+        assert_eq!(parse_direction("invalid"), None);
+        assert_eq!(parse_direction(""), None);
+    }
+
+    // ── UnicodeBidi 测试 ──
+
+    #[test]
+    fn test_parse_unicode_bidi_normal() {
+        assert_eq!(parse_unicode_bidi("normal"), Some(UnicodeBidiValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_unicode_bidi_all_values() {
+        assert_eq!(parse_unicode_bidi("embed"), Some(UnicodeBidiValue::Embed));
+        assert_eq!(parse_unicode_bidi("isolate"), Some(UnicodeBidiValue::Isolate));
+        assert_eq!(
+            parse_unicode_bidi("bidi-override"),
+            Some(UnicodeBidiValue::BidiOverride)
+        );
+        assert_eq!(
+            parse_unicode_bidi("isolate-override"),
+            Some(UnicodeBidiValue::IsolateOverride)
+        );
+        assert_eq!(parse_unicode_bidi("plaintext"), Some(UnicodeBidiValue::Plaintext));
+    }
+
+    #[test]
+    fn test_parse_unicode_bidi_case_insensitive() {
+        assert_eq!(parse_unicode_bidi("NORMAL"), Some(UnicodeBidiValue::Normal));
+        assert_eq!(parse_unicode_bidi("  Embed  "), Some(UnicodeBidiValue::Embed));
+    }
+
+    #[test]
+    fn test_parse_unicode_bidi_invalid() {
+        assert_eq!(parse_unicode_bidi("invalid"), None);
+        assert_eq!(parse_unicode_bidi(""), None);
+    }
+
+    // ── TabSize 测试 ──
+
+    #[test]
+    fn test_parse_tab_size_number() {
+        assert_eq!(parse_tab_size("4"), Some(TabSizeValue::Number(4)));
+        assert_eq!(parse_tab_size("8"), Some(TabSizeValue::Number(8)));
+        assert_eq!(parse_tab_size("0"), Some(TabSizeValue::Number(0)));
+    }
+
+    #[test]
+    fn test_parse_tab_size_length() {
+        assert_eq!(
+            parse_tab_size("20px"),
+            Some(TabSizeValue::Length(LengthValue::Px(20.0)))
+        );
+        assert_eq!(parse_tab_size("1em"), Some(TabSizeValue::Length(LengthValue::Em(1.0))));
+    }
+
+    #[test]
+    fn test_parse_tab_size_case_insensitive() {
+        assert_eq!(parse_tab_size("  4  "), Some(TabSizeValue::Number(4)));
+    }
+
+    #[test]
+    fn test_parse_tab_size_invalid() {
+        assert_eq!(parse_tab_size("-1"), None);
+        assert_eq!(parse_tab_size("abc"), None);
+        assert_eq!(parse_tab_size(""), None);
     }
 }

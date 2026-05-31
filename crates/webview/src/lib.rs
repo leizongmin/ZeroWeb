@@ -2036,4 +2036,131 @@ mod tests {
         assert_eq!(recorded[7], "UrlChanged(https://retry-lifecycle.com)");
         assert_eq!(recorded[8], "LoadEnd(https://retry-lifecycle.com)");
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：极端尺寸、Unicode URL、异常状态转换、回调边界
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证将 WebView 尺寸调整至 u32::MAX 不会 panic。
+    ///
+    /// 边界场景：传入 u32 最大值作为视口宽高，
+    /// 确保内部 RenderPipeline 不会因整数溢出或内存分配失败而崩溃。
+    /// resize 应正常存储配置值，后续 render 也不应 panic。
+    #[test]
+    fn test_webview_resize_to_u32_max() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<html><body><div>Extreme</div></body></html>", None);
+        wv.resize(u32::MAX, u32::MAX);
+        assert_eq!(wv.config().width, u32::MAX);
+        assert_eq!(wv.config().height, u32::MAX);
+        // render 在极端尺寸下应不 panic（管线内部会处理）
+        let result = wv.render();
+        assert!(result.timings.total_ms >= 0.0, "极端尺寸下渲染耗时应为非负");
+    }
+
+    /// 验证加载包含 Unicode 和特殊字符的 URL 不会 panic，且 URL 被正确存储。
+    ///
+    /// 边界场景：URL 包含中日韩字符、URL 编码百分号、查询参数中的特殊符号，
+    /// 确保 load_url 不会因非 ASCII 字符而崩溃，current_url 被原样存储。
+    #[test]
+    fn test_webview_load_url_with_unicode_and_special_chars() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let url = "https://例え.jp/パス?q=hello%20world&lang=日本語#セクション";
+        wv.load_url(url);
+        assert_eq!(wv.url(), Some(url), "Unicode URL 应被原样存储");
+        assert!(wv.is_loading());
+        wv.complete_load("<html><body><div>Unicode URL 内容</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert_eq!(wv.url(), Some(url));
+    }
+
+    /// 验证从加载失败状态直接调用 complete_load 不会 panic，且状态转换正确。
+    ///
+    /// 异常状态转换路径：load_url -> fail_load -> complete_load（无中间 load_url）。
+    /// fail_load 将 loading 置为 false，complete_load 应能正常工作：
+    /// 加载 HTML、将 loading 置为 false（已为 false 不变），并触发 LoadEnd 事件。
+    #[test]
+    fn test_webview_fail_load_then_complete_without_load_url() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // 先导航并失败
+        wv.load_url("https://will-fail.com");
+        assert!(wv.is_loading());
+        wv.fail_load("server error 500");
+        assert!(!wv.is_loading());
+
+        // 在未再次调用 load_url 的情况下直接 complete_load
+        let result = wv.complete_load("<html><body><div>Recovery</div></body></html>", None);
+        assert!(!wv.is_loading(), "complete_load 后不应处于加载状态");
+        assert!(result.timings.total_ms >= 0.0, "渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "应有渲染结果");
+        // URL 应保留为 will-fail.com（complete_load 使用 current_url）
+        assert_eq!(wv.url(), Some("https://will-fail.com"));
+
+        // 事件序列：LoadStart + UrlChanged + LoadFailed + LoadEnd
+        let recorded = events.borrow();
+        assert_eq!(recorded.len(), 4, "应有 4 个事件，实际: {recorded:?}");
+        assert!(recorded[3].starts_with("LoadEnd(https://will-fail.com"));
+    }
+
+    /// 验证在未注册任何回调时调用 remove_event_callback 返回 false。
+    ///
+    /// 边界场景：event_callbacks 为空列表时，传入索引 0（合法 usize），
+    /// remove_event_callback 应安全返回 false 而非 panic。
+    #[test]
+    fn test_webview_remove_event_callback_on_empty_list() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 未注册任何回调，空列表
+        assert!(!wv.remove_event_callback(0), "空回调列表中索引 0 应返回 false");
+        assert!(
+            !wv.remove_event_callback(usize::MAX),
+            "空回调列表中 usize::MAX 应返回 false"
+        );
+        // 后续操作应正常工作，不 panic
+        wv.load_url("https://test.com");
+        assert_eq!(wv.url(), Some("https://test.com"));
+    }
+
+    /// 验证在加载状态（loading=true）下调用 render 不会改变加载标志。
+    ///
+    /// 边界场景：load_url 将 loading 置为 true 后，直接调用 render，
+    /// render 仅执行重新渲染，不应干扰 loading 状态。
+    /// 适用于外部异步加载过程中需要中间渲染的场景（如进度指示器）。
+    #[test]
+    fn test_webview_render_while_loading_state() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 先加载一些内容到 cached_html 中
+        wv.load_html("<html><body><div>Loading indicator</div></body></html>", None);
+        assert!(!wv.is_loading());
+
+        // 发起 URL 加载（设置 loading=true）
+        wv.load_url("https://slow-page.com");
+        assert!(wv.is_loading(), "load_url 后应处于加载状态");
+        assert!(wv.last_render().is_some(), "之前的 load_html 应有渲染结果");
+
+        // 在 loading 状态下调用 render — 模拟显示加载进度
+        let result = wv.render();
+        assert!(result.timings.total_ms >= 0.0, "loading 中 render 耗时应为非负");
+
+        // 关键断言：render 不应改变 loading 状态
+        assert!(wv.is_loading(), "render() 不应改变 loading 状态，应仍为 true");
+        assert_eq!(wv.url(), Some("https://slow-page.com"), "URL 不应被 render 改变");
+
+        // 最终完成加载
+        wv.complete_load("<html><body><div>Final content</div></body></html>", None);
+        assert!(!wv.is_loading(), "complete_load 后不应处于加载状态");
+    }
 }

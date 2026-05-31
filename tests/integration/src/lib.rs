@@ -1909,4 +1909,249 @@ mod cross_crate_pipeline {
         // li 不应继承 ol 的 counter-reset
         assert!(li1_style.counter_reset.is_empty(), "li 不应继承 ol 的 counter_reset");
     }
+
+    /// CSS overflow-wrap 管线集成测试。
+    ///
+    /// 解析含 overflow-wrap 的 CSS，通过 style-system 计算样式，
+    /// 验证 overflow-wrap 值正确存储且能被子元素继承。
+    #[test]
+    fn test_overflow_wrap_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 父元素设置 overflow-wrap: break-word
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "wrap-container");
+        doc.append_child(body, parent).unwrap();
+
+        // 子元素不显式设置 overflow-wrap，应继承父元素的值
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "text");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .wrap-container { overflow-wrap: break-word; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素的 overflow-wrap 为 BreakWord
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.overflow_wrap,
+            zero_style_system::property::OverflowWrapValue::BreakWord,
+            "parent 的 overflow-wrap 应为 BreakWord"
+        );
+
+        // 验证子元素继承了 overflow-wrap
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.overflow_wrap,
+            zero_style_system::property::OverflowWrapValue::BreakWord,
+            "child 应继承 parent 的 overflow-wrap: BreakWord"
+        );
+    }
+
+    /// CSS text-align-last 管线集成测试。
+    ///
+    /// 解析含 text-align-last 的 CSS，通过 style-system 计算样式，
+    /// 验证 text-align-last 值正确应用到目标元素。
+    #[test]
+    fn test_text_align_last_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "last-line");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .last-line { text-align-last: center; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_align_last,
+            zero_style_system::property::TextAlignLastValue::Center,
+            "div 的 text-align-last 应为 Center"
+        );
+    }
+
+    /// CSS direction 管线集成测试。
+    ///
+    /// 解析含 direction: rtl 的 CSS，通过 style-system 计算样式，
+    /// 验证 direction 值正确应用且被子元素继承。
+    #[test]
+    fn test_direction_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "rtl-container");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "rtl-text");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .rtl-container { direction: rtl; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 父元素 direction 应为 Rtl
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.direction,
+            zero_style_system::property::DirectionValue::Rtl,
+            "parent 的 direction 应为 Rtl"
+        );
+
+        // 子元素应继承 direction: rtl
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.direction,
+            zero_style_system::property::DirectionValue::Rtl,
+            "child 应继承 parent 的 direction: Rtl"
+        );
+    }
+
+    /// CSS tab-size 管线集成测试。
+    ///
+    /// 解析含 tab-size 的 CSS，通过 style-system 计算样式，
+    /// 验证 tab-size 值正确解析和存储。
+    #[test]
+    fn test_tab_size_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let pre = doc.create_element("pre");
+        doc.set_attribute(pre, "class", "code-block");
+        doc.append_child(body, pre).unwrap();
+
+        // 子元素用于验证继承
+        let span = doc.create_element("span");
+        doc.set_attribute(span, "class", "code-text");
+        doc.append_child(pre, span).unwrap();
+
+        let css = r#"
+            .code-block { tab-size: 4; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证 pre 元素的 tab-size 为 4
+        let pre_style = styles.get(&pre).expect("pre 应有计算样式");
+        assert_eq!(
+            pre_style.tab_size,
+            zero_style_system::property::TabSizeValue::Number(4),
+            "pre 的 tab-size 应为 Number(4)"
+        );
+
+        // 验证子元素继承了 tab-size
+        let span_style = styles.get(&span).expect("span 应有计算样式");
+        assert_eq!(
+            span_style.tab_size,
+            zero_style_system::property::TabSizeValue::Number(4),
+            "span 应继承 pre 的 tab-size: Number(4)"
+        );
+    }
+
+    /// Storage + Protocol 序列化集成测试。
+    ///
+    /// 将 storage 操作通过 IPC 消息序列化 → 反序列化，
+    /// 验证 StorageOpParams 所有字段完整保留，包括 Remove 操作。
+    #[test]
+    fn test_storage_protocol_ipc_roundtrip() {
+        use zero_protocol::{
+            IpcMessage, IpcMessageKind, StorageOpParams, StorageOperation, StorageType, deserialize, serialize,
+        };
+        use zero_storage::StorageManager;
+
+        // 先执行实际 storage 操作
+        let mut mgr = StorageManager::new();
+        let store = mgr.local_storage("https://example.com");
+        store.set("session_id", "abc-123").unwrap();
+        store.set("theme", "dark").unwrap();
+        assert_eq!(store.get("session_id"), Some("abc-123"));
+
+        // 构造 Remove 操作的 IPC 消息
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Remove,
+                key: "session_id".to_string(),
+                value: None,
+                origin: "https://example.com".to_string(),
+            }),
+        };
+
+        // 序列化 → 反序列化
+        let bytes = serialize(&msg).expect("serialize 应成功");
+        let decoded = deserialize(&bytes).expect("deserialize 应成功");
+
+        // 验证 IPC 字段
+        assert_eq!(decoded.id, 42, "消息 ID 应为 42");
+        if let IpcMessageKind::StorageOp(p) = decoded.kind {
+            assert_eq!(p.storage_type, StorageType::Local, "storage_type 应为 Local");
+            assert_eq!(p.operation, StorageOperation::Remove, "operation 应为 Remove");
+            assert_eq!(p.key, "session_id", "key 应为 session_id");
+            assert_eq!(p.value, None, "Remove 操作 value 应为 None");
+            assert_eq!(p.origin, "https://example.com", "origin 应为 https://example.com");
+        } else {
+            panic!("expected StorageOp kind");
+        }
+
+        // 再构造 Clear 操作验证
+        let clear_msg = IpcMessage {
+            id: 43,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Clear,
+                key: String::new(),
+                value: None,
+                origin: "https://example.com".to_string(),
+            }),
+        };
+        let bytes2 = serialize(&clear_msg).expect("serialize clear 应成功");
+        let decoded2 = deserialize(&bytes2).expect("deserialize clear 应成功");
+        if let IpcMessageKind::StorageOp(p) = decoded2.kind {
+            assert_eq!(p.storage_type, StorageType::Session, "storage_type 应为 Session");
+            assert_eq!(p.operation, StorageOperation::Clear, "operation 应为 Clear");
+        } else {
+            panic!("expected StorageOp kind for clear");
+        }
+    }
 }
