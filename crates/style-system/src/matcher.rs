@@ -708,12 +708,64 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
             // 尝试解析选择器，能解析即为支持
             let css = format!("{selector_text} {{ }}");
             let stylesheet = zero_css_parser::Parser::parse_stylesheet(&css);
-            matches!(stylesheet.rules.first(), Some(zero_css_parser::ast::Rule::Style(_)))
+            if let Some(zero_css_parser::ast::Rule::Style(style_rule)) = stylesheet.rules.first() {
+                // 额外验证：检查解析结果没有因为容错解析产生无效结构
+                is_valid_selector_parse(selector_text, &style_rule.selectors)
+            } else {
+                false
+            }
         }
         SupportsCondition::And(conditions) => conditions.iter().all(evaluate_supports_condition),
         SupportsCondition::Or(conditions) => conditions.iter().any(evaluate_supports_condition),
         SupportsCondition::Not(inner) => !evaluate_supports_condition(inner),
     }
+}
+
+/// 验证解析后的选择器是否忠实于输入文本。
+///
+/// 容错解析器可能将无效选择器（如 `>>>invalid`）解析为合法选择器链，
+/// 因为 `>` 被当作子组合器处理。此函数检测此类无效解析结果。
+fn is_valid_selector_parse(input: &str, selectors: &[zero_css_parser::ast::Selector]) -> bool {
+    if selectors.is_empty() {
+        return false;
+    }
+
+    // 检查输入中是否存在连续的组合器序列（如 `>>>`、`> +`、`~ >` 等）
+    // 连续组合器不是有效的 CSS 选择器语法
+    let trimmed = input.trim();
+
+    // 遍历输入中所有非括号内的字符，检查组合器合法性
+    let mut depth = 0i32;
+    let mut chars_iter = trimmed.chars().peekable();
+    while let Some(ch) = chars_iter.next() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            depth = depth.saturating_sub(1);
+        } else if depth == 0 {
+            // 检查连续的组合器：> + ~ 后面紧跟空白再跟另一个组合器
+            if ch == '>' || ch == '+' || ch == '~' {
+                // 跳过空白
+                while chars_iter.peek().is_some_and(|c| *c == ' ' || *c == '\t') {
+                    chars_iter.next();
+                }
+                // 如果紧接着又是一个组合器，这是无效的
+                if chars_iter.peek().is_some_and(|c| *c == '>' || *c == '+' || *c == '~') {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // 检查选择器是否以组合器开头（不允许，除了在 :has() 等上下文中）
+    if trimmed.starts_with('>')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('~')
+    {
+        return false;
+    }
+
+    true
 }
 
 /// 检查 CSS 属性值对是否受支持。

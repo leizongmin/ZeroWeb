@@ -942,6 +942,134 @@ mod tests {
         assert_eq!(div_style.margin_top, LengthValue::Px(20.0));
     }
 
+    // ── @supports selector() 端到端测试 ──
+
+    /// 测试 selector() 基本用法：有效的选择器应返回 true。
+    #[test]
+    fn test_supports_selector_basic() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // @supports selector(div > .class) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Selector(
+                    "div > .class".to_string(),
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(
+            div_style.color,
+            ColorValue::Rgba(255, 0, 0, 255),
+            "selector(div > .class) 应该评估为 true，颜色应为红色"
+        );
+    }
+
+    /// 测试 selector() 复杂伪类：有效的 :is() 选择器应返回 true。
+    #[test]
+    fn test_supports_selector_complex() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // @supports selector(:is(div, span)) { div { color: green; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Selector(
+                    ":is(div, span)".to_string(),
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "green".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(
+            div_style.color,
+            ColorValue::Rgba(0, 128, 0, 255),
+            "selector(:is(div, span)) 应该评估为 true，颜色应为绿色"
+        );
+    }
+
+    /// 测试 selector() 无效选择器应返回 false。
+    #[test]
+    fn test_supports_selector_invalid() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // @supports selector(>>>invalid) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Selector(
+                    ">>>invalid".to_string(),
+                ),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(
+            div_style.color,
+            ColorValue::Rgba(0, 0, 0, 255),
+            "selector(>>>invalid) 应该评估为 false，不应应用红色"
+        );
+    }
+
+    /// 测试 selector() 在完整规则中的端到端应用。
+    #[test]
+    fn test_supports_selector_in_rule() {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+
+        // @supports selector(p) { div { color: red; } }
+        let stylesheets = vec![Stylesheet {
+            rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+                condition: zero_css_parser::ast::SupportsCondition::Selector("p".to_string()),
+                rules: vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })],
+            })],
+        }];
+
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let div_style = styles.get(&div).expect("div should have style");
+        assert_eq!(
+            div_style.color,
+            ColorValue::Rgba(255, 0, 0, 255),
+            "selector(p) 应该评估为 true，div 颜色应为红色"
+        );
+    }
+
     // ── Grid 属性端到端测试 ──
 
     #[test]
