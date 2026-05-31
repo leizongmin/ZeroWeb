@@ -614,6 +614,14 @@ impl CanvasContext {
         self.current_path.arc(tx, ty, radius, start_angle, end_angle);
     }
 
+    /// 画圆弧切线（arcTo）。通过当前点到 (x1,y1) 的线和 (x1,y1) 到 (x2,y2) 的线，
+    /// 绘制一条与两条线都相切、半径为 radius 的圆弧。
+    pub fn arc_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
+        let (tx1, ty1) = self.transform.transform_point(x1, y1);
+        let (tx2, ty2) = self.transform.transform_point(x2, y2);
+        self.current_path.arc_to(tx1, ty1, tx2, ty2, radius);
+    }
+
     /// 画椭圆弧。
     #[allow(clippy::too_many_arguments)]
     pub fn ellipse(
@@ -1419,6 +1427,147 @@ impl CanvasContext {
         (start_x, start_y)
     }
 
+    /// 计算 arcTo 的几何信息：返回 (切点1x, 切点1y, 切点2x, 切点2y)。
+    /// 特殊情况（半径为 0、共线、点重合等）返回的切点会退化为直线。
+    fn compute_arc_to_geometry(
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        radius: f32,
+    ) -> (f32, f32, f32, f32) {
+        // 方向向量：从当前点到控制点1，从控制点1到控制点2
+        let dx1 = x0 - x1;
+        let dy1 = y0 - y1;
+        let dx2 = x2 - x1;
+        let dy2 = y2 - y1;
+
+        let len1 = (dx1 * dx1 + dy1 * dy1).sqrt();
+        let len2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+
+        // 退化为直线：半径为 0，或任一方向向量长度为 0
+        if radius < f32::EPSILON || len1 < f32::EPSILON || len2 < f32::EPSILON {
+            return (x1, y1, x1, y1);
+        }
+
+        // 单位方向向量
+        let ux1 = dx1 / len1;
+        let uy1 = dy1 / len1;
+        let ux2 = dx2 / len2;
+        let uy2 = dy2 / len2;
+
+        // 两条切线之间的夹角
+        let dot = ux1 * ux2 + uy1 * uy2;
+        // 夹角接近 ±1 表示共线或反平行
+        let one_minus_dot_sq = 1.0 - dot * dot;
+        if one_minus_dot_sq < f32::EPSILON {
+            // 共线情况：直接画线到控制点1
+            return (x1, y1, x1, y1);
+        }
+
+        // 圆弧圆心到控制点1的距离
+        let d = radius / one_minus_dot_sq.sqrt();
+
+        // 圆弧圆心坐标
+        let cx = x1 + d * (ux1 + ux2);
+        let cy = y1 + d * (uy1 + uy2);
+
+        // 切点1：圆心 + radius * 指向当前点方向的单位向量
+        let t1x = cx + radius * ux1;
+        let t1y = cy + radius * uy1;
+
+        // 切点2：圆心 + radius * 指向控制点2方向的单位向量
+        let t2x = cx + radius * ux2;
+        let t2y = cy + radius * uy2;
+
+        (t1x, t1y, t2x, t2y)
+    }
+
+    /// 将 arcTo 命令扁平化为线段顶点。
+    #[allow(clippy::too_many_arguments)]
+    fn flatten_arc_to(
+        vertices: &mut Vec<f32>,
+        current_x: f32,
+        current_y: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        radius: f32,
+        segments: usize,
+    ) {
+        let (t1x, t1y, t2x, t2y) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
+
+        // 从当前点画线到切点1
+        if (current_x - t1x).abs() > f32::EPSILON || (current_y - t1y).abs() > f32::EPSILON {
+            vertices.push(current_x);
+            vertices.push(current_y);
+            vertices.push(t1x);
+            vertices.push(t1y);
+        }
+
+        // 如果两个切点重合（退化情况），不需要画弧
+        if (t1x - t2x).abs() < f32::EPSILON && (t1y - t2y).abs() < f32::EPSILON {
+            return;
+        }
+
+        // 计算圆弧圆心和角度范围
+        let v1x = t1x - x1;
+        let v1y = t1y - y1;
+        let v2x = t2x - x1;
+        let v2y = t2y - y1;
+        let lv1 = (v1x * v1x + v1y * v1y).sqrt();
+        let lv2 = (v2x * v2x + v2y * v2y).sqrt();
+
+        if lv1 < f32::EPSILON || lv2 < f32::EPSILON {
+            return;
+        }
+
+        // 圆心在切点1沿远离控制点1方向偏移 radius 处
+        let cx = t1x + (radius / lv1) * v1x;
+        let cy = t1y + (radius / lv1) * v1y;
+
+        // 计算切点相对圆心的角度
+        let start_angle = (t1y - cy).atan2(t1x - cx);
+        let end_angle = (t2y - cy).atan2(t2x - cx);
+
+        // 确定弧线方向：从 t1 经过远离 (x1,y1) 的方向到 t2
+        // 使用叉积判断方向
+        let cross = v1x * v2y - v1y * v2x;
+        let mut angle_span = end_angle - start_angle;
+
+        // 根据叉积方向调整角度范围
+        if cross >= 0.0 {
+            // 逆时针：确保 angle_span > 0
+            if angle_span < 0.0 {
+                angle_span += std::f32::consts::TAU;
+            }
+        } else {
+            // 顺时针：确保 angle_span < 0
+            if angle_span > 0.0 {
+                angle_span -= std::f32::consts::TAU;
+            }
+        }
+
+        // 用线段近似弧线
+        let step = angle_span / segments as f32;
+        let mut px = t1x;
+        let mut py = t1y;
+        for i in 0..segments {
+            let angle = start_angle + step * (i + 1) as f32;
+            let nx = cx + radius * angle.cos();
+            let ny = cy + radius * angle.sin();
+            vertices.push(px);
+            vertices.push(py);
+            vertices.push(nx);
+            vertices.push(ny);
+            px = nx;
+            py = ny;
+        }
+    }
+
     /// 将当前路径命令扁平化为顶点列表（x, y 交替）。
     /// 对于圆弧，使用线性近似（固定 16 段细分）。
     fn flatten_path(&self) -> Vec<f32> {
@@ -1507,6 +1656,24 @@ impl CanvasContext {
                     }
                     current_x = px;
                     current_y = py;
+                }
+                PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    Self::flatten_arc_to(
+                        &mut vertices,
+                        current_x,
+                        current_y,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        radius,
+                        ARC_SEGMENTS,
+                    );
+                    // flatten_arc_to updates current_x/current_y via the returned value
+                    // We compute the final point directly
+                    let (_, _, nx, ny) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
+                    current_x = nx;
+                    current_y = ny;
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     let cos_r = rotation.cos();
@@ -1630,6 +1797,22 @@ impl CanvasContext {
                     }
                     current_x = px;
                     current_y = py;
+                }
+                PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    Self::flatten_arc_to(
+                        &mut vertices,
+                        current_x,
+                        current_y,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        radius,
+                        ARC_SEGMENTS,
+                    );
+                    let (_, _, nx, ny) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
+                    current_x = nx;
+                    current_y = ny;
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     let cos_r = rotation.cos();
@@ -4384,5 +4567,49 @@ mod tests {
         let ctx = CanvasContext::new(200, 200);
         let grad = ctx.create_conic_gradient(0.0, 50.0, 50.0);
         assert!(grad.stops.is_empty());
+    }
+
+    // ── arcTo 测试 ──
+
+    /// 测试 arc_to 生成 path_fills（非空路径）。
+    #[test]
+    fn test_arc_to_produces_path_fills() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.arc_to(50.0, 0.0, 50.0, 50.0, 10.0);
+        ctx.line_to(50.0, 50.0);
+        ctx.fill();
+        assert!(!ctx.primitives().path_fills.is_empty(), "arc_to 应生成路径填充图元");
+    }
+
+    /// 测试 arc_to 零半径退化为直线到控制点1。
+    #[test]
+    fn test_arc_to_zero_radius_degenerates_to_line() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.arc_to(100.0, 0.0, 100.0, 100.0, 0.0);
+        ctx.fill();
+        assert!(!ctx.primitives().path_fills.is_empty());
+        // 零半径时：从 (0,0) 画线到 (100,0)，不产生弧线
+        let pf = &ctx.primitives().path_fills[0];
+        // 只有 1 条线段 = 4 floats（lineTo 到控制点1）
+        assert_eq!(pf.vertices.len(), 4, "零半径 arcTo 应退化为一条线段");
+    }
+
+    /// 测试 arc_to 共线点（当前点、控制点1、控制点2 在一条线上）退化为直线。
+    #[test]
+    fn test_arc_to_collinear_points_produces_line() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        // 三个点共线：(0,0) -> (50,0) -> (100,0)
+        ctx.arc_to(50.0, 0.0, 100.0, 0.0, 10.0);
+        ctx.fill();
+        assert!(!ctx.primitives().path_fills.is_empty());
+        // 共线时退化为 lineTo(50, 0)，只有 1 条线段 = 4 floats
+        let pf = &ctx.primitives().path_fills[0];
+        assert_eq!(pf.vertices.len(), 4, "共线 arcTo 应退化为一条线段");
     }
 }

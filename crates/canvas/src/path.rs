@@ -13,6 +13,8 @@ pub enum PathCommand {
     BezierCurveTo(f32, f32, f32, f32, f32, f32),
     /// 圆弧。
     Arc(f32, f32, f32, f32, f32),
+    /// 圆弧切线（控制点1 x, 控制点1 y, 控制点2 x, 控制点2 y, 半径）。
+    ArcTo(f32, f32, f32, f32, f32),
     /// 椭圆弧（圆心 x, 圆心 y, 半径 x, 半径 y, 旋转, 起始角, 结束角）。
     Ellipse(f32, f32, f32, f32, f32, f32, f32),
     /// 圆角矩形子路径（x, y, 宽, 高, 圆角半径列表）。
@@ -51,6 +53,11 @@ impl Path2D {
     /// 添加圆弧。
     pub fn arc(&mut self, x: f32, y: f32, radius: f32, start: f32, end: f32) {
         self.commands.push(PathCommand::Arc(x, y, radius, start, end));
+    }
+
+    /// 添加圆弧切线（arcTo）。
+    pub fn arc_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
+        self.commands.push(PathCommand::ArcTo(x1, y1, x2, y2, radius));
     }
 
     /// 添加二次贝塞尔曲线。
