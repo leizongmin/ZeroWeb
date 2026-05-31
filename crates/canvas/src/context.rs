@@ -401,6 +401,8 @@ struct CanvasState {
     line_dash_offset: f32,
     line_join: LineJoin,
     line_cap: LineCap,
+    /// 图像平滑（抗锯齿）开关。
+    image_smoothing_enabled: bool,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -449,6 +451,8 @@ pub struct CanvasContext {
     line_join: LineJoin,
     /// 线段端点样式。
     line_cap: LineCap,
+    /// 图像平滑（抗锯齿）开关。
+    image_smoothing_enabled: bool,
 }
 
 /// 文本度量。
@@ -500,6 +504,7 @@ impl CanvasContext {
             line_dash_offset: 0.0,
             line_join: LineJoin::default(),
             line_cap: LineCap::default(),
+            image_smoothing_enabled: true,
         }
     }
 
@@ -843,6 +848,7 @@ impl CanvasContext {
             line_dash_offset: self.line_dash_offset,
             line_join: self.line_join,
             line_cap: self.line_cap,
+            image_smoothing_enabled: self.image_smoothing_enabled,
         });
     }
 
@@ -864,6 +870,7 @@ impl CanvasContext {
             self.line_dash_offset = state.line_dash_offset;
             self.line_join = state.line_join;
             self.line_cap = state.line_cap;
+            self.image_smoothing_enabled = state.image_smoothing_enabled;
         }
     }
 
@@ -957,6 +964,16 @@ impl CanvasContext {
     /// 返回当前线段端点样式。
     pub fn line_cap(&self) -> LineCap {
         self.line_cap
+    }
+
+    /// 设置图像平滑（抗锯齿）开关。
+    pub fn set_image_smoothing_enabled(&mut self, enabled: bool) {
+        self.image_smoothing_enabled = enabled;
+    }
+
+    /// 返回当前图像平滑开关状态。
+    pub fn image_smoothing_enabled(&self) -> bool {
+        self.image_smoothing_enabled
     }
 
     /// 返回当前全局透明度。
@@ -2064,19 +2081,104 @@ impl CanvasContext {
         }
     }
 
-    /// 将路径描边写入像素缓冲区（简化：使用 Bresenham 线段光栅化）。
+    /// 将路径描边写入像素缓冲区（考虑 line_join 和 line_cap 设置）。
     fn blit_stroke_to_pixels(&mut self, vertices: &[f32], color: Color, line_width: f32) {
         if vertices.len() < 4 {
             return;
         }
-        // 为每条线段画一个宽度为 line_width 的矩形
-        for chunk in vertices.chunks_exact(4) {
-            let x1 = chunk[0];
-            let y1 = chunk[1];
-            let x2 = chunk[2];
-            let y2 = chunk[3];
-            let rect = self.line_segment_rect(x1, y1, x2, y2, line_width);
+
+        let half_lw = line_width / 2.0;
+
+        // 将线段顶点列表转为 (x1,y1,x2,y2) 段列表
+        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        if segments.is_empty() {
+            return;
+        }
+
+        // 绘制每条线段的主体矩形
+        for seg in &segments {
+            let rect = self.line_segment_rect(seg[0], seg[1], seg[2], seg[3], line_width);
             self.blit_rect_to_pixels(&rect, color);
+        }
+
+        // 绘制连接点（相邻线段交汇处）
+        for i in 0..segments.len().saturating_sub(1) {
+            let seg_a = segments[i];
+            let _seg_b = segments[i + 1];
+            // seg_a 的终点应与 seg_b 的起点相同
+            let jx = seg_a[2];
+            let jy = seg_a[3];
+
+            match self.line_join {
+                LineJoin::Miter => {
+                    // 尖角：在连接点画一个覆盖 half_lw 的正方形
+                    let rect = Rect::new(jx - half_lw, jy - half_lw, line_width, line_width);
+                    self.blit_rect_to_pixels(&rect, color);
+                }
+                LineJoin::Round => {
+                    // 圆角：在连接点画一个半径为 half_lw 的圆（近似为正方形）
+                    let rect = Rect::new(jx - half_lw, jy - half_lw, line_width, line_width);
+                    self.blit_rect_to_pixels(&rect, color);
+                }
+                LineJoin::Bevel => {
+                    // 斜角：在连接点画一个 half_lw × half_lw 的正方形
+                    let rect = Rect::new(jx - half_lw, jy - half_lw, line_width, line_width);
+                    self.blit_rect_to_pixels(&rect, color);
+                }
+            }
+        }
+
+        // 绘制端点 cap
+        let first_seg = segments[0];
+        let last_seg = segments[segments.len() - 1];
+
+        // 起点端 cap
+        self.blit_line_cap(first_seg[0], first_seg[1], first_seg[2], first_seg[3], half_lw, color);
+        // 终点端 cap
+        self.blit_line_cap(last_seg[2], last_seg[3], last_seg[0], last_seg[1], half_lw, color);
+    }
+
+    /// 绘制线段端点的 cap。
+    /// `endpoint` 是端点位置，`other` 是线段另一端（用于确定方向）。
+    fn blit_line_cap(
+        &mut self,
+        endpoint_x: f32,
+        endpoint_y: f32,
+        other_x: f32,
+        other_y: f32,
+        half_lw: f32,
+        color: Color,
+    ) {
+        match self.line_cap {
+            LineCap::Butt => {
+                // 平头：不做额外处理（线段矩形已精确到端点）
+            }
+            LineCap::Round => {
+                // 圆头：在端点画一个半径为 half_lw 的圆（近似为正方形）
+                let rect = Rect::new(endpoint_x - half_lw, endpoint_y - half_lw, half_lw * 2.0, half_lw * 2.0);
+                self.blit_rect_to_pixels(&rect, color);
+            }
+            LineCap::Square => {
+                // 方头：在端点方向延伸 half_lw 的矩形
+                let dx = endpoint_x - other_x;
+                let dy = endpoint_y - other_y;
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < f32::EPSILON {
+                    return;
+                }
+                let ux = dx / len;
+                let uy = dy / len;
+                // 从端点沿方向延伸 half_lw
+                let ext_x = endpoint_x + ux * half_lw;
+                let ext_y = endpoint_y + uy * half_lw;
+                // 覆盖区域：从 endpoint 到 ext 的范围，宽度 line_width
+                let min_x = endpoint_x.min(ext_x) - half_lw;
+                let min_y = endpoint_y.min(ext_y) - half_lw;
+                let max_x = endpoint_x.max(ext_x) + half_lw;
+                let max_y = endpoint_y.max(ext_y) + half_lw;
+                let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+                self.blit_rect_to_pixels(&rect, color);
+            }
         }
     }
 
@@ -2088,6 +2190,206 @@ impl CanvasContext {
         let max_x = x1.max(x2) + half_lw;
         let max_y = y1.max(y2) + half_lw;
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+
+    /// 计算描边路径的顶点，包括 line_join 和 line_cap 产生的额外顶点。
+    /// 返回一个包含 (x, y) 对的顶点列表，构成描边的轮廓多边形。
+    pub fn stroke_outline_vertices(&self) -> Vec<f32> {
+        let path_vertices = self.flatten_path();
+        if path_vertices.len() < 4 {
+            return Vec::new();
+        }
+
+        let half_lw = self.line_width / 2.0;
+        let segments: Vec<[f32; 4]> = path_vertices
+            .chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .collect();
+        let mut outline = Vec::new();
+
+        for (i, seg) in segments.iter().enumerate() {
+            let x1 = seg[0];
+            let y1 = seg[1];
+            let x2 = seg[2];
+            let y2 = seg[3];
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < f32::EPSILON {
+                continue;
+            }
+            let nx = -dy / len * half_lw; // 法线方向
+            let ny = dx / len * half_lw;
+
+            // 线段主体：4 个角点
+            outline.push(x1 + nx);
+            outline.push(y1 + ny);
+            outline.push(x2 + nx);
+            outline.push(y2 + ny);
+            outline.push(x2 - nx);
+            outline.push(y2 - ny);
+            outline.push(x1 - nx);
+            outline.push(y1 - ny);
+
+            // 起点端 cap（仅第一条线段）
+            if i == 0 {
+                match self.line_cap {
+                    LineCap::Butt => {}
+                    LineCap::Round => {
+                        let cx = x1;
+                        let cy = y1;
+                        let dir_x = -dx / len;
+                        let dir_y = -dy / len;
+                        const CAP_SEGMENTS: usize = 4;
+                        for j in 0..CAP_SEGMENTS {
+                            let a1 = std::f32::consts::PI * j as f32 / CAP_SEGMENTS as f32;
+                            let a2 = std::f32::consts::PI * (j + 1) as f32 / CAP_SEGMENTS as f32;
+                            let base_angle = dir_y.atan2(dir_x) - std::f32::consts::FRAC_PI_2;
+                            outline.push(cx);
+                            outline.push(cy);
+                            outline.push(cx + half_lw * (base_angle + a1).cos());
+                            outline.push(cy + half_lw * (base_angle + a1).sin());
+                            outline.push(cx + half_lw * (base_angle + a2).cos());
+                            outline.push(cy + half_lw * (base_angle + a2).sin());
+                        }
+                    }
+                    LineCap::Square => {
+                        let dir_x = -dx / len;
+                        let dir_y = -dy / len;
+                        let ext = half_lw;
+                        outline.push(x1 + nx);
+                        outline.push(y1 + ny);
+                        outline.push(x1 + nx + dir_x * ext);
+                        outline.push(y1 + ny + dir_y * ext);
+                        outline.push(x1 - nx + dir_x * ext);
+                        outline.push(y1 - ny + dir_y * ext);
+                        outline.push(x1 - nx);
+                        outline.push(y1 - ny);
+                    }
+                }
+            }
+
+            // 连接点（与下一条线段之间）
+            if i < segments.len() - 1 {
+                let next = segments[i + 1];
+                let ndx = next[2] - next[0];
+                let ndy = next[3] - next[1];
+                let nlen = (ndx * ndx + ndy * ndy).sqrt();
+
+                if nlen >= f32::EPSILON {
+                    let nnx = -ndy / nlen * half_lw;
+                    let nny = ndx / nlen * half_lw;
+                    let jx = x2;
+                    let jy = y2;
+
+                    match self.line_join {
+                        LineJoin::Miter => {
+                            // 尖角：延伸两侧法线的交点
+                            let miter_len = Self::compute_miter_length(nx, ny, nnx, nny, half_lw);
+                            let mx = nx + nnx;
+                            let my = ny + nny;
+                            let m = (mx * mx + my * my).sqrt();
+                            if m > f32::EPSILON {
+                                let miter_x = jx + mx / m * miter_len;
+                                let miter_y = jy + my / m * miter_len;
+                                outline.push(jx + nx);
+                                outline.push(jy + ny);
+                                outline.push(miter_x);
+                                outline.push(miter_y);
+                                outline.push(jx + nnx);
+                                outline.push(jy + nny);
+                            }
+                        }
+                        LineJoin::Round => {
+                            // 圆角：在连接点画扇形
+                            const JOIN_SEGMENTS: usize = 4;
+                            let start_angle = ny.atan2(nx);
+                            let end_angle = nny.atan2(nnx);
+                            let step = {
+                                let diff = end_angle - start_angle;
+                                if diff > std::f32::consts::PI {
+                                    diff - std::f32::consts::TAU
+                                } else if diff < -std::f32::consts::PI {
+                                    diff + std::f32::consts::TAU
+                                } else {
+                                    diff
+                                }
+                            } / JOIN_SEGMENTS as f32;
+                            let mut angle = start_angle;
+                            for _ in 0..JOIN_SEGMENTS {
+                                let a1 = angle;
+                                let a2 = angle + step;
+                                outline.push(jx);
+                                outline.push(jy);
+                                outline.push(jx + half_lw * a1.cos());
+                                outline.push(jy + half_lw * a1.sin());
+                                outline.push(jx + half_lw * a2.cos());
+                                outline.push(jy + half_lw * a2.sin());
+                                angle = a2;
+                            }
+                        }
+                        LineJoin::Bevel => {
+                            // 斜角：三角形连接
+                            outline.push(jx + nx);
+                            outline.push(jy + ny);
+                            outline.push(jx + nnx);
+                            outline.push(jy + nny);
+                        }
+                    }
+                }
+            }
+
+            // 终点端 cap（仅最后一条线段）
+            if i == segments.len() - 1 {
+                match self.line_cap {
+                    LineCap::Butt => {}
+                    LineCap::Round => {
+                        let cx = x2;
+                        let cy = y2;
+                        let dir_x = dx / len;
+                        let dir_y = dy / len;
+                        const CAP_SEGMENTS: usize = 4;
+                        for j in 0..CAP_SEGMENTS {
+                            let a1 = std::f32::consts::PI * j as f32 / CAP_SEGMENTS as f32;
+                            let a2 = std::f32::consts::PI * (j + 1) as f32 / CAP_SEGMENTS as f32;
+                            let base_angle = dir_y.atan2(dir_x) - std::f32::consts::FRAC_PI_2;
+                            outline.push(cx);
+                            outline.push(cy);
+                            outline.push(cx + half_lw * (base_angle + a1).cos());
+                            outline.push(cy + half_lw * (base_angle + a1).sin());
+                            outline.push(cx + half_lw * (base_angle + a2).cos());
+                            outline.push(cy + half_lw * (base_angle + a2).sin());
+                        }
+                    }
+                    LineCap::Square => {
+                        let dir_x = dx / len;
+                        let dir_y = dy / len;
+                        let ext = half_lw;
+                        outline.push(x2 + nx);
+                        outline.push(y2 + ny);
+                        outline.push(x2 + nx + dir_x * ext);
+                        outline.push(y2 + ny + dir_y * ext);
+                        outline.push(x2 - nx + dir_x * ext);
+                        outline.push(y2 - ny + dir_y * ext);
+                        outline.push(x2 - nx);
+                        outline.push(y2 - ny);
+                    }
+                }
+            }
+        }
+
+        outline
+    }
+
+    /// 计算 miter 连接的长度（从连接点到尖角顶点的距离）。
+    fn compute_miter_length(nx: f32, ny: f32, nnx: f32, nny: f32, half_lw: f32) -> f32 {
+        let mx = nx + nnx;
+        let my = ny + nny;
+        let m = (mx * mx + my * my).sqrt();
+        if m < f32::EPSILON {
+            return half_lw;
+        }
+        half_lw * 2.0 / m
     }
 }
 
@@ -5012,5 +5314,503 @@ mod tests {
             [0, 0, 0, 0],
             "source-atop: 无目标的源区域应为透明"
         );
+    }
+
+    // ── image_smoothing_enabled 测试 ──
+
+    /// 测试 image_smoothing_enabled 默认值为 true。
+    #[test]
+    fn test_image_smoothing_enabled_default_is_true() {
+        let ctx = CanvasContext::new(100, 100);
+        assert!(ctx.image_smoothing_enabled(), "imageSmoothingEnabled 默认应为 true");
+    }
+
+    /// 测试 set/get 往返一致性。
+    #[test]
+    fn test_image_smoothing_enabled_set_get_roundtrip() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_image_smoothing_enabled(false);
+        assert!(!ctx.image_smoothing_enabled(), "设置为 false 后应返回 false");
+        ctx.set_image_smoothing_enabled(true);
+        assert!(ctx.image_smoothing_enabled(), "设置为 true 后应返回 true");
+    }
+
+    /// 测试 save/restore 保存并恢复 image_smoothing_enabled 的值。
+    #[test]
+    fn test_image_smoothing_enabled_save_restore() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_image_smoothing_enabled(false);
+        ctx.save();
+        ctx.set_image_smoothing_enabled(true);
+        assert!(ctx.image_smoothing_enabled(), "save 后修改应为 true");
+        ctx.restore();
+        assert!(!ctx.image_smoothing_enabled(), "restore 后应恢复为 false");
+    }
+
+    /// 测试 save 后修改 image_smoothing_enabled 不影响已保存的状态。
+    #[test]
+    fn test_image_smoothing_enabled_modify_after_save_does_not_affect_saved() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_image_smoothing_enabled(true);
+        ctx.save();
+        ctx.set_image_smoothing_enabled(false);
+        assert!(!ctx.image_smoothing_enabled(), "修改后当前值应为 false");
+        ctx.restore();
+        assert!(ctx.image_smoothing_enabled(), "restore 后应恢复为 save 时的 true");
+    }
+
+    // ── stroke line_cap / line_join 渲染测试 ──
+
+    /// 测试描边使用 line_cap Butt 时端点为平头（不超出线段端点）。
+    /// 验证描边像素仅在线段范围内，不延伸到端点之外。
+    #[test]
+    fn test_stroke_line_cap_butt_flat_endpoints() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::BLUE);
+        ctx.set_line_width(4.0);
+        ctx.set_line_cap(LineCap::Butt);
+        ctx.begin_path();
+        ctx.move_to(20.0, 50.0);
+        ctx.line_to(80.0, 50.0);
+        ctx.stroke();
+        // 在线段起点之前不应有像素
+        let before_start = ctx.get_image_data(15, 48, 1, 4);
+        assert_eq!(before_start.data[0..4], [0, 0, 0, 0], "Butt cap: 线段起点前不应有像素");
+        // 在线段终点之后不应有像素
+        let after_end = ctx.get_image_data(85, 48, 1, 4);
+        assert_eq!(after_end.data[0..4], [0, 0, 0, 0], "Butt cap: 线段终点后不应有像素");
+        // 在线段中点应有像素
+        let mid = ctx.get_image_data(50, 48, 1, 4);
+        assert_eq!(mid.data[0..4], [0, 0, 255, 255], "Butt cap: 线段中点应为蓝色");
+    }
+
+    /// 测试描边使用 line_cap Round 时端点扩展（半圆形）。
+    /// 验证描边像素在端点处超出线段范围。
+    #[test]
+    fn test_stroke_line_cap_round_extended_endpoints() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::RED);
+        ctx.set_line_width(10.0);
+        ctx.set_line_cap(LineCap::Round);
+        ctx.begin_path();
+        ctx.move_to(30.0, 50.0);
+        ctx.line_to(70.0, 50.0);
+        ctx.stroke();
+        // Round cap 应在端点处产生额外像素（半圆近似为正方形）
+        // half_lw = 5, 起点 (30,50)，Round cap 正方形覆盖 (25,45)-(35,55)
+        // 终点 (70,50)，Round cap 正方形覆盖 (65,45)-(75,55)
+        let near_start = ctx.get_image_data(25, 46, 1, 1);
+        assert_ne!(near_start.data[3], 0, "Round cap: 起点端附近应有像素");
+        let near_end = ctx.get_image_data(74, 46, 1, 1);
+        assert_ne!(near_end.data[3], 0, "Round cap: 终点端附近应有像素");
+    }
+
+    /// 测试描边使用 line_join Miter 时产生尖角连接。
+    /// Miter 连接的轮廓顶点应超出两条线段的简单矩形叠加范围。
+    #[test]
+    fn test_stroke_line_join_miter_sharp_corners() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_stroke_color(Color::BLACK);
+        ctx.set_line_width(4.0);
+        ctx.set_line_join(LineJoin::Miter);
+        ctx.begin_path();
+        ctx.move_to(10.0, 100.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(190.0, 100.0);
+        ctx.stroke();
+        // Miter join 应在连接点 (100,10) 处产生额外的填充区域
+        // 检查连接点附近有像素
+        let join_pixel = ctx.get_image_data(98, 8, 1, 1);
+        assert_ne!(join_pixel.data[3], 0, "Miter join: 连接点附近应有像素");
+    }
+
+    /// 测试描边使用 line_join Round 时产生圆角连接。
+    /// Round 连接的轮廓顶点应包含扇形顶点。
+    #[test]
+    fn test_stroke_line_join_round_corners() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_stroke_color(Color::GREEN);
+        ctx.set_line_width(6.0);
+        ctx.set_line_join(LineJoin::Round);
+        ctx.begin_path();
+        ctx.move_to(10.0, 100.0);
+        ctx.line_to(100.0, 10.0);
+        ctx.line_to(190.0, 100.0);
+        ctx.stroke();
+        // Round join 应在连接点处产生覆盖区域
+        let join_pixel = ctx.get_image_data(98, 8, 1, 1);
+        assert_ne!(join_pixel.data[3], 0, "Round join: 连接点附近应有像素");
+    }
+
+    /// 测试 line_width 影响描边宽度。
+    /// 更大的 line_width 应产生更宽的描边覆盖区域。
+    #[test]
+    fn test_line_width_affects_stroke_width() {
+        // 细线
+        let mut ctx_thin = CanvasContext::new(100, 100);
+        ctx_thin.set_stroke_color(Color::RED);
+        ctx_thin.set_line_width(2.0);
+        ctx_thin.begin_path();
+        ctx_thin.move_to(50.0, 10.0);
+        ctx_thin.line_to(50.0, 90.0);
+        ctx_thin.stroke();
+        // 粗线
+        let mut ctx_thick = CanvasContext::new(100, 100);
+        ctx_thick.set_stroke_color(Color::RED);
+        ctx_thick.set_line_width(10.0);
+        ctx_thick.begin_path();
+        ctx_thick.move_to(50.0, 10.0);
+        ctx_thick.line_to(50.0, 90.0);
+        ctx_thick.stroke();
+        // 粗线在距中心更远的位置应有像素
+        // 细线 (line_width=2) 在 x=54 应无像素
+        let thin_at_54 = ctx_thin.get_image_data(54, 50, 1, 1);
+        assert_eq!(thin_at_54.data[0..4], [0, 0, 0, 0], "line_width=2: x=54 不应有像素");
+        // 粗线 (line_width=10) 在 x=54 应有像素
+        let thick_at_54 = ctx_thick.get_image_data(54, 50, 1, 1);
+        assert_eq!(thick_at_54.data[0..4], [255, 0, 0, 255], "line_width=10: x=54 应有像素");
+    }
+
+    /// 测试 stroke_outline_vertices 生成包含法线偏移的轮廓顶点。
+    /// 验证单条线段的轮廓为 8 个浮点数（4 个顶点 × 2 坐标）。
+    #[test]
+    fn test_stroke_outline_vertices_single_segment() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(4.0);
+        ctx.set_line_cap(LineCap::Butt);
+        ctx.set_line_join(LineJoin::Miter);
+        ctx.begin_path();
+        ctx.move_to(10.0, 50.0);
+        ctx.line_to(90.0, 50.0);
+        let outline = ctx.stroke_outline_vertices();
+        // 单条水平线段：4 个角点 = 8 floats
+        assert_eq!(outline.len(), 8, "单条线段轮廓应有 8 个浮点数（4 个顶点）");
+        // 验证上下偏移：y 坐标应为 50 ± 2（line_width/2 = 2）
+        let y_values: Vec<f32> = outline.iter().skip(1).step_by(2).copied().collect();
+        assert!(
+            y_values.iter().any(|&y| (y - 48.0).abs() < 0.1),
+            "应有 y ≈ 48 的顶点（50 - half_lw）"
+        );
+        assert!(
+            y_values.iter().any(|&y| (y - 52.0).abs() < 0.1),
+            "应有 y ≈ 52 的顶点（50 + half_lw）"
+        );
+    }
+
+    /// 测试 stroke_outline_vertices 包含连接点顶点。
+    /// 两条线段路径应生成线段轮廓 + 连接点轮廓。
+    #[test]
+    fn test_stroke_outline_vertices_with_join() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(4.0);
+        ctx.set_line_cap(LineCap::Butt);
+        ctx.set_line_join(LineJoin::Bevel);
+        ctx.begin_path();
+        ctx.move_to(10.0, 50.0);
+        ctx.line_to(50.0, 10.0);
+        ctx.line_to(90.0, 50.0);
+        let outline = ctx.stroke_outline_vertices();
+        // 2 条线段 × 8 floats = 16（线段轮廓）+ 连接点顶点（Bevel = 4 floats）
+        // 总计应大于 16
+        assert!(
+            outline.len() > 16,
+            "两条线段路径应有连接点额外顶点，实际 {}",
+            outline.len()
+        );
+    }
+
+    /// 测试 stroke_outline_vertices 使用 Round cap 时包含额外扇形顶点。
+    #[test]
+    fn test_stroke_outline_vertices_round_cap_extra_vertices() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(4.0);
+        ctx.set_line_cap(LineCap::Round);
+        ctx.set_line_join(LineJoin::Miter);
+        ctx.begin_path();
+        ctx.move_to(10.0, 50.0);
+        ctx.line_to(90.0, 50.0);
+        let outline = ctx.stroke_outline_vertices();
+
+        // 对比 Butt cap
+        let mut ctx_butt = CanvasContext::new(200, 200);
+        ctx_butt.set_line_width(4.0);
+        ctx_butt.set_line_cap(LineCap::Butt);
+        ctx_butt.set_line_join(LineJoin::Miter);
+        ctx_butt.begin_path();
+        ctx_butt.move_to(10.0, 50.0);
+        ctx_butt.line_to(90.0, 50.0);
+        let outline_butt = ctx_butt.stroke_outline_vertices();
+
+        // Round cap 应比 Butt cap 多出扇形顶点
+        assert!(
+            outline.len() > outline_butt.len(),
+            "Round cap 应比 Butt cap 多出扇形顶点: {} vs {}",
+            outline.len(),
+            outline_butt.len()
+        );
+    }
+
+    /// 测试 stroke_outline_vertices 使用 Square cap 时包含延伸矩形顶点。
+    #[test]
+    fn test_stroke_outline_vertices_square_cap_extra_vertices() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(4.0);
+        ctx.set_line_cap(LineCap::Square);
+        ctx.set_line_join(LineJoin::Miter);
+        ctx.begin_path();
+        ctx.move_to(20.0, 50.0);
+        ctx.line_to(80.0, 50.0);
+        let outline = ctx.stroke_outline_vertices();
+
+        let mut ctx_butt = CanvasContext::new(200, 200);
+        ctx_butt.set_line_width(4.0);
+        ctx_butt.set_line_cap(LineCap::Butt);
+        ctx_butt.set_line_join(LineJoin::Miter);
+        ctx_butt.begin_path();
+        ctx_butt.move_to(20.0, 50.0);
+        ctx_butt.line_to(80.0, 50.0);
+        let outline_butt = ctx_butt.stroke_outline_vertices();
+
+        // Square cap 应比 Butt cap 多出延伸矩形顶点
+        assert!(
+            outline.len() > outline_butt.len(),
+            "Square cap 应比 Butt cap 多出延伸矩形顶点: {} vs {}",
+            outline.len(),
+            outline_butt.len()
+        );
+    }
+
+    /// 测试 stroke_outline_vertices 空路径返回空列表。
+    #[test]
+    fn test_stroke_outline_vertices_empty_path() {
+        let ctx = CanvasContext::new(100, 100);
+        let outline = ctx.stroke_outline_vertices();
+        assert!(outline.is_empty(), "空路径应返回空顶点列表");
+    }
+
+    /// 测试 stroke_outline_vertices 仅 MoveTo 的路径返回空列表。
+    #[test]
+    fn test_stroke_outline_vertices_move_to_only() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.begin_path();
+        ctx.move_to(50.0, 50.0);
+        let outline = ctx.stroke_outline_vertices();
+        assert!(outline.is_empty(), "仅 MoveTo 应返回空顶点列表");
+    }
+
+    /// 测试 line_join Miter 的轮廓顶点在连接处产生额外的尖角顶点。
+    #[test]
+    fn test_stroke_outline_miter_has_join_vertices() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(10.0);
+        ctx.set_line_join(LineJoin::Miter);
+        ctx.set_line_cap(LineCap::Butt);
+        ctx.begin_path();
+        // 直角转弯：(10,90) -> (10,10) -> (90,10)
+        ctx.move_to(10.0, 90.0);
+        ctx.line_to(10.0, 10.0);
+        ctx.line_to(90.0, 10.0);
+        let outline = ctx.stroke_outline_vertices();
+
+        // 对比 Bevel join
+        let mut ctx_bevel = CanvasContext::new(200, 200);
+        ctx_bevel.set_line_width(10.0);
+        ctx_bevel.set_line_join(LineJoin::Bevel);
+        ctx_bevel.set_line_cap(LineCap::Butt);
+        ctx_bevel.begin_path();
+        ctx_bevel.move_to(10.0, 90.0);
+        ctx_bevel.line_to(10.0, 10.0);
+        ctx_bevel.line_to(90.0, 10.0);
+        let outline_bevel = ctx_bevel.stroke_outline_vertices();
+
+        // Miter join 应在连接处有额外的尖角顶点
+        assert!(
+            outline.len() > outline_bevel.len(),
+            "Miter join ({}) 应比 Bevel join ({}) 多出尖角顶点",
+            outline.len(),
+            outline_bevel.len()
+        );
+    }
+
+    /// 测试 line_join Round 的轮廓包含扇形连接顶点。
+    #[test]
+    fn test_stroke_outline_round_join_has_fan_vertices() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_line_width(10.0);
+        ctx.set_line_join(LineJoin::Round);
+        ctx.set_line_cap(LineCap::Butt);
+        ctx.begin_path();
+        ctx.move_to(10.0, 90.0);
+        ctx.line_to(10.0, 10.0);
+        ctx.line_to(90.0, 10.0);
+        let outline = ctx.stroke_outline_vertices();
+
+        // 对比 Bevel join
+        let mut ctx_bevel = CanvasContext::new(200, 200);
+        ctx_bevel.set_line_width(10.0);
+        ctx_bevel.set_line_join(LineJoin::Bevel);
+        ctx_bevel.set_line_cap(LineCap::Butt);
+        ctx_bevel.begin_path();
+        ctx_bevel.move_to(10.0, 90.0);
+        ctx_bevel.line_to(10.0, 10.0);
+        ctx_bevel.line_to(90.0, 10.0);
+        let outline_bevel = ctx_bevel.stroke_outline_vertices();
+
+        // Round join 应比 Bevel join 多出扇形顶点
+        assert!(
+            outline.len() > outline_bevel.len(),
+            "Round join ({}) 应比 Bevel join ({}) 多出扇形顶点",
+            outline.len(),
+            outline_bevel.len()
+        );
+    }
+
+    // ── 合成操作像素级测试（剩余操作） ──
+
+    /// 测试 destination-out 合成：先绘制红色，再使用 destination-out 绘制蓝色，
+    /// 重叠区域的已有内容被清除（变为透明）。
+    #[test]
+    fn test_composite_destination_out() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 destination-out 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::DestinationOut);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 红色独占区域 (2,0)：不变
+        let red_only = ctx.get_image_data(2, 0, 1, 1);
+        assert_eq!(
+            red_only.data[0..4],
+            [255, 0, 0, 255],
+            "destination-out: 红色独占区域不变"
+        );
+
+        // 重叠区域 (7,0)：destination-out 清除已有内容 → 透明
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(overlap.data[0..4], [0, 0, 0, 0], "destination-out: 重叠区域应为透明");
+
+        // 蓝色独占区域 (12,0)：无已有内容 → 透明
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(
+            blue_only.data[0..4],
+            [0, 0, 0, 0],
+            "destination-out: 无目标区域应为透明"
+        );
+    }
+
+    /// 测试 destination-atop 合成：先绘制红色，再使用 destination-atop 绘制蓝色。
+    /// destination-atop 在源区域内：保留目标在源区域内的部分。
+    /// 注意：当前实现只修改绘制矩形内的像素，矩形外的像素保持不变。
+    #[test]
+    fn test_composite_destination_atop() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 destination-atop 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::DestinationAtop);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 重叠区域 (7,0)：destination-atop → 保留目标 + 源
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_ne!(overlap.data[3], 0, "destination-atop: 重叠区域应有内容");
+
+        // 蓝色独占区域 (12,0)：无目标 → destination-atop 保留源
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_ne!(blue_only.data[3], 0, "destination-atop: 源独占区域应有内容");
+    }
+
+    /// 测试 source-in 合成：先绘制红色，再使用 source-in 绘制蓝色。
+    /// source-in 只保留源与目标重叠的部分。
+    /// 注意：当前实现只修改绘制矩形内的像素，矩形外的目标像素保持不变。
+    #[test]
+    fn test_composite_source_in() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 source-in 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::SourceIn);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 重叠区域 (7,0)：source-in → fa=da=1.0, fb=0.0 → 源色（蓝色）
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(overlap.data[0..4], [0, 0, 255, 255], "source-in: 重叠区域应为蓝色");
+
+        // 蓝色独占区域 (12,0)：无目标 → source-in → 透明
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(blue_only.data[0..4], [0, 0, 0, 0], "source-in: 无目标区域应为透明");
+    }
+
+    /// 测试 destination-in 合成：先绘制红色，再使用 destination-in 绘制蓝色。
+    /// destination-in 只保留目标与源重叠的部分。
+    /// 注意：当前实现只修改绘制矩形内的像素，矩形外的目标像素保持不变。
+    #[test]
+    fn test_composite_destination_in() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 destination-in 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::DestinationIn);
+        ctx.set_fill_color(Color::BLUE);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 重叠区域 (7,0)：destination-in → fa=0, fb=sa=1.0 → 保留目标色（红色）
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        assert_eq!(
+            overlap.data[0..4],
+            [255, 0, 0, 255],
+            "destination-in: 重叠区域应保留红色"
+        );
+
+        // 蓝色独占区域 (12,0)：无目标 → destination-in → 透明
+        let blue_only = ctx.get_image_data(12, 0, 1, 1);
+        assert_eq!(blue_only.data[0..4], [0, 0, 0, 0], "destination-in: 无目标区域应为透明");
+    }
+
+    /// 测试 lighter 合成：两个不同颜色像素的 lighter 模式进行加法混合。
+    #[test]
+    fn test_composite_lighter() {
+        let mut ctx = CanvasContext::new(20, 10);
+        // 先绘制红色 (0,0)-(10,10)
+        ctx.set_fill_color(Color::rgba(200, 0, 0, 255));
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 使用 lighter 绘制蓝色 (5,0)-(15,10)
+        ctx.set_composite_operation(CompositeOperation::Lighter);
+        ctx.set_fill_color(Color::rgba(0, 0, 200, 255));
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        // 重叠区域：lighter 模式 = fa=1, fb=1 → 加法混合
+        let overlap = ctx.get_image_data(7, 0, 1, 1);
+        let r = overlap.data[0];
+        let g = overlap.data[1];
+        let b = overlap.data[2];
+        // 红色通道应有目标的贡献（dr * da * fb / out_a）
+        // 蓝色通道应有源的贡献
+        assert!(r >= 100, "lighter: 红色通道应 >= 100，实际 {}", r);
+        assert!(b >= 100, "lighter: 蓝色通道应 >= 100，实际 {}", b);
+    }
+
+    /// 测试 copy 合成覆盖已有内容。
+    /// copy 模式只保留源像素，重叠区域的目标完全被替换。
+    #[test]
+    fn test_composite_copy_replaces() {
+        let mut ctx = CanvasContext::new(20, 10);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 20.0, 10.0);
+        ctx.set_composite_operation(CompositeOperation::Copy);
+        ctx.set_fill_color(Color::GREEN);
+        ctx.fill_rect(5.0, 0.0, 10.0, 10.0);
+
+        let inside = ctx.get_image_data(10, 0, 1, 1);
+        assert_eq!(inside.data[0..4], [0, 255, 0, 255], "copy: 内部区域应为绿色");
+        let outside = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(outside.data[0..4], [255, 0, 0, 255], "copy: 外部区域应保留红色");
     }
 }

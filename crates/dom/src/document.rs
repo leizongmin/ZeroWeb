@@ -787,6 +787,16 @@ impl Document {
         result
     }
 
+    /// 根据命名空间和标签名查找所有匹配的元素节点。
+    ///
+    /// - `namespace` 为 `Some(ns)` 时匹配指定命名空间，为 `None` 时匹配任意命名空间（通配）。
+    /// - `local_name` 为 `"*"` 时匹配所有元素（通配），否则匹配指定标签名。
+    pub fn get_elements_by_tag_name_ns(&self, namespace: Option<&str>, local_name: &str) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.collect_by_tag_name_ns(self.root, namespace, local_name, &mut result);
+        result
+    }
+
     /// 根据类名查找所有匹配的元素节点。
     pub fn get_elements_by_class_name(&self, class: &str) -> Vec<NodeId> {
         let mut result = Vec::new();
@@ -898,6 +908,95 @@ impl Document {
             .entry((slot_element, slot_name.to_string()))
             .or_default()
             .push(node);
+    }
+
+    /// 解析 Shadow DOM slot 分配。
+    ///
+    /// 遍历宿主元素（`host_node_id`）的 shadow 树中所有 `<slot>` 元素，
+    /// 将宿主 light DOM 子节点中匹配的元素分配到对应 slot：
+    ///
+    /// - 有 `slot="name"` 属性的子元素分配到 `<slot name="name">`
+    /// - 没有 `slot` 属性的子元素分配到默认 slot（`<slot>` 无 name 属性）
+    /// - 如果某个 slot 没有匹配的 light DOM 子节点，使用 slot 自身的子节点作为回退内容
+    ///
+    /// 该方法会清除并重新计算该宿主的全部 slot 分配。
+    pub fn resolve_slots(&mut self, host_node_id: NodeId) {
+        // 获取 shadow root
+        let shadow_id = match self.shadow_roots.get(&host_node_id).copied() {
+            Some(id) => id,
+            None => return,
+        };
+
+        // 收集 shadow 树中所有 <slot> 元素：(NodeId, Option<name>)
+        let slot_elements = self.collect_slot_elements(shadow_id);
+        if slot_elements.is_empty() {
+            return;
+        }
+
+        // 清除这些 slot 元素的旧分配
+        for &(slot_id, ref slot_name_opt) in &slot_elements {
+            let name = slot_name_opt.as_deref().unwrap_or("");
+            self.slot_assignments.remove(&(slot_id, name.to_string()));
+        }
+
+        // 收集宿主的 light DOM 子节点（排除 ShadowRoot 自身）
+        let host_children = self
+            .nodes
+            .get(host_node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        let light_children: Vec<NodeId> = host_children
+            .iter()
+            .copied()
+            .filter(|&id| !matches!(self.nodes.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
+            .collect();
+
+        // 对每个 light DOM 子节点，确定它分配到哪个 slot
+        for &child_id in &light_children {
+            let slot_attr = self.nodes.get(child_id).and_then(|n| match &n.kind {
+                NodeKind::Element(elem) => elem.get_attribute("slot"),
+                _ => None,
+            });
+
+            let matched_slot = if let Some(ref slot_name) = slot_attr {
+                // 有 slot 属性：找匹配 name 的 slot
+                slot_elements
+                    .iter()
+                    .find(|(_, name_opt)| name_opt.as_deref() == Some(slot_name.as_str()))
+            } else {
+                // 没有 slot 属性：分配到默认 slot（无 name 属性的 slot）
+                slot_elements.iter().find(|(_, name_opt)| name_opt.is_none())
+            };
+
+            if let Some(&(slot_id, ref name_opt)) = matched_slot {
+                let name = name_opt.as_deref().unwrap_or("").to_string();
+                self.slot_assignments.entry((slot_id, name)).or_default().push(child_id);
+            }
+        }
+    }
+
+    /// 获取 slot 元素已分配的节点列表。
+    ///
+    /// 在调用 `resolve_slots` 之后使用此方法获取分配结果。
+    /// 如果 slot 有已分配的 light DOM 节点，返回这些节点；
+    /// 如果没有已分配的节点（即使用回退内容），返回空列表。
+    ///
+    /// `slot_node_id` 是 `<slot>` 元素的 NodeId。
+    pub fn get_assigned_nodes(&self, slot_node_id: NodeId) -> Vec<NodeId> {
+        // 获取 slot 的 name 属性
+        let slot_name = self
+            .nodes
+            .get(slot_node_id)
+            .and_then(|n| match &n.kind {
+                NodeKind::Element(elem) => elem.get_attribute("name"),
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        self.slot_assignments
+            .get(&(slot_node_id, slot_name))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// 在 ShadowRoot 子树中查找第一个匹配选择器的元素。
@@ -1303,6 +1402,29 @@ impl Document {
         }
     }
 
+    /// 递归收集指定命名空间和标签名的元素。
+    fn collect_by_tag_name_ns(&self, id: NodeId, namespace: Option<&str>, local_name: &str, result: &mut Vec<NodeId>) {
+        let node_data = match self.nodes.get(id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        if let NodeKind::Element(elem) = &node_data.kind {
+            let ns_match = match namespace {
+                Some(ns) => elem.namespace() == ns,
+                None => true,
+            };
+            let name_match = local_name == "*" || elem.local_name().eq_ignore_ascii_case(local_name);
+            if ns_match && name_match {
+                result.push(id);
+            }
+        }
+
+        for &child in &node_data.children.clone() {
+            self.collect_by_tag_name_ns(child, namespace, local_name, result);
+        }
+    }
+
     /// 递归收集指定类名的元素。
     fn collect_by_class_name(&self, id: NodeId, class: &str, result: &mut Vec<NodeId>) {
         let node_data = match self.nodes.get(id) {
@@ -1418,6 +1540,43 @@ impl Document {
                 continue;
             }
             self.collect_matching_shadow(child, selector, result);
+        }
+    }
+
+    /// 收集 shadow 树中所有 `<slot>` 元素。
+    ///
+    /// 返回 `(NodeId, Option<name属性值>)` 列表。
+    /// 不穿透嵌套的 ShadowRoot 边界。
+    fn collect_slot_elements(&self, root: NodeId) -> Vec<(NodeId, Option<String>)> {
+        let mut result = Vec::new();
+        self.collect_slot_elements_recursive(root, &mut result);
+        result
+    }
+
+    /// 递归收集 `<slot>` 元素。
+    fn collect_slot_elements_recursive(&self, node_id: NodeId, result: &mut Vec<(NodeId, Option<String>)>) {
+        let node_data = match self.nodes.get(node_id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        // 检查当前节点是否为 <slot> 元素
+        if let NodeKind::Element(elem) = &node_data.kind
+            && elem.local_name() == "slot"
+        {
+            let name = elem.get_attribute("name");
+            result.push((node_id, name));
+        }
+
+        // 递归遍历子节点，不穿透嵌套的 ShadowRoot
+        let children = node_data.children.clone();
+        for child in children {
+            if let Some(child_data) = self.nodes.get(child)
+                && matches!(child_data.kind, NodeKind::ShadowRoot(_))
+            {
+                continue;
+            }
+            self.collect_slot_elements_recursive(child, result);
         }
     }
 
@@ -1819,5 +1978,182 @@ mod tests {
         // 导入副本不受影响
         assert_eq!(doc.get_attribute(imported, "class"), Some("original".to_string()));
         assert_eq!(doc.text_content(imported), Some("text".to_string()));
+    }
+
+    // ── get_elements_by_tag_name_ns 测试 ──────────────────────────
+
+    /// 测试按命名空间和标签名查找元素，应匹配正确命名空间中的元素。
+    #[test]
+    fn test_get_elements_by_tag_name_ns_finds_correct_namespace() {
+        use markup5ever::{LocalName, Namespace, QualName};
+
+        let mut doc = Document::new();
+        let container = doc.create_element("div");
+
+        // 创建 XHTML 命名空间的 div
+        let xhtml_div = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/1999/xhtml"),
+                LocalName::from("div"),
+            ),
+            vec![],
+        );
+        // 创建 SVG 命名空间的 rect
+        let svg_rect = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("rect"),
+            ),
+            vec![],
+        );
+
+        doc.append_child(container, xhtml_div).unwrap();
+        doc.append_child(container, svg_rect).unwrap();
+        doc.append_child(doc.root(), container).unwrap();
+
+        // 按 SVG 命名空间查找 rect
+        let results = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/2000/svg"), "rect");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], svg_rect);
+
+        // 按 XHTML 命名空间查找 div（只匹配 XHTML 命名空间的）
+        let results = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/1999/xhtml"), "div");
+        assert_eq!(results.len(), 2); // container + xhtml_div
+    }
+
+    /// 测试按命名空间查找时忽略错误命名空间中的元素。
+    #[test]
+    fn test_get_elements_by_tag_name_ns_ignores_wrong_namespace() {
+        use markup5ever::{LocalName, Namespace, QualName};
+
+        let mut doc = Document::new();
+
+        // 创建 SVG 命名空间的 div
+        let svg_div = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("div"),
+            ),
+            vec![],
+        );
+        // 创建 XHTML 命名空间的 div
+        let xhtml_div = doc.create_element("div");
+
+        doc.append_child(doc.root(), svg_div).unwrap();
+        doc.append_child(doc.root(), xhtml_div).unwrap();
+
+        // 按 SVG 命名空间查找 div — 不应匹配 XHTML 的 div
+        let results = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/2000/svg"), "div");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], svg_div);
+
+        // 按 XHTML 命名空间查找 div — 不应匹配 SVG 的 div
+        let results = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/1999/xhtml"), "div");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], xhtml_div);
+    }
+
+    /// 测试通配命名空间（None）匹配所有命名空间中指定标签名的元素。
+    #[test]
+    fn test_get_elements_by_tag_name_ns_wildcard_namespace() {
+        use markup5ever::{LocalName, Namespace, QualName};
+
+        let mut doc = Document::new();
+
+        let svg_rect = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("rect"),
+            ),
+            vec![],
+        );
+        let xhtml_rect = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/1999/xhtml"),
+                LocalName::from("rect"),
+            ),
+            vec![],
+        );
+
+        doc.append_child(doc.root(), svg_rect).unwrap();
+        doc.append_child(doc.root(), xhtml_rect).unwrap();
+
+        // namespace=None 应匹配所有命名空间的 rect
+        let results = doc.get_elements_by_tag_name_ns(None, "rect");
+        assert_eq!(results.len(), 2);
+    }
+
+    /// 测试通配标签名（"*"）匹配指定命名空间中的所有元素。
+    #[test]
+    fn test_get_elements_by_tag_name_ns_wildcard_local_name() {
+        use markup5ever::{LocalName, Namespace, QualName};
+
+        let mut doc = Document::new();
+        let container = doc.create_element("div");
+
+        let svg_rect = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("rect"),
+            ),
+            vec![],
+        );
+        let svg_circle = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("circle"),
+            ),
+            vec![],
+        );
+        let xhtml_span = doc.create_element("span");
+
+        doc.append_child(container, svg_rect).unwrap();
+        doc.append_child(container, svg_circle).unwrap();
+        doc.append_child(container, xhtml_span).unwrap();
+        doc.append_child(doc.root(), container).unwrap();
+
+        // "*" 在 SVG 命名空间中应只匹配 SVG 元素
+        let results = doc.get_elements_by_tag_name_ns(Some("http://www.w3.org/2000/svg"), "*");
+        assert_eq!(results.len(), 2);
+        assert!(results.contains(&svg_rect));
+        assert!(results.contains(&svg_circle));
+    }
+
+    /// 测试双重通配（None 命名空间 + "*" 标签名）返回文档中所有元素。
+    #[test]
+    fn test_get_elements_by_tag_name_ns_double_wildcard() {
+        use markup5ever::{LocalName, Namespace, QualName};
+
+        let mut doc = Document::new();
+        let container = doc.create_element("div");
+
+        let svg_rect = doc.create_element_with_qname(
+            QualName::new(
+                None,
+                Namespace::from("http://www.w3.org/2000/svg"),
+                LocalName::from("rect"),
+            ),
+            vec![],
+        );
+        let xhtml_span = doc.create_element("span");
+
+        doc.append_child(container, svg_rect).unwrap();
+        doc.append_child(container, xhtml_span).unwrap();
+        doc.append_child(doc.root(), container).unwrap();
+
+        // 双重通配应返回所有元素
+        let results = doc.get_elements_by_tag_name_ns(None, "*");
+        // container + svg_rect + xhtml_span = 3
+        assert!(results.len() >= 3);
+        assert!(results.contains(&container));
+        assert!(results.contains(&svg_rect));
+        assert!(results.contains(&xhtml_span));
     }
 }

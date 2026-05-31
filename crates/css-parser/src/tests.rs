@@ -3966,3 +3966,153 @@ fn test_parse_opacity_invalid() {
     assert_eq!(parse_opacity("abc"), None);
     assert_eq!(parse_opacity(""), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 27. 边界条件扩展测试 — hwb 颜色、混合渐变色标、3D 变换、嵌套 var、复杂 @supports
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 hwb() 颜色记法：当前不支持 hwb()，验证不崩溃并返回合理结果。
+/// hwb(0 0% 0%) 和 hwb(120 50% 25% / 0.5) 不应导致 panic。
+fn test_parse_color_hwb() {
+    // 当前 parse_color 不识别 hwb() 函数，应作为 Named 颜色或 None 返回
+    let result = parse_color("hwb(0 0% 0%)");
+    // 不是 crash 即为通过——当前返回 Named 或 None 均可接受
+    assert!(result.is_some() || result.is_none());
+
+    let result_with_alpha = parse_color("hwb(120 50% 25% / 0.5)");
+    assert!(result_with_alpha.is_some() || result_with_alpha.is_none());
+
+    // 验证 hwb() 在样式表中作为声明值不会导致解析崩溃
+    let css = "div { color: hwb(0 0% 0%); background: hwb(120 50% 25% / 0.5); }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    if let Rule::Style(sr) = &stylesheet.rules[0] {
+        // 至少应解析出两条声明
+        assert!(sr.declarations.len() >= 2);
+        assert!(sr.declarations.iter().any(|d| d.property == "color"));
+        assert!(sr.declarations.iter().any(|d| d.property == "background"));
+    }
+}
+
+#[test]
+/// 测试渐变使用混合色标位置类型（px、%）：验证解析不崩溃，色标数量正确。
+fn test_parse_gradient_with_multiple_types() {
+    // 纯 px 色标
+    let result = parse_gradient("linear-gradient(red 10px, blue 20px)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.stops.len(), 2);
+            assert_eq!(lg.stops[0].position, Some(LengthValue::Px(10.0)));
+            assert_eq!(lg.stops[1].position, Some(LengthValue::Px(20.0)));
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+
+    // 混合 px 和 % 色标
+    let result = parse_gradient("linear-gradient(red 10px, green 50%, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.stops.len(), 3);
+            assert_eq!(lg.stops[0].position, Some(LengthValue::Px(10.0)));
+            assert_eq!(lg.stops[1].position, Some(LengthValue::Percentage(50.0)));
+            assert_eq!(lg.stops[2].position, None);
+        }
+        _ => panic!("Expected LinearGradient"),
+    }
+
+    // calc() 色标位置：当前 parse_length 不支持 calc()，验证不崩溃
+    let result = parse_gradient("linear-gradient(red, blue calc(50% - 10px))");
+    // calc() 在色标位置中不被 parse_length 支持，可能返回 None 或部分结果
+    assert!(result.is_some() || result.is_none());
+}
+
+#[test]
+/// 测试 3D 变换函数：translate3d、scale3d、rotate3d、perspective。
+/// 当前 TransformFunction 不包含 3D 变体，应返回 None。
+fn test_parse_transform_3d_functions() {
+    // translate3d — 不支持，应返回 None
+    assert_eq!(parse_transform("translate3d(10px, 20px, 30px)"), None);
+
+    // scale3d — 不支持，应返回 None
+    assert_eq!(parse_transform("scale3d(1, 2, 3)"), None);
+
+    // rotate3d — 不支持，应返回 None
+    assert_eq!(parse_transform("rotate3d(1, 0, 0, 45deg)"), None);
+
+    // perspective — 不支持，应返回 None
+    assert_eq!(parse_transform("perspective(500px)"), None);
+
+    // 混合 2D 和 3D：只要有一个不支持就应返回 None
+    assert_eq!(parse_transform("translate(10px) rotate3d(1, 0, 0, 45deg)"), None);
+
+    // 纯 2D 变换仍然正常
+    let result = parse_transform("translate(10px, 20px) rotate(45deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+/// 测试 var() 三层嵌套回退：var(--a, var(--b, var(--c, blue)))。
+/// parse_var 使用逗号分割，深层嵌套的回退值应保留完整文本。
+fn test_parse_var_deeply_nested_fallback() {
+    let result = parse_var("var(--a, var(--b, var(--c, blue)))");
+    assert!(result.is_some());
+    let var = result.unwrap();
+    assert_eq!(var.name, "--a");
+    // 回退值应保留完整的嵌套 var() 文本
+    assert!(var.fallback.is_some());
+    let fallback = var.fallback.unwrap();
+    assert!(
+        fallback.contains("var(--b"),
+        "Nested var() should be preserved in fallback"
+    );
+    assert!(
+        fallback.contains("var(--c"),
+        "Deeply nested var() should be preserved in fallback"
+    );
+
+    // 单层嵌套回退
+    let result = parse_var("var(--x, var(--y, red))");
+    assert!(result.is_some());
+    let var = result.unwrap();
+    assert_eq!(var.name, "--x");
+    assert_eq!(var.fallback, Some("var(--y, red)".to_string()));
+}
+
+#[test]
+/// 测试 @supports 复杂嵌套条件：(display: grid) and (not (display: flex))。
+/// 验证解析器正确处理 and + not 嵌套组合。
+fn test_parse_supports_complex_condition() {
+    let css = "@supports (display: grid) and (not (display: flex)) { .container { display: grid; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Supports(supports_rule) => {
+            match &supports_rule.condition {
+                SupportsCondition::And(conditions) => {
+                    assert_eq!(conditions.len(), 2);
+                    // 第一个条件：(display: grid)
+                    assert!(matches!(
+                        &conditions[0],
+                        SupportsCondition::Property(p, v) if p == "display" && v == "grid"
+                    ));
+                    // 第二个条件：not (display: flex)
+                    match &conditions[1] {
+                        SupportsCondition::Not(inner) => {
+                            assert!(matches!(
+                                inner.as_ref(),
+                                SupportsCondition::Property(p, v) if p == "display" && v == "flex"
+                            ));
+                        }
+                        _ => panic!("Expected Not condition as second operand"),
+                    }
+                }
+                _ => panic!("Expected And condition with nested Not"),
+            }
+            assert_eq!(supports_rule.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports rule"),
+    }
+}

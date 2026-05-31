@@ -886,6 +886,39 @@ mod tests {
         assert_eq!(bb.bottom(), 30.0);
     }
 
+    /// 透明度 alpha=0.0 的图元应不可见（预乘 alpha 后所有通道为零）。
+    #[test]
+    fn test_composite_primitive_opacity_zero() {
+        // alpha=0 的颜色（完全透明），预乘后 RGB 通道全部归零
+        let invisible_color = Color::rgba(255, 0, 0, 0);
+        let premultiplied = invisible_color.premultiplied();
+        assert!(premultiplied[0].abs() < f32::EPSILON, "R 通道预乘后应为 0");
+        assert!(premultiplied[1].abs() < f32::EPSILON, "G 通道预乘后应为 0");
+        assert!(premultiplied[2].abs() < f32::EPSILON, "B 通道预乘后应为 0");
+        assert!(premultiplied[3].abs() < f32::EPSILON, "A 通道预乘后应为 0");
+
+        // 添加一个完全透明的 fill 图元
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 100.0), invisible_color);
+        // 图元本身存在（len=1），但颜色完全透明
+        assert_eq!(p.fills.len(), 1);
+        assert_eq!(p.fills[0].color.a, 0, "alpha 应为 0");
+
+        // 同理：添加一个完全透明的阴影图元
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+            color: Color::TRANSPARENT,
+            offset_x: 5.0,
+            offset_y: 5.0,
+            blur_radius: 3.0,
+            spread_radius: 0.0,
+        });
+        let shadow = &p.shadows[0];
+        assert_eq!(shadow.color.a, 0);
+        let shadow_premul = shadow.color.premultiplied();
+        assert!(shadow_premul.iter().all(|&c| c.abs() < f32::EPSILON));
+    }
+
     /// 测试 path_fill 空 vertices 的 bounding_box
     #[test]
     fn test_bounding_box_empty_path_fill_vertices() {

@@ -491,6 +491,41 @@ mod tests {
         assert!(a.intersection(&b).is_none());
     }
 
+    /// 清空追踪器后重新标记脏区域，验证新的脏矩形正确记录。
+    #[test]
+    fn test_damage_tracker_clear_then_remark() {
+        let mut tracker = DamageTracker::new();
+        // 初始标记
+        tracker.add_damage(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tracker.add_damage(Rect::new(200.0, 200.0, 80.0, 80.0));
+        assert!(tracker.is_dirty());
+        let count_before = tracker.dirty_rects().len();
+        assert!(count_before >= 1);
+
+        // 清空
+        tracker.clear();
+        assert!(!tracker.is_dirty());
+        assert!(tracker.dirty_rects().is_empty());
+
+        // 重新标记不同的脏区域
+        tracker.add_damage(Rect::new(10.0, 20.0, 30.0, 40.0));
+        tracker.add_damage(Rect::new(500.0, 100.0, 50.0, 60.0));
+        assert!(tracker.is_dirty());
+        // 两个不相邻的矩形不应合并
+        assert_eq!(tracker.dirty_rects().len(), 2);
+
+        // 验证新矩形的值
+        let rects = tracker.dirty_rects();
+        let r1 = rects[0];
+        assert_eq!(r1.origin.x, 10.0);
+        assert_eq!(r1.origin.y, 20.0);
+        assert_eq!(r1.size.width, 30.0);
+        assert_eq!(r1.size.height, 40.0);
+        let r2 = rects[1];
+        assert_eq!(r2.origin.x, 500.0);
+        assert_eq!(r2.size.width, 50.0);
+    }
+
     /// 测试 DamageTracker 多次 clear
     #[test]
     fn test_damage_tracker_double_clear_unchanged() {

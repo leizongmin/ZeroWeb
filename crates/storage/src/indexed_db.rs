@@ -3151,6 +3151,54 @@ mod tests {
         assert_eq!(names, vec!["Apple", "Mango", "Zebra"]);
     }
 
+    /// 使用键范围批量删除记录，验证剩余记录正确。
+    #[test]
+    fn test_idb_delete_range() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("store", None, false).unwrap();
+        // 插入 1..=10
+        for i in 1..=10 {
+            db.add(
+                "store",
+                serde_json::json!(format!("v{i}")),
+                Some(IdbKey::Number(i as f64)),
+            )
+            .unwrap();
+        }
+        assert_eq!(db.count("store").unwrap(), 10);
+
+        // 删除范围 [3, 7] 内的记录
+        let range = IdbKeyRange::bound(IdbKey::Number(3.0), IdbKey::Number(7.0), false, false);
+        let to_delete: Vec<IdbKey> = db
+            .get_all_with_range("store", &range)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.key.clone())
+            .collect();
+        assert_eq!(to_delete.len(), 5, "范围 [3,7] 应包含 5 条记录");
+
+        for key in &to_delete {
+            db.delete("store", key).unwrap();
+        }
+
+        // 验证剩余记录
+        assert_eq!(db.count("store").unwrap(), 5);
+        // 1, 2 应保留
+        assert!(db.get("store", &IdbKey::Number(1.0)).is_some());
+        assert!(db.get("store", &IdbKey::Number(2.0)).is_some());
+        // 3..=7 应被删除
+        for i in 3..=7 {
+            assert!(
+                db.get("store", &IdbKey::Number(i as f64)).is_none(),
+                "key={i} 应已被删除"
+            );
+        }
+        // 8, 9, 10 应保留
+        assert!(db.get("store", &IdbKey::Number(8.0)).is_some());
+        assert!(db.get("store", &IdbKey::Number(9.0)).is_some());
+        assert!(db.get("store", &IdbKey::Number(10.0)).is_some());
+    }
+
     /// 混合操作：add + put + delete + abort，store 不受影响。
     #[test]
     fn test_tx_mixed_operations_abort() {
