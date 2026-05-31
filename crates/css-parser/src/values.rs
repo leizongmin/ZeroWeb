@@ -248,10 +248,194 @@ pub struct CalcContext {
     pub ch_width: Option<f64>,
 }
 
+/// calc() 表达式解析器内部状态。
+struct CalcParser<'a> {
+    /// 待解析的输入切片。
+    input: &'a str,
+    /// 当前位置（字节偏移）。
+    pos: usize,
+    /// 当前递归深度。
+    depth: u32,
+}
+
+/// 最大递归深度限制。
+const MAX_CALC_DEPTH: u32 = 10;
+
+impl<'a> CalcParser<'a> {
+    /// 跳过前导空白。
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace()
+        {
+            self.pos += 1;
+        }
+    }
+
+    /// 查看当前剩余输入。
+    fn peek_rest(&self) -> &'a str {
+        &self.input[self.pos..]
+    }
+
+    /// 尝试消费指定前缀。
+    fn try_consume(&mut self, prefix: &str) -> bool {
+        let rest = self.peek_rest();
+        if rest.starts_with(prefix) {
+            self.pos += prefix.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
+    fn parse_expr(&mut self) -> Option<CalcExpr> {
+        let mut left = self.parse_term()?;
+
+        loop {
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.starts_with(')') || rest.is_empty() {
+                break;
+            }
+            if rest.starts_with('+') {
+                self.pos += 1;
+                let right = self.parse_term()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Add, Box::new(right));
+            } else if rest.starts_with('-') {
+                // 区分减号和负号：减号前面有操作数
+                self.pos += 1;
+                let right = self.parse_term()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Subtract, Box::new(right));
+            } else {
+                break;
+            }
+        }
+
+        Some(left)
+    }
+
+    /// 解析高优先级项（处理 * / 运算符）。
+    fn parse_term(&mut self) -> Option<CalcExpr> {
+        let mut left = self.parse_factor()?;
+
+        loop {
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.starts_with('*') {
+                self.pos += 1;
+                let right = self.parse_factor()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Multiply, Box::new(right));
+            } else if rest.starts_with('/') {
+                self.pos += 1;
+                let right = self.parse_factor()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Divide, Box::new(right));
+            } else {
+                break;
+            }
+        }
+
+        Some(left)
+    }
+
+    /// 解析原子因子：数字、长度值、嵌套 calc() 或括号表达式。
+    fn parse_factor(&mut self) -> Option<CalcExpr> {
+        self.skip_whitespace();
+
+        // 处理负号前缀
+        let neg = if self.peek_rest().starts_with('-') {
+            // 判断是否为负号（而非减号）：后面紧跟数字或 calc(
+            let after = self.peek_rest()[1..].trim_start();
+            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.')
+                || after.starts_with("calc(")
+            {
+                self.pos += 1;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        self.skip_whitespace();
+
+        let mut expr = if self.try_consume("calc(") {
+            // 嵌套 calc() 表达式
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let inner = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            inner
+        } else if self.try_consume("(") {
+            // 括号表达式
+            let inner = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            inner
+        } else {
+            // 解析原子操作数：数值或长度值
+            self.parse_atom()?
+        };
+
+        if neg {
+            expr = CalcExpr::BinaryOp(
+                Box::new(CalcExpr::Number(0.0)),
+                CalcOp::Subtract,
+                Box::new(expr),
+            );
+        }
+
+        Some(expr)
+    }
+
+    /// 解析原子操作数（数值或带单位的长度值）。
+    fn parse_atom(&mut self) -> Option<CalcExpr> {
+        self.skip_whitespace();
+        let rest = self.peek_rest();
+
+        // 从当前位置读取到下一个运算符、空白或右括号
+        let end = rest
+            .bytes()
+            .position(|b| b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b')')
+            .unwrap_or(rest.len());
+
+        if end == 0 {
+            return None;
+        }
+
+        let token = rest[..end].trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        self.pos += rest[..end].len();
+
+        // 尝试解析为纯数字
+        if let Ok(num) = token.parse::<f64>() {
+            return Some(CalcExpr::Number(num));
+        }
+
+        // 尝试解析为长度值
+        if let Some(length) = parse_length(token) {
+            return Some(CalcExpr::Length(length));
+        }
+
+        None
+    }
+}
+
 /// 解析 CSS calc() 表达式。
 ///
 /// 支持格式如 `"calc(100% - 20px)"`、`"calc(50% + 10px)"`、`"calc(2 * 10px)"`。
-/// 目前仅处理单次二元运算（左 操作数 右）。
+/// 支持嵌套 calc 表达式如 `"calc(calc(100% - 20px) / 2)"`。
+/// 运算符优先级：`*` `/` 高于 `+` `-`。
 pub fn parse_calc(value: &str) -> Option<CalcExpr> {
     let value = value.trim();
 
@@ -261,68 +445,25 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
     }
 
     let inner = value.get(5..value.len() - 1)?.trim();
-
-    // 尝试查找运算符：+、-、*、/
-    // 按优先级搜索 *、/ 优先于 +、-
-    // 简单实现：搜索第一个运算符
-    if let Some((op_pos, op)) = find_calc_operator(inner) {
-        let left_str = inner[..op_pos].trim();
-        let right_str = inner[op_pos + 1..].trim();
-
-        let left = parse_calc_operand(left_str)?;
-        let right = parse_calc_operand(right_str)?;
-
-        Some(CalcExpr::BinaryOp(Box::new(left), op, Box::new(right)))
-    } else {
-        // 单个操作数
-        parse_calc_operand(inner)
-    }
-}
-
-/// 在 calc 表达式内部查找运算符位置。
-///
-/// 返回第一个匹配的运算符及其位置。
-fn find_calc_operator(s: &str) -> Option<(usize, CalcOp)> {
-    let bytes = s.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'+' => return Some((i, CalcOp::Add)),
-            b'-' => {
-                // 跳过负号（前面紧跟着运算符或位于开头）
-                if i == 0 {
-                    continue;
-                }
-                // 前一个非空白字符必须是数字、%或字母(单位)
-                let prev_non_ws = s[..i].chars().rev().find(|c| !c.is_ascii_whitespace());
-                if let Some(prev) = prev_non_ws
-                    && (prev.is_ascii_digit() || prev == '%' || prev.is_ascii_alphabetic())
-                {
-                    return Some((i, CalcOp::Subtract));
-                }
-            }
-            b'*' => return Some((i, CalcOp::Multiply)),
-            b'/' => return Some((i, CalcOp::Divide)),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// 解析 calc 操作数（数值或长度值）。
-fn parse_calc_operand(s: &str) -> Option<CalcExpr> {
-    let s = s.trim();
-
-    // 尝试解析为纯数字（无单位）
-    if let Ok(num) = s.parse::<f64>() {
-        return Some(CalcExpr::Number(num));
+    if inner.is_empty() {
+        return None;
     }
 
-    // 尝试解析为长度值
-    if let Some(length) = parse_length(s) {
-        return Some(CalcExpr::Length(length));
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+
+    let expr = parser.parse_expr()?;
+
+    // 确保整个输入已被消费
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
     }
 
-    None
+    Some(expr)
 }
 
 /// 计算 CSS calc() 表达式的像素值。
@@ -1989,5 +2130,95 @@ mod tests {
         let expr = parse_calc("calc(50% + 10px)").unwrap();
         // 百分比没有 parent_length，应返回 None
         assert_eq!(eval_calc(&expr, None), None);
+    }
+
+    // ── parse_calc 嵌套与优先级 ──
+
+    #[test]
+    /// 测试 calc() 基本嵌套：calc(calc(100% - 20px) / 2)
+    fn test_calc_nested_basic() {
+        let expr = parse_calc("calc(calc(100% - 20px) / 2)");
+        let expr = expr.expect("should parse nested calc");
+        // 整体结构：外层除法，左操作数为内层减法
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(*op, CalcOp::Divide);
+                assert_eq!(**right, CalcExpr::Number(2.0));
+                // 内层 calc(100% - 20px)
+                match left.as_ref() {
+                    CalcExpr::BinaryOp(inner_left, inner_op, inner_right) => {
+                        assert_eq!(**inner_left, CalcExpr::Length(LengthValue::Percentage(100.0)));
+                        assert_eq!(*inner_op, CalcOp::Subtract);
+                        assert_eq!(**inner_right, CalcExpr::Length(LengthValue::Px(20.0)));
+                    }
+                    _ => panic!("expected inner BinaryOp, got {left:?}"),
+                }
+            }
+            _ => panic!("expected outer BinaryOp, got {expr:?}"),
+        }
+
+        // 求值验证：parent_length=200, 100%-20px=180, 180/2=90
+        let result = eval_calc(&expr, Some(200.0));
+        assert_eq!(result, Some(90.0));
+    }
+
+    #[test]
+    /// 测试 calc() 双重嵌套：calc(calc(10px + 5px) * calc(2))
+    fn test_calc_double_nesting() {
+        let expr = parse_calc("calc(calc(10px + 5px) * calc(2))");
+        let expr = expr.expect("should parse double nested calc");
+        // 外层乘法
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(*op, CalcOp::Multiply);
+                // 左侧 calc(10px + 5px)
+                match left.as_ref() {
+                    CalcExpr::BinaryOp(il, io, ir) => {
+                        assert_eq!(**il, CalcExpr::Length(LengthValue::Px(10.0)));
+                        assert_eq!(*io, CalcOp::Add);
+                        assert_eq!(**ir, CalcExpr::Length(LengthValue::Px(5.0)));
+                    }
+                    _ => panic!("expected left inner BinaryOp, got {left:?}"),
+                }
+                // 右侧 calc(2)
+                match right.as_ref() {
+                    CalcExpr::Number(n) => assert_eq!(*n, 2.0),
+                    _ => panic!("expected right Number, got {right:?}"),
+                }
+            }
+            _ => panic!("expected outer BinaryOp, got {expr:?}"),
+        }
+
+        // 求值：(10+5)*2=30
+        let result = eval_calc(&expr, None);
+        assert_eq!(result, Some(30.0));
+    }
+
+    #[test]
+    /// 测试 calc() 混合运算（运算符优先级与从左到右）：
+    /// calc(100% - 10px + 5px) 应按从左到右顺序求值
+    fn test_calc_mixed_operations() {
+        let expr = parse_calc("calc(100% - 10px + 5px)");
+        let expr = expr.expect("should parse mixed operations");
+        // + 和 - 同优先级，从左到右：(100% - 10px) + 5px
+        match &expr {
+            CalcExpr::BinaryOp(left, op, right) => {
+                assert_eq!(*op, CalcOp::Add);
+                assert_eq!(**right, CalcExpr::Length(LengthValue::Px(5.0)));
+                match left.as_ref() {
+                    CalcExpr::BinaryOp(ll, lo, lr) => {
+                        assert_eq!(**ll, CalcExpr::Length(LengthValue::Percentage(100.0)));
+                        assert_eq!(*lo, CalcOp::Subtract);
+                        assert_eq!(**lr, CalcExpr::Length(LengthValue::Px(10.0)));
+                    }
+                    _ => panic!("expected left BinaryOp, got {left:?}"),
+                }
+            }
+            _ => panic!("expected BinaryOp, got {expr:?}"),
+        }
+
+        // 求值：parent_length=200, (200-10)+5=195
+        let result = eval_calc(&expr, Some(200.0));
+        assert_eq!(result, Some(195.0));
     }
 }

@@ -51,6 +51,33 @@ pub fn compute_inherited_style(
                     apply_initial_value(&mut style, property);
                 }
             }
+            KeywordResolution::Revert => {
+                // revert 跳过作者级联值，回退到 User/UA 来源。
+                // 简化实现：继承属性使用父元素计算值（模拟 User 来源行为），
+                // 非继承属性使用初始值。
+                if PropertyRegistry::is_inherited(property) {
+                    if let Some(parent) = parent_style {
+                        inherit_property(parent, &mut style, property);
+                    } else {
+                        apply_initial_value(&mut style, property);
+                    }
+                } else {
+                    apply_initial_value(&mut style, property);
+                }
+            }
+            KeywordResolution::RevertLayer => {
+                // revert-layer 跳过当前 @layer 声明，回退到更低优先级层。
+                // 简化实现：等同于 unset。
+                if PropertyRegistry::is_inherited(property) {
+                    if let Some(parent) = parent_style {
+                        inherit_property(parent, &mut style, property);
+                    } else {
+                        apply_initial_value(&mut style, property);
+                    }
+                } else {
+                    apply_initial_value(&mut style, property);
+                }
+            }
             KeywordResolution::Concrete(v) => {
                 apply_property_value(&mut style, property, &v);
             }
@@ -78,6 +105,15 @@ enum KeywordResolution {
     Initial,
     /// unset 关键字。
     Unset,
+    /// revert 关键字 — 回退到上一层来源级联值。
+    ///
+    /// 简化实现：跳过作者级联，继承属性使用父元素值，
+    /// 非继承属性使用初始值（即回退到 UA/User 来源的行为）。
+    Revert,
+    /// revert-layer 关键字 — 回退到上一个 @layer。
+    ///
+    /// 简化实现：等同于 unset（跳过当前层声明后按 unset 规则处理）。
+    RevertLayer,
     /// 具体属性值。
     Concrete(String),
 }
@@ -95,12 +131,12 @@ fn resolve_keyword(
         "inherit" => KeywordResolution::Inherit,
         "initial" => KeywordResolution::Initial,
         "unset" => KeywordResolution::Unset,
-        // revert 需要回退到上一层来源的级联值，
-        // 简化实现：等同于 unset
-        "revert" => KeywordResolution::Unset,
-        // revert-layer 需要回退到上一个 @layer，
-        // 简化实现：等同于 unset
-        "revert-layer" => KeywordResolution::Unset,
+        // revert 回退到上一层来源级联值（Author -> User -> UA），
+        // 简化实现：跳过作者级联，继承属性使用父元素值，非继承属性使用初始值
+        "revert" => KeywordResolution::Revert,
+        // revert-layer 回退到上一个 @layer，
+        // 简化实现：等同于 unset（跳过当前层声明后按 unset 规则处理）
+        "revert-layer" => KeywordResolution::RevertLayer,
         _ => KeywordResolution::Concrete(trimmed.to_string()),
     }
 }
@@ -214,8 +250,44 @@ mod tests {
         cascaded.insert("color".to_string(), "revert".to_string());
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
-        // revert 简化为 unset，color 是继承属性所以 inherit from parent
+        // revert 跳过作者级联，color 是继承属性所以使用父元素值
         assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// revert 对继承属性使用父元素的值
+    fn test_revert_uses_inherited_value() {
+        let parent = make_parent_style();
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "revert".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // color 是继承属性，revert 回退到父元素计算值（即 red）
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// revert 对非继承属性使用初始值
+    fn test_revert_non_inherited_uses_initial() {
+        let mut parent = ComputedStyle::default();
+        parent.margin_top = LengthValue::Px(10.0);
+        let mut cascaded = HashMap::new();
+        cascaded.insert("margin-top".to_string(), "revert".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // margin-top 不是继承属性，revert 使用初始值 0
+        assert_eq!(style.margin_top, LengthValue::Px(0.0));
+    }
+
+    #[test]
+    /// revert 在根元素上回退到初始值
+    fn test_revert_on_root_uses_initial() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "revert".to_string());
+
+        let style = compute_inherited_style(None, &cascaded);
+        // 根元素无父元素，revert 使用初始值 black
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255));
     }
 
     #[test]
@@ -381,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    /// revert-layer 关键字简化为 unset
+    /// revert-layer 关键字简化为 unset 行为
     fn test_revert_layer_keyword() {
         let mut parent = ComputedStyle::default();
         parent.color = ColorValue::Rgba(255, 0, 0, 255);
@@ -390,7 +462,21 @@ mod tests {
         cascaded.insert("color".to_string(), "revert-layer".to_string());
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
-        // revert-layer 简化为 unset，color 是继承属性所以 inherit
+        // revert-layer 等同于 unset，color 是继承属性所以使用父元素值
         assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// revert-layer 对非继承属性使用初始值
+    fn test_revert_layer_non_inherited_uses_initial() {
+        let mut parent = ComputedStyle::default();
+        parent.margin_top = LengthValue::Px(10.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("margin-top".to_string(), "revert-layer".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // margin-top 不是继承属性，revert-layer 等同于 unset = initial
+        assert_eq!(style.margin_top, LengthValue::Px(0.0));
     }
 }

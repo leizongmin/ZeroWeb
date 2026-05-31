@@ -241,6 +241,9 @@ impl Document {
             parent_data.children.push(child);
         }
 
+        // 注册 id 映射（将 child 及其后代的 id 注册到 id_map）
+        self.register_id_map_recursive(child);
+
         // 记录 mutation
         self.record_mutation(MutationRecord {
             mutation_type: MutationType::ChildList,
@@ -298,6 +301,9 @@ impl Document {
             parent_data.children.retain(|&id| id != child);
         }
 
+        // 从 id_map 中移除被删除节点（及其后代）的 id 映射
+        self.remove_id_map_recursive(child);
+
         // 清除子节点的父引用
         if let Some(child_data) = self.nodes.get_mut(child) {
             child_data.parent = None;
@@ -351,6 +357,9 @@ impl Document {
         if let Some(parent_data) = self.nodes.get_mut(parent) {
             parent_data.children.insert(ref_idx, new_node);
         }
+
+        // 注册 id 映射
+        self.register_id_map_recursive(new_node);
 
         // 记录 mutation
         self.record_mutation(MutationRecord {
@@ -417,6 +426,10 @@ impl Document {
             node_data.parent = None;
         }
 
+        // 更新 id_map：移除旧节点的 id 映射，注册新节点的 id 映射
+        self.remove_id_map_recursive(old_child);
+        self.register_id_map_recursive(new_child);
+
         Ok(old_child)
     }
 
@@ -429,12 +442,10 @@ impl Document {
 
         let new_id = self.nodes.insert(NodeData::new(cloned_kind));
 
-        // 注册 id 映射（如果克隆的元素有 id）
-        if let Some(NodeKind::Element(elem)) = self.nodes.get(new_id).map(|n| &n.kind)
-            && let Some(id) = &elem.id
-        {
-            self.id_map.insert(id.clone(), new_id);
-        }
+        // 注意：克隆节点的 id 不注册到 id_map。
+        // 原因：id 在文档中必须唯一，克隆节点与原始节点共享相同的 id 值，
+        // 如果都注册会导致 id_map 条目被覆盖。
+        // 调用方应在将克隆节点插入文档后手动设置新的唯一 id。
 
         if deep && let Some(children) = self.nodes.get(node).map(|n| n.children.clone()) {
             for child in children {
@@ -709,7 +720,10 @@ impl Document {
                 if let Some(old_id) = &old_value {
                     self.id_map.remove(old_id);
                 }
-                self.id_map.insert(value.to_string(), id);
+                // 空字符串不注册到 id_map
+                if !value.is_empty() {
+                    self.id_map.insert(value.to_string(), id);
+                }
             }
         }
 
@@ -1113,6 +1127,52 @@ impl Document {
     }
 
     // ── 内部辅助方法 ────────────────────────────────────────────
+
+    /// 递归移除节点及其后代在 id_map 中的条目。
+    ///
+    /// 当节点从文档树中移除时调用，确保 `get_element_by_id` 不再返回已移除的节点。
+    fn remove_id_map_recursive(&mut self, id: NodeId) {
+        // 收集当前节点的 id（如果有）
+        let node_id_value = self.nodes.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(elem) => elem.id.clone(),
+            _ => None,
+        });
+        if let Some(ref id_val) = node_id_value {
+            self.id_map.remove(id_val);
+        }
+        // 递归处理子节点
+        let children = self
+            .nodes
+            .get(id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for child in children {
+            self.remove_id_map_recursive(child);
+        }
+    }
+
+    /// 递归注册节点及其后代的 id 到 id_map。
+    ///
+    /// 当节点插入文档树时调用，使 `get_element_by_id` 能找到新插入的节点。
+    fn register_id_map_recursive(&mut self, node_id: NodeId) {
+        // 收集当前节点的 id（如果有）
+        let id_value = self.nodes.get(node_id).and_then(|n| match &n.kind {
+            NodeKind::Element(elem) => elem.id.clone(),
+            _ => None,
+        });
+        if let Some(ref id_val) = id_value {
+            self.id_map.insert(id_val.clone(), node_id);
+        }
+        // 递归处理子节点
+        let children = self
+            .nodes
+            .get(node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for child in children {
+            self.register_id_map_recursive(child);
+        }
+    }
 
     /// 从父节点分离节点（不删除节点本身）。
     fn detach(&mut self, id: NodeId) {

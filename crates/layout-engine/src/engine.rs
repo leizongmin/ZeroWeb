@@ -2634,4 +2634,224 @@ mod tests {
             "grid 子元素应在 x 或 y 方向有不同位置"
         );
     }
+
+    // ── auto-fill 和 minmax() 集成测试 ──
+
+    /// 测试 repeat(auto-fill, 100px) 在 500px 容器中创建 5 个轨道。
+    ///
+    /// 每个 item 宽度应约 100px（500 / 5 = 100）。
+    #[test]
+    fn test_grid_auto_fill_fixed_size() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        // 5 个子元素
+        let mut item_ids = Vec::new();
+        for _ in 0..5 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("repeat(auto-fill, 100px)".to_string());
+        grid_style.width = LengthValue::Px(500.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 每个 item 宽度应约 100px（500 / 5 = 100）
+        for (i, &id) in item_ids.iter().enumerate() {
+            let item_box = find_child_by_node_id(&result.root, id)
+                .unwrap_or_else(|| panic!("item{} not found", i));
+            assert!(
+                (item_box.width - 100.0).abs() < 1.0,
+                "item{} 宽度应约 100px，实际 {}",
+                i,
+                item_box.width
+            );
+        }
+    }
+
+    /// 测试 repeat(auto-fill, 100px) 在 340px 容器中带 10px gap 时创建 3 个轨道。
+    ///
+    /// 3 个 item + 2 个 gap = 3*100 + 2*10 = 320 <= 340，
+    /// 但 4 个 item 不行：4*100 + 3*10 = 430 > 340。
+    #[test]
+    fn test_grid_auto_fill_with_gap() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..3 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("repeat(auto-fill, 100px)".to_string());
+        grid_style.gap = LengthValue::Px(10.0);
+        grid_style.width = LengthValue::Px(340.0);
+        grid_style.height = LengthValue::Px(200.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+
+        // 每个 item 宽度应约 100px
+        assert!(
+            (b0.width - 100.0).abs() < 1.0,
+            "item0 宽度应约 100px，实际 {}",
+            b0.width
+        );
+
+        // item1 应在 item0 右侧，间距约 10px
+        let gap = b1.x - b0.x - b0.width;
+        assert!(
+            (gap - 10.0).abs() < 1.0,
+            "gap 应约 10px，实际 {}",
+            gap
+        );
+
+        // item2 也应在 item1 右侧（同一行），说明有 3 个轨道
+        assert!(
+            b2.x > b1.x,
+            "item2 应在 item1 右侧，说明至少 3 个轨道"
+        );
+    }
+
+    /// 测试 minmax(100px, 1fr) 在 300px 容器中正确约束轨道大小。
+    ///
+    /// 两个轨道各 minmax(100px, 1fr)，总 300px -> 各 150px，满足 min=100 和 max=1fr。
+    #[test]
+    fn test_grid_minmax_basic() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+        let item1 = doc.create_element("span");
+        doc.append_child(grid, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(grid, item2).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns =
+            Some("minmax(100px, 1fr) minmax(100px, 1fr)".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        styles.insert(item1, ComputedStyle::default());
+        styles.insert(item2, ComputedStyle::default());
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+
+        // 1fr : 1fr = 150px : 150px，都满足 min 100px
+        assert!(
+            (b1.width - 150.0).abs() < 1.0,
+            "item1 宽度应约 150px（1fr of 300/2），实际 {}",
+            b1.width
+        );
+        assert!(
+            (b2.width - 150.0).abs() < 1.0,
+            "item2 宽度应约 150px（1fr of 300/2），实际 {}",
+            b2.width
+        );
+
+        // 总宽度应约 300px
+        let total = b1.width + b2.width;
+        assert!(
+            (total - 300.0).abs() < 1.0,
+            "总宽度应约 300px，实际 {}",
+            total
+        );
+    }
+
+    /// 测试 repeat(auto-fill, minmax(100px, 1fr)) 基本支持。
+    ///
+    /// 在 350px 容器中，auto-fill 应创建 3 个轨道（每个 min 100px），
+    /// 剩余空间按 1fr 分配。
+    #[test]
+    fn test_grid_auto_fill_minmax() {
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let mut item_ids = Vec::new();
+        for _ in 0..3 {
+            let item = doc.create_element("span");
+            doc.append_child(grid, item).unwrap();
+            item_ids.push(item);
+        }
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns =
+            Some("repeat(auto-fill, minmax(100px, 1fr))".to_string());
+        grid_style.width = LengthValue::Px(350.0);
+        grid_style.height = LengthValue::Px(100.0);
+        styles.insert(grid, grid_style);
+
+        for id in &item_ids {
+            styles.insert(*id, ComputedStyle::default());
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
+        let b1 = find_child_by_node_id(&result.root, item_ids[1]).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item_ids[2]).expect("item2 found");
+
+        // 每个轨道至少 100px（minmax 的 min 约束）
+        assert!(
+            b0.width >= 99.0,
+            "item0 宽度应 >= 100px（minmax min），实际 {}",
+            b0.width
+        );
+        assert!(
+            b1.width >= 99.0,
+            "item1 宽度应 >= 100px（minmax min），实际 {}",
+            b1.width
+        );
+
+        // 三个 item 应在同一行（水平排列）
+        assert!(b1.x > b0.x, "item1 应在 item0 右侧");
+        assert!(b2.x > b1.x, "item2 应在 item1 右侧");
+
+        // 总宽度应约 350px
+        let total = b0.width + b1.width + b2.width;
+        assert!(
+            (total - 350.0).abs() < 2.0,
+            "总宽度应约 350px，实际 {}",
+            total
+        );
+    }
 }

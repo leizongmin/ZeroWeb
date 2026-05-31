@@ -3603,11 +3603,10 @@ fn test_insert_before_places_before_ref() {
 // 26. id_map 一致性测试（文档化当前行为及已知缺陷）
 // ═══════════════════════════════════════════════════════════════════════
 
-/// 测试 remove_child 后 id_map 中的条目未被清除。
+/// 测试 remove_child 后 id_map 中的条目已被正确清除。
 ///
-/// 已知缺陷：remove_child 不会从 id_map 中移除被删除节点的 id 映射，
-/// 导致 get_element_by_id 仍然能找到已从文档树中移除的节点。
-/// 浏览器规范要求节点从文档中移除后不再可通过 getElementById 找到。
+/// remove_child 会从 id_map 中移除被删除节点（及其后代）的 id 映射，
+/// 确保 get_element_by_id 不再返回已从文档树中移除的节点。
 #[test]
 fn test_id_map_stale_after_remove() {
     let mut doc = Document::new();
@@ -3623,20 +3622,19 @@ fn test_id_map_stale_after_remove() {
     doc.remove_child(root, elem).unwrap();
     assert_eq!(doc.parent_node(elem), None);
 
-    // 当前行为：remove_child 未清理 id_map，仍能找到已移除的节点。
-    // 这是已知缺陷 — 规范要求返回 None。
+    // 移除后 id_map 条目应被清除
     let found = doc.get_element_by_id("test");
     assert!(
-        found == Some(elem),
-        "已知缺陷：remove_child 后 id_map 条目未被清除，get_element_by_id 仍返回已移除的节点"
+        found.is_none(),
+        "remove_child 后 id_map 条目应被清除，get_element_by_id 应返回 None"
     );
 }
 
 /// 测试 clone_node 后 id_map 的映射行为。
 ///
-/// 已知缺陷：clone_node 会将克隆元素的 id 注册到 id_map 中，
-/// 覆盖原始元素的映射。导致 get_element_by_id 返回克隆节点而非原始节点，
-/// 两个具有相同 id 的元素共存但 id_map 只记录最后一个。
+/// clone_node 不将克隆元素的 id 注册到 id_map 中，
+/// 确保 get_element_by_id 仍然返回原始节点。
+/// id 在文档中必须唯一，克隆节点共享相同的 id 值不应覆盖原始映射。
 #[test]
 fn test_id_map_after_clone() {
     let mut doc = Document::new();
@@ -3650,16 +3648,16 @@ fn test_id_map_after_clone() {
     // 克隆元素（浅拷贝，id 属性被复制）
     let cloned = doc.clone_node(elem, false);
 
-    // 两个节点都有 id="orig"
+    // 两个节点都有 id="orig" 属性
     assert_eq!(doc.get_attribute(elem, "id"), Some("orig".to_string()));
     assert_eq!(doc.get_attribute(cloned, "id"), Some("orig".to_string()));
 
-    // 当前行为：clone_node 将克隆的 id 插入 id_map，覆盖原始映射。
-    // get_element_by_id("orig") 返回克隆节点而非原始节点。
+    // clone_node 不注册到 id_map，get_element_by_id 仍返回原始节点
     let found = doc.get_element_by_id("orig");
-    assert!(
-        found == Some(cloned),
-        "已知缺陷：clone_node 覆盖了原始节点的 id_map 条目，get_element_by_id 返回克隆节点"
+    assert_eq!(
+        found,
+        Some(elem),
+        "clone_node 不应覆盖原始节点的 id_map 条目，get_element_by_id 应返回原始节点"
     );
 }
 
@@ -3693,5 +3691,108 @@ fn test_id_map_update_on_attribute_change() {
         doc.get_element_by_id("new"),
         Some(elem),
         "修改 id 后新 id 应正确映射到该元素"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 27. id_map 清理测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 remove_child 清理被移除节点的 id_map 条目。
+#[test]
+fn test_remove_child_cleans_id_map() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "x");
+    doc.append_child(root, elem).unwrap();
+
+    // 追加后可以通过 id 找到
+    assert_eq!(doc.get_element_by_id("x"), Some(elem));
+
+    // 从文档中移除
+    doc.remove_child(root, elem).unwrap();
+
+    // get_element_by_id("x") 应返回 None
+    assert_eq!(
+        doc.get_element_by_id("x"),
+        None,
+        "移除节点后 id_map 应被清理，get_element_by_id 应返回 None"
+    );
+}
+
+/// 测试 set_attribute 修改 id 时 id_map 正确更新。
+#[test]
+fn test_set_attribute_updates_id_map() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "old");
+    doc.append_child(root, elem).unwrap();
+
+    // 初始状态
+    assert_eq!(doc.get_element_by_id("old"), Some(elem));
+    assert_eq!(doc.get_element_by_id("new"), None);
+
+    // 修改 id
+    doc.set_attribute(elem, "id", "new");
+
+    // 旧 id 不再映射
+    assert_eq!(
+        doc.get_element_by_id("old"),
+        None,
+        "修改 id 后旧 id 应从 id_map 中移除"
+    );
+    // 新 id 正确映射
+    assert_eq!(
+        doc.get_element_by_id("new"),
+        Some(elem),
+        "修改 id 后新 id 应正确映射到该元素"
+    );
+}
+
+/// 测试 remove_attribute 移除 id 属性时清理 id_map。
+#[test]
+fn test_remove_attribute_cleans_id_map() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "id", "target");
+    doc.append_child(root, elem).unwrap();
+
+    // 初始状态
+    assert_eq!(doc.get_element_by_id("target"), Some(elem));
+
+    // 移除 id 属性
+    doc.remove_attribute(elem, "id");
+
+    // get_element_by_id 应返回 None
+    assert_eq!(
+        doc.get_element_by_id("target"),
+        None,
+        "移除 id 属性后 id_map 应被清理，get_element_by_id 应返回 None"
+    );
+}
+
+/// 测试 remove_child 递归清理后代节点的 id_map 条目。
+#[test]
+fn test_remove_child_cleans_id_map_recursive() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+    doc.set_attribute(child, "id", "inner");
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    assert_eq!(doc.get_element_by_id("inner"), Some(child));
+
+    // 移除父节点，后代节点的 id_map 条目也应被清理
+    doc.remove_child(root, parent).unwrap();
+
+    assert_eq!(
+        doc.get_element_by_id("inner"),
+        None,
+        "移除父节点后，后代的 id_map 条目也应被清理"
     );
 }
