@@ -5,13 +5,14 @@ use crate::parser::Parser;
 use crate::selector;
 use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
 use crate::values::{
-    CalcContext, ContainerTypeValue, CursorValue, GradientDirection, GradientValue, LengthValue, RadialShape,
-    RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
-    TextDecorationLineValue, TextTransformValue, TransformFunction, TransformValue, WritingModeValue, eval_calc,
-    eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state,
-    parse_calc, parse_container_type, parse_cursor, parse_gradient, parse_length, parse_length_shorthand,
-    parse_opacity, parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type, parse_spacing,
-    parse_text_decoration_line, parse_text_transform, parse_transform, parse_writing_mode,
+    BoxShadowValue, CalcContext, ColorValue, ContainerTypeValue, CursorValue, GradientDirection, GradientValue,
+    LengthValue, RadialShape, RadialSize, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
+    ScrollSnapTypeValue, TextDecorationLineValue, TextShadowValue, TextTransformValue, TransformFunction,
+    TransformValue, WritingModeValue, eval_calc, eval_calc_with_context, parse_animation_direction,
+    parse_animation_fill_mode, parse_animation_play_state, parse_box_shadow, parse_calc, parse_container_type,
+    parse_cursor, parse_gradient, parse_length, parse_length_shorthand, parse_opacity, parse_scroll_snap_align,
+    parse_scroll_snap_stop, parse_scroll_snap_type, parse_spacing, parse_text_decoration_line, parse_text_shadow,
+    parse_text_transform, parse_transform, parse_writing_mode,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4598,4 +4599,80 @@ fn test_parse_word_spacing_px() {
 /// 测试 parse_spacing 用于 word-spacing 的 "normal" 关键字
 fn test_parse_word_spacing_normal() {
     assert_eq!(parse_spacing("normal"), Some(LengthValue::Px(0.0)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-shadow / box-shadow 解析测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_text_shadow 的 "none" 值
+fn test_parse_text_shadow_none() {
+    let result = parse_text_shadow("none").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(0.0));
+    assert_eq!(result.offset_y, LengthValue::Px(0.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(0.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
+/// 测试 parse_text_shadow 基本偏移（无模糊、无颜色）
+fn test_parse_text_shadow_basic() {
+    let result = parse_text_shadow("2px 2px").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(2.0));
+    assert_eq!(result.offset_y, LengthValue::Px(2.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(0.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
+/// 测试 parse_text_shadow 带模糊半径
+fn test_parse_text_shadow_with_blur() {
+    let result = parse_text_shadow("2px 2px 4px").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(2.0));
+    assert_eq!(result.offset_y, LengthValue::Px(2.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(4.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
+/// 测试 parse_text_shadow 带命名颜色
+fn test_parse_text_shadow_with_color() {
+    let result = parse_text_shadow("2px 2px red").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(2.0));
+    assert_eq!(result.offset_y, LengthValue::Px(2.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(0.0));
+    assert_eq!(result.color, ColorValue::Rgba(255, 0, 0, 255));
+}
+
+#[test]
+/// 测试 parse_box_shadow 的 "none" 值
+fn test_parse_box_shadow_none() {
+    let result = parse_box_shadow("none").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(0.0));
+    assert_eq!(result.offset_y, LengthValue::Px(0.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(0.0));
+    assert_eq!(result.spread_radius, LengthValue::Px(0.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+    assert!(!result.inset);
+}
+
+#[test]
+/// 测试 parse_box_shadow 基本偏移
+fn test_parse_box_shadow_basic() {
+    let result = parse_box_shadow("2px 2px").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(2.0));
+    assert_eq!(result.offset_y, LengthValue::Px(2.0));
+    assert!(!result.inset);
+}
+
+#[test]
+/// 测试 parse_box_shadow 带 inset 关键字、模糊和颜色
+fn test_parse_box_shadow_inset() {
+    let result = parse_box_shadow("inset 2px 2px 4px black").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(2.0));
+    assert_eq!(result.offset_y, LengthValue::Px(2.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(4.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+    assert!(result.inset);
 }

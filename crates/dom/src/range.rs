@@ -229,6 +229,43 @@ impl Range {
         result
     }
 
+    /// 克隆当前 Range，返回一个具有相同边界的新 Range。
+    pub fn clone_range(&self) -> Self {
+        self.clone()
+    }
+
+    /// 比较两个 Range 的边界点位置关系。
+    ///
+    /// 返回值：
+    /// - `-1`：self 的结束在 other 的开始之前（self 完全在 other 前面）。
+    /// - `0`：两个 Range 共享边界点或边界重合。
+    /// - `1`：self 的开始在 other 的结束之后（self 完全在 other 后面）。
+    pub fn compare_boundary_points(&self, other: &Range) -> i32 {
+        // 先比较结束容器/偏移 vs 起始容器/偏移
+        if self.end_container == other.start_container && self.end_offset < other.start_offset {
+            return -1;
+        }
+        if self.start_container == other.end_container && self.start_offset > other.end_offset {
+            return 1;
+        }
+        // 检查完全相同的边界
+        if self.start_container == other.start_container
+            && self.start_offset == other.start_offset
+            && self.end_container == other.end_container
+            && self.end_offset == other.end_offset
+        {
+            return 0;
+        }
+        // 同一容器内的一般比较
+        if self.end_container == other.start_container && self.end_offset <= other.start_offset {
+            return -1;
+        }
+        if self.start_container == other.end_container && self.start_offset >= other.end_offset {
+            return 1;
+        }
+        0
+    }
+
     /// 获取范围的字符串表示（用于调试）。
     pub fn to_debug_string(&self, doc: &Document) -> String {
         let start_name = node_debug_name(doc, self.start_container);
@@ -724,5 +761,110 @@ mod tests {
             Some("middle"),
             "inserted span should contain 'middle'"
         );
+    }
+
+    // ── cloneRange / compareBoundaryPoints 测试 ──────────────────────────
+
+    /// 测试 clone_range：克隆后新 Range 应具有相同的边界点。
+    #[test]
+    fn test_range_clone_range() {
+        let doc = parse_html("<div><p>A</p><p>B</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+
+        let mut range = Range::new(div, div);
+        range.set_start(div, 1).unwrap();
+        range.set_end(div, 2).unwrap();
+
+        let cloned = range.clone_range();
+        assert_eq!(cloned.start_container(), range.start_container());
+        assert_eq!(cloned.start_offset(), range.start_offset());
+        assert_eq!(cloned.end_container(), range.end_container());
+        assert_eq!(cloned.end_offset(), range.end_offset());
+
+        // 修改原 Range 不应影响克隆
+        range.set_start(div, 0).unwrap();
+        assert_eq!(cloned.start_offset(), 1, "clone should be independent");
+    }
+
+    /// 测试 compare_boundary_points：第一个 Range 结束在第二个开始之前，返回 -1。
+    #[test]
+    fn test_range_compare_before() {
+        let doc = parse_html("<div><p>A</p><p>B</p><p>C</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+
+        // 第一个范围覆盖 offset 0..1，第二个覆盖 2..3
+        let mut r1 = Range::new(div, div);
+        r1.set_start(div, 0).unwrap();
+        r1.set_end(div, 1).unwrap();
+
+        let mut r2 = Range::new(div, div);
+        r2.set_start(div, 2).unwrap();
+        r2.set_end(div, 3).unwrap();
+
+        assert_eq!(r1.compare_boundary_points(&r2), -1);
+    }
+
+    /// 测试 compare_boundary_points：第一个 Range 开始在第二个结束之后，返回 1。
+    #[test]
+    fn test_range_compare_after() {
+        let doc = parse_html("<div><p>A</p><p>B</p><p>C</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+
+        // 第一个范围覆盖 offset 2..3，第二个覆盖 0..1
+        let mut r1 = Range::new(div, div);
+        r1.set_start(div, 2).unwrap();
+        r1.set_end(div, 3).unwrap();
+
+        let mut r2 = Range::new(div, div);
+        r2.set_start(div, 0).unwrap();
+        r2.set_end(div, 1).unwrap();
+
+        assert_eq!(r1.compare_boundary_points(&r2), 1);
+    }
+
+    /// 测试 compare_boundary_points：两个完全相同的 Range，返回 0。
+    #[test]
+    fn test_range_compare_same() {
+        let doc = parse_html("<div><p>A</p><p>B</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+
+        let mut r1 = Range::new(div, div);
+        r1.set_start(div, 0).unwrap();
+        r1.set_end(div, 2).unwrap();
+
+        let mut r2 = Range::new(div, div);
+        r2.set_start(div, 0).unwrap();
+        r2.set_end(div, 2).unwrap();
+
+        assert_eq!(r1.compare_boundary_points(&r2), 0);
+    }
+
+    /// 测试 select_node_contents 对深层嵌套元素：范围应覆盖所有子节点。
+    #[test]
+    fn test_range_select_node_contents_deep() {
+        let doc = parse_html("<div><p><span>A</span><b>B</b></p><p>C</p></div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let children = doc.child_nodes(div);
+        let p = children[0]; // 第一个 <p>，内含 <span> 和 <b>
+
+        // 选中 <p> 的所有内容
+        let mut range = Range::new(p, p);
+        range.select_node_contents(&doc, p).unwrap();
+
+        assert_eq!(range.start_container(), p);
+        assert_eq!(range.start_offset(), 0);
+        assert_eq!(range.end_container(), p);
+        // <p> 有 <span>A</span>、<b>B</b> 两个子元素
+        assert_eq!(range.end_offset(), 2, "<p> should have 2 children (span, b)");
+
+        // 验证范围覆盖的文本内容包含所有嵌套文本
+        let text = range.text_content(&doc);
+        assert!(text.contains("A"), "text should contain 'A', got: {text}");
+        assert!(text.contains("B"), "text should contain 'B', got: {text}");
     }
 }

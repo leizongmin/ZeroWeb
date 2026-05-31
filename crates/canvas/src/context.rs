@@ -6411,4 +6411,54 @@ mod tests {
         ctx.set_text_baseline(TextBaseline::Bottom);
         assert_eq!(ctx.text_baseline(), TextBaseline::Bottom);
     }
+
+    // ── Path2D.addPath() 测试 ──
+
+    /// 测试 add_path 将两个包含矩形的路径合并后，命令数量正确。
+    #[test]
+    fn test_path2d_add_path() {
+        let mut p1 = Path2D::new();
+        p1.rect(0.0, 0.0, 10.0, 10.0); // 5 个命令
+        let mut p2 = Path2D::new();
+        p2.rect(20.0, 20.0, 10.0, 10.0); // 5 个命令
+        p1.add_path(&p2);
+        assert_eq!(p1.len(), 10, "合并后应有 10 个命令");
+        assert!(!p2.is_empty(), "源路径应不受影响");
+    }
+
+    /// 测试 add_path 追加空路径后，原路径不变。
+    #[test]
+    fn test_path2d_add_path_empty() {
+        let mut p = Path2D::new();
+        p.rect(0.0, 0.0, 50.0, 50.0); // 5 个命令
+        let empty = Path2D::new();
+        p.add_path(&empty);
+        assert_eq!(p.len(), 5, "追加空路径后命令数不变");
+    }
+
+    /// 测试 add_path 后源路径保持不变。
+    #[test]
+    fn test_path2d_add_path_preserves_original() {
+        let mut target = Path2D::new();
+        target.rect(0.0, 0.0, 10.0, 10.0);
+        let mut source = Path2D::new();
+        source.rect(100.0, 100.0, 20.0, 20.0);
+        let source_len_before = source.len();
+        target.add_path(&source);
+        assert_eq!(source.len(), source_len_before, "add_path 后源路径命令数不变");
+    }
+
+    /// 测试闭合三角路径后 is_point_in_path 正确判断内部点。
+    #[test]
+    fn test_path2d_close_path_is_point_in_path() {
+        let mut p = Path2D::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(100.0, 0.0);
+        p.line_to(50.0, 100.0);
+        p.close_path();
+        // 三角形中心应在路径内
+        assert!(p.is_point_in_path(50.0, 40.0), "三角形内部点应命中");
+        // 远离三角形的外部点不应命中
+        assert!(!p.is_point_in_path(200.0, 200.0), "外部点不应命中");
+    }
 }

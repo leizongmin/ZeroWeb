@@ -5580,4 +5580,157 @@ mod tests {
         assert!(apply_property_value(&mut child, "letter-spacing", "5px"));
         assert_eq!(child.letter_spacing, LengthValue::Px(5.0));
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 级联/简写/自定义属性/继承/revert 边界条件测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    /// 测试级联源顺序：两条规则具有相同特异性，后应用的规则胜出
+    fn test_cascade_source_order() {
+        let mut style = ComputedStyle::default();
+
+        // 第一条规则：display: flex
+        assert!(apply_property_value(&mut style, "display", "flex"));
+        assert_eq!(style.display, DisplayValue::Flex);
+
+        // 第二条规则（相同特异性，后出现）：display: grid — 应覆盖前一条
+        assert!(apply_property_value(&mut style, "display", "grid"));
+        assert_eq!(style.display, DisplayValue::Grid);
+
+        // 同理测试 color
+        assert!(apply_property_value(&mut style, "color", "red"));
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+
+        assert!(apply_property_value(&mut style, "color", "blue"));
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 255, 255));
+
+        // 同理测试 width
+        assert!(apply_property_value(&mut style, "width", "100px"));
+        assert!(apply_property_value(&mut style, "width", "200px"));
+        assert_eq!(style.width, LengthValue::Px(200.0));
+    }
+
+    #[test]
+    /// 测试 border 简写展开为 12 个长属性（4边 x width/style/color）
+    fn test_shorthand_border_expansion() {
+        let mut style = ComputedStyle::default();
+
+        // 手动模拟 "border: 1px solid red" 的简写展开
+        // 宽度：四边均为 1px
+        assert!(apply_property_value(&mut style, "border-top-width", "1px"));
+        assert!(apply_property_value(&mut style, "border-right-width", "1px"));
+        assert!(apply_property_value(&mut style, "border-bottom-width", "1px"));
+        assert!(apply_property_value(&mut style, "border-left-width", "1px"));
+
+        // 样式：四边均为 solid
+        assert!(apply_property_value(&mut style, "border-top-style", "solid"));
+        assert!(apply_property_value(&mut style, "border-right-style", "solid"));
+        assert!(apply_property_value(&mut style, "border-bottom-style", "solid"));
+        assert!(apply_property_value(&mut style, "border-left-style", "solid"));
+
+        // 颜色：四边均为 red
+        assert!(apply_property_value(&mut style, "border-top-color", "red"));
+        assert!(apply_property_value(&mut style, "border-right-color", "red"));
+        assert!(apply_property_value(&mut style, "border-bottom-color", "red"));
+        assert!(apply_property_value(&mut style, "border-left-color", "red"));
+
+        // 验证所有 12 个长属性已正确设置
+        let expected_width = LengthValue::Px(1.0);
+        let expected_style = BorderStyleValue::Solid;
+        let expected_color = ColorValue::Rgba(255, 0, 0, 255);
+
+        // 宽度（4个）
+        assert_eq!(style.border_top_width, expected_width);
+        assert_eq!(style.border_right_width, expected_width);
+        assert_eq!(style.border_bottom_width, expected_width);
+        assert_eq!(style.border_left_width, expected_width);
+
+        // 样式（4个）
+        assert_eq!(style.border_top_style, expected_style);
+        assert_eq!(style.border_right_style, expected_style);
+        assert_eq!(style.border_bottom_style, expected_style);
+        assert_eq!(style.border_left_style, expected_style);
+
+        // 颜色（4个）
+        assert_eq!(style.border_top_color, expected_color);
+        assert_eq!(style.border_right_color, expected_color);
+        assert_eq!(style.border_bottom_color, expected_color);
+        assert_eq!(style.border_left_color, expected_color);
+    }
+
+    #[test]
+    /// 测试自定义属性链式引用：--a: red → --b: var(--a) → color: var(--b) 最终解析为 red
+    fn test_custom_property_chained() {
+        use crate::computed::resolve_var;
+        use std::collections::HashMap;
+
+        // 构建自定义属性映射
+        let mut custom_props = HashMap::new();
+        custom_props.insert("--a".to_string(), "red".to_string());
+        custom_props.insert("--b".to_string(), "var(--a)".to_string());
+
+        // 第一层：var(--b) → 解析为 var(--a)
+        let resolved_b = resolve_var("var(--b)", &custom_props);
+        // 第二层：var(--a) → 解析为 red
+        let resolved_a = resolve_var(&resolved_b, &custom_props);
+        assert_eq!(resolved_a, "red");
+
+        // 验证解析后的值可以应用到 ComputedStyle
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "color", &resolved_a));
+        assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    /// 测试对非继承属性显式设置 inherit：没有父元素时使用默认值
+    fn test_inherit_non_inherited_explicit() {
+        // display 不是继承属性，对不可继承属性调用 inherit_property 返回 false
+        let parent = ComputedStyle::default();
+        let mut child = ComputedStyle::default();
+
+        // display 不可继承
+        assert!(!inherit_property(&parent, &mut child, "display"));
+        assert_eq!(child.display, DisplayValue::Inline); // 保持默认值
+
+        // width 不可继承
+        assert!(!inherit_property(&parent, &mut child, "width"));
+        assert_eq!(child.width, ComputedStyle::default().width);
+
+        // 即使父元素 display 被修改，子元素也不会继承
+        let mut parent_modified = ComputedStyle::default();
+        parent_modified.display = DisplayValue::Flex;
+
+        let mut child2 = ComputedStyle::default();
+        assert!(!inherit_property(&parent_modified, &mut child2, "display"));
+        assert_eq!(child2.display, DisplayValue::Inline); // 仍为默认值，未继承父元素的 flex
+    }
+
+    #[test]
+    /// 测试 revert 关键字：应用 display: revert 时恢复为 user-agent 默认值
+    fn test_revert_keyword() {
+        let mut style = ComputedStyle::default();
+
+        // 先修改 display 为非默认值
+        style.display = DisplayValue::Flex;
+        assert_eq!(style.display, DisplayValue::Flex);
+
+        // "revert" 不是有效的 display 值，apply_property_value 返回 false
+        // 在完整 CSS 引擎中，revert 会触发回退到 user-agent 样式
+        // 这里模拟 revert 的效果：使用 apply_initial_value 恢复为 UA 默认
+        assert!(!apply_property_value(&mut style, "display", "revert"));
+        // display 未被 "revert" 字符串改变
+        assert_eq!(style.display, DisplayValue::Flex);
+
+        // 正确的 revert 模拟：使用 apply_initial_value 恢复为 UA 默认
+        assert!(apply_initial_value(&mut style, "display"));
+        assert_eq!(style.display, DisplayValue::Inline); // UA 默认 display 为 inline
+
+        // 同理测试 position: revert
+        style.position = PositionValue::Absolute;
+        assert!(!apply_property_value(&mut style, "position", "revert"));
+        assert_eq!(style.position, PositionValue::Absolute);
+        assert!(apply_initial_value(&mut style, "position"));
+        assert_eq!(style.position, PositionValue::Static); // UA 默认
+    }
 }

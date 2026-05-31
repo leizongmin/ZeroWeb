@@ -133,6 +133,11 @@ impl Path2D {
         self.commands.clear();
     }
 
+    /// 将另一个 Path2D 的所有路径命令追加到当前路径。
+    pub fn add_path(&mut self, other: &Path2D) {
+        self.commands.extend_from_slice(&other.commands);
+    }
+
     /// 判断点是否在路径内部（使用射线法，奇偶填充规则）。
     /// 将路径扁平化为多边形顶点后，用射线法判断点是否在多边形内。
     /// 支持多个子路径。
