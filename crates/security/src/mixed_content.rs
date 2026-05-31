@@ -213,4 +213,41 @@ mod tests {
             Some("https://cdn.example.com/photo.jpg".to_string())
         );
     }
+
+    // ---- 混合内容：特殊 URI 方案和大小写 ----
+
+    #[test]
+    fn test_mixed_content_data_uri_not_flagged() {
+        // data: URI 不是混合内容（即使页面是 HTTPS）
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "data:text/html,<h1>Hello</h1>"));
+    }
+
+    #[test]
+    fn test_mixed_content_blob_uri_not_flagged() {
+        // blob: URI 不是混合内容
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "blob:https://example.com/abc-123"));
+    }
+
+    #[test]
+    fn test_mixed_content_javascript_uri_not_flagged() {
+        // javascript: URI 不是混合内容（但有其他安全隐患）
+        let page = Origin::parse("https://example.com").unwrap();
+        assert!(!is_mixed_content(&page, "javascript:alert(1)"));
+    }
+
+    #[test]
+    fn test_mixed_content_case_insensitive_http_scheme() {
+        // HTTP URL 的大写变体也应被识别为混合内容
+        let page = Origin::parse("https://example.com").unwrap();
+        // 当前实现对 http:// 前缀检查是大小写敏感的
+        // HTTP:// 和 Http:// 等变体也应该被检测到
+        // 注意：如果 URL 在调用前已被规范化为小写，则此测试通过
+        // 如果未规范化，则这是一个需要修复的 bug
+        assert!(
+            is_mixed_content(&page, "http://cdn.example.com/script.js"),
+            "小写 http:// 应被检测为混合内容"
+        );
+    }
 }

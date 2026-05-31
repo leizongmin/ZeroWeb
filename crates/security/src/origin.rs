@@ -172,4 +172,38 @@ mod tests {
         set.insert(a.clone());
         assert!(set.contains(&b));
     }
+
+    // ---- 同源检查：显式默认端口与不同方案 ----
+
+    #[test]
+    fn test_same_origin_https_explicit_default_port() {
+        // https://example.com:443 与 https://example.com 应为同源
+        let a = Origin::parse("https://example.com").unwrap();
+        let b = Origin::parse("https://example.com:443").unwrap();
+        assert!(check_same_origin(&a, &b), "https 默认端口 443 应视为同源");
+    }
+
+    #[test]
+    fn test_same_origin_http_explicit_default_port() {
+        // http://example.com:80 与 http://example.com 应为同源
+        let a = Origin::parse("http://example.com").unwrap();
+        let b = Origin::parse("http://example.com:80").unwrap();
+        assert!(check_same_origin(&a, &b), "http 默认端口 80 应视为同源");
+    }
+
+    #[test]
+    fn test_not_same_origin_different_scheme_same_port() {
+        // http://example.com:443 与 https://example.com:443 不是同源（不同协议）
+        let a = Origin::parse("http://example.com:443").unwrap();
+        let b = Origin::parse("https://example.com:443").unwrap();
+        assert!(!check_same_origin(&a, &b), "不同协议不是同源");
+    }
+
+    #[test]
+    fn test_not_same_origin_different_port() {
+        // http://example.com:80 与 http://example.com:8080 不是同源
+        let a = Origin::parse("http://example.com").unwrap();
+        let b = Origin::parse("http://example.com:8080").unwrap();
+        assert!(!check_same_origin(&a, &b), "不同端口不是同源");
+    }
 }

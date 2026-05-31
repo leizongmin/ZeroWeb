@@ -3931,4 +3931,100 @@ mod tests {
         assert_eq!(result.width, 2);
         assert_eq!(result.height, 2);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 变换组合和 putImageData 边界测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试旋转变换 + 平移变换的顺序不可交换性。
+    ///
+    /// rotate(π/2) 后 translate(10,0) 与 translate(10,0) 后 rotate(π/2)
+    /// 应产生不同的变换结果。
+    #[test]
+    fn test_transform_rotate_then_translate_vs_reverse() {
+        let mut ctx1 = CanvasContext::new(100, 100);
+        ctx1.rotate(std::f32::consts::FRAC_PI_2);
+        ctx1.translate(10.0, 0.0);
+        let p1 = ctx1.transform.transform_point(0.0, 0.0);
+
+        let mut ctx2 = CanvasContext::new(100, 100);
+        ctx2.translate(10.0, 0.0);
+        ctx2.rotate(std::f32::consts::FRAC_PI_2);
+        let p2 = ctx2.transform.transform_point(0.0, 0.0);
+
+        // 两个结果应不同（矩阵乘法不可交换）
+        assert!(
+            (p1.0 - p2.0).abs() > 0.01 || (p1.1 - p2.1).abs() > 0.01,
+            "rotate→translate 与 translate→rotate 应产生不同结果: ({}, {}) vs ({}, {})",
+            p1.0,
+            p1.1,
+            p2.0,
+            p2.1
+        );
+    }
+
+    /// 测试 set_transform 替换（而非叠加）当前变换矩阵。
+    #[test]
+    fn test_set_transform_replaces_current() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 先设置一个非平凡的变换
+        ctx.translate(100.0, 100.0);
+        ctx.scale(2.0, 3.0);
+        // set_transform 应替换整个矩阵为单位矩阵
+        ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        let p = ctx.transform.transform_point(5.0, 7.0);
+        // 单位变换下 (5,7) 应保持不变
+        assert!((p.0 - 5.0).abs() < 0.01, "x 应为 5.0，实际 {}", p.0);
+        assert!((p.1 - 7.0).abs() < 0.01, "y 应为 7.0，实际 {}", p.1);
+    }
+
+    /// 测试 putImageData 处理超过画布大小的 ImageData 时不 panic。
+    #[test]
+    fn test_put_image_data_larger_than_canvas() {
+        let mut ctx = CanvasContext::new(5, 5);
+        // 创建 20x20 的 ImageData，但画布只有 5x5
+        let mut data = vec![255u8; 20 * 20 * 4];
+        // 写入一些标记值
+        data[0] = 255;
+        data[1] = 0;
+        data[2] = 0;
+        data[3] = 255; // 红色
+        let image_data = ImageData {
+            width: 20,
+            height: 20,
+            data,
+        };
+        // 不应 panic
+        ctx.put_image_data(&image_data, 0, 0);
+        // 验证画布内像素被写入
+        let result = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(result.data[0], 255, "红色通道应为 255");
+    }
+
+    /// 测试 putImageData 使用零尺寸 ImageData 时不 panic。
+    #[test]
+    fn test_put_image_data_zero_size() {
+        let mut ctx = CanvasContext::new(10, 10);
+        let image_data = ImageData {
+            width: 0,
+            height: 0,
+            data: vec![],
+        };
+        // 不应 panic
+        ctx.put_image_data(&image_data, 0, 0);
+    }
+
+    /// 测试 putImageData 使用数据向量过短的 ImageData 时不 panic。
+    #[test]
+    fn test_put_image_data_short_data_vector() {
+        let mut ctx = CanvasContext::new(10, 10);
+        // 声明为 10x10 但数据只有 4 字节（1 个像素）
+        let image_data = ImageData {
+            width: 10,
+            height: 10,
+            data: vec![255, 0, 0, 255],
+        };
+        // 不应 panic 或越界访问
+        ctx.put_image_data(&image_data, 0, 0);
+    }
 }
