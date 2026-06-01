@@ -680,6 +680,45 @@ pub fn generate_dom_api_polyfill() -> String {
     this.target = init.target || null;
     this.intersectionRatio = init.intersectionRatio || 0;
   };
+
+  // ── ResizeObserver Stub ──
+  // Provides ResizeObserver with observe/unobserve/disconnect.
+  // Real resize detection by host runtime.
+
+  globalThis.ResizeObserver = function(callback) {
+    this._callback = callback;
+    this._observing = [];
+  };
+  globalThis.ResizeObserver.prototype.observe = function(target) {
+    if (this._observing.indexOf(target) === -1) {
+      this._observing.push(target);
+    }
+  };
+  globalThis.ResizeObserver.prototype.unobserve = function(target) {
+    var idx = this._observing.indexOf(target);
+    if (idx !== -1) this._observing.splice(idx, 1);
+  };
+  globalThis.ResizeObserver.prototype.disconnect = function() {
+    this._observing = [];
+  };
+
+  // ResizeObserverEntry constructor
+  globalThis.ResizeObserverEntry = function(target, contentRect) {
+    this.target = target;
+    this.contentRect = contentRect || { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 };
+  };
+
+  // DOMRectReadOnly stub (used by ResizeObserver)
+  globalThis.DOMRectReadOnly = function(x, y, width, height) {
+    this.x = x || 0;
+    this.y = y || 0;
+    this.width = width || 0;
+    this.height = height || 0;
+    this.top = this.y;
+    this.right = this.x + this.width;
+    this.bottom = this.y + this.height;
+    this.left = this.x;
+  };
 })();
 "#
     .to_string()
@@ -1156,5 +1195,15 @@ mod tests {
         assert!(polyfill.contains("globalThis.IntersectionObserverEntry"));
         assert!(polyfill.contains("isIntersecting"));
         assert!(polyfill.contains("intersectionRatio"));
+    }
+
+    // ── Polyfill ResizeObserver 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_resize_observer() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.ResizeObserver"));
+        assert!(polyfill.contains("globalThis.ResizeObserverEntry"));
+        assert!(polyfill.contains("globalThis.DOMRectReadOnly"));
     }
 }

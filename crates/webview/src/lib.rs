@@ -3712,4 +3712,87 @@ mod tests {
             "IntersectionObserverEntry should have correct properties"
         );
     }
+
+    // ── ResizeObserver 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 ResizeObserver 构造函数存在。
+    #[test]
+    fn test_webview_resize_observer_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof ResizeObserver;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "ResizeObserver should be a function"
+        );
+    }
+
+    /// 测试 ResizeObserver observe/unobserve。
+    #[test]
+    fn test_webview_resize_observer_observe_unobserve() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var ro = new ResizeObserver(function() {});
+            var el = document.createElement('div');
+            ro.observe(el);
+            var len1 = ro._observing.length;
+            ro.unobserve(el);
+            var len2 = ro._observing.length;
+            len1 + ',' + len2;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1,0");
+    }
+
+    /// 测试 ResizeObserver disconnect。
+    #[test]
+    fn test_webview_resize_observer_disconnect() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var ro = new ResizeObserver(function() {});
+            ro.observe(document.createElement('div'));
+            ro.observe(document.createElement('span'));
+            ro.disconnect();
+            ro._observing.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0", "disconnect should clear all observed elements");
+    }
+
+    /// 测试 ResizeObserverEntry 构造函数。
+    #[test]
+    fn test_webview_resize_observer_entry() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var entry = new ResizeObserverEntry(document.body, { width: 100, height: 200 });
+            entry.contentRect.width + ',' + entry.contentRect.height;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "100,200",
+            "ResizeObserverEntry should have contentRect"
+        );
+    }
+
+    /// 测试 DOMRectReadOnly 构造函数。
+    #[test]
+    fn test_webview_dom_rect_read_only() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "var rect = new DOMRectReadOnly(10, 20, 100, 50); rect.left + ',' + rect.right + ',' + rect.top + ',' + rect.bottom;",
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "10,110,20,70",
+            "DOMRectReadOnly should compute derived properties"
+        );
+    }
 }
