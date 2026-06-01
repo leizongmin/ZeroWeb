@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，5111 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，5134 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5111 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5134 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -121,6 +121,18 @@
 | webview | **config 默认值/last_render 状态/resize+render/is_loading/callback 移除** | 5 |
 | host-runtime | **HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** | 5 |
 Total: 5068 → 5111 (+43 tests)
+
+### -44. CSS 表格/文本/布局属性管线 + 4 crate 边界测试 + 23 个测试（本轮，5134 测试）
+
+新增 CSS 表格/文本/布局属性管线集成测试、4 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| integration | **table-layout/caption-side/border-collapse/resize/word-break/writing-mode/isolation** 管线；**isolation 非继承** | 8 |
+| dom | **append_child 排序/set_attribute 覆写/元素大小写保留/remove_child 中间兄弟/create_text_node 空字符串** | 5 |
+| layout-engine | **display:none 排除/块级占满父容器/flex 换行/inline-block 尺寸/absolute 定位** | 5 |
+| css-parser | **空媒体查询/:not 嵌套伪类/自定义属性/@supports/多动画名称** | 5 |
+Total: 5111 → 5134 (+23 tests)
 
 ### -42. CSS 渐变渲染管线集成 + 44 测试（上轮，5038 测试）
 
