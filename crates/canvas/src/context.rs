@@ -8126,4 +8126,113 @@ mod tests {
             "alpha=1.0 时绘制的像素应完全不透明"
         );
     }
+
+    // ── 新增边界测试（第二批） ──
+
+    /// 测试多次 save/restore 后 fill_color 正确恢复（像素验证）。
+    #[test]
+    fn test_canvas_nested_save_restore_pixel_verify() {
+        let mut ctx = CanvasContext::new(100, 100);
+
+        ctx.set_fill_color(Color::rgba(255, 0, 0, 255)); // red
+        ctx.save();
+        ctx.set_fill_color(Color::rgba(0, 255, 0, 255)); // green
+        ctx.save();
+        ctx.set_fill_color(Color::rgba(0, 0, 255, 255)); // blue
+
+        // 恢复到 green
+        ctx.restore();
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[1], 255, "restore 后应为绿色");
+
+        // 恢复到 red
+        ctx.restore();
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0], 255, "二次 restore 后应为红色");
+    }
+
+    /// 测试 clear_rect 清除指定区域像素。
+    #[test]
+    fn test_canvas_clear_rect_region() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::WHITE);
+        ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
+
+        // 清除左上角 50x50 区域
+        ctx.clear_rect(0.0, 0.0, 50.0, 50.0);
+
+        let cleared = ctx.get_image_data(25, 25, 1, 1);
+        let untouched = ctx.get_image_data(75, 75, 1, 1);
+
+        // 被清除区域应为透明（全 0）
+        assert_eq!(cleared.data[3], 0, "清除区域应为透明");
+        // 未清除区域应保持白色
+        assert_eq!(untouched.data[0], 255, "未清除区域应保持白色");
+    }
+
+    /// 测试 Canvas 2D 变换 translate + scale 组合。
+    #[test]
+    fn test_canvas_translate_scale_combined() {
+        let mut ctx = CanvasContext::new(200, 200);
+        ctx.set_fill_color(Color::RED);
+        ctx.translate(50.0, 50.0);
+        ctx.scale(2.0, 2.0);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+
+        // 矩形在变换后应出现在 (50, 50) 位置，大小 20x20
+        let pixel_inside = ctx.get_image_data(60, 60, 1, 1);
+        assert_eq!(pixel_inside.data[0], 255, "变换后区域内部应有红色像素");
+    }
+
+    /// 测试 set_line_width 边界值。
+    #[test]
+    fn test_canvas_line_width_boundary_values() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_width(0.0);
+        assert_eq!(ctx.line_width(), 0.0, "line_width=0 应被接受");
+
+        ctx.set_line_width(0.5);
+        assert!((ctx.line_width() - 0.5).abs() < f32::EPSILON, "line_width=0.5 应被接受");
+
+        ctx.set_line_width(1000.0);
+        assert_eq!(ctx.line_width(), 1000.0, "大 line_width 应被接受");
+    }
+
+    /// 测试 fillText 绘制不 panic。
+    #[test]
+    fn test_canvas_fill_text_no_panic() {
+        let mut ctx = CanvasContext::new(200, 100);
+        ctx.set_fill_color(Color::BLACK);
+        // fillText 应不 panic（即使无字体加载）
+        ctx.fill_text("Hello", 10.0, 50.0);
+    }
+
+    /// 测试 stroke_rect 零尺寸不 panic。
+    #[test]
+    fn test_canvas_stroke_rect_zero_dims() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_stroke_color(Color::BLACK);
+        ctx.stroke_rect(50.0, 50.0, 0.0, 0.0);
+        ctx.stroke_rect(0.0, 0.0, -10.0, -10.0);
+    }
+
+    /// 测试 putImageData 再 get_image_data 数据一致。
+    #[test]
+    fn test_canvas_put_get_roundtrip() {
+        let mut ctx = CanvasContext::new(100, 100);
+        let data = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 128, 128, 128, 255],
+        };
+        ctx.put_image_data(&data, 10, 10);
+
+        let read = ctx.get_image_data(10, 10, 2, 2);
+        assert_eq!(read.data[0..4], [255, 0, 0, 255], "像素 0 应一致");
+        assert_eq!(read.data[4..8], [0, 255, 0, 255], "像素 1 应一致");
+        assert_eq!(read.data[8..12], [0, 0, 255, 255], "像素 2 应一致");
+        assert_eq!(read.data[12..16], [128, 128, 128, 255], "像素 3 应一致");
+    }
 }
