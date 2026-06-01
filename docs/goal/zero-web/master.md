@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，4907 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，4935 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 4907 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 4935 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -93,7 +93,25 @@
 
 ## 最近完成的改进
 
-### -39. CSS justify-items/justify-self/align-content + empty-cells/border-spacing + gap 简写 + 5 集成测试 + 8 crate 边界测试 + 61 个测试（本轮，4907 测试）
+### -40. CSS border-image 简写 + counter-set + 5 集成测试 + 8 crate 边界测试 + 28 个测试（本轮，4935 测试）
+
+新增 CSS border-image 简写展开、counter-set 属性、5 个跨 crate 集成测试、8 个 crate 边界条件测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| shorthand | **border-image 简写展开**：source/slice/width/outset/repeat 解析 | 5 |
+| css-parser | **counter-set**：none/name integer；边界解析测试 | 6 |
+| style-system | **counter-set 管线**（非继承）；border-image 简写测试 | 10 |
+| integration | **border-image 简写/counter-set/empty-cells/border-spacing 继承/justify-items** | 5 |
+| dom | root-only doc/text 特殊字符/re-append/空属性值/空 tag search | 5 |
+| layout-engine | grid named span 2/flex align-self stretch/margin auto center/inline-block in flex/nested grid | 5 |
+| engine | border-image paint/empty-cells paint/zero-opacity composite/border-spacing render/counter-set pipeline | 5 |
+| canvas | drawImage zero/identity transform/quadraticCurveTo/compositeOperation roundtrip | 5 |
+| security | CSP multi script-src/CORS PUT/same host diff port/sandbox forms+scripts/report-only no-block | 5 |
+| net | URL query only/cookie domain/301 redirect/URL hash fragment/navigation replace | 5 |
+Total: 4907 → 4935 (+28 tests)
+
+### -39. CSS justify-items/justify-self/align-content + empty-cells/border-spacing + gap 简写 + 5 集成测试 + 8 crate 边界测试 + 61 个测试（前轮，4907 测试）
 
 新增 5 个 CSS 属性、gap 简写展开、5 个跨 crate 集成测试、8 个 crate 边界条件测试：
 
