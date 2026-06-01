@@ -7870,4 +7870,186 @@ mod tests {
         // outer_item3 在左下角，outer_item4 在右下角
         assert!(o4_box.x > o3_box.x, "outer_item4 应在 outer_item3 右侧");
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 display:none 子树完全不参与布局。
+    #[test]
+    fn test_display_none_excludes_from_layout() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "style", "display: none; width: 100px; height: 50px;");
+        doc.append_child(body, div).unwrap();
+        let span = doc.create_element("span");
+        doc.append_child(div, span).unwrap();
+
+        let css = r#"div { display: none; }"#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let tree = engine.compute(&doc, &styles);
+
+        // display:none 元素不应出现在布局树中
+        assert!(
+            find_child_by_node_id(&tree.root, div).is_none(),
+            "display:none 元素不应出现在布局树中"
+        );
+    }
+
+    /// 测试单个块级元素占满父容器宽度。
+    #[test]
+    fn test_block_element_fills_parent_width() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let css = "";
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let tree = engine.compute(&doc, &styles);
+
+        let body_box = find_child_by_node_id(&tree.root, body).expect("body 应在布局树中");
+        let div_box = find_child_by_node_id(&tree.root, div).expect("div 应在布局树中");
+
+        // 块级 div 宽度应与 body 内容宽度一致
+        assert!(
+            (div_box.width - body_box.content_width).abs() < 1.0,
+            "块级 div 宽度 {} 应接近 body 内容宽度 {}",
+            div_box.width,
+            body_box.content_width
+        );
+    }
+
+    /// 测试 flex 容器宽度不足时子元素换行。
+    #[test]
+    fn test_flex_wrap_when_narrow() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let container = doc.create_element("div");
+        doc.set_attribute(container, "class", "flex");
+        doc.append_child(body, container).unwrap();
+
+        for _ in 0..5 {
+            let item = doc.create_element("div");
+            doc.set_attribute(item, "class", "item");
+            doc.append_child(container, item).unwrap();
+        }
+
+        let css = r#"
+            .flex { display: flex; flex-wrap: wrap; width: 100px; }
+            .item { width: 40px; height: 20px; }
+        "#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let tree = engine.compute(&doc, &styles);
+
+        let container_box = find_child_by_node_id(&tree.root, container).expect("container 应在布局树中");
+        // 容器宽度为 100px，每个 item 40px，所以应换行
+        assert!(
+            container_box.height >= 40.0,
+            "容器高度 {} 应至少 2 行（40px）",
+            container_box.height
+        );
+    }
+
+    /// 测试 inline-block 元素与文本同行排列。
+    #[test]
+    fn test_inline_block_inline_with_text() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let span = doc.create_element("span");
+        doc.set_attribute(span, "style", "display: inline-block; width: 50px; height: 30px;");
+        doc.append_child(body, span).unwrap();
+
+        let css = "span { display: inline-block; width: 50px; height: 30px; }";
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let tree = engine.compute(&doc, &styles);
+
+        let span_box = find_child_by_node_id(&tree.root, span).expect("span 应在布局树中");
+        assert!(
+            (span_box.width - 50.0).abs() < 1.0,
+            "inline-block 宽度应接近 50px，实际为 {}",
+            span_box.width
+        );
+        assert!(
+            (span_box.height - 30.0).abs() < 1.0,
+            "inline-block 高度应接近 30px，实际为 {}",
+            span_box.height
+        );
+    }
+
+    /// 测试 position:absolute 元素脱离文档流。
+    #[test]
+    fn test_absolute_position_out_of_flow() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let normal = doc.create_element("div");
+        doc.set_attribute(normal, "class", "normal");
+        doc.append_child(body, normal).unwrap();
+        let absolute = doc.create_element("div");
+        doc.set_attribute(absolute, "class", "abs");
+        doc.append_child(body, absolute).unwrap();
+
+        let css = r#"
+            .normal { width: 100px; height: 50px; }
+            .abs { position: absolute; top: 10px; left: 20px; width: 30px; height: 30px; }
+        "#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let tree = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
+        assert!(
+            (abs_box.x - 20.0).abs() < 1.0,
+            "absolute 元素 x 应接近 20，实际为 {}",
+            abs_box.x
+        );
+        assert!(
+            (abs_box.y - 10.0).abs() < 1.0,
+            "absolute 元素 y 应接近 10，实际为 {}",
+            abs_box.y
+        );
+    }
 }

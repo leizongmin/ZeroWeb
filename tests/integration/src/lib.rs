@@ -5713,4 +5713,224 @@ mod cross_crate_pipeline {
             div_style.transition_duration
         );
     }
+
+    // ── CSS 表格/布局/字体 变体属性管线集成测试 ──
+
+    /// CSS table-layout 管线集成测试。
+    ///
+    /// 解析 table-layout: fixed，验证计算样式。
+    #[test]
+    fn test_table_layout_fixed_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let table = doc.create_element("table");
+        doc.set_attribute(table, "class", "fixed-layout");
+        doc.append_child(body, table).unwrap();
+
+        let css = r#"
+            .fixed-layout { table-layout: fixed; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let table_style = styles.get(&table).expect("table 应有计算样式");
+        assert_eq!(
+            table_style.table_layout,
+            zero_style_system::property::TableLayoutValue::Fixed,
+            "table-layout 应为 Fixed"
+        );
+    }
+
+    /// CSS caption-side 管线集成测试。
+    ///
+    /// 解析 caption-side: bottom，验证计算样式。
+    #[test]
+    fn test_caption_side_bottom_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let caption = doc.create_element("caption");
+        doc.set_attribute(caption, "class", "bottom-cap");
+        doc.append_child(body, caption).unwrap();
+
+        let css = r#"
+            .bottom-cap { caption-side: bottom; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let cap_style = styles.get(&caption).expect("caption 应有计算样式");
+        assert_eq!(
+            cap_style.caption_side,
+            zero_style_system::property::CaptionSideValue::Bottom,
+            "caption-side 应为 Bottom"
+        );
+    }
+
+    /// CSS border-collapse 管线集成测试。
+    ///
+    /// 解析 border-collapse: collapse，验证计算样式。
+    #[test]
+    fn test_border_collapse_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let table = doc.create_element("table");
+        doc.set_attribute(table, "class", "collapse");
+        doc.append_child(body, table).unwrap();
+
+        let css = r#"
+            .collapse { border-collapse: collapse; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let table_style = styles.get(&table).expect("table 应有计算样式");
+        assert_eq!(
+            table_style.border_collapse,
+            zero_style_system::property::BorderCollapseValue::Collapse,
+            "border-collapse 应为 Collapse"
+        );
+    }
+
+    /// CSS resize 管线集成测试。
+    ///
+    /// 解析 resize: both，验证计算样式。
+    #[test]
+    fn test_resize_both_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "resizable");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .resizable { resize: both; overflow: auto; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.resize,
+            zero_style_system::property::ResizeValue::Both,
+            "resize 应为 Both"
+        );
+    }
+
+    /// CSS word-break 管线集成测试。
+    ///
+    /// 解析 word-break: break-all，验证计算样式。
+    #[test]
+    fn test_word_break_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "break-all");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .break-all { word-break: break-all; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.word_break,
+            zero_style_system::property::WordBreakValue::BreakAll,
+            "word-break 应为 BreakAll"
+        );
+    }
+
+    /// CSS writing-mode 管线集成测试。
+    ///
+    /// 解析 writing-mode: vertical-rl，验证计算样式。
+    #[test]
+    fn test_writing_mode_vertical_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "vertical");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .vertical { writing-mode: vertical-rl; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.writing_mode,
+            zero_style_system::property::WritingModeValue::VerticalRl,
+            "writing-mode 应为 VerticalRl"
+        );
+    }
+
+    /// CSS isolation 管线集成测试。
+    ///
+    /// 解析 isolation: isolate，验证计算样式。
+    #[test]
+    fn test_isolation_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "isolated");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .isolated { isolation: isolate; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.isolation,
+            zero_style_system::property::IsolationValue::Isolate,
+            "isolation 应为 Isolate"
+        );
+    }
+
+    /// CSS isolation 继承性验证。
+    ///
+    /// isolation 不继承，子元素应默认为 Auto。
+    #[test]
+    fn test_isolation_not_inherited_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "isolated");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .isolated { isolation: isolate; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.isolation,
+            zero_style_system::property::IsolationValue::Auto,
+            "isolation 不应继承，子元素应为 Auto"
+        );
+    }
 }
