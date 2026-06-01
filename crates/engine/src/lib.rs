@@ -15,11 +15,13 @@
 
 pub mod composite;
 pub mod dirty;
+pub mod dom_bridge;
 pub mod paint;
 pub mod pipeline;
 
 pub use composite::*;
 pub use dirty::*;
+pub use dom_bridge::*;
 pub use paint::*;
 pub use pipeline::*;
 
