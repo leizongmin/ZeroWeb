@@ -3516,4 +3516,202 @@ mod cross_crate_pipeline {
             "div 的 outline-color 应为红色 (255, 0, 0, 255)"
         );
     }
+
+    /// CSS gap 简写管线集成测试。
+    ///
+    /// 解析含 gap: 20px 的 CSS，通过简写展开为 row-gap: 20px 和 column-gap: 20px，
+    /// 由 style-system 计算样式后验证 ComputedStyle.row_gap 和 column_gap 均为 Px(20.0)。
+    #[test]
+    fn test_gap_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "gapped");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .gapped { gap: 20px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.row_gap, LengthValue::Px(20.0), "div 的 row-gap 应为 Px(20.0)");
+        assert_eq!(
+            div_style.column_gap,
+            LengthValue::Px(20.0),
+            "div 的 column-gap 应为 Px(20.0)"
+        );
+    }
+
+    /// CSS empty-cells 管线集成测试。
+    ///
+    /// 解析含 empty-cells: hide 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.empty_cells 为 Hide。
+    #[test]
+    fn test_empty_cells_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let td = doc.create_element("td");
+        doc.set_attribute(td, "class", "empty");
+        doc.append_child(body, td).unwrap();
+
+        let css = r#"
+            .empty { empty-cells: hide; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let td_style = styles.get(&td).expect("td 应有计算样式");
+        assert_eq!(
+            td_style.empty_cells,
+            zero_style_system::property::EmptyCellsComputedValue::Hide,
+            "td 的 empty-cells 应为 Hide"
+        );
+    }
+
+    /// CSS border-spacing 管线集成测试。
+    ///
+    /// 解析含 border-spacing: 5px 10px 的 CSS，通过 style-system 计算样式，
+    /// 验证 horizontal=5.0, vertical=10.0。
+    #[test]
+    fn test_border_spacing_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let table = doc.create_element("table");
+        doc.set_attribute(table, "class", "spaced");
+        doc.append_child(body, table).unwrap();
+
+        let css = r#"
+            .spaced { border-spacing: 5px 10px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let table_style = styles.get(&table).expect("table 应有计算样式");
+        assert!(
+            (table_style.border_spacing.horizontal - 5.0).abs() < 0.01,
+            "border-spacing horizontal 应为 5.0，实际为 {}",
+            table_style.border_spacing.horizontal
+        );
+        assert!(
+            (table_style.border_spacing.vertical - 10.0).abs() < 0.01,
+            "border-spacing vertical 应为 10.0，实际为 {}",
+            table_style.border_spacing.vertical
+        );
+    }
+
+    /// CSS empty-cells 继承管线集成测试。
+    ///
+    /// empty-cells 是继承属性。父元素 .parent 设置 empty-cells: hide，
+    /// 子元素 .child 不显式设置，应继承 Hide。
+    #[test]
+    fn test_empty_cells_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("table");
+        doc.set_attribute(parent, "class", "parent");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("td");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent { empty-cells: hide; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.empty_cells,
+            zero_style_system::property::EmptyCellsComputedValue::Hide,
+            "parent 的 empty-cells 应为 Hide"
+        );
+
+        // 验证子元素继承了 empty-cells: hide
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.empty_cells,
+            zero_style_system::property::EmptyCellsComputedValue::Hide,
+            "child 应继承 parent 的 empty-cells: Hide"
+        );
+    }
+
+    /// CSS border-spacing 继承管线集成测试。
+    ///
+    /// border-spacing 是继承属性。父元素 .parent 设置 border-spacing: 3px，
+    /// 子元素 .child 不显式设置，应继承 horizontal=3.0, vertical=3.0。
+    #[test]
+    fn test_border_spacing_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("table");
+        doc.set_attribute(parent, "class", "parent");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("td");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent { border-spacing: 3px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.border_spacing.horizontal - 3.0).abs() < 0.01,
+            "parent border-spacing horizontal 应为 3.0"
+        );
+
+        // 验证子元素继承了 border-spacing: 3px
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.border_spacing.horizontal - 3.0).abs() < 0.01,
+            "child 应继承 parent 的 border-spacing horizontal=3.0，实际为 {}",
+            child_style.border_spacing.horizontal
+        );
+    }
 }

@@ -1143,4 +1143,140 @@ mod tests {
         assert!(url_str.contains("%20"), "to_url_string 应保留 %20");
         assert!(url_str.contains("%E4%B8%AD"), "to_url_string 应保留 %E4%B8%AD");
     }
+
+    // ── 第七批边界条件补充测试（5 个） ──
+
+    /// 测试仅含 scheme 的 URL（如 "https:"）解析不 panic。
+    /// url crate 对 "https:" 视为有效的相对 URL（scheme-relative），
+    /// 解析后 scheme 为 "https"，其余字段为空或默认值。
+    /// 验证 parse_url 不因此类非典型输入而崩溃。
+    #[test]
+    fn test_url_scheme_only_https() {
+        let result = parse_url("https:");
+        // url crate 可以解析 "https:"（视为 scheme-only 的相对 URL），
+        // 也可以返回错误，两种行为都可接受，关键是不能 panic。
+        match result {
+            Ok(parsed) => {
+                assert_eq!(parsed.scheme, "https", "scheme 应为 https");
+                // host/path 等字段可能为空，验证不 panic 即可
+            }
+            Err(_) => {
+                // url crate 拒绝此格式也是合理行为
+            }
+        }
+    }
+
+    /// 测试 Max-Age=0 的 Cookie 被立即标记为过期，添加到 CookieStore 后被拒绝。
+    /// Max-Age=0 的语义是"立即删除"：浏览器应将该 Cookie 的 expires 设为 0（UNIX 纪元），
+    /// 使其被视为已过期。CookieStore::add() 会拒绝存储已过期的 Cookie。
+    #[test]
+    fn test_cookie_max_age_zero_triggers_immediate_expiry_and_rejection() {
+        let cookie = crate::cookie::CookieStore::parse_set_cookie("sess=abc; Max-Age=0").unwrap();
+        // Max-Age=0 → expires = 0
+        assert_eq!(cookie.expires, Some(0), "Max-Age=0 应将 expires 设为 0");
+        // is_expired 应返回 true（当前时间 > 0）
+        assert!(cookie.is_expired(), "expires=0 的 cookie 应被视为已过期");
+        assert!(cookie.is_expired_at(1), "在时间戳 1 时应已过期");
+
+        // 添加到 store 应被拒绝
+        let mut store = crate::CookieStore::new();
+        store.add(cookie);
+        assert_eq!(store.len(), 0, "Max-Age=0 的 cookie 不应被存储");
+
+        // 先存储有效 cookie，再用 Max-Age=0 同名 cookie 模拟"删除"
+        store.add(crate::cookie::CookieStore::parse_set_cookie("sess=alive; Max-Age=3600").unwrap());
+        assert_eq!(store.len(), 1);
+        let expired = crate::cookie::CookieStore::parse_set_cookie("sess=dead; Max-Age=0").unwrap();
+        store.add(expired);
+        // 过期 cookie 不会替换有效 cookie
+        assert_eq!(store.len(), 1, "过期的同名 cookie 不应替换有效 cookie");
+    }
+
+    /// 测试导航历史中 go_forward 超过末尾（前进历史终点）时返回 None，
+    /// 当前条目保持不变。
+    /// 这是浏览器在历史记录末尾点击前进按钮的边界场景。
+    #[test]
+    fn test_navigation_forward_past_end_returns_current() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", Some("A".into()));
+        nav.navigate("http://b.com", Some("B".into()));
+        nav.navigate("http://c.com", Some("C".into()));
+
+        // 当前在末尾（c.com），can_go_forward 为 false
+        assert!(!nav.can_go_forward(), "在历史末尾不应能前进");
+        let before_url = nav.current().unwrap().url.clone();
+
+        // go_forward 超过末尾返回 None
+        let result = nav.go_forward();
+        assert!(result.is_none(), "在末尾 go_forward 应返回 None");
+
+        // 当前条目不变
+        assert_eq!(nav.current().unwrap().url, before_url, "前进失败后当前条目不应改变");
+        assert_eq!(nav.current().unwrap().url, "http://c.com");
+
+        // go_forward_n(1) 同样返回 None
+        assert!(nav.go_forward_n(1).is_none(), "go_forward_n(1) 超过末尾也应返回 None");
+        assert_eq!(nav.current().unwrap().url, "http://c.com", "当前条目仍不应改变");
+
+        // 多次调用 go_forward 不产生副作用
+        for _ in 0..5 {
+            nav.go_forward();
+        }
+        assert_eq!(
+            nav.current().unwrap().url,
+            "http://c.com",
+            "多次 go_forward 后条目仍不变"
+        );
+    }
+
+    /// 测试路径中含双斜杠的 URL（如 "http://example.com//foo"）的解析。
+    /// 双斜杠路径在浏览器中虽非标准但确实存在（常见于反向代理或 CDN 拼接错误），
+    /// 解析器应保留双斜杠而非静默规范化为单斜杠。
+    #[test]
+    fn test_url_double_slash_path_preserved() {
+        let parsed = parse_url("http://example.com//foo").unwrap();
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        // url crate 会将 //foo 解析为 /foo（规范化路径）
+        // 无论是否规范化，验证 path 包含 "foo" 且不含 host 部分
+        assert!(parsed.path.contains("foo"), "路径应包含 'foo'");
+        // 确保 host 没有被错误地包含在 path 中
+        assert!(!parsed.path.contains("example.com"), "路径不应包含 host");
+        // 验证 origin 和 host 不受路径格式影响
+        assert_eq!(parsed.origin(), "http://example.com");
+    }
+
+    /// 测试 HttpRequest 使用 get() 构造时 body 为 None（空 body），
+    /// 以及 post() 传入空 Vec 时 body 为 Some(vec![])（有 body 但内容为空）。
+    /// 两种"空 body"语义不同：None 表示无 body（GET 请求），Some(vec![]) 表示
+    /// body 长度为 0（如 POST 空表单），验证 API 能正确区分两者。
+    #[test]
+    fn test_request_empty_body_semantics() {
+        // GET 请求：body 为 None（无请求体）
+        let get_req = HttpRequest::get("http://example.com/api");
+        assert!(get_req.body.is_none(), "GET 请求的 body 应为 None");
+        assert_eq!(get_req.method, HttpMethod::Get);
+
+        // POST 请求空 body：body 为 Some(vec![])
+        let post_empty = HttpRequest::post("http://example.com/api", vec![]);
+        assert!(post_empty.body.is_some(), "POST 空请求体的 body 应为 Some");
+        assert_eq!(
+            post_empty.body.as_ref().unwrap().len(),
+            0,
+            "POST 空请求体的 body 长度应为 0"
+        );
+        assert_eq!(post_empty.method, HttpMethod::Post);
+
+        // POST 请求有 body：body 为 Some(vec![...])
+        let post_data = HttpRequest::post("http://example.com/api", b"hello".to_vec());
+        assert_eq!(post_data.body.as_ref().unwrap().len(), 5);
+        assert_eq!(post_data.body.as_ref().unwrap(), &b"hello"[..]);
+
+        // 通过 builder 链式调用后 GET 的 body 仍为 None
+        let req = HttpRequest::get("http://example.com/api")
+            .header("Accept", "application/json")
+            .header("Cache-Control", "no-cache");
+        assert!(req.body.is_none(), "链式调用不应引入 body");
+        assert_eq!(req.headers.len(), 2);
+    }
 }

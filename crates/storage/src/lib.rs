@@ -1285,4 +1285,169 @@ mod tests {
         assert_eq!(storage.get("new_session"), Some("xyz-789"));
         assert!(!storage.is_empty());
     }
+
+    /// 测试 IndexedDB 在自增 store 上 add() 不提供主键时自动生成连续递增键，
+    /// 且每次 add 返回的键可用于后续 get 和 delete 操作。
+    #[test]
+    fn test_idb_add_auto_increment_key_usable() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("todos", None, true).unwrap();
+
+        // 连续 add 三条记录，不提供主键
+        let k1 = db.add("todos", serde_json::json!({"text": "买菜"}), None).unwrap();
+        let k2 = db.add("todos", serde_json::json!({"text": "洗衣服"}), None).unwrap();
+        let k3 = db.add("todos", serde_json::json!({"text": "写代码"}), None).unwrap();
+
+        // 自增键应连续递增：1, 2, 3
+        assert!(matches!(&k1, IdbKey::Number(n) if *n == 1.0));
+        assert!(matches!(&k2, IdbKey::Number(n) if *n == 2.0));
+        assert!(matches!(&k3, IdbKey::Number(n) if *n == 3.0));
+        assert_eq!(db.count("todos").unwrap(), 3);
+
+        // 用返回的键 get 能正确取回数据
+        let r2 = db.get("todos", &k2).unwrap();
+        assert_eq!(r2.value["text"], "洗衣服");
+
+        // 用返回的键 delete 能正确删除
+        assert!(db.delete("todos", &k2).unwrap());
+        assert_eq!(db.count("todos").unwrap(), 2);
+        assert!(db.get("todos", &k2).is_none());
+    }
+
+    /// 测试 Cache API 在没有任何缓存条目时调用 match_request 返回 None。
+    #[test]
+    fn test_cache_match_on_empty_storage() {
+        let cs = CacheStorage::new();
+
+        // 没有打开任何缓存，match_request 应返回 None
+        let req = CacheRequest::new("https://example.com/index.html");
+        assert!(
+            cs.match_request(&req).is_none(),
+            "空 CacheStorage 上 match_request 应返回 None"
+        );
+
+        // 打开一个缓存但不添加任何条目
+        let mut cs = cs;
+        let _cache = cs.open("empty-cache");
+        assert!(
+            cs.match_request(&req).is_none(),
+            "没有条目的缓存 match_request 也应返回 None"
+        );
+
+        // 在缓存上直接 match_request 也应返回 None
+        let cache = cs.open("empty-cache");
+        assert!(
+            cache.match_request(&req).is_none(),
+            "空缓存的 match_request 应返回 None"
+        );
+        assert_eq!(cache.len(), 0, "空缓存 len 应为 0");
+        assert!(cache.is_empty(), "空缓存 is_empty 应为 true");
+    }
+
+    /// 测试 localStorage setItem 覆盖已存在的键后，通过 key() 遍历的顺序保持稳定：
+    /// 键的插入顺序不变，不因值更新而重新排列。
+    #[test]
+    fn test_local_storage_overwrite_preserves_order() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 按顺序设置 4 个键
+        storage.set("first", "a").unwrap();
+        storage.set("second", "b").unwrap();
+        storage.set("third", "c").unwrap();
+        storage.set("fourth", "d").unwrap();
+
+        // 记录初始键顺序
+        let initial_keys: Vec<Option<String>> = (0..storage.len())
+            .map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        assert_eq!(initial_keys.len(), 4);
+
+        // 覆盖中间两个键的值
+        storage.set("second", "B-overwritten").unwrap();
+        storage.set("third", "C-overwritten").unwrap();
+
+        // len 不应增长
+        assert_eq!(storage.len(), 4, "覆盖不应增加条目数");
+
+        // 键顺序应保持不变
+        let after_keys: Vec<Option<String>> = (0..storage.len())
+            .map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        assert_eq!(initial_keys, after_keys, "覆盖值后键顺序应与初始顺序一致");
+
+        // 每个键的值应为最新值
+        assert_eq!(storage.get("first"), Some("a"));
+        assert_eq!(storage.get("second"), Some("B-overwritten"));
+        assert_eq!(storage.get("third"), Some("C-overwritten"));
+        assert_eq!(storage.get("fourth"), Some("d"));
+    }
+
+    /// 测试 IndexedDB 索引在 store 中无数据时打开游标应返回 None（空游标）。
+    #[test]
+    fn test_idb_index_empty_data_returns_none_cursor() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("logs", None, false).unwrap();
+
+        // 在空 store 上创建索引
+        db.create_index("logs", "level_idx", "level", false, false).unwrap();
+
+        // 在空索引上打开游标应返回 None
+        let result = db.open_cursor_on_index("logs", "level_idx", None).unwrap();
+        assert!(result.is_none(), "空索引上打开游标应返回 None");
+
+        // get_all_from_index 也应返回空
+        let all = db.get_all_from_index("logs", "level_idx").unwrap();
+        assert!(all.is_empty(), "空索引的 get_all_from_index 应返回空列表");
+
+        // count_from_index 应为 0
+        assert_eq!(
+            db.count_from_index("logs", "level_idx", None).unwrap(),
+            0,
+            "空索引的 count 应为 0"
+        );
+
+        // 添加数据后游标应能正常打开
+        db.add(
+            "logs",
+            serde_json::json!({"level": "info", "msg": "启动"}),
+            Some(IdbKey::String("l1".into())),
+        )
+        .unwrap();
+        let cursor = db.open_cursor_on_index("logs", "level_idx", None).unwrap();
+        assert!(cursor.is_some(), "有数据后游标应返回 Some");
+    }
+
+    /// 测试 sessionStorage key() 方法对超出范围的索引返回 None。
+    #[test]
+    fn test_session_storage_key_out_of_range_returns_null() {
+        let mut storage = WebStorage::new(StorageType::Session, "https://example.com");
+
+        // 空存储时 key(0) 应返回 None
+        assert_eq!(storage.key(0), None, "空存储 key(0) 应返回 None");
+        assert_eq!(storage.key(100), None, "空存储 key(100) 应返回 None");
+
+        // 设置 3 个键
+        storage.set("alpha", "1").unwrap();
+        storage.set("beta", "2").unwrap();
+        storage.set("gamma", "3").unwrap();
+        assert_eq!(storage.len(), 3);
+
+        // 合法索引范围内应能获取键名
+        let mut keys: Vec<String> = (0..storage.len())
+            .filter_map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        keys.sort();
+        assert_eq!(keys, vec!["alpha", "beta", "gamma"]);
+
+        // 索引恰好等于长度（边界）应返回 None
+        assert_eq!(storage.key(3), None, "key(len) 应返回 None，索引从 0 开始");
+
+        // 索引远超范围应返回 None
+        assert_eq!(storage.key(999), None, "key(999) 应返回 None");
+
+        // 删除一个后索引范围缩小
+        storage.remove("beta");
+        assert_eq!(storage.len(), 2);
+        assert_eq!(storage.key(2), None, "删除后 key(2) 应返回 None");
+    }
 }
