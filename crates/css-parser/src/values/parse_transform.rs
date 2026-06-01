@@ -1,0 +1,1199 @@
+//! CSS Transition、Animation、Transform、Gradient 解析。
+
+use super::*;
+
+// ── CSS Transition 值类型 ──────────────────────────────────────────────
+
+/// CSS transition-timing-function / animation-timing-function 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimingFunctionValue {
+    /// ease。
+    Ease,
+    /// linear。
+    Linear,
+    /// ease-in。
+    EaseIn,
+    /// ease-out。
+    EaseOut,
+    /// ease-in-out。
+    EaseInOut,
+    /// cubic-bezier(x1, y1, x2, y2)。
+    CubicBezier(f64, f64, f64, f64),
+    /// step-start。
+    StepStart,
+    /// step-end。
+    StepEnd,
+    /// steps(n, position)。
+    Steps(i32, Option<StepPosition>),
+}
+
+/// steps() 的位置参数。
+#[derive(Debug, Clone, PartialEq)]
+pub enum StepPosition {
+    /// jump-start / start。
+    Start,
+    /// jump-end / end（默认）。
+    End,
+    /// jump-both。
+    Both,
+    /// jump-none。
+    None,
+}
+
+/// CSS animation-direction 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationDirectionValue {
+    /// normal。
+    Normal,
+    /// reverse。
+    Reverse,
+    /// alternate。
+    Alternate,
+    /// alternate-reverse。
+    AlternateReverse,
+}
+
+/// CSS animation-fill-mode 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationFillModeValue {
+    /// none。
+    None,
+    /// forwards。
+    Forwards,
+    /// backwards。
+    Backwards,
+    /// both。
+    Both,
+}
+
+/// CSS animation-play-state 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationPlayStateValue {
+    /// running。
+    Running,
+    /// paused。
+    Paused,
+}
+
+/// 解析 CSS animation-direction 值。
+pub fn parse_animation_direction(value: &str) -> Option<AnimationDirectionValue> {
+    match value.trim() {
+        "normal" => Some(AnimationDirectionValue::Normal),
+        "reverse" => Some(AnimationDirectionValue::Reverse),
+        "alternate" => Some(AnimationDirectionValue::Alternate),
+        "alternate-reverse" => Some(AnimationDirectionValue::AlternateReverse),
+        _ => None,
+    }
+}
+
+/// 解析 CSS animation-fill-mode 值。
+pub fn parse_animation_fill_mode(value: &str) -> Option<AnimationFillModeValue> {
+    match value.trim() {
+        "none" => Some(AnimationFillModeValue::None),
+        "forwards" => Some(AnimationFillModeValue::Forwards),
+        "backwards" => Some(AnimationFillModeValue::Backwards),
+        "both" => Some(AnimationFillModeValue::Both),
+        _ => None,
+    }
+}
+
+/// 解析 CSS animation-play-state 值。
+pub fn parse_animation_play_state(value: &str) -> Option<AnimationPlayStateValue> {
+    match value.trim() {
+        "running" => Some(AnimationPlayStateValue::Running),
+        "paused" => Some(AnimationPlayStateValue::Paused),
+        _ => None,
+    }
+}
+
+// ── CSS Animation Name 值类型 ─────────────────────────────────────
+
+/// CSS animation-name 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationNameValue {
+    /// none — 无动画。
+    None,
+    /// 自定义动画名称。
+    Custom(String),
+}
+
+/// 解析 CSS animation-name 属性值。
+///
+/// 支持格式如 `"none"`、`"fadeIn"`、`"slide-in"`。
+pub fn parse_animation_name(value: &str) -> Option<AnimationNameValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(AnimationNameValue::None);
+    }
+    // 动画名称必须是有效 CSS 标识符（字母/下划线/连字符开头，不含空格）
+    if v.is_empty() || v.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    if v.contains(|c: char| c.is_whitespace()) {
+        return None;
+    }
+    Some(AnimationNameValue::Custom(v.to_string()))
+}
+
+// ── CSS Animation Duration 值类型 ──────────────────────────────────
+
+/// CSS animation-duration 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationDurationValue {
+    /// 时间值（秒或毫秒）。
+    Time(f64, TimeUnit),
+}
+
+/// 时间单位。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimeUnit {
+    /// 秒。
+    S,
+    /// 毫秒。
+    Ms,
+}
+
+/// 解析 CSS animation-duration 属性值。
+///
+/// 支持格式如 `"1s"`、`"500ms"`、`"0.5s"`。
+pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
+    let v = value.trim().to_ascii_lowercase();
+    if v.ends_with("ms") {
+        let n: f64 = v.trim_end_matches("ms").trim().parse().ok()?;
+        if n >= 0.0 {
+            return Some(AnimationDurationValue::Time(n, TimeUnit::Ms));
+        }
+    } else if v.ends_with('s') {
+        let n: f64 = v.trim_end_matches('s').trim().parse().ok()?;
+        if n >= 0.0 {
+            return Some(AnimationDurationValue::Time(n, TimeUnit::S));
+        }
+    }
+    None
+}
+
+// ── CSS Animation Iteration Count 值类型 ────────────────────────────
+
+/// CSS animation-iteration-count 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationIterationCountValue {
+    /// infinite — 无限循环。
+    Infinite,
+    /// 有限次数。
+    Number(f64),
+}
+
+/// 解析 CSS animation-iteration-count 属性值。
+///
+/// 支持格式如 `"infinite"`、`"3"`、`"2.5"`。
+pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIterationCountValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("infinite") {
+        return Some(AnimationIterationCountValue::Infinite);
+    }
+    let n: f64 = v.parse().ok()?;
+    if n > 0.0 {
+        Some(AnimationIterationCountValue::Number(n))
+    } else {
+        None
+    }
+}
+
+/// 解析 CSS transition-timing-function 值。
+pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
+    let value = value.trim();
+
+    match value {
+        "ease" => Some(TimingFunctionValue::Ease),
+        "linear" => Some(TimingFunctionValue::Linear),
+        "ease-in" => Some(TimingFunctionValue::EaseIn),
+        "ease-out" => Some(TimingFunctionValue::EaseOut),
+        "ease-in-out" => Some(TimingFunctionValue::EaseInOut),
+        "step-start" => Some(TimingFunctionValue::StepStart),
+        "step-end" => Some(TimingFunctionValue::StepEnd),
+        _ if value.starts_with("cubic-bezier(") => {
+            let inner = extract_parens_content(value, "cubic-bezier")?;
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 4 {
+                return None;
+            }
+            let x1 = parts[0].parse::<f64>().ok()?;
+            let y1 = parts[1].parse::<f64>().ok()?;
+            let x2 = parts[2].parse::<f64>().ok()?;
+            let y2 = parts[3].parse::<f64>().ok()?;
+            Some(TimingFunctionValue::CubicBezier(x1, y1, x2, y2))
+        }
+        _ if value.starts_with("steps(") => {
+            let inner = extract_parens_content(value, "steps")?;
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            let n: i32 = parts.first()?.parse().ok()?;
+            let position = if parts.len() > 1 {
+                Some(parse_step_position(parts[1])?)
+            } else {
+                None
+            };
+            Some(TimingFunctionValue::Steps(n, position))
+        }
+        _ => None,
+    }
+}
+
+/// 解析 steps() 位置参数。
+fn parse_step_position(s: &str) -> Option<StepPosition> {
+    match s.trim() {
+        "jump-start" | "start" => Some(StepPosition::Start),
+        "jump-end" | "end" => Some(StepPosition::End),
+        "jump-both" | "both" => Some(StepPosition::Both),
+        "jump-none" | "none" => Some(StepPosition::None),
+        _ => None,
+    }
+}
+
+/// 提取函数括号内的内容。
+fn extract_parens_content<'a>(value: &'a str, func_name: &str) -> Option<&'a str> {
+    let prefix = format!("{}(", func_name);
+    if !value.starts_with(&prefix) || !value.ends_with(')') {
+        return None;
+    }
+    Some(&value[func_name.len() + 1..value.len() - 1])
+}
+
+/// 解析 CSS 时间值（如 `"0.3s"`、`"200ms"`）。
+///
+/// 返回秒为单位的 f64 值。
+pub fn parse_time(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.ends_with("ms") {
+        let ms: f64 = value.trim_end_matches("ms").trim().parse().ok()?;
+        Some(ms / 1000.0)
+    } else if value.ends_with('s') {
+        let s: f64 = value.trim_end_matches('s').trim().parse().ok()?;
+        Some(s)
+    } else {
+        None
+    }
+}
+
+// ── CSS Transform 值类型 ──────────────────────────────────────────────
+
+/// CSS transform 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformValue {
+    /// none。
+    None,
+    /// 变换函数列表。
+    List(Vec<TransformFunction>),
+}
+
+/// CSS 单个变换函数。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformFunction {
+    /// translate(tx, ty)。
+    Translate(f64, f64),
+    /// translateX(tx)。
+    TranslateX(f64),
+    /// translateY(ty)。
+    TranslateY(f64),
+    /// rotate(angle) — 角度（度数）。
+    Rotate(f64),
+    /// scale(sx, sy)。
+    Scale(f64, Option<f64>),
+    /// scaleX(sx)。
+    ScaleX(f64),
+    /// scaleY(sy)。
+    ScaleY(f64),
+    /// skew(ax, ay) — 角度（度数）。
+    Skew(f64, Option<f64>),
+    /// rotateX(angle) — 绕 X 轴旋转（度数）。
+    RotateX(f64),
+    /// rotateY(angle) — 绕 Y 轴旋转（度数）。
+    RotateY(f64),
+    /// rotateZ(angle) — 绕 Z 轴旋转（度数）。
+    RotateZ(f64),
+    /// translate3d(tx, ty, tz) — 三维平移。
+    Translate3d(f64, f64, f64),
+    /// scale3d(sx, sy, sz) — 三维缩放。
+    Scale3d(f64, f64, f64),
+    /// rotate3d(x, y, z, angle) — 绕任意轴旋转。
+    Rotate3d(f64, f64, f64, f64),
+    /// perspective(length) — 透视距离。
+    Perspective(f64),
+    /// matrix(a, b, c, d, e, f) — 二维矩阵变换。
+    Matrix(f64, f64, f64, f64, f64, f64),
+}
+
+/// 解析 CSS transform 属性值。
+///
+/// 支持格式如 `"translate(10px, 20px) rotate(45deg) scale(2)"`。
+pub fn parse_transform(value: &str) -> Option<TransformValue> {
+    let value = value.trim();
+
+    if value.eq_ignore_ascii_case("none") {
+        return Some(TransformValue::None);
+    }
+
+    let mut functions = Vec::new();
+    let mut pos = 0;
+    let bytes = value.as_bytes();
+
+    while pos < bytes.len() {
+        // 跳过空白
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+
+        // 读取函数名（允许字母和数字，如 translate3d、scale3d、rotate3d）
+        let name_start = pos;
+        while pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos].is_ascii_digit()) {
+            pos += 1;
+        }
+        let name = &value[name_start..pos];
+
+        // 跳过空白和 '('
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() || bytes[pos] != b'(' {
+            return None;
+        }
+        pos += 1; // skip '('
+
+        // 找到匹配的 ')'
+        let args_start = pos;
+        let mut depth = 1;
+        while pos < bytes.len() && depth > 0 {
+            if bytes[pos] == b'(' {
+                depth += 1;
+            } else if bytes[pos] == b')' {
+                depth -= 1;
+            }
+            pos += 1;
+        }
+        let args_str = value[args_start..pos - 1].trim();
+
+        // 解析函数
+        if let Some(func) = parse_transform_function(name, args_str) {
+            functions.push(func);
+        } else {
+            return None;
+        }
+    }
+
+    if functions.is_empty() {
+        None
+    } else {
+        Some(TransformValue::List(functions))
+    }
+}
+
+/// 解析单个变换函数。
+fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
+    match name {
+        "translate" => {
+            let vals = parse_transform_args(args)?;
+            let tx = vals.first().copied()?;
+            let ty = vals.get(1).copied().unwrap_or(0.0);
+            Some(TransformFunction::Translate(tx, ty))
+        }
+        "translateX" => {
+            let vals = parse_transform_args(args)?;
+            let tx = vals.first().copied()?;
+            Some(TransformFunction::TranslateX(tx))
+        }
+        "translateY" => {
+            let vals = parse_transform_args(args)?;
+            let ty = vals.first().copied()?;
+            Some(TransformFunction::TranslateY(ty))
+        }
+        "rotate" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::Rotate(angle))
+        }
+        "scale" => {
+            let vals = parse_transform_args(args)?;
+            let sx = vals.first().copied()?;
+            let sy = vals.get(1).copied();
+            Some(TransformFunction::Scale(sx, sy))
+        }
+        "scaleX" => {
+            let vals = parse_transform_args(args)?;
+            let sx = vals.first().copied()?;
+            Some(TransformFunction::ScaleX(sx))
+        }
+        "scaleY" => {
+            let vals = parse_transform_args(args)?;
+            let sy = vals.first().copied()?;
+            Some(TransformFunction::ScaleY(sy))
+        }
+        "skew" => {
+            let vals = parse_transform_args(args)?;
+            let ax = vals.first().copied()?;
+            let ay = vals.get(1).copied();
+            Some(TransformFunction::Skew(ax, ay))
+        }
+        "rotateX" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateX(angle))
+        }
+        "rotateY" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateY(angle))
+        }
+        "rotateZ" => {
+            let angle = parse_angle(args)?;
+            Some(TransformFunction::RotateZ(angle))
+        }
+        "translate3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let tx = parse_css_number(parts[0])?;
+            let ty = parse_css_number(parts[1])?;
+            let tz = parse_css_number(parts[2])?;
+            Some(TransformFunction::Translate3d(tx, ty, tz))
+        }
+        "scale3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let sx = parse_css_number(parts[0])?;
+            let sy = parse_css_number(parts[1])?;
+            let sz = parse_css_number(parts[2])?;
+            Some(TransformFunction::Scale3d(sx, sy, sz))
+        }
+        "rotate3d" => {
+            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            if parts.len() != 4 {
+                return None;
+            }
+            let x = parse_css_number(parts[0])?;
+            let y = parse_css_number(parts[1])?;
+            let z = parse_css_number(parts[2])?;
+            let angle = parse_angle(parts[3])?;
+            Some(TransformFunction::Rotate3d(x, y, z, angle))
+        }
+        "perspective" => {
+            let val = parse_css_number(args)?;
+            if val <= 0.0 {
+                return None;
+            }
+            Some(TransformFunction::Perspective(val))
+        }
+        "matrix" => {
+            let vals = parse_transform_args(args)?;
+            if vals.len() != 6 {
+                return None;
+            }
+            Some(TransformFunction::Matrix(
+                vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// 解析变换参数列表（逗号或空格分隔的数值）。
+fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
+    let mut result = Vec::new();
+    for part in args.split(|c: char| c == ',' || c.is_whitespace()) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        // 尝试解析为带单位的角度或长度
+        if let Some(val) = parse_css_number(part) {
+            result.push(val);
+        } else {
+            return None;
+        }
+    }
+    if result.is_empty() { None } else { Some(result) }
+}
+
+/// 解析 CSS 数值（可能带 px/deg/rad/turn 等单位）。
+///
+/// 返回原始数值（px 直接返回数值，deg 转为度数）。
+fn parse_css_number(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.ends_with("deg") {
+        s.trim_end_matches("deg").trim().parse::<f64>().ok()
+    } else if s.ends_with("rad") {
+        let rad: f64 = s.trim_end_matches("rad").trim().parse().ok()?;
+        Some(rad.to_degrees())
+    } else if s.ends_with("turn") {
+        let turn: f64 = s.trim_end_matches("turn").trim().parse().ok()?;
+        Some(turn * 360.0)
+    } else if s.ends_with("px") || s.ends_with("em") || s.ends_with("rem") {
+        // 对于 translate，返回数值部分
+        let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')?;
+        s[..num_end].parse::<f64>().ok()
+    } else {
+        s.parse::<f64>().ok()
+    }
+}
+
+/// 解析角度值（返回度数）。
+fn parse_angle(s: &str) -> Option<f64> {
+    parse_css_number(s)
+}
+
+// ── CSS Gradient 值类型 ──────────────────────────────────────────────
+
+/// CSS 渐变方向。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GradientDirection {
+    /// 角度（度数）。
+    Angle(f64),
+    /// to top。
+    ToTop,
+    /// to bottom。
+    ToBottom,
+    /// to left。
+    ToLeft,
+    /// to right。
+    ToRight,
+    /// to top left / to left top。
+    ToTopLeft,
+    /// to top right / to right top。
+    ToTopRight,
+    /// to bottom left / to left bottom。
+    ToBottomLeft,
+    /// to bottom right / to right bottom。
+    ToBottomRight,
+}
+
+/// CSS 渐变色标。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradientColorStop {
+    /// 颜色值。
+    pub color: ColorValue,
+    /// 位置提示（百分比或长度），如 `50%`、`10px`。
+    pub position: Option<LengthValue>,
+}
+
+/// CSS linear-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinearGradient {
+    /// 渐变方向，默认为 to bottom。
+    pub direction: GradientDirection,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-linear-gradient。
+    pub repeating: bool,
+}
+
+/// CSS radial-gradient 形状。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RadialShape {
+    /// circle。
+    Circle,
+    /// ellipse。
+    Ellipse,
+}
+
+/// CSS radial-gradient 尺寸。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RadialSize {
+    /// closest-side。
+    ClosestSide,
+    /// farthest-side。
+    FarthestSide,
+    /// closest-corner。
+    ClosestCorner,
+    /// farthest-corner（默认）。
+    FarthestCorner,
+    /// 明确的半径值。
+    Length(LengthValue),
+}
+
+/// CSS radial-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RadialGradient {
+    /// 形状，默认为 ellipse。
+    pub shape: RadialShape,
+    /// 尺寸，默认为 farthest-corner。
+    pub size: RadialSize,
+    /// 中心位置 X，默认为 center (50%)。
+    pub position_x: LengthValue,
+    /// 中心位置 Y，默认为 center (50%)。
+    pub position_y: LengthValue,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-radial-gradient。
+    pub repeating: bool,
+}
+
+/// CSS conic-gradient() 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConicGradient {
+    /// 起始角度（度数），默认为 0。
+    pub from_angle: f64,
+    /// 中心位置 X，默认为 center (50%)。
+    pub position_x: LengthValue,
+    /// 中心位置 Y，默认为 center (50%)。
+    pub position_y: LengthValue,
+    /// 色标列表。
+    pub stops: Vec<GradientColorStop>,
+    /// 是否为 repeating-conic-gradient。
+    pub repeating: bool,
+}
+
+/// CSS 渐变值（所有渐变类型的统一表示）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum GradientValue {
+    /// linear-gradient() / repeating-linear-gradient()。
+    Linear(LinearGradient),
+    /// radial-gradient() / repeating-radial-gradient()。
+    Radial(RadialGradient),
+    /// conic-gradient() / repeating-conic-gradient()。
+    Conic(ConicGradient),
+}
+
+/// 解析 CSS 渐变值。
+///
+/// 支持格式：
+/// - `linear-gradient(direction, color-stop1, color-stop2, ...)`
+/// - `radial-gradient(shape size at position, color-stop1, ...)`
+/// - `conic-gradient(from angle at position, color-stop1, ...)`
+/// - 以及对应的 repeating- 变体。
+pub fn parse_gradient(value: &str) -> Option<GradientValue> {
+    let value = value.trim();
+
+    let (func_name, inner) = split_function_call(value)?;
+
+    match func_name.to_ascii_lowercase().as_str() {
+        "linear-gradient" => parse_linear_gradient_inner(inner, false),
+        "repeating-linear-gradient" => parse_linear_gradient_inner(inner, true),
+        "radial-gradient" => parse_radial_gradient_inner(inner, false),
+        "repeating-radial-gradient" => parse_radial_gradient_inner(inner, true),
+        "conic-gradient" => parse_conic_gradient_inner(inner, false),
+        "repeating-conic-gradient" => parse_conic_gradient_inner(inner, true),
+        _ => None,
+    }
+}
+
+/// 将函数调用拆分为 (函数名, 括号内内容)。
+fn split_function_call(value: &str) -> Option<(String, &str)> {
+    let paren_pos = value.find('(')?;
+    let name = &value[..paren_pos];
+    if !value.ends_with(')') {
+        return None;
+    }
+    let inner = &value[paren_pos + 1..value.len() - 1];
+    Some((name.to_string(), inner))
+}
+
+/// 解析 linear-gradient 内部参数。
+fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut direction = GradientDirection::ToBottom;
+    let mut stop_start = 0;
+
+    // 检查第一个参数是否为方向
+    let first = args[0].trim();
+    if let Some(dir) = parse_linear_direction(first) {
+        direction = dir;
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Linear(LinearGradient {
+        direction,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 linear-gradient 方向参数。
+fn parse_linear_direction(s: &str) -> Option<GradientDirection> {
+    let s = s.trim();
+    // 角度
+    if let Some(angle) = parse_angle(s) {
+        return Some(GradientDirection::Angle(angle));
+    }
+    // to 关键字方向
+    match s.to_ascii_lowercase().as_str() {
+        "to top" => Some(GradientDirection::ToTop),
+        "to bottom" => Some(GradientDirection::ToBottom),
+        "to left" => Some(GradientDirection::ToLeft),
+        "to right" => Some(GradientDirection::ToRight),
+        "to top left" | "to left top" => Some(GradientDirection::ToTopLeft),
+        "to top right" | "to right top" => Some(GradientDirection::ToTopRight),
+        "to bottom left" | "to left bottom" => Some(GradientDirection::ToBottomLeft),
+        "to bottom right" | "to right bottom" => Some(GradientDirection::ToBottomRight),
+        _ => None,
+    }
+}
+
+/// 解析 radial-gradient 内部参数。
+fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut shape = RadialShape::Ellipse;
+    let mut size = RadialSize::FarthestCorner;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+    let mut stop_start = 0;
+
+    // 第一个参数可能包含 shape/size/position
+    let first = args[0].trim();
+    let first_lower = first.to_ascii_lowercase();
+
+    if first_lower.starts_with("circle")
+        || first_lower.starts_with("ellipse")
+        || first_lower.starts_with("closest")
+        || first_lower.starts_with("farthest")
+        || first_lower.contains(" at ")
+    {
+        // 解析 shape + size + at position
+        if let Some((s, sz, px, py)) = parse_radial_shape_and_position(first) {
+            shape = s;
+            size = sz;
+            pos_x = px;
+            pos_y = py;
+        }
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Radial(RadialGradient {
+        shape,
+        size,
+        position_x: pos_x,
+        position_y: pos_y,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 radial-gradient 的 shape、size 和 at position。
+fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, LengthValue, LengthValue)> {
+    let mut shape = RadialShape::Ellipse;
+    let mut size = RadialSize::FarthestCorner;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+
+    let lower = s.to_ascii_lowercase();
+
+    // 解析 "at x y" 位置
+    if let Some(at_pos) = lower.find(" at ") {
+        let pos_str = &s[at_pos + 4..];
+        if let Some((px, py)) = parse_position_pair(pos_str) {
+            pos_x = px;
+            pos_y = py;
+        }
+        // 解析 at 之前的部分为 shape/size
+        let shape_str = s[..at_pos].trim();
+        parse_radial_shape_size(shape_str, &mut shape, &mut size);
+    } else {
+        parse_radial_shape_size(s, &mut shape, &mut size);
+    }
+
+    Some((shape, size, pos_x, pos_y))
+}
+
+/// 解析 radial shape 和 size 关键字。
+fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) {
+    let lower = s.trim().to_ascii_lowercase();
+
+    // 检查长度值（如 "50px 100px" 或 "circle 50px"）
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    for part in parts {
+        match part {
+            "circle" => *shape = RadialShape::Circle,
+            "ellipse" => *shape = RadialShape::Ellipse,
+            "closest-side" => *size = RadialSize::ClosestSide,
+            "farthest-side" => *size = RadialSize::FarthestSide,
+            "closest-corner" => *size = RadialSize::ClosestCorner,
+            "farthest-corner" => *size = RadialSize::FarthestCorner,
+            _ => {
+                // 尝试解析为长度值
+                if let Some(lv) = parse_length(part) {
+                    *size = RadialSize::Length(lv);
+                }
+            }
+        }
+    }
+}
+
+/// 解析位置对（如 "center center"、"50% 50%"、"left top"）。
+fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
+    let s = s.trim();
+    let parts: Vec<&str> = s.split_whitespace().collect();
+
+    match parts.len() {
+        1 => {
+            let p = parse_position_keyword(parts[0]);
+            Some((p.clone(), p))
+        }
+        2 => {
+            let px = parse_position_keyword(parts[0]);
+            let py = parse_position_keyword(parts[1]);
+            Some((px, py))
+        }
+        _ => None,
+    }
+}
+
+/// 解析位置关键字为 LengthValue。
+fn parse_position_keyword(s: &str) -> LengthValue {
+    match s.to_ascii_lowercase().as_str() {
+        "center" => LengthValue::Percentage(50.0),
+        "left" => LengthValue::Percentage(0.0),
+        "right" => LengthValue::Percentage(100.0),
+        "top" => LengthValue::Percentage(0.0),
+        "bottom" => LengthValue::Percentage(100.0),
+        other => parse_length(other).unwrap_or(LengthValue::Percentage(50.0)),
+    }
+}
+
+/// 解析 conic-gradient 内部参数。
+fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
+    let args = split_gradient_args(inner)?;
+    if args.is_empty() {
+        return None;
+    }
+
+    let mut from_angle = 0.0;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+    let mut stop_start = 0;
+
+    let first = args[0].trim();
+    let first_lower = first.to_ascii_lowercase();
+
+    if first_lower.starts_with("from ") || first_lower.starts_with("at ") || first_lower.contains(" at ") {
+        if let Some((angle, px, py)) = parse_conic_config(first) {
+            from_angle = angle;
+            pos_x = px;
+            pos_y = py;
+        }
+        stop_start = 1;
+    }
+
+    let stops = parse_color_stops(&args[stop_start..])?;
+    if stops.is_empty() {
+        return None;
+    }
+
+    Some(GradientValue::Conic(ConicGradient {
+        from_angle,
+        position_x: pos_x,
+        position_y: pos_y,
+        stops,
+        repeating,
+    }))
+}
+
+/// 解析 conic-gradient 的 from angle 和 at position 配置。
+fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
+    let mut angle = 0.0;
+    let mut pos_x = LengthValue::Percentage(50.0);
+    let mut pos_y = LengthValue::Percentage(50.0);
+
+    let lower = s.to_ascii_lowercase();
+
+    // 解析 "from <angle>"
+    if let Some(from_pos) = lower.find("from ") {
+        let after_from = &s[from_pos + 5..];
+        // 找到 from 和 at 之间的部分作为角度
+        let at_pos = after_from.to_ascii_lowercase().find(" at ").unwrap_or(after_from.len());
+        let angle_str = after_from[..at_pos].trim();
+        if !angle_str.is_empty() {
+            angle = parse_angle(angle_str).unwrap_or(0.0);
+        }
+    }
+
+    // 解析 "at <position>"（支持 "from X at Y" 和直接 "at Y"）
+    let at_keyword = if lower.starts_with("at ") {
+        Some(0)
+    } else {
+        lower.find(" at ")
+    };
+    if let Some(at_pos) = at_keyword {
+        let pos_str = &s[at_pos + 3..];
+        // 在第一个逗号处截断，避免渐变色标干扰位置解析
+        let pos_str = pos_str.split(',').next().unwrap_or(pos_str).trim();
+        if let Some((px, py)) = parse_position_pair(pos_str) {
+            pos_x = px;
+            pos_y = py;
+        }
+    }
+
+    Some((angle, pos_x, pos_y))
+}
+
+/// 将渐变参数按顶层逗号分割（不分割括号内的逗号）。
+fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
+    let mut args = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    let bytes = inner.as_bytes();
+
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                args.push(&inner[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < inner.len() {
+        args.push(&inner[start..]);
+    }
+
+    Some(args)
+}
+
+/// 解析色标列表。
+fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
+    let mut stops = Vec::new();
+    for arg in args {
+        let arg = arg.trim();
+        if arg.is_empty() {
+            continue;
+        }
+        stops.push(parse_color_stop(arg)?);
+    }
+    Some(stops)
+}
+
+/// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`）。
+fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
+    let s = s.trim();
+
+    // 尝试 "color position" 格式
+    // 从右往左找位置部分
+    let last_space = s.rfind(' ');
+    if let Some(space_pos) = last_space {
+        let color_str = &s[..space_pos];
+        let pos_str = &s[space_pos + 1..];
+
+        if let Some(color) = parse_color(color_str)
+            && let Some(position) = parse_length(pos_str)
+        {
+            return Some(GradientColorStop {
+                color,
+                position: Some(position),
+            });
+        }
+    }
+
+    // 仅颜色
+    let color = parse_color(s)?;
+    Some(GradientColorStop { color, position: None })
+}
+
+/// 解析 CSS grid-area 简写属性值。
+///
+/// 支持格式：
+/// - 单值：`"header"` → 四个值均为 `"header"`
+/// - `"auto"` → 四个值均为 `"auto"`
+/// - 四值斜杠分隔：`"1 / 2 / 3 / 4"` → `("1", "2", "3", "4")`
+/// - 两值斜杠分隔：`"1 / 3"` → `("1", "auto", "3", "auto")`
+/// - 三值斜杠分隔：`"1 / 2 / 3"` → `("1", "2", "3", "auto")`
+///
+/// 返回 `(row_start, row_end, col_start, col_end)` 原始字符串元组，
+/// 由 style-system 调用 `parse_grid_line` 转换为 `GridLineValue`。
+pub fn parse_grid_area(input: &str) -> Option<(String, String, String, String)> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+
+    // 包含斜杠 → 按斜杠分割
+    if input.contains('/') {
+        let parts: Vec<&str> = input.split('/').map(|s| s.trim()).collect();
+        match parts.len() {
+            1 => {
+                // 单值（斜杠后为空，不合法）
+                let v = parts[0].to_string();
+                if v.is_empty() {
+                    return None;
+                }
+                Some((v.clone(), v.clone(), v.clone(), v))
+            }
+            2 => {
+                // row-start / col-start
+                let rs = parts[0].to_string();
+                let cs = parts[1].to_string();
+                if rs.is_empty() || cs.is_empty() {
+                    return None;
+                }
+                Some((rs, "auto".to_string(), cs, "auto".to_string()))
+            }
+            3 => {
+                // row-start / row-end / col-start
+                let rs = parts[0].to_string();
+                let re = parts[1].to_string();
+                let cs = parts[2].to_string();
+                if rs.is_empty() || re.is_empty() || cs.is_empty() {
+                    return None;
+                }
+                Some((rs, re, cs, "auto".to_string()))
+            }
+            4 => {
+                // row-start / row-end / col-start / col-end
+                let rs = parts[0].to_string();
+                let re = parts[1].to_string();
+                let cs = parts[2].to_string();
+                let ce = parts[3].to_string();
+                if rs.is_empty() || re.is_empty() || cs.is_empty() || ce.is_empty() {
+                    return None;
+                }
+                Some((rs, re, cs, ce))
+            }
+            _ => None,
+        }
+    } else {
+        // 单值，所有四个都设为同一值
+        let v = input.to_string();
+        Some((v.clone(), v.clone(), v.clone(), v))
+    }
+}
+
+/// CSS text-shadow 值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextShadowValue {
+    /// 水平偏移量。
+    pub offset_x: LengthValue,
+    /// 垂直偏移量。
+    pub offset_y: LengthValue,
+    /// 模糊半径。
+    pub blur_radius: LengthValue,
+    /// 阴影颜色。
+    pub color: ColorValue,
+}
+
+/// 解析 CSS text-shadow 值。
+///
+/// 格式：`"none"` | `"<offset-x> <offset-y> [<blur-radius>] [<color>]"`。
+pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(TextShadowValue {
+            offset_x: LengthValue::Px(0.0),
+            offset_y: LengthValue::Px(0.0),
+            blur_radius: LengthValue::Px(0.0),
+            color: ColorValue::Rgba(0, 0, 0, 255),
+        });
+    }
+    // 解析 "2px 2px 4px red" 或 "2px 2px" 或 "2px 2px red"
+    let parts: Vec<&str> = v.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let ox = parse_length(parts[0])?;
+    let oy = parse_length(parts[1])?;
+    let (blur, color) = if parts.len() >= 3 {
+        if let Some(c) = parse_color(parts[2]) {
+            (LengthValue::Px(0.0), c)
+        } else if let Some(b) = parse_length(parts[2]) {
+            let c = if parts.len() >= 4 {
+                parse_color(parts[3]).unwrap_or(ColorValue::Rgba(0, 0, 0, 255))
+            } else {
+                ColorValue::Rgba(0, 0, 0, 255)
+            };
+            (b, c)
+        } else {
+            (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+        }
+    } else {
+        (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+    };
+    Some(TextShadowValue {
+        offset_x: ox,
+        offset_y: oy,
+        blur_radius: blur,
+        color,
+    })
+}
+
+/// CSS box-shadow 单个阴影。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxShadowValue {
+    /// 水平偏移量。
+    pub offset_x: LengthValue,
+    /// 垂直偏移量。
+    pub offset_y: LengthValue,
+    /// 模糊半径。
+    pub blur_radius: LengthValue,
+    /// 扩展半径。
+    pub spread_radius: LengthValue,
+    /// 阴影颜色。
+    pub color: ColorValue,
+    /// 是否为内阴影。
+    pub inset: bool,
+}
+
+/// 解析 CSS box-shadow 值。
+///
+/// 格式：`"none"` | `"[inset] <offset-x> <offset-y> [<blur>] [<spread>] [<color>]"`。
+pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(BoxShadowValue {
+            offset_x: LengthValue::Px(0.0),
+            offset_y: LengthValue::Px(0.0),
+            blur_radius: LengthValue::Px(0.0),
+            spread_radius: LengthValue::Px(0.0),
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        });
+    }
+    let lower = v.to_ascii_lowercase();
+    let inset = lower.starts_with("inset");
+    let rest = if inset { v[5..].trim_start() } else { v };
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let ox = parse_length(parts[0])?;
+    let oy = parse_length(parts[1])?;
+    let blur = if parts.len() >= 3 {
+        parse_length(parts[2]).unwrap_or(LengthValue::Px(0.0))
+    } else {
+        LengthValue::Px(0.0)
+    };
+    let spread = if parts.len() >= 4 {
+        parse_length(parts[3]).unwrap_or(LengthValue::Px(0.0))
+    } else {
+        LengthValue::Px(0.0)
+    };
+    // 颜色在最后一个非长度 token 或默认黑色
+    let color = parts
+        .iter()
+        .find_map(|p| parse_color(p))
+        .unwrap_or(ColorValue::Rgba(0, 0, 0, 255));
+    Some(BoxShadowValue {
+        offset_x: ox,
+        offset_y: oy,
+        blur_radius: blur,
+        spread_radius: spread,
+        color,
+        inset,
+    })
+}

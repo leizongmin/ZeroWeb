@@ -1,0 +1,947 @@
+//! CSS 属性值类型定义。
+//!
+//! 定义 CSS 属性值的类型化表示：长度、颜色、显示、布局等枚举类型，
+//! 以及 calc() 表达式的 AST（CalcExpr、CalcContext、CalcParser）。
+
+/// CSS 长度值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LengthValue {
+    /// 绝对长度（px）。
+    Px(f64),
+    /// em 单位。
+    Em(f64),
+    /// rem 单位。
+    Rem(f64),
+    /// vh 单位。
+    Vh(f64),
+    /// vw 单位。
+    Vw(f64),
+    /// vmin 单位。
+    Vmin(f64),
+    /// vmax 单位。
+    Vmax(f64),
+    /// ch 单位。
+    Ch(f64),
+    /// 百分比值（0-100）。
+    Percentage(f64),
+    /// auto 关键字。
+    Auto,
+    /// min-content 关键字 — 最小内容宽度。
+    MinContent,
+    /// max-content 关键字 — 最大内容宽度。
+    MaxContent,
+    /// 数学表达式（calc/min/max/clamp），在样式解析阶段无法直接求值，
+    /// 需要在 [`resolve_computed_style`](crate::resolve_computed_style) 阶段用完整上下文求值。
+    Calc(Box<CalcExpr>),
+    /// fit-content() 函数，将尺寸限制为内容最大宽度不超过给定值。
+    /// 参数可以是长度或百分比。
+    FitContent(Box<LengthValue>),
+}
+
+/// CSS 颜色值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColorValue {
+    /// RGB 颜色。
+    Rgba(u8, u8, u8, u8),
+    /// HSL 颜色。
+    Hsla(f64, f64, f64, f64),
+    /// 命名颜色。
+    Named(String),
+    /// transparent。
+    Transparent,
+    /// currentColor。
+    CurrentColor,
+}
+
+/// CSS display 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum DisplayValue {
+    /// block。
+    Block,
+    /// inline。
+    Inline,
+    /// inline-block。
+    InlineBlock,
+    /// flex。
+    Flex,
+    /// inline-flex。
+    InlineFlex,
+    /// grid。
+    Grid,
+    /// inline-grid。
+    InlineGrid,
+    /// none。
+    None,
+    /// contents。
+    Contents,
+    /// flow。
+    Flow,
+    /// flow-root。
+    FlowRoot,
+    /// list-item。
+    ListItem,
+}
+
+/// CSS float 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FloatValue {
+    /// none（默认值）。
+    None,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// inline-start。
+    InlineStart,
+    /// inline-end。
+    InlineEnd,
+}
+
+/// CSS clear 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClearValue {
+    /// none（默认值）。
+    None,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// both。
+    Both,
+    /// inline-start。
+    InlineStart,
+    /// inline-end。
+    InlineEnd,
+}
+
+/// CSS position 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PositionValue {
+    /// static。
+    Static,
+    /// relative。
+    Relative,
+    /// absolute。
+    Absolute,
+    /// fixed。
+    Fixed,
+    /// sticky。
+    Sticky,
+}
+
+/// CSS overflow 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverflowValue {
+    /// visible。
+    Visible,
+    /// hidden。
+    Hidden,
+    /// scroll。
+    Scroll,
+    /// auto。
+    Auto,
+    /// clip。
+    Clip,
+}
+
+/// CSS list-style-type 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStyleTypeValue {
+    /// disc（默认值）。
+    Disc,
+    /// circle。
+    Circle,
+    /// square。
+    Square,
+    /// decimal。
+    Decimal,
+    /// decimal-leading-zero。
+    DecimalLeadingZero,
+    /// lower-roman。
+    LowerRoman,
+    /// upper-roman。
+    UpperRoman,
+    /// lower-alpha / lower-latin。
+    LowerAlpha,
+    /// upper-alpha / upper-latin。
+    UpperAlpha,
+    /// none。
+    None,
+}
+
+/// CSS list-style-position 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStylePositionValue {
+    /// outside（默认值）。
+    Outside,
+    /// inside。
+    Inside,
+}
+
+/// CSS flex-direction 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FlexDirectionValue {
+    /// row。
+    Row,
+    /// row-reverse。
+    RowReverse,
+    /// column。
+    Column,
+    /// column-reverse。
+    ColumnReverse,
+}
+
+/// CSS flex-wrap 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FlexWrapValue {
+    /// nowrap。
+    Nowrap,
+    /// wrap。
+    Wrap,
+    /// wrap-reverse。
+    WrapReverse,
+}
+
+/// CSS justify-content / align-items 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlignmentValue {
+    /// flex-start。
+    FlexStart,
+    /// flex-end。
+    FlexEnd,
+    /// center。
+    Center,
+    /// space-between。
+    SpaceBetween,
+    /// space-around。
+    SpaceAround,
+    /// space-evenly。
+    SpaceEvenly,
+    /// stretch。
+    Stretch,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// baseline。
+    Baseline,
+}
+
+/// CSS box-sizing 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoxSizingValue {
+    /// content-box。
+    ContentBox,
+    /// border-box。
+    BorderBox,
+}
+
+/// CSS visibility 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum VisibilityValue {
+    /// visible。
+    Visible,
+    /// hidden。
+    Hidden,
+    /// collapse。
+    Collapse,
+}
+
+/// CSS word-break 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WordBreakValue {
+    /// normal。
+    Normal,
+    /// break-all。
+    BreakAll,
+    /// keep-all。
+    KeepAll,
+    /// break-word。
+    BreakWord,
+}
+
+/// CSS writing-mode 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum WritingModeValue {
+    /// horizontal-tb。
+    HorizontalTb,
+    /// vertical-rl。
+    VerticalRl,
+    /// vertical-lr。
+    VerticalLr,
+}
+
+/// CSS text-decoration-line 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextDecorationLineValue {
+    /// none。
+    None,
+    /// underline。
+    Underline,
+    /// overline。
+    Overline,
+    /// line-through。
+    LineThrough,
+    /// blink。
+    Blink,
+}
+
+/// CSS text-transform 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextTransformValue {
+    /// none。
+    None,
+    /// uppercase。
+    Uppercase,
+    /// lowercase。
+    Lowercase,
+    /// capitalize。
+    Capitalize,
+}
+
+/// CSS font-weight 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontWeightValue {
+    /// 绝对权重（100-900）。
+    Absolute(u16),
+    /// bold。
+    Bold,
+    /// normal。
+    Normal,
+    /// bolder。
+    Bolder,
+    /// lighter。
+    Lighter,
+}
+
+/// CSS font-style 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontStyleValue {
+    /// normal。
+    Normal,
+    /// italic。
+    Italic,
+    /// oblique。
+    Oblique(Option<f64>),
+}
+
+/// CSS 自定义属性引用（`var()` 函数）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarReference {
+    /// 自定义属性名（如 `--main-color`）。
+    pub name: String,
+    /// 回退值。
+    pub fallback: Option<String>,
+}
+
+/// CSS calc() 表达式。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CalcExpr {
+    /// 数值常量。
+    Number(f64),
+    /// 长度值（带单位）。
+    Length(LengthValue),
+    /// 二元运算：left op right。
+    BinaryOp(Box<CalcExpr>, CalcOp, Box<CalcExpr>),
+    /// min() 函数：取所有参数中的最小值。
+    Min(Vec<CalcExpr>),
+    /// max() 函数：取所有参数中的最大值。
+    Max(Vec<CalcExpr>),
+    /// clamp(min, val, max) 函数：将 val 限制在 [min, max] 范围内。
+    Clamp {
+        /// 最小值。
+        min: Box<CalcExpr>,
+        /// 首选值。
+        val: Box<CalcExpr>,
+        /// 最大值。
+        max: Box<CalcExpr>,
+    },
+}
+
+/// CSS calc() 运算符。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CalcOp {
+    /// 加法。
+    Add,
+    /// 减法。
+    Subtract,
+    /// 乘法。
+    Multiply,
+    /// 除法。
+    Divide,
+}
+
+/// CSS calc() 表达式求值上下文。
+///
+/// 提供相对单位转换为像素值所需的参考尺寸。
+#[derive(Debug, Clone, Default)]
+pub struct CalcContext {
+    /// 父元素长度，用于百分比计算。
+    pub parent_length: Option<f64>,
+    /// 当前字体大小（px），用于 em 单位转换。
+    pub font_size: Option<f64>,
+    /// 根元素字体大小（px），用于 rem 单位转换。
+    pub root_font_size: Option<f64>,
+    /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
+    pub viewport_height: Option<f64>,
+    /// 视口宽度（px），用于 vw/vmin/vmax 单位转换。
+    pub viewport_width: Option<f64>,
+    /// "0" 字形宽度（px），用于 ch 单位转换。
+    pub ch_width: Option<f64>,
+}
+
+/// calc() 表达式解析器内部状态。
+struct CalcParser<'a> {
+    /// 待解析的输入切片。
+    input: &'a str,
+    /// 当前位置（字节偏移）。
+    pos: usize,
+    /// 当前递归深度。
+    depth: u32,
+}
+
+/// 最大递归深度限制。
+const MAX_CALC_DEPTH: u32 = 10;
+
+impl<'a> CalcParser<'a> {
+    /// 跳过前导空白。
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+    }
+
+    /// 查看当前剩余输入。
+    fn peek_rest(&self) -> &'a str {
+        &self.input[self.pos..]
+    }
+
+    /// 尝试消费指定前缀。
+    fn try_consume(&mut self, prefix: &str) -> bool {
+        let rest = self.peek_rest();
+        if rest.starts_with(prefix) {
+            self.pos += prefix.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
+    fn parse_expr(&mut self) -> Option<CalcExpr> {
+        let mut left = self.parse_term()?;
+
+        loop {
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.starts_with(')') || rest.is_empty() {
+                break;
+            }
+            if rest.starts_with('+') {
+                self.pos += 1;
+                let right = self.parse_term()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Add, Box::new(right));
+            } else if rest.starts_with('-') {
+                // 区分减号和负号：减号前面有操作数
+                self.pos += 1;
+                let right = self.parse_term()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Subtract, Box::new(right));
+            } else {
+                break;
+            }
+        }
+
+        Some(left)
+    }
+
+    /// 解析高优先级项（处理 * / 运算符）。
+    fn parse_term(&mut self) -> Option<CalcExpr> {
+        let mut left = self.parse_factor()?;
+
+        loop {
+            self.skip_whitespace();
+            let rest = self.peek_rest();
+            if rest.starts_with('*') {
+                self.pos += 1;
+                let right = self.parse_factor()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Multiply, Box::new(right));
+            } else if rest.starts_with('/') {
+                self.pos += 1;
+                let right = self.parse_factor()?;
+                left = CalcExpr::BinaryOp(Box::new(left), CalcOp::Divide, Box::new(right));
+            } else {
+                break;
+            }
+        }
+
+        Some(left)
+    }
+
+    /// 解析原子因子：数字、长度值、嵌套 calc() 或括号表达式。
+    fn parse_factor(&mut self) -> Option<CalcExpr> {
+        self.skip_whitespace();
+
+        // 处理负号前缀
+        let neg = if self.peek_rest().starts_with('-') {
+            // 判断是否为负号（而非减号）：后面紧跟数字或 calc(
+            let after = self.peek_rest()[1..].trim_start();
+            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.') || after.starts_with("calc(") {
+                self.pos += 1;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        self.skip_whitespace();
+
+        let mut expr = if self.try_consume("calc(") {
+            // 嵌套 calc() 表达式
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let inner = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            inner
+        } else if self.try_consume("min(") {
+            // min(v1, v2, ...) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let args = self.parse_comma_list()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Min(args)
+        } else if self.try_consume("max(") {
+            // max(v1, v2, ...) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let args = self.parse_comma_list()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Max(args)
+        } else if self.try_consume("clamp(") {
+            // clamp(min, val, max) 函数
+            if self.depth >= MAX_CALC_DEPTH {
+                return None;
+            }
+            self.depth += 1;
+            let min = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                return None;
+            }
+            let val = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                return None;
+            }
+            let max = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            self.depth -= 1;
+            CalcExpr::Clamp {
+                min: Box::new(min),
+                val: Box::new(val),
+                max: Box::new(max),
+            }
+        } else if self.try_consume("(") {
+            // 括号表达式
+            let inner = self.parse_expr()?;
+            self.skip_whitespace();
+            if !self.try_consume(")") {
+                return None;
+            }
+            inner
+        } else {
+            // 解析原子操作数：数值或长度值
+            self.parse_atom()?
+        };
+
+        if neg {
+            expr = CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(expr));
+        }
+
+        Some(expr)
+    }
+
+    /// 解析逗号分隔的表达式列表（用于 min/max 函数）。
+    fn parse_comma_list(&mut self) -> Option<Vec<CalcExpr>> {
+        let mut args = Vec::new();
+        args.push(self.parse_expr()?);
+        loop {
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                break;
+            }
+            args.push(self.parse_expr()?);
+        }
+        Some(args)
+    }
+
+    /// 解析原子操作数（数值或带单位的长度值）。
+    fn parse_atom(&mut self) -> Option<CalcExpr> {
+        self.skip_whitespace();
+        let rest = self.peek_rest();
+
+        // 从当前位置读取到下一个运算符、空白、右括号或逗号
+        let end = rest
+            .bytes()
+            .position(|b| b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b')' || b == b',')
+            .unwrap_or(rest.len());
+
+        if end == 0 {
+            return None;
+        }
+
+        let token = rest[..end].trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        self.pos += rest[..end].len();
+
+        // 尝试解析为纯数字
+        if let Ok(num) = token.parse::<f64>() {
+            return Some(CalcExpr::Number(num));
+        }
+
+        // 尝试解析为长度值
+        if let Some(length) = parse_length(token) {
+            return Some(CalcExpr::Length(length));
+        }
+
+        None
+    }
+}
+
+/// 解析 CSS calc() 表达式。
+///
+/// 支持格式如 `"calc(100% - 20px)"`、`"calc(50% + 10px)"`、`"calc(2 * 10px)"`。
+/// 支持嵌套 calc 表达式如 `"calc(calc(100% - 20px) / 2)"`。
+/// 运算符优先级：`*` `/` 高于 `+` `-`。
+pub fn parse_calc(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+
+    // 检查 calc(...) 包装
+    if !value.starts_with("calc(") || !value.ends_with(')') {
+        return None;
+    }
+
+    let inner = value.get(5..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+
+    let expr = parser.parse_expr()?;
+
+    // 确保整个输入已被消费
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+
+    Some(expr)
+}
+
+/// 解析 CSS 数学函数（calc/min/max/clamp）。
+///
+/// 根据前缀自动识别并解析对应的数学函数。
+/// 返回统一的 [`CalcExpr`] 表达式树。
+pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+
+    if value.starts_with("calc(") && value.ends_with(')') {
+        parse_calc(value)
+    } else if value.starts_with("min(") && value.ends_with(')') {
+        parse_min(value)
+    } else if value.starts_with("max(") && value.ends_with(')') {
+        parse_max(value)
+    } else if value.starts_with("clamp(") && value.ends_with(')') {
+        parse_clamp(value)
+    } else {
+        None
+    }
+}
+
+/// 解析 CSS min() 函数。
+///
+/// 格式：`min(v1, v2, ...)` — 取所有参数中的最小值。
+pub fn parse_min(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("min(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(4..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let args = parser.parse_comma_list()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Min(args))
+}
+
+/// 解析 CSS max() 函数。
+///
+/// 格式：`max(v1, v2, ...)` — 取所有参数中的最大值。
+pub fn parse_max(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("max(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(4..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let args = parser.parse_comma_list()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Max(args))
+}
+
+/// 解析 CSS clamp() 函数。
+///
+/// 格式：`clamp(min, val, max)` — 将 val 限制在 [min, max] 范围。
+pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
+    let value = value.trim();
+    if !value.starts_with("clamp(") || !value.ends_with(')') {
+        return None;
+    }
+    let inner = value.get(6..value.len() - 1)?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut parser = CalcParser {
+        input: inner,
+        pos: 0,
+        depth: 0,
+    };
+    let min = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if !parser.try_consume(",") {
+        return None;
+    }
+    let val = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if !parser.try_consume(",") {
+        return None;
+    }
+    let max = parser.parse_expr()?;
+    parser.skip_whitespace();
+    if parser.pos < parser.input.len() {
+        return None;
+    }
+    Some(CalcExpr::Clamp {
+        min: Box::new(min),
+        val: Box::new(val),
+        max: Box::new(max),
+    })
+}
+
+/// 计算 CSS calc() 表达式的像素值。
+///
+/// `parent_length` 用于解析百分比值（如 `100%` = `parent_length`）。
+/// 返回计算结果（像素）。
+pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
+    let ctx = CalcContext {
+        parent_length,
+        ..Default::default()
+    };
+    eval_calc_with_context(expr, &ctx)
+}
+
+/// 使用完整上下文计算 CSS calc() 表达式的像素值。
+///
+/// 支持所有单位：px、百分比、em、rem、vh、vw、vmin、vmax、ch。
+/// 相对单位需要对应的上下文字段已设置，否则返回 `None`。
+pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
+    match expr {
+        CalcExpr::Number(n) => Some(*n),
+        CalcExpr::Length(lv) => resolve_length_to_px(lv, ctx),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let lv = eval_calc_with_context(left, ctx)?;
+            let rv = eval_calc_with_context(right, ctx)?;
+            match op {
+                CalcOp::Add => Some(lv + rv),
+                CalcOp::Subtract => Some(lv - rv),
+                CalcOp::Multiply => Some(lv * rv),
+                CalcOp::Divide => {
+                    if rv == 0.0 {
+                        None
+                    } else {
+                        Some(lv / rv)
+                    }
+                }
+            }
+        }
+        CalcExpr::Min(args) => {
+            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.is_empty() {
+                None
+            } else {
+                Some(vals.into_iter().reduce(f64::min).unwrap())
+            }
+        }
+        CalcExpr::Max(args) => {
+            let vals: Vec<f64> = args.iter().filter_map(|a| eval_calc_with_context(a, ctx)).collect();
+            if vals.is_empty() {
+                None
+            } else {
+                Some(vals.into_iter().reduce(f64::max).unwrap())
+            }
+        }
+        CalcExpr::Clamp { min, val, max } => {
+            let min_v = eval_calc_with_context(min, ctx)?;
+            let val_v = eval_calc_with_context(val, ctx)?;
+            let max_v = eval_calc_with_context(max, ctx)?;
+            Some(val_v.clamp(min_v, max_v))
+        }
+    }
+}
+
+/// 将长度值解析为像素值。
+///
+/// 使用 [`CalcContext`] 中提供的参考尺寸转换相对单位。
+fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
+    match lv {
+        LengthValue::Px(v) => Some(*v),
+        LengthValue::Percentage(pct) => ctx.parent_length.map(|pl| pct / 100.0 * pl),
+        LengthValue::Em(v) => ctx.font_size.map(|fs| v * fs),
+        LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
+        LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
+        LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
+        LengthValue::Vmin(v) => match (ctx.viewport_width, ctx.viewport_height) {
+            (Some(vw), Some(vh)) => Some(v * vw.min(vh) / 100.0),
+            _ => None,
+        },
+        LengthValue::Vmax(v) => match (ctx.viewport_width, ctx.viewport_height) {
+            (Some(vw), Some(vh)) => Some(v * vw.max(vh) / 100.0),
+            _ => None,
+        },
+        LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
+        LengthValue::Auto => None,
+        LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
+        LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
+        // min-content/max-content 需要内容信息才能计算，此处返回 None
+        LengthValue::MinContent | LengthValue::MaxContent => None,
+    }
+}
+
+/// 解析 CSS 长度值。
+///
+/// 支持格式如 `"10px"`、`"1.5em"`、`"2rem"`、`"100vh"`、`"50%"`、`"auto"`、
+/// `"fit-content(200px)"` 等。
+pub fn parse_length(value: &str) -> Option<LengthValue> {
+    let value = value.trim();
+
+    // 处理 auto 关键字
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(LengthValue::Auto);
+    }
+
+    // 处理 min-content/max-content 关键字
+    if value.eq_ignore_ascii_case("min-content") {
+        return Some(LengthValue::MinContent);
+    }
+    if value.eq_ignore_ascii_case("max-content") {
+        return Some(LengthValue::MaxContent);
+    }
+
+    // 处理 fit-content() 函数
+    if value.starts_with("fit-content(") && value.ends_with(')') {
+        let inner = &value["fit-content(".len()..value.len() - 1];
+        let inner = inner.trim();
+        // fit-content() 不接受空参数
+        if inner.is_empty() {
+            return None;
+        }
+        let arg = parse_length(inner)?;
+        return Some(LengthValue::FitContent(Box::new(arg)));
+    }
+
+    // 从字符串末尾扫描，找到单位部分的起始位置。
+    // 单位部分由字母组成（可能以 '%' 结尾）；数字部分在单位之前。
+    // 这样可以正确处理科学计数法（如 "1e2px"），因为 'e' 在数字部分内。
+    let unit_start = find_unit_start(value);
+
+    let num_str = &value[..unit_start];
+    let unit = &value[unit_start..];
+
+    let num: f64 = num_str.parse().ok()?;
+
+    match unit {
+        "px" => Some(LengthValue::Px(num)),
+        "em" => Some(LengthValue::Em(num)),
+        "rem" => Some(LengthValue::Rem(num)),
+        "vh" => Some(LengthValue::Vh(num)),
+        "vw" => Some(LengthValue::Vw(num)),
+        "vmin" => Some(LengthValue::Vmin(num)),
+        "vmax" => Some(LengthValue::Vmax(num)),
+        "ch" => Some(LengthValue::Ch(num)),
+        "%" => Some(LengthValue::Percentage(num)),
+        // Per CSS spec, a bare zero without units is a valid length (0px).
+        "" if num == 0.0 => Some(LengthValue::Px(0.0)),
+        _ => None,
+    }
+}
+
+/// 从字符串末尾找到单位部分的起始索引。
+///
+/// 从右向左扫描：跳过 '%'（如果有），然后跳过连续的字母字符，
+/// 剩下的就是数字部分的结束位置。
+fn find_unit_start(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut i = bytes.len();
+
+    // 跳过末尾的 '%'
+    if i > 0 && bytes[i - 1] == b'%' {
+        i -= 1;
+        return i;
+    }
+
+    // 从末尾向前跳过连续的 ASCII 字母（单位名）
+    while i > 0 && bytes[i - 1].is_ascii_alphabetic() {
+        i -= 1;
+    }
+
+    i
+}
