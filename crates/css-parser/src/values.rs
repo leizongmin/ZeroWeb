@@ -2428,6 +2428,99 @@ pub fn parse_animation_play_state(value: &str) -> Option<AnimationPlayStateValue
     }
 }
 
+// ── CSS Animation Name 值类型 ─────────────────────────────────────
+
+/// CSS animation-name 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationNameValue {
+    /// none — 无动画。
+    None,
+    /// 自定义动画名称。
+    Custom(String),
+}
+
+/// 解析 CSS animation-name 属性值。
+///
+/// 支持格式如 `"none"`、`"fadeIn"`、`"slide-in"`。
+pub fn parse_animation_name(value: &str) -> Option<AnimationNameValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(AnimationNameValue::None);
+    }
+    // 动画名称必须是有效 CSS 标识符（字母/下划线/连字符开头，不含空格）
+    if v.is_empty() || v.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    if v.contains(|c: char| c.is_whitespace()) {
+        return None;
+    }
+    Some(AnimationNameValue::Custom(v.to_string()))
+}
+
+// ── CSS Animation Duration 值类型 ──────────────────────────────────
+
+/// CSS animation-duration 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationDurationValue {
+    /// 时间值（秒或毫秒）。
+    Time(f64, TimeUnit),
+}
+
+/// 时间单位。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimeUnit {
+    /// 秒。
+    S,
+    /// 毫秒。
+    Ms,
+}
+
+/// 解析 CSS animation-duration 属性值。
+///
+/// 支持格式如 `"1s"`、`"500ms"`、`"0.5s"`。
+pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
+    let v = value.trim().to_ascii_lowercase();
+    if v.ends_with("ms") {
+        let n: f64 = v.trim_end_matches("ms").trim().parse().ok()?;
+        if n >= 0.0 {
+            return Some(AnimationDurationValue::Time(n, TimeUnit::Ms));
+        }
+    } else if v.ends_with('s') {
+        let n: f64 = v.trim_end_matches('s').trim().parse().ok()?;
+        if n >= 0.0 {
+            return Some(AnimationDurationValue::Time(n, TimeUnit::S));
+        }
+    }
+    None
+}
+
+// ── CSS Animation Iteration Count 值类型 ────────────────────────────
+
+/// CSS animation-iteration-count 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationIterationCountValue {
+    /// infinite — 无限循环。
+    Infinite,
+    /// 有限次数。
+    Number(f64),
+}
+
+/// 解析 CSS animation-iteration-count 属性值。
+///
+/// 支持格式如 `"infinite"`、`"3"`、`"2.5"`。
+pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIterationCountValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("infinite") {
+        return Some(AnimationIterationCountValue::Infinite);
+    }
+    let n: f64 = v.parse().ok()?;
+    if n > 0.0 {
+        Some(AnimationIterationCountValue::Number(n))
+    } else {
+        None
+    }
+}
+
 /// 解析 CSS transition-timing-function 值。
 pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
     let value = value.trim();
