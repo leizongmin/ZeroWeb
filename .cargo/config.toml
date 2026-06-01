@@ -1,0 +1,5 @@
+[build]
+rustc-wrapper = "scripts/rustc-with-rusty-v8-cache.sh"
+
+[env]
+RUSTY_V8_ARCHIVE = { value = ".cargo/rusty_v8/archive", relative = true }
