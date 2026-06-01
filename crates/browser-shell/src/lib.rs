@@ -1617,4 +1617,317 @@ mod tests {
         manager.create_tab(Some("https://b.com"));
         assert!(!manager.move_tab(id1, 100));
     }
+
+    // ── 下载管理器边界测试 ──
+
+    #[test]
+    fn test_download_pause_completed_is_noop() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.mark_completed(id);
+        dm.pause(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Completed);
+    }
+
+    #[test]
+    fn test_download_resume_not_paused_is_noop() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.resume(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Pending);
+    }
+
+    #[test]
+    fn test_download_cancel_completed_is_noop() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.mark_completed(id);
+        dm.cancel(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Completed);
+    }
+
+    #[test]
+    fn test_download_mark_failed_completed() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.mark_completed(id);
+        // 标记已完成的下载为失败（网络错误后覆盖）
+        dm.mark_failed(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Failed);
+    }
+
+    #[test]
+    fn test_download_remove_active_is_noop() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        assert!(!dm.remove(id), "不能移除活跃下载");
+        assert_eq!(dm.len(), 1);
+    }
+
+    #[test]
+    fn test_download_remove_nonexistent() {
+        let mut dm = DownloadManager::new();
+        assert!(!dm.remove(DownloadId(999)));
+    }
+
+    #[test]
+    fn test_download_multiple_downloads_active_count() {
+        let mut dm = DownloadManager::new();
+        let id1 = dm.start_download("https://a.com/a.zip", "a.zip");
+        let id2 = dm.start_download("https://b.com/b.zip", "b.zip");
+        let id3 = dm.start_download("https://c.com/c.zip", "c.zip");
+        assert_eq!(dm.active_count(), 3);
+        dm.mark_completed(id1);
+        assert_eq!(dm.active_count(), 2);
+        dm.cancel(id2);
+        assert_eq!(dm.active_count(), 1);
+        dm.pause(id3);
+        assert_eq!(dm.active_count(), 0, "暂停的下载不是活跃的");
+    }
+
+    #[test]
+    fn test_download_update_progress_transitions_pending_to_downloading() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Pending);
+        dm.update_progress(id, 1024, Some(4096));
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Downloading);
+        assert_eq!(dm.get(id).unwrap().downloaded_bytes(), 1024);
+        assert_eq!(dm.get(id).unwrap().total_bytes(), Some(4096));
+    }
+
+    #[test]
+    fn test_download_clear_completed_keeps_active() {
+        let mut dm = DownloadManager::new();
+        let id1 = dm.start_download("https://a.com/a.zip", "a.zip");
+        let id2 = dm.start_download("https://b.com/b.zip", "b.zip");
+        dm.mark_completed(id1);
+        dm.clear_completed();
+        assert_eq!(dm.len(), 1);
+        assert_eq!(dm.get(id2).unwrap().state(), DownloadState::Pending);
+    }
+
+    // ── FindState 边界测试 ──
+
+    #[test]
+    fn test_find_next_with_zero_matches_is_noop() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("test");
+        shell.find_set_matches(0);
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 0);
+    }
+
+    #[test]
+    fn test_find_previous_with_zero_matches_is_noop() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("test");
+        shell.find_previous();
+        assert_eq!(shell.find_state().current_match(), 0);
+    }
+
+    #[test]
+    fn test_find_close_resets_state() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("hello");
+        shell.find_set_matches(5);
+        shell.find_next();
+        assert!(shell.find_state().is_active());
+        shell.find_close();
+        assert!(!shell.find_state().is_active());
+        assert!(shell.find_state().query().is_empty());
+        assert_eq!(shell.find_state().current_match(), 0);
+        assert_eq!(shell.find_state().total_matches(), 0);
+    }
+
+    #[test]
+    fn test_find_next_wraps_around() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("test");
+        shell.find_set_matches(3);
+        assert_eq!(shell.find_state().current_match(), 1);
+        shell.find_next(); // 1 → 2
+        assert_eq!(shell.find_state().current_match(), 2);
+        shell.find_next(); // 2 → 3
+        assert_eq!(shell.find_state().current_match(), 3);
+        shell.find_next(); // 3 → 1（环绕）
+        assert_eq!(shell.find_state().current_match(), 1);
+    }
+
+    #[test]
+    fn test_find_previous_at_start_wraps() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("test");
+        shell.find_set_matches(3);
+        assert_eq!(shell.find_state().current_match(), 1);
+        shell.find_previous(); // 1 → 3（环绕）
+        assert_eq!(shell.find_state().current_match(), 3);
+    }
+
+    #[test]
+    fn test_find_previous_mid_range() {
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        shell.find_start("test");
+        shell.find_set_matches(5);
+        // current_match = 1, 先跳到 3
+        shell.find_next(); // 2
+        shell.find_next(); // 3
+        shell.find_previous(); // 3 → 2
+        assert_eq!(shell.find_state().current_match(), 2);
+    }
+
+    // ── 缩放边界测试 ──
+
+    #[test]
+    fn test_zoom_in_max_clamped() {
+        let mut shell = BrowserShell::new();
+        for _ in 0..100 {
+            shell.zoom_in();
+        }
+        assert_eq!(shell.zoom(), 5.0, "缩放不应超过 500%");
+    }
+
+    #[test]
+    fn test_zoom_out_min_clamped() {
+        let mut shell = BrowserShell::new();
+        for _ in 0..100 {
+            shell.zoom_out();
+        }
+        assert!((shell.zoom() - 0.25).abs() < 0.01, "缩放不应低于 25%");
+    }
+
+    #[test]
+    fn test_zoom_reset() {
+        let mut shell = BrowserShell::new();
+        shell.zoom_in();
+        shell.zoom_in();
+        assert!(shell.zoom() > 1.0);
+        shell.zoom_reset();
+        assert_eq!(shell.zoom(), 1.0);
+    }
+
+    #[test]
+    fn test_set_zoom_direct_clamp() {
+        let mut shell = BrowserShell::new();
+        shell.set_zoom(0.1);
+        assert!((shell.zoom() - 0.25).abs() < 0.01);
+        shell.set_zoom(10.0);
+        assert_eq!(shell.zoom(), 5.0);
+    }
+
+    // ── 浏览器 Shell 页面加载回调测试 ──
+
+    #[test]
+    fn test_on_page_loaded_records_history() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://example.com");
+        shell.on_page_loaded("Example Domain");
+        assert_eq!(shell.history().iter().count(), 1);
+        let entry = shell.history().iter().next().unwrap();
+        assert_eq!(entry.url(), "https://example.com");
+        assert_eq!(entry.title(), "Example Domain");
+    }
+
+    #[test]
+    fn test_on_page_loaded_updates_tab_title() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://example.com");
+        shell.on_page_loaded("My Title");
+        let tab = shell.active_tab().unwrap();
+        assert_eq!(tab.title(), Some("My Title"));
+        assert!(!tab.is_loading());
+    }
+
+    #[test]
+    fn test_on_page_error_stops_loading() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://example.com");
+        assert!(shell.active_tab().unwrap().is_loading());
+        shell.on_page_error("Network timeout");
+        assert!(!shell.active_tab().unwrap().is_loading());
+    }
+
+    #[test]
+    fn test_navigate_multiple_records_history() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://a.com");
+        shell.on_page_loaded("A");
+        shell.navigate("https://b.com");
+        shell.on_page_loaded("B");
+        shell.navigate("https://c.com");
+        shell.on_page_loaded("C");
+        assert_eq!(shell.history().iter().count(), 3);
+    }
+
+    #[test]
+    fn test_go_back_then_navigate_clears_forward() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://a.com");
+        shell.on_page_loaded("A");
+        shell.navigate("https://b.com");
+        shell.on_page_loaded("B");
+        assert!(shell.go_back()); // 回到 A
+        shell.navigate("https://c.com"); // 新导航应清空前进历史
+        assert!(!shell.go_forward(), "新导航后前进历史应清空");
+    }
+
+    // ── 书签嵌套文件夹测试 ──
+
+    #[test]
+    fn test_bookmarks_remove_folder_cascades() {
+        let mut bm = Bookmarks::new();
+        let folder = bm.create_folder("News");
+        bm.add("Hacker News", "https://news.ycombinator.com", Some(folder));
+        bm.remove_folder(folder);
+        assert_eq!(bm.list_in_folder(folder).len(), 0);
+    }
+
+    #[test]
+    fn test_bookmarks_multiple_folders_separate() {
+        let mut bm = Bookmarks::new();
+        let f1 = bm.create_folder("News");
+        let f2 = bm.create_folder("Tech");
+        bm.add("HN", "https://news.ycombinator.com", Some(f1));
+        bm.add("ZeroWeb", "https://zeroweb.dev", Some(f2));
+        assert_eq!(bm.list_in_folder(f1).len(), 1);
+        assert_eq!(bm.list_in_folder(f2).len(), 1);
+        // 移除一个文件夹不影响另一个
+        bm.remove_folder(f1);
+        assert_eq!(bm.list_in_folder(f2).len(), 1);
+    }
+
+    // ── 设置验证测试 ──
+
+    #[test]
+    fn test_settings_default_values() {
+        let settings = BrowserSettings::new();
+        assert_eq!(settings.home_url, "https://example.com");
+        assert!(settings.javascript_enabled);
+        assert!(settings.cookies_enabled);
+        assert!(!settings.do_not_track);
+        assert!((settings.default_zoom - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_settings_search_engine_urls() {
+        let settings = BrowserSettings::new();
+        let url = settings.search("rust programming");
+        assert!(
+            url.contains("rust+programming") || url.contains("rust%20programming"),
+            "搜索 URL 应包含查询词"
+        );
+    }
+
+    #[test]
+    fn test_settings_custom_home_url() {
+        let mut settings = BrowserSettings::new();
+        settings.home_url = "https://zeroweb.dev".to_string();
+        assert_eq!(settings.home_url, "https://zeroweb.dev");
+    }
 }
