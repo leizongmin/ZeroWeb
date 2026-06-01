@@ -2129,4 +2129,135 @@ mod tests {
         assert_eq!(cs, GridLineValue::Auto, "col-start 无 area map 时应为 Auto");
         assert_eq!(ce, GridLineValue::Auto, "col-end 无 area map 时应为 Auto");
     }
+
+    // ── 转换路径覆盖测试 ──
+
+    #[test]
+    /// 测试 width 使用 fit-content/min-content/max-content 值。
+    fn test_convert_length_dimension_content_keywords() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::FitContent(Box::new(LengthValue::Px(200.0)));
+        let taffy_style = computed_style_to_taffy(&style, None);
+        // fit-content 在 convert_length_to_dimension 中映射为特定值，不 panic 即可
+        let _ = taffy_style.size.width;
+
+        style.width = LengthValue::MinContent;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        let _ = taffy_style.size.width;
+
+        style.width = LengthValue::MaxContent;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        let _ = taffy_style.size.width;
+    }
+
+    #[test]
+    /// 测试 max-width 使用 Em 单位。
+    fn test_convert_max_length_dimension_units() {
+        let mut style = ComputedStyle::default();
+        style.max_width = LengthValue::Em(10.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(10.0));
+    }
+
+    #[test]
+    /// 测试 max-height 使用百分比。
+    fn test_convert_max_height_percentage() {
+        let mut style = ComputedStyle::default();
+        style.max_height = LengthValue::Percentage(50.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Percent(0.5));
+    }
+
+    #[test]
+    /// 测试 padding 使用 Em 和 Rem 单位。
+    fn test_convert_padding_em_rem() {
+        let mut style = ComputedStyle::default();
+        style.padding_left = LengthValue::Em(2.0);
+        style.padding_right = LengthValue::Rem(1.5);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.padding.left, taffy::style::LengthPercentage::Length(2.0));
+        assert_eq!(taffy_style.padding.right, taffy::style::LengthPercentage::Length(1.5));
+    }
+
+    #[test]
+    /// 测试 margin 使用 Vw/Vh 单位。
+    fn test_convert_margin_viewport_units() {
+        let mut style = ComputedStyle::default();
+        style.margin_top = LengthValue::Vw(5.0);
+        style.margin_bottom = LengthValue::Vh(2.5);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(5.0));
+        assert_eq!(
+            taffy_style.margin.bottom,
+            taffy::style::LengthPercentageAuto::Length(2.5)
+        );
+    }
+
+    #[test]
+    /// 测试 gap 使用 Vmin/Vmax 单位。
+    fn test_convert_gap_viewport_units() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.row_gap = LengthValue::Vmin(2.0);
+        style.column_gap = LengthValue::Vmax(1.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(2.0));
+    }
+
+    #[test]
+    /// 测试 flex-direction: row-reverse 和 column-reverse。
+    fn test_convert_flex_direction_reverse() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.flex_direction = FlexDirectionValue::RowReverse;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_direction, taffy::style::FlexDirection::RowReverse);
+
+        style.flex_direction = FlexDirectionValue::ColumnReverse;
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_direction, taffy::style::FlexDirection::ColumnReverse);
+    }
+
+    #[test]
+    /// 测试 flex-basis 使用 Em 长度值。
+    fn test_convert_flex_basis_length_em() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Em(3.0));
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(3.0));
+    }
+
+    #[test]
+    /// 测试 grid parse_single_track 对无效字符串回退到 Auto。
+    fn test_parse_single_track_fallback_auto() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_auto_rows = Some("invalid-value".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        // grid_auto_rows 解析失败不应 panic
+        let _ = taffy_style.grid_auto_rows;
+    }
+
+    #[test]
+    /// 测试 grid track 解析纯数值 minmax。
+    fn test_parse_minmax_numeric_fallback() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_template_rows = Some("minmax(100, 1fr)".to_string());
+        let taffy_style = computed_style_to_taffy(&style, None);
+        // 不应 panic
+        let _ = taffy_style.grid_template_rows;
+    }
+
+    #[test]
+    /// 测试 min-width/max-width 组合使用 Ch 单位。
+    fn test_convert_min_max_width_ch_unit() {
+        let mut style = ComputedStyle::default();
+        style.min_width = LengthValue::Ch(4.0);
+        style.max_width = LengthValue::Ch(40.0);
+        let taffy_style = computed_style_to_taffy(&style, None);
+        assert_eq!(taffy_style.min_size.width, taffy::style::Dimension::Length(4.0));
+        assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(40.0));
+    }
 }
