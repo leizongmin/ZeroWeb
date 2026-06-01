@@ -7564,4 +7564,80 @@ mod tests {
         assert_eq!(parse_border_image_outset("-1"), None);
         assert_eq!(parse_border_image_outset("1 2 3 4 5"), None);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边缘测试补充
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 parse_border_image_slice 混合百分比与数字值
+    /// 验证百分比值和纯数字值可以在同一声明中共存
+    #[test]
+    fn test_parse_border_image_slice_mixed_percent_and_number() {
+        let v = parse_border_image_slice("10% 20 30% 40").unwrap();
+        assert_eq!(v.top, BorderImageSliceComponent::Percent(10.0));
+        assert_eq!(v.right, BorderImageSliceComponent::Number(20.0));
+        assert_eq!(v.bottom, BorderImageSliceComponent::Percent(30.0));
+        assert_eq!(v.left, BorderImageSliceComponent::Number(40.0));
+        assert!(!v.fill);
+    }
+
+    /// 测试 parse_background_position 两值组合（left center）
+    /// 验证水平关键字 + 垂直关键字的组合正确解析为 TwoValue
+    #[test]
+    fn test_parse_background_position_left_center() {
+        let result = parse_background_position("left center").unwrap();
+        match result {
+            BackgroundPositionValue::TwoValue(h, v) => {
+                assert_eq!(*h, BackgroundPositionValue::Left);
+                assert_eq!(*v, BackgroundPositionValue::Center);
+            }
+            _ => panic!("应为 TwoValue，实际得到 {result:?}"),
+        }
+    }
+
+    /// 测试 parse_contain 的 "strict" 值
+    /// 根据 CSS 规范，strict 等价于 "size layout style paint" 四个值的组合
+    #[test]
+    fn test_parse_contain_strict() {
+        let result = parse_contain("strict").unwrap();
+        assert_eq!(result, ContainValue::Strict);
+
+        // 同时验证显式写出 "size layout style paint" 等价的 Custom 标志
+        let explicit = parse_contain("size layout style paint").unwrap();
+        match explicit {
+            ContainValue::Custom(flags) => {
+                let strict_flags = ContainValue::FLAG_SIZE
+                    | ContainValue::FLAG_LAYOUT
+                    | ContainValue::FLAG_STYLE
+                    | ContainValue::FLAG_PAINT;
+                assert_eq!(flags, strict_flags);
+            }
+            _ => panic!("应为 Custom，实际得到 {explicit:?}"),
+        }
+    }
+
+    /// 测试 parse_filter 解析多个 filter 函数
+    /// parse_filter 每次解析单个函数，此处验证 blur、brightness、sepia 三种函数均能正确解析
+    #[test]
+    fn test_parse_filter_multiple_functions() {
+        // blur(5px)
+        assert_eq!(parse_filter("blur(5px)"), Some(FilterValue::Blur(5.0)));
+        // brightness(1.5)
+        assert_eq!(parse_filter("brightness(1.5)"), Some(FilterValue::Brightness(1.5)));
+        // sepia(80%)
+        assert_eq!(parse_filter("sepia(80%)"), Some(FilterValue::Sepia(0.8)));
+        // hue-rotate(90deg)
+        assert_eq!(parse_filter("hue-rotate(90deg)"), Some(FilterValue::HueRotate(90.0)));
+    }
+
+    /// 测试 parse_text_shadow 仅有颜色无模糊半径的情况
+    /// 格式 "2px 3px red"：offset-x + offset-y + color，blur 默认为 0
+    #[test]
+    fn test_parse_text_shadow_color_only_no_blur() {
+        let result = parse_text_shadow("2px 3px red").unwrap();
+        assert_eq!(result.offset_x, LengthValue::Px(2.0));
+        assert_eq!(result.offset_y, LengthValue::Px(3.0));
+        assert_eq!(result.blur_radius, LengthValue::Px(0.0));
+        assert_eq!(result.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
 }

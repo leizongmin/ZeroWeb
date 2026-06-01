@@ -3091,4 +3091,220 @@ mod cross_crate_pipeline {
             "outset right 应为 Number(2.0)"
         );
     }
+
+    /// CSS text-shadow 管线集成测试。
+    ///
+    /// 解析含 text-shadow: 2px 3px red 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.text_shadow 的 offset_x=2.0, offset_y=3.0, color 为红色。
+    #[test]
+    fn test_text_shadow_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "shadowed");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .shadowed { text-shadow: 2px 3px red; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            (div_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "text-shadow offset_x 应为 2.0，实际为 {}",
+            div_style.text_shadow.offset_x
+        );
+        assert!(
+            (div_style.text_shadow.offset_y - 3.0).abs() < 0.01,
+            "text-shadow offset_y 应为 3.0，实际为 {}",
+            div_style.text_shadow.offset_y
+        );
+        assert_eq!(
+            div_style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+            "text-shadow color 应为红色 (255, 0, 0, 255)"
+        );
+    }
+
+    /// CSS box-shadow 管线集成测试。
+    ///
+    /// 解析含 box-shadow: 5px 10px 20px blue 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.box_shadow 的 offset_x=5.0, offset_y=10.0, blur_radius=20.0。
+    #[test]
+    fn test_box_shadow_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "box-shadowed");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .box-shadowed { box-shadow: 5px 10px 20px blue; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            (div_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+            "box-shadow offset_x 应为 5.0，实际为 {}",
+            div_style.box_shadow.offset_x
+        );
+        assert!(
+            (div_style.box_shadow.offset_y - 10.0).abs() < 0.01,
+            "box-shadow offset_y 应为 10.0，实际为 {}",
+            div_style.box_shadow.offset_y
+        );
+        assert!(
+            (div_style.box_shadow.blur_radius - 20.0).abs() < 0.01,
+            "box-shadow blur_radius 应为 20.0，实际为 {}",
+            div_style.box_shadow.blur_radius
+        );
+    }
+
+    /// CSS box-shadow inset 管线集成测试。
+    ///
+    /// 解析含 box-shadow: inset 3px 4px green 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.box_shadow 的 inset=true。
+    #[test]
+    fn test_box_shadow_inset_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "inset-shadow");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .inset-shadow { box-shadow: inset 3px 4px green; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(div_style.box_shadow.inset, "box-shadow inset 应为 true");
+        assert!(
+            (div_style.box_shadow.offset_x - 3.0).abs() < 0.01,
+            "box-shadow offset_x 应为 3.0，实际为 {}",
+            div_style.box_shadow.offset_x
+        );
+        assert!(
+            (div_style.box_shadow.offset_y - 4.0).abs() < 0.01,
+            "box-shadow offset_y 应为 4.0，实际为 {}",
+            div_style.box_shadow.offset_y
+        );
+    }
+
+    /// CSS text-shadow 继承集成测试。
+    ///
+    /// 父元素设置 text-shadow，子元素不显式设置，
+    /// 验证子元素继承了父元素的 text-shadow 值（text-shadow 是继承属性）。
+    #[test]
+    fn test_text_shadow_inheritance_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 父元素设置 text-shadow
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "shadowed");
+        doc.append_child(body, parent).unwrap();
+
+        // 子元素不设置 text-shadow，应继承
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "inner");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .shadowed { text-shadow: 2px 3px red; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素的 text-shadow
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "parent text-shadow offset_x 应为 2.0"
+        );
+
+        // 验证子元素继承了 text-shadow
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "child 应继承 parent 的 text-shadow offset_x=2.0，实际为 {}",
+            child_style.text_shadow.offset_x
+        );
+        assert!(
+            (child_style.text_shadow.offset_y - 3.0).abs() < 0.01,
+            "child 应继承 parent 的 text-shadow offset_y=3.0，实际为 {}",
+            child_style.text_shadow.offset_y
+        );
+        assert_eq!(
+            child_style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+            "child 应继承 parent 的 text-shadow color 为红色"
+        );
+    }
+
+    /// CSS outline-width 管线集成测试。
+    ///
+    /// 解析含 outline-width: 3px 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.outline_width 为 Px(3.0)。
+    #[test]
+    fn test_outline_width_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "outlined");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .outlined { outline-width: 3px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.outline_width,
+            zero_css_parser::values::LengthValue::Px(3.0),
+            "div 的 outline-width 应为 Px(3.0)"
+        );
+    }
 }

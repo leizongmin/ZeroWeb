@@ -7320,3 +7320,200 @@ fn test_resolve_slots_dynamic_add_light_dom() {
     assert_eq!(default_assigned.len(), 1, "重新解析后默认 slot 分配应保持");
     assert_eq!(default_assigned[0], default_content);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 边界测试（round 19）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 clone_node 对包含混合类型子节点的 DocumentFragment 进行深克隆。
+/// 验证克隆后的片段结构与原始一致，但节点 ID 不同（独立副本）。
+#[test]
+fn test_clone_node_document_fragment_mixed_children() {
+    let mut doc = Document::new();
+    let frag = doc.create_document_fragment();
+
+    // 向片段中添加混合类型子节点：元素 + 文本 + 注释
+    let div = doc.create_element("div");
+    doc.set_attribute(div, "class", "container");
+    let text = doc.create_text_node("Hello");
+    let comment = doc.create_comment("side note");
+    let span = doc.create_element("span");
+
+    doc.append_child(frag, div).unwrap();
+    doc.append_child(frag, text).unwrap();
+    doc.append_child(frag, comment).unwrap();
+    doc.append_child(frag, span).unwrap();
+
+    // 深克隆
+    let cloned = doc.clone_node(frag, true);
+
+    // 克隆节点应为 DocumentFragment 类型
+    assert_eq!(doc.node_type(cloned), Some(11), "克隆节点应为 DocumentFragment");
+
+    // 克隆节点应有相同数量的子节点
+    assert_eq!(doc.child_count(cloned), 4, "克隆片段应有 4 个子节点");
+
+    // 克隆的子节点类型与原始一致
+    let cloned_children = doc.child_nodes(cloned);
+    assert_eq!(doc.node_type(cloned_children[0]), Some(1), "第 1 个子节点应为 Element");
+    assert_eq!(doc.node_type(cloned_children[1]), Some(3), "第 2 个子节点应为 Text");
+    assert_eq!(doc.node_type(cloned_children[2]), Some(8), "第 3 个子节点应为 Comment");
+    assert_eq!(doc.node_type(cloned_children[3]), Some(1), "第 4 个子节点应为 Element");
+
+    // 克隆的元素保留属性
+    assert_eq!(
+        doc.get_attribute(cloned_children[0], "class"),
+        Some("container".to_string()),
+        "克隆元素应保留原始属性"
+    );
+
+    // 克隆的文本内容一致
+    assert_eq!(doc.text_content(cloned_children[1]), Some("Hello".to_string()));
+
+    // 克隆节点是独立副本——修改原始不影响克隆
+    doc.set_attribute(div, "class", "modified");
+    assert_eq!(
+        doc.get_attribute(cloned_children[0], "class"),
+        Some("container".to_string()),
+        "修改原始节点不应影响克隆副本"
+    );
+
+    // 节点 ID 互不相同
+    assert_ne!(cloned, frag, "克隆片段与原始片段 ID 应不同");
+    assert_ne!(cloned_children[0], div, "克隆子元素与原始子元素 ID 应不同");
+}
+
+/// 测试 replace_child 传入不属于 parent 子节点的 old_child 时返回错误。
+/// 当 new_child 不存在于文档（NodeId 无效）时也应返回错误。
+#[test]
+fn test_replace_child_invalid_nodes() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let child_a = doc.create_element("span");
+    doc.append_child(doc.root(), parent).unwrap();
+    doc.append_child(parent, child_a).unwrap();
+
+    // 创建一个不属于 parent 子节点的元素作为 old_child
+    let outsider = doc.create_element("p");
+    let new_elem = doc.create_element("em");
+    doc.append_child(doc.root(), outsider).unwrap();
+
+    // replace_child 要求 old_child 必须是 parent 的子节点
+    let result = doc.replace_child(parent, new_elem, outsider);
+    assert!(result.is_err(), "old_child 不是 parent 的子节点，应返回错误");
+    match result {
+        Err(DomError::NotAChild { parent: p, child: c }) => {
+            assert_eq!(p, parent);
+            assert_eq!(c, outsider);
+        }
+        other => panic!("预期 NotAChild 错误，实际得到: {:?}", other),
+    }
+
+    // parent 的子节点未被修改
+    assert_eq!(doc.child_count(parent), 1, "parent 子节点数应保持不变");
+}
+
+/// 测试 get_elements_by_tag_name_ns 使用通配符 "*" 返回文档中所有元素。
+/// get_elements_by_tag_name_ns(None, "*") 是 DOM 规范中通配查询的正确方式。
+#[test]
+fn test_get_elements_by_tag_name_wildcard_returns_all() {
+    let mut doc = Document::new();
+    let div = doc.create_element("div");
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    let a = doc.create_element("a");
+
+    doc.append_child(doc.root(), div).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(div, p).unwrap();
+    doc.append_child(p, a).unwrap();
+
+    // 使用 NS 变体的通配查询（namespace=None, local_name="*"）
+    let all_elements = doc.get_elements_by_tag_name_ns(None, "*");
+
+    // 应包含 div、span、p、a 共 4 个元素（不含 Document 节点）
+    assert!(all_elements.len() >= 4, "通配查询应至少返回 4 个元素");
+    assert!(all_elements.contains(&div), "应包含 div");
+    assert!(all_elements.contains(&span), "应包含 span");
+    assert!(all_elements.contains(&p), "应包含 p");
+    assert!(all_elements.contains(&a), "应包含 a");
+}
+
+/// 测试 text_content 对嵌套元素递归拼接所有后代文本节点。
+/// 验证多层嵌套中文本内容的正确合并。
+#[test]
+fn test_text_content_nested_elements() {
+    let mut doc = Document::new();
+
+    // 构建嵌套结构：div > "Hello " + span > "World" + "!"
+    let div = doc.create_element("div");
+    let text1 = doc.create_text_node("Hello ");
+    let span = doc.create_element("span");
+    let text2 = doc.create_text_node("World");
+    let text3 = doc.create_text_node("!");
+
+    doc.append_child(div, text1).unwrap();
+    doc.append_child(div, span).unwrap();
+    doc.append_child(div, text3).unwrap();
+    doc.append_child(span, text2).unwrap();
+
+    // div 的 text_content 应递归拼接所有后代文本
+    let content = doc.text_content(div);
+    assert_eq!(
+        content,
+        Some("Hello World!".to_string()),
+        "嵌套元素的 text_content 应递归拼接"
+    );
+
+    // span 的 text_content 只包含自身后代的文本
+    let span_content = doc.text_content(span);
+    assert_eq!(span_content, Some("World".to_string()), "span 内文本应仅为 World");
+
+    // 单个文本节点的 text_content 返回自身内容
+    let text_content = doc.text_content(text1);
+    assert_eq!(
+        text_content,
+        Some("Hello ".to_string()),
+        "文本节点的 text_content 应为自身内容"
+    );
+
+    // 空元素的 text_content 应为空字符串
+    let empty_div = doc.create_element("div");
+    assert_eq!(
+        doc.text_content(empty_div),
+        Some(String::new()),
+        "空元素的 text_content 应为空字符串"
+    );
+}
+
+/// 测试 insert_before 传入不是 parent 子节点的 ref_node 时返回错误。
+/// 操作不应修改 parent 的子节点列表。
+#[test]
+fn test_insert_before_ref_node_not_child_of_parent() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    let existing_child = doc.create_element("span");
+    doc.append_child(doc.root(), parent).unwrap();
+    doc.append_child(parent, existing_child).unwrap();
+
+    // 创建一个不属于 parent 的节点作为 ref_node
+    let outsider = doc.create_element("p");
+    let new_node = doc.create_element("em");
+    doc.append_child(doc.root(), outsider).unwrap();
+
+    // insert_before 应因 ref_node 不是 parent 子节点而失败
+    let result = doc.insert_before(parent, new_node, outsider);
+    assert!(result.is_err(), "ref_node 不是 parent 的子节点，应返回错误");
+    match result {
+        Err(DomError::NotAChild { parent: p, child: c }) => {
+            assert_eq!(p, parent, "错误中的 parent 应为调用时的 parent");
+            assert_eq!(c, outsider, "错误中的 child 应为 ref_node（outsider）");
+        }
+        other => panic!("预期 NotAChild 错误，实际得到: {:?}", other),
+    }
+
+    // parent 的子节点未被修改
+    assert_eq!(doc.child_count(parent), 1, "parent 子节点数应保持不变");
+    let children = doc.child_nodes(parent);
+    assert_eq!(children[0], existing_child, "原有的子节点应保持不变");
+}
