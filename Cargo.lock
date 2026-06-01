@@ -4435,6 +4435,7 @@ dependencies = [
 name = "zero-browser-shell"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "serde",
  "thiserror 2.0.18",
  "tracing",
@@ -4588,6 +4589,7 @@ dependencies = [
 name = "zero-script-sandbox"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "rquickjs",
  "rusty_v8",
  "thiserror 2.0.18",

@@ -23,3 +23,8 @@ version = "0.7"
 optional = true
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "script_sandbox_bench"
+harness = false
