@@ -2966,4 +2966,182 @@ mod tests {
             "Empty user script with polyfill should not panic"
         );
     }
+
+    // ── 事件系统集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 addEventListener 在 polyfill 中可用。
+    #[test]
+    fn test_webview_dom_add_event_listener_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("var el = document.createElement('div'); typeof el.addEventListener;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "addEventListener should be a function"
+        );
+    }
+
+    /// 测试 removeEventListener 在 polyfill 中可用。
+    #[test]
+    fn test_webview_dom_remove_event_listener_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result =
+            wv.execute_script_with_dom("var el = document.createElement('div'); typeof el.removeEventListener;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "removeEventListener should be a function"
+        );
+    }
+
+    /// 测试 dispatchEvent 在 polyfill 中可用。
+    #[test]
+    fn test_webview_dom_dispatch_event_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("var el = document.createElement('div'); typeof el.dispatchEvent;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "dispatchEvent should be a function"
+        );
+    }
+
+    /// 测试 CustomEvent 构造函数可用。
+    #[test]
+    fn test_webview_dom_custom_event_constructor() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "var evt = new CustomEvent('test', { bubbles: true, cancelable: true, detail: 42 }); evt.type;",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test", "CustomEvent type should match");
+    }
+
+    /// 测试 CustomEvent detail 属性。
+    #[test]
+    fn test_webview_dom_custom_event_detail() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "var evt = new CustomEvent('myevent', { detail: { name: 'test' } }); JSON.stringify(evt.detail);",
+        );
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("test"),
+            "CustomEvent detail should be preserved"
+        );
+    }
+
+    /// 测试事件监听器被正确调用。
+    #[test]
+    fn test_webview_dom_event_listener_fires() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            var received = false;
+            el.addEventListener('click', function() { received = true; });
+            el.dispatchEvent(new CustomEvent('click'));
+            received ? 'yes' : 'no';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "yes", "Event listener should fire on dispatchEvent");
+    }
+
+    /// 测试事件监听器接收事件对象。
+    #[test]
+    fn test_webview_dom_event_listener_receives_event() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            var eventType = '';
+            el.addEventListener('custom', function(e) { eventType = e.type; });
+            el.dispatchEvent(new CustomEvent('custom'));
+            eventType;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "custom",
+            "Listener should receive event with correct type"
+        );
+    }
+
+    /// 测试 preventDefault 可阻止默认行为。
+    #[test]
+    fn test_webview_dom_event_prevent_default() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.addEventListener('click', function(e) { e.preventDefault(); });
+            var notPrevented = el.dispatchEvent(new CustomEvent('click', { cancelable: true }));
+            notPrevented ? 'not-prevented' : 'prevented';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "prevented",
+            "preventDefault should make dispatchEvent return false"
+        );
+    }
+
+    /// 测试 capture 选项传递给 addEventListener。
+    #[test]
+    fn test_webview_dom_event_capture_option() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            var order = [];
+            el.addEventListener('click', function() { order.push('bubble'); }, false);
+            el.addEventListener('click', function() { order.push('capture'); }, true);
+            el.dispatchEvent(new CustomEvent('click'));
+            order.join(',');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "capture,bubble",
+            "Capture listeners should fire before bubble listeners"
+        );
+    }
+
+    /// 测试 body/head/documentElement 预创建节点存在。
+    #[test]
+    fn test_webview_dom_built_in_nodes() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "document.body.tagName + ',' + document.head.tagName + ',' + document.documentElement.tagName;",
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "BODY,HEAD,HTML",
+            "Built-in document nodes should have correct tag names"
+        );
+    }
+
+    /// 测试 setAttribute + getAttribute 往返正确。
+    #[test]
+    fn test_webview_dom_attribute_roundtrip() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.setAttribute('data-value', 'hello');
+            el.getAttribute('data-value');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "hello",
+            "setAttribute/getAttribute roundtrip should work"
+        );
+    }
 }
