@@ -1328,7 +1328,8 @@ mod cross_crate_pipeline {
 
     use zero_css_parser::Parser as CssParser;
     use zero_css_parser::values::{
-        ColorValue, DisplayValue, LengthValue, TransformFunction, TransformValue, parse_transform,
+        AlignmentValue, ColorValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FontWeightValue, LengthValue,
+        OverflowValue, TransformFunction, TransformValue, parse_transform,
     };
     use zero_dom::Document;
     use zero_engine::RenderPipeline;
@@ -5932,5 +5933,255 @@ mod cross_crate_pipeline {
             zero_style_system::property::IsolationValue::Auto,
             "isolation 不应继承，子元素应为 Auto"
         );
+    }
+
+    // ── CSS flexbox / 字体 / 自定义属性 / overflow 管线集成测试 ──
+
+    /// CSS flex-direction: column 管线集成测试。
+    ///
+    /// 解析 display: flex; flex-direction: column，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 display 为 Flex、flex_direction 为 Column。
+    #[test]
+    fn test_flex_direction_column_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "col-flex");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .col-flex { display: flex; flex-direction: column; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.display, DisplayValue::Flex, "display 应为 Flex");
+        assert_eq!(
+            div_style.flex_direction,
+            FlexDirectionValue::Column,
+            "flex-direction 应为 Column"
+        );
+    }
+
+    /// CSS justify-content: center 管线集成测试。
+    ///
+    /// 解析 display: flex; justify-content: center，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 justify_content 为 Center。
+    #[test]
+    fn test_flex_justify_center_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "centered");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .centered { display: flex; justify-content: center; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.justify_content,
+            AlignmentValue::Center,
+            "justify-content 应为 Center"
+        );
+    }
+
+    /// CSS align-items: stretch 管线集成测试。
+    ///
+    /// 解析 display: flex; align-items: stretch，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 align_items 为 Stretch。
+    #[test]
+    fn test_flex_align_items_stretch_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "stretch");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .stretch { display: flex; align-items: stretch; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.align_items,
+            AlignmentValue::Stretch,
+            "align-items 应为 Stretch"
+        );
+    }
+
+    /// CSS flex-wrap: wrap 管线集成测试。
+    ///
+    /// 解析 display: flex; flex-wrap: wrap，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 flex_wrap 为 Wrap。
+    #[test]
+    fn test_flex_wrap_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "wrap");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .wrap { display: flex; flex-wrap: wrap; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.flex_wrap, FlexWrapValue::Wrap, "flex-wrap 应为 Wrap");
+    }
+
+    /// CSS font-family 管线集成测试。
+    ///
+    /// 解析 font-family: Arial, sans-serif，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 font_family 为包含 "Arial" 和 "sans-serif" 的 Vec。
+    #[test]
+    fn test_font_family_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "fonted");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .fonted { font-family: Arial, sans-serif; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            div_style.font_family.contains(&"Arial".to_string()),
+            "font-family 应包含 Arial，实际为 {:?}",
+            div_style.font_family
+        );
+        assert!(
+            div_style.font_family.contains(&"sans-serif".to_string()),
+            "font-family 应包含 sans-serif，实际为 {:?}",
+            div_style.font_family
+        );
+    }
+
+    /// CSS font-weight: bold 管线集成测试。
+    ///
+    /// 解析 font-weight: bold，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 font_weight 为 FontWeightValue::Bold。
+    #[test]
+    fn test_font_weight_bold_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "bold");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .bold { font-weight: bold; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.font_weight, FontWeightValue::Bold, "font-weight 应为 Bold");
+    }
+
+    /// CSS line-height 数值管线集成测试。
+    ///
+    /// 解析 line-height: 1.5，通过 style-system 计算样式，
+    /// 验证 ComputedStyle 中 line_height 为 Number(1.5)。
+    #[test]
+    fn test_line_height_number_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "lh");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .lh { line-height: 1.5; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.line_height,
+            zero_style_system::property::LineHeightValue::Number(1.5),
+            "line-height 应为 Number(1.5)"
+        );
+    }
+
+    /// CSS 自定义属性 var() 回退值管线集成测试。
+    ///
+    /// 定义 --x: red，通过 var(--y, blue) 引用未定义变量 --y，
+    /// 验证 color 使用回退值 blue（即 ColorValue::Rgba(0, 0, 255, 255)）。
+    #[test]
+    fn test_custom_property_var_fallback_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "a");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .a { --x: red; color: var(--y, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.color,
+            ColorValue::Rgba(0, 0, 255, 255),
+            "color 应回退为蓝色 (0, 0, 255, 255)，实际为 {:?}",
+            div_style.color
+        );
+    }
+
+    /// CSS overflow 双值简写管线集成测试。
+    ///
+    /// 解析 overflow: hidden scroll，通过 style-system 简写展开，
+    /// 验证 overflow_x 为 Hidden、overflow_y 为 Scroll。
+    #[test]
+    fn test_overflow_shorthand_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "overflowed");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .overflowed { overflow: hidden scroll; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.overflow_x, OverflowValue::Hidden, "overflow-x 应为 Hidden");
+        assert_eq!(div_style.overflow_y, OverflowValue::Scroll, "overflow-y 应为 Scroll");
     }
 }

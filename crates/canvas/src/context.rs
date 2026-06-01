@@ -8025,4 +8025,105 @@ mod tests {
         let pixel = ctx.get_image_data(5, 5, 1, 1);
         assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "空 clip 后 fill_rect 应正常绘制");
     }
+
+    // ── 新增边界条件测试（5 个） ──
+
+    /// 测试 save/restore 在嵌套场景下正确保持 line_width 状态。
+    /// 外层设置 line_width=3，save 后改为 8，内层再 save 后改为 20，
+    /// 逐层 restore 后应依次恢复到 8 和 3。
+    #[test]
+    fn test_canvas_save_restore_line_width_nested() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_line_width(3.0);
+        ctx.save();
+        ctx.set_line_width(8.0);
+        ctx.save();
+        ctx.set_line_width(20.0);
+        assert!(
+            (ctx.line_width() - 20.0).abs() < f32::EPSILON,
+            "内层 line_width 应为 20.0"
+        );
+        ctx.restore();
+        assert!(
+            (ctx.line_width() - 8.0).abs() < f32::EPSILON,
+            "恢复到中层 line_width 应为 8.0"
+        );
+        ctx.restore();
+        assert!(
+            (ctx.line_width() - 3.0).abs() < f32::EPSILON,
+            "恢复到外层 line_width 应为 3.0"
+        );
+    }
+
+    /// 测试连续多次 arc() 调用不会 panic，且路径命令正确累积。
+    /// 模拟绘制一个由多段弧线组成的复杂路径场景。
+    #[test]
+    fn test_canvas_multiple_arc_paths() {
+        let mut ctx = CanvasContext::new(400, 400);
+        ctx.begin_path();
+        ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI);
+        ctx.arc(200.0, 100.0, 30.0, 0.0, std::f32::consts::FRAC_PI_2);
+        ctx.arc(300.0, 100.0, 40.0, 0.0, std::f32::consts::TAU);
+        // 不应 panic
+        ctx.fill();
+        assert!(
+            !ctx.primitives().path_fills.is_empty(),
+            "多次 arc 后 fill 应生成路径填充图元"
+        );
+    }
+
+    /// 测试 resize 到 0x0 尺寸不 panic，后续操作仍可安全执行。
+    #[test]
+    fn test_canvas_zero_size_resize() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        // resize 到零尺寸 — 不应 panic
+        ctx.resize(0, 0);
+        assert_eq!(ctx.width(), 0);
+        assert_eq!(ctx.height(), 0);
+        // 零尺寸画布上的绘制操作也不应 panic
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        ctx.stroke_rect(0.0, 0.0, 10.0, 10.0);
+    }
+
+    /// 测试对空路径同时调用 fill() 和 stroke() 均不 panic，且不生成任何图元。
+    #[test]
+    fn test_canvas_fill_stroke_empty_path() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.begin_path();
+        // 空路径上调用 fill 和 stroke — 不应 panic
+        ctx.fill();
+        ctx.stroke();
+        assert_eq!(ctx.primitives().path_fills.len(), 0, "空路径 fill 不应生成图元");
+        assert_eq!(ctx.primitives().path_strokes.len(), 0, "空路径 stroke 不应生成图元");
+    }
+
+    /// 测试 set_global_alpha 在边界值 0.0 和 1.0 时的行为正确。
+    /// 0.0 应使后续绘制完全透明，1.0 应保持完全不透明。
+    #[test]
+    fn test_canvas_global_alpha_boundary() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 设置 alpha 为 0.0 — 完全透明
+        ctx.set_global_alpha(0.0);
+        assert!(ctx.global_alpha().abs() < f32::EPSILON, "alpha=0.0 应精确返回 0.0");
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        let pixel_zero = ctx.get_image_data(25, 25, 1, 1);
+        assert_eq!(pixel_zero.data[3], 0, "alpha=0.0 时绘制的像素应完全透明");
+
+        // 设置 alpha 为 1.0 — 完全不透明
+        ctx.set_global_alpha(1.0);
+        assert!(
+            (ctx.global_alpha() - 1.0).abs() < f32::EPSILON,
+            "alpha=1.0 应精确返回 1.0"
+        );
+        ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+        let pixel_one = ctx.get_image_data(25, 25, 1, 1);
+        assert_eq!(
+            pixel_one.data[0..4],
+            [255, 0, 0, 255],
+            "alpha=1.0 时绘制的像素应完全不透明"
+        );
+    }
 }

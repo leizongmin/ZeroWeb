@@ -6671,4 +6671,164 @@ mod tests {
         // 不应 panic
         painter.paint(&layout, &styles, None);
     }
+
+    /// 测试四边均为 solid 边框时产生背景填充加 4 个边框填充（共 5 个 fill）。
+    #[test]
+    fn test_paint_border_solid_all_sides() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+        style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 255, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+        style.border_left_color = ColorValue::Rgba(255, 255, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // 1 个背景 fill + 4 个边框 fill = 5
+        assert_eq!(
+            painter.primitives().fills.len(),
+            5,
+            "四边 solid 边框 + 背景应产生 5 个 fill（1 bg + 4 border）"
+        );
+    }
+
+    /// 测试负 x 坐标的盒子渲染不 panic 且产生正确的 fill。
+    #[test]
+    fn test_paint_negative_x_position() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), -50.0, 10.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(0, 128, 255, 255);
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        // 不应 panic
+        painter.paint(&layout, &styles, None);
+
+        assert!(!painter.primitives().fills.is_empty(), "负 x 位置的盒子仍应产生 fill");
+    }
+
+    /// 测试极大尺寸（99999x99999）的盒子渲染不 panic。
+    #[test]
+    fn test_paint_very_large_dimensions() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 99999.0, 99999.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(100, 100, 100, 255);
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        // 不应 panic
+        painter.paint(&layout, &styles, None);
+
+        assert!(!painter.primitives().fills.is_empty(), "极大尺寸盒子仍应产生 fill");
+    }
+
+    /// 测试 RGBA 颜色分量在极端边界值（R=255, G=0, B=255, A=0 全透明）时不 panic。
+    #[test]
+    fn test_paint_color_rgba_clamp() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 80.0, 40.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        // 使用 u8 边界极值：R=255 最大, G=0 最小, A=0 全透明 — 验证不会 panic
+        style.background_color = ColorValue::Rgba(255, 0, 255, 0);
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        // 不应 panic
+        painter.paint(&layout, &styles, None);
+
+        assert!(!painter.primitives().fills.is_empty(), "RGBA 边界值颜色仍应产生 fill");
+    }
+
+    /// 测试父盒子包含两个子盒子时渲染，验证所有 fill 图元存在。
+    #[test]
+    fn test_paint_multiple_children_layout() {
+        let mut doc = zero_dom::Document::new();
+        let parent_elem = doc.create_element("div");
+        let child1 = doc.create_element("span");
+        let child2 = doc.create_element("span");
+
+        let child1_box = make_box(Some(child1), 0.0, 0.0, 50.0, 20.0);
+        let child2_box = make_box(Some(child2), 0.0, 20.0, 50.0, 20.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent_elem),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 40.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 40.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child1_box, child2_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        parent_style.color = ColorValue::CurrentColor;
+        styles.insert(parent_elem, parent_style);
+
+        let mut child1_style = ComputedStyle::default();
+        child1_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        child1_style.color = ColorValue::CurrentColor;
+        styles.insert(child1, child1_style);
+
+        let mut child2_style = ComputedStyle::default();
+        child2_style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+        child2_style.color = ColorValue::CurrentColor;
+        styles.insert(child2, child2_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles, None);
+
+        // 父 + 2 个子 = 至少 3 个背景 fill
+        assert!(
+            painter.primitives().fills.len() >= 3,
+            "父盒子加 2 个子盒子应产生至少 3 个 fill"
+        );
+    }
 }
