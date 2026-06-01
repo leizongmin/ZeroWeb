@@ -4512,6 +4512,7 @@ name = "zero-integration-tests"
 version = "0.1.0"
 dependencies = [
  "wat",
+ "zero-browser-shell",
  "zero-canvas",
  "zero-css-parser",
  "zero-dom",

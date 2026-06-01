@@ -37,3 +37,6 @@ mod cross_crate_pipeline;
 
 #[cfg(test)]
 mod dom_bridge_polyfill;
+
+#[cfg(test)]
+mod browser_shell_integration;

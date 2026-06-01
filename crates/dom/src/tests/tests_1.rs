@@ -2069,4 +2069,3 @@ fn test_stop_propagation_in_capture_phase() {
         "stopPropagation in capture should prevent target phase"
     );
 }
-

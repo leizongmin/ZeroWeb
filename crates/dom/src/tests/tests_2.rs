@@ -1804,4 +1804,3 @@ fn test_compare_document_position_parent_child() {
     let pos = doc.compare_document_position(child, parent).unwrap();
     assert!(pos.contains(DocumentPosition::CONTAINS), "child 应被 parent 包含");
 }
-
