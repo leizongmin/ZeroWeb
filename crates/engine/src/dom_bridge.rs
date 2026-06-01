@@ -644,6 +644,42 @@ pub fn generate_dom_api_polyfill() -> String {
     this.attributeNamespace = null;
     this.oldValue = null;
   };
+
+  // ── IntersectionObserver Stub ──
+  // Provides IntersectionObserver with observe/unobserve/disconnect.
+  // Real intersection computation by host runtime.
+
+  globalThis.IntersectionObserver = function(callback, options) {
+    this._callback = callback;
+    this._options = options || {};
+    this._observing = [];
+  };
+  globalThis.IntersectionObserver.prototype.observe = function(target) {
+    if (this._observing.indexOf(target) === -1) {
+      this._observing.push(target);
+    }
+  };
+  globalThis.IntersectionObserver.prototype.unobserve = function(target) {
+    var idx = this._observing.indexOf(target);
+    if (idx !== -1) this._observing.splice(idx, 1);
+  };
+  globalThis.IntersectionObserver.prototype.disconnect = function() {
+    this._observing = [];
+  };
+  globalThis.IntersectionObserver.prototype.takeRecords = function() {
+    return [];
+  };
+
+  // IntersectionObserverEntry constructor
+  globalThis.IntersectionObserverEntry = function(init) {
+    this.time = init.time || 0;
+    this.rootBounds = init.rootBounds || null;
+    this.boundingClientRect = init.boundingClientRect || null;
+    this.intersectionRect = init.intersectionRect || null;
+    this.isIntersecting = init.isIntersecting || false;
+    this.target = init.target || null;
+    this.intersectionRatio = init.intersectionRatio || 0;
+  };
 })();
 "#
     .to_string()
@@ -1100,5 +1136,25 @@ mod tests {
         assert!(polyfill.contains("addedNodes"));
         assert!(polyfill.contains("removedNodes"));
         assert!(polyfill.contains("attributeName"));
+    }
+
+    // ── Polyfill IntersectionObserver 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_intersection_observer() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.IntersectionObserver"));
+        assert!(polyfill.contains("prototype.observe"));
+        assert!(polyfill.contains("prototype.unobserve"));
+        assert!(polyfill.contains("prototype.disconnect"));
+        assert!(polyfill.contains("prototype.takeRecords"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_intersection_observer_entry() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.IntersectionObserverEntry"));
+        assert!(polyfill.contains("isIntersecting"));
+        assert!(polyfill.contains("intersectionRatio"));
     }
 }
