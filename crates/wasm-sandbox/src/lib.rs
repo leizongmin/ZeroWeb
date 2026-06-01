@@ -4407,4 +4407,77 @@ mod tests {
         assert_eq!(size1, size2, "多次 memory_size 应返回相同大小");
         assert_eq!(size1, 65536, "一页内存应为 65536 字节");
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 write_memory 后 read_memory 验证覆盖写入正确。
+    /// 先写入 ABC，再在同一偏移写入 XY，验证只有前两字节被覆盖。
+    #[test]
+    fn test_write_memory_partial_overwrite() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (memory (export "mem") 1))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        instance.write_memory("mem", 0, b"ABC").expect("write ABC");
+        instance.write_memory("mem", 0, b"XY").expect("write XY");
+        let data = instance.read_memory("mem", 0, 3).expect("read");
+        assert_eq!(&data, b"XYC", "部分覆盖后应为 XYC");
+    }
+
+    /// 测试 WasmValue I32 极端值 Display 格式化不 panic。
+    #[test]
+    fn test_wasm_value_i32_extreme_display() {
+        let v1 = WasmValue::I32(i32::MIN);
+        let v2 = WasmValue::I32(i32::MAX);
+        let v3 = WasmValue::I32(0);
+        assert!(!format!("{v1}").is_empty(), "I32::MIN Display 不应为空");
+        assert!(!format!("{v2}").is_empty(), "I32::MAX Display 不应为空");
+        assert!(!format!("{v3}").is_empty(), "I32(0) Display 不应为空");
+    }
+
+    /// 测试 WasmValue PartialEq 跨类型比较返回 false。
+    #[test]
+    fn test_wasm_value_cross_type_equality() {
+        assert_ne!(WasmValue::I32(0), WasmValue::I64(0), "I32(0) != I64(0)");
+        assert_ne!(WasmValue::F32(1.0), WasmValue::F64(1.0), "F32(1.0) != F64(1.0)");
+        assert_eq!(WasmValue::I32(42), WasmValue::I32(42), "同值应相等");
+    }
+
+    /// 测试 LinkerConfig 多次 define 同名函数会追加而非覆盖。
+    #[test]
+    fn test_linker_config_duplicate_function_appends() {
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "add",
+            vec![],
+            vec![],
+            |_: &[WasmValue], out: &mut Vec<WasmValue>| {
+                out.push(WasmValue::I32(1));
+                Ok(())
+            },
+        ));
+        linker.define(HostFunction::new(
+            "env",
+            "add",
+            vec![],
+            vec![],
+            |_: &[WasmValue], out: &mut Vec<WasmValue>| {
+                out.push(WasmValue::I32(2));
+                Ok(())
+            },
+        ));
+        let fns = linker.functions();
+        // 同名函数会追加（LinkerConfig 不做去重）
+        let count = fns.iter().filter(|f| f.module == "env" && f.name == "add").count();
+        assert_eq!(count, 2, "同名函数应追加为 2 个");
+    }
+
+    /// 测试 SandboxConfig 默认 consume_fuel 为 false。
+    #[test]
+    fn test_sandbox_config_default_no_fuel() {
+        let config = SandboxConfig::default();
+        assert!(!config.consume_fuel, "默认 consume_fuel 应为 false");
+    }
 }

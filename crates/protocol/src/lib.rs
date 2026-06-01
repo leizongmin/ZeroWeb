@@ -4492,4 +4492,118 @@ mod tests {
             );
         }
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 NavigateParams referrer 为 None 时序列化往返正确。
+    #[test]
+    fn test_navigate_params_none_referrer_roundtrip() {
+        let msg = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: "https://example.com".into(),
+                referrer: None,
+            }),
+        };
+        let rt = roundtrip(msg);
+        match rt.kind {
+            IpcMessageKind::Navigate(p) => {
+                assert_eq!(p.url, "https://example.com");
+                assert!(p.referrer.is_none(), "referrer 应为 None");
+            }
+            _ => panic!("期望 Navigate"),
+        }
+    }
+
+    /// 测试 KeyboardEventParams 所有修饰键同时为 true 的往返。
+    #[test]
+    fn test_keyboard_event_all_modifiers_true_roundtrip() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: "a".into(),
+                code: "KeyA".into(),
+                ctrl: true,
+                shift: true,
+                alt: true,
+                meta: true,
+                event_type: KeyboardEventType::Press,
+            }),
+        };
+        let rt = roundtrip(msg);
+        match rt.kind {
+            IpcMessageKind::KeyboardEvent(p) => {
+                assert!(p.ctrl && p.shift && p.alt && p.meta);
+                assert_eq!(p.event_type, KeyboardEventType::Press);
+            }
+            _ => panic!("期望 KeyboardEvent"),
+        }
+    }
+
+    /// 测试 MouseEventType 所有变体序列化后不混淆。
+    #[test]
+    fn test_mouse_event_type_all_variants_distinct() {
+        let variants = [
+            MouseEventType::Down,
+            MouseEventType::Up,
+            MouseEventType::Move,
+            MouseEventType::Click,
+            MouseEventType::DblClick,
+        ];
+        let mut bytes_set = std::collections::HashSet::new();
+        for v in &variants {
+            let msg = IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x: 0.0,
+                    y: 0.0,
+                    button: 0,
+                    event_type: v.clone(),
+                }),
+            };
+            let serialized = serialize(&msg).expect("serialize");
+            bytes_set.insert(serialized);
+        }
+        assert_eq!(
+            bytes_set.len(),
+            variants.len(),
+            "每个 MouseEventType 变体应产生不同的字节"
+        );
+    }
+
+    /// 测试 ScrollEventParams 负 delta 值序列化往返。
+    #[test]
+    fn test_scroll_event_negative_deltas_roundtrip() {
+        let msg = IpcMessage {
+            id: 7,
+            kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x: -50.5,
+                delta_y: -100.0,
+            }),
+        };
+        let rt = roundtrip(msg);
+        match rt.kind {
+            IpcMessageKind::ScrollEvent(p) => {
+                assert!((p.delta_x - (-50.5)).abs() < 0.001);
+                assert!((p.delta_y - (-100.0)).abs() < 0.001);
+            }
+            _ => panic!("期望 ScrollEvent"),
+        }
+    }
+
+    /// 测试 GoBack/GoForward 消息序列化后字节不同。
+    #[test]
+    fn test_go_back_forward_different_bytes() {
+        let back = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::GoBack,
+        };
+        let forward = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::GoForward,
+        };
+        let b1 = serialize(&back).expect("serialize back");
+        let b2 = serialize(&forward).expect("serialize forward");
+        assert_ne!(b1, b2, "GoBack 和 GoForward 应产生不同的字节");
+    }
 }

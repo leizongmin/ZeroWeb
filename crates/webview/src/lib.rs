@@ -2862,4 +2862,54 @@ mod tests {
             "第二次 render 的 fills 应与第一次 render 一致（幂等）"
         );
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 WebViewConfig 默认 devtools 为 false。
+    #[test]
+    fn test_webview_config_default_devtools_off() {
+        let config = WebViewConfig::default();
+        assert!(!config.devtools, "默认 devtools 应为 false");
+        assert!(!config.transparent, "默认 transparent 应为 false");
+    }
+
+    /// 测试 load_html 后 last_render 不为 None。
+    #[test]
+    fn test_webview_load_html_sets_last_render() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        assert!(wv.last_render().is_none(), "初始 last_render 应为 None");
+
+        wv.load_html("<p>Hello</p>", None);
+        assert!(wv.last_render().is_some(), "load_html 后 last_render 不应为 None");
+    }
+
+    /// 测试 resize 后重新 render 仍能工作（边界补充）。
+    #[test]
+    fn test_webview_resize_render_preserves_content() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<div style='background: red; width: 100px; height: 50px;'></div>", None);
+        let fills_before = wv.last_render().unwrap().primitives.fills.len();
+
+        wv.resize(1024, 768);
+        let result = wv.render();
+        assert!(
+            result.primitives.fills.len() >= fills_before,
+            "resize 后 render 的 fills 不应少于 resize 前"
+        );
+    }
+
+    /// 测试 is_loading 初始状态为 false。
+    #[test]
+    fn test_webview_initial_not_loading() {
+        let wv = WebView::new(WebViewConfig::default());
+        assert!(!wv.is_loading(), "初始状态不应在加载中");
+    }
+
+    /// 测试 remove_event_callback 对不存在的索引返回 false。
+    #[test]
+    fn test_webview_remove_nonexistent_callback() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        assert!(!wv.remove_event_callback(999), "移除不存在的索引应返回 false");
+        assert!(!wv.remove_event_callback(0), "移除索引 0（未注册）应返回 false");
+    }
 }

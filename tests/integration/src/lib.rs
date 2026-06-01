@@ -5258,4 +5258,459 @@ mod cross_crate_pipeline {
             "div 的 text-transform 应为 Lowercase"
         );
     }
+
+    // ── CSS transition / animation / 自定义属性 / 交互 / 文本 管线集成测试 ──
+
+    /// CSS transition 简写管线集成测试。
+    ///
+    /// 解析 transition: opacity 0.3s ease-in 0.1s，验证 4 个子属性正确展开。
+    #[test]
+    fn test_transition_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "fade");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .fade { transition: opacity 0.3s ease-in 0.1s; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            div_style.transition_property.contains(&"opacity".to_string()),
+            "transition-property 应包含 opacity，实际为 {:?}",
+            div_style.transition_property
+        );
+        assert!(
+            div_style.transition_duration.contains(&0.3),
+            "transition-duration 应包含 0.3，实际为 {:?}",
+            div_style.transition_duration
+        );
+        assert!(
+            div_style.transition_delay.contains(&0.1),
+            "transition-delay 应包含 0.1，实际为 {:?}",
+            div_style.transition_delay
+        );
+        assert!(
+            !div_style.transition_timing_function.is_empty(),
+            "transition-timing-function 不应为空"
+        );
+    }
+
+    /// CSS animation 简写管线集成测试。
+    ///
+    /// 解析 animation: slideIn 1s ease 0.2s infinite forwards，验证子属性展开。
+    #[test]
+    fn test_animation_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "animated");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .animated { animation: slideIn 1s ease 0.2s infinite forwards; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            div_style.animation_name.contains(&"slideIn".to_string()),
+            "animation-name 应包含 slideIn，实际为 {:?}",
+            div_style.animation_name
+        );
+        assert!(
+            div_style.animation_duration.contains(&1.0),
+            "animation-duration 应包含 1.0，实际为 {:?}",
+            div_style.animation_duration
+        );
+        assert!(
+            div_style.animation_delay.contains(&0.2),
+            "animation-delay 应包含 0.2，实际为 {:?}",
+            div_style.animation_delay
+        );
+    }
+
+    /// CSS 自定义属性 + var() 管线集成测试。
+    ///
+    /// 定义 --main-color: #ff0000，通过 var(--main-color) 引用到 color 属性。
+    #[test]
+    fn test_custom_property_var_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "themed");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .themed { --main-color: #ff0000; color: var(--main-color); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            matches!(div_style.color, ColorValue::Rgba(255, 0, 0, 255)),
+            "color 应通过 var() 解析为红色 #ff0000，实际为 {:?}",
+            div_style.color
+        );
+    }
+
+    /// CSS cursor 管线集成测试。
+    ///
+    /// 解析 cursor: pointer，验证计算样式。
+    #[test]
+    fn test_cursor_pointer_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "clickable");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .clickable { cursor: pointer; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.cursor,
+            zero_style_system::property::CursorValue::Pointer,
+            "cursor 应为 Pointer"
+        );
+    }
+
+    /// CSS cursor 继承管线集成测试。
+    ///
+    /// 父元素 cursor: pointer，子元素应继承。
+    #[test]
+    fn test_cursor_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "parent");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent { cursor: move; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.cursor,
+            zero_style_system::property::CursorValue::Move,
+            "cursor 应从父元素继承 Move"
+        );
+    }
+
+    /// CSS pointer-events 管线集成测试。
+    ///
+    /// 解析 pointer-events: none，验证计算样式。
+    #[test]
+    fn test_pointer_events_none_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "no-events");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .no-events { pointer-events: none; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.pointer_events,
+            zero_style_system::property::PointerEventsValue::None,
+            "pointer-events 应为 None"
+        );
+    }
+
+    /// CSS white-space 管线集成测试。
+    ///
+    /// 解析 white-space: pre-wrap，验证计算样式。
+    #[test]
+    fn test_white_space_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let pre = doc.create_element("pre");
+        doc.set_attribute(pre, "class", "code");
+        doc.append_child(body, pre).unwrap();
+
+        let css = r#"
+            .code { white-space: pre-wrap; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let pre_style = styles.get(&pre).expect("pre 应有计算样式");
+        assert_eq!(
+            pre_style.white_space,
+            zero_style_system::property::WhiteSpaceValue::PreWrap,
+            "white-space 应为 PreWrap"
+        );
+    }
+
+    /// CSS letter-spacing 管线集成测试。
+    ///
+    /// 解析 letter-spacing: 2px，验证计算样式为 Px(2.0)。
+    #[test]
+    fn test_letter_spacing_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "spaced");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .spaced { letter-spacing: 2px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.letter_spacing,
+            LengthValue::Px(2.0),
+            "letter-spacing 应为 2px"
+        );
+    }
+
+    /// CSS letter-spacing 继承管线集成测试。
+    ///
+    /// 父元素 letter-spacing: 3px，子元素应继承。
+    #[test]
+    fn test_letter_spacing_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "wide");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "inner");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .wide { letter-spacing: 3px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.letter_spacing,
+            LengthValue::Px(3.0),
+            "letter-spacing 应从父元素继承 3px"
+        );
+    }
+
+    /// CSS white-space 继承管线集成测试。
+    ///
+    /// 父元素 white-space: nowrap，子元素应继承。
+    #[test]
+    fn test_white_space_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "nowrap");
+        doc.append_child(body, parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .nowrap { white-space: nowrap; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.white_space,
+            zero_style_system::property::WhiteSpaceValue::Nowrap,
+            "white-space 应从父元素继承 Nowrap"
+        );
+    }
+
+    /// CSS user-select 管线集成测试。
+    ///
+    /// 解析 user-select: none，验证计算样式。
+    #[test]
+    fn test_user_select_none_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "noselect");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .noselect { user-select: none; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.user_select,
+            zero_style_system::property::UserSelectValue::None,
+            "user-select 应为 None"
+        );
+    }
+
+    /// CSS visibility hidden 渲染管线集成测试。
+    ///
+    /// 验证 visibility:hidden 的元素不产生填充图元。
+    #[test]
+    fn test_visibility_hidden_render_pipeline() {
+        let html = r#"<div class="hidden">text</div>"#;
+        let css = r#"
+            .hidden { visibility: hidden; background-color: red; }
+        "#;
+
+        let result = RenderPipeline::new(800.0, 600.0).render_html(html, css);
+        assert!(
+            result.primitives.fills.is_empty(),
+            "visibility:hidden 不应产生 fill 图元，实际有 {} 个",
+            result.primitives.fills.len()
+        );
+    }
+
+    /// CSS 多 transition 属性管线集成测试。
+    ///
+    /// 通过 transition-property、transition-duration 长属性分别设置多个值，
+    /// 验证多 transition 管线正确存储。
+    #[test]
+    fn test_multiple_transitions_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "multi");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .multi {
+                transition-property: opacity, transform;
+                transition-duration: 0.3s, 0.5s;
+            }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            div_style.transition_property.contains(&"opacity".to_string()),
+            "transition-property 应包含 opacity，实际为 {:?}",
+            div_style.transition_property
+        );
+        assert!(
+            div_style.transition_property.contains(&"transform".to_string()),
+            "transition-property 应包含 transform，实际为 {:?}",
+            div_style.transition_property
+        );
+        assert!(
+            div_style.transition_duration.contains(&0.3),
+            "transition-duration 应包含 0.3，实际为 {:?}",
+            div_style.transition_duration
+        );
+        assert!(
+            div_style.transition_duration.contains(&0.5),
+            "transition-duration 应包含 0.5，实际为 {:?}",
+            div_style.transition_duration
+        );
+    }
 }

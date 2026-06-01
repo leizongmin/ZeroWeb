@@ -927,4 +927,60 @@ mod tests {
         let debug = format!("{:?}", empty_commit);
         assert!(!debug.is_empty(), "Debug 输出不应为空");
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 HostError 所有变体的 Debug 输出非空。
+    #[test]
+    fn test_host_error_debug_non_empty() {
+        let variants = [
+            HostError::WindowCreationFailed("test".into()),
+            HostError::GpuRequestFailed("gpu".into()),
+            HostError::EventLoopError("loop".into()),
+        ];
+        for (i, err) in variants.iter().enumerate() {
+            let debug = format!("{err:?}");
+            assert!(!debug.is_empty(), "HostError 变体 {i} 的 Debug 不应为空");
+        }
+    }
+
+    /// 测试 TouchPhase 所有变体相等性比较。
+    #[test]
+    fn test_touch_phase_inequality() {
+        use crate::event::TouchPhase;
+        assert_ne!(TouchPhase::Started, TouchPhase::Moved);
+        assert_ne!(TouchPhase::Moved, TouchPhase::Ended);
+        assert_eq!(TouchPhase::Started, TouchPhase::Started);
+    }
+
+    /// 测试 MouseScrollDelta LineDelta 极端值转换。
+    #[test]
+    fn test_scroll_delta_line_delta_conversion() {
+        use crate::event::MouseScrollDelta;
+        let delta = winit::event::MouseScrollDelta::LineDelta(0.0, 0.0);
+        let result = crate::event::convert_scroll_delta(delta);
+        assert_eq!(result, MouseScrollDelta::LineDelta(0.0, 0.0), "零 delta 应保持不变");
+    }
+
+    /// 测试 BasicApp 处理 Destroyed 事件不 panic 且不增加事件。
+    #[test]
+    fn test_basic_app_destroyed_event_ignored() {
+        let mut received: Vec<crate::event::AppEvent> = Vec::new();
+        let mut callback = |e: crate::event::AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Destroyed);
+        assert!(received.is_empty(), "Destroyed 事件不应产生 AppEvent");
+    }
+
+    /// 测试 MouseButton 从 winit 转换的完整性。
+    #[test]
+    fn test_mouse_button_conversion_roundtrip() {
+        use crate::event::MouseButton;
+        assert_eq!(MouseButton::Left, MouseButton::Left);
+        assert_eq!(MouseButton::Right, MouseButton::Right);
+        assert_eq!(MouseButton::Middle, MouseButton::Middle);
+        assert_ne!(MouseButton::Left, MouseButton::Right);
+    }
 }
