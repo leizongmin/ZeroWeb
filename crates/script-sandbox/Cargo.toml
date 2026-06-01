@@ -9,9 +9,9 @@ license.workspace = true
 thiserror = { workspace = true }
 
 [features]
-default = []
-v8 = ["rusty_v8"]
-quickjs = ["rquickjs"]
+default = ["v8"]
+v8 = ["dep:rusty_v8"]
+quickjs = ["dep:rquickjs"]
 
 [dependencies.rusty_v8]
 version = "0.32"

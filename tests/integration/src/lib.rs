@@ -614,12 +614,13 @@ mod webview_full_pipeline {
         assert!(wv.last_render().is_some());
     }
 
-    /// WebView execute_script 返回 NotImplemented
+    /// WebView execute_script 通过 V8 沙箱执行脚本
     #[test]
-    fn test_webview_script_not_implemented() {
+    fn test_webview_script_execution() {
         let mut wv = WebView::new(WebViewConfig::default());
         let result = wv.execute_script("1+1");
-        assert!(result.is_err());
+        assert!(result.is_ok(), "V8 sandbox should execute simple script");
+        assert_eq!(result.unwrap(), "2");
     }
 }
 

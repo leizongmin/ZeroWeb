@@ -74,6 +74,8 @@ pub struct WebView {
     pipeline: RenderPipeline,
     /// HTTP 客户端。
     http_client: HttpClient,
+    /// JavaScript 沙箱。
+    js_sandbox: zero_script_sandbox::V8Sandbox,
     /// 当前 URL。
     current_url: Option<String>,
     /// 页面标题。
@@ -95,10 +97,13 @@ impl WebView {
     pub fn new(config: WebViewConfig) -> Self {
         let pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let http_client = HttpClient::new();
+        let js_sandbox = zero_script_sandbox::V8Sandbox::new()
+            .expect("V8 sandbox initialization should succeed");
         Self {
             config,
             pipeline,
             http_client,
+            js_sandbox,
             current_url: None,
             title: None,
             loading: false,
@@ -293,13 +298,44 @@ impl WebView {
     ///
     /// 需要 zero-script-sandbox 后端引擎（V8/QuickJS）。
     /// 当前尚未集成 JS 引擎，返回 `WebViewError::NotImplemented`。
+    /// 执行 JavaScript 脚本。
+    ///
+    /// 在 WebView 的 JavaScript 沙箱中执行脚本，返回结果的字符串表示。
+    ///
+    /// # 错误
+    ///
+    /// - [`WebViewError::Script`] — 脚本编译或运行时错误
+    /// - [`WebViewError::InvalidInput`] — 脚本为空
     pub fn execute_script(&mut self, script: &str) -> Result<String, WebViewError> {
         tracing::debug!("execute_script called: {} bytes", script.len());
-        // zero-script-sandbox 尚未实现 JS 引擎后端
-        let _ = script;
-        Err(WebViewError::NotImplemented(
-            "JavaScript execution requires V8/QuickJS engine (not yet integrated)".to_string(),
-        ))
+
+        match self.js_sandbox.execute(script) {
+            Ok(result) => {
+                tracing::debug!(
+                    "execute_script completed in {:.2}ms",
+                    result.execution_time_ms
+                );
+                Ok(result.value)
+            }
+            Err(zero_script_sandbox::ScriptError::InvalidInput(msg)) => {
+                Err(WebViewError::Script(format!("Invalid input: {msg}")))
+            }
+            Err(zero_script_sandbox::ScriptError::CompileError(msg)) => {
+                Err(WebViewError::Script(format!("Compile error: {msg}")))
+            }
+            Err(zero_script_sandbox::ScriptError::RuntimeError(msg)) => {
+                Err(WebViewError::Script(format!("Runtime error: {msg}")))
+            }
+            Err(zero_script_sandbox::ScriptError::Timeout(msg)) => {
+                Err(WebViewError::Script(format!("Timeout: {msg}")))
+            }
+            Err(zero_script_sandbox::ScriptError::NotInitialized) => {
+                Err(WebViewError::Script("JS sandbox not initialized".into()))
+            }
+            Err(zero_script_sandbox::ScriptError::EngineUnavailable(msg)) => {
+                Err(WebViewError::Script(format!("Engine unavailable: {msg}")))
+            }
+        }
     }
 
     /// 注入 CSS（重新渲染）。
