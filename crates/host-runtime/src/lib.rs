@@ -651,4 +651,280 @@ mod tests {
         let debug = format!("{:?}", event);
         assert!(debug.contains("Space"), "Debug 输出应包含 'Space'");
     }
+
+    /// 测试 KeyboardInput 事件使用未知按键名称的边界行为。
+    /// 当底层输入系统产生无法识别的按键名称时（如特殊硬件键或自定义输入设备），
+    /// key 字段应原样存储未知字符串，不会 panic 或被替换为默认值。
+    /// 验证按下和释放两个状态均能正确传递未知键名。
+    #[test]
+    fn test_keyboard_input_unknown_key_name() {
+        use crate::event::AppEvent;
+
+        // 使用完全虚构的键名，模拟无法识别的输入设备
+        let unknown_press = AppEvent::KeyboardInput {
+            key: "UnknownKey_0xDEAD".to_string(),
+            pressed: true,
+        };
+        if let AppEvent::KeyboardInput { key, pressed } = &unknown_press {
+            assert_eq!(key, "UnknownKey_0xDEAD", "未知按键名称应原样存储，不应被替换或截断");
+            assert!(pressed, "未知键的 pressed 应为 true");
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+
+        // 释放未知键
+        let unknown_release = AppEvent::KeyboardInput {
+            key: "UnknownKey_0xDEAD".to_string(),
+            pressed: false,
+        };
+        if let AppEvent::KeyboardInput { key, pressed } = &unknown_release {
+            assert_eq!(key, "UnknownKey_0xDEAD", "释放事件应保留相同的未知键名");
+            assert!(!pressed, "释放事件的 pressed 应为 false");
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+
+        // 验证 Debug 输出包含未知键名（确保格式化不 panic）
+        let debug = format!("{:?}", unknown_press);
+        assert!(debug.contains("UnknownKey_0xDEAD"), "Debug 输出应包含未知键名");
+
+        // 空字符串键名（极端未知键场景）
+        let empty_key = AppEvent::KeyboardInput {
+            key: String::new(),
+            pressed: true,
+        };
+        if let AppEvent::KeyboardInput { key, pressed } = &empty_key {
+            assert!(key.is_empty(), "空字符串键名应能正常存储");
+            assert!(pressed);
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+    }
+
+    /// 测试鼠标移动事件（MouseMotion）携带负数坐标的边界行为。
+    /// 当光标位于窗口外部（如拖拽到窗口左侧或上方）时，
+    /// 坐标值为负数。验证通过 BasicApp 分发路径传递负坐标时无精度丢失。
+    #[test]
+    fn test_mouse_motion_negative_coordinates() {
+        use crate::event::AppEvent;
+
+        // 直接构造负坐标 MouseMoved 事件
+        let negative_cases: Vec<(f64, f64)> = vec![
+            (-1.0, -1.0),
+            (-0.001, -999.999),
+            (-f64::MAX, -f64::MAX),
+            (-1920.0, -1080.0),
+        ];
+
+        for (x, y) in &negative_cases {
+            let event = AppEvent::MouseMoved { x: *x, y: *y };
+            if let AppEvent::MouseMoved { x: ex, y: ey } = event {
+                assert!((ex - *x).abs() < f64::EPSILON, "负坐标 x 精度丢失: 期望 {x}, 实际 {ex}");
+                assert!((ey - *y).abs() < f64::EPSILON, "负坐标 y 精度丢失: 期望 {y}, 实际 {ey}");
+            } else {
+                panic!("Expected MouseMoved variant for ({x}, {y})");
+            }
+        }
+
+        // 通过 BasicApp 分发路径验证负坐标精确传递
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(-500.5, -1000.25),
+        });
+
+        assert_eq!(received.len(), 1, "应收到 1 个 MouseMoved 事件");
+        match &received[0] {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((*x - (-500.5)).abs() < f64::EPSILON, "分发后 x 应为 -500.5，实际 {x}");
+                assert!(
+                    (*y - (-1000.25)).abs() < f64::EPSILON,
+                    "分发后 y 应为 -1000.25，实际 {y}"
+                );
+            }
+            _ => panic!("应为 MouseMoved 事件"),
+        }
+    }
+
+    /// 测试触摸事件的 Ended 阶段（手指抬起）。
+    /// Ended 阶段表示触摸点被释放，坐标应记录手指抬起时的最终位置。
+    /// 验证通过 BasicApp 分发路径传递 Ended 阶段时，id、phase 和坐标均正确。
+    #[test]
+    fn test_touch_event_ended_phase() {
+        use crate::event::{AppEvent, TouchPhase};
+
+        // 直接构造 Ended 阶段的触摸事件
+        let ended_event = AppEvent::Touch(crate::event::TouchEvent {
+            id: 42,
+            phase: TouchPhase::Ended,
+            x: 250.75,
+            y: 480.5,
+        });
+
+        if let AppEvent::Touch(te) = &ended_event {
+            assert_eq!(te.id, 42, "Ended 阶段的触摸点 id 应为 42");
+            assert_eq!(te.phase, TouchPhase::Ended, "阶段应为 Ended");
+            assert!((te.x - 250.75).abs() < f64::EPSILON, "x 应为 250.75");
+            assert!((te.y - 480.5).abs() < f64::EPSILON, "y 应为 480.5");
+        } else {
+            panic!("Expected Touch variant");
+        }
+
+        // 通过 BasicApp 分发路径验证 Ended 阶段
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Touch(winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            phase: winit::event::TouchPhase::Ended,
+            location: winit::dpi::PhysicalPosition::new(300.0, 600.0),
+            id: 99,
+            force: None,
+        }));
+
+        assert_eq!(received.len(), 1, "应收到 1 个 Touch 事件");
+        match &received[0] {
+            AppEvent::Touch(te) => {
+                assert_eq!(te.id, 99, "分发后的触摸点 id 应为 99");
+                assert_eq!(te.phase, TouchPhase::Ended, "分发后的阶段应为 Ended");
+                assert!((te.x - 300.0).abs() < f64::EPSILON, "x 应为 300.0");
+                assert!((te.y - 600.0).abs() < f64::EPSILON, "y 应为 600.0");
+            }
+            _ => panic!("应为 Touch 事件"),
+        }
+
+        // 验证 Ended 与其他阶段互不相等
+        assert_ne!(TouchPhase::Ended, TouchPhase::Started, "Ended 不应等于 Started");
+        assert_ne!(TouchPhase::Ended, TouchPhase::Moved, "Ended 不应等于 Moved");
+        assert_ne!(TouchPhase::Ended, TouchPhase::Cancelled, "Ended 不应等于 Cancelled");
+    }
+
+    /// 测试窗口 ScaleFactorChanged 事件在缩放因子为 2.0 时的行为。
+    /// 当用户将系统显示缩放比例从 100% 切换到 200%（如拖动窗口到高 DPI 显示器）时，
+    /// winit 会产生 ScaleFactorChanged 事件。
+    /// 当前 BasicApp 未处理此事件（落入 `_ => {}` 分支），验证其被静默忽略不产生回调，
+    /// 且不影响后续正常事件的分发。
+    #[test]
+    fn test_window_event_scale_changed_factor_2() {
+        use crate::event::AppEvent;
+
+        // 阶段 1：ScaleFactorChanged 等未处理事件应被静默忽略
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent| received.push(e);
+            let attrs = winit::window::WindowAttributes::default();
+            let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+            // winit 的 ScaleFactorChanged 携带 scale_factor 和 InnerSizeWriter，
+            // 由于 InnerSizeWriter 无法在测试中直接构造，
+            // 使用同样落入 `_ => {}` 分支的 ThemeChanged 事件来模拟未处理事件。
+            app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
+
+            assert!(
+                received.is_empty(),
+                "未处理的窗口事件（如 ScaleFactorChanged）不应产生回调事件"
+            );
+        }
+
+        // 阶段 2：忽略 ScaleFactorChanged 后，Resized 事件仍能正确分发
+        // 模拟缩放因子 2.0 下，逻辑尺寸 800x450 对应物理尺寸 1600x900
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent| received.push(e);
+            let attrs = winit::window::WindowAttributes::default();
+            let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+            app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
+            app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+                1600, 900,
+            )));
+
+            assert_eq!(received.len(), 1, "忽略未处理事件后，Resized 应正常分发");
+            match &received[0] {
+                AppEvent::Resized { width, height } => {
+                    assert_eq!(*width, 1600, "物理宽度应为 1600（800 * 2.0）");
+                    assert_eq!(*height, 900, "物理高度应为 900（450 * 2.0）");
+                }
+                _ => panic!("应为 Resized 事件"),
+            }
+        }
+
+        // 阶段 3：连续未处理事件后正常事件仍正常工作
+        {
+            let mut received: Vec<AppEvent> = Vec::new();
+            let mut callback = |e: AppEvent| received.push(e);
+            let attrs = winit::window::WindowAttributes::default();
+            let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+            app.handle_window_event(winit::event::WindowEvent::Destroyed);
+            app.handle_window_event(winit::event::WindowEvent::Occluded(false));
+            app.handle_window_event(winit::event::WindowEvent::Focused(true));
+
+            assert_eq!(received.len(), 1, "连续未处理事件后，Focused 应正常分发");
+            assert!(matches!(received[0], AppEvent::Focused), "应为 Focused 事件");
+        }
+    }
+
+    /// 测试 IME Commit 事件提交空字符串的边界行为。
+    /// 某些输入法在特定情况下可能提交空字符串（如用户取消输入、输入法状态异常等）。
+    /// 验证空字符串 Commit 事件能正确构造、存储、通过 winit 转换路径传递，
+    /// 且通过 BasicApp 分发后回调接收到的文本确实为空。
+    #[test]
+    fn test_ime_commit_empty_string() {
+        use crate::event::{AppEvent, ImeEvent};
+
+        // 直接构造空字符串 Commit 事件
+        let empty_commit = ImeEvent::Commit(String::new());
+        if let ImeEvent::Commit(text) = &empty_commit {
+            assert!(text.is_empty(), "空字符串 Commit 的 text 应为空");
+        } else {
+            panic!("Expected Commit variant");
+        }
+
+        // 验证相等性
+        assert_eq!(
+            empty_commit,
+            ImeEvent::Commit(String::new()),
+            "空字符串 Commit 应等于另一个空字符串 Commit"
+        );
+        assert_ne!(
+            empty_commit,
+            ImeEvent::Commit("a".to_string()),
+            "空字符串 Commit 不应等于非空 Commit"
+        );
+
+        // 通过 winit 转换路径验证
+        let converted = crate::event::convert_ime(winit::event::Ime::Commit(String::new()));
+        assert_eq!(
+            converted,
+            ImeEvent::Commit(String::new()),
+            "winit 空 commit 转换结果应一致"
+        );
+
+        // 通过 BasicApp 分发路径验证空 Commit 不 panic
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        app.handle_window_event(winit::event::WindowEvent::Ime(winit::event::Ime::Commit(String::new())));
+
+        assert_eq!(received.len(), 1, "应收到 1 个 IME Commit 事件");
+        match &received[0] {
+            AppEvent::Ime(ImeEvent::Commit(text)) => {
+                assert!(text.is_empty(), "分发后的 Commit 文本应为空字符串，实际: '{text}'");
+            }
+            _ => panic!("应为 Ime(Commit) 事件"),
+        }
+
+        // 验证 Debug 格式化不 panic
+        let debug = format!("{:?}", empty_commit);
+        assert!(!debug.is_empty(), "Debug 输出不应为空");
+    }
 }

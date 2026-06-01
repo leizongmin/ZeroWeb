@@ -3307,4 +3307,213 @@ mod cross_crate_pipeline {
             "div 的 outline-width 应为 Px(3.0)"
         );
     }
+
+    /// CSS list-style-image 管线集成测试。
+    ///
+    /// 解析含 list-style-image: url(marker.png) 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.list_style_image 为 Url("marker.png")。
+    #[test]
+    fn test_list_style_image_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let li = doc.create_element("li");
+        doc.set_attribute(li, "class", "item");
+        doc.append_child(body, li).unwrap();
+
+        let css = r#"
+            .item { list-style-image: url(marker.png); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let li_style = styles.get(&li).expect("li 应有计算样式");
+        assert_eq!(
+            li_style.list_style_image,
+            zero_style_system::property::ListStyleImageComputedValue::Url("marker.png".to_string()),
+            "li 的 list-style-image 应为 Url(\"marker.png\")"
+        );
+    }
+
+    /// CSS column-gap 管线集成测试。
+    ///
+    /// 解析含 column-gap: 30px 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.column_gap 为 Px(30.0)。
+    #[test]
+    fn test_column_gap_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "gap-container");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .gap-container { column-gap: 30px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.column_gap,
+            LengthValue::Px(30.0),
+            "div 的 column-gap 应为 Px(30.0)"
+        );
+    }
+
+    /// CSS text-shadow 继承管线集成测试。
+    ///
+    /// 父元素 .shadowed 设置 text-shadow: 2px 2px red，
+    /// 子元素 .inner 不显式设置，应继承父元素的 text-shadow（text-shadow 是继承属性）。
+    /// 验证子元素的 text_shadow.offset_x == 2.0。
+    #[test]
+    fn test_text_shadow_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "shadowed");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "inner");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .shadowed { text-shadow: 2px 2px red; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素的 text-shadow
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "parent text-shadow offset_x 应为 2.0"
+        );
+
+        // 验证子元素继承了 text-shadow
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "child 应继承 parent 的 text-shadow offset_x=2.0，实际为 {}",
+            child_style.text_shadow.offset_x
+        );
+    }
+
+    /// CSS box-shadow 不继承管线集成测试。
+    ///
+    /// 父元素 .shadowed 设置 box-shadow: 5px 5px blue，
+    /// 子元素 .inner 不显式设置，不应继承父元素的 box-shadow（box-shadow 不是继承属性）。
+    /// 验证子元素的 box_shadow.offset_x == 0.0（默认值）。
+    #[test]
+    fn test_box_shadow_not_inherited_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "shadowed");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "inner");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .shadowed { box-shadow: 5px 5px blue; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素的 box-shadow
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+            "parent box-shadow offset_x 应为 5.0"
+        );
+
+        // 验证子元素不继承 box-shadow，应为默认值 offset_x=0.0
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.box_shadow.offset_x - 0.0).abs() < 0.01,
+            "child 不应继承 parent 的 box-shadow，offset_x 应为 0.0，实际为 {}",
+            child_style.box_shadow.offset_x
+        );
+    }
+
+    /// CSS outline 简写属性管线集成测试。
+    ///
+    /// 解析含 outline: 2px solid red 的 CSS，通过 style-system 的简写展开，
+    /// 验证 outline_width=Px(2.0)、outline_style=Solid、outline_color=red。
+    #[test]
+    fn test_outline_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "outlined");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .outlined { outline: 2px solid red; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+
+        // 验证 outline-width
+        assert_eq!(
+            div_style.outline_width,
+            LengthValue::Px(2.0),
+            "div 的 outline-width 应为 Px(2.0)"
+        );
+
+        // 验证 outline-style
+        assert_eq!(
+            div_style.outline_style,
+            zero_style_system::property::OutlineStyleValue::Solid,
+            "div 的 outline-style 应为 Solid"
+        );
+
+        // 验证 outline-color
+        assert_eq!(
+            div_style.outline_color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+            "div 的 outline-color 应为红色 (255, 0, 0, 255)"
+        );
+    }
 }

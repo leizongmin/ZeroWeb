@@ -881,4 +881,169 @@ mod tests {
         assert_eq!(bb.right(), 180.0, "right 应为 180");
         assert_eq!(bb.bottom(), 230.0, "bottom 应为 230");
     }
+
+    /// 测试 ImageCache 对相同底层数据连续两次 insert 产生不同的 key，两个条目独立并存
+    ///
+    /// ImageCache::insert 每次调用都分配递增的唯一 key（next_key），
+    /// 即使传入完全相同的像素数据，也会创建独立的缓存条目。
+    /// 验证两次 insert 后缓存长度为 2，两个 key 不同，且两个 key 均可独立访问。
+    #[test]
+    fn test_image_cache_insert_same_data_yields_different_keys() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+
+        // 使用相同的像素数据连续插入两次
+        let pixels = vec![200u8; 3 * 3 * 4];
+        let key1 = cache.insert(ImageData::from_rgba(pixels.clone(), 3, 3).unwrap());
+        let key2 = cache.insert(ImageData::from_rgba(pixels, 3, 3).unwrap());
+
+        // 两次插入应返回不同的 key
+        assert_ne!(key1, key2, "两次 insert 应返回不同的 key");
+        assert_eq!(cache.len(), 2, "缓存中应有 2 个独立条目");
+
+        // 两个 key 都能独立获取
+        let img1 = cache.get(&key1);
+        assert!(img1.is_some(), "key1 应能获取到图片");
+        assert_eq!(img1.unwrap().get_pixel(0, 0), [200, 200, 200, 200]);
+
+        let img2 = cache.get(&key2);
+        assert!(img2.is_some(), "key2 应能获取到图片");
+        assert_eq!(img2.unwrap().get_pixel(0, 0), [200, 200, 200, 200]);
+
+        // 各自引用计数独立：insert(1) + get(1) = 2
+        assert_eq!(cache.ref_count(&key1), Some(2), "key1 的 ref_count 应为 2");
+        assert_eq!(cache.ref_count(&key2), Some(2), "key2 的 ref_count 应为 2");
+
+        // 释放 key2 后 GC，key2 被移除，key1 保留
+        cache.release(&key2);
+        cache.release(&key2);
+        cache.gc();
+        assert!(cache.ref_count(&key1).is_some(), "key1 应保留");
+        assert!(cache.ref_count(&key2).is_none(), "key2 应被 GC 移除");
+    }
+
+    /// 测试 DamageTracker 在多次 add_damage 后 clear 清除所有脏矩形
+    ///
+    /// 添加多个脏矩形后调用 clear()，验证 is_dirty 返回 false、
+    /// dirty_rects 为空。再重新添加新的脏矩形，验证追踪器恢复正常工作。
+    #[test]
+    fn test_damage_tracker_clear_after_multiple_adds() {
+        let mut tracker = DamageTracker::new();
+
+        // 添加 5 个脏矩形
+        for i in 0..5 {
+            let x = (i as f32) * 200.0;
+            tracker.add_damage(Rect::new(x, 0.0, 50.0, 50.0));
+        }
+        assert!(tracker.is_dirty(), "添加后应有脏区域");
+        let count = tracker.dirty_rects().len();
+        assert!(count >= 1, "应至少有 1 个脏矩形");
+
+        // clear 后应为干净状态
+        tracker.clear();
+        assert!(!tracker.is_dirty(), "clear 后不应有脏区域");
+        assert!(tracker.dirty_rects().is_empty(), "clear 后脏矩形列表应为空");
+
+        // 重新添加，验证追踪器恢复正常
+        tracker.add_damage(Rect::new(10.0, 20.0, 30.0, 40.0));
+        assert!(tracker.is_dirty(), "重新添加后应有脏区域");
+        assert_eq!(tracker.dirty_rects().len(), 1);
+        assert_eq!(tracker.dirty_rects()[0].origin.x, 10.0);
+        assert_eq!(tracker.dirty_rects()[0].origin.y, 20.0);
+    }
+
+    /// 测试 Color 使用最大 RGBA 值 (255, 255, 255, 255) 时各属性正确
+    ///
+    /// 验证 rgba(255,255,255,255) 等于 WHITE 常量，
+    /// to_f32_array 各通道均为 1.0，
+    /// premultiplied 后 RGB 通道不变（因为 alpha=1.0），
+    /// to_linear_f32 各通道均为 1.0，
+    /// lerp 到 BLACK 在 t=0.5 时产生中间灰色。
+    #[test]
+    fn test_color_max_rgba_255() {
+        let c = Color::rgba(255, 255, 255, 255);
+
+        // 应等于 WHITE 常量
+        assert_eq!(c, Color::WHITE, "rgba(255,255,255,255) 应等于 WHITE");
+
+        // 各通道直接值
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 255);
+        assert_eq!(c.b, 255);
+        assert_eq!(c.a, 255);
+
+        // to_f32_array 各通道均为 1.0
+        let f = c.to_f32_array();
+        for (i, &v) in f.iter().enumerate() {
+            assert!((v - 1.0).abs() < f32::EPSILON, "通道 {i} 应为 1.0");
+        }
+
+        // premultiplied：alpha=1.0 时 RGB 通道不变
+        let premul = c.premultiplied();
+        assert!((premul[0] - 1.0).abs() < 0.01, "premul R 应为 1.0");
+        assert!((premul[1] - 1.0).abs() < 0.01, "premul G 应为 1.0");
+        assert!((premul[2] - 1.0).abs() < 0.01, "premul B 应为 1.0");
+        assert!((premul[3] - 1.0).abs() < f32::EPSILON, "premul A 应为 1.0");
+
+        // to_linear_f32：白色各通道应为 1.0
+        let linear = c.to_linear_f32();
+        assert!((linear[0] - 1.0).abs() < 0.01, "linear R 应为 1.0");
+        assert!((linear[1] - 1.0).abs() < 0.01, "linear G 应为 1.0");
+        assert!((linear[2] - 1.0).abs() < 0.01, "linear B 应为 1.0");
+        assert!((linear[3] - 1.0).abs() < f32::EPSILON, "linear A 应为 1.0");
+
+        // lerp(WHITE, BLACK, 0.5) 应为中间灰 (128,128,128,255)
+        let mid = c.lerp(Color::BLACK, 0.5);
+        assert_eq!(mid.r, 128, "lerp 中间 R 应为 128");
+        assert_eq!(mid.g, 128, "lerp 中间 G 应为 128");
+        assert_eq!(mid.b, 128, "lerp 中间 B 应为 128");
+        assert_eq!(mid.a, 255, "lerp 中间 A 应为 255");
+    }
+
+    /// 测试 FrameBuffer::get_pixel 在越界坐标下 panic
+    ///
+    /// FrameBuffer::get_pixel 不进行边界检查，越界访问会导致索引越界 panic。
+    /// 使用零尺寸帧缓冲验证 get_pixel(0, 0) 会 panic（因为 data 为空）。
+    #[test]
+    #[should_panic]
+    fn test_frame_buffer_get_pixel_out_of_bounds_panics() {
+        let fb = FrameBuffer::new(0, 0);
+        // 零尺寸帧缓冲的 data 为空，任何 get_pixel 调用都会越界 panic
+        let _ = fb.get_pixel(0, 0);
+    }
+
+    /// 测试 TextShaper 对仅含空白字符的文本整形产生正确 glyph 序列
+    ///
+    /// 纯空格字符串 "   "（3 个空格）应产生 3 个 glyph，
+    /// 每个 glyph 的 code_point 为 ' '，advance_x 为正值。
+    /// 在换行模式下，空格文本不触发换行（无超出宽度的情况），
+    /// 返回单行且 glyph 数量等于空格数。
+    #[test]
+    fn test_text_shaper_whitespace_only() {
+        use crate::font::loader::FontLoader;
+        use crate::font::shaper::TextShaper;
+
+        let loader = FontLoader::new();
+        let shaper = TextShaper::new(&loader, None);
+
+        // 单行模式：3 个空格应产生 3 个 glyph
+        let glyphs = shaper.shape_single_line("   ", 16.0);
+        assert_eq!(glyphs.len(), 3, "3 个空格应产生 3 个 glyph");
+        for (i, g) in glyphs.iter().enumerate() {
+            assert_eq!(g.code_point, ' ', "第 {i} 个 glyph 应为空格字符");
+            assert!(g.advance_x > 0.0, "第 {i} 个空格的 advance_x 应为正数");
+        }
+
+        // 换行模式：纯空格不触发换行，产生单行
+        let lines = shaper.shape_with_line_wrap("   ", 16.0, 1000.0);
+        assert_eq!(lines.len(), 1, "纯空格应产生单行");
+        assert_eq!(lines[0].glyphs.len(), 3, "单行中应有 3 个空格 glyph");
+        assert!(lines[0].width > 0.0, "行宽度应为正数");
+
+        // 混合空白字符（空格 + tab + 换行符）
+        let glyphs_mixed = shaper.shape_single_line(" \t ", 16.0);
+        assert_eq!(glyphs_mixed.len(), 3, "空格+tab+空格 应产生 3 个 glyph");
+        assert_eq!(glyphs_mixed[0].code_point, ' ');
+        assert_eq!(glyphs_mixed[1].code_point, '\t');
+        assert_eq!(glyphs_mixed[2].code_point, ' ');
+    }
 }
