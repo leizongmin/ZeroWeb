@@ -4520,6 +4520,7 @@ dependencies = [
  "zero-net",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-script-sandbox",
  "zero-security",
  "zero-storage",
  "zero-style-system",

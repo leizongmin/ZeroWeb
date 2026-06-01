@@ -34,3 +34,6 @@ mod cross_crate_integration;
 
 #[cfg(test)]
 mod cross_crate_pipeline;
+
+#[cfg(test)]
+mod dom_bridge_polyfill;

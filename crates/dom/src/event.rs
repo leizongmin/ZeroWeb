@@ -334,4 +334,212 @@ mod tests {
             "deep nesting should propagate through all levels, got {total} calls"
         );
     }
+
+    /// 测试 stopPropagation 阻止后续节点的传播。
+    #[test]
+    fn test_stop_propagation_halts_bubbling() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        doc.append_child(doc.root(), parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let parent_count = Arc::new(AtomicUsize::new(0));
+        let pc = parent_count.clone();
+        doc.add_event_listener(
+            parent,
+            "click",
+            Box::new(move |_| {
+                pc.fetch_add(1, Ordering::SeqCst);
+            }),
+            false,
+        );
+
+        let child_count = Arc::new(AtomicUsize::new(0));
+        let cc = child_count.clone();
+        doc.add_event_listener(
+            child,
+            "click",
+            Box::new(move |e| {
+                cc.fetch_add(1, Ordering::SeqCst);
+                e.stop_propagation();
+            }),
+            false,
+        );
+
+        let mut event = Event::new_with_options("click", true, false);
+        doc.dispatch_event(child, &mut event);
+
+        assert_eq!(child_count.load(Ordering::SeqCst), 1, "child listener should fire");
+        assert_eq!(
+            parent_count.load(Ordering::SeqCst),
+            0,
+            "parent should NOT receive event after stopPropagation"
+        );
+    }
+
+    /// 测试多个监听器在同一节点上注册。
+    #[test]
+    fn test_multiple_listeners_same_element() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        let count = Arc::new(AtomicUsize::new(0));
+        for _ in 0..3 {
+            let c = count.clone();
+            doc.add_event_listener(
+                elem,
+                "click",
+                Box::new(move |_| {
+                    c.fetch_add(1, Ordering::SeqCst);
+                }),
+                false,
+            );
+        }
+
+        let mut event = Event::new_with_options("click", true, false);
+        doc.dispatch_event(elem, &mut event);
+        assert_eq!(count.load(Ordering::SeqCst), 3, "all 3 listeners should fire");
+    }
+
+    /// 测试 stopImmediatePropagation 阻止同节点后续监听器。
+    #[test]
+    fn test_stop_immediate_propagation() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        let count = Arc::new(AtomicUsize::new(0));
+
+        let c1 = count.clone();
+        doc.add_event_listener(
+            elem,
+            "click",
+            Box::new(move |e| {
+                c1.fetch_add(1, Ordering::SeqCst);
+                e.stop_immediate_propagation();
+            }),
+            false,
+        );
+
+        let c2 = count.clone();
+        doc.add_event_listener(
+            elem,
+            "click",
+            Box::new(move |_| {
+                c2.fetch_add(1, Ordering::SeqCst);
+            }),
+            false,
+        );
+
+        let mut event = Event::new_with_options("click", true, false);
+        doc.dispatch_event(elem, &mut event);
+        assert_eq!(count.load(Ordering::SeqCst), 1, "only first listener should fire");
+    }
+
+    /// 测试非冒泡事件不冒泡到父节点。
+    #[test]
+    fn test_non_bubbling_event() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut doc = Document::new();
+        let parent = doc.create_element("div");
+        doc.append_child(doc.root(), parent).unwrap();
+        let child = doc.create_element("span");
+        doc.append_child(parent, child).unwrap();
+
+        let parent_count = Arc::new(AtomicUsize::new(0));
+        let pc = parent_count.clone();
+        doc.add_event_listener(
+            parent,
+            "focus",
+            Box::new(move |_| {
+                pc.fetch_add(1, Ordering::SeqCst);
+            }),
+            false,
+        );
+
+        let child_count = Arc::new(AtomicUsize::new(0));
+        let cc = child_count.clone();
+        doc.add_event_listener(
+            child,
+            "focus",
+            Box::new(move |_| {
+                cc.fetch_add(1, Ordering::SeqCst);
+            }),
+            false,
+        );
+
+        // bubbles = false
+        let mut event = Event::new_with_options("focus", false, false);
+        doc.dispatch_event(child, &mut event);
+
+        assert_eq!(child_count.load(Ordering::SeqCst), 1, "target listener should fire");
+        assert_eq!(
+            parent_count.load(Ordering::SeqCst),
+            0,
+            "non-bubbling event should not reach parent"
+        );
+    }
+
+    /// 测试 EventPhase 语义。
+    #[test]
+    fn test_event_phases() {
+        assert_eq!(EventPhase::Capturing as u8, 1);
+        assert_eq!(EventPhase::AtTarget as u8, 2);
+        assert_eq!(EventPhase::Bubbling as u8, 3);
+    }
+
+    /// 测试 prevent_default 对不可取消事件无效。
+    #[test]
+    fn test_prevent_default_non_cancelable() {
+        let mut event = Event::new("scroll"); // cancelable = false by default
+        let result = event.prevent_default();
+        assert!(!result, "prevent_default should fail on non-cancelable event");
+        assert!(!event.default_prevented());
+    }
+
+    /// 测试 init_for_dispatch 重置状态。
+    #[test]
+    fn test_init_for_dispatch_resets() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.append_child(doc.root(), elem).unwrap();
+
+        let mut event = Event::new_with_options("click", true, true);
+        event.stop_propagation();
+        event.prevent_default();
+        assert!(event.propagation_stopped());
+        assert!(event.default_prevented());
+
+        // init_for_dispatch should reset
+        event.init_for_dispatch(elem);
+        assert!(!event.propagation_stopped());
+        assert!(!event.default_prevented());
+        assert_eq!(event.target(), Some(elem));
+    }
+
+    /// 测试 EventListenerHandle 结构。
+    #[test]
+    fn test_listener_handle_struct() {
+        use super::EventListenerHandle;
+        use crate::node::NodeId;
+
+        let handle = EventListenerHandle {
+            node: NodeId::default(),
+            index: 0,
+        };
+        assert_eq!(handle.index, 0);
+    }
 }
