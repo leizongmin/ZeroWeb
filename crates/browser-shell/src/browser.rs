@@ -1,12 +1,14 @@
-//! 浏览器 Shell — 协调标签页、书签、历史的顶层控制器。
+//! 浏览器 Shell — 协调标签页、书签、历史、下载、设置的顶层控制器。
 
 use crate::bookmarks::Bookmarks;
+use crate::download::DownloadManager;
 use crate::history::History;
+use crate::settings::BrowserSettings;
 use crate::tab::{TabId, TabManager};
 
 /// 浏览器 Shell — 顶层协调器。
 ///
-/// 管理标签页、书签、历史记录，提供浏览器级别的操作接口。
+/// 管理标签页、书签、历史记录、下载和设置，提供浏览器级别的操作接口。
 pub struct BrowserShell {
     /// 标签页管理器。
     tabs: TabManager,
@@ -14,6 +16,65 @@ pub struct BrowserShell {
     bookmarks: Bookmarks,
     /// 历史记录管理器。
     history: History,
+    /// 下载管理器。
+    downloads: DownloadManager,
+    /// 浏览器设置。
+    settings: BrowserSettings,
+    /// 当前页面缩放级别（1.0 = 100%）。
+    zoom: f32,
+    /// 页面查找状态。
+    find_state: FindState,
+}
+
+/// 页面查找状态。
+#[derive(Debug, Clone)]
+pub struct FindState {
+    /// 查找关键词。
+    query: String,
+    /// 是否正在查找。
+    active: bool,
+    /// 当前匹配索引（1-based）。
+    current_match: usize,
+    /// 总匹配数。
+    total_matches: usize,
+}
+
+impl FindState {
+    /// 创建空的查找状态。
+    pub fn new() -> Self {
+        Self {
+            query: String::new(),
+            active: false,
+            current_match: 0,
+            total_matches: 0,
+        }
+    }
+
+    /// 获取查找关键词。
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    /// 是否正在查找。
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    /// 当前匹配索引。
+    pub fn current_match(&self) -> usize {
+        self.current_match
+    }
+
+    /// 总匹配数。
+    pub fn total_matches(&self) -> usize {
+        self.total_matches
+    }
+}
+
+impl Default for FindState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BrowserShell {
@@ -28,6 +89,10 @@ impl BrowserShell {
             tabs,
             bookmarks: Bookmarks::new(),
             history: History::new(),
+            downloads: DownloadManager::new(),
+            settings: BrowserSettings::new(),
+            zoom: 1.0,
+            find_state: FindState::new(),
         }
     }
 
@@ -166,6 +231,106 @@ impl BrowserShell {
     /// 历史记录管理器的可变引用。
     pub fn history_mut(&mut self) -> &mut History {
         &mut self.history
+    }
+
+    // ── 下载操作 ──
+
+    /// 下载管理器的引用。
+    pub fn downloads(&self) -> &DownloadManager {
+        &self.downloads
+    }
+
+    /// 下载管理器的可变引用。
+    pub fn downloads_mut(&mut self) -> &mut DownloadManager {
+        &mut self.downloads
+    }
+
+    // ── 设置操作 ──
+
+    /// 浏览器设置的引用。
+    pub fn settings(&self) -> &BrowserSettings {
+        &self.settings
+    }
+
+    /// 浏览器设置的可变引用。
+    pub fn settings_mut(&mut self) -> &mut BrowserSettings {
+        &mut self.settings
+    }
+
+    // ── 缩放操作 ──
+
+    /// 获取当前缩放级别。
+    pub fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    /// 设置缩放级别。
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(0.25, 5.0);
+    }
+
+    /// 放大（增加 10%）。
+    pub fn zoom_in(&mut self) {
+        self.set_zoom(self.zoom + 0.1);
+    }
+
+    /// 缩小（减少 10%）。
+    pub fn zoom_out(&mut self) {
+        self.set_zoom(self.zoom - 0.1);
+    }
+
+    /// 重置缩放到 100%。
+    pub fn zoom_reset(&mut self) {
+        self.zoom = 1.0;
+    }
+
+    // ── 页面查找操作 ──
+
+    /// 获取查找状态。
+    pub fn find_state(&self) -> &FindState {
+        &self.find_state
+    }
+
+    /// 开始页面查找。
+    pub fn find_start(&mut self, query: &str) {
+        self.find_state.query = query.to_string();
+        self.find_state.active = true;
+        self.find_state.current_match = 0;
+        self.find_state.total_matches = 0;
+    }
+
+    /// 跳转到下一个匹配。
+    pub fn find_next(&mut self) {
+        if self.find_state.total_matches > 0 {
+            self.find_state.current_match = (self.find_state.current_match % self.find_state.total_matches) + 1;
+        }
+    }
+
+    /// 跳转到上一个匹配。
+    pub fn find_previous(&mut self) {
+        if self.find_state.total_matches > 0 {
+            if self.find_state.current_match <= 1 {
+                self.find_state.current_match = self.find_state.total_matches;
+            } else {
+                self.find_state.current_match -= 1;
+            }
+        }
+    }
+
+    /// 关闭页面查找。
+    pub fn find_close(&mut self) {
+        self.find_state.active = false;
+        self.find_state.query.clear();
+        self.find_state.current_match = 0;
+        self.find_state.total_matches = 0;
+    }
+
+    /// 更新查找匹配数。
+    pub fn find_set_matches(&mut self, total: usize) {
+        self.find_state.total_matches = total;
+        if total > 0 && self.find_state.current_match == 0 {
+            self.find_state.current_match = 1;
+        }
     }
 }
 

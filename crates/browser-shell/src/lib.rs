@@ -9,12 +9,16 @@
 
 mod bookmarks;
 mod browser;
+mod download;
 mod history;
+mod settings;
 mod tab;
 
 pub use bookmarks::*;
 pub use browser::*;
+pub use download::*;
 pub use history::*;
+pub use settings::*;
 pub use tab::*;
 
 #[cfg(test)]
@@ -951,5 +955,305 @@ mod tests {
         assert_eq!(shell.tab_count(), 3);
         shell.close_tab(id2);
         assert_eq!(shell.tab_count(), 2);
+    }
+
+    // ── DownloadManager 测试 ──
+
+    #[test]
+    fn test_download_manager_new() {
+        let dm = DownloadManager::new();
+        assert!(dm.is_empty());
+        assert_eq!(dm.len(), 0);
+    }
+
+    #[test]
+    fn test_download_start() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        assert_eq!(dm.len(), 1);
+        let entry = dm.get(id).unwrap();
+        assert_eq!(entry.url(), "https://example.com/file.zip");
+        assert_eq!(entry.filename(), "file.zip");
+        assert_eq!(entry.state(), DownloadState::Pending);
+        assert_eq!(entry.downloaded_bytes(), 0);
+        assert!(entry.total_bytes().is_none());
+    }
+
+    #[test]
+    fn test_download_update_progress() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.update_progress(id, 500, Some(1000));
+        let entry = dm.get(id).unwrap();
+        assert_eq!(entry.state(), DownloadState::Downloading);
+        assert_eq!(entry.downloaded_bytes(), 500);
+        assert_eq!(entry.total_bytes(), Some(1000));
+        assert!((entry.progress() - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_download_mark_completed() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.update_progress(id, 1000, Some(1000));
+        dm.mark_completed(id);
+        let entry = dm.get(id).unwrap();
+        assert!(entry.is_completed());
+        assert_eq!(entry.state(), DownloadState::Completed);
+    }
+
+    #[test]
+    fn test_download_pause_resume() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.update_progress(id, 500, Some(1000));
+        dm.pause(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Paused);
+        dm.resume(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Downloading);
+    }
+
+    #[test]
+    fn test_download_cancel() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.cancel(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Cancelled);
+    }
+
+    #[test]
+    fn test_download_mark_failed() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.mark_failed(id);
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Failed);
+    }
+
+    #[test]
+    fn test_download_remove_completed() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        assert!(!dm.remove(id), "Cannot remove active download");
+        dm.mark_completed(id);
+        assert!(dm.remove(id), "Should remove completed download");
+        assert!(dm.is_empty());
+    }
+
+    #[test]
+    fn test_download_clear_completed() {
+        let mut dm = DownloadManager::new();
+        let id1 = dm.start_download("https://a.com/file1.zip", "file1.zip");
+        let id2 = dm.start_download("https://b.com/file2.zip", "file2.zip");
+        let id3 = dm.start_download("https://c.com/file3.zip", "file3.zip");
+        dm.mark_completed(id1);
+        dm.cancel(id2);
+        // id3 is still pending
+        dm.clear_completed();
+        assert_eq!(dm.len(), 1);
+        assert!(dm.get(id3).is_some());
+    }
+
+    #[test]
+    fn test_download_active_count() {
+        let mut dm = DownloadManager::new();
+        let id1 = dm.start_download("https://a.com/f1", "f1");
+        let _id2 = dm.start_download("https://b.com/f2", "f2");
+        assert_eq!(dm.active_count(), 2);
+        // Now mark one as completed
+        dm.update_progress(id1, 100, Some(100));
+        dm.mark_completed(id1);
+        assert_eq!(dm.active_count(), 1);
+    }
+
+    #[test]
+    fn test_download_progress_unknown_size() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        dm.update_progress(id, 500, None);
+        let entry = dm.get(id).unwrap();
+        assert_eq!(entry.progress(), 0.0, "Unknown size should return 0 progress");
+    }
+
+    #[test]
+    fn test_download_is_active() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://example.com/file.zip", "file.zip");
+        assert!(dm.get(id).unwrap().is_active());
+        dm.pause(id);
+        assert!(!dm.get(id).unwrap().is_active());
+    }
+
+    // ── BrowserSettings 测试 ──
+
+    #[test]
+    fn test_settings_default() {
+        let settings = BrowserSettings::new();
+        assert_eq!(settings.search_engine, SearchEngine::Google);
+        assert_eq!(settings.home_url, "https://example.com");
+        assert!(settings.show_bookmarks_bar);
+        assert!(settings.javascript_enabled);
+        assert!(settings.cookies_enabled);
+        assert!(settings.block_third_party_cookies);
+        assert!(!settings.do_not_track);
+        assert!((settings.default_zoom - 1.0).abs() < 0.01);
+        assert!(settings.download_directory.is_empty());
+    }
+
+    #[test]
+    fn test_settings_search_google() {
+        let settings = BrowserSettings::new();
+        let url = settings.search("rust lang");
+        assert!(url.contains("google.com"));
+        assert!(url.contains("rust+lang"));
+    }
+
+    #[test]
+    fn test_settings_search_baidu() {
+        let mut settings = BrowserSettings::new();
+        settings.search_engine = SearchEngine::Baidu;
+        let url = settings.search("rust 语言");
+        assert!(url.contains("baidu.com"));
+        assert!(url.contains("rust+"));
+    }
+
+    #[test]
+    fn test_settings_search_duckduckgo() {
+        let mut settings = BrowserSettings::new();
+        settings.search_engine = SearchEngine::DuckDuckGo;
+        let url = settings.search("privacy");
+        assert!(url.contains("duckduckgo.com"));
+    }
+
+    #[test]
+    fn test_settings_search_bing() {
+        let mut settings = BrowserSettings::new();
+        settings.search_engine = SearchEngine::Bing;
+        let url = settings.search("test");
+        assert!(url.contains("bing.com"));
+    }
+
+    // ── BrowserShell 新功能测试 ──
+
+    #[test]
+    fn test_browser_shell_downloads() {
+        let shell = BrowserShell::new();
+        assert!(shell.downloads().is_empty());
+    }
+
+    #[test]
+    fn test_browser_shell_downloads_mut() {
+        let mut shell = BrowserShell::new();
+        shell
+            .downloads_mut()
+            .start_download("https://example.com/file.zip", "file.zip");
+        assert_eq!(shell.downloads().len(), 1);
+    }
+
+    #[test]
+    fn test_browser_shell_settings() {
+        let shell = BrowserShell::new();
+        assert_eq!(shell.settings().home_url, "https://example.com");
+    }
+
+    #[test]
+    fn test_browser_shell_settings_mut() {
+        let mut shell = BrowserShell::new();
+        shell.settings_mut().home_url = "https://google.com".to_string();
+        assert_eq!(shell.settings().home_url, "https://google.com");
+    }
+
+    #[test]
+    fn test_browser_shell_zoom() {
+        let mut shell = BrowserShell::new();
+        assert!((shell.zoom() - 1.0).abs() < 0.01);
+
+        shell.zoom_in();
+        assert!((shell.zoom() - 1.1).abs() < 0.01);
+
+        shell.zoom_out();
+        assert!((shell.zoom() - 1.0).abs() < 0.01);
+
+        shell.zoom_reset();
+        assert!((shell.zoom() - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_browser_shell_zoom_clamp() {
+        let mut shell = BrowserShell::new();
+        shell.set_zoom(10.0);
+        assert!((shell.zoom() - 5.0).abs() < 0.01, "Should clamp to max 5.0");
+        shell.set_zoom(0.01);
+        assert!((shell.zoom() - 0.25).abs() < 0.01, "Should clamp to min 0.25");
+    }
+
+    #[test]
+    fn test_browser_shell_find() {
+        let mut shell = BrowserShell::new();
+        assert!(!shell.find_state().is_active());
+
+        shell.find_start("hello");
+        assert!(shell.find_state().is_active());
+        assert_eq!(shell.find_state().query(), "hello");
+
+        shell.find_set_matches(5);
+        assert_eq!(shell.find_state().total_matches(), 5);
+        assert_eq!(shell.find_state().current_match(), 1);
+
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 2);
+
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 3);
+
+        shell.find_previous();
+        assert_eq!(shell.find_state().current_match(), 2);
+
+        shell.find_close();
+        assert!(!shell.find_state().is_active());
+        assert!(shell.find_state().query().is_empty());
+    }
+
+    #[test]
+    fn test_browser_shell_find_wrap_around() {
+        let mut shell = BrowserShell::new();
+        shell.find_start("test");
+        shell.find_set_matches(3);
+        // At match 1
+        assert_eq!(shell.find_state().current_match(), 1);
+
+        // Go to 2, then 3
+        shell.find_next();
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 3);
+
+        // Wrap around to 1
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 1);
+    }
+
+    #[test]
+    fn test_browser_shell_find_previous_at_start() {
+        let mut shell = BrowserShell::new();
+        shell.find_start("test");
+        shell.find_set_matches(3);
+        assert_eq!(shell.find_state().current_match(), 1);
+
+        // Go previous should wrap to 3
+        shell.find_previous();
+        assert_eq!(shell.find_state().current_match(), 3);
+    }
+
+    #[test]
+    fn test_browser_shell_find_no_matches() {
+        let mut shell = BrowserShell::new();
+        shell.find_start("nothing");
+        // No matches set
+        assert_eq!(shell.find_state().total_matches(), 0);
+        assert_eq!(shell.find_state().current_match(), 0);
+        // find_next/find_previous should be no-ops
+        shell.find_next();
+        assert_eq!(shell.find_state().current_match(), 0);
+        shell.find_previous();
+        assert_eq!(shell.find_state().current_match(), 0);
     }
 }
