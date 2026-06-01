@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，5194 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 15/16 crate 已实现，5246 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -12,9 +12,9 @@
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
+| 仓库代码 | ✅ Cargo workspace + 16 crate（15 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5194 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5246 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -37,6 +37,7 @@
 | canvas | 350 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp**、**gradient 多 stop/radial gradient/fillRule/lineDash/measure_text/shadow 属性**、**createImageData/getTransform/transform() 乘法/miterLimit/textDirection**、**同心圆渐变/路径跨 resize/退化变换/脏矩形越界/零长度渐变** |
 | webview | 157 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**默认配置/data URI/多次导航/CSS 注入后加载/状态转换**、**load 前注入/title 事件/零视口/失败恢复/连续 load**、**config 默认值/last_render 状态/resize+render/is_loading 初始状态/回调移除** |
 | wasm-sandbox | 132 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理** |
+| script-sandbox | 52 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**52 个单元测试全绿** |
 
 ### 跨 crate 集成测试
 
@@ -97,16 +98,35 @@
 | All Three New Properties | 1 | box-shadow + background-image + text-shadow 全组合 |
 | Box Shadow Spread Only | 1 | box-shadow 仅 spread-radius 渲染验证 |
 
-### 占位 crate（2 个）
+### 占位 crate（1 个）
 
 | Crate | 说明 |
 |-------|------|
-| script-sandbox | JS 引擎（V8/QuickJS feature gate）— 需要二进制依赖 |
 | browser-shell | 浏览器 UI — 需要 UI 框架选型 |
 
 ---
 
 ## 最近完成的改进
+
+### -48. V8 引擎集成 + script-sandbox 实现（本轮，5246 测试）
+
+将 rusty_v8 预编译版本集成到 script-sandbox crate，实现完整的 JavaScript 执行能力：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| script-sandbox | **V8Sandbox 结构体**：Isolate/Context 生命周期管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时） | 52 |
+| webview | **execute_script 使用 V8 沙箱**：JavaScript 脚本现在可以真正执行，返回结果字符串 | 测试更新 |
+| integration | **WebView 脚本执行集成测试**：验证端到端脚本执行 | 1 更新 |
+
+script-sandbox crate 实现的功能：
+- `V8Sandbox::new()` — 创建 V8 Isolate（首次调用全局初始化 V8 平台）
+- `V8Sandbox::with_config(config)` — 自定义堆限制和超时
+- `V8Sandbox::execute(code)` — 编译并执行 JS，返回 `ScriptResult`
+- `V8Sandbox::execute_json(code)` — 执行 JS 并返回 JSON 字符串
+- `V8Sandbox::v8_version()` — 获取 V8 引擎版本号
+- 支持的 JS 特性：ES6+（箭头函数、类、解构、展开运算符、模板字符串）、JSON、Math、数组方法等
+
+Total: 5194 → 5246 (+52 tests)
 
 ### -43. CSS transition/animation/custom properties + 交互属性管线测试 + 43 测试（本轮，5111 测试）
 
@@ -941,7 +961,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M3 CSS 解析器 + 样式系统 | ✅ |
 | M4 布局引擎 | ✅ |
 | M5 渲染管线集成 | ✅ |
-| M6 JavaScript 集成 (V8) | ⏸ 需要 rusty_v8 |
+| M6 JavaScript 集成 (V8) | ✅ script-sandbox V8 引擎已集成，WebView.execute_script 可用 |
 | M7 网络栈 + 导航模型 | ✅ |
 | M8 多进程架构 (IPC) | ✅ (protocol crate) |
 | M9 Canvas + Storage | ✅ |
@@ -951,11 +971,11 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 
 ## 下一步优先级
 
-1. **Shadow DOM**（高优先级）— Shadow root、slot、DOM 树封装、布局树扁平化
-2. **Grid 布局增强**（高优先级）— grid-area 简写解析、命名区域、subgrid
-3. **内联布局集成**（高优先级）— 行内格式化上下文集成到 paint 管线、文本换行、inline-block
+1. **浏览器应用（M11）**（高优先级）— browser-shell 多标签页、地址栏、导航、收藏夹
+2. **DOM API 绑定**（高优先级）— JS → DOM bindings（document.getElementById、querySelector 等）
+3. **事件系统集成**（高优先级）— JS 事件系统（addEventListener、事件冒泡/捕获）
 4. **更多 Canvas API**（中优先级）— OffscreenCanvas、line_join/line_cap、更多合成模式测试
-5. **V8 集成**（阻塞）— 需要 rusty_v8 编译环境
+5. **Fetch API**（中优先级）— JS 中发起网络请求
 
 ---
 
