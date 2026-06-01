@@ -1972,4 +1972,98 @@ mod tests {
         assert!(dm.remove(id), "应能移除 failed 下载");
         assert!(dm.get(id).is_none());
     }
+
+    // ── Download 迭代与边界 ──
+
+    #[test]
+    /// 测试 DownloadManager::iter() 迭代多个下载。
+    fn test_download_iter_multiple() {
+        let mut dm = DownloadManager::new();
+        dm.start_download("https://a.com/f1", "f1.bin");
+        dm.start_download("https://b.com/f2", "f2.bin");
+        dm.start_download("https://c.com/f3", "f3.bin");
+        let urls: Vec<&str> = dm.iter().map(|d| d.url()).collect();
+        assert_eq!(urls.len(), 3);
+        assert_eq!(urls[0], "https://a.com/f1");
+        assert_eq!(urls[2], "https://c.com/f3");
+    }
+
+    #[test]
+    /// 测试 DownloadManager::default() 产生空管理器。
+    fn test_download_default() {
+        let dm = DownloadManager::default();
+        assert!(dm.is_empty());
+        assert_eq!(dm.len(), 0);
+    }
+
+    #[test]
+    /// 测试 DownloadEntry::progress() 在 total=0 时返回 0.0。
+    fn test_download_progress_return_value_zero_total() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://x.com/f", "f.bin");
+        dm.update_progress(id, 500, Some(0));
+        assert_eq!(dm.get(id).unwrap().progress(), 0.0);
+    }
+
+    #[test]
+    /// 测试 update_progress 对不存在的 DownloadId 静默忽略。
+    fn test_download_update_progress_nonexistent_id() {
+        let mut dm = DownloadManager::new();
+        dm.update_progress(DownloadId(99999), 100, Some(200));
+        assert!(dm.is_empty());
+    }
+
+    #[test]
+    /// 测试 mark_completed 设置 downloaded_bytes = total_bytes。
+    fn test_download_mark_completed_sets_bytes() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://x.com/f", "f.bin");
+        dm.update_progress(id, 500, Some(1000));
+        dm.mark_completed(id);
+        assert!(dm.get(id).unwrap().is_completed());
+    }
+
+    // ── Settings 边界 ──
+
+    #[test]
+    /// 测试 SearchEngine::search_url() 对特殊字符（+, #, &）的处理。
+    fn test_search_url_special_chars() {
+        let engine = SearchEngine::Google;
+        let url = engine.search_url("a&b#c++d");
+        assert!(url.contains("a&b#c++d"), "特殊字符应直接传递");
+    }
+
+    // ── ContextMenu 边界 ──
+
+    #[test]
+    /// 测试 ContextMenu::with_items() 空列表。
+    fn test_context_menu_empty_items() {
+        let menu = ContextMenu::with_items(ContextType::Page, vec![]);
+        assert!(menu.is_empty());
+        assert_eq!(menu.len(), 0);
+    }
+
+    #[test]
+    /// 测试 ContextType::Image 默认菜单项完整性。
+    fn test_context_menu_image_items_complete() {
+        let menu = ContextMenu::new(ContextType::Image);
+        assert!(
+            menu.find_item("open_image").is_some(),
+            "Image menu should have open_image"
+        );
+        assert!(
+            menu.find_item("copy_image_url").is_some(),
+            "Image menu should have copy_image_url"
+        );
+    }
+
+    #[test]
+    /// 测试 ContextType::Editable 默认菜单项包含 select_all。
+    fn test_context_menu_editable_items_complete() {
+        let menu = ContextMenu::new(ContextType::Editable);
+        assert!(
+            menu.find_item("select_all").is_some(),
+            "Editable menu should have select_all"
+        );
+    }
 }

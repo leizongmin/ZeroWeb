@@ -602,4 +602,28 @@ mod tests {
         nav.navigate("http://d.com", None);
         assert_eq!(nav.len(), 3, "超出 max_entries 后应淘汰到 3 条");
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试 navigate("") 添加空 URL 条目。
+    fn test_navigate_empty_url() {
+        let mut nav = NavigationHistory::new(10);
+        nav.navigate("", None);
+        assert_eq!(nav.len(), 1);
+        assert_eq!(nav.current().unwrap().url, "");
+    }
+
+    #[test]
+    /// 测试 evict 后 go_back_n(0) 返回当前条目。
+    fn test_go_back_n_zero_after_eviction() {
+        let mut nav = NavigationHistory::new(2);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None); // 淘汰 a.com
+        assert_eq!(nav.len(), 2);
+        let result = nav.go_back_n(0);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().url, "http://c.com");
+    }
 }

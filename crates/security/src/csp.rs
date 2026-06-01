@@ -1055,4 +1055,53 @@ mod tests {
         let csp_no_form = ContentSecurityPolicy::parse("default-src 'none'");
         assert!(csp_no_form.is_form_action_allowed("https://evil.com/submit", None));
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试 bare nonce（无引号）格式的 inline script 允许。
+    fn test_csp_bare_nonce_inline_script() {
+        let csp = ContentSecurityPolicy::parse("script-src nonce-abc123");
+        assert!(
+            csp.is_inline_script_allowed(Some("abc123"), None),
+            "bare nonce should match"
+        );
+    }
+
+    #[test]
+    /// 测试 bare hash（无引号）格式的 inline style 解析不 panic。
+    fn test_csp_bare_hash_inline_style() {
+        let csp = ContentSecurityPolicy::parse("style-src sha256-base64hashvalue=");
+        // 验证解析不 panic 且包含 style-src 指令
+        let has_style = csp.directives.iter().any(|d| d.name == "style-src");
+        assert!(has_style, "should have style-src directive");
+    }
+
+    #[test]
+    /// 测试 frame-ancestors 自定义端口匹配。
+    fn test_csp_frame_ancestors_custom_port() {
+        let csp = ContentSecurityPolicy::parse("frame-ancestors https://allowed.com:8443");
+        let embedder = Origin::parse("https://allowed.com:8443").unwrap();
+        assert!(csp.is_frame_ancestor_allowed(&embedder), "端口匹配应允许");
+        let wrong_port = Origin::parse("https://allowed.com:9443").unwrap();
+        assert!(!csp.is_frame_ancestor_allowed(&wrong_port), "端口不匹配应拒绝");
+    }
+
+    #[test]
+    /// 测试 is_child_allowed 全回退到 default-src。
+    fn test_csp_child_allowed_fallback_default_src() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'");
+        // 相对 URL 视为同源匹配 'self'
+        assert!(csp.is_child_allowed("/app.js", None));
+    }
+
+    #[test]
+    /// 测试 is_worker_allowed 受 script-src 限制。
+    fn test_csp_worker_blocked_by_script_src() {
+        let csp = ContentSecurityPolicy::parse("script-src https://trusted.com");
+        assert!(
+            !csp.is_worker_allowed("https://evil.com/worker.js", None),
+            "不在 script-src 白名单中的 worker URL 应被阻止"
+        );
+    }
 }
