@@ -978,4 +978,196 @@ mod tests {
         assert_eq!(bb.right(), 124.0, "right 应为 x + font_size = 124");
         assert_eq!(bb.bottom(), 224.0, "bottom 应为 y + font_size = 224");
     }
+
+    /// 测试 ShadowPrimitive 大模糊半径 bounding_box 计算。
+    #[test]
+    fn test_edge_shadow_large_blur_radius_bounding_box() {
+        let mut p = RenderPrimitives::new();
+        // rect at (100,100) size (50,50), offset (0,0), spread=0, blur=200
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(100.0, 100.0, 50.0, 50.0),
+            color: Color::BLACK,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 200.0,
+            spread_radius: 0.0,
+        });
+        let bb = p.bounding_box().unwrap();
+        // left  = 100 + 0 - 0 - 200 = -100
+        // top   = 100 + 0 - 0 - 200 = -100
+        // right = 150 + 0 + 0 + 200 = 350
+        // bottom= 150 + 0 + 0 + 200 = 350
+        assert_eq!(bb.left(), -100.0);
+        assert_eq!(bb.top(), -100.0);
+        assert_eq!(bb.right(), 350.0);
+        assert_eq!(bb.bottom(), 350.0);
+    }
+
+    /// 测试 ShadowPrimitive 负偏移 bounding_box 计算。
+    #[test]
+    fn test_edge_shadow_negative_offset_bounding_box() {
+        let mut p = RenderPrimitives::new();
+        // rect at (50,50) size (40,40), offset (-10,-20), blur=0, spread=0
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(50.0, 50.0, 40.0, 40.0),
+            color: Color::BLACK,
+            offset_x: -10.0,
+            offset_y: -20.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+        });
+        let bb = p.bounding_box().unwrap();
+        // left  = 50 + (-10) - 0 - 0 = 40
+        // top   = 50 + (-20) - 0 - 0 = 30
+        // right = 90 + (-10) + 0 + 0 = 80
+        // bottom= 90 + (-20) + 0 + 0 = 70
+        assert_eq!(bb.left(), 40.0);
+        assert_eq!(bb.top(), 30.0);
+        assert_eq!(bb.right(), 80.0);
+        assert_eq!(bb.bottom(), 70.0);
+    }
+
+    /// 测试 ShadowPrimitive 大扩展半径 bounding_box 计算。
+    #[test]
+    fn test_edge_shadow_large_spread_radius_bounding_box() {
+        let mut p = RenderPrimitives::new();
+        // rect at (20,20) size (30,30), offset (0,0), blur=0, spread=50
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(20.0, 20.0, 30.0, 30.0),
+            color: Color::BLACK,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 50.0,
+        });
+        let bb = p.bounding_box().unwrap();
+        // left  = 20 + 0 - 50 - 0 = -30
+        // top   = 20 + 0 - 50 - 0 = -30
+        // right = 50 + 0 + 50 + 0 = 100
+        // bottom= 50 + 0 + 50 + 0 = 100
+        assert_eq!(bb.left(), -30.0);
+        assert_eq!(bb.top(), -30.0);
+        assert_eq!(bb.right(), 100.0);
+        assert_eq!(bb.bottom(), 100.0);
+    }
+
+    /// 测试多个 ShadowPrimitive bounding_box 合并计算。
+    #[test]
+    fn test_edge_multiple_shadows_bounding_box_merge() {
+        let mut p = RenderPrimitives::new();
+        // Shadow 1: rect(0,0,50,50) offset(5,5) blur=2 spread=1
+        // left=0+5-1-2=2, top=0+5-1-2=2, right=50+5+1+2=58, bottom=50+5+1+2=58
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(0.0, 0.0, 50.0, 50.0),
+            color: Color::BLACK,
+            offset_x: 5.0,
+            offset_y: 5.0,
+            blur_radius: 2.0,
+            spread_radius: 1.0,
+        });
+        // Shadow 2: rect(200,200,50,50) offset(-5,-5) blur=10 spread=0
+        // left=200+(-5)-0-10=185, top=200+(-5)-0-10=185, right=250+(-5)+0+10=255, bottom=250+(-5)+0+10=255
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(200.0, 200.0, 50.0, 50.0),
+            color: Color::BLACK,
+            offset_x: -5.0,
+            offset_y: -5.0,
+            blur_radius: 10.0,
+            spread_radius: 0.0,
+        });
+        let bb = p.bounding_box().unwrap();
+        // Merged: min of lefts, min of tops, max of rights, max of bottoms
+        assert_eq!(bb.left(), 2.0);
+        assert_eq!(bb.top(), 2.0);
+        assert_eq!(bb.right(), 255.0);
+        assert_eq!(bb.bottom(), 255.0);
+    }
+
+    /// 测试 ImagePrimitive 不同 ImageKey 区分。
+    #[test]
+    fn test_edge_image_primitive_different_keys() {
+        let mut p = RenderPrimitives::new();
+        let key_a = ImageKey::new(100);
+        let key_b = ImageKey::new(200);
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 50.0, 50.0),
+            image_key: key_a,
+        });
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+            image_key: key_b,
+        });
+        assert_eq!(p.images.len(), 2);
+        // Verify keys are distinct
+        assert_ne!(p.images[0].image_key, p.images[1].image_key);
+        assert_eq!(p.images[0].image_key, ImageKey::new(100));
+        assert_eq!(p.images[1].image_key, ImageKey::new(200));
+        // Verify rects are preserved independently
+        assert_eq!(p.images[0].rect.origin.x, 0.0);
+        assert_eq!(p.images[1].rect.origin.x, 10.0);
+    }
+
+    /// 测试 RenderPrimitives 包含阴影和图片时的 len 计数。
+    #[test]
+    fn test_edge_len_with_shadows_and_images() {
+        let mut p = RenderPrimitives::new();
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: Color::BLACK,
+            offset_x: 3.0,
+            offset_y: 3.0,
+            blur_radius: 5.0,
+            spread_radius: 0.0,
+        });
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(50.0, 50.0, 100.0, 100.0),
+            color: Color::rgba(0, 0, 0, 80),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 10.0,
+            spread_radius: 2.0,
+        });
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 200.0, 200.0),
+            image_key: ImageKey::new(1),
+        });
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(10.0, 10.0, 150.0, 150.0),
+            image_key: ImageKey::new(2),
+        });
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(20.0, 20.0, 100.0, 100.0),
+            image_key: ImageKey::new(3),
+        });
+        // 2 shadows + 3 images = 5 total
+        assert_eq!(p.shadows.len(), 2);
+        assert_eq!(p.images.len(), 3);
+        assert_eq!(p.len(), 5);
+        assert!(!p.is_empty());
+    }
+
+    /// 测试 ShadowPrimitive 零尺寸矩形。
+    #[test]
+    fn test_edge_shadow_zero_size_rect() {
+        let mut p = RenderPrimitives::new();
+        // rect at (50,50) size (0,0) — left=right=50, top=bottom=50
+        // With offset=0, blur=5, spread=3:
+        // left  = 50 + 0 - 3 - 5 = 42
+        // top   = 50 + 0 - 3 - 5 = 42
+        // right = 50 + 0 + 3 + 5 = 58
+        // bottom= 50 + 0 + 3 + 5 = 58
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(50.0, 50.0, 0.0, 0.0),
+            color: Color::BLACK,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 5.0,
+            spread_radius: 3.0,
+        });
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), 42.0);
+        assert_eq!(bb.top(), 42.0);
+        assert_eq!(bb.right(), 58.0);
+        assert_eq!(bb.bottom(), 58.0);
+    }
 }

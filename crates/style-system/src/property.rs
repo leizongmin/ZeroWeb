@@ -12272,4 +12272,124 @@ mod tests {
     fn test_counter_set_initial_value() {
         assert!(PropertyRegistry::initial_value("counter-set").is_some());
     }
+
+    // ── 边界测试：box-shadow / text-shadow / background-image ──
+
+    /// 测试 box-shadow 计算值默认值（所有参数为零、无内阴影）。
+    #[test]
+    fn test_edge_box_shadow_default_all_zero() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.box_shadow.offset_x, 0.0);
+        assert_eq!(style.box_shadow.offset_y, 0.0);
+        assert_eq!(style.box_shadow.blur_radius, 0.0);
+        assert_eq!(style.box_shadow.spread_radius, 0.0);
+        assert!(!style.box_shadow.inset);
+        assert_eq!(
+            style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255)
+        );
+    }
+
+    /// 测试 box-shadow 解析 "4px 4px 8px 0px rgba(0,0,0,0.5)"。
+    #[test]
+    fn test_edge_box_shadow_rgba_parse() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "box-shadow",
+            "4px 4px 8px 0px rgba(0,0,0,0.5)"
+        ));
+        assert_eq!(style.box_shadow.offset_x, 4.0);
+        assert_eq!(style.box_shadow.offset_y, 4.0);
+        assert_eq!(style.box_shadow.blur_radius, 8.0);
+        assert_eq!(style.box_shadow.spread_radius, 0.0);
+        // rgba(0,0,0,0.5) -> alpha=128 (0.5*255 rounded)
+        assert_eq!(
+            style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 128)
+        );
+        assert!(!style.box_shadow.inset);
+    }
+
+    /// 测试 text-shadow 计算值默认值。
+    #[test]
+    fn test_edge_text_shadow_default() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.text_shadow.offset_x, 0.0);
+        assert_eq!(style.text_shadow.offset_y, 0.0);
+        assert_eq!(style.text_shadow.blur_radius, 0.0);
+        assert_eq!(
+            style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255)
+        );
+    }
+
+    /// 测试 text-shadow 解析 "2px 2px 4px red"。
+    #[test]
+    fn test_edge_text_shadow_red_parse() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-shadow", "2px 2px 4px red"));
+        assert_eq!(style.text_shadow.offset_x, 2.0);
+        assert_eq!(style.text_shadow.offset_y, 2.0);
+        assert_eq!(style.text_shadow.blur_radius, 4.0);
+        assert_eq!(
+            style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
+        );
+    }
+
+    /// 测试 background-image 计算值默认值为 None。
+    #[test]
+    fn test_edge_background_image_default_none() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    }
+
+    /// 测试 background-image 解析 "url(hero.png)"。
+    #[test]
+    fn test_edge_background_image_url_hero() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-image", "url(hero.png)"));
+        assert_eq!(
+            style.background_image,
+            BackgroundImageComputedValue::Url("hero.png".to_string())
+        );
+    }
+
+    /// 测试 box-shadow 负值解析。
+    #[test]
+    fn test_edge_box_shadow_negative_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "box-shadow",
+            "-3px -5px -2px -1px red"
+        ));
+        assert_eq!(style.box_shadow.offset_x, -3.0);
+        assert_eq!(style.box_shadow.offset_y, -5.0);
+        assert_eq!(style.box_shadow.blur_radius, -2.0);
+        assert_eq!(style.box_shadow.spread_radius, -1.0);
+        assert_eq!(
+            style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
+        );
+        assert!(!style.box_shadow.inset);
+    }
+
+    /// 测试 text-shadow 继承到子元素。
+    #[test]
+    fn test_edge_text_shadow_inherit_to_child() {
+        let mut parent = ComputedStyle::default();
+        assert!(apply_property_value(&mut parent, "text-shadow", "2px 2px 4px red"));
+        let mut child = ComputedStyle::default();
+        // text-shadow 是继承属性，inherit_property 应成功
+        assert!(inherit_property(&parent, &mut child, "text-shadow"));
+        assert_eq!(child.text_shadow.offset_x, 2.0);
+        assert_eq!(child.text_shadow.offset_y, 2.0);
+        assert_eq!(child.text_shadow.blur_radius, 4.0);
+        assert_eq!(
+            child.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
+        );
+    }
 }

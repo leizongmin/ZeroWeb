@@ -5399,3 +5399,100 @@ fn test_parse_isolation_edge_cases() {
     assert_eq!(parse_isolation(""), None);
     assert_eq!(parse_isolation("inherit"), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 32. parse_box_shadow / parse_text_shadow / parse_background_image 边界条件测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_box_shadow 空字符串返回 None。
+fn test_edge_parse_box_shadow_empty() {
+    assert_eq!(parse_box_shadow(""), None);
+    assert_eq!(parse_box_shadow("   "), None);
+}
+
+#[test]
+/// 测试 parse_box_shadow 仅 inset 关键字。
+fn test_edge_parse_box_shadow_inset_only() {
+    // "inset" alone has no offset values → parts.len() < 2 → None
+    assert_eq!(parse_box_shadow("inset"), None);
+    // "inset" with valid offsets should parse correctly
+    let result = parse_box_shadow("inset 3px 4px").unwrap();
+    assert!(result.inset);
+    assert_eq!(result.offset_x, LengthValue::Px(3.0));
+    assert_eq!(result.offset_y, LengthValue::Px(4.0));
+}
+
+#[test]
+/// 测试 parse_box_shadow 带颜色值 "5px 5px 10px red"。
+fn test_edge_parse_box_shadow_with_named_color() {
+    let result = parse_box_shadow("5px 5px 10px red").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(5.0));
+    assert_eq!(result.offset_y, LengthValue::Px(5.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(10.0));
+    assert_eq!(result.spread_radius, LengthValue::Px(0.0));
+    assert_eq!(result.color, ColorValue::Rgba(255, 0, 0, 255));
+    assert!(!result.inset);
+}
+
+#[test]
+/// 测试 parse_text_shadow 空字符串返回 None。
+fn test_edge_parse_text_shadow_empty() {
+    assert_eq!(parse_text_shadow(""), None);
+    assert_eq!(parse_text_shadow("   "), None);
+}
+
+#[test]
+/// 测试 parse_text_shadow 颜色在前 "red 2px 3px"。
+/// 解析器从 parts[0] 开始尝试 parse_length，"red" 不是长度，
+/// 所以 ox 会是 None → 整体返回 None。
+fn test_edge_parse_text_shadow_color_first() {
+    assert_eq!(parse_text_shadow("red 2px 3px"), None);
+}
+
+#[test]
+/// 测试 parse_text_shadow 大偏移量。
+fn test_edge_parse_text_shadow_large_offset() {
+    let result = parse_text_shadow("9999px 8888px 100px").unwrap();
+    assert_eq!(result.offset_x, LengthValue::Px(9999.0));
+    assert_eq!(result.offset_y, LengthValue::Px(8888.0));
+    assert_eq!(result.blur_radius, LengthValue::Px(100.0));
+    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
+/// 测试 parse_background_image 空字符串返回 None。
+fn test_edge_parse_background_image_empty() {
+    assert_eq!(parse_background_image(""), None);
+    assert_eq!(parse_background_image("   "), None);
+}
+
+#[test]
+/// 测试 parse_background_image url 带引号。
+fn test_edge_parse_background_image_quoted_url() {
+    // 双引号
+    let result = parse_background_image("url(\"image.png\")");
+    assert_eq!(result, Some(BackgroundImageValue::Url("image.png".to_string())));
+    // 单引号
+    let result = parse_background_image("url('bg.jpg')");
+    assert_eq!(result, Some(BackgroundImageValue::Url("bg.jpg".to_string())));
+}
+
+#[test]
+/// 测试 parse_background_image 大小写 URL。
+fn test_edge_parse_background_image_case_insensitive() {
+    // "URL(...)" is not recognized — starts_with("url(") is case-sensitive
+    assert_eq!(parse_background_image("URL(image.png)"), None);
+    // "url(...)" is the valid form
+    let result = parse_background_image("url(image.png)");
+    assert_eq!(result, Some(BackgroundImageValue::Url("image.png".to_string())));
+}
+
+#[test]
+/// 测试 parse_background_image 无效值返回 None。
+fn test_edge_parse_background_image_invalid() {
+    assert_eq!(parse_background_image("not-a-url"), None);
+    assert_eq!(parse_background_image("url()"), None);
+    assert_eq!(parse_background_image("gradient(red, blue)"), None);
+    assert_eq!(parse_background_image("url('')"), None);
+}
