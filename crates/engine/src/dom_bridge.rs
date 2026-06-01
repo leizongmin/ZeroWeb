@@ -125,6 +125,55 @@ pub enum DomCommand {
         /// 是否可取消。
         cancelable: bool,
     },
+    /// element.insertBefore(newChild, refChild) — 在参考节点前插入新节点。
+    InsertBefore {
+        /// 父节点 ID。
+        parent_id: u64,
+        /// 新子节点 ID。
+        new_child_id: u64,
+        /// 参考子节点 ID（None 表示插入末尾）。
+        ref_child_id: Option<u64>,
+    },
+    /// element.replaceChild(newChild, oldChild) — 替换子节点。
+    ReplaceChild {
+        /// 父节点 ID。
+        parent_id: u64,
+        /// 新子节点 ID。
+        new_child_id: u64,
+        /// 旧子节点 ID。
+        old_child_id: u64,
+    },
+    /// element.cloneNode(deep) — 克隆节点。
+    CloneNode {
+        /// 源元素 ID。
+        element_id: u64,
+        /// 是否深拷贝。
+        deep: bool,
+    },
+    /// element.style — 获取元素的 inline style 字符串。
+    GetStyle {
+        /// 元素 ID。
+        element_id: u64,
+    },
+    /// element.style = value — 设置 inline style。
+    SetStyle {
+        /// 元素 ID。
+        element_id: u64,
+        /// CSS 文本。
+        value: String,
+    },
+    /// element.innerHTML = value — 设置 innerHTML。
+    SetInnerHtml {
+        /// 元素 ID。
+        element_id: u64,
+        /// HTML 内容。
+        value: String,
+    },
+    /// element.parentNode — 获取父节点。
+    GetParentNode {
+        /// 元素 ID。
+        element_id: u64,
+    },
 }
 
 /// DOM 命令执行结果。
@@ -366,6 +415,12 @@ pub fn generate_dom_api_polyfill() -> String {
       }
       return results;
     },
+    createDocumentFragment: function() {
+      var node = _createNode(11);
+      node.nodeType = 11;
+      return node;
+    },
+    title: '',
     body: _createNode(1),
     head: _createNode(1),
     documentElement: _createNode(1)
@@ -389,17 +444,90 @@ pub fn generate_dom_api_polyfill() -> String {
       child.parentNode = null;
       return child;
     },
+    insertBefore: function(newChild, refChild) {
+      if (newChild.parentNode) {
+        newChild.parentNode.children = newChild.parentNode.children.filter(function(c) { return c !== newChild; });
+      }
+      if (!refChild) {
+        this.children.push(newChild);
+      } else {
+        var idx = this.children.indexOf(refChild);
+        if (idx === -1) throw new Error('NotFoundError');
+        this.children.splice(idx, 0, newChild);
+      }
+      newChild.parentNode = this;
+      return newChild;
+    },
+    replaceChild: function(newChild, oldChild) {
+      var idx = this.children.indexOf(oldChild);
+      if (idx === -1) throw new Error('NotFoundError');
+      if (newChild.parentNode) {
+        newChild.parentNode.children = newChild.parentNode.children.filter(function(c) { return c !== newChild; });
+      }
+      this.children[idx] = newChild;
+      newChild.parentNode = this;
+      oldChild.parentNode = null;
+      return oldChild;
+    },
+    cloneNode: function(deep) {
+      var clone = document.createElement(this.tagName ? this.tagName.toLowerCase() : 'div');
+      // 复制属性
+      for (var key in this.attributes) {
+        if (this.attributes.hasOwnProperty(key)) {
+          clone.attributes[key] = this.attributes[key];
+        }
+      }
+      clone.id = this.id || '';
+      if (deep) {
+        for (var i = 0; i < this.children.length; i++) {
+          var child = this.children[i];
+          if (child.nodeType === 1) {
+            clone.appendChild(child.cloneNode(true));
+          } else if (child.nodeType === 3) {
+            clone.appendChild(document.createTextNode(child.textContent || ''));
+          }
+        }
+      }
+      return clone;
+    },
     setAttribute: function(name, value) {
       this.attributes[name] = String(value);
+      if (name === 'id') this.id = String(value);
+      if (name === 'class') this.className = String(value);
     },
     getAttribute: function(name) {
       return this.attributes[name] || null;
     },
     removeAttribute: function(name) {
       delete this.attributes[name];
+      if (name === 'id') this.id = '';
+      if (name === 'class') this.className = '';
     },
     hasAttribute: function(name) {
       return name in this.attributes;
+    },
+    hasChildNodes: function() { return this.children.length > 0; },
+    // ── textContent getter/setter ──
+    getTextContent: function() {
+      if (this.nodeType === 3) return this.textContent || '';
+      var result = '';
+      for (var i = 0; i < this.children.length; i++) {
+        var child = this.children[i];
+        if (child.nodeType === 3) {
+          result += child.textContent || '';
+        } else if (child.nodeType === 1) {
+          result += child.getTextContent();
+        }
+      }
+      return result;
+    },
+    setTextContent: function(value) {
+      this.children = [];
+      if (value) {
+        var textNode = document.createTextNode(value);
+        Object.assign(textNode, { parentNode: this });
+        this.children.push(textNode);
+      }
     },
     // ── Event System ──
     addEventListener: function(type, listener, options) {
@@ -475,8 +603,205 @@ pub fn generate_dom_api_polyfill() -> String {
   document.createElement = function(tag) {
     var node = origCreateElement(tag);
     Object.assign(node, _elementProto);
+    // ── 导航属性（getter 需要在 Object.assign 之后定义，否则赋值时触发 getter） ──
+    Object.defineProperty(node, 'firstChild', {
+      get: function() { return this.children.length > 0 ? this.children[0] : null; },
+      configurable: true
+    });
+    Object.defineProperty(node, 'lastChild', {
+      get: function() { return this.children.length > 0 ? this.children[this.children.length - 1] : null; },
+      configurable: true
+    });
+    Object.defineProperty(node, 'nextSibling', {
+      get: function() {
+        if (!this.parentNode) return null;
+        var idx = this.parentNode.children.indexOf(this);
+        return idx >= 0 && idx < this.parentNode.children.length - 1 ? this.parentNode.children[idx + 1] : null;
+      },
+      configurable: true
+    });
+    Object.defineProperty(node, 'previousSibling', {
+      get: function() {
+        if (!this.parentNode) return null;
+        var idx = this.parentNode.children.indexOf(this);
+        return idx > 0 ? this.parentNode.children[idx - 1] : null;
+      },
+      configurable: true
+    });
+    Object.defineProperty(node, 'childElementCount', {
+      get: function() { return this.children.length; },
+      configurable: true
+    });
+    // ── style 属性（CSSStyleDeclaration 简化实现） ──
+    node.style = new _CSSStyleDeclaration();
+    // ── classList 属性（DOMTokenList 简化实现） ──
+    node.classList = new _DOMTokenList(node, 'class');
+    // ── id / className getter+setter ──
+    node.id = '';
+    node.className = '';
+    // ── innerHTML setter ──
+    Object.defineProperty(node, 'innerHTML', {
+      get: function() {
+        var html = '';
+        for (var i = 0; i < this.children.length; i++) {
+          var child = this.children[i];
+          if (child.nodeType === 3) {
+            html += child.textContent;
+          } else if (child.nodeType === 1) {
+            html += '<' + child.tagName.toLowerCase();
+            for (var attr in child.attributes) {
+              if (child.attributes.hasOwnProperty(attr)) {
+                html += ' ' + attr + '="' + child.attributes[attr] + '"';
+              }
+            }
+            html += '>';
+            if (child.innerHTML !== undefined) html += child.innerHTML;
+            html += '</' + child.tagName.toLowerCase() + '>';
+          }
+        }
+        return html;
+      },
+      set: function(value) {
+        this.children = [];
+        // 简化实现：将 innerHTML 内容作为单个文本节点
+        if (value) {
+          var textNode = document.createTextNode(value);
+          Object.assign(textNode, { parentNode: this });
+          this.children.push(textNode);
+        }
+      },
+      configurable: true
+    });
+    // ── outerHTML getter ──
+    Object.defineProperty(node, 'outerHTML', {
+      get: function() {
+        var tag = this.tagName ? this.tagName.toLowerCase() : 'div';
+        var attrs = '';
+        for (var attr in this.attributes) {
+          if (this.attributes.hasOwnProperty(attr)) {
+            attrs += ' ' + attr + '="' + this.attributes[attr] + '"';
+          }
+        }
+        return '<' + tag + attrs + '>' + this.innerHTML + '</' + tag + '>';
+      },
+      configurable: true
+    });
+    // ── textContent getter+setter ──
+    Object.defineProperty(node, 'textContent', {
+      get: function() { return this.getTextContent(); },
+      set: function(value) { this.setTextContent(value); },
+      configurable: true
+    });
+    // ── innerText getter+setter（简化：等同 textContent） ──
+    Object.defineProperty(node, 'innerText', {
+      get: function() { return this.getTextContent(); },
+      set: function(value) { this.setTextContent(value); },
+      configurable: true
+    });
     return node;
   };
+
+  // ── CSSStyleDeclaration 简化实现 ──
+  // 支持 cssText getter/setter 和按属性名读写。
+  function _CSSStyleDeclaration() {
+    this._props = {};
+  }
+  _CSSStyleDeclaration.prototype.getPropertyValue = function(prop) {
+    return this._props[prop] || '';
+  };
+  _CSSStyleDeclaration.prototype.setProperty = function(prop, value) {
+    this._props[prop] = value;
+  };
+  _CSSStyleDeclaration.prototype.removeProperty = function(prop) {
+    var v = this._props[prop] || '';
+    delete this._props[prop];
+    return v;
+  };
+  Object.defineProperty(_CSSStyleDeclaration.prototype, 'cssText', {
+    get: function() {
+      var parts = [];
+      for (var k in this._props) {
+        if (this._props.hasOwnProperty(k)) parts.push(k + ': ' + this._props[k]);
+      }
+      return parts.join('; ');
+    },
+    set: function(text) {
+      this._props = {};
+      if (!text) return;
+      var decls = text.split(';');
+      for (var i = 0; i < decls.length; i++) {
+        var decl = decls[i].trim();
+        if (!decl) continue;
+        var colon = decl.indexOf(':');
+        if (colon === -1) continue;
+        var prop = decl.substring(0, colon).trim();
+        var val = decl.substring(colon + 1).trim();
+        if (prop) this._props[prop] = val;
+      }
+    },
+    configurable: true
+  });
+
+  // ── DOMTokenList 简化实现（用于 classList） ──
+  function _DOMTokenList(element, attrName) {
+    this._element = element;
+    this._attrName = attrName;
+  }
+  _DOMTokenList.prototype._tokens = function() {
+    var v = this._element.getAttribute(this._attrName) || '';
+    return v ? v.split(/\s+/).filter(function(t) { return t; }) : [];
+  };
+  _DOMTokenList.prototype._sync = function(tokens) {
+    var val = tokens.join(' ');
+    this._element.setAttribute(this._attrName, val);
+    if (this._attrName === 'class') this._element.className = val;
+  };
+  Object.defineProperty(_DOMTokenList.prototype, 'length', {
+    get: function() { return this._tokens().length; }
+  });
+  _DOMTokenList.prototype.item = function(index) { return this._tokens()[index] || null; };
+  _DOMTokenList.prototype.contains = function(token) { return this._tokens().indexOf(token) !== -1; };
+  _DOMTokenList.prototype.add = function() {
+    var tokens = this._tokens();
+    for (var i = 0; i < arguments.length; i++) {
+      if (tokens.indexOf(arguments[i]) === -1) tokens.push(arguments[i]);
+    }
+    this._sync(tokens);
+  };
+  _DOMTokenList.prototype.remove = function() {
+    var tokens = this._tokens();
+    for (var i = 0; i < arguments.length; i++) {
+      var idx = tokens.indexOf(arguments[i]);
+      if (idx !== -1) tokens.splice(idx, 1);
+    }
+    this._sync(tokens);
+  };
+  _DOMTokenList.prototype.toggle = function(token) {
+    if (this.contains(token)) { this.remove(token); return false; }
+    else { this.add(token); return true; }
+  };
+  _DOMTokenList.prototype.replace = function(oldToken, newToken) {
+    var tokens = this._tokens();
+    var idx = tokens.indexOf(oldToken);
+    if (idx === -1) return false;
+    tokens[idx] = newToken;
+    this._sync(tokens);
+    return true;
+  };
+
+  // ── 为预创建的 document 节点混入元素方法 ──
+  // document.body/head/documentElement 在 _elementProto/CSSStyleDeclaration/DOMTokenList
+  // 定义之前创建，需要在这里补齐方法。
+  function _mixinElementMethods(node) {
+    Object.assign(node, _elementProto);
+    node.style = new _CSSStyleDeclaration();
+    node.classList = new _DOMTokenList(node, 'class');
+    node.id = '';
+    node.className = '';
+  }
+  _mixinElementMethods(document.body);
+  _mixinElementMethods(document.head);
+  _mixinElementMethods(document.documentElement);
 
   // ── Fetch API Stub ──
   // Provides globalThis.fetch, Headers, Request, Response constructors.
@@ -1205,5 +1530,206 @@ mod tests {
         assert!(polyfill.contains("globalThis.ResizeObserver"));
         assert!(polyfill.contains("globalThis.ResizeObserverEntry"));
         assert!(polyfill.contains("globalThis.DOMRectReadOnly"));
+    }
+
+    // ── 新增 DomCommand 变体测试 ──
+
+    #[test]
+    fn test_insert_before_command() {
+        let cmd = DomCommand::InsertBefore {
+            parent_id: 1,
+            new_child_id: 2,
+            ref_child_id: Some(3),
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::InsertBefore {
+                parent_id: 1,
+                new_child_id: 2,
+                ref_child_id: Some(3),
+            }
+        );
+    }
+
+    #[test]
+    fn test_insert_before_no_ref() {
+        let cmd = DomCommand::InsertBefore {
+            parent_id: 1,
+            new_child_id: 2,
+            ref_child_id: None,
+        };
+        match cmd {
+            DomCommand::InsertBefore { ref_child_id, .. } => assert!(ref_child_id.is_none()),
+            _ => panic!("Expected InsertBefore"),
+        }
+    }
+
+    #[test]
+    fn test_replace_child_command() {
+        let cmd = DomCommand::ReplaceChild {
+            parent_id: 1,
+            new_child_id: 2,
+            old_child_id: 3,
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::ReplaceChild {
+                parent_id: 1,
+                new_child_id: 2,
+                old_child_id: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn test_clone_node_command() {
+        let cmd = DomCommand::CloneNode {
+            element_id: 42,
+            deep: true,
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::CloneNode {
+                element_id: 42,
+                deep: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_clone_node_shallow() {
+        let cmd = DomCommand::CloneNode {
+            element_id: 5,
+            deep: false,
+        };
+        match cmd {
+            DomCommand::CloneNode { element_id, deep } => {
+                assert_eq!(element_id, 5);
+                assert!(!deep);
+            }
+            _ => panic!("Expected CloneNode"),
+        }
+    }
+
+    #[test]
+    fn test_get_style_command() {
+        let cmd = DomCommand::GetStyle { element_id: 10 };
+        assert_eq!(cmd, DomCommand::GetStyle { element_id: 10 });
+    }
+
+    #[test]
+    fn test_set_style_command() {
+        let cmd = DomCommand::SetStyle {
+            element_id: 10,
+            value: "color: red; font-size: 16px".to_string(),
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::SetStyle {
+                element_id: 10,
+                value: "color: red; font-size: 16px".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_set_inner_html_command() {
+        let cmd = DomCommand::SetInnerHtml {
+            element_id: 7,
+            value: "<p>Hello</p>".to_string(),
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::SetInnerHtml {
+                element_id: 7,
+                value: "<p>Hello</p>".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_get_parent_node_command() {
+        let cmd = DomCommand::GetParentNode { element_id: 3 };
+        assert_eq!(cmd, DomCommand::GetParentNode { element_id: 3 });
+    }
+
+    // ── Polyfill 新增 API 验证测试 ──
+
+    #[test]
+    fn test_polyfill_contains_insert_before() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("insertBefore"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_replace_child() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("replaceChild"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_clone_node() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("cloneNode"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_navigation_properties() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("firstChild"));
+        assert!(polyfill.contains("lastChild"));
+        assert!(polyfill.contains("nextSibling"));
+        assert!(polyfill.contains("previousSibling"));
+        assert!(polyfill.contains("childElementCount"));
+        assert!(polyfill.contains("hasChildNodes"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_style_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("_CSSStyleDeclaration"));
+        assert!(polyfill.contains("getPropertyValue"));
+        assert!(polyfill.contains("setProperty"));
+        assert!(polyfill.contains("removeProperty"));
+        assert!(polyfill.contains("cssText"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_classlist_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("_DOMTokenList"));
+        assert!(polyfill.contains("classList"));
+        assert!(polyfill.contains("contains"));
+        assert!(polyfill.contains("toggle"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_inner_html_setter() {
+        let polyfill = generate_dom_api_polyfill();
+        // innerHTML getter + setter
+        assert!(polyfill.contains("innerHTML"));
+        assert!(polyfill.contains("outerHTML"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_text_content_property() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("textContent"));
+        assert!(polyfill.contains("innerText"));
+        assert!(polyfill.contains("getTextContent"));
+        assert!(polyfill.contains("setTextContent"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_document_fragment() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("createDocumentFragment"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_id_classname() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("node.id"));
+        assert!(polyfill.contains("node.className"));
     }
 }
