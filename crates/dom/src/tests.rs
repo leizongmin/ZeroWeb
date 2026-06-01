@@ -7754,3 +7754,88 @@ fn test_child_count_on_empty_element() {
     assert!(!doc.has_child_nodes(elem), "空元素 has_child_nodes 应返回 false");
     assert_eq!(doc.child_nodes(elem), Vec::new(), "空元素的 child_nodes 应返回空列表");
 }
+
+// ── 新增边界测试 ──
+
+/// 测试连续 append_child 维持正确顺序。
+#[test]
+fn test_append_child_ordering() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("ul");
+    doc.append_child(root, parent).unwrap();
+
+    let a = doc.create_element("li");
+    let b = doc.create_element("li");
+    let c = doc.create_element("li");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 3, "应有 3 个子节点");
+    assert_eq!(children[0], a, "第一个子节点应为 a");
+    assert_eq!(children[1], b, "第二个子节点应为 b");
+    assert_eq!(children[2], c, "第三个子节点应为 c");
+}
+
+/// 测试 set_attribute 覆写已有值（边界补充）。
+#[test]
+fn test_set_attribute_overwrite_returns_new() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "data-val", "first");
+    assert_eq!(doc.get_attribute(elem, "data-val"), Some("first".to_string()));
+
+    doc.set_attribute(elem, "data-val", "second");
+    assert_eq!(
+        doc.get_attribute(elem, "data-val"),
+        Some("second".to_string()),
+        "覆写后应返回最新值"
+    );
+}
+
+/// 测试 create_element 名称大小写保留。
+#[test]
+fn test_create_element_case_preserved() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("MyComponent");
+    // 元素创建后 tag_name 应保留原始大小写
+    assert!(doc.outer_html(elem).contains("MyComponent"), "tag 名应保留大小写");
+}
+
+/// 测试 remove_child 从中间移除不影响兄弟顺序。
+#[test]
+fn test_remove_child_middle_sibling() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    doc.append_child(root, parent).unwrap();
+
+    let a = doc.create_element("span");
+    let b = doc.create_element("span");
+    let c = doc.create_element("span");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+
+    doc.remove_child(parent, b).unwrap();
+
+    let children = doc.child_nodes(parent);
+    assert_eq!(children.len(), 2, "移除后应有 2 个子节点");
+    assert_eq!(children[0], a, "第一个应为 a");
+    assert_eq!(children[1], c, "第二个应为 c");
+}
+
+/// 测试 create_text_node 空字符串不 panic。
+#[test]
+fn test_create_text_node_empty_string() {
+    let mut doc = Document::new();
+    let text = doc.create_text_node("");
+    let root = doc.root();
+    doc.append_child(root, text).unwrap();
+
+    let html = doc.outer_html(text);
+    // 空文本节点序列化后应为空字符串
+    assert_eq!(html, "", "空文本节点序列化应为空字符串");
+}
