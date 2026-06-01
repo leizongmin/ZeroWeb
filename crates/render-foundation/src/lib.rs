@@ -1046,4 +1046,129 @@ mod tests {
         assert_eq!(glyphs_mixed[1].code_point, '\t');
         assert_eq!(glyphs_mixed[2].code_point, ' ');
     }
+
+    /// 测试 Color::lerp 在 t=0.0 和 t=1.0 边界处返回精确的端点颜色
+    ///
+    /// lerp(a, b, 0.0) 应精确返回 a，lerp(a, b, 1.0) 应精确返回 b。
+    /// 使用多种颜色组合验证，包括黑→白、红→蓝、以及带 alpha 的颜色。
+    #[test]
+    fn test_color_lerp_boundary() {
+        let black = Color::BLACK;
+        let white = Color::WHITE;
+        let red = Color::RED;
+        let blue = Color::BLUE;
+
+        // t=0.0 应精确返回起始颜色
+        assert_eq!(black.lerp(white, 0.0), black, "t=0 应返回起始颜色（黑→白）");
+        assert_eq!(red.lerp(blue, 0.0), red, "t=0 应返回起始颜色（红→蓝）");
+
+        // t=1.0 应精确返回目标颜色
+        assert_eq!(black.lerp(white, 1.0), white, "t=1 应返回目标颜色（黑→白）");
+        assert_eq!(red.lerp(blue, 1.0), blue, "t=1 应返回目标颜色（红→蓝）");
+
+        // 带 alpha 通道的边界验证
+        let semi_a = Color::rgba(100, 150, 200, 50);
+        let semi_b = Color::rgba(10, 20, 30, 250);
+        assert_eq!(semi_a.lerp(semi_b, 0.0), semi_a, "t=0 应返回起始颜色（半透明）");
+        assert_eq!(semi_a.lerp(semi_b, 1.0), semi_b, "t=1 应返回目标颜色（半透明）");
+    }
+
+    /// 测试两个完全不重叠的矩形交集为 None（含负坐标场景）
+    ///
+    /// 构造两个在水平和垂直方向上都没有重叠的矩形，
+    /// 验证 intersection 返回 None，且交换操作数结果一致。
+    /// 补充负坐标与正坐标不重叠的场景验证。
+    #[test]
+    fn test_rect_intersection_no_overlap_extended() {
+        let a = Rect::new(0.0, 0.0, 50.0, 50.0);
+        let b = Rect::new(200.0, 200.0, 100.0, 100.0);
+        assert!(a.intersection(&b).is_none(), "不重叠的矩形交集应为 None");
+        assert!(b.intersection(&a).is_none(), "交集运算应满足交换律");
+
+        // 对角方向也不重叠
+        let c = Rect::new(-100.0, -100.0, 50.0, 50.0);
+        let d = Rect::new(0.0, 0.0, 50.0, 50.0);
+        assert!(c.intersection(&d).is_none(), "负坐标与正坐标不重叠时交集应为 None");
+    }
+
+    /// 测试 ImageCache 在 max_entries=0 时优雅处理插入和 GC
+    ///
+    /// 当 max_entries=0 时，insert 仍然可以插入条目，
+    /// 但 GC 后所有条目都会被淘汰。验证连续插入+GC 循环后缓存始终为空，
+    /// 且不会 panic 或产生异常行为。
+    #[test]
+    fn test_image_cache_zero_max_entries() {
+        let mut cache = ImageCache::new(0, 1024 * 1024);
+
+        // 插入后能立即获取
+        let key = cache.insert(ImageData::new_empty(1, 1));
+        assert_eq!(cache.len(), 1, "插入后应有一个条目");
+        assert!(cache.get(&key).is_some(), "插入后应能获取");
+
+        // GC 后缓存为空
+        cache.gc();
+        assert!(cache.is_empty(), "max_entries=0 时 GC 后应为空");
+
+        // 再次插入+GC 循环验证稳定性
+        let k2 = cache.insert(ImageData::new_empty(2, 2));
+        let k3 = cache.insert(ImageData::new_empty(3, 3));
+        assert_eq!(cache.len(), 2);
+        cache.gc();
+        assert!(cache.is_empty(), "多条目 GC 后仍应为空");
+        assert!(cache.ref_count(&k2).is_none());
+        assert!(cache.ref_count(&k3).is_none());
+    }
+
+    /// 测试 DamageTracker 对相同区域重复标记时脏矩形数量不增长
+    ///
+    /// 连续添加两个完全相同的脏矩形后，由于 try_merge 会将它们合并，
+    /// dirty_rects 的数量不应超过单独添加一次时的数量。
+    #[test]
+    fn test_damage_tracker_mark_same_area() {
+        let mut tracker = DamageTracker::new();
+        let area = Rect::new(10.0, 20.0, 100.0, 80.0);
+
+        tracker.add_damage(area);
+        let count_after_one = tracker.dirty_rects().len();
+
+        // 再次标记完全相同的区域
+        tracker.add_damage(area);
+        let count_after_two = tracker.dirty_rects().len();
+
+        assert_eq!(count_after_two, count_after_one, "重复标记相同区域不应增加脏矩形数量");
+        assert!(tracker.is_dirty(), "仍应标记为脏");
+
+        // 多次重复标记
+        for _ in 0..10 {
+            tracker.add_damage(area);
+        }
+        assert_eq!(
+            tracker.dirty_rects().len(),
+            count_after_one,
+            "多次重复标记同一区域后脏矩形数量应保持不变"
+        );
+    }
+
+    /// 测试 Size 宽度为零时面积返回零
+    ///
+    /// 当 width=0 时，无论 height 为何值，area() 都应返回 0.0。
+    /// 这是 Size::area 实现为 width * height 的直接推论，
+    /// 验证零宽度、零高度、以及两者都为零的情况。
+    #[test]
+    fn test_size_area_zero() {
+        // 零宽度、非零高度
+        let s = Size::new(0.0, 100.0);
+        assert_eq!(s.area(), 0.0, "零宽度面积应为 0");
+        assert!(s.is_empty(), "零宽度 Size 应为空");
+
+        // 非零宽度、零高度
+        let s2 = Size::new(200.0, 0.0);
+        assert_eq!(s2.area(), 0.0, "零高度面积应为 0");
+        assert!(s2.is_empty(), "零高度 Size 应为空");
+
+        // 两者都为零
+        let s3 = Size::ZERO;
+        assert_eq!(s3.area(), 0.0, "零尺寸面积应为 0");
+        assert!(s3.is_empty(), "ZERO 应为空");
+    }
 }

@@ -1607,4 +1607,309 @@ mod tests {
         assert!(abs_x2.is_nan(), "NaN + 有限值应仍为 NaN");
         assert!(abs_y2.is_nan(), "NaN + 有限值应仍为 NaN");
     }
+
+    // -- 边界条件测试（第五批）--
+
+    /// 测试 LayoutBox 默认值的所有几何字段均为零。
+    ///
+    /// 构造一个全零 LayoutBox，逐一验证位置、尺寸、内容区域、
+    /// 边框、内边距、外边距均为 0.0，且 children 为空。
+    #[test]
+    fn test_layout_box_default_values() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // 位置和尺寸均为零
+        assert!((box0.x).abs() < 0.001);
+        assert!((box0.y).abs() < 0.001);
+        assert!((box0.width).abs() < 0.001);
+        assert!((box0.height).abs() < 0.001);
+        // 内容区域为零
+        assert!((box0.content_x).abs() < 0.001);
+        assert!((box0.content_y).abs() < 0.001);
+        assert!((box0.content_width).abs() < 0.001);
+        assert!((box0.content_height).abs() < 0.001);
+        // 边框为零
+        assert!((box0.border_top).abs() < 0.001);
+        assert!((box0.border_right).abs() < 0.001);
+        assert!((box0.border_bottom).abs() < 0.001);
+        assert!((box0.border_left).abs() < 0.001);
+        // 内边距为零
+        assert!((box0.padding_top).abs() < 0.001);
+        assert!((box0.padding_right).abs() < 0.001);
+        assert!((box0.padding_bottom).abs() < 0.001);
+        assert!((box0.padding_left).abs() < 0.001);
+        // 外边距为零
+        assert!((box0.margin_top).abs() < 0.001);
+        assert!((box0.margin_right).abs() < 0.001);
+        assert!((box0.margin_bottom).abs() < 0.001);
+        assert!((box0.margin_left).abs() < 0.001);
+        // 无子节点
+        assert!(box0.children.is_empty());
+        // 无定位标志
+        assert!(!box0.is_absolute);
+        assert!(!box0.is_fixed);
+        assert!(!box0.is_sticky);
+    }
+
+    /// 测试 LayoutResult 使用特定视口尺寸。
+    ///
+    /// 创建视口为 375x667（模拟移动端）的 LayoutResult，
+    /// 验证 viewport_width 和 viewport_height 字段正确存储。
+    #[test]
+    fn test_layout_result_viewport_edge() {
+        let result = LayoutResult {
+            root: LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 375.0,
+                height: 667.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 375.0,
+                content_height: 667.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 0,
+            },
+            viewport_width: 375.0,
+            viewport_height: 667.0,
+        };
+        assert!((result.viewport_width - 375.0).abs() < 0.001);
+        assert!((result.viewport_height - 667.0).abs() < 0.001);
+        assert!((result.root.width - 375.0).abs() < 0.001);
+        assert!((result.root.height - 667.0).abs() < 0.001);
+    }
+
+    /// 测试 LayoutBox 添加多个子节点后 children 向量长度。
+    ///
+    /// 向一个 LayoutBox 添加 3 个子盒子，验证 children 长度为 3，
+    /// 且每个子盒子可独立访问。
+    #[test]
+    fn test_layout_box_with_children_edge() {
+        let make_child = |x: f32, y: f32, w: f32, h: f32| LayoutBox {
+            node_id: None,
+            x,
+            y,
+            width: w,
+            height: h,
+            content_x: x,
+            content_y: y,
+            content_width: w,
+            content_height: h,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let parent = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 300.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 300.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![
+                make_child(0.0, 0.0, 100.0, 50.0),
+                make_child(100.0, 0.0, 100.0, 50.0),
+                make_child(200.0, 0.0, 100.0, 50.0),
+            ],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert_eq!(parent.children.len(), 3);
+        assert!((parent.children[0].x - 0.0).abs() < 0.001);
+        assert!((parent.children[1].x - 100.0).abs() < 0.001);
+        assert!((parent.children[2].x - 200.0).abs() < 0.001);
+    }
+
+    /// 测试 OverflowClip::Visible 和 OverflowClip::Hidden 是不同变体。
+    ///
+    /// 验证 Visible != Hidden，且各变体与其自身相等，
+    /// 确保枚举的 PartialEq 实现正确区分两种溢出策略。
+    #[test]
+    fn test_overflow_clip_visible_vs_hidden() {
+        assert_ne!(
+            OverflowClip::Visible,
+            OverflowClip::Hidden,
+            "Visible 和 Hidden 应为不同变体"
+        );
+        assert_eq!(OverflowClip::Visible, OverflowClip::Visible);
+        assert_eq!(OverflowClip::Hidden, OverflowClip::Hidden);
+        // 两者在同一个 LayoutBox 中分别赋给 overflow_x/overflow_y
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Hidden,
+            z_index: 0,
+        };
+        assert_eq!(box0.overflow_x, OverflowClip::Visible);
+        assert_eq!(box0.overflow_y, OverflowClip::Hidden);
+        assert_ne!(box0.overflow_x, box0.overflow_y);
+    }
+
+    /// 测试 LayoutBox content_x/y/width/height 字段正确设置。
+    ///
+    /// 构造一个带 border 和 padding 的 LayoutBox，
+    /// 验证 content_x 等于 border_left + padding_left，
+    /// content_y 等于 border_top + padding_top，
+    /// content 空间排除 border 和 padding。
+    #[test]
+    fn test_layout_box_content_area() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 150.0,
+            content_x: 15.0,       // border_left(5) + padding_left(10)
+            content_y: 12.0,       // border_top(4) + padding_top(8)
+            content_width: 170.0,  // 200 - border_left(5) - border_right(5) - padding_left(10) - padding_right(10)
+            content_height: 126.0, // 150 - border_top(4) - border_bottom(4) - padding_top(8) - padding_bottom(8)
+            border_top: 4.0,
+            border_right: 5.0,
+            border_bottom: 4.0,
+            border_left: 5.0,
+            padding_top: 8.0,
+            padding_right: 10.0,
+            padding_bottom: 8.0,
+            padding_left: 10.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // content_x = border_left + padding_left = 5 + 10 = 15
+        assert!((box0.content_x - 15.0).abs() < 0.001, "content_x 应为 15");
+        // content_y = border_top + padding_top = 4 + 8 = 12
+        assert!((box0.content_y - 12.0).abs() < 0.001, "content_y 应为 12");
+        // content_width = 200 - 5 - 5 - 10 - 10 = 170
+        assert!((box0.content_width - 170.0).abs() < 0.001, "content_width 应为 170");
+        // content_height = 150 - 4 - 4 - 8 - 8 = 126
+        assert!((box0.content_height - 126.0).abs() < 0.001, "content_height 应为 126");
+        // 验证 content 区域与 border/padding 的关系一致
+        assert!((box0.content_x - box0.border_left - box0.padding_left).abs() < 0.001);
+        assert!((box0.content_y - box0.border_top - box0.padding_top).abs() < 0.001);
+        assert!(
+            (box0.content_width
+                - (box0.width - box0.border_left - box0.border_right - box0.padding_left - box0.padding_right))
+                .abs()
+                < 0.001
+        );
+        assert!(
+            (box0.content_height
+                - (box0.height - box0.border_top - box0.border_bottom - box0.padding_top - box0.padding_bottom))
+                .abs()
+                < 0.001
+        );
+    }
 }
