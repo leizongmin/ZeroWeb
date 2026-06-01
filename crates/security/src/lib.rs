@@ -1811,4 +1811,226 @@ mod tests {
             "当前实现对 ws:// 不检测为混合内容"
         );
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Additional edge-case tests (round 21)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// 测试 CSP 空指令列表策略不阻止任何资源加载。
+    ///
+    /// ContentSecurityPolicy::parse 接收空字符串时，directives 列表应为空。
+    /// 空策略等同于未设置 CSP，所有资源类型（script、style、img、connect 等）
+    /// 的加载均应被允许，内联脚本和内联样式也不受限制。
+    #[test]
+    fn test_csp_empty_directive_list_allows_all() {
+        let csp = ContentSecurityPolicy::parse("");
+        assert!(csp.directives.is_empty(), "空字符串解析后 directives 应为空");
+
+        // 所有资源类型均应允许
+        assert!(
+            csp.is_resource_allowed("script", "https://evil.com/bad.js", None),
+            "空策略不应阻止脚本加载"
+        );
+        assert!(
+            csp.is_resource_allowed("style", "https://evil.com/bad.css", None),
+            "空策略不应阻止样式加载"
+        );
+        assert!(
+            csp.is_resource_allowed("img", "https://evil.com/bad.png", None),
+            "空策略不应阻止图片加载"
+        );
+        assert!(
+            csp.is_resource_allowed("connect", "https://api.example.com/data", None),
+            "空策略不应阻止 XHR/Fetch 请求"
+        );
+        assert!(
+            csp.is_resource_allowed("font", "https://cdn.example.com/font.woff2", None),
+            "空策略不应阻止字体加载"
+        );
+        assert!(
+            csp.is_resource_allowed("frame", "https://evil.com/embed", None),
+            "空策略不应阻止 iframe 加载"
+        );
+
+        // 内联脚本和样式也不受限制
+        assert!(csp.is_inline_script_allowed(None, None), "空策略不应阻止内联脚本");
+        assert!(csp.is_inline_style_allowed(None, None), "空策略不应阻止内联样式");
+    }
+
+    /// 测试 CORS 通配符源（*）配合凭证（credentials）时请求被拒绝。
+    ///
+    /// 根据 CORS 规范，Access-Control-Allow-Origin: * 与
+    /// Access-Control-Allow-Credentials: true 不能同时使用。
+    /// 当 allow_origins 包含 "*" 且 allow_credentials 为 true 时，
+    /// check_cors 应拒绝请求，generate_preflight_response 也应返回空响应。
+    #[test]
+    fn test_cors_wildcard_origin_with_credentials_rejected() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // check_cors 应拒绝（通配符 + 凭证不允许）
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(!result.allowed, "通配符源 + credentials 应被 check_cors 拒绝");
+        assert!(
+            result.reason.contains("credential") || result.reason.contains("origin"),
+            "拒绝原因应提及 credential 或 origin"
+        );
+
+        // generate_preflight_response 也应拒绝
+        let headers = generate_preflight_response(&policy, &origin, "POST", &[]);
+        assert!(
+            headers.allow_origin.is_none(),
+            "通配符源 + credentials 的预检响应不应包含 allow_origin"
+        );
+        assert!(
+            headers.allow_credentials.is_none(),
+            "通配符源 + credentials 时不应返回 allow_credentials"
+        );
+
+        // 对比：通配符源 + 无凭证 → 允许
+        let policy_no_cred = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let result_ok = check_cors(&policy_no_cred, &origin, "GET", &[]);
+        assert!(result_ok.allowed, "通配符源 + 无凭证应被允许");
+    }
+
+    /// 测试混合内容检测对 data: URI 的处理：不以 http:// 开头故不检测为混合内容。
+    ///
+    /// data: URI 是不透明来源（opaque origin），不使用 http:// 或 https:// 协议。
+    /// 当前 is_mixed_content 仅检测 starts_with("http://")，
+    /// 因此 data: URI 不会被识别为混合内容。upgrade_to_https 对
+    /// 非 http:// 开头的 URL 也返回 None。
+    #[test]
+    fn test_mixed_content_data_uri_not_detected() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // data: URI 不以 http:// 开头 → 不被检测为混合内容
+        let data_uri = "data:text/html,<script>alert(1)</script>";
+        assert!(
+            !is_mixed_content(&page, data_uri),
+            "data: URI 不以 http:// 开头，不应被检测为混合内容"
+        );
+
+        // check_mixed_content 返回 NotMixedContent
+        assert_eq!(
+            check_mixed_content(&page, data_uri, "script"),
+            MixedContentStatus::NotMixedContent,
+            "data: URI 的混合内容状态应为 NotMixedContent"
+        );
+
+        // upgrade_to_https 对 data: URI 返回 None
+        assert_eq!(upgrade_to_https(data_uri), None, "upgrade_to_https 不应处理 data: URI");
+
+        // data: image URI
+        let data_img = "data:image/png;base64,iVBORw0KGgo=";
+        assert!(
+            !is_mixed_content(&page, data_img),
+            "data: 图片 URI 也不应被检测为混合内容"
+        );
+        assert_eq!(
+            check_mixed_content(&page, data_img, "img"),
+            MixedContentStatus::NotMixedContent
+        );
+        assert_eq!(upgrade_to_https(data_img), None);
+    }
+
+    /// 测试沙箱空标志（等同于严格沙箱）的所有功能均被禁止。
+    ///
+    /// IframeSandbox::strict() 创建的沙箱 flags 列表为空，
+    /// 所有核心功能（脚本、同源、表单、弹窗、顶层导航）均被禁止。
+    /// effective_origin 为不透明源（Opaque），
+    /// IframeSandbox::parse("") 也应产生相同的严格行为。
+    #[test]
+    fn test_sandbox_empty_flags_is_strict() {
+        let strict = IframeSandbox::strict();
+        let from_empty = IframeSandbox::parse("");
+
+        // 所有核心功能均被禁止
+        assert!(!strict.allows_scripts(), "严格沙箱不应允许脚本");
+        assert!(!strict.allows_same_origin(), "严格沙箱不应允许同源");
+        assert!(!strict.allows_forms(), "严格沙箱不应允许表单");
+        assert!(!strict.allows_popups(), "严格沙箱不应允许弹窗");
+        assert!(!strict.allows_top_navigation(), "严格沙箱不应允许顶层导航");
+
+        // parse("") 与 strict() 行为一致
+        assert!(!from_empty.allows_scripts(), "parse(\"\") 不应允许脚本");
+        assert!(!from_empty.allows_same_origin(), "parse(\"\") 不应允许同源");
+        assert!(!from_empty.allows_forms(), "parse(\"\") 不应允许表单");
+        assert!(!from_empty.allows_popups(), "parse(\"\") 不应允许弹窗");
+        assert!(!from_empty.allows_top_navigation(), "parse(\"\") 不应允许顶层导航");
+
+        // effective_origin 为不透明源
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(
+            strict.effective_origin(&origin),
+            SandboxOrigin::Opaque,
+            "严格沙箱的 effective_origin 应为 Opaque"
+        );
+        assert_eq!(
+            from_empty.effective_origin(&origin),
+            SandboxOrigin::Opaque,
+            "parse(\"\") 的 effective_origin 应为 Opaque"
+        );
+
+        // 无任何标志
+        assert!(!strict.has_flag(IframeSandboxFlag::AllowScripts));
+        assert!(!strict.has_flag(IframeSandboxFlag::AllowSameOrigin));
+        assert!(!strict.has_flag(IframeSandboxFlag::AllowForms));
+        assert!(!strict.has_flag(IframeSandboxFlag::AllowPopups));
+        assert!(!strict.has_flag(IframeSandboxFlag::AllowTopNavigation));
+    }
+
+    /// 测试同源策略：完全相同的源（scheme+host+port 一致）返回 true。
+    ///
+    /// 验证 is_same_origin 和 check_same_origin 在以下场景均返回 true：
+    /// 1. 相同完整 URL 字符串解析出的两个 Origin
+    /// 2. 不同路径（/a vs /b）但相同三元组的 Origin
+    /// 3. 显式默认端口与隐式默认端口
+    /// 4. http 和 https 各自的同源判断
+    #[test]
+    fn test_same_origin_identical_origins_returns_true() {
+        // 场景 1：相同完整 URL
+        let a = Origin::parse("https://example.com/page").unwrap();
+        let b = Origin::parse("https://example.com/page").unwrap();
+        assert!(a.is_same_origin(&b), "相同 URL 解析出的 Origin 应为同源");
+        assert!(check_same_origin(&a, &b), "check_same_origin 对相同 Origin 应返回 true");
+        assert_eq!(a, b, "相同 URL 的 Origin 应相等");
+
+        // 场景 2：不同路径但相同三元组
+        let c = Origin::parse("https://example.com/a").unwrap();
+        let d = Origin::parse("https://example.com/b").unwrap();
+        assert!(c.is_same_origin(&d), "不同路径但相同 scheme+host+port 应为同源");
+        assert!(check_same_origin(&c, &d));
+        assert_eq!(c, d, "三元组相同的 Origin 应相等");
+
+        // 场景 3：显式默认端口与隐式默认端口
+        let implicit = Origin::parse("https://example.com").unwrap();
+        let explicit = Origin::parse("https://example.com:443").unwrap();
+        assert!(implicit.is_same_origin(&explicit), "隐式 443 与显式 443 应为同源");
+        assert!(check_same_origin(&implicit, &explicit));
+        assert_eq!(implicit, explicit);
+
+        // 场景 4：http 同源判断
+        let http_a = Origin::parse("http://example.com").unwrap();
+        let http_b = Origin::parse("http://example.com:80/path").unwrap();
+        assert!(http_a.is_same_origin(&http_b), "http 默认端口 80 应为同源");
+        assert!(check_same_origin(&http_a, &http_b));
+        assert_eq!(http_a, http_b);
+
+        // 验证三元组字段值
+        assert_eq!(implicit.scheme, "https");
+        assert_eq!(implicit.host, "example.com");
+        assert_eq!(implicit.port, 443);
+    }
 }

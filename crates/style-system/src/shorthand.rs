@@ -249,6 +249,18 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 双值：依次为 column-count 和 column-width
         "columns" => expand_columns(value, important, specificity),
 
+        // ── gap 简写 ──
+        // gap: <row-gap> <column-gap>
+        // 单值同时应用于 gap、row-gap 和 column-gap
+        "gap" => {
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            match parts.len() {
+                1 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[0])],
+                2 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[1])],
+                _ => vec![],
+            }
+        }
+
         // ── column-rule 简写 ──
         // column-rule: [width] [style] [color]
         // 与 outline 类似，各部分顺序无关
@@ -2542,5 +2554,49 @@ mod tests {
         assert_eq!(result[0].1, "3px");
         assert_eq!(result[1].1, "dashed");
         assert_eq!(result[2].1, "currentcolor"); // 默认 color
+    }
+
+    // ── gap 简写测试 ──
+
+    #[test]
+    /// gap 简写单值：10px 同时应用于 gap、row-gap 和 column-gap
+    fn test_gap_shorthand_single_value() {
+        let result = expand_one("gap", "10px", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "gap");
+        assert_eq!(result[0].1, "10px");
+        assert_eq!(result[1].0, "row-gap");
+        assert_eq!(result[1].1, "10px");
+        assert_eq!(result[2].0, "column-gap");
+        assert_eq!(result[2].1, "10px");
+    }
+
+    #[test]
+    /// gap 简写双值：10px 20px 分别应用于 gap、row-gap 和 column-gap
+    fn test_gap_shorthand_two_values() {
+        let result = expand_one("gap", "10px 20px", false, (0, 0, 1));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "gap");
+        assert_eq!(result[0].1, "10px");
+        assert_eq!(result[1].0, "row-gap");
+        assert_eq!(result[1].1, "10px");
+        assert_eq!(result[2].0, "column-gap");
+        assert_eq!(result[2].1, "20px");
+    }
+
+    #[test]
+    /// gap 简写三值及以上应为空
+    fn test_gap_shorthand_too_many_values() {
+        let result = expand_one("gap", "10px 20px 30px", false, (0, 0, 1));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    /// gap 简写保留 important 和 specificity
+    fn test_gap_shorthand_preserves_important() {
+        let result = expand_one("gap", "5px", true, (0, 1, 0));
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().all(|(_, _, imp, _)| *imp));
+        assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
     }
 }

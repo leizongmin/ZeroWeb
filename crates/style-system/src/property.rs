@@ -1365,6 +1365,16 @@ pub enum PropertyValue {
     TextShadow(TextShadowComputedValue),
     /// box-shadow 值。
     BoxShadow(BoxShadowComputedValue),
+    /// justify-items 值。
+    JustifyItems(JustifyItemsValue),
+    /// justify-self 值。
+    JustifySelf(JustifySelfValue),
+    /// align-content 值。
+    AlignContent(AlignContentValue),
+    /// empty-cells 值。
+    EmptyCells(EmptyCellsComputedValue),
+    /// border-spacing 值。
+    BorderSpacing(BorderSpacingComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1448,6 +1458,87 @@ pub enum FilterComputedValue {
 }
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
+
+/// CSS justify-items 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum JustifyItemsValue {
+    /// auto。
+    Auto,
+    /// normal（默认值）。
+    Normal,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// center。
+    Center,
+    /// stretch。
+    Stretch,
+    /// baseline。
+    Baseline,
+}
+
+/// CSS justify-self 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum JustifySelfValue {
+    /// auto（默认值）。
+    Auto,
+    /// normal。
+    Normal,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// center。
+    Center,
+    /// stretch。
+    Stretch,
+    /// baseline。
+    Baseline,
+}
+
+/// CSS align-content 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlignContentValue {
+    /// auto。
+    Auto,
+    /// normal（默认值）。
+    Normal,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// center。
+    Center,
+    /// stretch。
+    Stretch,
+    /// baseline。
+    Baseline,
+    /// space-between。
+    SpaceBetween,
+    /// space-around。
+    SpaceAround,
+    /// space-evenly。
+    SpaceEvenly,
+}
+
+/// CSS empty-cells 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum EmptyCellsComputedValue {
+    /// show（默认值）— 显示空单元格边框。
+    Show,
+    /// hide — 隐藏空单元格边框。
+    Hide,
+}
+
+/// CSS border-spacing 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderSpacingComputedValue {
+    /// 水平间距（px）。
+    pub horizontal: f32,
+    /// 垂直间距（px）。
+    pub vertical: f32,
+}
 
 /// 计算样式结构体，包含所有 Tier 1 CSS 属性。
 #[derive(Debug, Clone)]
@@ -1599,6 +1690,10 @@ pub struct ComputedStyle {
     pub caption_side: CaptionSideValue,
     /// border-collapse 属性。
     pub border_collapse: BorderCollapseValue,
+    /// empty-cells 属性。
+    pub empty_cells: EmptyCellsComputedValue,
+    /// border-spacing 属性。
+    pub border_spacing: BorderSpacingComputedValue,
 
     // ── Flexbox ──
     /// flex-direction 属性。
@@ -1611,6 +1706,12 @@ pub struct ComputedStyle {
     pub align_items: AlignmentValue,
     /// align-self 属性。
     pub align_self: AlignmentValue,
+    /// justify-items 属性。
+    pub justify_items: JustifyItemsValue,
+    /// justify-self 属性。
+    pub justify_self: JustifySelfValue,
+    /// align-content 属性。
+    pub align_content: AlignContentValue,
     /// flex-grow 属性。
     pub flex_grow: f64,
     /// flex-shrink 属性。
@@ -1985,6 +2086,11 @@ impl Default for ComputedStyle {
             table_layout: TableLayoutValue::Auto,
             caption_side: CaptionSideValue::Top,
             border_collapse: BorderCollapseValue::Separate,
+            empty_cells: EmptyCellsComputedValue::Show,
+            border_spacing: BorderSpacingComputedValue {
+                horizontal: 0.0,
+                vertical: 0.0,
+            },
 
             // Flexbox
             flex_direction: FlexDirectionValue::Row,
@@ -1992,6 +2098,9 @@ impl Default for ComputedStyle {
             justify_content: AlignmentValue::FlexStart,
             align_items: AlignmentValue::Stretch,
             align_self: AlignmentValue::Stretch,
+            justify_items: JustifyItemsValue::Normal,
+            justify_self: JustifySelfValue::Auto,
+            align_content: AlignContentValue::Normal,
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: FlexBasisValue::Auto,
@@ -2276,6 +2385,11 @@ impl PropertyRegistry {
             "table-layout" => Some(TableLayout(TableLayoutValue::Auto)),
             "caption-side" => Some(CaptionSide(CaptionSideValue::Top)),
             "border-collapse" => Some(BorderCollapse(BorderCollapseValue::Separate)),
+            "empty-cells" => Some(EmptyCells(EmptyCellsComputedValue::Show)),
+            "border-spacing" => Some(BorderSpacing(BorderSpacingComputedValue {
+                horizontal: 0.0,
+                vertical: 0.0,
+            })),
             "resize" => Some(Resize(ResizeValue::None)),
 
             // Writing Mode
@@ -2286,6 +2400,9 @@ impl PropertyRegistry {
             "flex-wrap" => Some(FlexWrap(FlexWrapValue::Nowrap)),
             "justify-content" => Some(Alignment(AlignmentValue::FlexStart)),
             "align-items" | "align-self" => Some(Alignment(AlignmentValue::Stretch)),
+            "justify-items" => Some(JustifyItems(JustifyItemsValue::Normal)),
+            "justify-self" => Some(JustifySelf(JustifySelfValue::Auto)),
+            "align-content" => Some(AlignContent(AlignContentValue::Normal)),
             "flex-grow" => Some(Number(0.0)),
             "flex-shrink" => Some(Number(1.0)),
             "flex-basis" => Some(FlexBasis(FlexBasisValue::Auto)),
@@ -2520,6 +2637,8 @@ impl PropertyRegistry {
                 | "hyphens"
                 | "text-shadow"
                 | "list-style-image"
+                | "empty-cells"
+                | "border-spacing"
         )
     }
 
@@ -2588,6 +2707,9 @@ impl PropertyRegistry {
             "justify-content",
             "align-items",
             "align-self",
+            "justify-items",
+            "justify-self",
+            "align-content",
             "flex-grow",
             "flex-shrink",
             "flex-basis",
@@ -2649,6 +2771,8 @@ impl PropertyRegistry {
             "table-layout",
             "caption-side",
             "border-collapse",
+            "empty-cells",
+            "border-spacing",
             "resize",
             "transform-origin",
             "perspective",
@@ -5003,6 +5127,78 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "justify-items" => {
+            let lower = value.to_ascii_lowercase();
+            let v = match lower.as_str() {
+                "auto" => JustifyItemsValue::Auto,
+                "normal" => JustifyItemsValue::Normal,
+                "start" => JustifyItemsValue::Start,
+                "end" => JustifyItemsValue::End,
+                "center" => JustifyItemsValue::Center,
+                "stretch" => JustifyItemsValue::Stretch,
+                "baseline" => JustifyItemsValue::Baseline,
+                _ => return false,
+            };
+            style.justify_items = v;
+            return true;
+        }
+        "justify-self" => {
+            let lower = value.to_ascii_lowercase();
+            let v = match lower.as_str() {
+                "auto" => JustifySelfValue::Auto,
+                "normal" => JustifySelfValue::Normal,
+                "start" => JustifySelfValue::Start,
+                "end" => JustifySelfValue::End,
+                "center" => JustifySelfValue::Center,
+                "stretch" => JustifySelfValue::Stretch,
+                "baseline" => JustifySelfValue::Baseline,
+                _ => return false,
+            };
+            style.justify_self = v;
+            return true;
+        }
+        "align-content" => {
+            let lower = value.to_ascii_lowercase();
+            let v = match lower.as_str() {
+                "auto" => AlignContentValue::Auto,
+                "normal" => AlignContentValue::Normal,
+                "start" => AlignContentValue::Start,
+                "end" => AlignContentValue::End,
+                "center" => AlignContentValue::Center,
+                "stretch" => AlignContentValue::Stretch,
+                "baseline" => AlignContentValue::Baseline,
+                "space-between" => AlignContentValue::SpaceBetween,
+                "space-around" => AlignContentValue::SpaceAround,
+                "space-evenly" => AlignContentValue::SpaceEvenly,
+                _ => return false,
+            };
+            style.align_content = v;
+            return true;
+        }
+        "empty-cells" => {
+            if let Some(v) = zero_css_parser::values::parse_empty_cells(value) {
+                style.empty_cells = match v {
+                    zero_css_parser::values::EmptyCellsValue::Show => EmptyCellsComputedValue::Show,
+                    zero_css_parser::values::EmptyCellsValue::Hide => EmptyCellsComputedValue::Hide,
+                };
+                return true;
+            }
+        }
+        "border-spacing" => {
+            if let Some(v) = zero_css_parser::values::parse_border_spacing(value) {
+                style.border_spacing = BorderSpacingComputedValue {
+                    horizontal: match v.horizontal {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    vertical: match v.vertical {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -5131,6 +5327,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "list-style-image" => {
             child.list_style_image = parent.list_style_image.clone();
+            true
+        }
+        "empty-cells" => {
+            child.empty_cells = parent.empty_cells.clone();
+            true
+        }
+        "border-spacing" => {
+            child.border_spacing = parent.border_spacing.clone();
             true
         }
         _ => false,
@@ -5917,6 +6121,26 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "box-shadow" => {
             style.box_shadow = default_style.box_shadow;
+            true
+        }
+        "justify-items" => {
+            style.justify_items = default_style.justify_items;
+            true
+        }
+        "justify-self" => {
+            style.justify_self = default_style.justify_self;
+            true
+        }
+        "align-content" => {
+            style.align_content = default_style.align_content;
+            true
+        }
+        "empty-cells" => {
+            style.empty_cells = default_style.empty_cells;
+            true
+        }
+        "border-spacing" => {
+            style.border_spacing = default_style.border_spacing;
             true
         }
         _ => false,
@@ -11659,5 +11883,342 @@ mod tests {
         let mut style = ComputedStyle::default();
         assert!(apply_property_value(&mut style, "row-gap", "1.5em"));
         assert_eq!(style.row_gap, LengthValue::Em(1.5));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // justify-items / justify-self / align-content / empty-cells / border-spacing
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 验证 justify-items 的 apply_property_value 正确解析所有关键字值。
+    #[test]
+    fn test_apply_justify_items_keywords() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "justify-items", "center"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Center);
+        assert!(apply_property_value(&mut style, "justify-items", "start"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Start);
+        assert!(apply_property_value(&mut style, "justify-items", "normal"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Normal);
+        assert!(apply_property_value(&mut style, "justify-items", "stretch"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Stretch);
+    }
+
+    /// 验证 justify-items 对无效值返回 false。
+    #[test]
+    fn test_apply_justify_items_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "justify-items", "invalid"));
+    }
+
+    /// 验证 justify-self 的 apply_property_value 正确解析所有关键字值。
+    #[test]
+    fn test_apply_justify_self_keywords() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "justify-self", "auto"));
+        assert_eq!(style.justify_self, JustifySelfValue::Auto);
+        assert!(apply_property_value(&mut style, "justify-self", "end"));
+        assert_eq!(style.justify_self, JustifySelfValue::End);
+        assert!(apply_property_value(&mut style, "justify-self", "baseline"));
+        assert_eq!(style.justify_self, JustifySelfValue::Baseline);
+    }
+
+    /// 验证 align-content 的 apply_property_value 正确解析所有关键字值。
+    #[test]
+    fn test_apply_align_content_keywords() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "align-content", "space-between"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceBetween);
+        assert!(apply_property_value(&mut style, "align-content", "space-around"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceAround);
+        assert!(apply_property_value(&mut style, "align-content", "space-evenly"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceEvenly);
+        assert!(apply_property_value(&mut style, "align-content", "center"));
+        assert_eq!(style.align_content, AlignContentValue::Center);
+    }
+
+    /// 验证 align-content 对无效值返回 false。
+    #[test]
+    fn test_apply_align_content_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "align-content", "flex-start"));
+    }
+
+    /// 验证 empty-cells 的 apply_property_value 正确解析 show/hide。
+    #[test]
+    fn test_apply_empty_cells() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "empty-cells", "hide"));
+        assert_eq!(style.empty_cells, EmptyCellsComputedValue::Hide);
+        assert!(apply_property_value(&mut style, "empty-cells", "show"));
+        assert_eq!(style.empty_cells, EmptyCellsComputedValue::Show);
+    }
+
+    /// 验证 empty-cells 对无效值返回 false。
+    #[test]
+    fn test_apply_empty_cells_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "empty-cells", "visible"));
+    }
+
+    /// 验证 border-spacing 的 apply_property_value 正确解析单值和双值。
+    #[test]
+    fn test_apply_border_spacing() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-spacing", "5px"));
+        assert_eq!(style.border_spacing.horizontal, 5.0);
+        assert_eq!(style.border_spacing.vertical, 5.0);
+        assert!(apply_property_value(&mut style, "border-spacing", "2px 4px"));
+        assert_eq!(style.border_spacing.horizontal, 2.0);
+        assert_eq!(style.border_spacing.vertical, 4.0);
+    }
+
+    /// 验证 border-spacing 对无效值返回 false。
+    #[test]
+    fn test_apply_border_spacing_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-spacing", "invalid"));
+    }
+
+    /// 验证 empty-cells 和 border-spacing 是继承属性。
+    #[test]
+    fn test_inheritance_empty_cells_and_border_spacing() {
+        assert!(PropertyRegistry::is_inherited("empty-cells"));
+        assert!(PropertyRegistry::is_inherited("border-spacing"));
+        // justify-items / justify-self / align-content 不继承
+        assert!(!PropertyRegistry::is_inherited("justify-items"));
+        assert!(!PropertyRegistry::is_inherited("justify-self"));
+        assert!(!PropertyRegistry::is_inherited("align-content"));
+    }
+
+    /// 验证 5 个属性都在 known_properties 中注册。
+    #[test]
+    fn test_known_properties_new_five() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"justify-items"));
+        assert!(props.contains(&"justify-self"));
+        assert!(props.contains(&"align-content"));
+        assert!(props.contains(&"empty-cells"));
+        assert!(props.contains(&"border-spacing"));
+    }
+
+    /// 验证 5 个属性的 initial_value 均可获取。
+    #[test]
+    fn test_initial_value_new_five() {
+        assert!(PropertyRegistry::initial_value("justify-items").is_some());
+        assert!(PropertyRegistry::initial_value("justify-self").is_some());
+        assert!(PropertyRegistry::initial_value("align-content").is_some());
+        assert!(PropertyRegistry::initial_value("empty-cells").is_some());
+        assert!(PropertyRegistry::initial_value("border-spacing").is_some());
+    }
+
+    /// 验证 apply_initial_value 对 5 个新属性能正确重置为默认值。
+    #[test]
+    fn test_apply_initial_value_new_five() {
+        let mut style = ComputedStyle::default();
+        // 先设置非默认值
+        apply_property_value(&mut style, "justify-items", "center");
+        apply_property_value(&mut style, "justify-self", "end");
+        apply_property_value(&mut style, "align-content", "space-between");
+        apply_property_value(&mut style, "empty-cells", "hide");
+        apply_property_value(&mut style, "border-spacing", "10px");
+
+        // 重置
+        assert!(apply_initial_value(&mut style, "justify-items"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Normal);
+        assert!(apply_initial_value(&mut style, "justify-self"));
+        assert_eq!(style.justify_self, JustifySelfValue::Auto);
+        assert!(apply_initial_value(&mut style, "align-content"));
+        assert_eq!(style.align_content, AlignContentValue::Normal);
+        assert!(apply_initial_value(&mut style, "empty-cells"));
+        assert_eq!(style.empty_cells, EmptyCellsComputedValue::Show);
+        assert!(apply_initial_value(&mut style, "border-spacing"));
+        assert_eq!(style.border_spacing.horizontal, 0.0);
+        assert_eq!(style.border_spacing.vertical, 0.0);
+    }
+
+    /// 验证 empty-cells 和 border-spacing 的继承正确工作。
+    #[test]
+    fn test_inherit_property_empty_cells_and_border_spacing() {
+        let mut parent = ComputedStyle::default();
+        apply_property_value(&mut parent, "empty-cells", "hide");
+        apply_property_value(&mut parent, "border-spacing", "3px 7px");
+
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "empty-cells"));
+        assert_eq!(child.empty_cells, EmptyCellsComputedValue::Hide);
+        assert!(inherit_property(&parent, &mut child, "border-spacing"));
+        assert_eq!(child.border_spacing.horizontal, 3.0);
+        assert_eq!(child.border_spacing.vertical, 7.0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边界条件测试 — justify-items 全值 / align-content space-between /
+    //   empty-cells 继承 / border-spacing 继承 / gap 简写展开
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 justify-items 所有枚举值通过 apply_property_value 正确应用到 ComputedStyle。
+    #[test]
+    fn test_justify_items_all_values_via_apply() {
+        let mut style = ComputedStyle::default();
+
+        // 默认值为 Normal
+        assert_eq!(style.justify_items, JustifyItemsValue::Normal);
+
+        // 逐一验证所有 7 个枚举值
+        assert!(apply_property_value(&mut style, "justify-items", "auto"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Auto);
+
+        assert!(apply_property_value(&mut style, "justify-items", "normal"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Normal);
+
+        assert!(apply_property_value(&mut style, "justify-items", "start"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Start);
+
+        assert!(apply_property_value(&mut style, "justify-items", "end"));
+        assert_eq!(style.justify_items, JustifyItemsValue::End);
+
+        assert!(apply_property_value(&mut style, "justify-items", "center"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Center);
+
+        assert!(apply_property_value(&mut style, "justify-items", "stretch"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Stretch);
+
+        assert!(apply_property_value(&mut style, "justify-items", "baseline"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Baseline);
+
+        // 无效值应返回 false 且不改变当前值
+        assert!(!apply_property_value(&mut style, "justify-items", "invalid"));
+        assert_eq!(style.justify_items, JustifyItemsValue::Baseline);
+    }
+
+    /// 测试 align-content: space-between 通过 apply_property_value 正确应用。
+    #[test]
+    fn test_align_content_space_between() {
+        let mut style = ComputedStyle::default();
+
+        // 默认值为 Normal
+        assert_eq!(style.align_content, AlignContentValue::Normal);
+
+        // space-between 是 Box Alignment 规范中的关键值
+        assert!(apply_property_value(&mut style, "align-content", "space-between"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceBetween);
+
+        // 同系列值也应工作
+        assert!(apply_property_value(&mut style, "align-content", "space-around"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceAround);
+
+        assert!(apply_property_value(&mut style, "align-content", "space-evenly"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceEvenly);
+
+        // 无效值返回 false
+        assert!(!apply_property_value(&mut style, "align-content", "space-invalid"));
+        assert_eq!(style.align_content, AlignContentValue::SpaceEvenly);
+    }
+
+    /// 测试 empty-cells 通过 inherit_property 正确从父元素继承到子元素。
+    #[test]
+    fn test_empty_cells_inheritance_via_inherit_property() {
+        // empty-cells 是继承属性，父元素设置 hide 后子元素应继承
+        let mut parent = ComputedStyle::default();
+        parent.empty_cells = EmptyCellsComputedValue::Hide;
+
+        let mut child = ComputedStyle::default();
+        // 子元素默认为 Show
+        assert_eq!(child.empty_cells, EmptyCellsComputedValue::Show);
+
+        // 继承成功
+        assert!(inherit_property(&parent, &mut child, "empty-cells"));
+        assert_eq!(child.empty_cells, EmptyCellsComputedValue::Hide);
+
+        // 子元素显式设置后覆盖继承值
+        assert!(apply_property_value(&mut child, "empty-cells", "show"));
+        assert_eq!(child.empty_cells, EmptyCellsComputedValue::Show);
+
+        // 反向：父元素 Show → 子元素继承 Show
+        let parent2 = ComputedStyle::default();
+        let mut child2 = ComputedStyle::default();
+        child2.empty_cells = EmptyCellsComputedValue::Hide;
+        assert!(inherit_property(&parent2, &mut child2, "empty-cells"));
+        assert_eq!(child2.empty_cells, EmptyCellsComputedValue::Show);
+    }
+
+    /// 测试 border-spacing 通过 inherit_property 正确从父元素继承到子元素，
+    /// 包括水平/垂直分量独立验证。
+    #[test]
+    fn test_border_spacing_inheritance_via_inherit_property() {
+        // border-spacing 是继承属性
+        let mut parent = ComputedStyle::default();
+        parent.border_spacing.horizontal = 12.0;
+        parent.border_spacing.vertical = 24.0;
+
+        let mut child = ComputedStyle::default();
+        // 子元素默认为 0 0
+        assert_eq!(child.border_spacing.horizontal, 0.0);
+        assert_eq!(child.border_spacing.vertical, 0.0);
+
+        // 继承成功，水平/垂直分量分别复制
+        assert!(inherit_property(&parent, &mut child, "border-spacing"));
+        assert_eq!(child.border_spacing.horizontal, 12.0);
+        assert_eq!(child.border_spacing.vertical, 24.0);
+
+        // 子元素显式设置后覆盖继承值（只设水平，垂直仍由简写决定）
+        assert!(apply_property_value(&mut child, "border-spacing", "5px"));
+        assert_eq!(child.border_spacing.horizontal, 5.0);
+        assert_eq!(child.border_spacing.vertical, 5.0);
+
+        // 两值形式继承：水平和垂直不同
+        let mut parent3 = ComputedStyle::default();
+        parent3.border_spacing.horizontal = 8.0;
+        parent3.border_spacing.vertical = 16.0;
+
+        let mut child3 = ComputedStyle::default();
+        assert!(inherit_property(&parent3, &mut child3, "border-spacing"));
+        assert_eq!(child3.border_spacing.horizontal, 8.0);
+        assert_eq!(child3.border_spacing.vertical, 16.0);
+    }
+
+    /// 测试 gap 简写属性通过 expand_shorthands 正确展开为
+    /// gap、row-gap、column-gap 三个长属性，
+    /// 覆盖单值和双值两种形式。
+    #[test]
+    fn test_gap_shorthand_expansion_via_expand_shorthands() {
+        use crate::shorthand::expand_shorthands;
+
+        // ── 单值形式：gap: 10px → row-gap: 10px, column-gap: 10px ──
+        let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+            vec![("gap".to_string(), "10px".to_string(), false, (0, 0, 1))];
+        let expanded = expand_shorthands(&decls);
+
+        // 展开后应得到 3 个声明：gap + row-gap + column-gap
+        assert_eq!(expanded.len(), 3);
+
+        let props: Vec<(&str, &str)> = expanded.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+        assert!(props.contains(&("gap", "10px")));
+        assert!(props.contains(&("row-gap", "10px")));
+        assert!(props.contains(&("column-gap", "10px")));
+
+        // important 和特异性应保留
+        for (_, _, imp, spec) in &expanded {
+            assert!(!imp);
+            assert_eq!(*spec, (0, 0, 1));
+        }
+
+        // ── 双值形式：gap: 10px 20px → row-gap: 10px, column-gap: 20px ──
+        let decls2: Vec<(String, String, bool, (u32, u32, u32))> =
+            vec![("gap".to_string(), "10px 20px".to_string(), true, (0, 1, 0))];
+        let expanded2 = expand_shorthands(&decls2);
+
+        assert_eq!(expanded2.len(), 3);
+
+        let props2: Vec<(&str, &str)> = expanded2.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+        assert!(props2.contains(&("gap", "10px")));
+        assert!(props2.contains(&("row-gap", "10px")));
+        assert!(props2.contains(&("column-gap", "20px")));
+
+        // important 和特异性保留
+        for (_, _, imp, spec) in &expanded2 {
+            assert!(imp, "important 标志应被保留");
+            assert_eq!(*spec, (0, 1, 0), "特异性应被保留");
+        }
     }
 }

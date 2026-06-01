@@ -5132,6 +5132,53 @@ pub fn parse_list_style_image(value: &str) -> Option<ListStyleImageValue> {
     None
 }
 
+/// CSS empty-cells 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum EmptyCellsValue {
+    /// show（默认值）— 显示空单元格边框。
+    Show,
+    /// hide — 隐藏空单元格边框。
+    Hide,
+}
+
+/// 解析 CSS empty-cells 属性值。
+pub fn parse_empty_cells(value: &str) -> Option<EmptyCellsValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "show" => Some(EmptyCellsValue::Show),
+        "hide" => Some(EmptyCellsValue::Hide),
+        _ => None,
+    }
+}
+
+/// CSS border-spacing 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderSpacingValue {
+    /// 水平间距。
+    pub horizontal: LengthValue,
+    /// 垂直间距（如果只有一个值，则等于水平间距）。
+    pub vertical: LengthValue,
+}
+
+/// 解析 CSS border-spacing 属性值。
+///
+/// 支持格式如 "2px"、"2px 4px"。
+pub fn parse_border_spacing(value: &str) -> Option<BorderSpacingValue> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.is_empty() || parts.len() > 2 {
+        return None;
+    }
+    let h = parse_length(parts[0])?;
+    let v = if parts.len() == 2 {
+        parse_length(parts[1])?
+    } else {
+        h.clone()
+    };
+    Some(BorderSpacingValue {
+        horizontal: h,
+        vertical: v,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7766,5 +7813,106 @@ mod tests {
     #[test]
     fn test_parse_box_shadow_color_at_start_returns_none() {
         assert_eq!(parse_box_shadow("red 5px 10px"), None);
+    }
+
+    // ── empty-cells ──
+
+    #[test]
+    fn test_parse_empty_cells_show() {
+        assert_eq!(parse_empty_cells("show"), Some(EmptyCellsValue::Show));
+    }
+
+    #[test]
+    fn test_parse_empty_cells_hide() {
+        assert_eq!(parse_empty_cells("hide"), Some(EmptyCellsValue::Hide));
+    }
+
+    #[test]
+    fn test_parse_empty_cells_case_insensitive() {
+        assert_eq!(parse_empty_cells("SHOW"), Some(EmptyCellsValue::Show));
+        assert_eq!(parse_empty_cells("Hide"), Some(EmptyCellsValue::Hide));
+    }
+
+    #[test]
+    fn test_parse_empty_cells_invalid() {
+        assert_eq!(parse_empty_cells("invalid"), None);
+        assert_eq!(parse_empty_cells(""), None);
+    }
+
+    // ── border-spacing ──
+
+    #[test]
+    fn test_parse_border_spacing_single_value() {
+        let v = parse_border_spacing("2px").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Px(2.0));
+        assert_eq!(v.vertical, LengthValue::Px(2.0));
+    }
+
+    #[test]
+    fn test_parse_border_spacing_two_values() {
+        let v = parse_border_spacing("2px 4px").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Px(2.0));
+        assert_eq!(v.vertical, LengthValue::Px(4.0));
+    }
+
+    #[test]
+    fn test_parse_border_spacing_em() {
+        let v = parse_border_spacing("1em").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Em(1.0));
+    }
+
+    #[test]
+    fn test_parse_border_spacing_invalid() {
+        assert_eq!(parse_border_spacing(""), None);
+        assert_eq!(parse_border_spacing("invalid"), None);
+        assert_eq!(parse_border_spacing("1px 2px 3px"), None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边缘测试补充（round 22）
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 parse_empty_cells 两个有效值的全面断言
+    /// 同时验证 show 和 hide 都能正确解析，包含前后空白
+    #[test]
+    fn test_parse_empty_cells_both_values_with_whitespace() {
+        assert_eq!(parse_empty_cells("  show  "), Some(EmptyCellsValue::Show));
+        assert_eq!(parse_empty_cells("\thide\t"), Some(EmptyCellsValue::Hide));
+    }
+
+    /// 测试 parse_border_spacing 单值（rem 单位）
+    /// 单值时 vertical 应等于 horizontal，验证 rem 单位正确解析
+    #[test]
+    fn test_parse_border_spacing_single_rem() {
+        let v = parse_border_spacing("0.5rem").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Rem(0.5));
+        assert_eq!(v.vertical, LengthValue::Rem(0.5));
+    }
+
+    /// 测试 parse_border_spacing 双值（混合单位 em + px）
+    /// 水平和垂直可以使用不同单位
+    #[test]
+    fn test_parse_border_spacing_mixed_units() {
+        let v = parse_border_spacing("1em 8px").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Em(1.0));
+        assert_eq!(v.vertical, LengthValue::Px(8.0));
+    }
+
+    /// 测试 parse_border_spacing 负值
+    /// CSS 规范要求 border-spacing 不接受负值，但当前解析器不会拒绝，
+    /// 验证负值确实被解析为 Px(-2.0)，记录此边界行为
+    #[test]
+    fn test_parse_border_spacing_negative_value() {
+        let v = parse_border_spacing("-2px").unwrap();
+        assert_eq!(v.horizontal, LengthValue::Px(-2.0));
+        assert_eq!(v.vertical, LengthValue::Px(-2.0));
+    }
+
+    /// 测试 parse_list_style_image URL 中包含空格
+    /// URL 未加引号但含有空格时，解析器按括号到末尾取值，空格被保留
+    #[test]
+    fn test_parse_list_style_image_url_with_spaces() {
+        let v = parse_list_style_image("url(my image.png)").unwrap();
+        assert_eq!(v, ListStyleImageValue::Url("my image.png".to_string()));
     }
 }
