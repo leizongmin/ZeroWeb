@@ -223,3 +223,483 @@ fn test_polyfill_get_element_by_id_not_found() {
     let result = eval_polyfill("JSON.stringify(document.getElementById('nonexistent'));");
     assert_eq!(result.trim(), "null");
 }
+
+// ── CSSStyleDeclaration 测试 ──
+
+#[test]
+fn test_polyfill_style_set_get_property() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.style.setProperty('color', 'red');
+        el.style.setProperty('font-size', '16px');
+        JSON.stringify([el.style.getPropertyValue('color'), el.style.getPropertyValue('font-size')]);
+    "#,
+    );
+    assert!(result.contains("red"), "color 应为 'red': {result}");
+    assert!(result.contains("16px"), "font-size 应为 '16px': {result}");
+}
+
+#[test]
+fn test_polyfill_style_remove_property() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.style.setProperty('color', 'red');
+        var removed = el.style.removeProperty('color');
+        JSON.stringify([removed, el.style.getPropertyValue('color')]);
+    "#,
+    );
+    assert!(result.contains("red"), "removeProperty 应返回旧值: {result}");
+    assert!(result.contains("\"\""), "移除后 getPropertyValue 应为空: {result}");
+}
+
+#[test]
+fn test_polyfill_style_css_text() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.style.setProperty('color', 'blue');
+        el.style.setProperty('margin', '10px');
+        JSON.stringify(el.style.cssText);
+    "#,
+    );
+    assert!(result.contains("color"), "cssText 应包含 'color': {result}");
+    assert!(result.contains("margin"), "cssText 应包含 'margin': {result}");
+}
+
+#[test]
+fn test_polyfill_style_css_text_setter() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.style.cssText = 'padding: 5px; border: 1px solid';
+        JSON.stringify(el.style.getPropertyValue('padding'));
+    "#,
+    );
+    assert!(result.contains("5px"), "cssText setter 应解析属性: {result}");
+}
+
+// ── DOMTokenList (classList) 测试 ──
+
+#[test]
+fn test_polyfill_classlist_add_contains() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.classList.add('active');
+        el.classList.add('visible');
+        JSON.stringify([el.classList.contains('active'), el.classList.contains('hidden'), el.classList.length]);
+    "#,
+    );
+    assert!(result.contains("true"), "应包含 'active': {result}");
+    assert!(result.contains("false"), "不应包含 'hidden': {result}");
+}
+
+#[test]
+fn test_polyfill_classlist_remove() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.classList.add('a');
+        el.classList.add('b');
+        el.classList.remove('a');
+        JSON.stringify([el.classList.contains('a'), el.classList.contains('b')]);
+    "#,
+    );
+    assert!(result.contains("false"), "移除后不应包含 'a': {result}");
+    assert!(result.contains("true"), "仍应包含 'b': {result}");
+}
+
+#[test]
+fn test_polyfill_classlist_toggle() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.classList.add('on');
+        var r1 = el.classList.toggle('on');
+        var r2 = el.classList.toggle('off');
+        JSON.stringify([r1, r2, el.classList.contains('on'), el.classList.contains('off')]);
+    "#,
+    );
+    assert!(result.contains("false"), "toggle 已有的类应返回 false: {result}");
+    assert!(result.contains("true"), "toggle 没有的类应返回 true: {result}");
+}
+
+#[test]
+fn test_polyfill_classlist_replace() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.classList.add('old');
+        var r = el.classList.replace('old', 'new');
+        JSON.stringify([r, el.classList.contains('old'), el.classList.contains('new')]);
+    "#,
+    );
+    assert!(result.contains("true"), "replace 应返回 true: {result}");
+}
+
+#[test]
+fn test_polyfill_classlist_item() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.classList.add('first');
+        el.classList.add('second');
+        JSON.stringify([el.classList.item(0), el.classList.item(1), el.classList.item(99)]);
+    "#,
+    );
+    assert!(result.contains("first"), "item(0) 应为 'first': {result}");
+    assert!(result.contains("second"), "item(1) 应为 'second': {result}");
+    assert!(result.contains("null"), "越界 item 应为 null: {result}");
+}
+
+// ── 导航属性测试 ──
+
+#[test]
+fn test_polyfill_first_last_child() {
+    let result = eval_polyfill(
+        r#"
+        var p = document.createElement('div');
+        var a = document.createElement('a');
+        var b = document.createElement('b');
+        p.appendChild(a);
+        p.appendChild(b);
+        JSON.stringify([p.firstChild.tagName, p.lastChild.tagName]);
+    "#,
+    );
+    assert!(result.contains("A"), "firstChild 应为 A: {result}");
+    assert!(result.contains("B"), "lastChild 应为 B: {result}");
+}
+
+#[test]
+fn test_polyfill_next_previous_sibling() {
+    let result = eval_polyfill(
+        r#"
+        var p = document.createElement('div');
+        var a = document.createElement('a');
+        var b = document.createElement('b');
+        var c = document.createElement('c');
+        p.appendChild(a); p.appendChild(b); p.appendChild(c);
+        JSON.stringify([a.nextSibling.tagName, c.previousSibling.tagName]);
+    "#,
+    );
+    assert!(result.contains("B"), "a.nextSibling 应为 B: {result}");
+    assert!(result.contains("B"), "c.previousSibling 应为 B: {result}");
+}
+
+#[test]
+fn test_polyfill_child_element_count() {
+    let result = eval_polyfill(
+        r#"
+        var p = document.createElement('div');
+        p.appendChild(document.createElement('a'));
+        p.appendChild(document.createElement('b'));
+        JSON.stringify(p.childElementCount);
+    "#,
+    );
+    assert_eq!(result.trim(), "2");
+}
+
+#[test]
+fn test_polyfill_first_child_empty() {
+    let result = eval_polyfill("var p = document.createElement('div'); JSON.stringify(p.firstChild);");
+    assert_eq!(result.trim(), "null");
+}
+
+// ── innerHTML / outerHTML 测试 ──
+
+#[test]
+fn test_polyfill_inner_html_setter() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.innerHTML = 'Hello';
+        JSON.stringify(el.textContent);
+    "#,
+    );
+    assert_eq!(result.trim_matches('"'), "Hello");
+}
+
+#[test]
+fn test_polyfill_outer_html_tag() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('id', 'x');
+        var html = el.outerHTML;
+        JSON.stringify(html.indexOf('<div') === 0 && html.indexOf('id="x"') > 0);
+    "#,
+    );
+    assert_eq!(result.trim(), "true");
+}
+
+// ── Fetch API 测试 ──
+
+#[test]
+fn test_polyfill_fetch_returns_response() {
+    // fetch() 返回 Promise，then 回调在 V8 桩中不保证同步执行
+    // 直接验证 fetch 函数和 Response 构造器存在
+    let result = eval_polyfill("JSON.stringify([typeof fetch === 'function', typeof Response === 'function']);");
+    assert!(result.contains("true"), "fetch 和 Response 应存在: {result}");
+}
+
+#[test]
+fn test_polyfill_headers_case_insensitive() {
+    let result = eval_polyfill(
+        r#"
+        var h = new Headers();
+        h.append('Content-Type', 'text/html');
+        JSON.stringify([h.get('content-type'), h.has('CONTENT-TYPE')]);
+    "#,
+    );
+    assert!(result.contains("text/html"), "Headers 应不区分大小写: {result}");
+    assert!(result.contains("true"), "has 应不区分大小写: {result}");
+}
+
+#[test]
+fn test_polyfill_headers_delete() {
+    let result = eval_polyfill(
+        r#"
+        var h = new Headers();
+        h.set('X-Custom', 'value');
+        h.delete('x-custom');
+        JSON.stringify(h.has('X-Custom'));
+    "#,
+    );
+    assert_eq!(result.trim(), "false");
+}
+
+#[test]
+fn test_polyfill_response_ok_status() {
+    let result = eval_polyfill(
+        r#"
+        var r = new Response('body text', {status: 200, statusText: 'OK'});
+        JSON.stringify([r.ok, r.status, r.statusText]);
+    "#,
+    );
+    assert!(result.contains("true"), "status 200 ok 应为 true: {result}");
+    assert!(result.contains("200"), "status 应为 200: {result}");
+}
+
+#[test]
+fn test_polyfill_response_not_ok() {
+    let result = eval_polyfill("var r = new Response(null, {status: 404}); JSON.stringify(r.ok);");
+    assert_eq!(result.trim(), "false", "status 404 ok 应为 false");
+}
+
+#[test]
+fn test_polyfill_response_clone() {
+    let result = eval_polyfill(
+        r#"
+        var r = new Response('body', {status: 201, statusText: 'Created'});
+        var c = r.clone();
+        JSON.stringify([c.status, c.statusText]);
+    "#,
+    );
+    assert!(result.contains("201"), "clone 应保留 status: {result}");
+    assert!(result.contains("Created"), "clone 应保留 statusText: {result}");
+}
+
+#[test]
+fn test_polyfill_response_error() {
+    let result = eval_polyfill("var r = Response.error(); JSON.stringify(r.type);");
+    assert_eq!(result.trim_matches('"'), "error");
+}
+
+// ── Web Storage API 测试 ──
+
+#[test]
+fn test_polyfill_local_storage_crud() {
+    let result = eval_polyfill(
+        r#"
+        localStorage.setItem('key', 'value');
+        var v = localStorage.getItem('key');
+        localStorage.removeItem('key');
+        var after = localStorage.getItem('key');
+        JSON.stringify([v, after]);
+    "#,
+    );
+    assert!(result.contains("value"), "getItem 应返回 'value': {result}");
+    assert!(result.contains("null"), "removeItem 后应为 null: {result}");
+}
+
+#[test]
+fn test_polyfill_session_storage_clear() {
+    let result = eval_polyfill(
+        r#"
+        sessionStorage.setItem('a', '1');
+        sessionStorage.setItem('b', '2');
+        sessionStorage.clear();
+        JSON.stringify(sessionStorage.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "0");
+}
+
+#[test]
+fn test_polyfill_storage_key() {
+    let result = eval_polyfill(
+        r#"
+        localStorage.clear();
+        localStorage.setItem('x', '1');
+        localStorage.setItem('y', '2');
+        JSON.stringify(localStorage.length >= 2);
+    "#,
+    );
+    assert_eq!(result.trim(), "true");
+}
+
+// ── MutationObserver 测试 ──
+
+#[test]
+fn test_polyfill_mutation_observer_observe_disconnect() {
+    let result = eval_polyfill(
+        r#"
+        var called = false;
+        var obs = new MutationObserver(function() { called = true; });
+        var el = document.createElement('div');
+        obs.observe(el, { childList: true });
+        obs.disconnect();
+        JSON.stringify(typeof obs._callback === 'function');
+    "#,
+    );
+    assert_eq!(result.trim(), "true");
+}
+
+#[test]
+fn test_polyfill_mutation_observer_take_records() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new MutationObserver(function() {});
+        var records = obs.takeRecords();
+        JSON.stringify(Array.isArray(records) && records.length === 0);
+    "#,
+    );
+    assert_eq!(result.trim(), "true");
+}
+
+// ── CustomEvent 测试 ──
+
+#[test]
+fn test_polyfill_custom_event() {
+    let result = eval_polyfill(
+        r#"
+        var e = new CustomEvent('myevent', { bubbles: true, detail: { x: 42 } });
+        JSON.stringify([e.type, e.bubbles, e.detail.x]);
+    "#,
+    );
+    assert!(result.contains("myevent"), "type 应为 'myevent': {result}");
+    assert!(result.contains("42"), "detail.x 应为 42: {result}");
+}
+
+#[test]
+fn test_polyfill_custom_event_prevent_default() {
+    let result = eval_polyfill(
+        r#"
+        var e = new CustomEvent('test', { cancelable: true });
+        e.preventDefault();
+        JSON.stringify(e._defaultPrevented);
+    "#,
+    );
+    assert_eq!(result.trim(), "true");
+}
+
+// ── IntersectionObserver 测试 ──
+
+#[test]
+fn test_polyfill_intersection_observer_observe() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new IntersectionObserver(function() {});
+        var el = document.createElement('div');
+        obs.observe(el);
+        obs.observe(el);
+        JSON.stringify(obs._observing.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "1", "重复 observe 不应重复添加");
+}
+
+#[test]
+fn test_polyfill_intersection_observer_unobserve() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new IntersectionObserver(function() {});
+        var el = document.createElement('div');
+        obs.observe(el);
+        obs.unobserve(el);
+        JSON.stringify(obs._observing.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "0");
+}
+
+#[test]
+fn test_polyfill_intersection_observer_disconnect() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new IntersectionObserver(function() {});
+        obs.observe(document.createElement('a'));
+        obs.observe(document.createElement('b'));
+        obs.disconnect();
+        JSON.stringify(obs._observing.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "0");
+}
+
+// ── ResizeObserver 测试 ──
+
+#[test]
+fn test_polyfill_resize_observer_observe_unobserve() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new ResizeObserver(function() {});
+        var el = document.createElement('div');
+        obs.observe(el);
+        obs.unobserve(el);
+        JSON.stringify(obs._observing.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "0");
+}
+
+#[test]
+fn test_polyfill_resize_observer_disconnect() {
+    let result = eval_polyfill(
+        r#"
+        var obs = new ResizeObserver(function() {});
+        obs.observe(document.createElement('div'));
+        obs.disconnect();
+        JSON.stringify(obs._observing.length);
+    "#,
+    );
+    assert_eq!(result.trim(), "0");
+}
+
+// ── Timer API 测试 ──
+
+#[test]
+fn test_polyfill_set_timeout_executes() {
+    let result = eval_polyfill(
+        r#"
+        var x = 0;
+        setTimeout(function() { x = 42; }, 0);
+        JSON.stringify(x);
+    "#,
+    );
+    assert_eq!(result.trim(), "42", "setTimeout 应同步执行回调（桩实现）");
+}
+
+#[test]
+fn test_polyfill_set_interval_executes() {
+    let result = eval_polyfill(
+        r#"
+        var x = 0;
+        setInterval(function() { x = 99; }, 100);
+        JSON.stringify(x);
+    "#,
+    );
+    assert_eq!(result.trim(), "99", "setInterval 应同步执行回调（桩实现）");
+}

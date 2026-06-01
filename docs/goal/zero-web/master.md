@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，5693 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
+**执行状态**: 16/16 crate 已实现，5729 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5693 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5729 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -44,7 +44,7 @@
 
 | 测试模块 | 测试数 | 覆盖场景 |
 |----------|--------|----------|
-| DOM Bridge Polyfill (V8) | 17 | createElement/createTextNode/setAttribute/getAttribute/removeAttribute/appendChild/removeChild/insertBefore/cloneNode(浅/深)/textContent/hasChildNodes/replaceChild/DocumentFragment/id+className/getElementById |
+| DOM Bridge Polyfill (V8) | 53 | createElement/textNode/setAttribute/appendChild/insertBefore/cloneNode/textContent/replaceChild/DocumentFragment/getElementById/CSSStyleDeclaration/DOMTokenList/navigation properties/innerHTML/outerHTML/Fetch/Headers/Response/Storage/MutationObserver/CustomEvent/IntersectionObserver/ResizeObserver/setTimeout/setInterval |
 | CSS + Style System | 3 | 样式计算、级联优先级、继承 |
 | Render Pipeline | 4 | 完整管线、CSS 集成、耗时分解、复杂页面 |
 | Net + Security | 3 | 同源判断、CORS 策略、安全上下文 |
@@ -103,20 +103,20 @@
 
 ## 最近完成的改进
 
-### -53. 集成测试文件拆分 + 新增 70 个测试（本轮，5693 测试）
+### -53. 集成测试文件拆分 + 新增 106 个测试（本轮，5729 测试）
 
-重构集成测试文件结构，新增 HTML 解析器/MutationObserver/Event/DomBridge 边界测试、V8 polyfill 行为测试：
+重构集成测试文件结构，新增 HTML 解析器/MutationObserver/Event/DomBridge 边界测试、V8 polyfill 全 API 行为测试：
 
 | 模块 | 新增内容 | 新增测试 |
 |------|----------|----------|
 | integration | **文件拆分**：6424 行 lib.rs → 17 个模块文件（每个 <2000 行） | — |
-| integration/dom_bridge_polyfill | **V8 polyfill 行为测试**：createElement/createTextNode/setAttribute/appendChild/insertBefore/cloneNode(浅/深)/textContent/replaceChild/DocumentFragment/getElementById 等实际 V8 执行验证 | 17 |
+| integration/dom_bridge_polyfill | **V8 polyfill 全 API 行为测试**：DOM 操作、CSSStyleDeclaration、DOMTokenList、导航属性、innerHTML/outerHTML、Fetch/Headers/Response、localStorage/sessionStorage、MutationObserver、CustomEvent、IntersectionObserver、ResizeObserver、setTimeout/setInterval | 53 |
 | dom/parser | **HTML 解析器测试**：空文档/纯文本/完整文档/属性/嵌套/void 元素/错误恢复/未闭合标签/HTML 实体/注释/script+style/DOCTYPE/Unicode/大文档 | 22 |
 | dom/mutation | **MutationObserver 测试**：ChildList/Attributes/CharacterData 记录、回调调用、空记录、MutationType 相等性、clone 一致性 | 7 |
 | dom/event | **Event 系统测试**：stopPropagation 阻止冒泡、多监听器、stopImmediatePropagation、非冒泡事件、EventPhase、preventDefault 不可取消、init_for_dispatch 重置、EventListenerHandle | 10 |
 | engine/dom_bridge | **命令解析边界**：空白容错/单引号/空字符串/未知命令；**DomBridge 句柄边界**：重复注册/批量注册/unregister+resolve/clear；**DomResult 测试** | 14 |
 
-Total: 5623 → 5693 (+70 tests)
+Total: 5623 → 5729 (+106 tests)
 
 ### -52. DOM Bridge polyfill 增强 + browser-shell 边界测试（本轮，5568 测试）
 
