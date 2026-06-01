@@ -3408,4 +3408,144 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "1", "setInterval callback should execute once in stub");
     }
+
+    // ── Web Storage API 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 localStorage 存在。
+    #[test]
+    fn test_webview_local_storage_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof localStorage;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "object", "localStorage should be an object");
+    }
+
+    /// 测试 sessionStorage 存在。
+    #[test]
+    fn test_webview_session_storage_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof sessionStorage;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "object", "sessionStorage should be an object");
+    }
+
+    /// 测试 localStorage setItem/getItem 往返。
+    #[test]
+    fn test_webview_local_storage_set_get() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('key1', 'value1');
+            localStorage.getItem('key1');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "value1",
+            "localStorage getItem should return set value"
+        );
+    }
+
+    /// 测试 localStorage removeItem。
+    #[test]
+    fn test_webview_local_storage_remove() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('temp', 'data');
+            localStorage.removeItem('temp');
+            localStorage.getItem('temp');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "null",
+            "localStorage should return null after removeItem"
+        );
+    }
+
+    /// 测试 localStorage clear。
+    #[test]
+    fn test_webview_local_storage_clear() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('a', '1');
+            localStorage.setItem('b', '2');
+            localStorage.clear();
+            localStorage.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0", "localStorage should be empty after clear");
+    }
+
+    /// 测试 localStorage length。
+    #[test]
+    fn test_webview_local_storage_length() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('x', '1');
+            localStorage.setItem('y', '2');
+            localStorage.setItem('z', '3');
+            localStorage.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "3", "localStorage length should be 3");
+    }
+
+    /// 测试 localStorage key() 方法。
+    #[test]
+    fn test_webview_local_storage_key() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('alpha', 'a');
+            localStorage.setItem('beta', 'b');
+            var k0 = localStorage.key(0);
+            var k1 = localStorage.key(1);
+            var kn = localStorage.key(99);
+            kn === null ? k0 + ',' + k1 : 'fail';
+            "#,
+        );
+        assert!(result.is_ok());
+        let val = result.unwrap();
+        // key order is insertion order
+        assert!(
+            val.contains("alpha") || val.contains("beta"),
+            "key() should return valid keys"
+        );
+    }
+
+    /// 测试 getItem 对不存在的 key 返回 null。
+    #[test]
+    fn test_webview_local_storage_get_missing() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("localStorage.getItem('nonexistent');");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "null", "Missing key should return null");
+    }
+
+    /// 测试 sessionStorage 独立于 localStorage。
+    #[test]
+    fn test_webview_session_storage_independent() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            localStorage.setItem('shared', 'in-local');
+            sessionStorage.setItem('shared', 'in-session');
+            localStorage.getItem('shared') + ',' + sessionStorage.getItem('shared');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "in-local,in-session",
+            "localStorage and sessionStorage should be independent"
+        );
+    }
 }
