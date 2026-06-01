@@ -140,7 +140,7 @@ fn resolve_keyword(value: &str, _property: &str, _parent: Option<&ComputedStyle>
 mod tests {
     use super::*;
     use crate::property::{ComputedStyle, LineHeightValue};
-    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, VisibilityValue};
+    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, PositionValue, VisibilityValue};
 
     /// 创建一个带自定义 color 和 font-size 的父样式。
     fn make_parent_style() -> ComputedStyle {
@@ -629,5 +629,45 @@ mod tests {
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
         assert_eq!(style.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    // ── 新增边界测试 ──
+
+    #[test]
+    /// 根元素无父样式时，inherit 对非继承属性使用初始值
+    fn test_inherit_no_parent_non_inherited() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("display".to_string(), "inherit".to_string());
+
+        let style = compute_inherited_style(None, &cascaded);
+        // display 非继承，无父样式 → 回退到 initial
+        assert_eq!(style.display, DisplayValue::Inline, "无父样式时 inherit 对非继承属性应使用 initial");
+    }
+
+    #[test]
+    /// 空级联属性映射应使用所有默认初始值
+    fn test_empty_cascaded_all_initial() {
+        let cascaded = HashMap::new();
+        let style = compute_inherited_style(None, &cascaded);
+
+        assert_eq!(style.display, DisplayValue::Inline);
+        assert_eq!(style.position, PositionValue::Static);
+        assert_eq!(style.width, LengthValue::Auto);
+    }
+
+    #[test]
+    /// initial 关键字对继承属性恢复默认值
+    fn test_initial_on_inherited_property() {
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255);
+        parent.font_size = LengthValue::Px(24.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("color".to_string(), "initial".to_string());
+        cascaded.insert("font-size".to_string(), "initial".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        // color initial = black (default), font-size initial = medium (16px)
+        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255), "initial 应恢复 color 默认值");
     }
 }

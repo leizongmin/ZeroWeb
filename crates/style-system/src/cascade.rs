@@ -603,4 +603,68 @@ mod tests {
         let user = CascadeOrder::new(Origin::User, None, (0, 0, 1), 0, false);
         assert!(user > ua);
     }
+
+    // ── 新增边界测试 ──
+
+    #[test]
+    /// cascade 函数空声明返回空 map
+    fn test_cascade_empty_declarations() {
+        let result = cascade(vec![]);
+        assert!(result.is_empty(), "空声明应返回空 map");
+    }
+
+    #[test]
+    /// cascade 函数单一声明返回正确值
+    fn test_cascade_single_declaration() {
+        let decls = vec![CascadedDeclaration {
+            property: "color".to_string(),
+            value: "red".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls);
+        assert_eq!(result.get("color"), Some(&"red".to_string()));
+    }
+
+    #[test]
+    /// cascade 多属性各自保留最高优先级值（补充验证）
+    fn test_cascade_multiple_properties_comprehensive() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "block".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("color"), Some(&"blue".to_string()), "高特异性胜出");
+        assert_eq!(result.get("display"), Some(&"block".to_string()));
+    }
+
+    #[test]
+    /// 同层级下后出现的声明胜出（位置递增）
+    fn test_cascade_position_ordering() {
+        let first = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let second = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false);
+        assert!(second > first, "后出现的声明应胜出");
+    }
+
+    #[test]
+    /// 高特异性胜过低特异性
+    fn test_cascade_specificity_ordering() {
+        let id_sel = CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false);
+        let class_sel = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let type_sel = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        assert!(id_sel > class_sel, "ID 选择器应胜过类选择器");
+        assert!(class_sel > type_sel, "类选择器应胜过类型选择器");
+    }
 }
