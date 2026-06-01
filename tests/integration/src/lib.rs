@@ -1329,7 +1329,7 @@ mod cross_crate_pipeline {
     use zero_css_parser::Parser as CssParser;
     use zero_css_parser::values::{
         AlignmentValue, ColorValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FontWeightValue, LengthValue,
-        OverflowValue, TransformFunction, TransformValue, parse_transform,
+        OverflowValue, PositionValue, TransformFunction, TransformValue, parse_transform,
     };
     use zero_dom::Document;
     use zero_engine::RenderPipeline;
@@ -6183,5 +6183,243 @@ mod cross_crate_pipeline {
         let div_style = styles.get(&div).expect("div 应有计算样式");
         assert_eq!(div_style.overflow_x, OverflowValue::Hidden, "overflow-x 应为 Hidden");
         assert_eq!(div_style.overflow_y, OverflowValue::Scroll, "overflow-y 应为 Scroll");
+    }
+
+    // ── CSS Grid / Position / Box Model 管线集成测试 ──
+
+    /// CSS grid-template-columns 管线集成测试。
+    ///
+    /// 解析含 display: grid; grid-template-columns: 1fr 2fr 100px 的 CSS，
+    /// 通过 style-system 计算样式，验证 grid_template_columns 为 Some 且包含预期值。
+    #[test]
+    fn test_grid_template_columns_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "grid");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .grid { display: grid; grid-template-columns: 1fr 2fr 100px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.display, DisplayValue::Grid, "div 的 display 应为 Grid");
+        assert!(
+            div_style.grid_template_columns.is_some(),
+            "grid_template_columns 不应为 None"
+        );
+        let cols = div_style.grid_template_columns.as_ref().unwrap();
+        assert!(cols.contains("1fr"), "grid_template_columns 应包含 1fr");
+        assert!(cols.contains("2fr"), "grid_template_columns 应包含 2fr");
+        assert!(cols.contains("100px"), "grid_template_columns 应包含 100px");
+    }
+
+    /// CSS grid-template-rows 管线集成测试。
+    ///
+    /// 解析含 display: grid; grid-template-rows: auto 200px 的 CSS，
+    /// 通过 style-system 计算样式，验证 grid_template_rows 为 Some 且包含预期值。
+    #[test]
+    fn test_grid_template_rows_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "grid");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .grid { display: grid; grid-template-rows: auto 200px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.display, DisplayValue::Grid, "div 的 display 应为 Grid");
+        assert!(div_style.grid_template_rows.is_some(), "grid_template_rows 不应为 None");
+        let rows = div_style.grid_template_rows.as_ref().unwrap();
+        assert!(rows.contains("auto"), "grid_template_rows 应包含 auto");
+        assert!(rows.contains("200px"), "grid_template_rows 应包含 200px");
+    }
+
+    /// CSS grid-auto-flow 管线集成测试。
+    ///
+    /// 解析含 display: grid; grid-auto-flow: dense 的 CSS，
+    /// 通过 style-system 计算样式，验证 grid_auto_flow 为 RowDense（dense 等价于 row dense）。
+    #[test]
+    fn test_grid_auto_flow_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "grid");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .grid { display: grid; grid-auto-flow: dense; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.display, DisplayValue::Grid, "div 的 display 应为 Grid");
+        assert!(
+            div_style.grid_auto_flow == zero_style_system::property::GridAutoFlowValue::RowDense
+                || div_style.grid_auto_flow == zero_style_system::property::GridAutoFlowValue::ColumnDense,
+            "grid_auto_flow 应为 RowDense 或 ColumnDense，实际为 {:?}",
+            div_style.grid_auto_flow
+        );
+    }
+
+    /// CSS display: grid 管线集成测试。
+    ///
+    /// 解析含 display: grid 的 CSS，通过 style-system 计算样式，
+    /// 验证 display == DisplayValue::Grid。
+    #[test]
+    fn test_display_grid_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "container");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .container { display: grid; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.display, DisplayValue::Grid, "div 的 display 应为 Grid");
+    }
+
+    /// CSS position: absolute 管线集成测试。
+    ///
+    /// 解析含 position: absolute; top: 10px; left: 20px 的 CSS，
+    /// 通过 style-system 计算样式，验证 position 为 Absolute，
+    /// top 和 left 为 Px(10.0) 和 Px(20.0)。
+    #[test]
+    fn test_position_absolute_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "abs");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .abs { position: absolute; top: 10px; left: 20px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.position,
+            PositionValue::Absolute,
+            "div 的 position 应为 Absolute"
+        );
+        assert_eq!(div_style.top, LengthValue::Px(10.0), "div 的 top 应为 Px(10.0)");
+        assert_eq!(div_style.left, LengthValue::Px(20.0), "div 的 left 应为 Px(20.0)");
+    }
+
+    /// CSS margin 简写管线集成测试。
+    ///
+    /// 解析含 margin: 10px 20px 的 CSS，通过 style-system 简写展开，
+    /// 验证 margin_top 为 Px(10.0)，margin_right 为 Px(20.0)。
+    #[test]
+    fn test_margin_shorthand_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "spaced");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .spaced { margin: 10px 20px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.margin_top, LengthValue::Px(10.0), "margin_top 应为 Px(10.0)");
+        assert_eq!(
+            div_style.margin_right,
+            LengthValue::Px(20.0),
+            "margin_right 应为 Px(20.0)"
+        );
+    }
+
+    /// CSS padding 简写管线集成测试。
+    ///
+    /// 解析含 padding: 5px 15px 的 CSS，通过 style-system 简写展开，
+    /// 验证 padding_top 为 Px(5.0)，padding_right 为 Px(15.0)。
+    #[test]
+    fn test_padding_shorthand_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "padded");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .padded { padding: 5px 15px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.padding_top, LengthValue::Px(5.0), "padding_top 应为 Px(5.0)");
+        assert_eq!(
+            div_style.padding_right,
+            LengthValue::Px(15.0),
+            "padding_right 应为 Px(15.0)"
+        );
+    }
+
+    /// CSS width + height 管线集成测试。
+    ///
+    /// 解析含 width: 300px; height: 200px 的 CSS，
+    /// 通过 style-system 计算样式，验证 width 和 height 正确设置。
+    #[test]
+    fn test_width_height_pipeline() {
+        let (mut doc, body) = make_doc_with_body();
+
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "sized");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .sized { width: 300px; height: 200px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(div_style.width, LengthValue::Px(300.0), "width 应为 Px(300.0)");
+        assert_eq!(div_style.height, LengthValue::Px(200.0), "height 应为 Px(200.0)");
     }
 }
