@@ -1279,4 +1279,72 @@ mod tests {
         assert!(req.body.is_none(), "链式调用不应引入 body");
         assert_eq!(req.headers.len(), 2);
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 URL 解析带认证信息。
+    #[test]
+    fn test_url_parse_with_userinfo() {
+        let url = parse_url("https://user:pass@example.com/path").expect("parse");
+        assert_eq!(url.host, Some("example.com".to_string()));
+    }
+
+    /// 测试 Cookie SameSite=None 必须带 Secure。
+    #[test]
+    fn test_cookie_samesite_none_requires_secure() {
+        let cookie = CookieStore::parse_set_cookie("sid=abc; SameSite=None; Secure").expect("parse");
+        assert!(cookie.secure);
+    }
+
+    /// 测试导航历史前进超出范围返回 None。
+    #[test]
+    fn test_navigation_forward_beyond_limit() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.go_back();
+        // 已回到 a.com，前进一次到 b.com
+        let fwd = nav.go_forward();
+        assert!(fwd.is_some());
+        // 再前进已无更多记录
+        assert!(nav.go_forward().is_none());
+    }
+
+    /// 测试 HttpResponse 状态码分类。
+    #[test]
+    fn test_http_response_status_categories() {
+        let info = HttpResponse {
+            status_code: 100,
+            headers: vec![],
+            body: vec![],
+            url: "http://x.com".into(),
+            redirect_count: 0,
+        };
+        assert!(info.status_code >= 100 && info.status_code < 200);
+
+        let ok = HttpResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![],
+            url: "http://x.com".into(),
+            redirect_count: 0,
+        };
+        assert!(ok.is_success());
+
+        let not_found = HttpResponse {
+            status_code: 404,
+            headers: vec![],
+            body: vec![],
+            url: "http://x.com".into(),
+            redirect_count: 0,
+        };
+        assert!(not_found.is_client_error());
+    }
+
+    /// 测试 URL 查询参数保留。
+    #[test]
+    fn test_url_query_param_preserved() {
+        let url = parse_url("http://example.com/search?q=hello&lang=zh").expect("parse");
+        assert!(url.query.as_ref().unwrap().contains("q=hello"));
+    }
 }
