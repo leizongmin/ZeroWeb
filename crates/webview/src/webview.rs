@@ -332,6 +332,23 @@ impl WebView {
         }
     }
 
+    /// 执行带有 DOM API 环境的 JavaScript。
+    ///
+    /// 在执行用户脚本前，先注入 DOM API polyfill，
+    /// 使得脚本可以使用 `document.getElementById` 等 DOM 操作。
+    ///
+    /// # 错误
+    ///
+    /// 与 [`execute_script`](Self::execute_script) 相同。
+    pub fn execute_script_with_dom(&mut self, script: &str) -> Result<String, WebViewError> {
+        tracing::debug!("execute_script_with_dom called: {} bytes", script.len());
+
+        let polyfill = zero_engine::generate_dom_api_polyfill();
+        let full_script = format!("{polyfill}\n{script}");
+
+        self.execute_script(&full_script)
+    }
+
     /// 注入 CSS（重新渲染）。
     pub fn inject_css(&mut self, css: &str) -> WebViewRenderResult {
         let html = if self.cached_html.is_empty() {

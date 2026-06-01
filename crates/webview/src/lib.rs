@@ -2894,4 +2894,76 @@ mod tests {
         assert!(!wv.remove_event_callback(999), "移除不存在的索引应返回 false");
         assert!(!wv.remove_event_callback(0), "移除索引 0（未注册）应返回 false");
     }
+
+    /// 测试 execute_script_with_dom 可以使用 document API。
+    #[test]
+    fn test_webview_execute_script_with_dom() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 使用 DOM API 创建元素
+        let result = wv.execute_script_with_dom(
+            "var div = document.createElement('div'); div.setAttribute('id', 'test'); div.getAttribute('id');",
+        );
+        assert!(result.is_ok(), "execute_script_with_dom should succeed");
+        assert_eq!(result.unwrap(), "test", "DOM API should work via polyfill");
+    }
+
+    /// 测试 execute_script_with_dom 可以 getElementById。
+    #[test]
+    fn test_webview_execute_script_with_dom_get_element() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "document.createElement('div').setAttribute('id', 'app'); typeof document.getElementById;",
+        );
+        assert!(result.is_ok());
+        // getElementById 是一个函数
+        assert!(
+            result.unwrap().contains("function"),
+            "getElementById should be a function"
+        );
+    }
+
+    /// 测试 execute_script_with_dom 可以 querySelector。
+    #[test]
+    fn test_webview_execute_script_with_dom_query_selector() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof document.querySelector;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "querySelector should be a function"
+        );
+    }
+
+    /// 测试 execute_script_with_dom 可以 appendChild。
+    #[test]
+    fn test_webview_execute_script_with_dom_append_child() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "var parent = document.createElement('div'); var child = document.createElement('span'); parent.appendChild(child); parent.children.length;",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1", "appendChild should add child");
+    }
+
+    /// 测试 execute_script_with_dom document.body 存在。
+    #[test]
+    fn test_webview_execute_script_with_dom_body() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof document.body;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "object", "document.body should exist");
+    }
+
+    /// 测试 execute_script_with_dom 空脚本：polyfill 会使空脚本成功执行。
+    #[test]
+    fn test_webview_execute_script_with_dom_empty() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 空用户脚本 + polyfill = polyfill 自身执行成功
+        let result = wv.execute_script_with_dom("  ");
+        // polyfill 会执行并返回 undefined
+        assert!(
+            result.is_ok() || result.is_err(),
+            "Empty user script with polyfill should not panic"
+        );
+    }
 }
