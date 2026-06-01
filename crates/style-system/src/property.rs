@@ -1263,6 +1263,8 @@ pub enum PropertyValue {
     CounterReset(Vec<CounterActionValue>),
     /// counter-increment 值。
     CounterIncrement(Vec<CounterActionValue>),
+    /// counter-set 值。
+    CounterSet(Vec<CounterActionValue>),
     /// content 值。
     Content(ContentComputedValue),
     /// quotes 值。
@@ -1862,6 +1864,8 @@ pub struct ComputedStyle {
     pub counter_reset: Vec<CounterActionValue>,
     /// counter-increment 属性。
     pub counter_increment: Vec<CounterActionValue>,
+    /// counter-set 属性。
+    pub counter_set: Vec<CounterActionValue>,
     /// content 属性。
     pub content: ContentComputedValue,
     /// quotes 属性。
@@ -2187,6 +2191,7 @@ impl Default for ComputedStyle {
             // Counters / Content / Quotes
             counter_reset: vec![],
             counter_increment: vec![],
+            counter_set: vec![],
             content: ContentComputedValue::Normal,
             quotes: QuotesComputedValue::Auto,
 
@@ -2479,6 +2484,7 @@ impl PropertyRegistry {
             // Counters / Content / Quotes
             "counter-reset" => Some(CounterReset(vec![])),
             "counter-increment" => Some(CounterIncrement(vec![])),
+            "counter-set" => Some(CounterSet(vec![])),
             "content" => Some(Content(ContentComputedValue::Normal)),
             "quotes" => Some(Quotes(QuotesComputedValue::Auto)),
 
@@ -2781,6 +2787,7 @@ impl PropertyRegistry {
             "backface-visibility",
             "counter-reset",
             "counter-increment",
+            "counter-set",
             "content",
             "quotes",
             "page-break-before",
@@ -4254,6 +4261,15 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "counter-increment" => {
             if let Some(v) = values::parse_counter_list(value) {
                 style.counter_increment = v;
+                return true;
+            }
+        }
+        "counter-set" => {
+            if let Some(v) = values::parse_counter_set(value) {
+                style.counter_set = match v {
+                    values::CounterSetValue::None => vec![],
+                    values::CounterSetValue::Actions(actions) => actions,
+                };
                 return true;
             }
         }
@@ -5890,6 +5906,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "counter-increment" => {
             style.counter_increment = default_style.counter_increment;
+            true
+        }
+        "counter-set" => {
+            style.counter_set = default_style.counter_set;
             true
         }
         "content" => {
@@ -12220,5 +12240,36 @@ mod tests {
             assert!(imp, "important 标志应被保留");
             assert_eq!(*spec, (0, 1, 0), "特异性应被保留");
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // counter-set 属性测试
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_apply_counter_set_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "counter-set", "none"));
+    }
+
+    #[test]
+    fn test_apply_counter_set_value() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "counter-set", "mycounter 3"));
+    }
+
+    #[test]
+    fn test_counter_set_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("counter-set"));
+    }
+
+    #[test]
+    fn test_counter_set_in_known_properties() {
+        assert!(PropertyRegistry::known_properties().contains(&"counter-set"));
+    }
+
+    #[test]
+    fn test_counter_set_initial_value() {
+        assert!(PropertyRegistry::initial_value("counter-set").is_some());
     }
 }

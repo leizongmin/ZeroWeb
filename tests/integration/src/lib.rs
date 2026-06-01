@@ -3714,4 +3714,203 @@ mod cross_crate_pipeline {
             child_style.border_spacing.horizontal
         );
     }
+
+    /// CSS border-image 简写属性管线集成测试。
+    ///
+    /// 解析含 border-image: url(border.png) 25 的 CSS，
+    /// 通过 style-system 简写展开为 border-image-source 和 border-image-slice，
+    /// 验证 border-image-source 为 Url("border.png")，border-image-slice top 为 Number(25)。
+    #[test]
+    fn test_border_image_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "bordered");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .bordered { border-image: url(border.png) 25; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+
+        // 验证 border-image-source 为 Url
+        assert_eq!(
+            div_style.border_image_source,
+            zero_style_system::property::BorderImageSourceComputedValue::Url("border.png".to_string()),
+            "div 的 border-image-source 应为 Url(\"border.png\")"
+        );
+
+        // 验证 border-image-slice top 为 Number(25)
+        use zero_style_system::property::BorderImageSliceComputedComponent;
+        assert_eq!(
+            div_style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Number(25.0),
+            "div 的 border-image-slice top 应为 Number(25)"
+        );
+    }
+
+    /// CSS counter-set 管线集成测试。
+    ///
+    /// 解析含 counter-set: mycounter 5 的 CSS，通过 style-system 计算样式，
+    /// 验证 counter_set 列表中包含 mycounter，值为 5。
+    #[test]
+    fn test_counter_set_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "counter-set");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .counter-set { counter-set: mycounter 5; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(!div_style.counter_set.is_empty(), "div 的 counter_set 不应为空");
+        assert_eq!(div_style.counter_set.len(), 1, "应有一个 counter-set 条目");
+        assert_eq!(div_style.counter_set[0].name, "mycounter", "计数器名应为 mycounter");
+        assert_eq!(div_style.counter_set[0].value, Some(5), "设定值应为 5");
+    }
+
+    /// CSS empty-cells: show 管线集成测试。
+    ///
+    /// 解析含 empty-cells: show 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.empty_cells 为 Show。
+    #[test]
+    fn test_empty_cells_show_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let td = doc.create_element("td");
+        doc.set_attribute(td, "class", "visible");
+        doc.append_child(body, td).unwrap();
+
+        let css = r#"
+            .visible { empty-cells: show; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let td_style = styles.get(&td).expect("td 应有计算样式");
+        assert_eq!(
+            td_style.empty_cells,
+            zero_style_system::property::EmptyCellsComputedValue::Show,
+            "td 的 empty-cells 应为 Show"
+        );
+    }
+
+    /// CSS border-spacing 双值继承管线集成测试。
+    ///
+    /// border-spacing 是继承属性。父元素设置 border-spacing: 10px 20px，
+    /// 子元素不显式设置，应继承 horizontal=10.0, vertical=20.0。
+    #[test]
+    fn test_border_spacing_dual_value_inheritance_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("table");
+        doc.set_attribute(parent, "class", "parent");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("td");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent { border-spacing: 10px 20px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 验证父元素
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.border_spacing.horizontal - 10.0).abs() < 0.01,
+            "parent border-spacing horizontal 应为 10.0，实际为 {}",
+            parent_style.border_spacing.horizontal
+        );
+        assert!(
+            (parent_style.border_spacing.vertical - 20.0).abs() < 0.01,
+            "parent border-spacing vertical 应为 20.0，实际为 {}",
+            parent_style.border_spacing.vertical
+        );
+
+        // 验证子元素继承了 border-spacing: 10px 20px
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.border_spacing.horizontal - 10.0).abs() < 0.01,
+            "child 应继承 parent 的 border-spacing horizontal=10.0，实际为 {}",
+            child_style.border_spacing.horizontal
+        );
+        assert!(
+            (child_style.border_spacing.vertical - 20.0).abs() < 0.01,
+            "child 应继承 parent 的 border-spacing vertical=20.0，实际为 {}",
+            child_style.border_spacing.vertical
+        );
+    }
+
+    /// CSS justify-items: center 管线集成测试。
+    ///
+    /// 解析含 justify-items: center 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.justify_items 为 Center。
+    #[test]
+    fn test_justify_items_center_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "centered");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .centered { justify-items: center; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.justify_items,
+            zero_style_system::property::JustifyItemsValue::Center,
+            "div 的 justify-items 应为 Center"
+        );
+    }
 }
