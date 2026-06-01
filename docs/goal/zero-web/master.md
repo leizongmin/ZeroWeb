@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，5733 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
+**执行状态**: 16/16 crate 已实现，5768 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5733 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5768 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -37,7 +37,7 @@
 | canvas | 350 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp**、**gradient 多 stop/radial gradient/fillRule/lineDash/measure_text/shadow 属性**、**createImageData/getTransform/transform() 乘法/miterLimit/textDirection**、**同心圆渐变/路径跨 resize/退化变换/脏矩形越界/零长度渐变** |
 | webview | 189 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**事件系统集成测试**、**Fetch API 端到端测试**、**console/timer API 端到端测试（log/warn/error/time/setTimeout/setInterval）** |
 | wasm-sandbox | 132 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理** |
-| script-sandbox | 52 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**52 个单元测试全绿** |
+| script-sandbox | 77 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）、77 个单元测试全绿** |
 | browser-shell | 189 | — | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）** |
 
 ### 跨 crate 集成测试
@@ -102,6 +102,17 @@
 ---
 
 ## 最近完成的改进
+
+### -54. 测试文件拆分 + script-sandbox 边界测试 + browser-shell 集成测试（本轮，5768 测试）
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser | **文件拆分**：tests.rs (5637行) → tests/mod.rs + tests_1..4（每个 <1930 行） | — |
+| dom | **文件拆分**：tests.rs (7841行) → tests/mod.rs + tests_1..5（每个 <1900 行） | — |
+| script-sandbox | **状态隔离**：execution 间变量不泄漏、独立 sandbox 隔离；**execute_json 边界**：嵌套对象/空对象/空数组/null/boolean/undefined/语法错误/空脚本/特殊字符；**大脚本**：10k循环/大字符串拼接；**ES6+**：Map/Set/Symbol/Proxy/async-await/默认参数/rest参数/for-of/Object静态方法/Array静态方法/JSON内置/Math方法 | 25 |
+| integration | **browser-shell + protocol + storage 集成**：导航IPC序列化/多标签IPC排序/前进后退IPC/书签+Storage持久化/历史+Storage持久化/下载+FetchResponse IPC/自动补全+书签/设置+StorageOp IPC/缩放+Reload IPC/页面加载+LoadComplete IPC | 9 |
+
+Total: 5733 → 5768 (+35 tests)
 
 ### -53. 集成测试文件拆分 + 新增 106 个测试（本轮，5729 测试）
 

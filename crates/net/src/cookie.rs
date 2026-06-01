@@ -1158,4 +1158,40 @@ mod tests {
         assert!(!header.contains("lax_ck"), "SameSite: Lax 不应在跨站子资源发送");
         assert!(header.contains("none_ck=n"), "SameSite: None 应在跨站子资源发送");
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试同名 Cookie 不同域名分别存储。
+    fn test_cookie_store_same_name_different_domain() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=x.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("a=2; Domain=y.com").unwrap());
+        assert_eq!(store.len(), 2, "same name + different domain → 2 entries");
+    }
+
+    #[test]
+    /// 测试 cookie_header 多 Cookie 排序（保持插入顺序）。
+    fn test_cookie_header_multiple_ordering() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("b=2; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap());
+        let header = store.cookie_header(&parse_url("https://example.com/path").unwrap());
+        assert!(header.contains("b=2"), "b=2 should be present");
+        assert!(header.contains("a=1"), "a=1 should be present");
+        // 插入顺序：b 先于 a
+        let b_pos = header.find("b=2").unwrap();
+        let a_pos = header.find("a=1").unwrap();
+        assert!(b_pos < a_pos, "b=2 should appear before a=1");
+    }
+
+    #[test]
+    /// 测试空 host URL 不匹配 Cookie domain。
+    fn test_cookie_domain_empty_host() {
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("test=1; Domain=example.com").unwrap());
+        // data: URL 无 host
+        let header = store.cookie_header(&parse_url("data:text/html,hello").unwrap());
+        assert!(!header.contains("test=1"), "cookie should not match empty-host URL");
+    }
 }

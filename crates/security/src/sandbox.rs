@@ -353,4 +353,37 @@ mod tests {
         let strict = IframeSandbox::strict();
         assert!(!strict.allows_forms(), "严格沙箱应阻止表单提交");
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试重复标志解析不 panic。
+    fn test_sandbox_duplicate_flags() {
+        let sandbox = IframeSandbox::parse("allow-scripts allow-scripts");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowScripts));
+    }
+
+    #[test]
+    /// 测试少用标志的 has_flag。
+    fn test_sandbox_rare_flags() {
+        let sandbox = IframeSandbox::parse("allow-downloads allow-presentation allow-pointer-lock");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowDownloads));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPresentation));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPointerLock));
+    }
+
+    #[test]
+    /// 测试 SandboxOrigin 相等性。
+    fn test_sandbox_origin_equality() {
+        assert_eq!(SandboxOrigin::Opaque, SandboxOrigin::Opaque);
+        let o = Origin::parse("https://example.com").unwrap();
+        assert_eq!(SandboxOrigin::Normal(o.clone()), SandboxOrigin::Normal(o));
+    }
+
+    #[test]
+    /// 测试同时包含两种导航标志的沙箱。
+    fn test_sandbox_both_navigation_flags() {
+        let sandbox = IframeSandbox::parse("allow-top-navigation allow-top-navigation-by-user-activation");
+        assert!(sandbox.allows_top_navigation());
+    }
 }

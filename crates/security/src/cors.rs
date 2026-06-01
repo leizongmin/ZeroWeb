@@ -1130,4 +1130,45 @@ mod tests {
             "text/plain 是简单 Content-Type，不需要在 allow_headers 中"
         );
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试 credentials=true + 特定 origin（正向用例）。
+    fn test_cors_credentials_specific_origin_allowed() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string()],
+            allow_headers: vec![],
+            allow_credentials: true,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed, "特定 origin + credentials 应被允许");
+    }
+
+    #[test]
+    /// 测试 policy 小写 method，请求大写 METHOD 匹配。
+    fn test_cors_lowercase_policy_uppercase_request() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["*".to_string()],
+            allow_methods: vec!["get".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+        let result = check_cors(&policy, &origin, "GET", &[]);
+        assert!(result.allowed, "大小写不敏感方法匹配");
+    }
+
+    #[test]
+    /// 测试 is_simple_request：GET + None content_type + 自定义 header 不是简单请求。
+    fn test_simple_request_custom_header_not_simple() {
+        assert!(
+            !is_simple_request("GET", None, &[("X-Custom".to_string(), "val".to_string())]),
+            "自定义 header 不应是简单请求"
+        );
+    }
 }

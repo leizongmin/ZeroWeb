@@ -552,4 +552,23 @@ mod tests {
         assert!(url_str.contains("q=hello"), "to_url_string 应包含 query");
         assert!(!url_str.contains("#results"), "to_url_string 不应包含 fragment");
     }
+
+    // ── 边界测试 ──
+
+    #[test]
+    /// 测试 username 无 password 的 URL 序列化。
+    fn test_to_url_string_username_no_password() {
+        let parsed = parse_url("http://user@example.com/path").unwrap();
+        let url_str = parsed.to_url_string();
+        assert!(url_str.contains("user@"), "应包含 user@");
+        assert!(!url_str.contains("user:@"), "不应有冒号（无 password）");
+    }
+
+    #[test]
+    /// 测试默认端口与显式端口视为同源。
+    fn test_same_origin_default_port() {
+        let a = parse_url("http://example.com").unwrap();
+        let b = parse_url("http://example.com:80").unwrap();
+        assert!(a.is_same_origin(&b), "http 默认 80 端口应视为同源");
+    }
 }
