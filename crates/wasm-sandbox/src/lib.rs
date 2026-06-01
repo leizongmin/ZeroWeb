@@ -4048,4 +4048,206 @@ mod tests {
             panic!("期望 F64 返回值");
         }
     }
+
+    // =======================================================================
+    // 新增测试：多实例内存独立性、表导出缺失、可变全局读取、
+    //           燃料累计消耗、空模块错误处理
+    // =======================================================================
+
+    /// 测试同一模块使用相同 LinkerConfig 实例化两次后，两个实例的内存完全独立。
+    /// 向实例 A 的内存写入数据 A，向实例 B 的内存写入数据 B，
+    /// 验证实例 A 读回的仍是数据 A，实例 B 读回的仍是数据 B，互不干扰。
+    #[test]
+    fn test_two_instances_memory_isolation() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "read_byte") (param i32) (result i32)
+                    local.get 0 i32.load8_u)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+
+        // 使用相同的空 LinkerConfig 实例化两个实例
+        let linker = LinkerConfig::new();
+        let mut inst_a = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate A");
+        let mut inst_b = module
+            .instantiate_with_linker(&sandbox, &linker)
+            .expect("instantiate B");
+
+        // 向实例 A 偏移 0 写入 0xAA，向实例 B 偏移 0 写入 0xBB
+        inst_a.write_memory("mem", 0, &[0xAA]).expect("write A");
+        inst_b.write_memory("mem", 0, &[0xBB]).expect("write B");
+
+        // 验证实例 A 的内存未被实例 B 影响
+        let data_a = inst_a.read_memory("mem", 0, 1).expect("read A");
+        assert_eq!(data_a, [0xAA], "实例 A 的内存应仍为 0xAA");
+
+        // 验证实例 B 的内存未被实例 A 影响
+        let data_b = inst_b.read_memory("mem", 0, 1).expect("read B");
+        assert_eq!(data_b, [0xBB], "实例 B 的内存应仍为 0xBB");
+
+        // 通过 WASM 函数进一步验证隔离性
+        let r_a = inst_a.call("read_byte", &[WasmValue::I32(0)]).expect("call A");
+        assert_eq!(r_a[0], WasmValue::I32(0xAA), "WASM 函数读取实例 A 应返回 0xAA");
+
+        let r_b = inst_b.call("read_byte", &[WasmValue::I32(0)]).expect("call B");
+        assert_eq!(r_b[0], WasmValue::I32(0xBB), "WASM 函数读取实例 B 应返回 0xBB");
+
+        // 向两个实例的不同偏移写入更多数据，进一步验证独立性
+        inst_a.write_memory("mem", 100, b"AAAA").expect("write A offset");
+        inst_b.write_memory("mem", 100, b"BBBB").expect("write B offset");
+
+        let data_a2 = inst_a.read_memory("mem", 100, 4).expect("read A offset");
+        assert_eq!(&data_a2, b"AAAA", "实例 A 偏移 100 应为 AAAA");
+        let data_b2 = inst_b.read_memory("mem", 100, 4).expect("read B offset");
+        assert_eq!(&data_b2, b"BBBB", "实例 B 偏移 100 应为 BBBB");
+    }
+
+    /// 测试没有导出表的 WASM 模块，has_table 应返回 false。
+    /// 同时验证函数导出和内存导出不会被 has_table 误判为表。
+    #[test]
+    fn test_has_table_when_no_table_export() {
+        let sandbox = WasmSandbox::new();
+        // 模块只有函数和内存导出，没有表
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "f") nop)
+                (global (export "g") i32 (i32.const 0))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 没有表导出，has_table 应返回 false
+        assert!(!instance.has_table("tbl"), "不存在的表名应返回 false");
+        assert!(!instance.has_table("mem"), "内存导出不应被 has_table 匹配");
+        assert!(!instance.has_table("f"), "函数导出不应被 has_table 匹配");
+        assert!(!instance.has_table("g"), "全局导出不应被 has_table 匹配");
+        assert!(!instance.has_table(""), "空名字应返回 false");
+    }
+
+    /// 测试通过 get_global_export 读取不可变的 i32 全局导出变量，
+    /// 验证返回的 WasmValue 类型为 I32 且值正确。
+    #[test]
+    fn test_get_global_export_i32_immutable() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global (export "answer") i32 (i32.const 42))
+                (global (export "zero") i32 (i32.const 0))
+                (global (export "neg") i32 (i32.const -999))
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 读取各个全局导出
+        let answer = instance.get_global_export("answer").expect("read answer");
+        assert_eq!(answer, WasmValue::I32(42), "全局 answer 应为 i32(42)");
+
+        let zero = instance.get_global_export("zero").expect("read zero");
+        assert_eq!(zero, WasmValue::I32(0), "全局 zero 应为 i32(0)");
+
+        let neg = instance.get_global_export("neg").expect("read neg");
+        assert_eq!(neg, WasmValue::I32(-999), "全局 neg 应为 i32(-999)");
+
+        // 不存在的全局应返回 None
+        assert!(
+            instance.get_global_export("nonexistent").is_none(),
+            "不存在的全局导出应返回 None"
+        );
+    }
+
+    /// 测试启用燃料计量后，设置初始燃料、执行多次函数调用，
+    /// 验证每次调用后剩余燃料严格递减，且总消耗等于各次消耗之和。
+    #[test]
+    fn test_fuel_consumption_across_multiple_calls() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "square") (param i32) (result i32)
+                    local.get 0 local.get 0 i32.mul)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let initial_fuel: u64 = 50_000;
+        instance.set_fuel(initial_fuel).expect("set_fuel");
+
+        let mut remaining = initial_fuel;
+        let mut consumptions: Vec<u64> = Vec::new();
+
+        // 执行 5 次调用，记录每次的燃料消耗
+        for i in 1..=5 {
+            let before = instance.get_fuel().expect("get_fuel before");
+            let r = instance
+                .call("square", &[WasmValue::I32(i)])
+                .unwrap_or_else(|_| panic!("call {i} should succeed"));
+            assert_eq!(r[0], WasmValue::I32(i * i), "square({i}) 应为 {}", i * i);
+            let after = instance.get_fuel().expect("get_fuel after");
+            let consumed = before - after;
+            assert!(consumed > 0, "第 {i} 次调用应消耗燃料，消耗量: {consumed}");
+            consumptions.push(consumed);
+            remaining = after;
+        }
+
+        // 总消耗应等于各次消耗之和
+        let total_consumed: u64 = consumptions.iter().sum();
+        assert_eq!(initial_fuel - remaining, total_consumed, "总消耗应等于各次消耗之和");
+
+        // 每次调用的消耗量应相同（相同函数相同模式）
+        let first = consumptions[0];
+        for (i, &c) in consumptions.iter().enumerate() {
+            assert_eq!(
+                c,
+                first,
+                "第 {} 次调用的燃料消耗 ({c}) 应与第一次 ({first}) 相同",
+                i + 1
+            );
+        }
+
+        // 剩余燃料应严格大于 0（50_000 足以支撑 5 次 square 调用）
+        assert!(remaining > 0, "剩余燃料应大于 0，实际: {remaining}");
+        assert!(remaining < initial_fuel, "剩余燃料应小于初始值");
+    }
+
+    /// 测试在空模块（无导出函数）上调用任意函数名，应返回 ExportNotFound 错误。
+    /// 验证沙箱在无效的实例句柄上优雅地处理调用失败，不会 panic。
+    #[test]
+    fn test_call_on_module_with_no_exports_graceful_error() {
+        let sandbox = WasmSandbox::new();
+        // 编译一个没有任何导出的空模块
+        let wasm = wat_to_wasm("(module)");
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 在空模块上调用任何函数都应返回 ExportNotFound 错误
+        let result = instance.call("any_func", &[]);
+        assert!(result.is_err(), "空模块上调用函数应返回错误");
+        if let Err(WasmError::ExportNotFound { name }) = result {
+            assert_eq!(name, "any_func", "错误中应包含请求的函数名");
+        } else {
+            panic!("期望 ExportNotFound 错误，实际: {result:?}");
+        }
+
+        // 再次调用不同名称，验证错误处理的一致性
+        let result2 = instance.call("another_func", &[WasmValue::I32(1)]);
+        assert!(result2.is_err(), "第二次调用也应返回错误");
+        if let Err(WasmError::ExportNotFound { name }) = result2 {
+            assert_eq!(name, "another_func", "错误中应包含第二个函数名");
+        } else {
+            panic!("期望 ExportNotFound 错误，实际: {result2:?}");
+        }
+
+        // has_func 也应返回 false
+        assert!(!instance.has_func("any_func"), "has_func 对空模块应返回 false");
+        assert!(!instance.has_func(""), "has_func 对空字符串应返回 false");
+    }
 }

@@ -465,4 +465,190 @@ mod tests {
             }
         }
     }
+
+    /// 测试 BasicApp 处理连续三次 Resized 事件（800x600 → 1024x768 → 640x480），
+    /// 验证所有事件均被接收且顺序和尺寸值正确。
+    #[test]
+    fn test_basic_app_consecutive_resized_events_order() {
+        use crate::event::AppEvent;
+
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        // 第一次 resize：800x600
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            800, 600,
+        )));
+        // 第二次 resize：1024x768
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            1024, 768,
+        )));
+        // 第三次 resize：640x480
+        app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
+            640, 480,
+        )));
+
+        assert_eq!(received.len(), 3, "应收到 3 个 Resized 事件");
+
+        // 验证顺序和尺寸值
+        match &received[0] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 800, "第 1 次 resize 宽度应为 800");
+                assert_eq!(*height, 600, "第 1 次 resize 高度应为 600");
+            }
+            _ => panic!("第 1 个事件应为 Resized"),
+        }
+        match &received[1] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 1024, "第 2 次 resize 宽度应为 1024");
+                assert_eq!(*height, 768, "第 2 次 resize 高度应为 768");
+            }
+            _ => panic!("第 2 个事件应为 Resized"),
+        }
+        match &received[2] {
+            AppEvent::Resized { width, height } => {
+                assert_eq!(*width, 640, "第 3 次 resize 宽度应为 640");
+                assert_eq!(*height, 480, "第 3 次 resize 高度应为 480");
+            }
+            _ => panic!("第 3 个事件应为 Resized"),
+        }
+    }
+
+    /// 测试 KeyboardInput 事件同时按下 Shift+Ctrl+Alt 三个修饰键的场景。
+    /// 验证每个修饰键按下事件的 key 名称和 pressed 状态均正确。
+    #[test]
+    fn test_keyboard_input_all_modifiers_simultaneous() {
+        use crate::event::AppEvent;
+
+        let events: Vec<AppEvent> = vec![
+            AppEvent::KeyboardInput {
+                key: "Shift".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "Control".to_string(),
+                pressed: true,
+            },
+            AppEvent::KeyboardInput {
+                key: "Alt".to_string(),
+                pressed: true,
+            },
+        ];
+
+        assert_eq!(events.len(), 3, "应构造 3 个修饰键按下事件");
+
+        let expected: Vec<(&str, bool)> = vec![("Shift", true), ("Control", true), ("Alt", true)];
+        for (i, (expected_key, expected_pressed)) in expected.iter().enumerate() {
+            match &events[i] {
+                AppEvent::KeyboardInput { key, pressed } => {
+                    assert_eq!(key, expected_key, "第 {} 个修饰键名称应为 {}", i + 1, expected_key);
+                    assert_eq!(
+                        *pressed,
+                        *expected_pressed,
+                        "第 {} 个修饰键 pressed 应为 {}",
+                        i + 1,
+                        expected_pressed
+                    );
+                }
+                _ => panic!("第 {} 个事件应为 KeyboardInput", i + 1),
+            }
+        }
+    }
+
+    /// 测试 MouseInput 事件的中键（Middle）按钮变体。
+    /// 验证通过 BasicApp 分发路径传递 Middle 按钮的按下和释放事件。
+    #[test]
+    fn test_mouse_input_middle_button_dispatch() {
+        use crate::event::{AppEvent, MouseButton};
+
+        let mut received: Vec<AppEvent> = Vec::new();
+        let mut callback = |e: AppEvent| received.push(e);
+        let attrs = winit::window::WindowAttributes::default();
+        let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
+
+        // 中键按下
+        app.handle_window_event(winit::event::WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: winit::event::ElementState::Pressed,
+            button: winit::event::MouseButton::Middle,
+        });
+        // 中键释放
+        app.handle_window_event(winit::event::WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: winit::event::ElementState::Released,
+            button: winit::event::MouseButton::Middle,
+        });
+
+        assert_eq!(received.len(), 2, "应收到 2 个 MouseInput 事件");
+
+        match &received[0] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Middle, "按下事件的按钮应为 Middle");
+                assert!(*pressed, "按下事件 pressed 应为 true");
+            }
+            _ => panic!("第 1 个事件应为 MouseInput"),
+        }
+        match &received[1] {
+            AppEvent::MouseInput { button, pressed } => {
+                assert_eq!(*button, MouseButton::Middle, "释放事件的按钮应为 Middle");
+                assert!(!pressed, "释放事件 pressed 应为 false");
+            }
+            _ => panic!("第 2 个事件应为 MouseInput"),
+        }
+    }
+
+    /// 测试 ImeEvent::Preedit 在文本为空字符串且光标位置为 (0, 0) 时的行为。
+    /// 验证空 preedit 文本和零值光标位置均能正确存储和读取。
+    #[test]
+    fn test_ime_preedit_empty_string_with_cursor_position() {
+        use crate::event::ImeEvent;
+
+        // 空文本 + 光标在起始位置
+        let preedit = ImeEvent::Preedit {
+            text: String::new(),
+            cursor: Some((0, 0)),
+        };
+        if let ImeEvent::Preedit { text, cursor } = &preedit {
+            assert!(text.is_empty(), "preedit 文本应为空字符串");
+            assert_eq!(*cursor, Some((0, 0)), "光标位置应为 (0, 0)");
+        } else {
+            panic!("Expected Preedit variant");
+        }
+
+        // 通过 winit 转换路径验证
+        let converted = crate::event::convert_ime(winit::event::Ime::Preedit(String::new(), Some((0, 0))));
+        assert_eq!(
+            converted,
+            ImeEvent::Preedit {
+                text: String::new(),
+                cursor: Some((0, 0)),
+            },
+            "winit 空 preedit 转换应保留光标位置 (0, 0)"
+        );
+    }
+
+    /// 测试 KeyboardInput 事件中按键 "Space" 且 released=true（pressed=false）的场景。
+    /// 验证空格键释放事件能正确构造和读取。
+    #[test]
+    fn test_keyboard_input_space_released() {
+        use crate::event::AppEvent;
+
+        let event = AppEvent::KeyboardInput {
+            key: "Space".to_string(),
+            pressed: false,
+        };
+
+        if let AppEvent::KeyboardInput { key, pressed } = &event {
+            assert_eq!(key, "Space", "按键名称应为 'Space'");
+            assert!(!pressed, "Space 释放事件 pressed 应为 false");
+        } else {
+            panic!("Expected KeyboardInput variant");
+        }
+
+        // 验证 Debug 输出包含 Space 和 pressed=false 信息
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("Space"), "Debug 输出应包含 'Space'");
+    }
 }

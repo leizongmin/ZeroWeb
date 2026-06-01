@@ -2377,4 +2377,370 @@ mod tests {
             inc.glyphs.len()
         );
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 paint 处理 12 层深嵌套元素，交替设置 visibility: hidden/visible，
+    /// 验证填充图元数量仅匹配 visible 层级。
+    ///
+    /// 构建一棵 12 层深的 LayoutBox 树，每个节点都有背景色，
+    /// 奇数层（第 0、2、4…层）为 visible，偶数层（第 1、3、5…层）为 hidden。
+    /// 最终只有 visible 层级的节点产生填充图元。
+    #[test]
+    fn test_paint_deeply_nested_alternating_visibility() {
+        use zero_css_parser::values::VisibilityValue;
+
+        let mut doc = zero_dom::Document::new();
+
+        // 从最内层向外构建 12 层嵌套 LayoutBox
+        let depth = 12;
+        let mut elements = Vec::with_capacity(depth);
+        for _ in 0..depth {
+            elements.push(doc.create_element("div"));
+        }
+
+        // 最内层：叶子节点
+        let innermost = LayoutBox {
+            node_id: Some(elements[depth - 1]),
+            x: (depth - 1) as f32 * 5.0,
+            y: (depth - 1) as f32 * 5.0,
+            width: 200.0 - (depth - 1) as f32 * 10.0,
+            height: 100.0 - (depth - 1) as f32 * 5.0,
+            content_x: (depth - 1) as f32 * 5.0,
+            content_y: (depth - 1) as f32 * 5.0,
+            content_width: 200.0 - (depth - 1) as f32 * 10.0,
+            content_height: 100.0 - (depth - 1) as f32 * 5.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        // 从内向外逐层包装
+        let mut current_box = innermost;
+        for i in (0..depth - 1).rev() {
+            let level = i;
+            current_box = LayoutBox {
+                node_id: Some(elements[level]),
+                x: level as f32 * 5.0,
+                y: level as f32 * 5.0,
+                width: 200.0 - level as f32 * 10.0,
+                height: 100.0 - level as f32 * 5.0,
+                content_x: level as f32 * 5.0,
+                content_y: level as f32 * 5.0,
+                content_width: 200.0 - level as f32 * 10.0,
+                content_height: 100.0 - level as f32 * 5.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![current_box],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                z_index: 0,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+            };
+        }
+
+        // 构建样式：奇数索引 visible，偶数索引 hidden
+        let mut styles = HashMap::new();
+        let mut visible_count = 0usize;
+        for (i, &elem) in elements.iter().enumerate() {
+            let mut style = ComputedStyle::default();
+            style.background_color =
+                ColorValue::Rgba((i as u8).wrapping_mul(20), 100, 200 - (i as u8).wrapping_mul(15), 255);
+            if i % 2 == 0 {
+                // 偶数层 visible
+                style.visibility = VisibilityValue::Visible;
+                visible_count += 1;
+            } else {
+                // 奇数层 hidden
+                style.visibility = VisibilityValue::Hidden;
+            }
+            styles.insert(elem, style);
+        }
+
+        let mut painter = Painter::new();
+        painter.paint(&current_box, &styles, Some(&doc));
+
+        // 填充图元数量应等于 visible 层级数
+        assert_eq!(
+            painter.primitives().fills.len(),
+            visible_count,
+            "填充图元数应等于 visible 层级数 {}，实际 {}",
+            visible_count,
+            painter.primitives().fills.len()
+        );
+    }
+
+    /// 测试 3 个元素设置相同 z-index 时 promote_compositing_layers 正确处理。
+    ///
+    /// 三个元素均设置 z-index=5，验证合成层返回根图层 + 3 个提升图层，
+    /// 且提升图层的 z-index 均为 5，顺序按 DOM 出现顺序排列。
+    #[test]
+    fn test_composite_identical_z_index_values() {
+        use zero_style_system::property::ZIndexValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem_a = doc.create_element("div");
+        let elem_b = doc.create_element("div");
+        let elem_c = doc.create_element("div");
+
+        let make_box = |elem_id| LayoutBox {
+            node_id: Some(elem_id),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let child_a = make_box(elem_a);
+        let child_b = make_box(elem_b);
+        let child_c = make_box(elem_c);
+
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_a, child_b, child_c],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        for &elem in &[elem_a, elem_b, elem_c] {
+            let mut style = ComputedStyle::default();
+            style.z_index = ZIndexValue::Integer(5);
+            styles.insert(elem, style);
+        }
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // 根图层 + 3 个提升图层
+        assert_eq!(layers.len(), 4, "根图层 + 3 个相同 z-index 提升图层");
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+
+        // 所有提升图层的 z-index 均为 5
+        assert_eq!(layers[1].z_index, 5, "第一个提升图层 z-index 应为 5");
+        assert_eq!(layers[2].z_index, 5, "第二个提升图层 z-index 应为 5");
+        assert_eq!(layers[3].z_index, 5, "第三个提升图层 z-index 应为 5");
+    }
+
+    /// 测试渲染管线处理包含 @media 规则的 CSS 不 panic 且产生渲染输出。
+    ///
+    /// CSS 中包含 @media 规则和普通规则，管线应安全解析并渲染。
+    /// 验证渲染完成、布局缓存有效、且存在填充图元。
+    #[test]
+    fn test_pipeline_render_with_media_rules() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="box">Content</div>
+            <div class="sidebar">Sidebar</div>
+        </body></html>"#;
+        let css = r#"
+            .box { background-color: #336699; width: 200px; height: 100px; }
+            @media (min-width: 600px) {
+                .sidebar { background-color: #996633; width: 150px; height: 300px; }
+            }
+            @media screen and (max-width: 400px) {
+                .box { background-color: #ff0000; width: 100%; }
+            }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        // 管线不 panic 且正常完成
+        assert!(result.timings.total_ms >= 0.0, "@media 规则 HTML 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+
+        // 至少 .box 的背景应产生填充图元
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 @media 规则的 CSS 应产生填充图元"
+        );
+    }
+
+    /// 测试脏追踪器在全量渲染后经历 3 次增量渲染，状态始终正确。
+    ///
+    /// 全量渲染后，依次执行 3 次增量渲染（不同区域大小），
+    /// 验证每次增量渲染后：脏矩形列表为空、不标记全量重绘、脏面积为 0。
+    #[test]
+    fn test_dirty_tracker_after_full_then_three_incremental() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+        let css = ".box { background-color: red; width: 200px; height: 100px; }";
+
+        // 全量渲染
+        let _full = pipeline.render_html(html, css);
+        assert!(pipeline.layout().is_some());
+        let tracker = pipeline.dirty_tracker();
+        assert!(tracker.dirty_rects().is_empty(), "全量渲染后脏矩形应为空");
+        assert!(!tracker.is_full_redraw(), "全量渲染后不应标记全量重绘");
+        assert_eq!(tracker.dirty_area(), 0.0, "全量渲染后脏面积应为 0");
+
+        // 辅助：构造脏区域 LayoutBox
+        let make_dirty = |x, y, w, h| LayoutBox {
+            node_id: None,
+            x,
+            y,
+            width: w,
+            height: h,
+            content_x: x,
+            content_y: y,
+            content_width: w,
+            content_height: h,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        // 第 1 次增量渲染：小区域
+        let dirty1 = make_dirty(10.0, 10.0, 50.0, 50.0);
+        let r1 = pipeline.incremental_render(html, "", &dirty1);
+        assert!(r1.timings.total_ms >= 0.0, "第 1 次增量渲染应正常完成");
+        let t1 = pipeline.dirty_tracker();
+        assert!(t1.dirty_rects().is_empty(), "第 1 次增量后脏矩形应为空");
+        assert_eq!(t1.dirty_area(), 0.0, "第 1 次增量后脏面积应为 0");
+
+        // 第 2 次增量渲染：中等区域
+        let dirty2 = make_dirty(100.0, 50.0, 200.0, 150.0);
+        let r2 = pipeline.incremental_render(html, "", &dirty2);
+        assert!(r2.timings.total_ms >= 0.0, "第 2 次增量渲染应正常完成");
+        let t2 = pipeline.dirty_tracker();
+        assert!(t2.dirty_rects().is_empty(), "第 2 次增量后脏矩形应为空");
+        assert_eq!(t2.dirty_area(), 0.0, "第 2 次增量后脏面积应为 0");
+
+        // 第 3 次增量渲染：大区域
+        let dirty3 = make_dirty(0.0, 0.0, 400.0, 300.0);
+        let r3 = pipeline.incremental_render(html, "", &dirty3);
+        assert!(r3.timings.total_ms >= 0.0, "第 3 次增量渲染应正常完成");
+        let t3 = pipeline.dirty_tracker();
+        assert!(t3.dirty_rects().is_empty(), "第 3 次增量后脏矩形应为空");
+        assert!(!t3.is_full_redraw(), "增量渲染不应触发全量重绘");
+        assert_eq!(t3.dirty_area(), 0.0, "第 3 次增量后脏面积应为 0");
+
+        // 布局缓存始终有效
+        assert!(pipeline.layout().is_some(), "布局缓存应始终有效");
+    }
+
+    /// 测试 paint 处理包含 border-image-source: url(test.png) 的 CSS 不 panic。
+    ///
+    /// border-image-source 引用外部图片资源，在当前架构中 paint 应安全跳过
+    /// 或降级处理，不会因无法加载图片而崩溃。验证渲染输出存在且有效。
+    #[test]
+    fn test_paint_with_border_image_source_no_panic() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="bordered">Content with border-image</div></body></html>"#;
+        let css = r#"
+            .bordered {
+                background-color: #4488aa;
+                width: 200px;
+                height: 100px;
+                border: 10px solid #333333;
+                border-image-source: url(test.png);
+                border-image-slice: 30;
+            }
+        "#;
+
+        // 渲染不 panic
+        let result = pipeline.render_html(html, css);
+
+        assert!(
+            result.timings.total_ms >= 0.0,
+            "含 border-image-source 的 CSS 应容错完成"
+        );
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // 即使 border-image 无法加载，背景和边框仍应产生填充图元
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 border-image 的元素仍应产生填充图元"
+        );
+    }
 }

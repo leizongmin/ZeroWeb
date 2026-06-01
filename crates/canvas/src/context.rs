@@ -7853,4 +7853,103 @@ mod tests {
         // 验证描边图元已生成（即使线宽为负）
         assert!(!ctx.primitives().fills.is_empty(), "负线宽描边矩形仍应生成图元");
     }
+
+    // ── 边界条件测试（第十三批）──
+
+    /// 测试 createRadialGradient 使用完全相同的内外圆（圆心和半径均相同）时不 panic。
+    /// 退化渐变应正常创建，停止点可正常添加。
+    #[test]
+    fn test_radial_gradient_identical_circles_no_panic() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_radial_gradient(50.0, 50.0, 25.0, 50.0, 50.0, 25.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // 退化渐变不 panic，停止点数量正确
+        assert_eq!(grad.stops.len(), 2);
+        assert!((grad.x0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y0 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r0 - 25.0).abs() < f32::EPSILON);
+        assert!((grad.x1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.y1 - 50.0).abs() < f32::EPSILON);
+        assert!((grad.r1 - 25.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试在路径构建过程中 resize 画布后路径仍然保留。
+    /// begin_path → move_to → line_to → resize → 更多路径操作 → fill，
+    /// resize 只清除像素缓冲区和已渲染图元，不清除当前路径。
+    #[test]
+    fn test_resize_during_path_construction_preserves_path() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.begin_path();
+        ctx.move_to(10.0, 10.0);
+        ctx.line_to(50.0, 10.0);
+        // resize 会清除 pixel_buffer 和 primitives，但 current_path 不受影响
+        ctx.resize(200, 200);
+        // 继续路径操作
+        ctx.line_to(50.0, 50.0);
+        ctx.line_to(10.0, 50.0);
+        ctx.close_path();
+        ctx.fill();
+        // 路径应保留，fill 应产生 path_fills 图元
+        assert!(
+            !ctx.primitives().path_fills.is_empty(),
+            "resize 后路径应保留，fill 应产生填充图元"
+        );
+    }
+
+    /// 测试 set_transform 使用全零退化矩阵时不 panic。
+    /// 全零矩阵将所有点映射到原点，reset_transform 后恢复正常绘制。
+    #[test]
+    fn test_set_transform_degenerate_all_zeros_then_reset() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 设置全零退化矩阵
+        ctx.set_transform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (x, y) = ctx.transform.transform_point(50.0, 50.0);
+        assert!((x).abs() < f32::EPSILON, "退化矩阵应将所有点映射到原点 x=0");
+        assert!((y).abs() < f32::EPSILON, "退化矩阵应将所有点映射到原点 y=0");
+        // 退化矩阵下 fill_rect 不 panic
+        ctx.fill_rect(10.0, 10.0, 30.0, 30.0);
+        // reset_transform 恢复单位矩阵后绘制正常
+        ctx.reset_transform();
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "reset_transform 后应正常绘制");
+    }
+
+    /// 测试 put_image_data 使用超出 ImageData 数据范围的偏移参数时不 panic。
+    /// 将小尺寸 ImageData 放置到远超其范围的坐标上，不应导致越界访问。
+    #[test]
+    fn test_put_image_data_out_of_bounds_dirty_rect_no_panic() {
+        let mut ctx = CanvasContext::new(50, 50);
+        // 2x2 的 ImageData
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255],
+        };
+        // 放置在远超画布边界的位置 — 不应 panic
+        ctx.put_image_data(&img, 100, 100);
+        ctx.put_image_data(&img, 200, 200);
+        ctx.put_image_data(&img, u32::MAX, u32::MAX);
+        // 画布内像素应未被修改
+        let pixel = ctx.get_image_data(0, 0, 1, 1);
+        assert_eq!(pixel.data[0..4], [0, 0, 0, 0], "越界 put_image_data 不应写入画布内像素");
+    }
+
+    /// 测试 createLinearGradient 起点和终点完全相同（零长度渐变）时不 panic。
+    /// 零长度渐变应正常创建，可添加停止点，sample_color 不 panic。
+    #[test]
+    fn test_linear_gradient_zero_length_no_panic() {
+        let ctx = CanvasContext::new(200, 200);
+        let mut grad = ctx.create_linear_gradient(75.0, 75.0, 75.0, 75.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(0.5, Color::GREEN);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // 零长度渐变不 panic，停止点数量正确
+        assert_eq!(grad.stops.len(), 3);
+        // sample_color 不应 panic
+        let c = grad.sample_color(0.5);
+        assert_eq!(c, Color::GREEN, "零长度渐变在 offset=0.5 处应返回绿色");
+    }
 }

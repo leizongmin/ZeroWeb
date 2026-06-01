@@ -709,4 +709,176 @@ mod tests {
         assert_eq!(bb.right(), 160.0, "right 应为 rect.right + offset_x = 160");
         assert_eq!(bb.bottom(), 300.0, "bottom 应为 rect.bottom + offset_y = 300");
     }
+
+    /// 测试 DamageTracker 添加 20 个不重叠的 1x1 小矩形后 dirty_area 等于面积之和
+    ///
+    /// 构造 20 个 1x1 像素的脏矩形，彼此间距足够远（不会触发 try_merge），
+    /// 验证总面积恰好等于 20 * 1 * 1 = 20。
+    #[test]
+    fn test_damage_tracker_20_non_overlapping_1x1_rects() {
+        let mut tracker = DamageTracker::new();
+
+        // 20 个 1x1 矩形，间距 500 像素，确保不会合并
+        for i in 0..20 {
+            let x = (i as f32) * 500.0;
+            tracker.add_damage(Rect::new(x, 0.0, 1.0, 1.0));
+        }
+
+        // 所有不重叠，应保留 20 个独立矩形
+        assert_eq!(tracker.dirty_rects().len(), 20, "20 个不重叠 1x1 矩形不应合并");
+
+        // 每个 1x1 面积为 1，总面积 = 20
+        let total_area: f32 = tracker.dirty_rects().iter().map(|r| r.size.area()).sum();
+        assert!(
+            (total_area - 20.0).abs() < 0.01,
+            "dirty_area 应为 20，实际: {total_area}"
+        );
+    }
+
+    /// 测试 Color::lerp 从 TRANSPARENT 到 WHITE 在 t=0.5 时 RGBA 各通道近似相等
+    ///
+    /// TRANSPARENT (0,0,0,0) → WHITE (255,255,255,255)，
+    /// t=0.5 时每个通道的插值结果为 round(0 + (255-0)*0.5) = 128，
+    /// 验证 R、G、B、A 四个通道值彼此相等（均约为 128）。
+    #[test]
+    fn test_color_lerp_transparent_to_white_midpoint() {
+        let transparent = Color::TRANSPARENT;
+        let white = Color::WHITE;
+        let mid = transparent.lerp(white, 0.5);
+
+        // 四个通道应均为 128
+        assert_eq!(mid.r, 128, "R 通道应为 128");
+        assert_eq!(mid.g, 128, "G 通道应为 128");
+        assert_eq!(mid.b, 128, "B 通道应为 128");
+        assert_eq!(mid.a, 128, "A 通道应为 128");
+
+        // 验证各通道近似相等
+        assert_eq!(mid.r, mid.g, "R 和 G 通道应相等");
+        assert_eq!(mid.g, mid.b, "G 和 B 通道应相等");
+        assert_eq!(mid.b, mid.a, "B 和 A 通道应相等");
+    }
+
+    /// 测试 ImageCache GC 中高 ref_count 条目在淘汰中存活
+    ///
+    /// 插入 5 张图片并多次 get 以提高 ref_count（ref_count >= 11），
+    /// 再插入 20 张图片并 release 使其 ref_count 降为 0，
+    /// GC 时 ref_count == 0 的冷条目首先被移除，高 ref_count 的热条目存活。
+    #[test]
+    fn test_image_cache_gc_high_ref_count_survives_eviction() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+
+        // 插入 5 张热图片并多次 get 以提高 ref_count
+        let mut hot_keys = Vec::new();
+        for i in 0..5 {
+            let key = cache.insert(ImageData::new_empty(2, 2));
+            for _ in 0..10 {
+                let _ = cache.get(&key);
+            }
+            hot_keys.push(key);
+            assert!(
+                cache.ref_count(&hot_keys[i as usize]).unwrap() >= 11,
+                "第 {} 张图片 ref_count 应 >= 11",
+                i
+            );
+        }
+
+        // 插入 20 张冷图片，然后 release 使 ref_count 降为 0
+        let mut cold_keys = Vec::new();
+        for _ in 0..20 {
+            let key = cache.insert(ImageData::new_empty(2, 2));
+            cache.release(&key); // ref_count: 1 → 0
+            cold_keys.push(key);
+        }
+
+        // 冷条目 ref_count 均为 0
+        for key in &cold_keys {
+            assert_eq!(cache.ref_count(key), Some(0));
+        }
+
+        // GC：ref_count == 0 的冷条目首先被移除
+        cache.gc();
+
+        // 冷条目应全部被移除
+        for (i, key) in cold_keys.iter().enumerate() {
+            assert!(cache.ref_count(key).is_none(), "冷条目 {} 应被 GC 移除", i);
+        }
+
+        // 高 ref_count 的热条目应全部存活
+        for (i, key) in hot_keys.iter().enumerate() {
+            assert!(cache.ref_count(key).is_some(), "高 ref_count 的热条目 {} 应存活", i);
+        }
+    }
+
+    /// 测试 FrameBuffer 在四个角落坐标的 set_pixel 和 get_pixel
+    ///
+    /// 验证 (0,0)、(w-1,0)、(0,h-1)、(w-1,h-1) 四个角落像素
+    /// 写入后能正确读回，确保索引计算无越界。
+    #[test]
+    fn test_frame_buffer_four_corner_pixels() {
+        let w = 80u32;
+        let h = 60u32;
+        let mut fb = FrameBuffer::new(w, h);
+
+        // 四个角落使用不同的颜色
+        let tl = [255, 0, 0, 255]; // 左上 (0, 0)
+        let tr = [0, 255, 0, 255]; // 右上 (w-1, 0)
+        let bl = [0, 0, 255, 255]; // 左下 (0, h-1)
+        let br = [255, 255, 0, 255]; // 右下 (w-1, h-1)
+
+        fb.set_pixel(0, 0, tl);
+        fb.set_pixel(w - 1, 0, tr);
+        fb.set_pixel(0, h - 1, bl);
+        fb.set_pixel(w - 1, h - 1, br);
+
+        assert_eq!(fb.get_pixel(0, 0), tl, "左上角像素应正确读回");
+        assert_eq!(fb.get_pixel(w - 1, 0), tr, "右上角像素应正确读回");
+        assert_eq!(fb.get_pixel(0, h - 1), bl, "左下角像素应正确读回");
+        assert_eq!(fb.get_pixel(w - 1, h - 1), br, "右下角像素应正确读回");
+
+        // 中间像素仍为初始黑色
+        assert_eq!(fb.get_pixel(w / 2, h / 2), [0, 0, 0, 0]);
+    }
+
+    /// 测试 RenderPrimitives 仅包含 RoundedRectFill 图元时 bounding_box 的正确性（含负坐标）
+    ///
+    /// 添加多个 RoundedRectPrimitive 图元，部分使用负坐标，
+    /// 验证 bounding_box 仅基于 rounded_rects 列表正确计算全局包围盒。
+    #[test]
+    fn test_bounding_box_rounded_rect_only_with_negative_coords() {
+        use crate::primitive::*;
+
+        let mut p = RenderPrimitives::new();
+
+        // 仅添加 rounded_rect，包含正坐标和负坐标
+        p.add_rounded_rect(RoundedRectPrimitive::uniform(
+            Rect::new(-200.0, -100.0, 50.0, 40.0),
+            Color::RED,
+            5.0,
+        ));
+        p.add_rounded_rect(RoundedRectPrimitive::uniform(
+            Rect::new(100.0, 50.0, 80.0, 60.0),
+            Color::GREEN,
+            10.0,
+        ));
+        p.add_rounded_rect(RoundedRectPrimitive::uniform(
+            Rect::new(-50.0, 200.0, 30.0, 30.0),
+            Color::BLUE,
+            8.0,
+        ));
+
+        // 确认只有 rounded_rects 有内容
+        assert_eq!(p.rounded_rects.len(), 3);
+        assert!(p.fills.is_empty());
+        assert!(p.strokes.is_empty());
+
+        let bb = p.bounding_box().expect("仅 rounded_rect 应返回包围盒");
+
+        // 第一个: (-200,-100) → (-150,-60)
+        // 第二个: (100,50) → (180,110)
+        // 第三个: (-50,200) → (-20,230)
+        assert_eq!(bb.left(), -200.0, "left 应为 -200");
+        assert_eq!(bb.top(), -100.0, "top 应为 -100");
+        assert_eq!(bb.right(), 180.0, "right 应为 180");
+        assert_eq!(bb.bottom(), 230.0, "bottom 应为 230");
+    }
 }

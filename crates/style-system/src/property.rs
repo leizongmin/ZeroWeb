@@ -635,6 +635,111 @@ pub enum BackgroundOriginComputedValue {
     ContentBox,
 }
 
+// ── CSS Border Image 计算值类型 ──────────────────────────────────────────
+
+/// CSS border-image-source 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageSourceComputedValue {
+    /// none（默认值）。
+    None,
+    /// url(<string>)。
+    Url(String),
+}
+
+/// CSS border-image-slice 单个分量的计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageSliceComputedComponent {
+    /// 数字值。
+    Number(f32),
+    /// 百分比值。
+    Percent(f32),
+}
+
+/// CSS border-image-slice 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageSliceComputedValue {
+    /// 顶部。
+    pub top: BorderImageSliceComputedComponent,
+    /// 右侧。
+    pub right: BorderImageSliceComputedComponent,
+    /// 底部。
+    pub bottom: BorderImageSliceComputedComponent,
+    /// 左侧。
+    pub left: BorderImageSliceComputedComponent,
+    /// 是否填充。
+    pub fill: bool,
+}
+
+/// CSS border-image-width 单个分量的计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageWidthComputedComponent {
+    /// auto。
+    Auto,
+    /// 数字（倍数）。
+    Number(f32),
+    /// 长度值。
+    Length(f32),
+    /// 百分比值。
+    Percent(f32),
+}
+
+/// CSS border-image-width 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageWidthComputedValue {
+    /// 顶部。
+    pub top: BorderImageWidthComputedComponent,
+    /// 右侧。
+    pub right: BorderImageWidthComputedComponent,
+    /// 底部。
+    pub bottom: BorderImageWidthComputedComponent,
+    /// 左侧。
+    pub left: BorderImageWidthComputedComponent,
+}
+
+/// CSS border-image-repeat 模式的计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageRepeatComputedMode {
+    /// stretch（默认）。
+    Stretch,
+    /// repeat。
+    Repeat,
+    /// round。
+    Round,
+    /// space。
+    Space,
+}
+
+/// CSS border-image-repeat 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageRepeatComputedValue {
+    /// 水平方向。
+    pub horizontal: BorderImageRepeatComputedMode,
+    /// 垂直方向。
+    pub vertical: BorderImageRepeatComputedMode,
+}
+
+/// CSS border-image-outset 单个分量的计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageOutsetComputedComponent {
+    /// 数字（倍数）。
+    Number(f32),
+    /// 长度值。
+    Length(f32),
+}
+
+/// CSS border-image-outset 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageOutsetComputedValue {
+    /// 顶部。
+    pub top: BorderImageOutsetComputedComponent,
+    /// 右侧。
+    pub right: BorderImageOutsetComputedComponent,
+    /// 底部。
+    pub bottom: BorderImageOutsetComputedComponent,
+    /// 左侧。
+    pub left: BorderImageOutsetComputedComponent,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1205,6 +1310,16 @@ pub enum PropertyValue {
     BackgroundClip(BackgroundClipComputedValue),
     /// background-origin 值。
     BackgroundOrigin(BackgroundOriginComputedValue),
+    /// border-image-source 值。
+    BorderImageSource(BorderImageSourceComputedValue),
+    /// border-image-slice 值。
+    BorderImageSlice(BorderImageSliceComputedValue),
+    /// border-image-width 值。
+    BorderImageWidth(BorderImageWidthComputedValue),
+    /// border-image-repeat 值。
+    BorderImageRepeat(BorderImageRepeatComputedValue),
+    /// border-image-outset 值。
+    BorderImageOutset(BorderImageOutsetComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1717,6 +1832,16 @@ pub struct ComputedStyle {
     pub background_clip: BackgroundClipComputedValue,
     /// background-origin 属性。
     pub background_origin: BackgroundOriginComputedValue,
+    /// border-image-source 属性。
+    pub border_image_source: BorderImageSourceComputedValue,
+    /// border-image-slice 属性。
+    pub border_image_slice: BorderImageSliceComputedValue,
+    /// border-image-width 属性。
+    pub border_image_width: BorderImageWidthComputedValue,
+    /// border-image-repeat 属性。
+    pub border_image_repeat: BorderImageRepeatComputedValue,
+    /// border-image-outset 属性。
+    pub border_image_outset: BorderImageOutsetComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -1973,6 +2098,32 @@ impl Default for ComputedStyle {
             background_attachment: BackgroundAttachmentComputedValue::Scroll,
             background_clip: BackgroundClipComputedValue::BorderBox,
             background_origin: BackgroundOriginComputedValue::PaddingBox,
+
+            // Border Image (Source / Slice / Width / Repeat / Outset)
+            border_image_source: BorderImageSourceComputedValue::None,
+            border_image_slice: BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(100.0),
+                right: BorderImageSliceComputedComponent::Number(100.0),
+                bottom: BorderImageSliceComputedComponent::Number(100.0),
+                left: BorderImageSliceComputedComponent::Number(100.0),
+                fill: false,
+            },
+            border_image_width: BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Number(1.0),
+                right: BorderImageWidthComputedComponent::Number(1.0),
+                bottom: BorderImageWidthComputedComponent::Number(1.0),
+                left: BorderImageWidthComputedComponent::Number(1.0),
+            },
+            border_image_repeat: BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            },
+            border_image_outset: BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            },
         }
     }
 }
@@ -2216,6 +2367,32 @@ impl PropertyRegistry {
             "background-clip" => Some(BackgroundClip(BackgroundClipComputedValue::BorderBox)),
             "background-origin" => Some(BackgroundOrigin(BackgroundOriginComputedValue::PaddingBox)),
 
+            // Border Image
+            "border-image-source" => Some(BorderImageSource(BorderImageSourceComputedValue::None)),
+            "border-image-slice" => Some(BorderImageSlice(BorderImageSliceComputedValue {
+                top: BorderImageSliceComputedComponent::Number(100.0),
+                right: BorderImageSliceComputedComponent::Number(100.0),
+                bottom: BorderImageSliceComputedComponent::Number(100.0),
+                left: BorderImageSliceComputedComponent::Number(100.0),
+                fill: false,
+            })),
+            "border-image-width" => Some(BorderImageWidth(BorderImageWidthComputedValue {
+                top: BorderImageWidthComputedComponent::Number(1.0),
+                right: BorderImageWidthComputedComponent::Number(1.0),
+                bottom: BorderImageWidthComputedComponent::Number(1.0),
+                left: BorderImageWidthComputedComponent::Number(1.0),
+            })),
+            "border-image-repeat" => Some(BorderImageRepeat(BorderImageRepeatComputedValue {
+                horizontal: BorderImageRepeatComputedMode::Stretch,
+                vertical: BorderImageRepeatComputedMode::Stretch,
+            })),
+            "border-image-outset" => Some(BorderImageOutset(BorderImageOutsetComputedValue {
+                top: BorderImageOutsetComputedComponent::Number(0.0),
+                right: BorderImageOutsetComputedComponent::Number(0.0),
+                bottom: BorderImageOutsetComputedComponent::Number(0.0),
+                left: BorderImageOutsetComputedComponent::Number(0.0),
+            })),
+
             _ => None,
         }
     }
@@ -2431,6 +2608,11 @@ impl PropertyRegistry {
             "background-attachment",
             "background-clip",
             "background-origin",
+            "border-image-source",
+            "border-image-slice",
+            "border-image-width",
+            "border-image-repeat",
+            "border-image-outset",
         ]
     }
 }
@@ -4554,6 +4736,114 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "border-image-source" => {
+            if let Some(v) = values::parse_border_image_source(value) {
+                style.border_image_source = match v {
+                    zero_css_parser::values::BorderImageSourceValue::None => BorderImageSourceComputedValue::None,
+                    zero_css_parser::values::BorderImageSourceValue::Url(url) => {
+                        BorderImageSourceComputedValue::Url(url)
+                    }
+                };
+                return true;
+            }
+        }
+        "border-image-slice" => {
+            if let Some(v) = values::parse_border_image_slice(value) {
+                fn convert_comp(
+                    c: &zero_css_parser::values::BorderImageSliceComponent,
+                ) -> BorderImageSliceComputedComponent {
+                    match c {
+                        zero_css_parser::values::BorderImageSliceComponent::Number(n) => {
+                            BorderImageSliceComputedComponent::Number(*n)
+                        }
+                        zero_css_parser::values::BorderImageSliceComponent::Percent(p) => {
+                            BorderImageSliceComputedComponent::Percent(*p)
+                        }
+                    }
+                }
+                style.border_image_slice = BorderImageSliceComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                    fill: v.fill,
+                };
+                return true;
+            }
+        }
+        "border-image-width" => {
+            if let Some(v) = values::parse_border_image_width(value) {
+                fn convert_comp(
+                    c: &zero_css_parser::values::BorderImageWidthComponent,
+                ) -> BorderImageWidthComputedComponent {
+                    match c {
+                        zero_css_parser::values::BorderImageWidthComponent::Auto => {
+                            BorderImageWidthComputedComponent::Auto
+                        }
+                        zero_css_parser::values::BorderImageWidthComponent::Number(n) => {
+                            BorderImageWidthComputedComponent::Number(*n)
+                        }
+                        zero_css_parser::values::BorderImageWidthComponent::Length(
+                            zero_css_parser::values::LengthValue::Px(px),
+                        ) => BorderImageWidthComputedComponent::Length(*px as f32),
+                        zero_css_parser::values::BorderImageWidthComponent::Percent(p) => {
+                            BorderImageWidthComputedComponent::Percent(*p)
+                        }
+                        _ => BorderImageWidthComputedComponent::Number(1.0),
+                    }
+                }
+                style.border_image_width = BorderImageWidthComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
+        "border-image-repeat" => {
+            if let Some(v) = values::parse_border_image_repeat(value) {
+                fn convert_mode(m: &zero_css_parser::values::BorderImageRepeatMode) -> BorderImageRepeatComputedMode {
+                    match m {
+                        zero_css_parser::values::BorderImageRepeatMode::Stretch => {
+                            BorderImageRepeatComputedMode::Stretch
+                        }
+                        zero_css_parser::values::BorderImageRepeatMode::Repeat => BorderImageRepeatComputedMode::Repeat,
+                        zero_css_parser::values::BorderImageRepeatMode::Round => BorderImageRepeatComputedMode::Round,
+                        zero_css_parser::values::BorderImageRepeatMode::Space => BorderImageRepeatComputedMode::Space,
+                    }
+                }
+                style.border_image_repeat = BorderImageRepeatComputedValue {
+                    horizontal: convert_mode(&v.horizontal),
+                    vertical: convert_mode(&v.vertical),
+                };
+                return true;
+            }
+        }
+        "border-image-outset" => {
+            if let Some(v) = values::parse_border_image_outset(value) {
+                fn convert_comp(
+                    c: &zero_css_parser::values::BorderImageOutsetComponent,
+                ) -> BorderImageOutsetComputedComponent {
+                    match c {
+                        zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                            BorderImageOutsetComputedComponent::Number(*n)
+                        }
+                        zero_css_parser::values::BorderImageOutsetComponent::Length(
+                            zero_css_parser::values::LengthValue::Px(px),
+                        ) => BorderImageOutsetComputedComponent::Length(*px as f32),
+                        _ => BorderImageOutsetComputedComponent::Number(0.0),
+                    }
+                }
+                style.border_image_outset = BorderImageOutsetComputedValue {
+                    top: convert_comp(&v.top),
+                    right: convert_comp(&v.right),
+                    bottom: convert_comp(&v.bottom),
+                    left: convert_comp(&v.left),
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -5424,6 +5714,26 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "background-origin" => {
             style.background_origin = default_style.background_origin;
+            true
+        }
+        "border-image-source" => {
+            style.border_image_source = default_style.border_image_source;
+            true
+        }
+        "border-image-slice" => {
+            style.border_image_slice = default_style.border_image_slice;
+            true
+        }
+        "border-image-width" => {
+            style.border_image_width = default_style.border_image_width;
+            true
+        }
+        "border-image-repeat" => {
+            style.border_image_repeat = default_style.border_image_repeat;
+            true
+        }
+        "border-image-outset" => {
+            style.border_image_outset = default_style.border_image_outset;
             true
         }
         _ => false,
@@ -10426,5 +10736,308 @@ mod tests {
         style.background_origin = BackgroundOriginComputedValue::ContentBox;
         assert!(apply_initial_value(&mut style, "background-origin"));
         assert_eq!(style.background_origin, BackgroundOriginComputedValue::PaddingBox);
+    }
+
+    // ── border-image-source ──
+
+    #[test]
+    fn test_apply_property_border_image_source_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-source", "none"));
+        assert_eq!(style.border_image_source, BorderImageSourceComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_property_border_image_source_url() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "border-image-source",
+            "url(border.png)"
+        ));
+        assert_eq!(
+            style.border_image_source,
+            BorderImageSourceComputedValue::Url("border.png".to_string())
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_source_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-image-source", "invalid"));
+    }
+
+    #[test]
+    fn test_border_image_source_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("border-image-source"));
+    }
+
+    #[test]
+    fn test_border_image_source_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"border-image-source"));
+    }
+
+    #[test]
+    fn test_border_image_source_initial_value() {
+        assert!(PropertyRegistry::initial_value("border-image-source").is_some());
+        let mut style = ComputedStyle::default();
+        style.border_image_source = BorderImageSourceComputedValue::Url("test.png".to_string());
+        assert!(apply_initial_value(&mut style, "border-image-source"));
+        assert_eq!(style.border_image_source, BorderImageSourceComputedValue::None);
+    }
+
+    // ── border-image-slice ──
+
+    #[test]
+    fn test_apply_property_border_image_slice_number() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-slice", "50"));
+        assert_eq!(
+            style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Number(50.0)
+        );
+        assert_eq!(
+            style.border_image_slice.right,
+            BorderImageSliceComputedComponent::Number(50.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_slice_percent() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-slice", "30%"));
+        assert_eq!(
+            style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Percent(30.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_slice_fill() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-slice", "25 fill"));
+        assert!(style.border_image_slice.fill);
+        assert_eq!(
+            style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Number(25.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_slice_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-image-slice", "invalid"));
+    }
+
+    #[test]
+    fn test_border_image_slice_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("border-image-slice"));
+    }
+
+    #[test]
+    fn test_border_image_slice_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"border-image-slice"));
+    }
+
+    #[test]
+    fn test_border_image_slice_initial_value() {
+        assert!(PropertyRegistry::initial_value("border-image-slice").is_some());
+        let mut style = ComputedStyle::default();
+        style.border_image_slice.fill = true;
+        assert!(apply_initial_value(&mut style, "border-image-slice"));
+        assert!(!style.border_image_slice.fill);
+    }
+
+    // ── border-image-width ──
+
+    #[test]
+    fn test_apply_property_border_image_width_auto() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-width", "auto"));
+        assert_eq!(style.border_image_width.top, BorderImageWidthComputedComponent::Auto);
+    }
+
+    #[test]
+    fn test_apply_property_border_image_width_number() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-width", "3"));
+        assert_eq!(
+            style.border_image_width.top,
+            BorderImageWidthComputedComponent::Number(3.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_width_px() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-width", "10px"));
+        assert_eq!(
+            style.border_image_width.top,
+            BorderImageWidthComputedComponent::Length(10.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_width_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-image-width", "invalid"));
+    }
+
+    #[test]
+    fn test_border_image_width_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("border-image-width"));
+    }
+
+    #[test]
+    fn test_border_image_width_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"border-image-width"));
+    }
+
+    #[test]
+    fn test_border_image_width_initial_value() {
+        assert!(PropertyRegistry::initial_value("border-image-width").is_some());
+        let mut style = ComputedStyle::default();
+        style.border_image_width.top = BorderImageWidthComputedComponent::Auto;
+        assert!(apply_initial_value(&mut style, "border-image-width"));
+        assert_eq!(
+            style.border_image_width.top,
+            BorderImageWidthComputedComponent::Number(1.0)
+        );
+    }
+
+    // ── border-image-repeat ──
+
+    #[test]
+    fn test_apply_property_border_image_repeat_stretch() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-repeat", "stretch"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Stretch
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_repeat_repeat() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-repeat", "repeat"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Repeat
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_repeat_round() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-repeat", "round"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Round
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_repeat_space() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-repeat", "space"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Space
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_repeat_two_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-repeat", "repeat round"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Repeat
+        );
+        assert_eq!(style.border_image_repeat.vertical, BorderImageRepeatComputedMode::Round);
+    }
+
+    #[test]
+    fn test_apply_property_border_image_repeat_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-image-repeat", "invalid"));
+    }
+
+    #[test]
+    fn test_border_image_repeat_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("border-image-repeat"));
+    }
+
+    #[test]
+    fn test_border_image_repeat_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"border-image-repeat"));
+    }
+
+    #[test]
+    fn test_border_image_repeat_initial_value() {
+        assert!(PropertyRegistry::initial_value("border-image-repeat").is_some());
+        let mut style = ComputedStyle::default();
+        style.border_image_repeat.horizontal = BorderImageRepeatComputedMode::Repeat;
+        assert!(apply_initial_value(&mut style, "border-image-repeat"));
+        assert_eq!(
+            style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Stretch
+        );
+    }
+
+    // ── border-image-outset ──
+
+    #[test]
+    fn test_apply_property_border_image_outset_number() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-outset", "2"));
+        assert_eq!(
+            style.border_image_outset.top,
+            BorderImageOutsetComputedComponent::Number(2.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_outset_px() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "border-image-outset", "10px"));
+        assert_eq!(
+            style.border_image_outset.top,
+            BorderImageOutsetComputedComponent::Length(10.0)
+        );
+    }
+
+    #[test]
+    fn test_apply_property_border_image_outset_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "border-image-outset", "invalid"));
+    }
+
+    #[test]
+    fn test_border_image_outset_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("border-image-outset"));
+    }
+
+    #[test]
+    fn test_border_image_outset_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"border-image-outset"));
+    }
+
+    #[test]
+    fn test_border_image_outset_initial_value() {
+        assert!(PropertyRegistry::initial_value("border-image-outset").is_some());
+        let mut style = ComputedStyle::default();
+        style.border_image_outset.top = BorderImageOutsetComputedComponent::Number(10.0);
+        assert!(apply_initial_value(&mut style, "border-image-outset"));
+        assert_eq!(
+            style.border_image_outset.top,
+            BorderImageOutsetComputedComponent::Number(0.0)
+        );
     }
 }

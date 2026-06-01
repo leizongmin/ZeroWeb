@@ -4767,6 +4767,338 @@ pub fn parse_background_origin(value: &str) -> Option<BackgroundOriginValue> {
     }
 }
 
+// ── CSS Border Image 值类型 ──────────────────────────────────────────
+
+/// CSS border-image-source 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageSourceValue {
+    /// none（默认值）— 不使用边框图片。
+    None,
+    /// url(<string>) — 指定边框图片 URL。
+    Url(String),
+}
+
+/// 解析 CSS border-image-source 属性值。
+///
+/// 支持格式如 `"none"`、`"url(border.png)"`。
+pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(BorderImageSourceValue::None);
+    }
+    if value.starts_with("url(") && value.ends_with(')') {
+        let inner = value.get(4..value.len() - 1)?;
+        let url = inner.trim();
+        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
+            url.get(1..url.len() - 1)?
+        } else {
+            url
+        };
+        if url.is_empty() {
+            return None;
+        }
+        return Some(BorderImageSourceValue::Url(url.to_string()));
+    }
+    None
+}
+
+/// CSS border-image-slice 属性值。
+///
+/// 支持数字、百分比和 `fill` 关键字，最多 4 个值（上 右 下 左）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageSliceValue {
+    /// 顶部切片值。
+    pub top: BorderImageSliceComponent,
+    /// 右侧切片值。
+    pub right: BorderImageSliceComponent,
+    /// 底部切片值。
+    pub bottom: BorderImageSliceComponent,
+    /// 左侧切片值。
+    pub left: BorderImageSliceComponent,
+    /// 是否填充中央区域。
+    pub fill: bool,
+}
+
+/// border-image-slice 的单个分量。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageSliceComponent {
+    /// 数字值（无单位，默认）。
+    Number(f32),
+    /// 百分比值。
+    Percent(f32),
+}
+
+/// 解析 CSS border-image-slice 属性值。
+///
+/// 支持格式如 `"50"`、`"50%"`、`"25 50"`、`"25 50 75"`、`"25 50 75 100"`、
+/// `"25 50 fill"`、`"fill 25 50 75 100"`。
+pub fn parse_border_image_slice(value: &str) -> Option<BorderImageSliceValue> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut fill = false;
+    let mut numbers: Vec<BorderImageSliceComponent> = Vec::new();
+
+    for token in value.split_whitespace() {
+        let lower = token.to_ascii_lowercase();
+        if lower == "fill" {
+            fill = true;
+            continue;
+        }
+        if lower.ends_with('%') {
+            let pct: f32 = lower.trim_end_matches('%').parse().ok()?;
+            if pct < 0.0 {
+                return None;
+            }
+            numbers.push(BorderImageSliceComponent::Percent(pct));
+        } else {
+            let n: f32 = lower.parse().ok()?;
+            if n < 0.0 {
+                return None;
+            }
+            numbers.push(BorderImageSliceComponent::Number(n));
+        }
+    }
+
+    if numbers.is_empty() {
+        return None;
+    }
+    if numbers.len() > 4 {
+        return None;
+    }
+
+    // 扩展到 4 个值（CSS TRBL 顺序）
+    while numbers.len() < 4 {
+        match numbers.len() {
+            1 => numbers.push(numbers[0].clone()), // 右 = 上
+            2 => numbers.push(numbers[0].clone()), // 下 = 上
+            3 => numbers.push(numbers[1].clone()), // 左 = 右
+            _ => break,
+        }
+    }
+
+    Some(BorderImageSliceValue {
+        top: numbers[0].clone(),
+        right: numbers[1].clone(),
+        bottom: numbers[2].clone(),
+        left: numbers[3].clone(),
+        fill,
+    })
+}
+
+/// CSS border-image-width 属性值。
+///
+/// 支持长度、百分比、数字（倍数）和 `auto`，最多 4 个值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageWidthValue {
+    /// 顶部宽度。
+    pub top: BorderImageWidthComponent,
+    /// 右侧宽度。
+    pub right: BorderImageWidthComponent,
+    /// 底部宽度。
+    pub bottom: BorderImageWidthComponent,
+    /// 左侧宽度。
+    pub left: BorderImageWidthComponent,
+}
+
+/// border-image-width 的单个分量。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageWidthComponent {
+    /// auto — 使用 border-image-slice 的自然尺寸。
+    Auto,
+    /// 数字值（对应 border-width 的倍数）。
+    Number(f32),
+    /// 长度值（px/em 等）。
+    Length(LengthValue),
+    /// 百分比值。
+    Percent(f32),
+}
+
+/// 解析 CSS border-image-width 属性值。
+///
+/// 支持格式如 `"3"`、`"10px"`、`"auto"`、`"5%"`、`"1 2"`、`"1 2 3"`、`"1 2 3 4"`。
+pub fn parse_border_image_width(value: &str) -> Option<BorderImageWidthValue> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut components: Vec<BorderImageWidthComponent> = Vec::new();
+
+    for token in value.split_whitespace() {
+        let lower = token.to_ascii_lowercase();
+        if lower == "auto" {
+            components.push(BorderImageWidthComponent::Auto);
+        } else if lower.ends_with('%') {
+            let pct: f32 = lower.trim_end_matches('%').parse().ok()?;
+            if pct < 0.0 {
+                return None;
+            }
+            components.push(BorderImageWidthComponent::Percent(pct));
+        } else if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
+            let len = parse_length(token)?;
+            components.push(BorderImageWidthComponent::Length(len));
+        } else {
+            let n: f32 = lower.parse().ok()?;
+            if n < 0.0 {
+                return None;
+            }
+            components.push(BorderImageWidthComponent::Number(n));
+        }
+    }
+
+    if components.is_empty() || components.len() > 4 {
+        return None;
+    }
+
+    // 扩展到 4 个值（CSS TRBL 顺序）
+    while components.len() < 4 {
+        match components.len() {
+            1 => components.push(components[0].clone()),
+            2 => components.push(components[0].clone()),
+            3 => components.push(components[1].clone()),
+            _ => break,
+        }
+    }
+
+    Some(BorderImageWidthValue {
+        top: components[0].clone(),
+        right: components[1].clone(),
+        bottom: components[2].clone(),
+        left: components[3].clone(),
+    })
+}
+
+/// CSS border-image-repeat 属性值。
+///
+/// 控制边框图片的缩放和平铺方式，最多 2 个值（水平 垂直）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageRepeatValue {
+    /// 水平方向重复方式。
+    pub horizontal: BorderImageRepeatMode,
+    /// 垂直方向重复方式。
+    pub vertical: BorderImageRepeatMode,
+}
+
+/// border-image-repeat 的重复模式。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageRepeatMode {
+    /// stretch（默认值）— 拉伸图片填充区域。
+    Stretch,
+    /// repeat — 平铺图片。
+    Repeat,
+    /// round — 平铺并缩放使整数次平铺。
+    Round,
+    /// space — 平铺且均匀分布空白。
+    Space,
+}
+
+/// 解析 CSS border-image-repeat 属性值。
+///
+/// 支持格式如 `"stretch"`、`"repeat"`、`"round"`、`"space"`、`"repeat round"`。
+pub fn parse_border_image_repeat(value: &str) -> Option<BorderImageRepeatValue> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    fn parse_mode(s: &str) -> Option<BorderImageRepeatMode> {
+        match s.to_ascii_lowercase().as_str() {
+            "stretch" => Some(BorderImageRepeatMode::Stretch),
+            "repeat" => Some(BorderImageRepeatMode::Repeat),
+            "round" => Some(BorderImageRepeatMode::Round),
+            "space" => Some(BorderImageRepeatMode::Space),
+            _ => None,
+        }
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.is_empty() || parts.len() > 2 {
+        return None;
+    }
+
+    let horizontal = parse_mode(parts[0])?;
+    let vertical = if parts.len() == 2 {
+        parse_mode(parts[1])?
+    } else {
+        horizontal.clone()
+    };
+
+    Some(BorderImageRepeatValue { horizontal, vertical })
+}
+
+/// CSS border-image-outset 属性值。
+///
+/// 指定边框图片超出边框区域的距离，最多 4 个值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BorderImageOutsetValue {
+    /// 顶部 outset。
+    pub top: BorderImageOutsetComponent,
+    /// 右侧 outset。
+    pub right: BorderImageOutsetComponent,
+    /// 底部 outset。
+    pub bottom: BorderImageOutsetComponent,
+    /// 左侧 outset。
+    pub left: BorderImageOutsetComponent,
+}
+
+/// border-image-outset 的单个分量。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderImageOutsetComponent {
+    /// 数字值（对应 border-width 的倍数）。
+    Number(f32),
+    /// 长度值。
+    Length(LengthValue),
+}
+
+/// 解析 CSS border-image-outset 属性值。
+///
+/// 支持格式如 `"2"`、`"10px"`、`"1 2"`、`"1 2 3"`、`"1 2 3 4"`。
+pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut components: Vec<BorderImageOutsetComponent> = Vec::new();
+
+    for token in value.split_whitespace() {
+        let lower = token.to_ascii_lowercase();
+        if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
+            let len = parse_length(token)?;
+            components.push(BorderImageOutsetComponent::Length(len));
+        } else {
+            let n: f32 = lower.parse().ok()?;
+            if n < 0.0 {
+                return None;
+            }
+            components.push(BorderImageOutsetComponent::Number(n));
+        }
+    }
+
+    if components.is_empty() || components.len() > 4 {
+        return None;
+    }
+
+    while components.len() < 4 {
+        match components.len() {
+            1 => components.push(components[0].clone()),
+            2 => components.push(components[0].clone()),
+            3 => components.push(components[1].clone()),
+            _ => break,
+        }
+    }
+
+    Some(BorderImageOutsetValue {
+        top: components[0].clone(),
+        right: components[1].clone(),
+        bottom: components[2].clone(),
+        left: components[3].clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7036,5 +7368,200 @@ mod tests {
         assert_eq!(parse_background_origin("invalid"), None);
         assert_eq!(parse_background_origin("text"), None);
         assert_eq!(parse_background_origin("padding-box border-box"), None);
+    }
+
+    // ── border-image-source ──
+
+    #[test]
+    fn test_parse_border_image_source_none() {
+        let v = parse_border_image_source("none").unwrap();
+        assert_eq!(v, BorderImageSourceValue::None);
+    }
+
+    #[test]
+    fn test_parse_border_image_source_url() {
+        let v = parse_border_image_source("url(border.png)").unwrap();
+        assert_eq!(v, BorderImageSourceValue::Url("border.png".to_string()));
+    }
+
+    #[test]
+    fn test_parse_border_image_source_url_quoted() {
+        let v = parse_border_image_source("url('border.png')").unwrap();
+        assert_eq!(v, BorderImageSourceValue::Url("border.png".to_string()));
+    }
+
+    #[test]
+    fn test_parse_border_image_source_invalid() {
+        assert_eq!(parse_border_image_source("invalid"), None);
+        assert_eq!(parse_border_image_source("url()"), None);
+        assert_eq!(parse_border_image_source(""), None);
+    }
+
+    // ── border-image-slice ──
+
+    #[test]
+    fn test_parse_border_image_slice_single_number() {
+        let v = parse_border_image_slice("50").unwrap();
+        assert_eq!(v.top, BorderImageSliceComponent::Number(50.0));
+        assert_eq!(v.right, BorderImageSliceComponent::Number(50.0));
+        assert_eq!(v.bottom, BorderImageSliceComponent::Number(50.0));
+        assert_eq!(v.left, BorderImageSliceComponent::Number(50.0));
+        assert!(!v.fill);
+    }
+
+    #[test]
+    fn test_parse_border_image_slice_percent() {
+        let v = parse_border_image_slice("30%").unwrap();
+        assert_eq!(v.top, BorderImageSliceComponent::Percent(30.0));
+        assert_eq!(v.right, BorderImageSliceComponent::Percent(30.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_slice_four_values() {
+        let v = parse_border_image_slice("10 20 30 40").unwrap();
+        assert_eq!(v.top, BorderImageSliceComponent::Number(10.0));
+        assert_eq!(v.right, BorderImageSliceComponent::Number(20.0));
+        assert_eq!(v.bottom, BorderImageSliceComponent::Number(30.0));
+        assert_eq!(v.left, BorderImageSliceComponent::Number(40.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_slice_fill() {
+        let v = parse_border_image_slice("25 fill").unwrap();
+        assert!(v.fill);
+        assert_eq!(v.top, BorderImageSliceComponent::Number(25.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_slice_fill_prefix() {
+        let v = parse_border_image_slice("fill 10 20 30 40").unwrap();
+        assert!(v.fill);
+        assert_eq!(v.top, BorderImageSliceComponent::Number(10.0));
+        assert_eq!(v.left, BorderImageSliceComponent::Number(40.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_slice_invalid() {
+        assert_eq!(parse_border_image_slice(""), None);
+        assert_eq!(parse_border_image_slice("-5"), None);
+        assert_eq!(parse_border_image_slice("1 2 3 4 5"), None);
+    }
+
+    // ── border-image-width ──
+
+    #[test]
+    fn test_parse_border_image_width_auto() {
+        let v = parse_border_image_width("auto").unwrap();
+        assert_eq!(v.top, BorderImageWidthComponent::Auto);
+        assert_eq!(v.right, BorderImageWidthComponent::Auto);
+    }
+
+    #[test]
+    fn test_parse_border_image_width_number() {
+        let v = parse_border_image_width("3").unwrap();
+        assert_eq!(v.top, BorderImageWidthComponent::Number(3.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_width_px() {
+        let v = parse_border_image_width("10px").unwrap();
+        assert_eq!(v.top, BorderImageWidthComponent::Length(LengthValue::Px(10.0)));
+    }
+
+    #[test]
+    fn test_parse_border_image_width_percent() {
+        let v = parse_border_image_width("25%").unwrap();
+        assert_eq!(v.top, BorderImageWidthComponent::Percent(25.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_width_four_values() {
+        let v = parse_border_image_width("1 2 3 4").unwrap();
+        assert_eq!(v.top, BorderImageWidthComponent::Number(1.0));
+        assert_eq!(v.right, BorderImageWidthComponent::Number(2.0));
+        assert_eq!(v.bottom, BorderImageWidthComponent::Number(3.0));
+        assert_eq!(v.left, BorderImageWidthComponent::Number(4.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_width_invalid() {
+        assert_eq!(parse_border_image_width(""), None);
+        assert_eq!(parse_border_image_width("-1"), None);
+        assert_eq!(parse_border_image_width("1 2 3 4 5"), None);
+    }
+
+    // ── border-image-repeat ──
+
+    #[test]
+    fn test_parse_border_image_repeat_stretch() {
+        let v = parse_border_image_repeat("stretch").unwrap();
+        assert_eq!(v.horizontal, BorderImageRepeatMode::Stretch);
+        assert_eq!(v.vertical, BorderImageRepeatMode::Stretch);
+    }
+
+    #[test]
+    fn test_parse_border_image_repeat_repeat() {
+        let v = parse_border_image_repeat("repeat").unwrap();
+        assert_eq!(v.horizontal, BorderImageRepeatMode::Repeat);
+        assert_eq!(v.vertical, BorderImageRepeatMode::Repeat);
+    }
+
+    #[test]
+    fn test_parse_border_image_repeat_round() {
+        let v = parse_border_image_repeat("round").unwrap();
+        assert_eq!(v.horizontal, BorderImageRepeatMode::Round);
+        assert_eq!(v.vertical, BorderImageRepeatMode::Round);
+    }
+
+    #[test]
+    fn test_parse_border_image_repeat_space() {
+        let v = parse_border_image_repeat("space").unwrap();
+        assert_eq!(v.horizontal, BorderImageRepeatMode::Space);
+        assert_eq!(v.vertical, BorderImageRepeatMode::Space);
+    }
+
+    #[test]
+    fn test_parse_border_image_repeat_two_values() {
+        let v = parse_border_image_repeat("repeat round").unwrap();
+        assert_eq!(v.horizontal, BorderImageRepeatMode::Repeat);
+        assert_eq!(v.vertical, BorderImageRepeatMode::Round);
+    }
+
+    #[test]
+    fn test_parse_border_image_repeat_invalid() {
+        assert_eq!(parse_border_image_repeat(""), None);
+        assert_eq!(parse_border_image_repeat("invalid"), None);
+        assert_eq!(parse_border_image_repeat("stretch repeat round"), None);
+    }
+
+    // ── border-image-outset ──
+
+    #[test]
+    fn test_parse_border_image_outset_number() {
+        let v = parse_border_image_outset("2").unwrap();
+        assert_eq!(v.top, BorderImageOutsetComponent::Number(2.0));
+        assert_eq!(v.right, BorderImageOutsetComponent::Number(2.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_outset_px() {
+        let v = parse_border_image_outset("10px").unwrap();
+        assert_eq!(v.top, BorderImageOutsetComponent::Length(LengthValue::Px(10.0)));
+    }
+
+    #[test]
+    fn test_parse_border_image_outset_four_values() {
+        let v = parse_border_image_outset("1px 2 3px 4").unwrap();
+        assert_eq!(v.top, BorderImageOutsetComponent::Length(LengthValue::Px(1.0)));
+        assert_eq!(v.right, BorderImageOutsetComponent::Number(2.0));
+        assert_eq!(v.bottom, BorderImageOutsetComponent::Length(LengthValue::Px(3.0)));
+        assert_eq!(v.left, BorderImageOutsetComponent::Number(4.0));
+    }
+
+    #[test]
+    fn test_parse_border_image_outset_invalid() {
+        assert_eq!(parse_border_image_outset(""), None);
+        assert_eq!(parse_border_image_outset("-1"), None);
+        assert_eq!(parse_border_image_outset("1 2 3 4 5"), None);
     }
 }
