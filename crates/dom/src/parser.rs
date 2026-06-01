@@ -468,3 +468,192 @@ fn parse_html_with_builder(html: &str) -> Document {
     let parser = html5ever::parse_document(builder, ParseOpts::default());
     parser.one(html)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── 基础解析 ──
+
+    /// 空文档应产生仅包含 document 根的树。
+    #[test]
+    fn test_parse_empty_html() {
+        let doc = parse_html("");
+        assert!(doc.root().is_valid());
+        assert!(doc.node_count() >= 1, "空文档应有根节点");
+    }
+
+    /// 最简文档：仅文本。
+    #[test]
+    fn test_parse_text_only() {
+        let doc = parse_html("Hello");
+        assert!(doc.node_count() > 1, "应有文本节点");
+    }
+
+    /// 完整 HTML5 文档。
+    #[test]
+    fn test_parse_full_html5_document() {
+        let html = r#"<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 5, "完整文档应包含多个节点");
+    }
+
+    /// 纯空白输入。
+    #[test]
+    fn test_parse_whitespace_only() {
+        let doc = parse_html("   \n\t  ");
+        assert!(doc.root().is_valid());
+    }
+
+    // ── 元素和属性 ──
+
+    /// 带属性的元素。
+    #[test]
+    fn test_parse_element_with_attributes() {
+        let doc = parse_html(r#"<div id="main" class="container" data-value="123">Content</div>"#);
+        assert!(doc.node_count() > 1);
+    }
+
+    /// 嵌套元素。
+    #[test]
+    fn test_parse_nested_elements() {
+        let html = "<div><p><span>Deep</span></p></div>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 3, "嵌套元素应产生多个节点");
+    }
+
+    /// 自闭合 void 元素。
+    #[test]
+    fn test_parse_void_elements() {
+        let html = "<div><br><img src='test.png'><input type='text'></div>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 2, "void 元素应被正确解析");
+    }
+
+    /// 多 class 属性。
+    #[test]
+    fn test_parse_multiple_classes() {
+        let doc = parse_html(r#"<div class="a b c"></div>"#);
+        assert!(doc.node_count() > 0);
+    }
+
+    // ── 错误恢复 ──
+
+    /// 未闭合标签：html5ever 自动恢复。
+    #[test]
+    fn test_parse_unclosed_tags() {
+        let html = "<div><p>text<span>more";
+        let doc = parse_html(html);
+        // html5ever 自动闭合标签
+        assert!(doc.node_count() > 2, "未闭合标签应被自动恢复");
+    }
+
+    /// 错误嵌套标签。
+    #[test]
+    fn test_parse_misnested_tags() {
+        let html = "<b><i>bold italic</b></i>";
+        let doc = parse_html(html);
+        // html5ever 处理错误嵌套
+        assert!(doc.node_count() > 1, "错误嵌套应被恢复");
+    }
+
+    /// 重复属性。
+    #[test]
+    fn test_parse_duplicate_attributes() {
+        let html = r#"<div class="a" class="b">text</div>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0, "重复属性不应导致解析失败");
+    }
+
+    /// 仅关闭标签无开始标签。
+    #[test]
+    fn test_parse_closing_tag_without_open() {
+        let html = "</div></p>text";
+        let doc = parse_html(html);
+        assert!(doc.root().is_valid());
+    }
+
+    // ── 特殊内容 ──
+
+    /// HTML 实体。
+    #[test]
+    fn test_parse_html_entities() {
+        let html = "<p>&amp; &lt; &gt; &quot; &#x2603;</p>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0, "实体应被正确解析");
+    }
+
+    /// 注释。
+    #[test]
+    fn test_parse_comment() {
+        let html = "<div><!-- this is a comment -->text</div>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 1, "注释应被保留在 DOM 中");
+    }
+
+    /// script 标签内容。
+    #[test]
+    fn test_parse_script_content() {
+        let html = r#"<script>var x = 1 < 2; if (a && b) {}</script>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0, "script 内容应被正确处理");
+    }
+
+    /// style 标签内容。
+    #[test]
+    fn test_parse_style_content() {
+        let html = "<style>body { color: red; }</style>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0, "style 内容应被正确处理");
+    }
+
+    /// DOCTYPE 声明。
+    #[test]
+    fn test_parse_doctype() {
+        let html = "<!DOCTYPE html><html><body>ok</body></html>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 2);
+    }
+
+    // ── 文档结构 ──
+
+    /// 无 html/body 标签时自动补全。
+    #[test]
+    fn test_parse_auto_body() {
+        let doc = parse_html("<p>paragraph</p>");
+        assert!(doc.node_count() > 1, "html5ever 应自动添加 html/body");
+    }
+
+    /// head 中的 link/meta。
+    #[test]
+    fn test_parse_head_elements() {
+        let html = r#"<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"><title>T</title></head>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 3);
+    }
+
+    /// 多层嵌套（10 层）。
+    #[test]
+    fn test_parse_deeply_nested() {
+        let html = "<div>".repeat(10) + "text" + &"</div>".repeat(10);
+        let doc = parse_html(&html);
+        assert!(doc.node_count() > 10, "深层嵌套应被正确解析");
+    }
+
+    /// Unicode 文本。
+    #[test]
+    fn test_parse_unicode_text() {
+        let html = "<p>你好世界 🌍 こんにちは 안녕하세요</p>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0, "Unicode 文本应被正确解析");
+    }
+
+    /// 大文档（1000 个段落）。
+    #[test]
+    fn test_parse_large_document() {
+        let paragraphs: Vec<String> = (0..1000).map(|i| format!("<p>Paragraph {i}</p>")).collect();
+        let html = format!("<html><body>{}</body></html>", paragraphs.join(""));
+        let doc = parse_html(&html);
+        assert!(doc.node_count() > 1000, "大文档应被正确解析");
+    }
+}

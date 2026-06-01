@@ -57,3 +57,161 @@ impl MutationObserver {
         (self.callback)(records);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// 创建 MutationRecord — 基础字段验证。
+    #[test]
+    fn test_mutation_record_child_list() {
+        let mut doc = crate::Document::new();
+        let target = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let record = MutationRecord {
+            mutation_type: MutationType::ChildList,
+            target,
+            added_nodes: vec![child],
+            removed_nodes: vec![],
+            previous_sibling: None,
+            attribute_name: None,
+            old_value: None,
+        };
+
+        assert_eq!(record.mutation_type, MutationType::ChildList);
+        assert_eq!(record.target, target);
+        assert_eq!(record.added_nodes.len(), 1);
+        assert!(record.removed_nodes.is_empty());
+        assert!(record.attribute_name.is_none());
+    }
+
+    /// MutationRecord — 属性变更记录。
+    #[test]
+    fn test_mutation_record_attributes() {
+        let mut doc = crate::Document::new();
+        let target = doc.create_element("div");
+
+        let record = MutationRecord {
+            mutation_type: MutationType::Attributes,
+            target,
+            added_nodes: vec![],
+            removed_nodes: vec![],
+            previous_sibling: None,
+            attribute_name: Some("class".to_string()),
+            old_value: Some("old-class".to_string()),
+        };
+
+        assert_eq!(record.mutation_type, MutationType::Attributes);
+        assert_eq!(record.attribute_name.as_deref(), Some("class"));
+        assert_eq!(record.old_value.as_deref(), Some("old-class"));
+    }
+
+    /// MutationRecord — CharacterData 变更。
+    #[test]
+    fn test_mutation_record_character_data() {
+        let mut doc = crate::Document::new();
+        let target = doc.create_text_node("hello");
+
+        let record = MutationRecord {
+            mutation_type: MutationType::CharacterData,
+            target,
+            added_nodes: vec![],
+            removed_nodes: vec![],
+            previous_sibling: None,
+            attribute_name: None,
+            old_value: Some("hello".to_string()),
+        };
+
+        assert_eq!(record.mutation_type, MutationType::CharacterData);
+        assert_eq!(record.old_value.as_deref(), Some("hello"));
+    }
+
+    /// MutationObserver 回调被正确调用。
+    #[test]
+    fn test_observer_notify_calls_callback() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        let observer = MutationObserver::new(Box::new(move |records| {
+            count_clone.fetch_add(records.len(), Ordering::SeqCst);
+        }));
+
+        let mut doc = crate::Document::new();
+        let target = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let records = vec![
+            MutationRecord {
+                mutation_type: MutationType::ChildList,
+                target,
+                added_nodes: vec![child],
+                removed_nodes: vec![],
+                previous_sibling: None,
+                attribute_name: None,
+                old_value: None,
+            },
+            MutationRecord {
+                mutation_type: MutationType::Attributes,
+                target,
+                added_nodes: vec![],
+                removed_nodes: vec![],
+                previous_sibling: None,
+                attribute_name: Some("id".to_string()),
+                old_value: None,
+            },
+        ];
+
+        observer.notify(&records);
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    /// MutationObserver — 空记录列表不触发回调内容。
+    #[test]
+    fn test_observer_notify_empty_records() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        let observer = MutationObserver::new(Box::new(move |records| {
+            count_clone.fetch_add(records.len(), Ordering::SeqCst);
+        }));
+
+        observer.notify(&[]);
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    /// MutationType — PartialEq 验证。
+    #[test]
+    fn test_mutation_type_equality() {
+        assert_eq!(MutationType::ChildList, MutationType::ChildList);
+        assert_eq!(MutationType::Attributes, MutationType::Attributes);
+        assert_eq!(MutationType::CharacterData, MutationType::CharacterData);
+        assert_ne!(MutationType::ChildList, MutationType::Attributes);
+        assert_ne!(MutationType::Attributes, MutationType::CharacterData);
+    }
+
+    /// MutationRecord — clone 一致性验证。
+    #[test]
+    fn test_mutation_record_clone() {
+        let mut doc = crate::Document::new();
+        let target = doc.create_element("div");
+
+        let record = MutationRecord {
+            mutation_type: MutationType::ChildList,
+            target,
+            added_nodes: vec![],
+            removed_nodes: vec![],
+            previous_sibling: None,
+            attribute_name: Some("data-x".to_string()),
+            old_value: Some("old".to_string()),
+        };
+
+        let cloned = record.clone();
+        assert_eq!(cloned.mutation_type, record.mutation_type);
+        assert_eq!(cloned.target, record.target);
+        assert_eq!(cloned.attribute_name, record.attribute_name);
+        assert_eq!(cloned.old_value, record.old_value);
+    }
+}

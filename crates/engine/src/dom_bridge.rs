@@ -1732,4 +1732,132 @@ mod tests {
         assert!(polyfill.contains("node.id"));
         assert!(polyfill.contains("node.className"));
     }
+
+    // ── 命令解析边界测试 ──
+
+    #[test]
+    fn test_parse_command_whitespace_tolerance() {
+        let cmd = DomBridge::parse_command("  document.getElementById(\"test\")  ");
+        assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == "test"));
+    }
+
+    #[test]
+    fn test_parse_command_single_quotes() {
+        let cmd = DomBridge::parse_command("document.getElementById('my-id')");
+        assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == "my-id"));
+    }
+
+    #[test]
+    fn test_parse_command_empty_string_arg() {
+        let cmd = DomBridge::parse_command("document.getElementById(\"\")");
+        assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == ""));
+    }
+
+    #[test]
+    fn test_parse_command_unknown_returns_none() {
+        assert!(DomBridge::parse_command("window.alert('hi')").is_none());
+        assert!(DomBridge::parse_command("").is_none());
+        assert!(DomBridge::parse_command("not a command").is_none());
+    }
+
+    #[test]
+    fn test_parse_command_create_element() {
+        let cmd = DomBridge::parse_command("document.createElement(\"div\")");
+        assert!(matches!(cmd, Some(DomCommand::CreateElement { tag_name }) if tag_name == "div"));
+    }
+
+    #[test]
+    fn test_parse_command_create_text_node() {
+        let cmd = DomBridge::parse_command("document.createTextNode(\"hello\")");
+        assert!(matches!(cmd, Some(DomCommand::CreateTextNode { text }) if text == "hello"));
+    }
+
+    #[test]
+    fn test_parse_command_query_selector() {
+        let cmd = DomBridge::parse_command("document.querySelector(\".container\")");
+        assert!(matches!(cmd, Some(DomCommand::QuerySelector { selector }) if selector == ".container"));
+    }
+
+    #[test]
+    fn test_parse_command_query_selector_all() {
+        let cmd = DomBridge::parse_command("document.querySelectorAll(\"div\")");
+        assert!(matches!(cmd, Some(DomCommand::QuerySelectorAll { selector }) if selector == "div"));
+    }
+
+    #[test]
+    fn test_parse_command_get_elements_by_class_name() {
+        let cmd = DomBridge::parse_command("document.getElementsByClassName(\"active\")");
+        assert!(matches!(cmd, Some(DomCommand::GetElementsByClassName { class_name }) if class_name == "active"));
+    }
+
+    #[test]
+    fn test_parse_command_get_elements_by_tag_name() {
+        let cmd = DomBridge::parse_command("document.getElementsByTagName(\"span\")");
+        assert!(matches!(cmd, Some(DomCommand::GetElementsByTagName { tag_name }) if tag_name == "span"));
+    }
+
+    // ── DomBridge 边界测试 ──
+
+    #[test]
+    fn test_bridge_register_same_id_twice() {
+        let mut bridge = DomBridge::new();
+        let h1 = bridge.register(42);
+        let h2 = bridge.register(42);
+        assert_eq!(h1, h2, "重复注册同一 node_id 应返回相同 handle");
+        assert_eq!(bridge.len(), 1);
+    }
+
+    #[test]
+    fn test_bridge_register_many() {
+        let mut bridge = DomBridge::new();
+        let mut handles = vec![];
+        for i in 0..100 {
+            handles.push(bridge.register(i));
+        }
+        assert_eq!(bridge.len(), 100);
+        // 所有 handle 应唯一
+        let unique: std::collections::HashSet<u64> = handles.iter().copied().collect();
+        assert_eq!(unique.len(), 100);
+    }
+
+    #[test]
+    fn test_bridge_resolve_unregistered() {
+        let bridge = DomBridge::new();
+        assert!(bridge.resolve(999).is_none());
+    }
+
+    #[test]
+    fn test_bridge_unregister_and_resolve() {
+        let mut bridge = DomBridge::new();
+        let h = bridge.register(10);
+        assert_eq!(bridge.resolve(h), Some(10));
+        bridge.unregister(h);
+        assert!(bridge.resolve(h).is_none());
+        assert_eq!(bridge.len(), 0);
+    }
+
+    #[test]
+    fn test_bridge_clear() {
+        let mut bridge = DomBridge::new();
+        bridge.register(1);
+        bridge.register(2);
+        bridge.register(3);
+        assert_eq!(bridge.len(), 3);
+        bridge.clear();
+        assert!(bridge.is_empty());
+    }
+
+    // ── DomResult 测试 ──
+
+    #[test]
+    fn test_dom_result_equality() {
+        assert_eq!(DomResult::Void, DomResult::Void);
+        assert_eq!(DomResult::Bool(true), DomResult::Bool(true));
+        assert_ne!(DomResult::Bool(true), DomResult::Bool(false));
+        assert_eq!(DomResult::Element(Some(42)), DomResult::Element(Some(42)));
+        assert_eq!(
+            DomResult::String(Some("hello".to_string())),
+            DomResult::String(Some("hello".to_string()))
+        );
+    }
 }
