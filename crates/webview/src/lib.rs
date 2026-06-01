@@ -3306,4 +3306,106 @@ mod tests {
             "fetch() should return a Promise (object type)"
         );
     }
+
+    // ── Console API 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 console 对象存在。
+    #[test]
+    fn test_webview_console_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof console;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "object", "console should be an object");
+    }
+
+    /// 测试 console.log 可调用。
+    #[test]
+    fn test_webview_console_log_callable() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof console.log;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "console.log should be a function");
+    }
+
+    /// 测试 console.log 调用不报错。
+    #[test]
+    fn test_webview_console_log_no_error() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("console.log('hello', 42, {a:1}); 'ok';");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok", "console.log should not throw");
+    }
+
+    /// 测试 console.warn/error/info 不报错。
+    #[test]
+    fn test_webview_console_methods_no_error() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("console.warn('w'); console.error('e'); console.info('i'); 'ok';");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok");
+    }
+
+    /// 测试 console.time/timeEnd 不报错。
+    #[test]
+    fn test_webview_console_time() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("console.time('test'); console.timeEnd('test'); 'ok';");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok");
+    }
+
+    // ── Timer API 集成测试 ──
+
+    /// 测试 setTimeout 存在且可调用。
+    #[test]
+    fn test_webview_set_timeout_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof setTimeout;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "setTimeout should be a function");
+    }
+
+    /// 测试 setInterval 存在且可调用。
+    #[test]
+    fn test_webview_set_interval_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof setInterval;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "setInterval should be a function");
+    }
+
+    /// 测试 clearTimeout/clearInterval 存在。
+    #[test]
+    fn test_webview_clear_timers_exist() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof clearTimeout + ',' + typeof clearInterval;");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "function,function",
+            "clearTimeout and clearInterval should be functions"
+        );
+    }
+
+    /// 测试 setTimeout 执行回调。
+    #[test]
+    fn test_webview_set_timeout_calls_fn() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("var x = 0; setTimeout(function() { x = 42; }, 0); x;");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "42",
+            "setTimeout callback should execute synchronously in stub"
+        );
+    }
+
+    /// 测试 setInterval 执行回调。
+    #[test]
+    fn test_webview_set_interval_calls_fn() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("var count = 0; setInterval(function() { count++; }, 100); count;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "1", "setInterval callback should execute once in stub");
+    }
 }

@@ -548,6 +548,42 @@ pub fn generate_dom_api_polyfill() -> String {
       url: req.url
     }));
   };
+
+  // ── Console API Stub ──
+  // Provides console.log/warn/error/info/debug/trace/time/timeEnd.
+
+  var _consoleTimers = {};
+  globalThis.console = {
+    log: function() { /* stub: output handled by host runtime */ },
+    warn: function() {},
+    error: function() {},
+    info: function() {},
+    debug: function() {},
+    trace: function() {},
+    time: function(label) { _consoleTimers[label || 'default'] = Date.now(); },
+    timeEnd: function(label) { var key = label || 'default'; delete _consoleTimers[key]; },
+    assert: function(condition) { if (!condition) { /* stub */ } },
+    clear: function() {},
+    count: function() {},
+    group: function() {},
+    groupEnd: function() {},
+    table: function() {}
+  };
+
+  // ── Timer API Stub ──
+  // Provides setTimeout/setInterval/clearTimeout/clearInterval.
+  // Real timing handled by host runtime event loop.
+
+  globalThis.setTimeout = function(fn, delay) {
+    if (typeof fn === 'function') fn();
+    return 0;
+  };
+  globalThis.setInterval = function(fn, delay) {
+    if (typeof fn === 'function') fn();
+    return 0;
+  };
+  globalThis.clearTimeout = function(id) {};
+  globalThis.clearInterval = function(id) {};
 })();
 "#
     .to_string()
@@ -949,5 +985,28 @@ mod tests {
         assert!(polyfill.contains("prototype.get"));
         assert!(polyfill.contains("prototype.has"));
         assert!(polyfill.contains("prototype.set"));
+    }
+
+    // ── Polyfill Console + Timer API 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_console_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.console"));
+        assert!(polyfill.contains("log: function"));
+        assert!(polyfill.contains("warn: function"));
+        assert!(polyfill.contains("error: function"));
+        assert!(polyfill.contains("info: function"));
+        assert!(polyfill.contains("time: function"));
+        assert!(polyfill.contains("timeEnd: function"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_timer_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.setTimeout"));
+        assert!(polyfill.contains("globalThis.setInterval"));
+        assert!(polyfill.contains("globalThis.clearTimeout"));
+        assert!(polyfill.contains("globalThis.clearInterval"));
     }
 }
