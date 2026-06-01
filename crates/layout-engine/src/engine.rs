@@ -7090,4 +7090,316 @@ mod tests {
         assert!(b2.x > b1.x, "item2 应在 item1 右侧");
         assert!(b3.x > b2.x, "item3 应在 item2 右侧");
     }
+
+    // ── 边缘场景补充测试（第十批）──
+
+    /// 测试 grid 中 span 3 跨满三列网格的所有列。
+    ///
+    /// 3 列网格（每列 100px），子元素设置 grid-column: span 3，
+    /// 验证子元素宽度约 300px，占满整行所有列。
+    #[test]
+    fn test_grid_span_3_fills_all_columns() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let wide_item = doc.create_element("span");
+        doc.append_child(grid, wide_item).unwrap();
+        let below_item = doc.create_element("span");
+        doc.append_child(grid, below_item).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 3 列网格
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_template_rows = Some("60px 60px".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(120.0);
+        styles.insert(grid, grid_style);
+
+        // wide_item: 跨三列（span 3），占满第一行
+        let mut wide_style = ComputedStyle::default();
+        wide_style.grid_column_start = GridLineValue::Line(1);
+        wide_style.grid_column_end = GridLineValue::Span(3);
+        wide_style.grid_row_start = GridLineValue::Line(1);
+        wide_style.grid_row_end = GridLineValue::Line(2);
+        styles.insert(wide_item, wide_style);
+
+        // below_item: 第二行第一列
+        let mut below_style = ComputedStyle::default();
+        below_style.grid_column_start = GridLineValue::Line(1);
+        below_style.grid_column_end = GridLineValue::Line(2);
+        below_style.grid_row_start = GridLineValue::Line(2);
+        below_style.grid_row_end = GridLineValue::Line(3);
+        styles.insert(below_item, below_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let wide_box = find_child_by_node_id(&result.root, wide_item).expect("wide_item 应找到");
+        let below_box = find_child_by_node_id(&result.root, below_item).expect("below_item 应找到");
+
+        // 跨三列元素宽度应约 300px（占满整行）
+        assert!(
+            (wide_box.width - 300.0).abs() < 1.0,
+            "span 3 元素宽度应约 300px（占满三列），实际 {}",
+            wide_box.width
+        );
+        // 高度应约 60px（单行）
+        assert!(
+            (wide_box.height - 60.0).abs() < 1.0,
+            "span 3 元素高度应约 60px（单行），实际 {}",
+            wide_box.height
+        );
+        // below_item 应在 wide_item 下方
+        assert!(
+            below_box.y > wide_box.y,
+            "below_item (y={}) 应在 wide_item (y={}) 下方",
+            below_box.y,
+            wide_box.y
+        );
+        // below_item 宽度应约 100px（单列）
+        assert!(
+            (below_box.width - 100.0).abs() < 1.0,
+            "below_item 宽度应约 100px（单列），实际 {}",
+            below_box.width
+        );
+    }
+
+    /// 测试 flex 容器中 gap 属性在子元素之间产生固定间距。
+    ///
+    /// flex 容器 400x100，gap:20px，三个子元素各 80px 宽。
+    /// 验证子元素之间的间距为 20px，且总宽度 = 80*3 + 20*2 = 280。
+    #[test]
+    fn test_flex_with_gap_property() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        let item1 = doc.create_element("span");
+        doc.append_child(container, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(container, item2).unwrap();
+        let item3 = doc.create_element("span");
+        doc.append_child(container, item3).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // flex 容器带 gap
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_direction = FlexDirectionValue::Row;
+        container_style.gap = LengthValue::Px(20.0);
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(100.0);
+        styles.insert(container, container_style);
+
+        // 三个子元素各 80px 宽，flex-shrink:0 保持自然尺寸
+        for id in [item1, item2, item3] {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(80.0);
+            s.height = LengthValue::Px(50.0);
+            s.flex_shrink = 0.0;
+            styles.insert(id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 应找到");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 应找到");
+        let b3 = find_child_by_node_id(&result.root, item3).expect("item3 应找到");
+
+        // 子元素应保持 80px 宽度
+        assert!((b1.width - 80.0).abs() < 1.0, "item1 宽度应约 80px，实际 {}", b1.width);
+        assert!((b2.width - 80.0).abs() < 1.0, "item2 宽度应约 80px，实际 {}", b2.width);
+
+        // item1 和 item2 之间间距应约 20px（gap）
+        let gap1 = b2.x - b1.x - b1.width;
+        assert!(
+            (gap1 - 20.0).abs() < 1.0,
+            "item1-item2 间距应约 20px（gap），实际 {}",
+            gap1
+        );
+
+        // item2 和 item3 之间间距也应约 20px
+        let gap2 = b3.x - b2.x - b2.width;
+        assert!(
+            (gap2 - 20.0).abs() < 1.0,
+            "item2-item3 间距应约 20px（gap），实际 {}",
+            gap2
+        );
+
+        // 三个元素水平排列，x 递增
+        assert!(b2.x > b1.x, "item2 应在 item1 右侧");
+        assert!(b3.x > b2.x, "item3 应在 item2 右侧");
+    }
+
+    /// 测试 block 布局中极大的 padding 值。
+    ///
+    /// 元素 width:200px, padding 每侧 500px（远超 width），
+    /// 验证布局不 panic，content_width 被钳位到非负值，
+    /// 且 padding 值在 LayoutBox 中正确记录。
+    #[test]
+    fn test_block_with_very_large_padding() {
+        let (mut doc, body) = make_doc_with_body();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.display = DisplayValue::Block;
+        div_style.width = LengthValue::Px(200.0);
+        div_style.height = LengthValue::Px(100.0);
+        div_style.padding_top = LengthValue::Px(500.0);
+        div_style.padding_bottom = LengthValue::Px(500.0);
+        div_style.padding_left = LengthValue::Px(500.0);
+        div_style.padding_right = LengthValue::Px(500.0);
+        styles.insert(div, div_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let div_box = find_child_by_node_id(&result.root, div).expect("div 应找到");
+
+        // 布局不 panic，几何值为有限值
+        assert!(div_box.width.is_finite(), "宽度应为有限值");
+        assert!(div_box.height.is_finite(), "高度应为有限值");
+
+        // padding 值应正确记录
+        assert_eq!(div_box.padding_top, 500.0, "padding_top 应为 500");
+        assert_eq!(div_box.padding_bottom, 500.0, "padding_bottom 应为 500");
+        assert_eq!(div_box.padding_left, 500.0, "padding_left 应为 500");
+        assert_eq!(div_box.padding_right, 500.0, "padding_right 应为 500");
+
+        // content_width 不应为负值（被钳位）
+        assert!(
+            div_box.content_width >= 0.0,
+            "content_width 应被钳位到 >= 0，实际 {}",
+            div_box.content_width
+        );
+        assert!(
+            div_box.content_height >= 0.0,
+            "content_height 应被钳位到 >= 0，实际 {}",
+            div_box.content_height
+        );
+    }
+
+    /// 测试绝对定位元素设置 top:0, left:0, right:0 时水平拉伸填满包含块。
+    ///
+    /// 父容器 relative 400x300，子元素 absolute + top:0 + left:0 + right:0。
+    /// 子元素宽度应约 400px（拉伸填满父容器宽度），高度由内容或默认值决定。
+    #[test]
+    fn test_absolute_stretched_with_top_left_right_zero() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // relative 父容器
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(400.0);
+        parent_style.height = LengthValue::Px(300.0);
+        styles.insert(parent, parent_style);
+
+        // absolute 子元素：top:0, left:0, right:0 → 水平拉伸
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(0.0);
+        abs_style.left = LengthValue::Px(0.0);
+        abs_style.right = LengthValue::Px(0.0);
+        abs_style.height = LengthValue::Px(50.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child 应找到");
+
+        // 绝对定位标记
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+
+        // 位置应从 (0, 0) 开始
+        assert!(abs_box.x.abs() < 1.0, "abs x 应约 0（left:0），实际 {}", abs_box.x);
+        assert!(abs_box.y.abs() < 1.0, "abs y 应约 0（top:0），实际 {}", abs_box.y);
+
+        // 宽度应约 400px（拉伸填满父容器：left:0 + right:0）
+        assert!(
+            (abs_box.width - 400.0).abs() < 2.0,
+            "abs 宽度应约 400px（拉伸填满父容器），实际 {}",
+            abs_box.width
+        );
+
+        // 高度应保持 50px
+        assert!(
+            (abs_box.height - 50.0).abs() < 1.0,
+            "abs 高度应约 50px，实际 {}",
+            abs_box.height
+        );
+    }
+
+    /// 测试 inline-block 元素使用百分比宽度。
+    ///
+    /// 父容器 400px 宽，inline-block 子元素宽度设为 50%。
+    /// inline-block 在 taffy 中映射为 Block，百分比宽度应相对于父容器计算。
+    /// 验证子元素宽度约为 200px（400 * 50%）。
+    #[test]
+    fn test_inline_block_with_percentage_width() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+        let ib_child = doc.create_element("span");
+        doc.append_child(container, ib_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // block 父容器 400x200
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(200.0);
+        styles.insert(container, container_style);
+
+        // inline-block 子元素宽度 50%
+        let mut ib_style = ComputedStyle::default();
+        ib_style.display = DisplayValue::InlineBlock;
+        ib_style.width = LengthValue::Percentage(50.0);
+        ib_style.height = LengthValue::Px(80.0);
+        styles.insert(ib_child, ib_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let ib_box = find_child_by_node_id(&result.root, ib_child).expect("inline-block 子元素应找到");
+
+        // 50% of 400px = 200px
+        assert!(
+            (ib_box.width - 200.0).abs() < 1.0,
+            "inline-block 百分比宽度应为 200px（400 * 50%），实际 {}",
+            ib_box.width
+        );
+        assert!(
+            (ib_box.height - 80.0).abs() < 1.0,
+            "inline-block 高度应为 80px，实际 {}",
+            ib_box.height
+        );
+
+        // 子元素应在父容器内容区域内
+        let container_box = find_child_by_node_id(&result.root, container).expect("container 应找到");
+        assert!(
+            ib_box.x >= container_box.content_x,
+            "子元素应在父容器内容区域内: ib.x={} >= container.content_x={}",
+            ib_box.x,
+            container_box.content_x
+        );
+    }
 }

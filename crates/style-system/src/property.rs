@@ -740,6 +740,36 @@ pub struct BorderImageOutsetComputedValue {
     pub left: BorderImageOutsetComputedComponent,
 }
 
+/// CSS text-shadow 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextShadowComputedValue {
+    /// 水平偏移量（px）。
+    pub offset_x: f32,
+    /// 垂直偏移量（px）。
+    pub offset_y: f32,
+    /// 模糊半径（px）。
+    pub blur_radius: f32,
+    /// 阴影颜色。
+    pub color: zero_css_parser::values::ColorValue,
+}
+
+/// CSS box-shadow 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxShadowComputedValue {
+    /// 水平偏移量（px）。
+    pub offset_x: f32,
+    /// 垂直偏移量（px）。
+    pub offset_y: f32,
+    /// 模糊半径（px）。
+    pub blur_radius: f32,
+    /// 扩展半径（px）。
+    pub spread_radius: f32,
+    /// 阴影颜色。
+    pub color: zero_css_parser::values::ColorValue,
+    /// 是否为内阴影。
+    pub inset: bool,
+}
+
 /// CSS overflow-wrap 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowWrapValue {
@@ -1320,6 +1350,10 @@ pub enum PropertyValue {
     BorderImageRepeat(BorderImageRepeatComputedValue),
     /// border-image-outset 值。
     BorderImageOutset(BorderImageOutsetComputedValue),
+    /// text-shadow 值。
+    TextShadow(TextShadowComputedValue),
+    /// box-shadow 值。
+    BoxShadow(BoxShadowComputedValue),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
@@ -1842,6 +1876,10 @@ pub struct ComputedStyle {
     pub border_image_repeat: BorderImageRepeatComputedValue,
     /// border-image-outset 属性。
     pub border_image_outset: BorderImageOutsetComputedValue,
+    /// text-shadow 属性。
+    pub text_shadow: TextShadowComputedValue,
+    /// box-shadow 属性。
+    pub box_shadow: BoxShadowComputedValue,
 }
 
 impl Default for ComputedStyle {
@@ -2124,6 +2162,21 @@ impl Default for ComputedStyle {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             },
+
+            text_shadow: TextShadowComputedValue {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                blur_radius: 0.0,
+                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
+            },
+            box_shadow: BoxShadowComputedValue {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                blur_radius: 0.0,
+                spread_radius: 0.0,
+                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
+                inset: false,
+            },
         }
     }
 }
@@ -2392,6 +2445,20 @@ impl PropertyRegistry {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             })),
+            "text-shadow" => Some(TextShadow(TextShadowComputedValue {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                blur_radius: 0.0,
+                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
+            })),
+            "box-shadow" => Some(BoxShadow(BoxShadowComputedValue {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                blur_radius: 0.0,
+                spread_radius: 0.0,
+                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
+                inset: false,
+            })),
 
             _ => None,
         }
@@ -2431,6 +2498,7 @@ impl PropertyRegistry {
                 | "caret-color"
                 | "text-wrap"
                 | "hyphens"
+                | "text-shadow"
         )
     }
 
@@ -2613,6 +2681,8 @@ impl PropertyRegistry {
             "border-image-width",
             "border-image-repeat",
             "border-image-outset",
+            "text-shadow",
+            "box-shadow",
         ]
     }
 }
@@ -4844,6 +4914,51 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "text-shadow" => {
+            if let Some(v) = zero_css_parser::values::parse_text_shadow(value) {
+                style.text_shadow = TextShadowComputedValue {
+                    offset_x: match v.offset_x {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    offset_y: match v.offset_y {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    blur_radius: match v.blur_radius {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    color: v.color,
+                };
+                return true;
+            }
+        }
+        "box-shadow" => {
+            if let Some(v) = zero_css_parser::values::parse_box_shadow(value) {
+                style.box_shadow = BoxShadowComputedValue {
+                    offset_x: match v.offset_x {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    offset_y: match v.offset_y {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    blur_radius: match v.blur_radius {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    spread_radius: match v.spread_radius {
+                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                        _ => 0.0,
+                    },
+                    color: v.color,
+                    inset: v.inset,
+                };
+                return true;
+            }
+        }
         _ => {}
     }
     false
@@ -4964,6 +5079,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "hyphens" => {
             child.hyphens = parent.hyphens.clone();
+            true
+        }
+        "text-shadow" => {
+            child.text_shadow = parent.text_shadow.clone();
             true
         }
         _ => false,
@@ -5734,6 +5853,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "border-image-outset" => {
             style.border_image_outset = default_style.border_image_outset;
+            true
+        }
+        "text-shadow" => {
+            style.text_shadow = default_style.text_shadow;
+            true
+        }
+        "box-shadow" => {
+            style.box_shadow = default_style.box_shadow;
             true
         }
         _ => false,
@@ -11039,5 +11166,281 @@ mod tests {
             style.border_image_outset.top,
             BorderImageOutsetComputedComponent::Number(0.0)
         );
+    }
+
+    // ── text-shadow ──
+
+    #[test]
+    fn test_apply_text_shadow_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-shadow", "none"));
+        assert_eq!(style.text_shadow.offset_x, 0.0);
+    }
+
+    #[test]
+    fn test_apply_text_shadow_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "text-shadow", "2px 3px 4px red"));
+        assert_eq!(style.text_shadow.offset_x, 2.0);
+        assert_eq!(style.text_shadow.offset_y, 3.0);
+        assert_eq!(style.text_shadow.blur_radius, 4.0);
+        assert_eq!(
+            style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
+        );
+    }
+
+    #[test]
+    fn test_text_shadow_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("text-shadow"));
+    }
+
+    #[test]
+    fn test_text_shadow_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"text-shadow"));
+    }
+
+    #[test]
+    fn test_text_shadow_initial_value() {
+        assert!(PropertyRegistry::initial_value("text-shadow").is_some());
+    }
+
+    #[test]
+    fn test_text_shadow_apply_initial() {
+        let mut style = ComputedStyle::default();
+        style.text_shadow.offset_x = 10.0;
+        assert!(apply_initial_value(&mut style, "text-shadow"));
+        assert_eq!(style.text_shadow.offset_x, 0.0);
+    }
+
+    // ── box-shadow ──
+
+    #[test]
+    fn test_apply_box_shadow_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "box-shadow", "none"));
+        assert_eq!(style.box_shadow.offset_x, 0.0);
+    }
+
+    #[test]
+    fn test_apply_box_shadow_values() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "box-shadow",
+            "10px 20px 30px 5px blue"
+        ));
+        assert_eq!(style.box_shadow.offset_x, 10.0);
+        assert_eq!(style.box_shadow.offset_y, 20.0);
+        assert_eq!(style.box_shadow.blur_radius, 30.0);
+        assert_eq!(style.box_shadow.spread_radius, 5.0);
+        assert_eq!(
+            style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255)
+        );
+        assert!(!style.box_shadow.inset);
+    }
+
+    #[test]
+    fn test_apply_box_shadow_inset() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "box-shadow", "inset 5px 10px"));
+        assert!(style.box_shadow.inset);
+        assert_eq!(style.box_shadow.offset_x, 5.0);
+        assert_eq!(style.box_shadow.offset_y, 10.0);
+    }
+
+    #[test]
+    fn test_box_shadow_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("box-shadow"));
+    }
+
+    #[test]
+    fn test_box_shadow_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"box-shadow"));
+    }
+
+    #[test]
+    fn test_box_shadow_initial_value() {
+        assert!(PropertyRegistry::initial_value("box-shadow").is_some());
+    }
+
+    #[test]
+    fn test_box_shadow_apply_initial() {
+        let mut style = ComputedStyle::default();
+        style.box_shadow.offset_x = 99.0;
+        assert!(apply_initial_value(&mut style, "box-shadow"));
+        assert_eq!(style.box_shadow.offset_x, 0.0);
+    }
+
+    #[test]
+    fn test_box_shadow_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "box-shadow", "invalid"));
+    }
+
+    #[test]
+    fn test_text_shadow_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "text-shadow", "invalid"));
+    }
+
+    // ── 边界测试：text-shadow 通过 DOM 树继承 ──
+
+    /// 验证 text-shadow 作为可继承属性，通过 inherit_property 从父元素传递到子元素。
+    /// 父元素设置 text-shadow: 3px 5px 2px blue，子元素应完整继承该值。
+    #[test]
+    fn test_text_shadow_inheritance_through_dom_tree() {
+        // 构造父元素样式：设置 text-shadow
+        let mut parent = ComputedStyle::default();
+        assert!(apply_property_value(&mut parent, "text-shadow", "3px 5px 2px blue"));
+        assert_eq!(parent.text_shadow.offset_x, 3.0);
+        assert_eq!(parent.text_shadow.offset_y, 5.0);
+        assert_eq!(parent.text_shadow.blur_radius, 2.0);
+        assert_eq!(
+            parent.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255)
+        );
+
+        // 构造子元素样式：从父元素继承 text-shadow
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "text-shadow"));
+
+        // 子元素应获得与父元素完全相同的 text-shadow 值
+        assert_eq!(child.text_shadow, parent.text_shadow);
+    }
+
+    // ── 边界测试：box-shadow inset 与 normal 正确区分 ──
+
+    /// 验证 box-shadow 的 inset 标志与普通（outset）阴影正确区分。
+    /// 同一偏移量下，inset 版本的 inset 字段应为 true，普通版本应为 false。
+    #[test]
+    fn test_box_shadow_inset_vs_normal_applied_correctly() {
+        // 普通 box-shadow（无 inset）
+        let mut normal_style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut normal_style,
+            "box-shadow",
+            "4px 8px 6px 2px green"
+        ));
+        assert!(!normal_style.box_shadow.inset, "普通 box-shadow 的 inset 应为 false");
+        assert_eq!(normal_style.box_shadow.offset_x, 4.0);
+        assert_eq!(normal_style.box_shadow.offset_y, 8.0);
+        assert_eq!(normal_style.box_shadow.blur_radius, 6.0);
+        assert_eq!(normal_style.box_shadow.spread_radius, 2.0);
+        assert_eq!(
+            normal_style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255)
+        );
+
+        // inset box-shadow
+        let mut inset_style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut inset_style,
+            "box-shadow",
+            "inset 4px 8px 6px 2px green"
+        ));
+        assert!(inset_style.box_shadow.inset, "inset box-shadow 的 inset 应为 true");
+        assert_eq!(inset_style.box_shadow.offset_x, 4.0);
+        assert_eq!(inset_style.box_shadow.offset_y, 8.0);
+        assert_eq!(inset_style.box_shadow.blur_radius, 6.0);
+        assert_eq!(inset_style.box_shadow.spread_radius, 2.0);
+        assert_eq!(
+            inset_style.box_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255)
+        );
+    }
+
+    // ── 边界测试：outline 简写属性通过 expand_shorthands 展开 ──
+
+    /// 验证 outline 简写属性通过 expand_shorthands 正确展开为
+    /// outline-width、outline-style、outline-color 三个长属性，
+    /// 且 important 标志和特异性正确保留。
+    #[test]
+    fn test_outline_shorthand_expansion_via_expand_shorthands() {
+        use crate::shorthand::expand_shorthands;
+
+        // outline: 3px dashed red, important=true, specificity=(0,1,0)
+        let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+            vec![("outline".to_string(), "3px dashed red".to_string(), true, (0, 1, 0))];
+        let expanded = expand_shorthands(&decls);
+
+        // 展开后应得到 3 个长属性声明
+        assert_eq!(expanded.len(), 3);
+
+        // 验证各长属性名称和值
+        let props: Vec<(&str, &str)> = expanded.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+        assert!(props.contains(&("outline-width", "3px")));
+        assert!(props.contains(&("outline-style", "dashed")));
+        assert!(props.contains(&("outline-color", "red")));
+
+        // 验证 important 和特异性在展开中保留
+        for (_, _, imp, spec) in &expanded {
+            assert!(imp, "important 标志应被保留");
+            assert_eq!(*spec, (0, 1, 0), "特异性应被保留");
+        }
+    }
+
+    // ── 边界测试：border-image-slice 带 fill 关键字通过 apply_property_value ──
+
+    /// 验证 border-image-slice 的 fill 关键字在 apply_property_value 中正确解析，
+    /// fill=true 时四个分量值也正确设置。
+    #[test]
+    fn test_border_image_slice_with_fill_keyword() {
+        let mut style = ComputedStyle::default();
+
+        // 默认 fill 应为 false
+        assert!(!style.border_image_slice.fill);
+
+        // 设置 border-image-slice: fill 10 20% 30 40%
+        assert!(apply_property_value(
+            &mut style,
+            "border-image-slice",
+            "fill 10 20% 30 40%"
+        ));
+
+        // fill 应为 true
+        assert!(style.border_image_slice.fill, "fill 关键字应使 fill=true");
+
+        // 验证四个分量的值
+        assert_eq!(
+            style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Number(10.0)
+        );
+        assert_eq!(
+            style.border_image_slice.right,
+            BorderImageSliceComputedComponent::Percent(20.0)
+        );
+        assert_eq!(
+            style.border_image_slice.bottom,
+            BorderImageSliceComputedComponent::Number(30.0)
+        );
+        assert_eq!(
+            style.border_image_slice.left,
+            BorderImageSliceComputedComponent::Percent(40.0)
+        );
+    }
+
+    // ── 边界测试：text_shadow 和 box_shadow 计算样式的默认值（无阴影） ──
+
+    /// 验证 ComputedStyle 默认构造时，text_shadow 和 box_shadow 均表示"无阴影"状态：
+    /// 所有偏移/半径为 0，颜色为不透明黑色（但 inset 为 false 表示无实际阴影效果）。
+    #[test]
+    fn test_computed_style_default_no_shadow() {
+        let style = ComputedStyle::default();
+
+        // text-shadow 默认值：全部为零，无实际阴影
+        assert_eq!(style.text_shadow.offset_x, 0.0);
+        assert_eq!(style.text_shadow.offset_y, 0.0);
+        assert_eq!(style.text_shadow.blur_radius, 0.0);
+
+        // box-shadow 默认值：全部为零，无实际阴影
+        assert_eq!(style.box_shadow.offset_x, 0.0);
+        assert_eq!(style.box_shadow.offset_y, 0.0);
+        assert_eq!(style.box_shadow.blur_radius, 0.0);
+        assert_eq!(style.box_shadow.spread_radius, 0.0);
+        assert!(!style.box_shadow.inset, "默认 box-shadow 的 inset 应为 false");
     }
 }

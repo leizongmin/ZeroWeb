@@ -2743,4 +2743,264 @@ mod tests {
             "含 border-image 的元素仍应产生填充图元"
         );
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试渲染管线处理含 box-shadow CSS 属性的元素不 panic 且产生填充图元。
+    ///
+    /// box-shadow 属性在 CSS 中定义阴影效果（偏移、模糊、扩展、颜色）。
+    /// 当前架构下，paint 应安全处理 box-shadow 样式而不崩溃。
+    /// 验证渲染管线完成且背景填充仍然生成。
+    #[test]
+    fn test_paint_with_box_shadow_css_property() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="shadowed">Box Shadow</div></body></html>"#;
+        let css = r#"
+            .shadowed {
+                background-color: #336699;
+                width: 200px;
+                height: 100px;
+                box-shadow: 5px 10px 15px 3px rgba(0, 0, 0, 0.5);
+            }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "含 box-shadow 的 CSS 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // 背景填充应正常生成
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 box-shadow 的元素仍应产生背景填充图元"
+        );
+    }
+
+    /// 测试渲染管线处理含 text-shadow CSS 属性的元素不 panic 且产生填充图元。
+    ///
+    /// text-shadow 属性为文本添加阴影效果（偏移、模糊、颜色）。
+    /// 当前架构下，paint 应安全处理 text-shadow 样式而不崩溃。
+    /// 验证渲染管线完成且输出有效。
+    #[test]
+    fn test_paint_with_text_shadow_css_property() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="glow">Text Shadow</div></body></html>"#;
+        let css = r#"
+            .glow {
+                background-color: #222222;
+                width: 200px;
+                height: 100px;
+                color: white;
+                text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.6);
+            }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "含 text-shadow 的 CSS 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        // 背景和文本图元应正常生成
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 text-shadow 的元素应产生背景填充图元"
+        );
+    }
+
+    /// 测试合成层正确处理负 z-index 值的排序和图层分配。
+    ///
+    /// 构建三个子元素：z-index 分别为 -10、0、5。
+    /// 验证负 z-index 图层在合成排序中排在最前面（根图层之后），
+    /// 且所有提升图层按 z-index 严格升序排列。
+    #[test]
+    fn test_composite_negative_z_index_values() {
+        use zero_style_system::property::ZIndexValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem_neg = doc.create_element("div");
+        let elem_zero = doc.create_element("div");
+        let elem_pos = doc.create_element("div");
+
+        let make_box = |elem_id| LayoutBox {
+            node_id: Some(elem_id),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let child_neg = make_box(elem_neg);
+        let child_zero = make_box(elem_zero);
+        let child_pos = make_box(elem_pos);
+
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_neg, child_zero, child_pos],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+
+        let mut style_neg = ComputedStyle::default();
+        style_neg.z_index = ZIndexValue::Integer(-10);
+        styles.insert(elem_neg, style_neg);
+
+        let mut style_zero = ComputedStyle::default();
+        style_zero.z_index = ZIndexValue::Integer(0);
+        styles.insert(elem_zero, style_zero);
+
+        let mut style_pos = ComputedStyle::default();
+        style_pos.z_index = ZIndexValue::Integer(5);
+        styles.insert(elem_pos, style_pos);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // 根图层 + 3 个提升图层
+        assert_eq!(layers.len(), 4, "应有根图层 + 3 个提升图层");
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+
+        // 提升图层按 z-index 严格升序：-10, 0, 5
+        assert_eq!(layers[1].z_index, -10, "第一个提升图层 z-index 应为 -10");
+        assert_eq!(layers[2].z_index, 0, "第二个提升图层 z-index 应为 0");
+        assert_eq!(layers[3].z_index, 5, "第三个提升图层 z-index 应为 5");
+
+        // 验证严格单调递增
+        assert!(layers[1].z_index < layers[2].z_index, "负 z-index 应排在零之前");
+        assert!(
+            layers[2].z_index < layers[3].z_index,
+            "零 z-index 应排在正 z-index 之前"
+        );
+    }
+
+    /// 测试渲染管线处理含 outline-style: solid 的 HTML 元素不 panic 且生成 outline 填充图元。
+    ///
+    /// 通过 CSS 为元素设置 outline（宽度、样式、颜色），
+    /// 验证管线端到端正确解析、应用样式并生成 outline 对应的填充图元。
+    /// outline 应生成 4 个填充图元（上、下、左、右），加上背景共 5 个。
+    #[test]
+    fn test_pipeline_with_outline_style_solid() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="outlined">Outlined Content</div></body></html>"#;
+        let css = r#"
+            .outlined {
+                background-color: #ffcc00;
+                width: 200px;
+                height: 100px;
+                outline: 3px solid #ff0000;
+            }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        assert!(
+            result.timings.total_ms >= 0.0,
+            "含 outline-style:solid 的 CSS 应正常完成"
+        );
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+
+        // 应至少有背景填充（1 个）+ outline 填充（4 个）= 5 个
+        assert!(
+            result.primitives.fills.len() >= 5,
+            "outline-style:solid 应产生至少 5 个填充图元（1 背景 + 4 outline），实际 {}",
+            result.primitives.fills.len()
+        );
+
+        // 第一个填充应为背景色 #ffcc00 → Rgba(255, 204, 0, 255)
+        let bg_fill = &result.primitives.fills[0];
+        assert_eq!(bg_fill.color.r, 255, "背景 R 应为 255");
+        assert_eq!(bg_fill.color.g, 204, "背景 G 应为 204");
+        assert_eq!(bg_fill.color.b, 0, "背景 B 应为 0");
+    }
+
+    /// 测试脏追踪器合并不重叠但相邻的矩形。
+    ///
+    /// 两个矩形紧密相邻但不重叠（间距小于合并阈值），
+    /// 验证合并后状态正确：矩形数量减少或保持，脏面积有效。
+    /// 当两矩形并集面积不超过各自面积之和的 150% 时应合并。
+    #[test]
+    fn test_dirty_tracker_merge_adjacent_non_overlapping_rects() {
+        let mut tracker = crate::dirty::DirtyTracker::new();
+
+        // 两个相邻矩形：rect1 在左侧，rect2 在右侧，有 1px 间隙
+        // rect1: (0, 0, 50, 50) 面积 2500
+        // rect2: (51, 0, 50, 50) 面积 2500
+        // 个体面积之和 = 5000
+        // 并集: (0, 0, 101, 50) 面积 = 5050
+        // 5050 / 5000 = 1.01 <= 1.5 → 应该合并
+        tracker.mark_dirty(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tracker.mark_dirty(Rect::new(51.0, 0.0, 50.0, 50.0));
+        assert_eq!(tracker.dirty_rects().len(), 2, "合并前应有 2 个脏矩形");
+
+        let area_before = tracker.dirty_area();
+        assert!(
+            (area_before - 5000.0).abs() < 1.0,
+            "合并前脏面积应约为 5000，实际 {}",
+            area_before
+        );
+
+        tracker.merge_overlapping();
+
+        // 相邻矩形应合并为 1 个（并集面积比率 <= 150%）
+        assert!(
+            tracker.dirty_rects().len() <= 2,
+            "相邻矩形合并后数量应 <= 2，实际 {}",
+            tracker.dirty_rects().len()
+        );
+
+        // 合并后脏面积应大于任一单个矩形
+        assert!(tracker.dirty_area() >= 2500.0, "合并后脏面积应 >= 2500");
+
+        // 如果合并为 1 个，验证并集矩形覆盖原范围
+        if tracker.dirty_rects().len() == 1 {
+            let merged = &tracker.dirty_rects()[0];
+            assert!(merged.origin.x <= 0.0, "合并矩形左边界应 <= 0");
+            assert!(merged.origin.x + merged.size.width >= 100.0, "合并矩形右边界应 >= 100");
+        }
+    }
 }

@@ -1567,4 +1567,248 @@ mod tests {
             assert!(!is_mixed_content(&page, &upgraded_url));
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Additional edge-case tests (round 19)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// 测试 CORS 自定义请求头不在 Access-Control-Allow-Headers 中时被拒绝。
+    ///
+    /// 当请求携带自定义头（如 X-Secret-Token），
+    /// 但服务端 CORS 策略的 allow_headers 仅包含 Authorization 时，
+    /// check_cors 应拒绝该请求，且原因应包含未允许的头名。
+    /// 同时验证 generate_preflight_response 在请求头不匹配时返回空响应。
+    #[test]
+    fn test_cors_custom_header_not_in_allow_headers() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec!["Authorization".to_string()],
+            allow_credentials: false,
+            max_age: None,
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // 场景 1：X-Secret-Token 不在 allow_headers 中 → check_cors 拒绝
+        let result = check_cors(
+            &policy,
+            &origin,
+            "GET",
+            &[
+                ("Authorization".to_string(), "Bearer token".to_string()),
+                ("X-Secret-Token".to_string(), "abc".to_string()),
+            ],
+        );
+        assert!(!result.allowed, "X-Secret-Token 未在 allow_headers 中应被拒绝");
+        assert!(result.reason.contains("X-Secret-Token"), "拒绝原因应包含未允许的头名");
+
+        // 场景 2：仅有 Authorization 在 allow_headers 中 → 通过
+        let result_ok = check_cors(
+            &policy,
+            &origin,
+            "GET",
+            &[("Authorization".to_string(), "Bearer token".to_string())],
+        );
+        assert!(result_ok.allowed, "Authorization 在 allow_headers 中应通过");
+
+        // 场景 3：generate_preflight_response 对未允许的头返回空响应
+        let headers = generate_preflight_response(
+            &policy,
+            &origin,
+            "GET",
+            &["Authorization".to_string(), "X-Secret-Token".to_string()],
+        );
+        assert!(headers.allow_origin.is_none(), "预检请求中有未允许的头时应返回空响应");
+    }
+
+    /// 测试 CSP script-src 'none' 阻止 data: URI 脚本加载。
+    ///
+    /// data: URI 可用于内联嵌入脚本内容（如 data:text/javascript,...）。
+    /// 当 script-src 为 'none' 时，应无条件阻止所有脚本来源，包括 data: URI。
+    /// 当前实现中 is_self_match 将非 http/https 开头的 URL 视为相对路径（同源），
+    /// 因此 script-src 'self' 不会阻止 data: URI——这是已知行为。
+    /// 此测试验证 'none' 策略能正确阻止 data: URI。
+    #[test]
+    fn test_csp_script_src_blocks_data_uri() {
+        // script-src 'none' → 所有脚本均被阻止，包括 data: URI
+        let csp_none = ContentSecurityPolicy::parse("script-src 'none'");
+        assert!(
+            !csp_none.is_resource_allowed("script", "data:text/javascript,alert(1)", None),
+            "script-src 'none' 应阻止 data: URI"
+        );
+        // 内联脚本也被阻止
+        assert!(
+            !csp_none.is_inline_script_allowed(None, None),
+            "script-src 'none' 应阻止内联脚本"
+        );
+
+        // script-src data: → data: 作为前缀匹配允许 data: URI
+        let csp_data = ContentSecurityPolicy::parse("script-src data:");
+        assert!(
+            csp_data.is_resource_allowed("script", "data:text/javascript,alert(1)", None),
+            "script-src data: 应允许 data: URI（前缀匹配）"
+        );
+
+        // default-src 'none' 回退也应阻止 data: URI
+        let csp_default = ContentSecurityPolicy::parse("default-src 'none'");
+        assert!(
+            !csp_default.is_resource_allowed("script", "data:text/javascript,alert(1)", None),
+            "default-src 'none' 应阻止 data: URI 脚本"
+        );
+        assert!(
+            !csp_default.is_inline_script_allowed(None, None),
+            "default-src 'none' 应阻止内联脚本"
+        );
+
+        // 当前实现行为记录：script-src 'self' 不会阻止 data: URI，
+        // 因为 is_self_match 将非 http/https 开头的 URL 视为相对路径（同源）。
+        // 根据 CSP 规范，data: URI 不应匹配 'self'，这是需要改进的地方。
+        let csp_self = ContentSecurityPolicy::parse("script-src 'self'");
+        let doc_origin = Origin::parse("https://example.com").unwrap();
+        let data_allowed = csp_self.is_resource_allowed("script", "data:text/javascript,alert(1)", Some(&doc_origin));
+        // 记录当前行为：data: URI 通过 'self' 检查（is_self_match 的相对路径逻辑）
+        assert!(
+            data_allowed,
+            "当前实现：data: URI 被 is_self_match 视为相对路径，通过 'self' 检查"
+        );
+    }
+
+    /// 测试同源策略对 http 与 https 不同协议的严格区分。
+    ///
+    /// http://example.com 与 https://example.com 虽然主机名相同，
+    /// 但协议不同（http vs https），且默认端口也不同（80 vs 443），
+    /// 因此不是同源。验证 is_same_origin、check_same_origin 和
+    /// is_secure 三个维度的一致性。
+    #[test]
+    fn test_same_origin_http_vs_https_protocol() {
+        let http = Origin::parse("http://example.com").unwrap();
+        let https = Origin::parse("https://example.com").unwrap();
+
+        // 协议不同
+        assert_ne!(http.scheme, https.scheme, "http 与 https 的 scheme 应不同");
+        assert_eq!(http.scheme, "http");
+        assert_eq!(https.scheme, "https");
+
+        // 默认端口不同：http=80, https=443
+        assert_ne!(http.port, https.port, "默认端口应不同（80 vs 443）");
+        assert_eq!(http.port, 80);
+        assert_eq!(https.port, 443);
+
+        // 主机名相同
+        assert_eq!(http.host, https.host, "主机名应相同");
+
+        // 不同源
+        assert!(
+            !http.is_same_origin(&https),
+            "http://example.com 与 https://example.com 不是同源"
+        );
+        assert!(
+            !check_same_origin(&http, &https),
+            "check_same_origin 对 http vs https 应返回 false"
+        );
+
+        // 反向也成立
+        assert!(!https.is_same_origin(&http), "反向同源检查也应返回 false");
+
+        // 安全上下文判断
+        assert!(!http.is_secure(), "http 不是安全上下文");
+        assert!(https.is_secure(), "https 是安全上下文");
+
+        // 显式端口版本也验证
+        let http_80 = Origin::parse("http://example.com:80").unwrap();
+        let https_443 = Origin::parse("https://example.com:443").unwrap();
+        assert!(!http_80.is_same_origin(&https_443), "显式默认端口版本也不是同源");
+        assert!(http.is_same_origin(&http_80), "http 默认端口应与隐式端口同源");
+        assert!(https.is_same_origin(&https_443), "https 默认端口应与隐式端口同源");
+    }
+
+    /// 测试沙箱 allow-popups 标志允许弹窗但与其他标志组合时的行为。
+    ///
+    /// allow-popups 允许 iframe 内通过 window.open 等方式打开弹窗。
+    /// 验证：
+    /// 1. 仅有 allow-popups 时允许弹窗但其他功能受限
+    /// 2. allow-popups + allow-scripts 组合允许脚本和弹窗
+    /// 3. check_sandbox_popup 函数与 allows_popups 方法一致
+    /// 4. 无 allow-popups 时弹窗被禁止
+    #[test]
+    fn test_sandbox_allow_popups_flag_behavior() {
+        // 场景 1：仅有 allow-popups
+        let sandbox = IframeSandbox::parse("allow-popups");
+        assert!(sandbox.allows_popups(), "allow-popups 应允许弹窗");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowPopups));
+        assert!(check_sandbox_popup(&sandbox), "check_sandbox_popup 应返回 true");
+        // 其他功能受限
+        assert!(!sandbox.allows_scripts(), "不应允许脚本");
+        assert!(!sandbox.allows_forms(), "不应允许表单");
+        assert!(!sandbox.allows_same_origin(), "不应允许同源访问");
+        assert!(!sandbox.allows_top_navigation(), "不应允许顶层导航");
+
+        // 场景 2：allow-popups + allow-scripts 组合
+        let sandbox_combo = IframeSandbox::parse("allow-popups allow-scripts");
+        assert!(sandbox_combo.allows_popups(), "组合中弹窗应允许");
+        assert!(sandbox_combo.allows_scripts(), "组合中脚本应允许");
+        assert!(!sandbox_combo.allows_forms(), "组合中表单仍被禁止");
+        assert!(!sandbox_combo.allows_same_origin(), "组合中同源仍被禁止");
+
+        // 场景 3：严格沙箱不允许弹窗
+        let strict = IframeSandbox::strict();
+        assert!(!strict.allows_popups(), "严格沙箱不允许弹窗");
+        assert!(
+            !check_sandbox_popup(&strict),
+            "check_sandbox_popup 对严格沙箱应返回 false"
+        );
+
+        // 场景 4：弹窗权限不影响 effective_origin
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(
+            sandbox.effective_origin(&iframe_origin),
+            SandboxOrigin::Opaque,
+            "allow-popups 不影响 effective_origin（缺少 allow-same-origin 仍为不透明源）"
+        );
+    }
+
+    /// 测试混合内容检测对 ws: WebSocket URL 在 HTTPS 页面上的处理。
+    ///
+    /// HTTPS 页面打开 ws://（非加密 WebSocket）连接属于混合内容，
+    /// 因为 ws:// 使用明文传输。当前 is_mixed_content 仅检测
+    /// starts_with("http://")，ws:// 前缀不同，因此不会被检测为混合内容。
+    /// 但 wss://（加密 WebSocket）在 HTTPS 页面上是安全的。
+    /// 此测试记录当前行为并验证升级函数对 ws:// 的处理。
+    #[test]
+    fn test_mixed_content_ws_url_on_https_page() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // ws:// WebSocket URL 在 HTTPS 页面上
+        let ws_url = "ws://api.example.com/socket";
+        // 当前 is_mixed_content 仅检测 http:// 前缀，ws:// 不以 http:// 开头
+        // 因此当前实现不将其识别为混合内容
+        // 这记录了当前行为——ws:// 理论上应被视为混合内容（需要扩展检测逻辑）
+        let is_detected = is_mixed_content(&page, ws_url);
+        // ws:// 不以 http:// 开头，当前不会被检测为混合内容
+        assert!(
+            !is_detected,
+            "当前 is_mixed_content 不检测 ws:// 前缀（仅检测 http://）"
+        );
+
+        // wss://（加密 WebSocket）不是混合内容
+        let wss_url = "wss://api.example.com/socket";
+        assert!(!is_mixed_content(&page, wss_url), "wss:// 在 HTTPS 页面上不是混合内容");
+
+        // upgrade_to_https 不处理 ws://（仅处理 http:// 前缀）
+        assert_eq!(upgrade_to_https(ws_url), None, "upgrade_to_https 不应处理 ws:// URL");
+
+        // 对比：http:// 在 HTTPS 页面上应被检测为混合内容
+        let http_url = "http://api.example.com/data";
+        assert!(
+            is_mixed_content(&page, http_url),
+            "http:// 在 HTTPS 页面上应被检测为混合内容"
+        );
+
+        // check_mixed_content 对 ws:// 返回 NotMixedContent（当前行为）
+        assert_eq!(
+            check_mixed_content(&page, ws_url, "connect"),
+            MixedContentStatus::NotMixedContent,
+            "当前实现对 ws:// 不检测为混合内容"
+        );
+    }
 }

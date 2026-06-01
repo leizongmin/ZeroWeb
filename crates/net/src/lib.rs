@@ -1020,4 +1020,127 @@ mod tests {
             "非 http/https 协议的显式端口应保留在 origin 中"
         );
     }
+
+    // ── 第六批边界条件补充测试（5 个） ──
+
+    /// 测试包含 IPv6 地址 [::1] 的 URL 解析。
+    /// IPv6 地址在 URL 中以方括号包裹，验证 host 字段正确提取地址、
+    /// 端口号和路径均不被方括号干扰。
+    #[test]
+    fn test_url_ipv6_loopback_host() {
+        let parsed = parse_url("http://[::1]:8080/resource").unwrap();
+        assert_eq!(parsed.scheme, "http");
+        // url crate 对 IPv6 返回带方括号的 host 字符串
+        assert!(
+            parsed.host.as_deref().unwrap().contains("::1"),
+            "host 应包含 IPv6 地址 ::1"
+        );
+        assert_eq!(parsed.port, Some(8080), "端口应为 8080");
+        assert_eq!(parsed.path, "/resource", "路径应为 /resource");
+    }
+
+    /// 测试 SameSite=Strict 的 Cookie 在跨站请求中完全被阻止。
+    /// Strict 模式是最严格的 SameSite 策略：仅在完全同站的请求中发送，
+    /// 即使是用户从外部链接点击进入（跨站顶层导航）也不允许。
+    #[test]
+    fn test_cookie_samesite_strict_cross_site_blocked() {
+        let mut store = crate::CookieStore::new();
+        store.add(crate::CookieStore::parse_set_cookie("auth=secret123; Domain=example.com; SameSite=Strict").unwrap());
+
+        let url = parse_url("http://example.com/").unwrap();
+
+        // 同站请求：Strict cookie 应发送
+        let header = store.cookie_header_with_context(&url, crate::cookie::RequestContext::SameSite, true);
+        assert!(header.contains("auth=secret123"), "SameSite=Strict 应在同站请求中发送");
+
+        // 跨站顶层导航（安全方法）：Strict cookie 不应发送
+        let header = store.cookie_header_with_context(&url, crate::cookie::RequestContext::CrossSiteTopLevel, true);
+        assert!(!header.contains("auth"), "SameSite=Strict 不应在跨站顶层导航中发送");
+
+        // 跨站子资源：Strict cookie 不应发送
+        let header = store.cookie_header_with_context(&url, crate::cookie::RequestContext::CrossSiteSubresource, true);
+        assert!(!header.contains("auth"), "SameSite=Strict 不应在跨站子资源请求中发送");
+    }
+
+    /// 测试 NavigationHistory 在初始页面（第一个条目）调用 go_back 不崩溃。
+    /// 当前索引为 0 时 go_back 应返回 None，can_go_back 应为 false，
+    /// 当前条目不应被改变。这是浏览器在首页按下后退按钮的边界场景。
+    #[test]
+    fn test_navigation_go_back_from_initial_page_no_crash() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://initial.com", Some("首页".into()));
+
+        assert_eq!(nav.len(), 1);
+        assert!(!nav.can_go_back(), "初始页面不应能后退");
+
+        // 在初始页面调用 go_back 应返回 None，不 panic
+        let result = nav.go_back();
+        assert!(result.is_none(), "初始页面 go_back 应返回 None");
+
+        // 状态不受影响
+        assert_eq!(nav.current().unwrap().url, "http://initial.com");
+        assert_eq!(nav.current().unwrap().title, Some("首页".into()));
+        assert!(!nav.can_go_back());
+        assert!(!nav.can_go_forward());
+
+        // 再次调用 go_back 仍不崩溃
+        assert!(nav.go_back().is_none());
+        assert_eq!(nav.current().unwrap().url, "http://initial.com");
+    }
+
+    /// 测试 HTTP 304 Not Modified 响应的属性判断。
+    /// 304 属于 3xx 重定向类别，is_redirect 应返回 true；
+    /// 但其语义是"资源未修改，使用缓存"，响应体通常为空。
+    /// 验证状态码分类、content_type 和 text() 在空 body 下的行为。
+    #[test]
+    fn test_http_response_304_not_modified() {
+        let resp = HttpResponse {
+            status_code: 304,
+            headers: vec![("ETag".into(), "\"abc123\"".into())],
+            body: vec![],
+            url: "http://example.com/resource".to_string(),
+            redirect_count: 0,
+        };
+
+        // 304 属于 3xx，is_redirect 应为 true
+        assert!(resp.is_redirect(), "304 应属于 redirect 类别");
+        assert!(!resp.is_success(), "304 不应是 success");
+        assert!(!resp.is_client_error(), "304 不应是 client_error");
+        assert!(!resp.is_server_error(), "304 不应是 server_error");
+
+        // 304 通常无 body
+        let text = resp.text();
+        assert!(text.is_ok(), "空 body 的 text() 不应返回错误");
+        assert_eq!(text.unwrap(), "");
+
+        // 可通过 header() 获取 ETag
+        assert_eq!(resp.header("ETag"), Some("\"abc123\""));
+        // 无 Content-Type
+        assert!(resp.content_type().is_none());
+    }
+
+    /// 测试 URL 路径和查询中包含 percent-encoded 字符（如 %20、%E4%B8%AD）的解析。
+    /// 验证编码字符在 path 和 query 中被原样保留（不解码），
+    /// 且各字段正确提取。这是浏览器处理含空格和中文 URL 的常见场景。
+    #[test]
+    fn test_url_with_percent_encoded_characters() {
+        let parsed = parse_url("http://example.com/path%20with%20spaces/page?q=hello%20world&lang=%E4%B8%AD").unwrap();
+
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+
+        // 路径中的 %20 应被保留（不解码）
+        assert!(parsed.path.contains("%20"), "路径中的 %20 应被原样保留");
+        assert!(parsed.path.contains("spaces"), "路径中应包含 'spaces'");
+
+        // 查询中的 %20 和 %E4%B8%AD 应被保留
+        let query = parsed.query.as_deref().unwrap();
+        assert!(query.contains("q=hello%20world"), "查询中 %20 应被保留");
+        assert!(query.contains("lang=%E4%B8%AD"), "查询中 %E4%B8%AD（中文编码）应被保留");
+
+        // to_url_string 应保留编码字符
+        let url_str = parsed.to_url_string();
+        assert!(url_str.contains("%20"), "to_url_string 应保留 %20");
+        assert!(url_str.contains("%E4%B8%AD"), "to_url_string 应保留 %E4%B8%AD");
+    }
 }

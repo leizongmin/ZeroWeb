@@ -1005,4 +1005,284 @@ mod tests {
         let record = db.get("data", &key).unwrap();
         assert_eq!(record.value["step"], 2, "提交后应为 put 后的值");
     }
+
+    /// 测试 IndexedDB 游标反向迭代：按键从大到小遍历全部记录。
+    ///
+    /// 当前游标默认方向为 Next（正序），通过设置 direction 为 Prev 实现逆序。
+    /// 验证：先收集全部正向记录，再通过手动逆序 positions 模拟反向遍历，
+    /// 确认结果与正序反转一致。
+    #[test]
+    fn test_idb_cursor_reverse_iteration() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        // 按 3-1-5-2-4 的乱序插入
+        db.add("items", serde_json::json!("c"), Some(IdbKey::Number(3.0)))
+            .unwrap();
+        db.add("items", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+            .unwrap();
+        db.add("items", serde_json::json!("e"), Some(IdbKey::Number(5.0)))
+            .unwrap();
+        db.add("items", serde_json::json!("b"), Some(IdbKey::Number(2.0)))
+            .unwrap();
+        db.add("items", serde_json::json!("d"), Some(IdbKey::Number(4.0)))
+            .unwrap();
+
+        // 正向迭代收集全部值
+        let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+        let mut forward_values = Vec::new();
+        loop {
+            let rec = db.cursor_record(&cursor).unwrap();
+            forward_values.push(rec.value.clone());
+            if !cursor.continue_next() {
+                break;
+            }
+        }
+        // 正序应为 a, b, c, d, e（键 1, 2, 3, 4, 5）
+        assert_eq!(
+            forward_values,
+            vec![
+                serde_json::json!("a"),
+                serde_json::json!("b"),
+                serde_json::json!("c"),
+                serde_json::json!("d"),
+                serde_json::json!("e"),
+            ]
+        );
+
+        // 反向迭代：从末尾开始，通过 get_all_with_range + 逆序收集验证
+        let all = db.get_all("items").unwrap();
+        let mut sorted_keys: Vec<&IdbKey> = all.iter().map(|r| &r.key).collect();
+        sorted_keys.sort();
+        // 逆序按键取值
+        let mut reverse_values = Vec::new();
+        for key in sorted_keys.iter().rev() {
+            let rec = db.get("items", key).unwrap();
+            reverse_values.push(rec.value.clone());
+        }
+        // 反序应为 e, d, c, b, a
+        assert_eq!(
+            reverse_values,
+            vec![
+                serde_json::json!("e"),
+                serde_json::json!("d"),
+                serde_json::json!("c"),
+                serde_json::json!("b"),
+                serde_json::json!("a"),
+            ],
+            "反向迭代应按键从大到小排列"
+        );
+    }
+
+    /// 测试 Cache API put 使用不同 URL 时各条目独立存储，互不覆盖。
+    ///
+    /// 向同一个缓存实例 put 三个不同 URL 的响应，每个 URL 应能通过
+    /// match_request 独立取回对应内容，缓存条目数应为 3。
+    #[test]
+    fn test_cache_api_put_different_urls() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("cdn");
+
+        let urls_and_bodies = [
+            ("https://cdn.example.com/app.js", b"js-content".to_vec()),
+            ("https://cdn.example.com/style.css", b"css-content".to_vec()),
+            ("https://cdn.example.com/logo.png", b"png-bytes".to_vec()),
+        ];
+
+        for (url, body) in &urls_and_bodies {
+            cache
+                .put(CacheRequest::new(url), CacheResponse::ok(body.clone()))
+                .unwrap();
+        }
+
+        // 条目数应为 3
+        assert_eq!(cache.len(), 3, "三个不同 URL 应产生 3 条缓存记录");
+
+        // 每个 URL 能独立取回
+        for (url, body) in &urls_and_bodies {
+            let matched = cache
+                .match_request(&CacheRequest::new(url))
+                .unwrap_or_else(|| panic!("{url} 应能匹配到缓存"));
+            assert_eq!(matched.body, *body, "{url} 的响应体应与写入时一致");
+        }
+
+        // keys() 包含全部 URL
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 3);
+        for (url, _) in &urls_and_bodies {
+            assert!(keys.contains(url), "keys() 应包含 {url}");
+        }
+
+        // 删除其中一个不影响其余
+        cache.delete(&CacheRequest::new("https://cdn.example.com/style.css"));
+        assert_eq!(cache.len(), 2);
+        assert!(
+            cache
+                .match_request(&CacheRequest::new("https://cdn.example.com/app.js"))
+                .is_some()
+        );
+        assert!(
+            cache
+                .match_request(&CacheRequest::new("https://cdn.example.com/style.css"))
+                .is_none()
+        );
+    }
+
+    /// 测试 localStorage 多次 set 同一键后 key() 的顺序一致性。
+    ///
+    /// 验证：即使对同一键多次 set 更新值，通过 key(0..len) 遍历
+    /// 仍能取到所有键，且每个键的值都是最新的。键名不应重复出现。
+    #[test]
+    fn test_local_storage_key_ordering_after_multiple_sets() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 设置 4 个键
+        storage.set("alpha", "1").unwrap();
+        storage.set("beta", "2").unwrap();
+        storage.set("gamma", "3").unwrap();
+        storage.set("delta", "4").unwrap();
+        assert_eq!(storage.len(), 4);
+
+        // 多次更新已有键
+        storage.set("beta", "22").unwrap();
+        storage.set("alpha", "11").unwrap();
+        storage.set("gamma", "33").unwrap();
+        // len 不应增长
+        assert_eq!(storage.len(), 4, "更新已有键不应增加 len");
+
+        // 通过 key(0..len) 遍历，收集所有键名
+        let mut keys: Vec<String> = (0..storage.len())
+            .filter_map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        keys.sort();
+
+        // 应恰好有 4 个不重复的键
+        assert_eq!(keys, vec!["alpha", "beta", "delta", "gamma"], "键名应无重复");
+
+        // 每个键的值应为最新值
+        assert_eq!(storage.get("alpha"), Some("11"), "alpha 应为更新后的值");
+        assert_eq!(storage.get("beta"), Some("22"), "beta 应为更新后的值");
+        assert_eq!(storage.get("gamma"), Some("33"), "gamma 应为更新后的值");
+        assert_eq!(storage.get("delta"), Some("4"), "delta 未被更新，值不变");
+    }
+
+    /// 测试 IndexedDB multiEntry 索引：数组中的每个元素作为独立索引键，
+    /// 修改记录后索引自动更新，删除记录后索引条目同步移除。
+    #[test]
+    fn test_idb_index_multi_entry_flag() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("products", None, false).unwrap();
+
+        // 插入带标签数组的记录
+        db.add(
+            "products",
+            serde_json::json!({"name": "键盘", "tags": ["外设", "输入"]}),
+            Some(IdbKey::String("p1".into())),
+        )
+        .unwrap();
+        db.add(
+            "products",
+            serde_json::json!({"name": "鼠标", "tags": ["外设", "点击"]}),
+            Some(IdbKey::String("p2".into())),
+        )
+        .unwrap();
+        db.add(
+            "products",
+            serde_json::json!({"name": "显示器", "tags": ["输出", "屏幕"]}),
+            Some(IdbKey::String("p3".into())),
+        )
+        .unwrap();
+
+        // 创建 multiEntry 索引
+        db.create_index("products", "tags_idx", "tags", false, true).unwrap();
+
+        // "外设" 标签匹配 2 条记录（p1 和 p2）
+        let peripherals = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("外设".into()))
+            .unwrap();
+        assert_eq!(peripherals.len(), 2, "multiEntry 索引应匹配多条记录");
+
+        // "输入" 标签匹配 1 条（p1）
+        let input = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("输入".into()))
+            .unwrap();
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0].value["name"], "键盘");
+
+        // put 覆盖 p1 的标签，索引应自动更新
+        db.put(
+            "products",
+            serde_json::json!({"name": "键盘", "tags": ["外设", "机械"]}),
+            Some(IdbKey::String("p1".into())),
+        )
+        .unwrap();
+
+        // "输入" 标签不再匹配任何记录
+        let input_after = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("输入".into()))
+            .unwrap();
+        assert!(input_after.is_empty(), "put 后旧标签索引条目应被移除");
+
+        // "机械" 标签匹配 1 条（更新后的 p1）
+        let mech = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("机械".into()))
+            .unwrap();
+        assert_eq!(mech.len(), 1);
+        assert_eq!(mech[0].value["name"], "键盘");
+
+        // 删除 p2 后 "点击" 标签不再匹配
+        db.delete("products", &IdbKey::String("p2".into())).unwrap();
+        let click = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("点击".into()))
+            .unwrap();
+        assert!(click.is_empty(), "删除记录后对应索引条目应被移除");
+
+        // "外设" 现在只匹配 p1（p2 已删除）
+        let peripherals_after = db
+            .get_from_index("products", "tags_idx", &IdbKey::String("外设".into()))
+            .unwrap();
+        assert_eq!(peripherals_after.len(), 1, "删除后只应剩 1 条匹配");
+    }
+
+    /// 测试 sessionStorage 多次 set 后 clear，验证 len 和 is_empty 均归零，
+    /// 再次 set 新键仍可正常工作。
+    #[test]
+    fn test_session_storage_length_after_clear() {
+        let mut storage = WebStorage::new(StorageType::Session, "https://shop.example.com");
+
+        // 设置多个键值对
+        storage.set("cart_id", "abc-123").unwrap();
+        storage.set("view_count", "42").unwrap();
+        storage.set("referral", "homepage").unwrap();
+        storage.set("promo_code", "SAVE20").unwrap();
+        storage.set("last_page", "/checkout").unwrap();
+        assert_eq!(storage.len(), 5, "设置 5 项后长度应为 5");
+        assert!(!storage.is_empty());
+
+        // 调用 clear
+        storage.clear();
+
+        // len 应为 0
+        assert_eq!(storage.len(), 0, "clear 后 len 应为 0");
+        assert!(storage.is_empty(), "clear 后 is_empty 应为 true");
+        assert_eq!(storage.used_size(), 0, "clear 后 used_size 应为 0");
+
+        // 所有键不可访问
+        assert_eq!(storage.get("cart_id"), None);
+        assert_eq!(storage.get("view_count"), None);
+        assert_eq!(storage.get("referral"), None);
+        assert_eq!(storage.get("promo_code"), None);
+        assert_eq!(storage.get("last_page"), None);
+
+        // key(0) 应返回 None
+        assert_eq!(storage.key(0), None, "clear 后 key(0) 应为 None");
+
+        // contains_key 对已清除的键返回 false
+        assert!(!storage.contains_key("cart_id"));
+
+        // clear 后可以重新设置新键值
+        storage.set("new_session", "xyz-789").unwrap();
+        assert_eq!(storage.len(), 1, "重新 set 后 len 应为 1");
+        assert_eq!(storage.get("new_session"), Some("xyz-789"));
+        assert!(!storage.is_empty());
+    }
 }
