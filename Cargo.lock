@@ -4421,10 +4421,13 @@ checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 name = "zero-browser"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "tracing",
  "tracing-subscriber",
+ "winit",
  "zero-browser-shell",
  "zero-host-runtime",
+ "zero-render-foundation",
  "zero-webview",
 ]
 
