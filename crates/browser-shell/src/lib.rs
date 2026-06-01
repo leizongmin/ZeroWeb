@@ -1930,4 +1930,46 @@ mod tests {
         settings.home_url = "https://zeroweb.dev".to_string();
         assert_eq!(settings.home_url, "https://zeroweb.dev");
     }
+
+    // ── Autocomplete 边界测试 ──
+
+    #[test]
+    fn test_autocomplete_unicode_query() {
+        let ac = Autocomplete::new();
+        let mut history = History::new();
+        history.record("https://example.com/你好", "你好世界");
+        let bookmarks = Bookmarks::new();
+        let results = ac.suggest("你好", &history, &bookmarks);
+        assert_eq!(results.len(), 1, "Unicode 查询应匹配");
+    }
+
+    #[test]
+    fn test_autocomplete_whitespace_only_query() {
+        let ac = Autocomplete::new();
+        let mut history = History::new();
+        history.record("https://example.com", "Test");
+        let bookmarks = Bookmarks::new();
+        let results = ac.suggest("   ", &history, &bookmarks);
+        assert!(results.is_empty(), "纯空白查询应返回空");
+    }
+
+    // ── Download 边界测试 ──
+
+    #[test]
+    fn test_download_progress_zero_total() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://x.com/f", "f.bin");
+        dm.update_progress(id, 500, Some(0));
+        // 零 total_bytes 不应 panic
+        assert_eq!(dm.get(id).unwrap().state(), DownloadState::Downloading);
+    }
+
+    #[test]
+    fn test_download_remove_failed() {
+        let mut dm = DownloadManager::new();
+        let id = dm.start_download("https://x.com/bad", "bad.dat");
+        dm.mark_failed(id);
+        assert!(dm.remove(id), "应能移除 failed 下载");
+        assert!(dm.get(id).is_none());
+    }
 }
