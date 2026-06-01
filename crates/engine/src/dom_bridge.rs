@@ -98,6 +98,33 @@ pub enum DomCommand {
         /// 标签名。
         tag_name: String,
     },
+    /// element.addEventListener(type, listener, capture) — 添加事件监听器。
+    AddEventListener {
+        /// 元素 ID。
+        element_id: u64,
+        /// 事件类型（如 "click"、"input"、"keydown"）。
+        event_type: String,
+        /// 是否在捕获阶段触发。
+        capture: bool,
+    },
+    /// element.removeEventListener(type, listener) — 移除事件监听器。
+    RemoveEventListener {
+        /// 元素 ID。
+        element_id: u64,
+        /// 事件类型。
+        event_type: String,
+    },
+    /// 事件分发请求（从宿主运行时发往 DOM）。
+    DispatchEvent {
+        /// 目标元素 ID。
+        target_id: u64,
+        /// 事件类型。
+        event_type: String,
+        /// 是否冒泡。
+        bubbles: bool,
+        /// 是否可取消。
+        cancelable: bool,
+    },
 }
 
 /// DOM 命令执行结果。
@@ -373,7 +400,59 @@ pub fn generate_dom_api_polyfill() -> String {
     },
     hasAttribute: function(name) {
       return name in this.attributes;
+    },
+    // ── Event System ──
+    addEventListener: function(type, listener, options) {
+      if (typeof listener !== 'function') return;
+      if (!this._eventListeners) this._eventListeners = {};
+      if (!this._eventListeners[type]) this._eventListeners[type] = [];
+      var capture = (options === true) || (options && options.capture === true);
+      this._eventListeners[type].push({ fn: listener, capture: capture });
+    },
+    removeEventListener: function(type, listener) {
+      if (!this._eventListeners || !this._eventListeners[type]) return;
+      this._eventListeners[type] = this._eventListeners[type].filter(function(l) {
+        return l.fn !== listener;
+      });
+    },
+    dispatchEvent: function(event) {
+      if (!this._eventListeners) return true;
+      var listeners = this._eventListeners[event.type];
+      if (!listeners) return true;
+      event.target = this;
+      event.currentTarget = this;
+      // Capture phase (simplified: just call capture listeners first)
+      for (var i = 0; i < listeners.length; i++) {
+        if (listeners[i].capture) {
+          listeners[i].fn.call(this, event);
+          if (event._immediatePropagationStopped) return !event._defaultPrevented;
+        }
+      }
+      // Target + bubble phase
+      for (var i = 0; i < listeners.length; i++) {
+        if (!listeners[i].capture) {
+          listeners[i].fn.call(this, event);
+          if (event._immediatePropagationStopped) return !event._defaultPrevented;
+        }
+      }
+      return !event._defaultPrevented;
     }
+  };
+
+  // CustomEvent constructor
+  globalThis.CustomEvent = function(type, options) {
+    this.type = type;
+    this.bubbles = (options && options.bubbles) || false;
+    this.cancelable = (options && options.cancelable) || false;
+    this.detail = (options && options.detail) || null;
+    this.target = null;
+    this.currentTarget = null;
+    this._defaultPrevented = false;
+    this._propagationStopped = false;
+    this._immediatePropagationStopped = false;
+    this.preventDefault = function() { if (this.cancelable) this._defaultPrevented = true; };
+    this.stopPropagation = function() { this._propagationStopped = true; };
+    this.stopImmediatePropagation = function() { this._immediatePropagationStopped = true; this._propagationStopped = true; };
   };
 
   function _matchesSelector(node, selector) {
@@ -657,5 +736,117 @@ mod tests {
     fn test_extract_string_arg_with_spaces() {
         let result = extract_string_arg(r#"  "hello"  )"#);
         assert_eq!(result, Some("hello".to_string()));
+    }
+
+    // ── 事件命令构造测试 ──
+
+    #[test]
+    fn test_add_event_listener_command_equality() {
+        let cmd = DomCommand::AddEventListener {
+            element_id: 42,
+            event_type: "click".to_string(),
+            capture: false,
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::AddEventListener {
+                element_id: 42,
+                event_type: "click".to_string(),
+                capture: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_add_event_listener_capture() {
+        let cmd = DomCommand::AddEventListener {
+            element_id: 1,
+            event_type: "keydown".to_string(),
+            capture: true,
+        };
+        match cmd {
+            DomCommand::AddEventListener { capture, .. } => assert!(capture),
+            _ => panic!("Expected AddEventListener"),
+        }
+    }
+
+    #[test]
+    fn test_remove_event_listener_command() {
+        let cmd = DomCommand::RemoveEventListener {
+            element_id: 10,
+            event_type: "input".to_string(),
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::RemoveEventListener {
+                element_id: 10,
+                event_type: "input".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_dispatch_event_command() {
+        let cmd = DomCommand::DispatchEvent {
+            target_id: 5,
+            event_type: "custom".to_string(),
+            bubbles: true,
+            cancelable: false,
+        };
+        assert_eq!(
+            cmd,
+            DomCommand::DispatchEvent {
+                target_id: 5,
+                event_type: "custom".to_string(),
+                bubbles: true,
+                cancelable: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_dispatch_event_no_bubble() {
+        let cmd = DomCommand::DispatchEvent {
+            target_id: 1,
+            event_type: "change".to_string(),
+            bubbles: false,
+            cancelable: true,
+        };
+        match cmd {
+            DomCommand::DispatchEvent {
+                bubbles, cancelable, ..
+            } => {
+                assert!(!bubbles);
+                assert!(cancelable);
+            }
+            _ => panic!("Expected DispatchEvent"),
+        }
+    }
+
+    // ── Polyfill 事件系统测试 ──
+
+    #[test]
+    fn test_polyfill_contains_event_system() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("addEventListener"));
+        assert!(polyfill.contains("removeEventListener"));
+        assert!(polyfill.contains("dispatchEvent"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_custom_event() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("CustomEvent"));
+        assert!(polyfill.contains("preventDefault"));
+        assert!(polyfill.contains("stopPropagation"));
+        assert!(polyfill.contains("stopImmediatePropagation"));
+    }
+
+    #[test]
+    fn test_polyfill_event_options_capture() {
+        let polyfill = generate_dom_api_polyfill();
+        // Verify the polyfill handles capture option
+        assert!(polyfill.contains("capture"));
+        assert!(polyfill.contains("_eventListeners"));
     }
 }
