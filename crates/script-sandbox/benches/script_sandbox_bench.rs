@@ -7,15 +7,13 @@
 //! - 多次执行吞吐量
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use zero_script_sandbox::{V8Sandbox, SandboxConfig};
+use zero_script_sandbox::{SandboxConfig, V8Sandbox};
 
 /// 基准 1: 简单表达式执行吞吐量。
 fn bench_simple_expression(c: &mut Criterion) {
     let mut sandbox = V8Sandbox::new().unwrap();
     c.bench_function("execute_simple_expression", |b| {
-        b.iter(|| {
-            sandbox.execute(black_box("1 + 1")).unwrap()
-        })
+        b.iter(|| sandbox.execute(black_box("1 + 1")).unwrap())
     });
 }
 
@@ -47,11 +45,7 @@ fn bench_loop_computation(c: &mut Criterion) {
 fn bench_json_serialize(c: &mut Criterion) {
     let mut sandbox = V8Sandbox::new().unwrap();
     c.bench_function("execute_json_object", |b| {
-        b.iter(|| {
-            sandbox
-                .execute_json(black_box("({a:1,b:[2,3],c:{d:4}})"))
-                .unwrap()
-        })
+        b.iter(|| sandbox.execute_json(black_box("({a:1,b:[2,3],c:{d:4}})")).unwrap())
     });
 }
 

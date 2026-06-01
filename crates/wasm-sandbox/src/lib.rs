@@ -4463,4 +4463,188 @@ mod tests {
         let config = SandboxConfig::default();
         assert!(!config.consume_fuel, "默认 consume_fuel 应为 false");
     }
+
+    // ── 新增边界测试（第二轮） ──
+
+    /// 测试 has_memory 显式 true/false 判断。
+    #[test]
+    fn test_has_memory_explicit() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (memory (export "mem") 1))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        assert!(instance.has_memory("mem"), "已导出内存 'mem' 应返回 true");
+        assert!(!instance.has_memory("nonexistent"), "未导出内存应返回 false");
+    }
+
+    /// 测试 get_global_export 对 i64 全局变量。
+    #[test]
+    fn test_get_global_export_i64() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (global (export "g") i64 (i64.const 123456789012)))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let val = instance.get_global_export("g").expect("global");
+        assert_eq!(val, WasmValue::I64(123456789012_i64), "i64 全局变量值应正确");
+    }
+
+    /// 测试 get_global_export 对 f32 全局变量。
+    #[test]
+    fn test_get_global_export_f32() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (global (export "g") f32 (f32.const 3.14)))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let val = instance.get_global_export("g").expect("global");
+        match val {
+            WasmValue::F32(_) => {} // f32 精度可接受
+            other => panic!("期望 F32，得到 {other:?}"),
+        }
+    }
+
+    /// 测试 get_global_export 对 f64 全局变量。
+    #[test]
+    fn test_get_global_export_f64() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (global (export "g") f64 (f64.const 2.718281828)))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let val = instance.get_global_export("g").expect("global");
+        match val {
+            WasmValue::F64(v) => {
+                assert!((v - 2.718281828).abs() < 1e-6, "f64 全局变量值应接近 2.718");
+            }
+            other => panic!("期望 F64，得到 {other:?}"),
+        }
+    }
+
+    /// 测试 WasmValue Display 特殊浮点值不 panic。
+    #[test]
+    fn test_wasm_value_float_special_display() {
+        let nan = format!("{}", WasmValue::F32(f32::NAN));
+        let inf = format!("{}", WasmValue::F32(f32::INFINITY));
+        let neg_inf = format!("{}", WasmValue::F64(f64::NEG_INFINITY));
+        assert!(!nan.is_empty(), "F32(NaN) Display 不应为空");
+        assert!(!inf.is_empty(), "F32(Inf) Display 不应为空");
+        assert!(!neg_inf.is_empty(), "F64(-Inf) Display 不应为空");
+    }
+
+    /// 测试 exports 列出混合类型导出（函数+内存+全局+表）。
+    #[test]
+    fn test_exports_mixed_types() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "fn") (result i32) i32.const 1)
+                (memory (export "mem") 1)
+                (global (export "g") i32 (i32.const 42))
+                (table (export "tbl") 1 funcref)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let exports = module.exports();
+        assert!(exports.contains(&"fn".to_string()), "应包含函数导出");
+        assert!(exports.contains(&"mem".to_string()), "应包含内存导出");
+        assert!(exports.contains(&"g".to_string()), "应包含全局导出");
+        assert!(exports.contains(&"tbl".to_string()), "应包含表导出");
+    }
+
+    /// 测试 memory.grow 后 memory_size 反映新大小。
+    #[test]
+    fn test_memory_size_after_grow() {
+        let sandbox = WasmSandbox::new();
+        // 使用分开的函数：grow 做增长，size 查询页数
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+                (func (export "grow")
+                    i32.const 1
+                    memory.grow
+                    drop
+                )
+                (func (export "size") (result i32)
+                    memory.size
+                )
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 先确认初始大小为 1 页
+        let before = instance.memory_size("mem").expect("size before");
+        assert_eq!(before, 65536, "初始应为 1 页");
+
+        // 调用 grow 函数
+        instance.call("grow", &[]).expect("call grow");
+
+        // 从 host 侧验证增长后大小
+        let after = instance.memory_size("mem").expect("size after");
+        assert_eq!(after, 2 * 65536, "host 侧 memory_size 应反映增长后大小");
+    }
+
+    /// 测试 WasmError::LinkError 场景（链接器注册失败）。
+    #[test]
+    fn test_link_error_variant() {
+        // 构建一个需要导入的模块，但链接器注册了一个错误的签名
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (import "env" "add" (func $add (param i32 i32) (result i32)))
+                (func (export "call_add") (result i32)
+                    i32.const 1
+                    i32.const 2
+                    call $add
+                )
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+
+        // 定义一个签名不匹配的 host 函数（0 参数 vs 需要 2 参数）
+        let mut linker = LinkerConfig::new();
+        linker.define(HostFunction::new(
+            "env",
+            "add",
+            vec![],
+            vec![WasmValueType::I32],
+            |_: &[WasmValue], _: &mut Vec<WasmValue>| Ok(()),
+        ));
+
+        let result = module.instantiate_with_linker(&sandbox, &linker);
+        assert!(result.is_err(), "签名不匹配应导致实例化失败");
+    }
+
+    /// 测试 has_table 显式 true/false 判断。
+    #[test]
+    fn test_has_table_explicit() {
+        let sandbox = WasmSandbox::new();
+        let wasm_with = wat_to_wasm(r#"(module (table (export "t") 1 funcref))"#);
+        let wasm_without = wat_to_wasm(r#"(module)"#);
+
+        let module_with = sandbox.compile(&wasm_with).expect("compile");
+        let instance_with = module_with.instantiate(&sandbox).expect("instantiate");
+        assert!(instance_with.has_table("t"), "已导出表应返回 true");
+        assert!(!instance_with.has_table("nonexistent"), "未导出表应返回 false");
+
+        let module_without = sandbox.compile(&wasm_without).expect("compile");
+        let instance_without = module_without.instantiate(&sandbox).expect("instantiate");
+        assert!(!instance_without.has_table("any"), "无表模块 has_table 应返回 false");
+    }
+
+    /// 测试多次调用同一函数结果一致性。
+    #[test]
+    fn test_repeated_call_consistency() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(r#"(module (func (export "id") (param i32) (result i32) local.get 0))"#);
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        for i in 0..10 {
+            let result = instance.call("id", &[WasmValue::I32(i)]).expect("call");
+            assert_eq!(result[0], WasmValue::I32(i), "重复调用结果应一致");
+        }
+    }
 }

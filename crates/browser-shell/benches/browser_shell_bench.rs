@@ -8,9 +8,7 @@
 //! - 下载管理器操作
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use zero_browser_shell::{
-    Autocomplete, Bookmarks, BrowserShell, DownloadManager, History,
-};
+use zero_browser_shell::{Autocomplete, Bookmarks, BrowserShell, DownloadManager, History};
 
 /// 基准 1: 标签页创建吞吐量。
 fn bench_tab_creation(c: &mut Criterion) {
@@ -44,16 +42,9 @@ fn bench_bookmark_bulk_add(c: &mut Criterion) {
 fn bench_history_search(c: &mut Criterion) {
     let mut history = History::new();
     for i in 0..1000 {
-        history.record(
-            &format!("https://example.com/page/{i}"),
-            &format!("Page {i}"),
-        );
+        history.record(&format!("https://example.com/page/{i}"), &format!("Page {i}"));
     }
-    c.bench_function("history_search_1k", |b| {
-        b.iter(|| {
-            history.search(black_box("example"))
-        })
-    });
+    c.bench_function("history_search_1k", |b| b.iter(|| history.search(black_box("example"))));
 }
 
 /// 基准 4: 自动补全建议。
@@ -61,23 +52,14 @@ fn bench_autocomplete_suggest(c: &mut Criterion) {
     let mut history = History::new();
     let mut bookmarks = Bookmarks::new();
     for i in 0..500 {
-        history.record(
-            &format!("https://example.com/page/{i}"),
-            &format!("Example Page {i}"),
-        );
+        history.record(&format!("https://example.com/page/{i}"), &format!("Example Page {i}"));
     }
     for i in 0..100 {
-        bookmarks.add(
-            &format!("Bookmark {i}"),
-            &format!("https://example.com/bm/{i}"),
-            None,
-        );
+        bookmarks.add(&format!("Bookmark {i}"), &format!("https://example.com/bm/{i}"), None);
     }
     let ac = Autocomplete::new();
     c.bench_function("autocomplete_suggest_500history", |b| {
-        b.iter(|| {
-            ac.suggest(black_box("example"), &history, &bookmarks)
-        })
+        b.iter(|| ac.suggest(black_box("example"), &history, &bookmarks))
     });
 }
 

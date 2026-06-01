@@ -1765,4 +1765,92 @@ mod tests {
         assert!(element_state_to_pressed(winit::event::ElementState::Pressed));
         assert!(!element_state_to_pressed(winit::event::ElementState::Released));
     }
+
+    // ── 新增边界测试（第二轮） ──
+
+    /// 测试 MouseButton 枚举比较语义（补充）。
+    #[test]
+    fn test_mouse_button_equality_comprehensive() {
+        assert_eq!(MouseButton::Left, MouseButton::Left);
+        assert_eq!(MouseButton::Other(5), MouseButton::Other(5));
+        assert_ne!(MouseButton::Other(5), MouseButton::Other(6));
+        assert_ne!(MouseButton::Left, MouseButton::Right);
+    }
+
+    /// 测试 TouchPhase 枚举比较语义。
+    #[test]
+    fn test_touch_phase_ordering() {
+        assert_eq!(TouchPhase::Started, TouchPhase::Started);
+        assert_ne!(TouchPhase::Started, TouchPhase::Ended);
+    }
+
+    /// 测试 ImeEvent Preedit 带光标。
+    #[test]
+    fn test_ime_preedit_with_cursor() {
+        let event = ImeEvent::Preedit {
+            text: "你好".to_string(),
+            cursor: Some((0, 2)),
+        };
+        match event {
+            ImeEvent::Preedit { text, cursor } => {
+                assert_eq!(text, "你好");
+                assert_eq!(cursor, Some((0, 2)));
+            }
+            _ => panic!("期望 Preedit"),
+        }
+    }
+
+    /// 测试 MouseScrollDelta PixelDelta 极端负值。
+    #[test]
+    fn test_scroll_delta_negative() {
+        let delta = MouseScrollDelta::PixelDelta(-1000.0, -2000.0);
+        match delta {
+            MouseScrollDelta::PixelDelta(x, y) => {
+                assert_eq!(x, -1000.0);
+                assert_eq!(y, -2000.0);
+            }
+            _ => panic!("期望 PixelDelta"),
+        }
+    }
+
+    /// 测试 AppEvent::Touch 包含完整 TouchEvent 数据。
+    #[test]
+    fn test_touch_event_data() {
+        let touch = TouchEvent {
+            id: 42,
+            phase: TouchPhase::Moved,
+            x: 123.45,
+            y: 678.90,
+        };
+        assert_eq!(touch.id, 42);
+        assert_eq!(touch.phase, TouchPhase::Moved);
+        assert!((touch.x - 123.45).abs() < 0.01);
+        assert!((touch.y - 678.90).abs() < 0.01);
+    }
+
+    /// 测试 AppEvent 部分变体 Debug 格式化不 panic。
+    #[test]
+    fn test_app_event_more_debug_formats() {
+        let events = vec![
+            AppEvent::MouseMoved { x: 0.0, y: 0.0 },
+            AppEvent::MouseInput {
+                button: MouseButton::Middle,
+                pressed: true,
+            },
+            AppEvent::MouseWheel {
+                delta: MouseScrollDelta::LineDelta(1.0, 0.0),
+            },
+            AppEvent::Touch(TouchEvent {
+                id: 0,
+                phase: TouchPhase::Started,
+                x: 0.0,
+                y: 0.0,
+            }),
+            AppEvent::Ime(ImeEvent::Disabled),
+        ];
+        for event in &events {
+            let debug = format!("{event:?}");
+            assert!(!debug.is_empty(), "Debug 格式不应为空");
+        }
+    }
 }
