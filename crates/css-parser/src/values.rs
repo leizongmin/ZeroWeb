@@ -4517,11 +4517,13 @@ pub enum BackgroundImageValue {
     None,
     /// url(<string>) — 指定背景图片 URL。
     Url(String),
+    /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
+    Gradient(GradientValue),
 }
 
 /// 解析 CSS background-image 属性值。
 ///
-/// 支持格式如 `"none"`、`"url(image.png)"`。
+/// 支持格式如 `"none"`、`"url(image.png)"`、`"linear-gradient(...)"` 等。
 pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     let value = value.trim();
 
@@ -4543,6 +4545,11 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
             return None;
         }
         return Some(BackgroundImageValue::Url(url.to_string()));
+    }
+
+    // 尝试解析渐变函数
+    if let Some(gradient) = parse_gradient(value) {
+        return Some(BackgroundImageValue::Gradient(gradient));
     }
 
     None

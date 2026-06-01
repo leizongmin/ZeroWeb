@@ -542,6 +542,8 @@ pub enum BackgroundImageComputedValue {
     None,
     /// url(<string>) — 指定背景图片 URL。
     Url(String),
+    /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
+    Gradient(zero_css_parser::values::GradientValue),
 }
 
 /// CSS background-position 属性值。
@@ -4849,6 +4851,9 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 style.background_image = match v {
                     zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
                     zero_css_parser::values::BackgroundImageValue::Url(url) => BackgroundImageComputedValue::Url(url),
+                    zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
+                        BackgroundImageComputedValue::Gradient(g)
+                    }
                 };
                 return true;
             }

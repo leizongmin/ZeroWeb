@@ -1215,12 +1215,28 @@ fn expand_background(value: &str, important: bool, specificity: (u32, u32, u32))
 
     let parts: Vec<&str> = value.split_whitespace().collect();
 
-    // 如果包含 url()，提取为 background-image；否则作为 background-color
+    // 如果包含 url()，提取为 background-image
     if let Some(url_part) = parts.iter().find(|p| p.starts_with("url(")) {
-        vec![mk("background-image", url_part)]
-    } else {
-        vec![mk("background-color", value)]
+        return vec![mk("background-image", url_part)];
     }
+
+    // 如果包含渐变函数，整体作为 background-image
+    let gradient_funcs = [
+        "linear-gradient(",
+        "repeating-linear-gradient(",
+        "radial-gradient(",
+        "repeating-radial-gradient(",
+        "conic-gradient(",
+        "repeating-conic-gradient(",
+    ];
+    for func in &gradient_funcs {
+        if value.contains(func) {
+            return vec![mk("background-image", value)];
+        }
+    }
+
+    // 否则作为 background-color
+    vec![mk("background-color", value)]
 }
 
 /// 展开 font 简写。

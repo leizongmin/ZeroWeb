@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::GradientDirection;
+use zero_css_parser::values::GradientValue;
 use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::RadialSize;
 use zero_css_parser::values::TransformFunction;
 use zero_css_parser::values::TransformValue;
 use zero_css_parser::values::VisibilityValue;
@@ -14,7 +17,10 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, RenderPrimitives, ShadowPrimitive};
+use zero_render_foundation::primitive::{
+    FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive, RenderPrimitives,
+    ShadowPrimitive,
+};
 use zero_style_system::{BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
@@ -402,10 +408,10 @@ impl Painter {
         });
     }
 
-    /// 绘制背景图片。
+    /// 绘制背景图片 / 渐变。
     ///
     /// 当 background-image 为 Url 时，生成 ImagePrimitive 图元。
-    /// 使用 URL 字符串的哈希值作为 ImageKey（简化实现，实际图片加载由上层处理）。
+    /// 当 background-image 为 Gradient 时，生成 GradientPrimitive 图元。
     fn paint_background_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         match &style.background_image {
             BackgroundImageComputedValue::None => {}
@@ -416,6 +422,12 @@ impl Painter {
                     rect,
                     image_key: ImageKey::new(key),
                 });
+            }
+            BackgroundImageComputedValue::Gradient(gradient) => {
+                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                if let Some(prim) = gradient_to_primitive(gradient, &rect) {
+                    self.primitives.add_gradient(prim);
+                }
             }
         }
     }
@@ -674,6 +686,165 @@ fn simple_hash(s: &str) -> u64 {
         hash = hash.wrapping_mul(33).wrapping_add(byte as u64);
     }
     hash
+}
+
+/// 将 CSS GradientValue 转换为 GradientPrimitive。
+///
+/// 目前支持 linear-gradient 和 radial-gradient。
+/// conic-gradient 暂不渲染（返回 None）。
+fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<GradientPrimitive> {
+    let w = rect.size.width;
+    let h = rect.size.height;
+    match gradient {
+        GradientValue::Linear(lg) => {
+            let kind = linear_direction_to_kind(&lg.direction, rect);
+            let stops = convert_color_stops(&lg.stops);
+            Some(GradientPrimitive {
+                rect: *rect,
+                kind,
+                stops,
+            })
+        }
+        GradientValue::Radial(rg) => {
+            let cx = rect.left() + length_to_f32(&rg.position_x) / 100.0 * w;
+            let cy = rect.top() + length_to_f32(&rg.position_y) / 100.0 * h;
+            let outer = match &rg.size {
+                RadialSize::ClosestSide => (cx - rect.left())
+                    .min(rect.right() - cx)
+                    .min(cy - rect.top())
+                    .min(rect.bottom() - cy),
+                RadialSize::FarthestSide => (cx - rect.left())
+                    .max(rect.right() - cx)
+                    .max(cy - rect.top())
+                    .max(rect.bottom() - cy),
+                RadialSize::ClosestCorner => {
+                    let tl = (cx - rect.left()).hypot(cy - rect.top());
+                    let tr = (rect.right() - cx).hypot(cy - rect.top());
+                    let bl = (cx - rect.left()).hypot(rect.bottom() - cy);
+                    let br = (rect.right() - cx).hypot(rect.bottom() - cy);
+                    tl.min(tr).min(bl).min(br)
+                }
+                RadialSize::FarthestCorner => {
+                    let tl = (cx - rect.left()).hypot(cy - rect.top());
+                    let tr = (rect.right() - cx).hypot(cy - rect.top());
+                    let bl = (cx - rect.left()).hypot(rect.bottom() - cy);
+                    let br = (rect.right() - cx).hypot(rect.bottom() - cy);
+                    tl.max(tr).max(bl).max(br)
+                }
+                RadialSize::Length(lv) => length_to_f32(lv),
+            };
+            let stops = convert_color_stops(&rg.stops);
+            Some(GradientPrimitive {
+                rect: *rect,
+                kind: GradientKind::Radial {
+                    cx,
+                    cy,
+                    inner_radius: 0.0,
+                    outer_radius: outer.max(0.01),
+                },
+                stops,
+            })
+        }
+        GradientValue::Conic(_) => {
+            // conic-gradient 暂不支持渲染
+            None
+        }
+    }
+}
+
+/// 将线性渐变方向转换为 GradientKind::Linear。
+fn linear_direction_to_kind(dir: &GradientDirection, rect: &Rect) -> GradientKind {
+    let w = rect.size.width;
+    let h = rect.size.height;
+    let cx = rect.left() + w / 2.0;
+    let cy = rect.top() + h / 2.0;
+    match dir {
+        GradientDirection::ToBottom => GradientKind::Linear {
+            x0: cx,
+            y0: rect.top(),
+            x1: cx,
+            y1: rect.bottom(),
+        },
+        GradientDirection::ToTop => GradientKind::Linear {
+            x0: cx,
+            y0: rect.bottom(),
+            x1: cx,
+            y1: rect.top(),
+        },
+        GradientDirection::ToRight => GradientKind::Linear {
+            x0: rect.left(),
+            y0: cy,
+            x1: rect.right(),
+            y1: cy,
+        },
+        GradientDirection::ToLeft => GradientKind::Linear {
+            x0: rect.right(),
+            y0: cy,
+            x1: rect.left(),
+            y1: cy,
+        },
+        GradientDirection::ToTopRight => GradientKind::Linear {
+            x0: rect.left(),
+            y0: rect.bottom(),
+            x1: rect.right(),
+            y1: rect.top(),
+        },
+        GradientDirection::ToTopLeft => GradientKind::Linear {
+            x0: rect.right(),
+            y0: rect.bottom(),
+            x1: rect.left(),
+            y1: rect.top(),
+        },
+        GradientDirection::ToBottomRight => GradientKind::Linear {
+            x0: rect.left(),
+            y0: rect.top(),
+            x1: rect.right(),
+            y1: rect.bottom(),
+        },
+        GradientDirection::ToBottomLeft => GradientKind::Linear {
+            x0: rect.right(),
+            y0: rect.top(),
+            x1: rect.left(),
+            y1: rect.bottom(),
+        },
+        GradientDirection::Angle(deg) => {
+            // 角度转坐标：0deg = to top, 90deg = to right, 180deg = to bottom
+            let rad = (deg - 90.0).to_radians();
+            let dx = rad.cos();
+            let dy = rad.sin();
+            let half_diag = w.hypot(h) / 2.0;
+            GradientKind::Linear {
+                x0: cx - dx as f32 * half_diag,
+                y0: cy - dy as f32 * half_diag,
+                x1: cx + dx as f32 * half_diag,
+                y1: cy + dy as f32 * half_diag,
+            }
+        }
+    }
+}
+
+/// 将 CSS 渐变色标转换为渲染层 GradientStop。
+fn convert_color_stops(stops: &[zero_css_parser::values::GradientColorStop]) -> Vec<GradientStop> {
+    let n = stops.len();
+    stops
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let offset = s
+                .position
+                .as_ref()
+                .map(|lv| match lv {
+                    LengthValue::Percentage(p) => *p as f32 / 100.0,
+                    LengthValue::Px(px) => *px as f32,
+                    _ => 0.0,
+                })
+                .unwrap_or(if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 });
+            GradientStop {
+                offset,
+                color: color_value_to_render(&s.color),
+            }
+        })
+        .collect()
 }
 
 impl Default for Painter {
