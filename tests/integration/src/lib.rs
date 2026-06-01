@@ -4811,4 +4811,451 @@ mod cross_crate_pipeline {
             other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
         }
     }
+
+    // ── CSS opacity / text-decoration / text-transform 管线集成测试 ──
+
+    /// CSS opacity 管线集成测试。
+    ///
+    /// 解析含 opacity: 0.5 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.opacity == 0.5。
+    #[test]
+    fn test_opacity_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "semi");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .semi { opacity: 0.5; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            (div_style.opacity - 0.5).abs() < 0.01,
+            "div 的 opacity 应为 0.5，实际为 {}",
+            div_style.opacity
+        );
+    }
+
+    /// CSS opacity 默认值管线测试。
+    ///
+    /// 不设置 opacity 时，默认值应为 1.0。
+    #[test]
+    fn test_opacity_default_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "plain");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .plain { color: black; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert!(
+            (div_style.opacity - 1.0).abs() < 0.01,
+            "未设置 opacity 时默认应为 1.0，实际为 {}",
+            div_style.opacity
+        );
+    }
+
+    /// CSS text-decoration: underline 管线集成测试。
+    ///
+    /// 解析含 text-decoration: underline 的 CSS，通过简写展开
+    /// 设置 text-decoration-line，验证 text_decoration_line == Underline。
+    #[test]
+    fn test_text_decoration_underline_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "underlined");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .underlined { text-decoration: underline; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_decoration_line,
+            zero_style_system::property::TextDecorationLineValue::Underline,
+            "div 的 text-decoration-line 应为 Underline"
+        );
+    }
+
+    /// CSS text-decoration: line-through 管线集成测试。
+    ///
+    /// 解析含 text-decoration: line-through 的 CSS，通过简写展开
+    /// 设置 text-decoration-line，验证 text_decoration_line == LineThrough。
+    #[test]
+    fn test_text_decoration_line_through_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "struck");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .struck { text-decoration: line-through; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_decoration_line,
+            zero_style_system::property::TextDecorationLineValue::LineThrough,
+            "div 的 text-decoration-line 应为 LineThrough"
+        );
+    }
+
+    /// CSS text-decoration: none 管线集成测试。
+    ///
+    /// 解析含 text-decoration: none 的 CSS，通过简写展开
+    /// 设置 text-decoration-line，验证 text_decoration_line == None。
+    #[test]
+    fn test_text_decoration_none_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "undecorated");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .undecorated { text-decoration: none; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_decoration_line,
+            zero_style_system::property::TextDecorationLineValue::None,
+            "div 的 text-decoration-line 应为 None"
+        );
+    }
+
+    /// CSS text-transform: uppercase 管线集成测试。
+    ///
+    /// 解析含 text-transform: uppercase 的 CSS，通过 style-system 计算样式，
+    /// 验证 text_transform == Uppercase。
+    #[test]
+    fn test_text_transform_uppercase_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "upper");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .upper { text-transform: uppercase; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_transform,
+            zero_style_system::property::TextTransformValue::Uppercase,
+            "div 的 text-transform 应为 Uppercase"
+        );
+    }
+
+    /// CSS text-transform: capitalize 管线集成测试。
+    ///
+    /// 解析含 text-transform: capitalize 的 CSS，通过 style-system 计算样式，
+    /// 验证 text_transform == Capitalize。
+    #[test]
+    fn test_text_transform_capitalize_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "capitalized");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .capitalized { text-transform: capitalize; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_transform,
+            zero_style_system::property::TextTransformValue::Capitalize,
+            "div 的 text-transform 应为 Capitalize"
+        );
+    }
+
+    /// CSS text-transform 继承管线测试。
+    ///
+    /// text-transform 是继承属性。父元素设置 text-transform: uppercase，
+    /// 子元素不显式设置，应继承父元素的 Uppercase 值。
+    #[test]
+    fn test_text_transform_inherited_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "upper-parent");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .upper-parent { text-transform: uppercase; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 父元素应有 Uppercase
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert_eq!(
+            parent_style.text_transform,
+            zero_style_system::property::TextTransformValue::Uppercase,
+            "parent 的 text-transform 应为 Uppercase"
+        );
+
+        // 子元素应继承 text-transform: uppercase
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.text_transform,
+            zero_style_system::property::TextTransformValue::Uppercase,
+            "child 应继承 parent 的 text-transform: Uppercase"
+        );
+    }
+
+    /// CSS opacity 渲染管线完整测试。
+    ///
+    /// 使用 RenderPipeline 渲染含 opacity: 0.5 和 background-color: red 的页面，
+    /// 验证渲染成功完成（timings.total_ms >= 0）。
+    #[test]
+    fn test_opacity_render_pipeline() {
+        let html = r#"<html><body>
+            <div class="semi" style="width: 200px; height: 100px;">Semi-transparent</div>
+        </body></html>"#;
+        let css = r#".semi { opacity: 0.5; background-color: red; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        assert!(result.timings.total_ms >= 0.0, "opacity 渲染管线应成功完成");
+        // 应生成填充图元（background-color: red）
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "background-color: red 应生成填充图元"
+        );
+    }
+
+    /// CSS text-decoration + text-shadow 组合管线测试。
+    ///
+    /// 同时设置 text-decoration: underline 和 text-shadow: 2px 2px red，
+    /// 验证两个属性都被正确设置到 computed style 中。
+    #[test]
+    fn test_text_decoration_with_text_shadow_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "combo");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .combo { text-decoration: underline; text-shadow: 2px 2px red; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+
+        // 验证 text-decoration-line 为 Underline
+        assert_eq!(
+            div_style.text_decoration_line,
+            zero_style_system::property::TextDecorationLineValue::Underline,
+            "div 的 text-decoration-line 应为 Underline"
+        );
+
+        // 验证 text-shadow 的 offset_x 和 offset_y
+        assert!(
+            (div_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+            "text-shadow offset_x 应为 2.0，实际为 {}",
+            div_style.text_shadow.offset_x
+        );
+        assert!(
+            (div_style.text_shadow.offset_y - 2.0).abs() < 0.01,
+            "text-shadow offset_y 应为 2.0，实际为 {}",
+            div_style.text_shadow.offset_y
+        );
+        assert_eq!(
+            div_style.text_shadow.color,
+            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+            "text-shadow color 应为红色"
+        );
+    }
+
+    /// CSS opacity + box-shadow + gradient 组合管线测试。
+    ///
+    /// 同时设置 opacity: 0.7、box-shadow: 5px 5px blue 和
+    /// background-image: linear-gradient(red, green)，
+    /// 验证三个属性都被正确设置到 computed style 中。
+    #[test]
+    fn test_opacity_shadow_gradient_combined_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "triple");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .triple {
+                opacity: 0.7;
+                box-shadow: 5px 5px blue;
+                background-image: linear-gradient(red, green);
+            }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+
+        // 验证 opacity
+        assert!(
+            (div_style.opacity - 0.7).abs() < 0.01,
+            "opacity 应为 0.7，实际为 {}",
+            div_style.opacity
+        );
+
+        // 验证 box-shadow
+        assert!(
+            (div_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+            "box-shadow offset_x 应为 5.0，实际为 {}",
+            div_style.box_shadow.offset_x
+        );
+        assert!(
+            (div_style.box_shadow.offset_y - 5.0).abs() < 0.01,
+            "box-shadow offset_y 应为 5.0，实际为 {}",
+            div_style.box_shadow.offset_y
+        );
+
+        // 验证 background-image 为渐变
+        assert!(
+            matches!(
+                &div_style.background_image,
+                zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
+            ),
+            "background_image 应为 Gradient 变体"
+        );
+    }
+
+    /// CSS text-transform: lowercase 管线集成测试。
+    ///
+    /// 解析含 text-transform: lowercase 的 CSS，通过 style-system 计算样式，
+    /// 验证 text_transform == Lowercase。
+    #[test]
+    fn test_text_transform_lowercase_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "lower");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .lower { text-transform: lowercase; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.text_transform,
+            zero_style_system::property::TextTransformValue::Lowercase,
+            "div 的 text-transform 应为 Lowercase"
+        );
+    }
 }

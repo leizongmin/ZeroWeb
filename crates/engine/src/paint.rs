@@ -5958,4 +5958,470 @@ mod tests {
         assert_eq!(grad.stops.len(), 1, "应有 1 个色标");
         assert_eq!(grad.stops[0].offset, 0.0, "单个色标 position=None 时 offset 应为 0.0");
     }
+
+    // ── 新增测试：opacity + text-decoration + text-transform ──
+
+    /// 测试 opacity=0.5 降低 fill alpha。
+    #[test]
+    fn test_paint_opacity_halves_alpha() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.opacity = 0.5;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().fills[0].color.a,
+            128,
+            "opacity=0.5 应将 fill alpha 从 255 降到 128"
+        );
+    }
+
+    /// 测试 opacity=1.0 不影响 alpha。
+    #[test]
+    fn test_paint_opacity_full() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.opacity = 1.0;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().fills[0].color.a,
+            255,
+            "opacity=1.0 不应改变 fill alpha"
+        );
+    }
+
+    /// 测试 opacity=0.0 使 fill 完全透明。
+    #[test]
+    fn test_paint_opacity_zero() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.opacity = 0.0;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().fills[0].color.a,
+            0,
+            "opacity=0.0 应将 fill alpha 设为 0"
+        );
+    }
+
+    /// 测试 opacity 影响 glyph alpha。
+    #[test]
+    fn test_paint_opacity_affects_glyphs() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.opacity = 0.5;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().glyphs[0].color.a,
+            128,
+            "opacity=0.5 应将 glyph alpha 从 255 降到 128"
+        );
+    }
+
+    /// 测试 opacity 影响 shadow alpha。
+    #[test]
+    fn test_paint_opacity_affects_shadow() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        style.opacity = 0.5;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().shadows[0].color.a,
+            128,
+            "opacity=0.5 应将 shadow alpha 从 255 降到 128"
+        );
+    }
+
+    /// 测试 opacity 不影响无样式节点。
+    #[test]
+    fn test_paint_opacity_no_style() {
+        let layout = make_box(None, 0.0, 0.0, 100.0, 50.0);
+        let mut painter = Painter::new();
+        let styles = HashMap::new();
+        painter.paint(&layout, &styles, None);
+        assert!(painter.primitives().is_empty(), "无样式节点不应产生任何图元");
+    }
+
+    /// 测试 text-decoration: underline 生成填充图元。
+    #[test]
+    fn test_paint_text_decoration_underline() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::Underline;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert!(prims.fills.len() >= 1, "underline 应生成至少 1 个装饰填充图元");
+        assert!(prims.glyphs.len() >= 1, "underline 应同时生成至少 1 个 glyph");
+    }
+
+    /// 测试 text-decoration: overline 生成填充图元。
+    #[test]
+    fn test_paint_text_decoration_overline() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::Overline;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().fills.len() >= 1,
+            "overline 应生成至少 1 个装饰填充图元"
+        );
+    }
+
+    /// 测试 text-decoration: line-through 生成填充图元。
+    #[test]
+    fn test_paint_text_decoration_line_through() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::LineThrough;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().fills.len() >= 1,
+            "line-through 应生成至少 1 个装饰填充图元"
+        );
+    }
+
+    /// 测试 text-decoration: none 不生成填充图元。
+    #[test]
+    fn test_paint_text_decoration_none() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::None;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.fills.len(), 0, "text-decoration: none 不应生成额外填充图元");
+        assert_eq!(prims.glyphs.len(), 1, "应有 1 个 glyph");
+    }
+
+    /// 测试 text-decoration: blink 不生成填充图元。
+    #[test]
+    fn test_paint_text_decoration_blink() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::Blink;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.fills.len(), 0, "blink 不应生成装饰填充图元");
+    }
+
+    /// 测试 underline 位置在基线下方。
+    #[test]
+    fn test_paint_underline_position() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::Underline;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        // baseline_y = content_y + font_size = 0 + 16 = 16
+        let baseline_y = 16.0_f32;
+        let decoration_fill = &prims.fills[0];
+        assert!(
+            decoration_fill.rect.origin.y > baseline_y,
+            "underline 的 y 位置 ({}) 应大于 baseline_y ({})",
+            decoration_fill.rect.origin.y,
+            baseline_y
+        );
+    }
+
+    /// 测试 line-through 位置在文本中部。
+    #[test]
+    fn test_paint_line_through_position() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::LineThrough;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        let decoration_fill = &prims.fills[0];
+        let top = 0.0_f32; // content_y = 0
+        let baseline_y = 16.0_f32; // content_y + font_size
+        assert!(
+            decoration_fill.rect.origin.y > top && decoration_fill.rect.origin.y < baseline_y,
+            "line-through 的 y 位置 ({}) 应在 top ({}) 和 baseline ({}) 之间",
+            decoration_fill.rect.origin.y,
+            top,
+            baseline_y
+        );
+    }
+
+    /// 测试 text-transform: uppercase 不影响 glyph 生成（退化为占位 glyph）。
+    #[test]
+    fn test_paint_text_transform_uppercase_fallback() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_transform = TextTransformValue::Uppercase;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().glyphs.len() >= 1,
+            "text-transform: uppercase 应至少生成 1 个 glyph"
+        );
+    }
+
+    /// 测试 opacity + background + text-decoration 组合。
+    #[test]
+    fn test_paint_opacity_with_decoration() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_decoration_line = TextDecorationLineValue::Underline;
+        style.opacity = 0.5;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        // background fill alpha should be halved
+        assert_eq!(
+            prims.fills[0].color.a, 128,
+            "opacity=0.5 应将背景 fill alpha 从 255 降到 128"
+        );
+        // decoration fill alpha should also be halved
+        assert!(prims.fills.len() >= 2, "应有背景填充和装饰填充");
+        assert_eq!(
+            prims.fills[1].color.a, 128,
+            "opacity=0.5 应将装饰 fill alpha 从 255 降到 128"
+        );
+    }
+
+    /// 测试 opacity=0.3 影响 gradient alpha。
+    #[test]
+    fn test_paint_opacity_affects_gradient() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        }));
+        style.opacity = 0.3;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let grad = &painter.primitives().gradients[0];
+        let expected_alpha = (255.0_f32 * 0.3).round() as u8; // 76
+        for (i, stop) in grad.stops.iter().enumerate() {
+            assert_eq!(
+                stop.color.a, expected_alpha,
+                "gradient stop[{}] alpha 应为 {}，实际 {}",
+                i, expected_alpha, stop.color.a
+            );
+        }
+    }
+
+    /// 测试 text-decoration 在无文本时不绘制。
+    #[test]
+    fn test_paint_text_decoration_no_text() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        // color 为 CurrentColor 时不生成 glyph 和 text-decoration
+        style.color = ColorValue::CurrentColor;
+        style.text_decoration_line = TextDecorationLineValue::Underline;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().fills.is_empty(),
+            "color=CurrentColor 时不应生成装饰填充图元"
+        );
+    }
+
+    /// 测试 opacity=0.5 + box-shadow + background-color。
+    #[test]
+    fn test_paint_opacity_shadow_and_fill() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        style.opacity = 0.5;
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(
+            prims.shadows[0].color.a, 128,
+            "opacity=0.5 应将 shadow alpha 从 255 降到 128"
+        );
+        assert_eq!(
+            prims.fills[0].color.a, 128,
+            "opacity=0.5 应将 fill alpha 从 255 降到 128"
+        );
+    }
 }
