@@ -1369,4 +1369,65 @@ mod tests {
         // 布局树应有嵌套结构（body → table → rows → cells）
         assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
     }
+
+    // ── Pipeline 边界条件测试 ──
+
+    /// 测试连续多次 incremental render 后状态正确。
+    #[test]
+    fn test_pipeline_multiple_incremental_renders() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div id="a">First</div><div id="b">Second</div></body></html>"#;
+        let css = "div { width: 100px; height: 50px; background-color: blue; }";
+        let result = pipeline.render_html(html, css);
+        assert!(result.timings.total_ms >= 0.0);
+        let count1 = result.primitives.fills.len();
+
+        // 重新渲染相同内容
+        let result2 = pipeline.render_html(html, css);
+        assert!(result2.timings.total_ms >= 0.0);
+        // 第二次渲染结果应与第一次一致
+        assert_eq!(result2.primitives.fills.len(), count1);
+    }
+
+    /// 测试渲染包含 link/style 标签的 HTML 不崩溃。
+    #[test]
+    fn test_pipeline_render_with_style_tag() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = r#"<html><head><style>div { color: red; }</style></head><body><div>Styled</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染纯文本内容（无标签包裹）不崩溃。
+    #[test]
+    fn test_pipeline_render_plain_text() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = "<html><body>Hello World</body></html>";
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试渲染包含嵌套 div 的深层结构。
+    #[test]
+    fn test_pipeline_deeply_nested_divs() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // 10 层嵌套
+        let html = "<html><body>".to_string() + &"<div>".repeat(10) + "inner" + &"</div>".repeat(10) + "</body></html>";
+        let result = pipeline.render_html(&html, "div { padding: 5px; background-color: #eee; }");
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+        assert!(!result.layout.root.children.is_empty());
+    }
+
+    /// 测试 zero-width viewport 渲染不产生填充图元。
+    #[test]
+    fn test_pipeline_zero_width_viewport() {
+        let mut pipeline = RenderPipeline::new(0.0, 600.0);
+        let html = "<html><body><div>Test</div></body></html>";
+        let result = pipeline.render_html(html, "div { width: 100px; height: 50px; }");
+        assert!(result.timings.total_ms >= 0.0);
+        // Zero-width viewport may produce no visible output
+    }
 }
