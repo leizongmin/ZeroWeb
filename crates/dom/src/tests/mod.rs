@@ -10,8 +10,10 @@ pub(super) fn body_of(doc: &Document) -> NodeId {
     doc.last_child(html).unwrap()
 }
 
-mod tests_1;
+mod tests_1a;
+mod tests_1b;
 mod tests_2;
 mod tests_3;
 mod tests_4;
 mod tests_5;
+mod tests_6_document;
