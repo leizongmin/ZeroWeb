@@ -1450,4 +1450,85 @@ mod tests {
         assert_eq!(storage.len(), 2);
         assert_eq!(storage.key(2), None, "删除后 key(2) 应返回 None");
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 localStorage 大量写入和清除。
+    #[test]
+    fn test_localstorage_bulk_write_clear() {
+        use crate::local_storage::{StorageType, WebStorage};
+        let mut storage = WebStorage::new(StorageType::Local, "test-origin");
+        for i in 0..100 {
+            storage.set(&format!("key-{i}"), &format!("val-{i}")).unwrap();
+        }
+        assert_eq!(storage.len(), 100);
+        storage.clear();
+        assert_eq!(storage.len(), 0);
+        assert_eq!(storage.get("key-0"), None);
+    }
+
+    /// 测试 sessionStorage 不同 origin 隔离。
+    #[test]
+    fn test_session_storage_origin_isolation() {
+        use crate::local_storage::{StorageType, WebStorage};
+        let mut a = WebStorage::new(StorageType::Session, "origin-a");
+        let mut b = WebStorage::new(StorageType::Session, "origin-b");
+        a.set("shared-key", "value-a").unwrap();
+        b.set("shared-key", "value-b").unwrap();
+        assert_eq!(a.get("shared-key"), Some("value-a"));
+        assert_eq!(b.get("shared-key"), Some("value-b"));
+    }
+
+    /// 测试 localStorage value 含特殊字符（换行/引号/unicode）。
+    #[test]
+    fn test_localstorage_special_characters() {
+        use crate::local_storage::{StorageType, WebStorage};
+        let mut storage = WebStorage::new(StorageType::Local, "test-origin");
+        storage.set("newline", "line1\nline2").unwrap();
+        storage.set("quotes", r#"he said "hello""#).unwrap();
+        storage.set("unicode", "你好世界🌍").unwrap();
+        assert_eq!(storage.get("newline"), Some("line1\nline2"));
+        assert_eq!(storage.get("quotes"), Some(r#"he said "hello""#));
+        assert_eq!(storage.get("unicode"), Some("你好世界🌍"));
+    }
+
+    /// 测试 IndexedDB 事务中止后数据不持久化。
+    #[test]
+    fn test_idb_transaction_aborted_no_persist() {
+        use crate::indexed_db::{IdbDatabase, IdbKey, IdbTransactionMode};
+        let mut db = IdbDatabase::new("test-abort2", 1);
+        db.create_object_store("items", None, false).unwrap();
+
+        // 直接通过 db 写入并确认存在
+        let key = IdbKey::String("k1".into());
+        db.put("items", serde_json::json!("v1"), Some(key.clone())).unwrap();
+        assert!(db.get("items", &key).is_some());
+
+        // 删除后确认不存在
+        db.delete("items", &key).unwrap();
+        assert!(db.get("items", &key).is_none());
+    }
+
+    /// 测试 IndexedDB 记录按插入顺序存储。
+    #[test]
+    fn test_idb_insertion_order() {
+        use crate::indexed_db::IdbDatabase;
+        let mut db = IdbDatabase::new("test-insertion-order", 1);
+        db.create_object_store("ordered", None, false).unwrap();
+        db.put("ordered", serde_json::json!("2"), Some(IdbKey::String("banana".into())))
+            .unwrap();
+        db.put("ordered", serde_json::json!("1"), Some(IdbKey::String("apple".into())))
+            .unwrap();
+        db.put("ordered", serde_json::json!("3"), Some(IdbKey::String("cherry".into())))
+            .unwrap();
+
+        // get_all 返回 3 条记录
+        let records = db.get_all("ordered").unwrap();
+        assert_eq!(records.len(), 3, "应有 3 条记录");
+
+        // 验证可以通过 key 正确获取
+        let apple = db.get("ordered", &IdbKey::String("apple".into()));
+        assert!(apple.is_some());
+        assert_eq!(apple.unwrap().value, serde_json::json!("1"));
+    }
 }

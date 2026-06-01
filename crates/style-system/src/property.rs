@@ -12488,4 +12488,77 @@ mod tests {
             other => panic!("expected Gradient(Conic(..)), got {:?}", other),
         }
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 background-color: transparent 管线。
+    #[test]
+    fn test_background_color_transparent_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "background-color", "transparent"));
+        assert_eq!(style.background_color, ColorValue::Transparent);
+    }
+
+    /// 测试 color: currentColor 管线。
+    #[test]
+    fn test_color_current_color_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "color", "currentColor"));
+        assert_eq!(style.color, ColorValue::CurrentColor);
+    }
+
+    /// 测试 display: inline-block 管线。
+    #[test]
+    fn test_display_inline_block_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "display", "inline-block"));
+        assert_eq!(style.display, DisplayValue::InlineBlock);
+    }
+
+    /// 测试 display: flex 管线。
+    #[test]
+    fn test_display_flex_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "display", "flex"));
+        assert_eq!(style.display, DisplayValue::Flex);
+    }
+
+    /// 测试 position: fixed 管线。
+    #[test]
+    fn test_position_fixed_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "position", "fixed"));
+        assert_eq!(style.position, PositionValue::Fixed);
+    }
+
+    /// 测试 overflow-x/y 管线。
+    #[test]
+    fn test_overflow_xy_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "overflow-x", "scroll"));
+        assert!(apply_property_value(&mut style, "overflow-y", "hidden"));
+        assert_eq!(style.overflow_x, OverflowValue::Scroll);
+        assert_eq!(style.overflow_y, OverflowValue::Hidden);
+    }
+
+    /// 测试 z-index: auto 管线。
+    #[test]
+    fn test_z_index_auto_pipeline() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "z-index", "auto"));
+        assert_eq!(style.z_index, ZIndexValue::Auto);
+    }
+
+    /// 测试多个 font-weight 值管线。
+    #[test]
+    fn test_font_weight_values_pipeline() {
+        use zero_css_parser::values::FontWeightValue;
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "font-weight", "bold"));
+        assert_eq!(style.font_weight, FontWeightValue::Bold);
+        assert!(apply_property_value(&mut style, "font-weight", "300"));
+        assert_eq!(style.font_weight, FontWeightValue::Absolute(300));
+        assert!(apply_property_value(&mut style, "font-weight", "normal"));
+        assert_eq!(style.font_weight, FontWeightValue::Normal);
+    }
 }

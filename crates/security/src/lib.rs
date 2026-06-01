@@ -2033,4 +2033,59 @@ mod tests {
         assert_eq!(implicit.host, "example.com");
         assert_eq!(implicit.port, 443);
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 CSP report-only 不阻止实际请求。
+    #[test]
+    fn test_csp_report_only_allows_all() {
+        let policy = csp::ContentSecurityPolicy::parse("Content-Security-Policy-Report-Only: default-src 'self'");
+        // report-only 模式下应允许所有资源
+        assert!(policy.is_resource_allowed("script", "http://evil.com", None));
+        assert!(policy.is_resource_allowed("style", "http://evil.com", None));
+    }
+
+    /// 测试不同协议的源判定。
+    #[test]
+    fn test_origin_different_scheme_not_same() {
+        let http = Origin::parse("http://example.com").unwrap();
+        let https = Origin::parse("https://example.com").unwrap();
+        assert!(!http.is_same_origin(&https), "http 和 https 应为不同源");
+    }
+
+    /// 测试 CORS 简单请求不包含自定义 header。
+    #[test]
+    fn test_cors_simple_request_no_custom_header() {
+        assert!(cors::is_simple_request("GET", Some("text/plain"), &[]));
+        assert!(cors::is_simple_request(
+            "POST",
+            Some("application/x-www-form-urlencoded"),
+            &[]
+        ));
+    }
+
+    /// 测试混合内容阻止 http: 协议但不阻止 https:。
+    #[test]
+    fn test_mixed_content_blocks_http_on_https() {
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert!(mixed_content::is_mixed_content(&origin, "http://example.com/script.js"));
+        assert!(!mixed_content::is_mixed_content(
+            &origin,
+            "https://example.com/script.js"
+        ));
+        // 非安全源（http）不触发混合内容检查
+        let http_origin = Origin::parse("http://example.com").unwrap();
+        assert!(!mixed_content::is_mixed_content(
+            &http_origin,
+            "http://other.com/script.js"
+        ));
+    }
+
+    /// 测试 sandbox 允许脚本运行。
+    #[test]
+    fn test_sandbox_allows_scripts() {
+        let sandbox = sandbox::IframeSandbox::parse("allow-scripts");
+        assert!(sandbox.allows_scripts());
+        assert!(!sandbox.allows_same_origin());
+    }
 }
