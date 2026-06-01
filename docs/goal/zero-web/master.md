@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，5768 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
+**执行状态**: 16/16 crate 已实现，5796 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver + insertBefore/replaceChild/cloneNode/style/classList/innerHTML/outerHTML/textContent/innerText/navigation properties）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5768 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5796 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -112,7 +112,7 @@
 | script-sandbox | **状态隔离**：execution 间变量不泄漏、独立 sandbox 隔离；**execute_json 边界**：嵌套对象/空对象/空数组/null/boolean/undefined/语法错误/空脚本/特殊字符；**大脚本**：10k循环/大字符串拼接；**ES6+**：Map/Set/Symbol/Proxy/async-await/默认参数/rest参数/for-of/Object静态方法/Array静态方法/JSON内置/Math方法 | 25 |
 | integration | **browser-shell + protocol + storage 集成**：导航IPC序列化/多标签IPC排序/前进后退IPC/书签+Storage持久化/历史+Storage持久化/下载+FetchResponse IPC/自动补全+书签/设置+StorageOp IPC/缩放+Reload IPC/页面加载+LoadComplete IPC | 9 |
 
-Total: 5733 → 5768 (+35 tests)
+Total: 5733 → 5796 (+63 tests)
 
 ### -53. 集成测试文件拆分 + 新增 106 个测试（本轮，5729 测试）
 
