@@ -3633,4 +3633,83 @@ mod tests {
             "MutationRecord should have default properties"
         );
     }
+
+    // ── IntersectionObserver 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 IntersectionObserver 构造函数存在。
+    #[test]
+    fn test_webview_intersection_observer_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof IntersectionObserver;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "IntersectionObserver should be a function"
+        );
+    }
+
+    /// 测试 IntersectionObserver observe 和 unobserve。
+    #[test]
+    fn test_webview_intersection_observer_observe_unobserve() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var io = new IntersectionObserver(function() {});
+            var el1 = document.createElement('div');
+            var el2 = document.createElement('span');
+            io.observe(el1);
+            io.observe(el2);
+            var len1 = io._observing.length;
+            io.unobserve(el1);
+            var len2 = io._observing.length;
+            len1 + ',' + len2;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "2,1", "observe/unobserve should manage elements");
+    }
+
+    /// 测试 IntersectionObserver disconnect。
+    #[test]
+    fn test_webview_intersection_observer_disconnect() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var io = new IntersectionObserver(function() {});
+            io.observe(document.createElement('div'));
+            io.disconnect();
+            io._observing.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0", "disconnect should clear observed elements");
+    }
+
+    /// 测试 IntersectionObserver takeRecords。
+    #[test]
+    fn test_webview_intersection_observer_take_records() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result =
+            wv.execute_script_with_dom("var io = new IntersectionObserver(function() {}); io.takeRecords().length;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0", "takeRecords should return empty array in stub");
+    }
+
+    /// 测试 IntersectionObserverEntry 构造函数。
+    #[test]
+    fn test_webview_intersection_observer_entry() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var entry = new IntersectionObserverEntry({ isIntersecting: true, intersectionRatio: 0.5 });
+            entry.isIntersecting + ',' + entry.intersectionRatio;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "true,0.5",
+            "IntersectionObserverEntry should have correct properties"
+        );
+    }
 }
