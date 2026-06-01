@@ -97,8 +97,7 @@ impl WebView {
     pub fn new(config: WebViewConfig) -> Self {
         let pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let http_client = HttpClient::new();
-        let js_sandbox = zero_script_sandbox::V8Sandbox::new()
-            .expect("V8 sandbox initialization should succeed");
+        let js_sandbox = zero_script_sandbox::V8Sandbox::new().expect("V8 sandbox initialization should succeed");
         Self {
             config,
             pipeline,
@@ -311,10 +310,7 @@ impl WebView {
 
         match self.js_sandbox.execute(script) {
             Ok(result) => {
-                tracing::debug!(
-                    "execute_script completed in {:.2}ms",
-                    result.execution_time_ms
-                );
+                tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
                 Ok(result.value)
             }
             Err(zero_script_sandbox::ScriptError::InvalidInput(msg)) => {
@@ -326,9 +322,7 @@ impl WebView {
             Err(zero_script_sandbox::ScriptError::RuntimeError(msg)) => {
                 Err(WebViewError::Script(format!("Runtime error: {msg}")))
             }
-            Err(zero_script_sandbox::ScriptError::Timeout(msg)) => {
-                Err(WebViewError::Script(format!("Timeout: {msg}")))
-            }
+            Err(zero_script_sandbox::ScriptError::Timeout(msg)) => Err(WebViewError::Script(format!("Timeout: {msg}"))),
             Err(zero_script_sandbox::ScriptError::NotInitialized) => {
                 Err(WebViewError::Script("JS sandbox not initialized".into()))
             }
