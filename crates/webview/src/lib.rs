@@ -3795,4 +3795,247 @@ mod tests {
             "DOMRectReadOnly should compute derived properties"
         );
     }
+
+    // ── DOM Bridge 增强 API 端到端测试 ──
+
+    /// 测试 insertBefore 在参考节点前插入。
+    #[test]
+    fn test_webview_dom_insert_before() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var c1 = document.createElement('span');
+            var c2 = document.createElement('p');
+            var c3 = document.createElement('a');
+            parent.appendChild(c1);
+            parent.appendChild(c3);
+            parent.insertBefore(c2, c3);
+            parent.children.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "3", "insertBefore 应插入到参考节点前");
+    }
+
+    /// 测试 replaceChild 替换子节点。
+    #[test]
+    fn test_webview_dom_replace_child() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var old = document.createElement('span');
+            var rep = document.createElement('p');
+            parent.appendChild(old);
+            parent.replaceChild(rep, old);
+            parent.children[0].tagName;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "P", "replaceChild 应替换旧节点");
+    }
+
+    /// 测试 cloneNode 浅拷贝。
+    #[test]
+    fn test_webview_dom_clone_node_shallow() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.setAttribute('id', 'orig');
+            var child = document.createElement('span');
+            el.appendChild(child);
+            var clone = el.cloneNode(false);
+            clone.getAttribute('id') + ',' + clone.children.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "orig,0", "浅拷贝应复制属性但不复制子节点");
+    }
+
+    /// 测试 cloneNode 深拷贝。
+    #[test]
+    fn test_webview_dom_clone_node_deep() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.setAttribute('id', 'orig');
+            var child = document.createElement('span');
+            el.appendChild(child);
+            var clone = el.cloneNode(true);
+            clone.getAttribute('id') + ',' + clone.children.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "orig,1", "深拷贝应复制属性和子节点");
+    }
+
+    /// 测试 style.cssText 读写。
+    #[test]
+    fn test_webview_dom_style_css_text() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.style.cssText = 'color: red; font-size: 16px';
+            el.style.cssText;
+            "#,
+        );
+        assert!(result.is_ok());
+        let css = result.unwrap();
+        assert!(css.contains("color: red"), "cssText 应包含 color");
+        assert!(css.contains("font-size: 16px"), "cssText 应包含 font-size");
+    }
+
+    /// 测试 style.setProperty / getPropertyValue。
+    #[test]
+    fn test_webview_dom_style_set_get() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.style.setProperty('background-color', 'blue');
+            el.style.getPropertyValue('background-color');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "blue");
+    }
+
+    /// 测试 classList add/remove/contains。
+    #[test]
+    fn test_webview_dom_classlist() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.classList.add('a', 'b');
+            var has = el.classList.contains('a') && el.classList.contains('b');
+            el.classList.remove('a');
+            var afterRemove = !el.classList.contains('a') && el.classList.contains('b');
+            has + ',' + afterRemove;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "true,true", "classList add/remove/contains 应正常工作");
+    }
+
+    /// 测试 classList toggle。
+    #[test]
+    fn test_webview_dom_classlist_toggle() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.classList.add('active');
+            var r1 = el.classList.toggle('active');
+            var r2 = el.classList.toggle('active');
+            r1 + ',' + r2 + ',' + el.classList.contains('active');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "false,true,true", "toggle 应移除再添加");
+    }
+
+    /// 测试 innerHTML setter。
+    #[test]
+    fn test_webview_dom_inner_html_setter() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.innerHTML = 'Hello World';
+            el.textContent;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hello World", "innerHTML setter 应设置内容");
+    }
+
+    /// 测试 textContent getter/setter。
+    #[test]
+    fn test_webview_dom_text_content() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            var child = document.createElement('span');
+            child.textContent = 'Hello';
+            el.appendChild(child);
+            el.textContent;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hello", "textContent getter 应返回子节点文本");
+    }
+
+    /// 测试导航属性 firstChild/lastChild。
+    #[test]
+    fn test_webview_dom_navigation_properties() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var c1 = document.createElement('span');
+            var c2 = document.createElement('p');
+            parent.appendChild(c1);
+            parent.appendChild(c2);
+            var first = parent.firstChild.tagName;
+            var last = parent.lastChild.tagName;
+            var count = parent.childElementCount;
+            first + ',' + last + ',' + count;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "SPAN,P,2", "导航属性应返回正确的子节点");
+    }
+
+    /// 测试 nextSibling/previousSibling。
+    #[test]
+    fn test_webview_dom_sibling_navigation() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var c1 = document.createElement('span');
+            var c2 = document.createElement('p');
+            var c3 = document.createElement('a');
+            parent.appendChild(c1);
+            parent.appendChild(c2);
+            parent.appendChild(c3);
+            var next = c2.nextSibling.tagName;
+            var prev = c2.previousSibling.tagName;
+            next + ',' + prev;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "A,SPAN", "兄弟节点导航应正确工作");
+    }
+
+    /// 测试 hasChildNodes。
+    #[test]
+    fn test_webview_dom_has_child_nodes() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var empty = document.createElement('div');
+            var parent = document.createElement('div');
+            parent.appendChild(document.createElement('span'));
+            empty.hasChildNodes() + ',' + parent.hasChildNodes();
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "false,true");
+    }
+
+    /// 测试 createDocumentFragment。
+    #[test]
+    fn test_webview_dom_create_document_fragment() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof document.createDocumentFragment();");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "object", "createDocumentFragment 应返回对象");
+    }
 }
