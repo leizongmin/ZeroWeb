@@ -1347,4 +1347,178 @@ mod tests {
         let url = parse_url("http://example.com/search?q=hello&lang=zh").expect("parse");
         assert!(url.query.as_ref().unwrap().contains("q=hello"));
     }
+
+    // ── 第八批边界条件补充测试（10 个） ──
+
+    /// 测试 blob: URL 的解析。blob URL 格式为 blob:<origin>/<uuid>，
+    /// 由 File API 生成，用于引用内存中的二进制数据。
+    /// 验证 scheme 为 "blob"，其余部分保留在 path 中。
+    #[test]
+    fn test_url_blob_scheme() {
+        let parsed = parse_url("blob:https://example.com/550e8400-e29b-41d4-a716-446655440000").unwrap();
+        assert_eq!(parsed.scheme, "blob", "blob URL 的 scheme 应为 'blob'");
+        // blob URL 的 path 包含 origin 和 UUID 部分
+        assert!(parsed.path.contains("example.com"), "path 应包含 origin 部分");
+    }
+
+    /// 测试 file: URL 的路径解析。file:// 协议用于本地文件系统引用，
+    /// 常见于浏览器打开本地 HTML 文件。验证 scheme 为 "file"，路径以 / 开头。
+    #[test]
+    fn test_url_file_scheme_path() {
+        let parsed = parse_url("file:///home/user/docs/index.html").unwrap();
+        assert_eq!(parsed.scheme, "file");
+        assert!(
+            parsed.path.starts_with('/') || parsed.path.contains("home"),
+            "file URL 应包含路径"
+        );
+        assert!(
+            parsed.host.is_none() || parsed.host.as_deref() == Some(""),
+            "file:// host 通常为空"
+        );
+    }
+
+    /// 测试非常长的 URL 解析不 panic。超长 URL 在攻击场景（如 URL 溢出攻击）
+    /// 中可能出现，解析器应能正常处理而不崩溃。
+    #[test]
+    fn test_url_very_long_url_no_panic() {
+        let long_path = "a".repeat(2000);
+        let long_query = (0..100).map(|i| format!("key{i}=val{i}")).collect::<Vec<_>>().join("&");
+        let url = format!("http://example.com/{long_path}?{long_query}");
+        let result = parse_url(&url);
+        assert!(result.is_ok(), "超长 URL 应能正常解析");
+        let parsed = result.unwrap();
+        assert!(parsed.path.contains('a'));
+        assert!(parsed.query.is_some());
+    }
+
+    /// 测试 URL 查询字符串只有问号（?）的情况。浏览器中 "?" 表示
+    /// 存在查询部分但内容为空。url crate 将其解析为 query=Some("")。
+    #[test]
+    fn test_url_query_empty_question_mark_only() {
+        let parsed = parse_url("http://example.com/path?").unwrap();
+        // url crate 对 "http://example.com/path?" 的 query 解析：
+        // 空查询字符串可能返回 Some("") 或 None，关键是不能 panic
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.host.as_deref(), Some("example.com"));
+        // 无论 query 是 Some("") 还是 None，都不应 panic
+        if let Some(ref q) = parsed.query {
+            assert!(q.is_empty(), "纯 '?' 的 query 应为空字符串");
+        }
+    }
+
+    /// 测试 URL 查询参数只有 key 没有 value（如 ?flag&key=）。
+    /// 在实际 Web 中常见于布尔标志（?darkmode&debug）或空值参数。
+    /// 验证 query 字符串原样保留这些形式。
+    #[test]
+    fn test_url_query_key_only_no_value() {
+        let parsed = parse_url("http://example.com/search?flag&key=&name=val").unwrap();
+        let query = parsed.query.as_deref().unwrap();
+        assert!(query.contains("flag"), "应保留无值参数 'flag'");
+        assert!(query.contains("key="), "应保留空值参数 'key='");
+        assert!(query.contains("name=val"), "应保留正常参数 'name=val'");
+    }
+
+    /// 测试 Cookie path=/subpath 的路径匹配规则。
+    /// Path=/subpath 的 cookie 应匹配 /subpath、/subpath/、/subpath/page，
+    /// 但不应匹配 / 或 /other。
+    #[test]
+    fn test_cookie_path_subpath_matching() {
+        let mut store = crate::CookieStore::new();
+        store.add(crate::CookieStore::parse_set_cookie("pref=dark; Path=/subpath; Domain=example.com").unwrap());
+
+        let exact = parse_url("http://example.com/subpath").unwrap();
+        let child = parse_url("http://example.com/subpath/page").unwrap();
+        let trailing = parse_url("http://example.com/subpath/").unwrap();
+        let parent = parse_url("http://example.com/").unwrap();
+        let sibling = parse_url("http://example.com/other").unwrap();
+
+        assert_eq!(store.get_for_url(&exact).len(), 1, "/subpath 应匹配 Path=/subpath");
+        assert_eq!(store.get_for_url(&child).len(), 1, "/subpath/page 应匹配 Path=/subpath");
+        assert_eq!(store.get_for_url(&trailing).len(), 1, "/subpath/ 应匹配 Path=/subpath");
+        assert!(store.get_for_url(&parent).is_empty(), "/ 不应匹配 Path=/subpath");
+        assert!(store.get_for_url(&sibling).is_empty(), "/other 不应匹配 Path=/subpath");
+    }
+
+    /// 测试 Cookie 过期时间精确等于当前时间时 is_expired 返回 false。
+    /// Cookie::is_expired 使用严格大于 (now > secs) 比较，
+    /// 因此 expires == now 时不视为已过期（恰好到期仍有效）。
+    #[test]
+    fn test_cookie_expires_exactly_now_not_expired() {
+        let mut cookie = crate::CookieStore::parse_set_cookie("sess=test").unwrap();
+        cookie.expires = Some(1000);
+
+        // 在恰好 expires 时间点，不应过期（now == secs → now > secs 为 false）
+        assert!(!cookie.is_expired_at(1000), "expires == now 时不应过期");
+        // 稍晚一秒则过期
+        assert!(cookie.is_expired_at(1001), "now > expires 时应过期");
+        // 稍早一秒则不过期
+        assert!(!cookie.is_expired_at(999), "now < expires 时不应过期");
+    }
+
+    /// 测试 NavigationHistory 中在开始位置（index 0）replace_current 后
+    /// 再 navigate 的行为。replace_current 不影响索引，后续 navigate 应正常工作。
+    #[test]
+    fn test_navigation_replace_at_beginning_then_navigate() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://initial.com", Some("首页".into()));
+        nav.replace_current("http://replaced.com", Some("替换".into()));
+        assert_eq!(nav.current().unwrap().url, "http://replaced.com");
+
+        // 替换后继续导航应正常工作
+        nav.navigate("http://next.com", Some("下一页".into()));
+        assert_eq!(nav.len(), 2);
+        assert_eq!(nav.current().unwrap().url, "http://next.com");
+        assert!(nav.can_go_back());
+
+        // 后退应回到替换后的 URL
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://replaced.com");
+        assert_eq!(nav.current().unwrap().title, Some("替换".into()));
+    }
+
+    /// 测试 NavigationHistory 中 navigate 相同 URL（重复 URL）产生独立条目。
+    /// 浏览器允许连续导航到同一 URL（如刷新页面），每次都应创建新条目。
+    #[test]
+    fn test_navigation_push_duplicate_url_creates_separate_entries() {
+        let mut nav = NavigationHistory::new(50);
+        nav.navigate("http://page.com", Some("第一次".into()));
+        nav.navigate("http://page.com", Some("第二次".into()));
+        nav.navigate("http://page.com", Some("第三次".into()));
+
+        assert_eq!(nav.len(), 3, "相同 URL 应产生 3 个独立条目");
+
+        // 后退两次应仍停留在同一 URL，但 title 不同
+        let entry = nav.go_back().unwrap();
+        assert_eq!(entry.url, "http://page.com");
+        assert_eq!(entry.title, Some("第二次".into()));
+
+        let entry = nav.go_back().unwrap();
+        assert_eq!(entry.url, "http://page.com");
+        assert_eq!(entry.title, Some("第一次".into()));
+    }
+
+    /// 测试 NavigationHistory 在 max_entries 边界处淘汰后再后退的完整性。
+    /// max=2 时添加 3 个条目后，第一个被淘汰，此时后退只能回到第二个。
+    /// 再从中间位置导航新 URL，前进历史被清除。
+    #[test]
+    fn test_navigation_max_entries_boundary_then_back() {
+        let mut nav = NavigationHistory::new(2);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None); // a 被淘汰
+
+        assert_eq!(nav.len(), 2);
+        // 后退到 b
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+        // 无法再后退（a 已被淘汰）
+        assert!(!nav.can_go_back(), "a 已被淘汰，不应能后退");
+
+        // 从 b 添加新条目，c 被清除，b 被保留
+        nav.navigate("http://d.com", None);
+        assert_eq!(nav.len(), 2);
+        // 后退到 b
+        nav.go_back();
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
 }

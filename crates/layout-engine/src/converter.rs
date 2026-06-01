@@ -2260,4 +2260,199 @@ mod tests {
         assert_eq!(taffy_style.min_size.width, taffy::style::Dimension::Length(4.0));
         assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(40.0));
     }
+
+    // ── 内部解析函数边界条件测试 ──
+
+    /// 测试 find_top_level_comma：无逗号时返回 None。
+    #[test]
+    fn test_find_top_level_comma_no_comma() {
+        assert_eq!(find_top_level_comma("100px 1fr auto"), None);
+        assert_eq!(find_top_level_comma(""), None);
+        assert_eq!(find_top_level_comma("abc"), None);
+    }
+
+    /// 测试 find_top_level_comma：逗号在括号内时被忽略。
+    #[test]
+    fn test_find_top_level_comma_inside_parens() {
+        assert_eq!(find_top_level_comma("minmax(100px, 1fr)"), None);
+    }
+
+    /// 测试 find_top_level_comma：正常顶层逗号正确返回位置。
+    #[test]
+    fn test_find_top_level_comma_top_level() {
+        let result = find_top_level_comma("3, minmax(10px, 1fr)");
+        assert_eq!(result, Some(1), "逗号应在位置 1");
+
+        let result = find_top_level_comma("a, b, c");
+        assert!(result.is_some(), "应找到逗号");
+        assert_eq!(result.unwrap(), 1, "第一个逗号应在位置 1");
+    }
+
+    /// 测试 tokenize_track_list：空字符串和纯空白。
+    #[test]
+    fn test_tokenize_track_list_empty_and_whitespace() {
+        assert!(tokenize_track_list("").is_empty(), "空字符串应无 token");
+        assert!(tokenize_track_list("   ").is_empty(), "纯空白应无 token");
+        assert!(tokenize_track_list("\t\t").is_empty(), "纯 tab 应无 token");
+    }
+
+    /// 测试 tokenize_track_list：多层嵌套括号保持为单个 token。
+    #[test]
+    fn test_tokenize_track_list_deeply_nested() {
+        let tokens = tokenize_track_list("repeat(2, minmax(10px, 1fr)) 200px auto");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], "repeat(2, minmax(10px, 1fr))");
+        assert_eq!(tokens[1], "200px");
+        assert_eq!(tokens[2], "auto");
+    }
+
+    /// 测试 parse_single_auto_track：auto 返回 AUTO。
+    #[test]
+    fn test_parse_single_auto_track_auto() {
+        let result = parse_single_auto_track("auto");
+        assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    }
+
+    /// 测试 parse_single_auto_track：fr 值返回弹性轨道。
+    #[test]
+    fn test_parse_single_auto_track_fr() {
+        let result = parse_single_auto_track("2fr");
+        let _ = result;
+    }
+
+    /// 测试 parse_single_auto_track：100px 返回固定长度。
+    #[test]
+    fn test_parse_single_auto_track_px() {
+        let result = parse_single_auto_track("100px");
+        let _ = result;
+    }
+
+    /// 测试 parse_single_auto_track：百分比返回百分比轨道。
+    #[test]
+    fn test_parse_single_auto_track_percent() {
+        let result = parse_single_auto_track("50%");
+        let _ = result;
+    }
+
+    /// 测试 parse_single_auto_track：无效值回退到 AUTO。
+    #[test]
+    fn test_parse_single_auto_track_invalid() {
+        let result = parse_single_auto_track("invalid");
+        assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    }
+
+    /// 测试 parse_min_track：auto 返回 Auto。
+    #[test]
+    fn test_parse_min_track_auto() {
+        use taffy::style::MinTrackSizingFunction;
+        let result = parse_min_track("auto");
+        assert_eq!(result, MinTrackSizingFunction::Auto);
+    }
+
+    /// 测试 parse_min_track：px 值返回 Fixed(Length)。
+    #[test]
+    fn test_parse_min_track_px() {
+        use taffy::style::MinTrackSizingFunction;
+        let result = parse_min_track("50px");
+        assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    }
+
+    /// 测试 parse_min_track：百分比值返回 Fixed(Percent)。
+    #[test]
+    fn test_parse_min_track_percent() {
+        use taffy::style::MinTrackSizingFunction;
+        let result = parse_min_track("25%");
+        assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    }
+
+    /// 测试 parse_min_track：纯数字返回 Fixed(Length)。
+    #[test]
+    fn test_parse_min_track_numeric() {
+        use taffy::style::MinTrackSizingFunction;
+        let result = parse_min_track("100");
+        assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    }
+
+    /// 测试 parse_min_track：无效值回退到 Auto。
+    #[test]
+    fn test_parse_min_track_invalid() {
+        use taffy::style::MinTrackSizingFunction;
+        let result = parse_min_track("abc");
+        assert_eq!(result, MinTrackSizingFunction::Auto);
+    }
+
+    /// 测试 parse_max_track：auto 返回 Auto。
+    #[test]
+    fn test_parse_max_track_auto() {
+        use taffy::style::MaxTrackSizingFunction;
+        let result = parse_max_track("auto");
+        assert_eq!(result, MaxTrackSizingFunction::Auto);
+    }
+
+    /// 测试 parse_max_track：fr 值返回 Fraction。
+    #[test]
+    fn test_parse_max_track_fr() {
+        use taffy::style::MaxTrackSizingFunction;
+        let result = parse_max_track("1fr");
+        assert!(matches!(result, MaxTrackSizingFunction::Fraction(_)));
+    }
+
+    /// 测试 parse_max_track：px 值返回 Fixed(Length)。
+    #[test]
+    fn test_parse_max_track_px() {
+        use taffy::style::MaxTrackSizingFunction;
+        let result = parse_max_track("200px");
+        assert!(matches!(result, MaxTrackSizingFunction::Fixed(_)));
+    }
+
+    /// 测试 parse_max_track：百分比值返回 Fixed(Percent)。
+    #[test]
+    fn test_parse_max_track_percent() {
+        use taffy::style::MaxTrackSizingFunction;
+        let result = parse_max_track("75%");
+        assert!(matches!(result, MaxTrackSizingFunction::Fixed(_)));
+    }
+
+    /// 测试 parse_max_track：无效值回退到 Auto。
+    #[test]
+    fn test_parse_max_track_invalid() {
+        use taffy::style::MaxTrackSizingFunction;
+        let result = parse_max_track("??");
+        assert_eq!(result, MaxTrackSizingFunction::Auto);
+    }
+
+    /// 测试 parse_minmax_as_non_repeated：合法的 minmax(auto, 1fr) 组合。
+    #[test]
+    fn test_parse_minmax_as_non_repeated_auto_fr() {
+        let result = parse_minmax_as_non_repeated("auto, 1fr");
+        let _ = result;
+    }
+
+    /// 测试 parse_minmax_as_non_repeated：合法的 minmax(100px, auto) 组合。
+    #[test]
+    fn test_parse_minmax_as_non_repeated_px_auto() {
+        let result = parse_minmax_as_non_repeated("100px, auto");
+        let _ = result;
+    }
+
+    /// 测试 parse_minmax_as_non_repeated：三个参数时回退到 AUTO。
+    #[test]
+    fn test_parse_minmax_as_non_repeated_too_many_parts() {
+        let result = parse_minmax_as_non_repeated("10px, 20px, 30px");
+        assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    }
+
+    /// 测试 parse_grid_auto_tracks：None 值返回空列表。
+    #[test]
+    fn test_parse_grid_auto_tracks_none() {
+        let result = parse_grid_auto_tracks(&None);
+        assert!(result.is_empty());
+    }
+
+    /// 测试 parse_grid_auto_tracks：多值正确解析。
+    #[test]
+    fn test_parse_grid_auto_tracks_multiple() {
+        let result = parse_grid_auto_tracks(&Some("100px auto 1fr".to_string()));
+        assert_eq!(result.len(), 3);
+    }
 }

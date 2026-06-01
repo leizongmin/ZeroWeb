@@ -296,4 +296,34 @@ mod tests {
         let upgraded_status = check_mixed_content(&page, &upgraded_url, "img");
         assert_eq!(upgraded_status, MixedContentStatus::NotMixedContent);
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试混合内容 blob: URI 在 HTTPS 页面上的处理。
+    ///
+    /// blob: URI 是由当前页面通过 URL.createObjectURL() 创建的，
+    /// 其源继承自创建者。当前 is_mixed_content 仅检测 http:// 前缀，
+    /// blob: URI 不以 http:// 开头，因此不被识别为混合内容。
+    #[test]
+    fn test_mixed_content_blob_uri_on_https_page() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // blob: URI 不以 http:// 开头 → 不是混合内容
+        let blob_url = "blob:https://example.com/abc-123-def";
+        assert!(!is_mixed_content(&page, blob_url), "blob: URI 不应被检测为混合内容");
+        assert_eq!(
+            check_mixed_content(&page, blob_url, "script"),
+            MixedContentStatus::NotMixedContent,
+            "blob: URI 的混合内容状态应为 NotMixedContent"
+        );
+
+        // upgrade_to_https 对 blob: URI 返回 None
+        assert_eq!(upgrade_to_https(blob_url), None, "upgrade_to_https 不应处理 blob: URI");
+
+        // 对比：http:// 应被检测为混合内容
+        assert!(
+            is_mixed_content(&page, "http://example.com/resource"),
+            "http:// 应被检测为混合内容"
+        );
+    }
 }

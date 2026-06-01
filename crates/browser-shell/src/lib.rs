@@ -2066,4 +2066,139 @@ mod tests {
             "Editable menu should have select_all"
         );
     }
+
+    // ── 新增边界测试 ──
+
+    #[test]
+    /// 测试 TabManager::move_tab 将标签页从首位移到末位。
+    fn test_tab_manager_move_tab_first_to_last() {
+        let mut mgr = TabManager::new();
+        let id0 = mgr.create_tab(Some("https://a.com"));
+        let _id1 = mgr.create_tab(Some("https://b.com"));
+        let _id2 = mgr.create_tab(Some("https://c.com"));
+        // 初始顺序: [id0, id1, id2]
+        mgr.move_tab(id0, 2);
+        let urls: Vec<_> = mgr.tabs().map(|t| t.url().unwrap_or("")).collect();
+        assert_eq!(
+            urls,
+            &["https://b.com", "https://c.com", "https://a.com"],
+            "id0 应移到末位"
+        );
+    }
+
+    #[test]
+    /// 测试 TabManager::move_tab 无效索引不 panic。
+    fn test_tab_manager_move_tab_invalid_index() {
+        let mut mgr = TabManager::new();
+        let id = mgr.create_tab(Some("https://a.com"));
+        let result = mgr.move_tab(id, 99); // 越界
+        assert!(!result, "越界 move_tab 应返回 false");
+        let fake_id = TabId(99999);
+        let result2 = mgr.move_tab(fake_id, 0); // 不存在的 id
+        assert!(!result2, "不存在的 id 应返回 false");
+        assert_eq!(mgr.len(), 1, "标签页数不变");
+    }
+
+    #[test]
+    /// 测试 Tab 多次前进/后退导航历史边界。
+    fn test_tab_navigation_history_boundary() {
+        let mut tab = Tab::new("https://a.com");
+        tab.set_title("A");
+        tab.navigate("https://b.com");
+        tab.navigate("https://c.com");
+        // 后退 2 次
+        assert!(tab.go_back()); // → B
+        assert!(tab.go_back()); // → A
+        assert!(!tab.go_back(), "已到历史起点应返回 false");
+        // 前进 2 次
+        assert!(tab.go_forward()); // → B
+        assert!(tab.go_forward()); // → C
+        assert!(!tab.go_forward(), "已到历史末尾应返回 false");
+    }
+
+    #[test]
+    /// 测试 Bookmarks::iter 按 URL 过滤。
+    fn test_bookmarks_iter_filter_by_url() {
+        let mut bm = Bookmarks::new();
+        bm.add("Example", "https://example.com", None);
+        bm.add("Example 2", "https://example.com", None);
+        bm.add("Other", "https://other.com", None);
+        let count = bm.iter().filter(|b| b.url() == "https://example.com").count();
+        assert_eq!(count, 2, "应能按 URL 过滤书签");
+    }
+
+    #[test]
+    /// 测试 History::clear 后搜索返回空。
+    fn test_history_clear_then_search_empty() {
+        let mut hist = History::new();
+        hist.record("https://example.com", "Example");
+        hist.record("https://test.com", "Test");
+        hist.clear();
+        assert!(hist.search("example").next().is_none(), "清除后搜索应返回空");
+        assert!(hist.search("test").next().is_none(), "清除后搜索应返回空");
+    }
+
+    #[test]
+    /// 测试 DownloadManager 移除不存在的下载不 panic。
+    fn test_download_manager_remove_nonexistent() {
+        let mut dm = DownloadManager::new();
+        let fake_id = DownloadId(99999);
+        dm.remove(fake_id); // 不存在的 id
+        assert_eq!(dm.active_count(), 0);
+    }
+
+    #[test]
+    /// 测试 Autocomplete 空查询返回空列表。
+    fn test_autocomplete_suggest_empty_query() {
+        let ac = Autocomplete::new();
+        let hist = History::new();
+        let bm = Bookmarks::new();
+        let results = ac.suggest("", &hist, &bm);
+        assert!(results.is_empty(), "空查询应返回空列表");
+    }
+
+    #[test]
+    /// 测试 Autocomplete 大小写不敏感搜索。
+    fn test_autocomplete_suggest_case_insensitive() {
+        let ac = Autocomplete::new();
+        let mut hist = History::new();
+        hist.record("https://Example.com", "Test");
+        let bm = Bookmarks::new();
+        let results = ac.suggest("example", &hist, &bm);
+        assert!(!results.is_empty(), "大小写不敏感搜索应找到结果");
+    }
+
+    #[test]
+    /// 测试 BrowserShell 多次导航后前进历史被清空。
+    fn test_browser_shell_navigation_clears_forward() {
+        let mut shell = BrowserShell::new();
+        shell.navigate("https://a.com");
+        shell.on_page_loaded("A");
+        shell.navigate("https://b.com");
+        shell.on_page_loaded("B");
+        // 后退
+        let back = shell.go_back();
+        assert!(back);
+        // 从 A 导航到 C，B 应从前进历史消失
+        shell.navigate("https://c.com");
+        let forward = shell.go_forward();
+        assert!(!forward, "新导航后前进历史应被清空");
+    }
+
+    #[test]
+    /// 测试 BrowserSettings 默认搜索引擎 URL 格式。
+    fn test_browser_settings_search_url_format() {
+        let settings = BrowserSettings::default();
+        let url = settings.search_engine.search_url("test query");
+        assert!(url.contains("test"), "搜索 URL 应包含查询词");
+    }
+
+    #[test]
+    /// 测试 ContextMenu::find_item 在子菜单中递归查找。
+    fn test_context_menu_find_item_in_submenu() {
+        let menu = ContextMenu::new(ContextType::Page);
+        // 页面菜单应有子菜单或直接项
+        let found = menu.find_item("inspect");
+        assert!(found.is_some(), "Page 菜单应包含 inspect");
+    }
 }

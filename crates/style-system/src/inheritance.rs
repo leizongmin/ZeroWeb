@@ -641,7 +641,11 @@ mod tests {
 
         let style = compute_inherited_style(None, &cascaded);
         // display 非继承，无父样式 → 回退到 initial
-        assert_eq!(style.display, DisplayValue::Inline, "无父样式时 inherit 对非继承属性应使用 initial");
+        assert_eq!(
+            style.display,
+            DisplayValue::Inline,
+            "无父样式时 inherit 对非继承属性应使用 initial"
+        );
     }
 
     #[test]
@@ -668,6 +672,10 @@ mod tests {
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
         // color initial = black (default), font-size initial = medium (16px)
-        assert_eq!(style.color, ColorValue::Rgba(0, 0, 0, 255), "initial 应恢复 color 默认值");
+        assert_eq!(
+            style.color,
+            ColorValue::Rgba(0, 0, 0, 255),
+            "initial 应恢复 color 默认值"
+        );
     }
 }

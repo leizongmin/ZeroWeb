@@ -4647,4 +4647,250 @@ mod tests {
             assert_eq!(result[0], WasmValue::I32(i), "重复调用结果应一致");
         }
     }
+
+    // =======================================================================
+    // 新增边界测试：燃料禁用时 get_fuel、u64::MAX 燃料、内存边界、
+    //               I64 Display、SandboxConfig 链式调用、空字符串函数名、
+    //               多沙箱独立性、write/read 往返、start 函数 trap
+    // =======================================================================
+
+    /// 测试 get_fuel 在未启用燃料计量时返回 Err。
+    /// 已有 test_fuel_disabled_by_default 测试了 set_fuel 报错，
+    /// 此测试专门验证 get_fuel 在燃料禁用时的错误行为。
+    #[test]
+    fn test_get_fuel_when_fuel_disabled() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 燃料计量未启用时 get_fuel 应返回错误
+        let result = instance.get_fuel();
+        assert!(result.is_err(), "未启用燃料计量时 get_fuel 应返回 Err");
+    }
+
+    /// 测试 set_fuel(u64::MAX) 后 get_fuel() 返回相同值。
+    /// 验证最大燃料值不会溢出或被截断。
+    #[test]
+    fn test_set_get_fuel_max() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        instance.set_fuel(u64::MAX).expect("set_fuel u64::MAX");
+        let fuel = instance.get_fuel().expect("get_fuel");
+        assert_eq!(fuel, u64::MAX, "get_fuel 应返回 u64::MAX");
+    }
+
+    /// 测试 read_memory 在内存边界（offset = memory_size, len = 0），
+    /// 应返回空切片（Some(vec![])），而非 None。
+    #[test]
+    fn test_read_memory_at_exact_boundary() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let size = instance.memory_size("mem").expect("memory_size");
+        // offset == memory_size, len == 0 → 边界内，应返回 Some(空)
+        let result = instance.read_memory("mem", size, 0);
+        assert!(result.is_some(), "边界处读取 0 字节应返回 Some");
+        assert!(result.unwrap().is_empty(), "边界处读取 0 字节应返回空 vec");
+    }
+
+    /// 测试 write_memory 向最后一个有效字节写入数据，
+    /// 验证偏移量为 memory_size - 1 时写入 1 字节成功。
+    #[test]
+    fn test_write_memory_last_valid_byte() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        let size = instance.memory_size("mem").expect("memory_size");
+        // 写入到最后一个字节
+        let result = instance.write_memory("mem", size - 1, &[0xFF]);
+        assert!(result.is_ok(), "写入最后一个有效字节应成功");
+
+        // 验证写入的数据正确
+        let data = instance.read_memory("mem", size - 1, 1).expect("read back");
+        assert_eq!(data, vec![0xFF], "读回的数据应为 0xFF");
+    }
+
+    /// 测试 WasmValue::I64 的 Display 格式化，
+    /// 验证负值、零值和 i64::MAX 的格式化结果完全匹配 "i64(...)" 模式。
+    #[test]
+    fn test_wasm_value_i64_display_exact() {
+        assert_eq!(WasmValue::I64(-1).to_string(), "i64(-1)");
+        assert_eq!(WasmValue::I64(0).to_string(), "i64(0)");
+        assert_eq!(WasmValue::I64(i64::MAX).to_string(), format!("i64({})", i64::MAX));
+    }
+
+    /// 测试 SandboxConfig::consume_fuel 链式调用，
+    /// 验证 .consume_fuel(true).consume_fuel(false) 最终结果为禁用燃料。
+    #[test]
+    fn test_sandbox_config_consume_fuel_chaining() {
+        let config = SandboxConfig::new().consume_fuel(true).consume_fuel(false);
+        assert!(!config.is_consume_fuel(), "链式调用后 consume_fuel 应为 false");
+
+        // 反向链式：false → true
+        let config2 = SandboxConfig::new().consume_fuel(false).consume_fuel(true);
+        assert!(config2.is_consume_fuel(), "反向链式调用后 consume_fuel 应为 true");
+    }
+
+    /// 测试 has_memory 使用函数导出名查询，应返回 false（不会把函数误认为内存）。
+    #[test]
+    fn test_has_memory_with_function_export_name() {
+        let sandbox = WasmSandbox::new();
+        // 模块有一个函数导出但无内存导出
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "my_func") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        assert!(
+            !instance.has_memory("my_func"),
+            "函数导出名不应被 has_memory 匹配为内存"
+        );
+        assert!(instance.has_func("my_func"), "函数导出应被 has_func 找到");
+    }
+
+    /// 测试空字符串作为函数名传入 call 和 has_func，
+    /// 验证不会 panic，而是返回正常的错误/false。
+    #[test]
+    fn test_empty_string_function_name() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "exists") nop)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // has_func("") 应返回 false（不会 panic）
+        assert!(!instance.has_func(""), "空字符串函数名 has_func 应返回 false");
+
+        // call("") 应返回 ExportNotFound 错误（不会 panic）
+        let result = instance.call("", &[]);
+        assert!(result.is_err(), "空字符串 call 应返回错误");
+        if let Err(WasmError::ExportNotFound { name }) = result {
+            assert_eq!(name, "", "错误名应为空字符串");
+        } else {
+            panic!("期望 ExportNotFound 错误，实际: {result:?}");
+        }
+    }
+
+    /// 测试两个独立的沙箱实例（不同 WasmSandbox 对象），各自编译并实例化相同模块，
+    /// 验证两个实例完全独立，互不影响。
+    #[test]
+    fn test_multiple_independent_sandbox_instances() {
+        let sandbox_a = WasmSandbox::new();
+        let sandbox_b = WasmSandbox::new();
+
+        let wasm = wat_to_wasm(
+            r#"(module
+                (global $counter (export "counter") (mut i32) (i32.const 0))
+                (func (export "inc") (result i32)
+                    global.get $counter
+                    i32.const 1
+                    i32.add
+                    global.set $counter
+                    global.get $counter)
+            )"#,
+        );
+
+        let module_a = sandbox_a.compile(&wasm).expect("compile A");
+        let module_b = sandbox_b.compile(&wasm).expect("compile B");
+
+        let mut inst_a = module_a.instantiate(&sandbox_a).expect("instantiate A");
+        let mut inst_b = module_b.instantiate(&sandbox_b).expect("instantiate B");
+
+        // 实例 A 递增 3 次
+        for expected in [1, 2, 3] {
+            let r = inst_a.call("inc", &[]).expect("A inc");
+            assert_eq!(r[0], WasmValue::I32(expected), "实例 A 递增应为 {expected}");
+        }
+
+        // 实例 B 独立递增 1 次
+        let r = inst_b.call("inc", &[]).expect("B inc");
+        assert_eq!(r[0], WasmValue::I32(1), "实例 B 应从 0 开始独立计数");
+    }
+
+    /// 测试 write_memory 后 read_memory 往返一致性。
+    /// 写入一组已知字节序列到非零偏移，读回后验证完全匹配。
+    #[test]
+    fn test_write_memory_read_memory_round_trip() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 写入一组已知字节到偏移 256
+        let original: Vec<u8> = (0..16).map(|i| (i * 17 + 0xAB) as u8).collect();
+        instance.write_memory("mem", 256, &original).expect("write");
+
+        // 读回并验证
+        let read_back = instance.read_memory("mem", 256, 16).expect("read");
+        assert_eq!(read_back, original, "读回的数据应与写入完全一致");
+
+        // 写入前后的区域应不受影响
+        let before = instance.read_memory("mem", 255, 1).expect("read before");
+        assert_eq!(before, [0x00], "写入区域前一个字节应为 0");
+        let after = instance.read_memory("mem", 272, 1).expect("read after");
+        assert_eq!(after, [0x00], "写入区域后一个字节应为 0");
+    }
+
+    /// 测试带 start 函数的 WASM 模块在 start 函数 trap 时的行为。
+    /// 编译应成功（语法正确），但实例化时应返回 InstantiationError
+    /// （因为 start 函数执行了 unreachable 导致 trap）。
+    #[test]
+    fn test_module_with_start_function_that_traps() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func $start unreachable)
+                (start $start)
+            )"#,
+        );
+        // 编译应成功（语法正确）
+        let module = sandbox.compile(&wasm).expect("compile");
+
+        // 实例化应失败（start 函数执行 trap）
+        let result = module.instantiate(&sandbox);
+        assert!(result.is_err(), "start 函数 trap 时实例化应返回错误");
+        if let Err(WasmError::InstantiationError(msg)) = result {
+            assert!(
+                msg.contains("unreachable") || msg.contains("trap"),
+                "错误信息应包含 trap 相关描述，实际: {msg}"
+            );
+        } else {
+            panic!("期望 InstantiationError，实际: Ok");
+        }
+    }
 }

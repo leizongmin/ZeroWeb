@@ -3,6 +3,7 @@
 // 覆盖：节点类型、树操作、属性操作、HTML 解析、查询、序列化、MutationObserver。
 
 use crate::*;
+use std::sync::{Arc, Mutex};
 
 // ═══════════════════════════════════════════════════════════════════════
 // 1. 节点创建测试
@@ -210,4 +211,293 @@ fn test_create_text_node_empty_string() {
     let html = doc.outer_html(text);
     // 空文本节点序列化后应为空字符串
     assert_eq!(html, "", "空文本节点序列化应为空字符串");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 边界条件补充测试（round 22）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 compare_document_position 对同一节点返回 0（bits 为空）。
+///
+/// 验证 node1 == node2 时结果为 DocumentPosition(0)，
+/// 不包含任何 PRECEDING、FOLLOWING、CONTAINS 等标志。
+#[test]
+fn test_compare_document_position_same_node_zero_flags() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.append_child(root, elem).unwrap();
+
+    let pos = doc.compare_document_position(elem, elem).unwrap();
+    assert_eq!(pos.bits(), 0, "同一节点比较应返回 0");
+    assert!(!pos.contains(DocumentPosition::PRECEDING));
+    assert!(!pos.contains(DocumentPosition::FOLLOWING));
+    assert!(!pos.contains(DocumentPosition::CONTAINS));
+    assert!(!pos.contains(DocumentPosition::CONTAINED_BY));
+    assert!(!pos.contains(DocumentPosition::DISCONNECTED));
+}
+
+/// 测试 create_element 使用含连字符的标签名（自定义元素命名规则）。
+///
+/// Web Components 规范要求自定义元素名必须含连字符。
+/// 验证 create_element 正确保留连字符标签名。
+#[test]
+fn test_create_element_with_hyphenated_name() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("my-widget");
+    assert!(doc.contains(elem));
+    if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
+        assert_eq!(e.local_name(), "my-widget", "应保留含连字符的标签名");
+    }
+}
+
+/// 测试 DOMTokenList 边界：设置重复 class 后 get_elements_by_class_name 不重复返回。
+///
+/// set_attribute("class", "foo foo foo") 存储时 class_list 解析为
+/// ["foo", "foo", "foo"]，但 get_elements_by_class_name 仍只返回元素一次。
+#[test]
+fn test_duplicate_class_in_attribute() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "foo foo foo");
+    doc.append_child(root, elem).unwrap();
+
+    // 元素在结果中只出现一次
+    let result = doc.get_elements_by_class_name("foo");
+    assert_eq!(result.len(), 1, "重复 class 不应导致元素重复出现");
+    assert_eq!(result[0], elem);
+}
+
+/// 测试 DOMTokenList 边界：移除不存在的 class 后属性值不变。
+#[test]
+fn test_remove_nonexistent_class_preserves_others() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "foo bar baz");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    // 手动移除一个不存在的 class "qux"，保留其他
+    let current = doc.get_attribute(elem, "class").unwrap();
+    let filtered: Vec<&str> = current.split_whitespace().filter(|c| *c != "qux").collect();
+    doc.set_attribute(elem, "class", &filtered.join(" "));
+
+    // 所有原有 class 仍然存在
+    assert_eq!(doc.get_attribute(elem, "class"), Some("foo bar baz".to_string()));
+    assert_eq!(doc.get_elements_by_class_name("foo"), vec![elem]);
+    assert_eq!(doc.get_elements_by_class_name("bar"), vec![elem]);
+    assert_eq!(doc.get_elements_by_class_name("baz"), vec![elem]);
+}
+
+/// 测试 DOMTokenList 边界：在空 class 属性上操作不 panic。
+#[test]
+fn test_class_operations_on_empty_class() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.set_attribute(elem, "class", "");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    // 空 class 属性上查询任何 class 都不匹配
+    assert!(doc.get_elements_by_class_name("foo").is_empty());
+    assert!(doc.get_elements_by_class_name("").is_empty());
+
+    // 设置为空白字符串也视为空
+    doc.set_attribute(elem, "class", "   ");
+    assert!(doc.get_elements_by_class_name("foo").is_empty());
+}
+
+/// 测试 Range select_node_contents 对空元素返回折叠范围（offset 0, 0）。
+#[test]
+fn test_range_select_node_contents_empty_element() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    let mut range = Range::new(elem, elem);
+    range.select_node_contents(&doc, elem).unwrap();
+
+    assert_eq!(range.start_offset(), 0, "空元素 start_offset 应为 0");
+    assert_eq!(range.end_offset(), 0, "空元素 end_offset 应为 0");
+    assert!(range.collapsed(), "空元素 select_node_contents 应产生折叠范围");
+}
+
+/// 测试 Range clone_contents 对嵌套多层元素深拷贝后结构独立。
+#[test]
+fn test_range_clone_contents_nested_independence() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+
+    // 构建嵌套结构：div > ul > li > span > "text"
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("text");
+    doc.append_child(parent, ul).unwrap();
+    doc.append_child(ul, li).unwrap();
+    doc.append_child(li, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut range = Range::new(parent, parent);
+    range.select_node_contents(&doc, parent).unwrap();
+    let fragment = range.clone_contents(&mut doc).unwrap();
+
+    // 修改原始树不影响克隆
+    doc.set_text_content(span, "modified");
+    // 克隆的 text_content 仍为 "text"
+    let frag_children = doc.child_nodes(fragment);
+    assert_eq!(frag_children.len(), 1, "克隆片段应有 1 个子节点");
+    assert_eq!(
+        doc.text_content(fragment),
+        Some("text".to_string()),
+        "克隆应为独立副本，不受原始修改影响"
+    );
+    // 原始已改变
+    assert_eq!(doc.text_content(parent), Some("modified".to_string()));
+}
+
+/// 测试序列化带 public_id 和 system_id 的 DocumentType。
+#[test]
+fn test_serialize_doctype_with_public_and_system_id() {
+    let mut doc = Document::new();
+    let doctype = doc.create_document_type(
+        "html",
+        Some("-//W3C//DTD XHTML 1.0 Strict//EN".to_string()),
+        Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd".to_string()),
+    );
+    let html = doc.outer_html(doctype);
+    assert!(html.contains("<!DOCTYPE"), "应包含 DOCTYPE 声明");
+    assert!(html.contains("PUBLIC"), "应包含 PUBLIC 关键字");
+    assert!(html.contains(r#"-//W3C//DTD XHTML 1.0 Strict//EN"#), "应包含 public_id");
+    assert!(
+        html.contains("http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"),
+        "应包含 system_id"
+    );
+}
+
+/// 测试序列化仅带 system_id（无 public_id）的 DocumentType。
+#[test]
+fn test_serialize_doctype_system_id_only() {
+    let mut doc = Document::new();
+    let doctype = doc.create_document_type("html", None, Some("about:legacy-compat".to_string()));
+    let html = doc.outer_html(doctype);
+    assert!(html.contains("<!DOCTYPE"), "应包含 DOCTYPE 声明");
+    // 仅 system_id 时输出 SYSTEM 关键字
+    assert!(
+        html.contains("SYSTEM"),
+        "仅 system_id 时应使用 SYSTEM 关键字，实际: {html}"
+    );
+    assert!(html.contains("about:legacy-compat"), "应包含 system_id 值");
+}
+
+/// 测试 TreeWalker 遍历混合节点类型（元素、文本、注释）。
+#[test]
+fn test_tree_walker_mixed_node_types() {
+    let mut doc = Document::new();
+    let root = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("hello");
+    let comment = doc.create_comment("note");
+    let p = doc.create_element("p");
+    doc.append_child(root, span).unwrap();
+    doc.append_child(root, text).unwrap();
+    doc.append_child(root, comment).unwrap();
+    doc.append_child(root, p).unwrap();
+
+    let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+
+    // 深度优先前序遍历
+    let n1 = walker.next_node(&doc);
+    assert_eq!(n1, Some(span), "第一个子节点应为 span");
+
+    let n2 = walker.next_node(&doc);
+    assert_eq!(n2, Some(text), "第二个子节点应为文本节点");
+
+    let n3 = walker.next_node(&doc);
+    assert_eq!(n3, Some(comment), "第三个子节点应为注释节点");
+
+    let n4 = walker.next_node(&doc);
+    assert_eq!(n4, Some(p), "第四个子节点应为 p");
+
+    // 遍历完毕
+    let n5 = walker.next_node(&doc);
+    assert_eq!(n5, None, "遍历完毕后应返回 None");
+}
+
+/// 测试 TreeWalker first_child 和 next_sibling 导航。
+#[test]
+fn test_tree_walker_child_and_sibling_navigation() {
+    let mut doc = Document::new();
+    let root = doc.create_element("div");
+    let c1 = doc.create_element("a");
+    let c2 = doc.create_element("b");
+    let inner = doc.create_element("i");
+    doc.append_child(root, c1).unwrap();
+    doc.append_child(root, c2).unwrap();
+    doc.append_child(c1, inner).unwrap();
+
+    let mut walker = TreeWalker::new(root, 0xFFFFFFFF);
+
+    // first_child 从 root 进入第一个子节点
+    let child = walker.first_child(&doc);
+    assert_eq!(child, Some(c1), "first_child 应为 a");
+    assert_eq!(walker.current_node(), c1);
+
+    // first_child 从 c1 进入其子节点
+    let inner_node = walker.first_child(&doc);
+    assert_eq!(inner_node, Some(inner), "a 的 first_child 应为 i");
+
+    // next_sibling 从 inner 应该返回 None（无兄弟）
+    let sibling = walker.next_sibling(&doc);
+    assert_eq!(sibling, None, "i 没有兄弟节点");
+}
+
+/// 测试 dispatch_event 在断开连接（未附加到文档树）的节点上正常工作。
+#[test]
+fn test_dispatch_event_on_disconnected_node_sets_target() {
+    let mut doc = Document::new();
+    let orphan = doc.create_element("div");
+    // 不 append 到文档树
+
+    let called = Arc::new(Mutex::new(false));
+    let called_clone = called.clone();
+    doc.add_event_listener(
+        orphan,
+        "click",
+        Box::new(move |event| {
+            assert_eq!(event.target(), Some(orphan), "target 应为孤立节点自身");
+            *called_clone.lock().unwrap() = true;
+        }),
+        false,
+    );
+
+    let mut event = Event::new("click");
+    let result = doc.dispatch_event(orphan, &mut event);
+    assert!(result, "dispatch 应正常完成");
+    assert!(*called.lock().unwrap(), "监听器应被调用");
+    assert_eq!(event.target(), Some(orphan), "事件 target 应被设置");
+}
+
+/// 测试 prevent_default 在不可取消事件上无效且 default_prevented 保持 false。
+#[test]
+fn test_prevent_default_on_non_cancelable_event_in_dispatch() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.append_child(doc.root(), elem).unwrap();
+
+    doc.add_event_listener(
+        elem,
+        "load",
+        Box::new(|event| {
+            let result = event.prevent_default();
+            assert!(!result, "不可取消事件上 prevent_default 应返回 false");
+            assert!(!event.default_prevented(), "default_prevented 应保持 false");
+        }),
+        false,
+    );
+
+    let mut event = Event::new("load"); // cancelable=false
+    let not_prevented = doc.dispatch_event(elem, &mut event);
+    assert!(not_prevented, "不可取消事件的 dispatch 应返回 true");
+    assert!(!event.default_prevented());
 }

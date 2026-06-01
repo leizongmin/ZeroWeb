@@ -1912,4 +1912,236 @@ mod tests {
                 < 0.001
         );
     }
+
+    // ── absolute_position / absolute_position_with_parent 边界条件测试 ──
+
+    /// 测试 absolute_position 对零坐标的 LayoutBox 返回 (0.0, 0.0)。
+    #[test]
+    fn test_absolute_position_zero() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert!((abs_x - 0.0).abs() < 0.001);
+        assert!((abs_y - 0.0).abs() < 0.001);
+    }
+
+    /// 测试 absolute_position 对带 border/padding 的盒子只返回 (x, y)。
+    ///
+    /// absolute_position 只返回 self.x 和 self.y，不受 border/padding 影响。
+    #[test]
+    fn test_absolute_position_ignores_border_padding() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 50.0,
+            y: 75.0,
+            width: 200.0,
+            height: 150.0,
+            content_x: 55.0,
+            content_y: 80.0,
+            content_width: 190.0,
+            content_height: 140.0,
+            border_top: 2.0,
+            border_right: 2.0,
+            border_bottom: 2.0,
+            border_left: 3.0,
+            padding_top: 3.0,
+            padding_right: 3.0,
+            padding_bottom: 3.0,
+            padding_left: 3.0,
+            margin_top: 5.0,
+            margin_right: 5.0,
+            margin_bottom: 5.0,
+            margin_left: 5.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert!((abs_x - 50.0).abs() < 0.001, "x 应为 50.0");
+        assert!((abs_y - 75.0).abs() < 0.001, "y 应为 75.0");
+    }
+
+    /// 测试 absolute_position_with_parent 累加父子偏移。
+    #[test]
+    fn test_absolute_position_with_parent_basic() {
+        let child = LayoutBox {
+            node_id: None,
+            x: 30.0,
+            y: 40.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 30.0,
+            content_y: 40.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = child.absolute_position_with_parent(100.0, 200.0);
+        assert!((abs_x - 130.0).abs() < 0.001, "abs_x 应为 130.0");
+        assert!((abs_y - 240.0).abs() < 0.001, "abs_y 应为 240.0");
+    }
+
+    /// 测试 absolute_position_with_parent 传入负父偏移。
+    #[test]
+    fn test_absolute_position_with_parent_negative() {
+        let child = LayoutBox {
+            node_id: None,
+            x: 10.0,
+            y: 20.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = child.absolute_position_with_parent(-50.0, -30.0);
+        assert!((abs_x - (-40.0)).abs() < 0.001, "abs_x 应为 -40.0");
+        assert!((abs_y - (-10.0)).abs() < 0.001, "abs_y 应为 -10.0");
+    }
+
+    /// 测试 outer_area 在零尺寸盒子上的计算。
+    #[test]
+    fn test_outer_area_zero_size_box() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 10.0,
+            margin_right: 10.0,
+            margin_bottom: 10.0,
+            margin_left: 10.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // total_width = 10 + 0 + 10 = 20, total_height = 10 + 0 + 10 = 20
+        let area = box0.outer_area();
+        assert!((area - 400.0).abs() < 0.001, "outer_area 应为 400.0，实际 {}", area);
+    }
+
+    /// 测试 absolute_position 对 is_fixed=true 的盒子同样返回 (x, y)。
+    #[test]
+    fn test_absolute_position_fixed_element() {
+        let box0 = LayoutBox {
+            node_id: None,
+            x: 25.0,
+            y: 35.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 25.0,
+            content_y: 35.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: true,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box0.absolute_position();
+        assert!((abs_x - 25.0).abs() < 0.001);
+        assert!((abs_y - 35.0).abs() < 0.001);
+    }
 }

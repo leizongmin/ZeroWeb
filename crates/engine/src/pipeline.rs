@@ -1430,4 +1430,102 @@ mod tests {
         assert!(result.timings.total_ms >= 0.0);
         // Zero-width viewport may produce no visible output
     }
+
+    // ── 边界条件测试：viewport 访问 / 多次渲染视口 / dirty_tracker_mut 持久性 ──
+
+    /// 测试 viewport_width 和 viewport_height 返回创建时指定的值。
+    #[test]
+    fn test_pipeline_viewport_accessors() {
+        let pipeline = RenderPipeline::new(1024.0, 768.0);
+        assert_eq!(pipeline.viewport_width(), 1024.0);
+        assert_eq!(pipeline.viewport_height(), 768.0);
+
+        let pipeline2 = RenderPipeline::new(375.0, 667.0);
+        assert_eq!(pipeline2.viewport_width(), 375.0);
+        assert_eq!(pipeline2.viewport_height(), 667.0);
+    }
+
+    /// 测试多次 render_html 使用不同视口参数的管线互不影响。
+    #[test]
+    fn test_pipeline_multiple_render_different_viewports() {
+        let mut p1 = RenderPipeline::new(800.0, 600.0);
+        let mut p2 = RenderPipeline::new(1920.0, 1080.0);
+
+        let html = "<html><body><div>Content</div></body></html>";
+        let r1 = p1.render_html(html, "");
+        let r2 = p2.render_html(html, "");
+
+        assert_eq!(p1.viewport_width(), 800.0);
+        assert_eq!(p2.viewport_width(), 1920.0);
+        assert!(r1.timings.total_ms >= 0.0);
+        assert!(r2.timings.total_ms >= 0.0);
+        // 两个管线的布局视口应不同
+        assert_ne!(r1.layout.viewport_width, r2.layout.viewport_width);
+    }
+
+    /// 测试 dirty_tracker_mut() 的修改在后续调用中持久存在。
+    #[test]
+    fn test_dirty_tracker_mut_persistence() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+
+        // 通过 dirty_tracker_mut 添加脏区域
+        pipeline
+            .dirty_tracker_mut()
+            .mark_dirty(Rect::new(10.0, 20.0, 50.0, 30.0));
+        assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 1);
+
+        // 再次获取可变引用，添加更多脏区域
+        pipeline
+            .dirty_tracker_mut()
+            .mark_dirty(Rect::new(100.0, 100.0, 20.0, 20.0));
+        assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 2);
+
+        // 通过不可变引用验证之前的修改持久存在
+        assert_eq!(pipeline.dirty_tracker().dirty_rects()[0].origin.x, 10.0);
+        assert_eq!(pipeline.dirty_tracker().dirty_rects()[1].origin.x, 100.0);
+    }
+
+    /// 测试连续多次 render_html 不导致管线状态异常。
+    #[test]
+    fn test_pipeline_repeated_render_html_stability() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>Test</div></body></html>";
+
+        for i in 0..5 {
+            let result = pipeline.render_html(html, "");
+            assert!(result.timings.total_ms >= 0.0, "第 {} 次渲染应成功", i);
+            assert!(pipeline.layout().is_some(), "第 {} 次渲染后布局应存在", i);
+        }
+
+        assert_eq!(pipeline.viewport_width(), 800.0, "多次渲染后视口宽度不变");
+        assert_eq!(pipeline.viewport_height(), 600.0, "多次渲染后视口高度不变");
+    }
+
+    /// 测试 render_html 后 cached_layout 的 viewport 正确。
+    #[test]
+    fn test_pipeline_cached_layout_viewport_correct() {
+        let mut pipeline = RenderPipeline::new(640.0, 480.0);
+        assert!(pipeline.layout().is_none());
+
+        let _ = pipeline.render_html("<html><body>Hi</body></html>", "");
+        let layout = pipeline.layout().unwrap();
+        assert_eq!(layout.viewport_width, 640.0);
+        assert_eq!(layout.viewport_height, 480.0);
+    }
+
+    /// 测试 dirty_tracker 初始为空且非 full_redraw。
+    #[test]
+    fn test_pipeline_initial_dirty_tracker_state() {
+        let pipeline = RenderPipeline::new(800.0, 600.0);
+        assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
+        assert!(!pipeline.dirty_tracker().is_full_redraw());
+        assert_eq!(pipeline.dirty_tracker().dirty_area(), 0.0);
+    }
+
+    /// 测试 layout() 在首次 render_html 前返回 None。
+    #[test]
+    fn test_pipeline_layout_none_before_render() {
+        let pipeline = RenderPipeline::new(800.0, 600.0);
+        assert!(pipeline.layout().is_none());
+    }
 }

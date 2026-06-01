@@ -6765,6 +6765,219 @@ mod tests {
         assert!(!painter.primitives().fills.is_empty(), "RGBA 边界值颜色仍应产生 fill");
     }
 
+    // ── 边界条件测试：case-insensitivity / hash / length / transform / opacity / decoration / gradient / shadow ──
+
+    /// 测试 named_color_to_render 混合大小写（如 "GrAy"、"LiMe"）仍然正确解析。
+    #[test]
+    fn test_named_color_mixed_case_insensitivity() {
+        assert_eq!(named_color_to_render("GrAy"), Color::rgb(128, 128, 128));
+        assert_eq!(named_color_to_render("LiMe"), Color::rgb(0, 255, 0));
+        assert_eq!(named_color_to_render("DaRKrED"), Color::rgb(0, 0, 0)); // unknown → black
+        assert_eq!(named_color_to_render("WhItE"), Color::rgb(255, 255, 255));
+        assert_eq!(named_color_to_render("ReD"), Color::rgb(255, 0, 0));
+    }
+
+    /// 测试 simple_hash 对空字符串和长字符串的边界行为。
+    #[test]
+    fn test_simple_hash_boundary_inputs() {
+        let empty_hash = simple_hash("");
+        assert_ne!(empty_hash, 0, "空字符串哈希应非零（初始值 5381）");
+
+        let a = simple_hash("abc");
+        let b = simple_hash("abc");
+        assert_eq!(a, b, "相同字符串应产生相同哈希");
+
+        let c = simple_hash("abd");
+        assert_ne!(a, c, "不同字符串应产生不同哈希");
+
+        // 长字符串不 panic
+        let long_str = "x".repeat(10000);
+        let _long_hash = simple_hash(&long_str);
+    }
+
+    /// 测试 length_to_f32 对 Px 变体的各种值（零、正数、极大值）。
+    #[test]
+    fn test_length_to_f32_px_variants() {
+        assert_eq!(length_to_f32(&LengthValue::Px(0.0)), 0.0);
+        assert_eq!(length_to_f32(&LengthValue::Px(42.5)), 42.5);
+        assert_eq!(length_to_f32(&LengthValue::Px(-10.0)), -10.0);
+        assert_eq!(length_to_f32(&LengthValue::Px(f64::MAX)), f64::MAX as f32);
+    }
+
+    /// 测试 paint_text 带 TextTransformValue::Lowercase 不 panic 并生成 glyph。
+    #[test]
+    fn test_paint_text_lowercase_transform() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_transform = TextTransformValue::Lowercase;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+    }
+
+    /// 测试嵌套 opacity：父元素 opacity=0.5 包裹子元素 opacity=0.5，
+    /// 子元素的 fill alpha 应被两层衰减（255 -> 128 -> 64）。
+    #[test]
+    fn test_paint_nested_opacity_interaction() {
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let child = doc.create_element("span");
+
+        let child_box = make_box(Some(child), 0.0, 0.0, 50.0, 30.0);
+        let parent_box = LayoutBox {
+            node_id: Some(parent),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 80.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut parent_style = ComputedStyle::default();
+        parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        parent_style.opacity = 0.5;
+        parent_style.color = ColorValue::CurrentColor;
+        styles.insert(parent, parent_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        child_style.opacity = 0.5;
+        child_style.color = ColorValue::CurrentColor;
+        styles.insert(child, child_style);
+
+        let mut painter = Painter::new();
+        painter.paint(&parent_box, &styles, None);
+
+        let fills = &painter.primitives().fills;
+        assert_eq!(fills.len(), 2);
+        // 父元素 fill：opacity=0.5 -> 255*0.5=128
+        assert_eq!(fills[0].color.a, 128, "父元素 alpha 应为 128");
+        // 子元素 fill：先被自身 opacity=0.5 衰减到 128，再被父 opacity=0.5 衰减到 64
+        assert_eq!(fills[1].color.a, 64, "子元素 alpha 应为 64（两层 0.5 衰减）");
+    }
+
+    /// 测试 paint_text_decoration 对零宽度和负宽度不生成填充。
+    #[test]
+    fn test_paint_text_decoration_zero_negative_width() {
+        let mut painter = Painter::new();
+        let color = Color::rgb(0, 0, 0);
+
+        painter.paint_text_decoration(0.0, 16.0, 16.0, 0.0, color, &TextDecorationLineValue::Underline);
+        assert!(painter.primitives().fills.is_empty(), "宽度为 0 不应生成装饰填充");
+
+        painter.paint_text_decoration(0.0, 16.0, 16.0, -10.0, color, &TextDecorationLineValue::Underline);
+        assert!(painter.primitives().fills.is_empty(), "负宽度不应生成装饰填充");
+    }
+
+    /// 测试 linear_direction_to_kind 对各种角度值生成正确的 Linear 坐标。
+    #[test]
+    fn test_linear_direction_to_kind_angle_values() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+
+        // 0deg = to top
+        let kind = linear_direction_to_kind(&GradientDirection::Angle(0.0), &rect);
+        assert!(matches!(kind, GradientKind::Linear { .. }));
+
+        // 90deg = to right
+        let kind_90 = linear_direction_to_kind(&GradientDirection::Angle(90.0), &rect);
+        if let GradientKind::Linear { x0, x1, .. } = kind_90 {
+            assert!(x0 < x1, "90deg 应从左到右");
+        }
+
+        // 180deg = to bottom
+        let kind_180 = linear_direction_to_kind(&GradientDirection::Angle(180.0), &rect);
+        if let GradientKind::Linear { y0, y1, .. } = kind_180 {
+            assert!(y0 < y1, "180deg 应从上到下");
+        }
+
+        // 360deg = 等效 0deg（to top）
+        let kind_360 = linear_direction_to_kind(&GradientDirection::Angle(360.0), &rect);
+        if let GradientKind::Linear { y0, y1, .. } = kind_360 {
+            assert!(y0 > y1, "360deg 应从下到上（等效 0deg）");
+        }
+    }
+
+    /// 测试 gradient_to_primitive 对只有单个色标的渐变返回 Some。
+    #[test]
+    fn test_gradient_to_primitive_single_color_stop() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let gradient = GradientValue::Linear(LinearGradient {
+            direction: GradientDirection::ToRight,
+            stops: vec![GradientColorStop {
+                color: ColorValue::Rgba(128, 128, 128, 255),
+                position: None,
+            }],
+            repeating: false,
+        });
+
+        let result = gradient_to_primitive(&gradient, &rect);
+        assert!(result.is_some(), "单色标渐变应返回 Some");
+        let prim = result.unwrap();
+        assert_eq!(prim.stops.len(), 1);
+        assert_eq!(prim.stops[0].offset, 0.0, "单色标 offset 应为 0.0");
+    }
+
+    /// 测试 paint_box_shadow 带负偏移值正确传递。
+    #[test]
+    fn test_paint_box_shadow_negative_offsets() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: -5.0,
+            offset_y: -3.0,
+            blur_radius: 10.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let shadow = &painter.primitives().shadows[0];
+        assert_eq!(shadow.offset_x, -5.0, "负 offset_x 应正确传递");
+        assert_eq!(shadow.offset_y, -3.0, "负 offset_y 应正确传递");
+        assert_eq!(shadow.blur_radius, 10.0);
+        assert_eq!(shadow.color, Color::rgba(0, 0, 0, 128));
+    }
+
     /// 测试父盒子包含两个子盒子时渲染，验证所有 fill 图元存在。
     #[test]
     fn test_paint_multiple_children_layout() {

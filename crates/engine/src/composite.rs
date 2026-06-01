@@ -2279,4 +2279,161 @@ mod tests {
             root.height
         );
     }
+
+    // ── 边界条件测试：CompositingLayer 默认字段验证 / position:absolute + z-index ──
+
+    /// 测试 CompositingLayer::new() 所有字段均为默认值。
+    #[test]
+    fn test_compositing_layer_new_default_fields() {
+        let layer = CompositingLayer::new(7);
+        assert_eq!(layer.id, 7);
+        assert!(layer.boxes.is_empty());
+        assert_eq!(layer.offset_x, 0.0);
+        assert_eq!(layer.offset_y, 0.0);
+        assert_eq!(layer.width, 0.0);
+        assert_eq!(layer.height, 0.0);
+        assert!((layer.opacity - 1.0).abs() < f32::EPSILON, "默认 opacity 应为 1.0");
+        assert!(!layer.is_root, "默认 is_root 应为 false");
+        assert_eq!(layer.z_index, 0);
+    }
+
+    /// 测试 position: absolute 的元素配合 z-index 被提升为独立图层。
+    #[test]
+    fn test_compositing_layer_position_absolute_with_z_index() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        // 标记为 absolute
+        let mut abs_child = child_box;
+        abs_child.is_absolute = true;
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![abs_child],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Absolute;
+        style.z_index = ZIndexValue::Integer(5);
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // 根图层 + 1 个 z-index 提升图层（position:absolute 本身不提升，但 z-index 非 Auto 会提升）
+        assert_eq!(layers.len(), 2, "z-index:5 应提升为独立图层");
+        assert!(layers[0].is_root);
+        assert_eq!(layers[1].z_index, 5);
+    }
+
+    /// 测试 position:absolute 但 z-index:auto 时不被提升。
+    #[test]
+    fn test_compositing_layer_absolute_auto_z_index_not_promoted() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0, false);
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Absolute;
+        style.z_index = ZIndexValue::Auto;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+        // position:absolute + z-index:auto -> opacity=1.0, 非 fixed -> 不被提升
+        assert_eq!(layers.len(), 1, "absolute + z-index:auto 不应提升");
+        assert!(layers[0].is_root);
+    }
+
+    /// 测试 CompositingLayer 手动修改字段后 bounding_box 正确计算。
+    #[test]
+    fn test_compositing_layer_manual_modification_bounding_box() {
+        let mut layer = CompositingLayer::new(0);
+        layer.boxes.push(make_box(None, 0.0, 0.0, 100.0, 100.0, false));
+        layer.boxes.push(make_box(None, 200.0, 200.0, 50.0, 50.0, false));
+        layer.offset_x = 10.0;
+        layer.offset_y = 20.0;
+        layer.opacity = 0.7;
+        layer.is_root = true;
+
+        assert!((layer.opacity - 0.7).abs() < f32::EPSILON);
+        assert!(layer.is_root);
+        let (x, y, w, h) = layer.bounding_box();
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+        assert_eq!(w, 250.0); // max right (250) - min left (0)
+        assert_eq!(h, 250.0); // max bottom (250) - min top (0)
+    }
+
+    /// 测试 CompositingLayer::new() 的 Debug 和 Clone 实现。
+    #[test]
+    fn test_compositing_layer_debug_clone() {
+        let mut layer = CompositingLayer::new(42);
+        layer.boxes.push(make_box(None, 10.0, 20.0, 50.0, 30.0, false));
+        layer.z_index = 3;
+
+        let cloned = layer.clone();
+        assert_eq!(cloned.id, 42);
+        assert_eq!(cloned.z_index, 3);
+        assert_eq!(cloned.boxes.len(), 1);
+
+        let debug_str = format!("{:?}", layer);
+        assert!(debug_str.contains("42"));
+    }
 }
