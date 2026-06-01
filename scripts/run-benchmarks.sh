@@ -27,6 +27,8 @@ declare -A BENCH_MAP=(
     [zero-security]="security_bench"
     [zero-storage]="storage_bench"
     [zero-wasm-sandbox]="wasm_bench"
+    [zero-browser-shell]="browser_shell_bench"
+    [zero-script-sandbox]="script_sandbox_bench"
 )
 
 echo "=== ZeroWeb Benchmarks ===" | tee "$REPORT"
