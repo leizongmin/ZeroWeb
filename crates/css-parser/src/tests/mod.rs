@@ -1,0 +1,70 @@
+// CSS 解析器综合测试。
+
+use crate::ast::*;
+use crate::parser::Parser;
+use crate::selector;
+use crate::tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
+use crate::values::{
+    BackgroundImageValue, BorderCollapseValue, CalcContext, CaptionSideValue, ClearValue, ColorValue,
+    ContainerTypeValue, CursorValue, FloatValue, GradientDirection, GradientValue, LengthValue, ListStylePositionValue,
+    ListStyleTypeValue, RadialShape, RadialSize, ResizeValue, ScrollSnapAlignValue, ScrollSnapAxis,
+    ScrollSnapStopValue, ScrollSnapTypeValue, TableLayoutValue, TextDecorationLineValue, TextOverflowValue,
+    TextTransformValue, TransformFunction, TransformValue, VarReference, WritingModeValue, eval_calc,
+    eval_calc_with_context, parse_animation_direction, parse_animation_fill_mode, parse_animation_play_state,
+    parse_background_image, parse_border_collapse, parse_box_shadow, parse_calc, parse_caption_side, parse_clear,
+    parse_color, parse_container_type, parse_cursor, parse_float, parse_gradient, parse_length, parse_length_shorthand,
+    parse_list_style_position, parse_list_style_type, parse_opacity, parse_resize, parse_scroll_snap_align,
+    parse_scroll_snap_stop, parse_scroll_snap_type, parse_spacing, parse_table_layout, parse_text_decoration_line,
+    parse_text_indent, parse_text_overflow, parse_text_shadow, parse_text_transform, parse_transform, parse_var,
+    parse_writing_mode,
+};
+
+/// Helper: 创建标签选择器。
+pub(super) fn tag_sel(tag: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag(tag.to_string())),
+                    subclass_selectors: vec![],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+/// Helper: 创建 ID 选择器。
+pub(super) fn id_sel(id: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Id(id.to_string())],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+/// Helper: 创建类选择器。
+pub(super) fn class_sel(cls: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Class(cls.to_string())],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+mod tests_1;
+mod tests_2;
+mod tests_3;
+mod tests_4;
