@@ -258,6 +258,34 @@ impl TabManager {
     pub fn tabs(&self) -> impl Iterator<Item = &Tab> {
         self.tabs.iter()
     }
+
+    /// 移动标签页位置（拖拽排序）。
+    ///
+    /// 将指定 ID 的标签页移动到目标索引位置。
+    /// 返回 `true` 表示成功移动。
+    pub fn move_tab(&mut self, id: TabId, to_index: usize) -> bool {
+        let Some(from_index) = self.tabs.iter().position(|t| t.id() == id) else {
+            return false;
+        };
+        if from_index == to_index || to_index >= self.tabs.len() {
+            return false;
+        }
+        // 保存活跃标签页 ID（move 前记录）
+        let active_id = self.active_index.and_then(|i| self.tabs.get(i).map(|t| t.id()));
+        let tab = self.tabs.remove(from_index);
+        // 插入位置需要调整：如果从前面移到后面，索引会偏移
+        let insert_at = if from_index < to_index {
+            to_index.min(self.tabs.len())
+        } else {
+            to_index
+        };
+        self.tabs.insert(insert_at, tab);
+        // 重新定位活跃索引
+        if let Some(aid) = active_id {
+            self.active_index = self.tabs.iter().position(|t| t.id() == aid);
+        }
+        true
+    }
 }
 
 impl Default for TabManager {

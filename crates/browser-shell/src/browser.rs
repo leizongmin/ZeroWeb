@@ -1,5 +1,6 @@
 //! 浏览器 Shell — 协调标签页、书签、历史、下载、设置的顶层控制器。
 
+use crate::autocomplete::Autocomplete;
 use crate::bookmarks::Bookmarks;
 use crate::download::DownloadManager;
 use crate::history::History;
@@ -24,6 +25,8 @@ pub struct BrowserShell {
     zoom: f32,
     /// 页面查找状态。
     find_state: FindState,
+    /// 地址栏自动补全引擎。
+    autocomplete: Autocomplete,
 }
 
 /// 页面查找状态。
@@ -93,6 +96,7 @@ impl BrowserShell {
             settings: BrowserSettings::new(),
             zoom: 1.0,
             find_state: FindState::new(),
+            autocomplete: Autocomplete::new(),
         }
     }
 
@@ -331,6 +335,15 @@ impl BrowserShell {
         if total > 0 && self.find_state.current_match == 0 {
             self.find_state.current_match = 1;
         }
+    }
+
+    // ── 地址栏自动补全 ──
+
+    /// 根据输入查询自动补全建议。
+    ///
+    /// 从历史记录和书签中搜索匹配的 URL 和标题。
+    pub fn suggest(&self, query: &str) -> Vec<crate::autocomplete::Suggestion> {
+        self.autocomplete.suggest(query, &self.history, &self.bookmarks)
     }
 }
 
