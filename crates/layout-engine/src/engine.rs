@@ -7894,7 +7894,7 @@ mod tests {
         sys.set_viewport(800.0, 600.0);
         let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let engine = LayoutEngine::new(800.0, 600.0);
         let tree = engine.compute(&doc, &styles);
 
         // display:none 元素不应出现在布局树中
@@ -7922,7 +7922,7 @@ mod tests {
         sys.set_viewport(800.0, 600.0);
         let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let engine = LayoutEngine::new(800.0, 600.0);
         let tree = engine.compute(&doc, &styles);
 
         let body_box = find_child_by_node_id(&tree.root, body).expect("body 应在布局树中");
@@ -7965,7 +7965,7 @@ mod tests {
         sys.set_viewport(800.0, 600.0);
         let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let engine = LayoutEngine::new(800.0, 600.0);
         let tree = engine.compute(&doc, &styles);
 
         let container_box = find_child_by_node_id(&tree.root, container).expect("container 应在布局树中");
@@ -7996,7 +7996,7 @@ mod tests {
         sys.set_viewport(800.0, 600.0);
         let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let engine = LayoutEngine::new(800.0, 600.0);
         let tree = engine.compute(&doc, &styles);
 
         let span_box = find_child_by_node_id(&tree.root, span).expect("span 应在布局树中");
@@ -8037,7 +8037,7 @@ mod tests {
         sys.set_viewport(800.0, 600.0);
         let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let engine = LayoutEngine::new(800.0, 600.0);
         let tree = engine.compute(&doc, &styles);
 
         let abs_box = find_child_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");

@@ -229,7 +229,7 @@ mod tests {
         assert!(event.propagation_stopped());
 
         // init_for_dispatch 重置状态
-        let target = {
+        let _target = {
             let mut doc = Document::new();
             let elem = doc.create_element("div");
             doc.append_child(doc.root(), elem).unwrap();

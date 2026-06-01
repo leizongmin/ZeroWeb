@@ -6093,7 +6093,7 @@ mod tests {
         // 重叠区域：lighter 模式 = fa=1, fb=1 → 加法混合
         let overlap = ctx.get_image_data(7, 0, 1, 1);
         let r = overlap.data[0];
-        let g = overlap.data[1];
+        let _g = overlap.data[1];
         let b = overlap.data[2];
         // 红色通道应有目标的贡献（dr * da * fb / out_a）
         // 蓝色通道应有源的贡献

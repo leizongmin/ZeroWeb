@@ -408,7 +408,7 @@ mod tests {
     /// 测试空历史记录的后退/前进行为。
     #[test]
     fn test_empty_history_back_forward() {
-        let mut nav = NavigationHistory::new(50);
+        let nav = NavigationHistory::new(50);
         assert!(!nav.can_go_back(), "空历史不应能后退");
         assert!(!nav.can_go_forward(), "空历史不应能前进");
         assert!(nav.current().is_none(), "空历史当前条目应为 None");

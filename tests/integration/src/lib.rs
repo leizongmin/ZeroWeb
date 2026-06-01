@@ -629,10 +629,7 @@ mod cross_crate_integration {
     use std::collections::HashMap;
 
     use zero_canvas::CanvasContext;
-    use zero_css_parser::ast::{
-        ComplexSelector, CompoundSelector, ContainerCondition, ContainerRule, ContainerSizeCondition, Declaration,
-        Rule, StyleRule, TypeSelector,
-    };
+    use zero_css_parser::ast::{ComplexSelector, CompoundSelector, Rule, TypeSelector};
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
     use zero_css_parser::{Parser as CssParser, Selector};
     use zero_dom::{Document, ShadowRootMode, parse_html};
@@ -654,6 +651,7 @@ mod cross_crate_integration {
     }
 
     /// 创建标签选择器。
+    #[allow(dead_code)]
     fn make_tag_selector(tag: &str) -> Selector {
         Selector {
             complex: ComplexSelector {

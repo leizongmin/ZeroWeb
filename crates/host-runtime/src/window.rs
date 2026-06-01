@@ -1108,14 +1108,14 @@ mod tests {
     #[test]
     fn test_basic_app_window_initially_none() {
         let mut callback = |_: AppEvent| {};
-        let mut app = make_basic_app(&mut callback);
+        let app = make_basic_app(&mut callback);
         assert!(app.window.is_none());
     }
 
     #[test]
     fn test_basic_app_window_attrs_initially_some() {
         let mut callback = |_: AppEvent| {};
-        let mut app = make_basic_app(&mut callback);
+        let app = make_basic_app(&mut callback);
         assert!(app.window_attrs.is_some());
     }
 
@@ -1302,14 +1302,14 @@ mod tests {
     #[test]
     fn test_gpu_app_window_initially_none() {
         let mut callback = |_: AppEvent, _: Option<Arc<winit::window::Window>>| {};
-        let mut app = make_gpu_app(&mut callback);
+        let app = make_gpu_app(&mut callback);
         assert!(app.window.is_none());
     }
 
     #[test]
     fn test_gpu_app_window_attrs_initially_some() {
         let mut callback = |_: AppEvent, _: Option<Arc<winit::window::Window>>| {};
-        let mut app = make_gpu_app(&mut callback);
+        let app = make_gpu_app(&mut callback);
         assert!(app.window_attrs.is_some());
     }
 

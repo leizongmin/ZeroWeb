@@ -1495,7 +1495,7 @@ mod tests {
     /// 测试 IndexedDB 事务中止后数据不持久化。
     #[test]
     fn test_idb_transaction_aborted_no_persist() {
-        use crate::indexed_db::{IdbDatabase, IdbKey, IdbTransactionMode};
+        use crate::indexed_db::{IdbDatabase, IdbKey};
         let mut db = IdbDatabase::new("test-abort2", 1);
         db.create_object_store("items", None, false).unwrap();
 

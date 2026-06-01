@@ -6662,7 +6662,7 @@ mod tests {
         // 无 node_id 的布局盒子
         let layout = make_box(None, 0.0, 0.0, 0.0, 0.0);
 
-        let mut styles = HashMap::new();
+        let styles = HashMap::new();
         let mut style = ComputedStyle::default();
         style.font_size = LengthValue::Px(16.0);
         style.color = ColorValue::Rgba(0, 0, 0, 255);

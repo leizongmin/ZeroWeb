@@ -2599,25 +2599,8 @@ mod tests {
         let config = SandboxConfig::new().consume_fuel(true);
         let sandbox = WasmSandbox::with_config(config);
         // WASM 模块导出 step 函数并导入 host_step 主机函数。
-        // step(n) 调用 host_step(n)，host_step 再调用 step(n-1)，
-        // 形成递归链。靠燃料限制来终止递归。
-        let wasm = wat_to_wasm(
-            r#"(module
-                (import "env" "host_step" (func $host_step (param i32) (result i32)))
-                (func $step (export "step") (param i32) (result i32)
-                    local.get 0
-                    i32.eqz
-                    if (result i32) i32.const 0
-                    else
-                        local.get 0
-                        call $host_step
-                    end)
-            )"#,
-        );
-
-        // 因为 host 函数无法直接回调 WASM（需要 &mut store 但主机函数签名只有参数和结果），
-        // 所以这里用简化的方式：host_step 返回 n-1 的值，
-        // 然后 WASM 侧循环调用 host_step 直到 n=0，验证燃料被正确消耗。
+        // step(n) 调用 host_step(n)，host_step 返回 n-1，
+        // WASM 侧循环调用 host_step 直到 n=0，验证燃料被正确消耗。
         let wasm = wat_to_wasm(
             r#"(module
                 (import "env" "host_step" (func $host_step (param i32) (result i32)))
