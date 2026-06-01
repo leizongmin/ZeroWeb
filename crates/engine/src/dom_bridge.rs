@@ -584,6 +584,28 @@ pub fn generate_dom_api_polyfill() -> String {
   };
   globalThis.clearTimeout = function(id) {};
   globalThis.clearInterval = function(id) {};
+
+  // ── Web Storage API Stub ──
+  // Provides localStorage and sessionStorage with full Storage interface.
+  // Data is session-scoped (not persisted to disk); real persistence by host runtime.
+
+  function _createStorage() {
+    var _data = {};
+    return {
+      getItem: function(key) { return _data.hasOwnProperty(key) ? _data[key] : null; },
+      setItem: function(key, value) { _data[String(key)] = String(value); },
+      removeItem: function(key) { delete _data[String(key)]; },
+      clear: function() { _data = {}; },
+      key: function(index) {
+        var keys = Object.keys(_data);
+        return index >= 0 && index < keys.length ? keys[index] : null;
+      },
+      get length() { return Object.keys(_data).length; }
+    };
+  }
+
+  globalThis.localStorage = _createStorage();
+  globalThis.sessionStorage = _createStorage();
 })();
 "#
     .to_string()
@@ -1008,5 +1030,17 @@ mod tests {
         assert!(polyfill.contains("globalThis.setInterval"));
         assert!(polyfill.contains("globalThis.clearTimeout"));
         assert!(polyfill.contains("globalThis.clearInterval"));
+    }
+
+    // ── Polyfill Web Storage API 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_storage_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.localStorage"));
+        assert!(polyfill.contains("globalThis.sessionStorage"));
+        assert!(polyfill.contains("getItem"));
+        assert!(polyfill.contains("setItem"));
+        assert!(polyfill.contains("removeItem"));
     }
 }
