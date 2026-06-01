@@ -2913,4 +2913,182 @@ mod cross_crate_pipeline {
             other => panic!("accent-color 应为 Color 变体，实际为 {:?}", other),
         }
     }
+
+    /// CSS border-image-source 管线集成测试。
+    ///
+    /// 解析含 border-image-source: url(border.png) 的 CSS，通过 style-system 计算样式，
+    /// 验证 ComputedStyle.border_image_source 为 Url 计算值。
+    #[test]
+    fn test_border_image_source_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "bordered");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .bordered { border-image-source: url(border.png); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        assert_eq!(
+            div_style.border_image_source,
+            zero_style_system::property::BorderImageSourceComputedValue::Url("border.png".to_string()),
+            "div 的 border-image-source 应为 Url(border.png)"
+        );
+    }
+
+    /// CSS border-image-slice 管线集成测试。
+    #[test]
+    fn test_border_image_slice_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "sliced");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .sliced { border-image-slice: 30 40 fill; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        use zero_style_system::property::BorderImageSliceComputedComponent;
+        assert_eq!(
+            div_style.border_image_slice.top,
+            BorderImageSliceComputedComponent::Number(30.0),
+            "slice top 应为 30"
+        );
+        assert_eq!(
+            div_style.border_image_slice.right,
+            BorderImageSliceComputedComponent::Number(40.0),
+            "slice right 应为 40"
+        );
+        assert!(div_style.border_image_slice.fill, "slice fill 应为 true");
+    }
+
+    /// CSS border-image-repeat 管线集成测试。
+    #[test]
+    fn test_border_image_repeat_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "repeated");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .repeated { border-image-repeat: round space; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        use zero_style_system::property::BorderImageRepeatComputedMode;
+        assert_eq!(
+            div_style.border_image_repeat.horizontal,
+            BorderImageRepeatComputedMode::Round,
+            "repeat 水平应为 Round"
+        );
+        assert_eq!(
+            div_style.border_image_repeat.vertical,
+            BorderImageRepeatComputedMode::Space,
+            "repeat 垂直应为 Space"
+        );
+    }
+
+    /// CSS border-image-width 管线集成测试。
+    #[test]
+    fn test_border_image_width_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "widthed");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .widthed { border-image-width: 2 10px; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        use zero_style_system::property::BorderImageWidthComputedComponent;
+        assert_eq!(
+            div_style.border_image_width.top,
+            BorderImageWidthComputedComponent::Number(2.0),
+            "width top 应为 Number(2.0)"
+        );
+        assert_eq!(
+            div_style.border_image_width.right,
+            BorderImageWidthComputedComponent::Length(10.0),
+            "width right 应为 Length(10.0)"
+        );
+    }
+
+    /// CSS border-image-outset 管线集成测试。
+    #[test]
+    fn test_border_image_outset_pipeline_integration() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "outset");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .outset { border-image-outset: 5px 2; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        use zero_style_system::property::BorderImageOutsetComputedComponent;
+        assert_eq!(
+            div_style.border_image_outset.top,
+            BorderImageOutsetComputedComponent::Length(5.0),
+            "outset top 应为 Length(5.0)"
+        );
+        assert_eq!(
+            div_style.border_image_outset.right,
+            BorderImageOutsetComputedComponent::Number(2.0),
+            "outset right 应为 Number(2.0)"
+        );
+    }
 }

@@ -2477,4 +2477,214 @@ mod tests {
         );
         assert!(first_fills > 0, "带背景色 CSS 的 HTML 应产生至少一个 fill 图元");
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：inject_css 先于 load_html、set_title 事件计数、零视口渲染、
+    //  失败恢复后渲染、连续 load_html 内容覆盖
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证在全新 WebView 上（从未调用 load_html）直接 inject_css 不会 panic。
+    ///
+    /// 边界场景：WebView 刚创建，cached_html 为空，
+    /// 此时调用 inject_css 应安全返回有效的渲染结果，
+    /// 不会因缺少已缓存 HTML 而崩溃。
+    #[test]
+    fn test_webview_inject_css_before_any_load_html() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        // 全新 WebView，未调用任何 load_html
+        assert!(wv.last_render().is_none(), "全新 WebView 不应有渲染结果");
+
+        // 在未加载任何 HTML 的情况下直接注入 CSS
+        let result = wv.inject_css("div { color: red; width: 100px; height: 50px; }");
+        assert!(result.timings.total_ms >= 0.0, "inject_css 应返回非负耗时");
+        assert!(wv.last_render().is_some(), "inject_css 后应有渲染结果");
+        assert!(!wv.is_loading(), "inject_css 不应触发加载状态");
+
+        // 后续 load_html 应正常工作
+        let html_result = wv.load_html("<html><body><div>After inject</div></body></html>", None);
+        assert!(html_result.timings.total_ms >= 0.0, "后续 load_html 应正常工作");
+    }
+
+    /// 验证多次 set_title 调用每次都触发独立的 TitleChanged 事件。
+    ///
+    /// 场景：连续调用 set_title 三次（包含重复标题值），
+    /// 每次调用都应触发一个 TitleChanged 事件，共 3 个事件。
+    /// 即使标题值与前一次相同，事件仍应触发。
+    #[test]
+    fn test_webview_set_title_fires_separate_events_each_call() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<WebViewEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            ec.borrow_mut().push(e.clone());
+        });
+
+        // 第一次 set_title
+        wv.set_title("标题一");
+        // 第二次 set_title（不同值）
+        wv.set_title("标题二");
+        // 第三次 set_title（与第二次相同的值——仍应触发事件）
+        wv.set_title("标题二");
+
+        let recorded = events.borrow();
+        assert_eq!(recorded.len(), 3, "三次 set_title 应触发 3 个 TitleChanged 事件");
+        assert!(
+            matches!(&recorded[0], WebViewEvent::TitleChanged(t) if t == "标题一"),
+            "第一个事件应为 TitleChanged(\"标题一\")"
+        );
+        assert!(
+            matches!(&recorded[1], WebViewEvent::TitleChanged(t) if t == "标题二"),
+            "第二个事件应为 TitleChanged(\"标题二\")"
+        );
+        assert!(
+            matches!(&recorded[2], WebViewEvent::TitleChanged(t) if t == "标题二"),
+            "第三个事件应为 TitleChanged(\"标题二\")（重复值仍触发事件）"
+        );
+    }
+
+    /// 验证 WebView 在零尺寸视口（width=0, height=0）下 render 不会 panic。
+    ///
+    /// 边界场景：将视口尺寸设为 (0, 0) 后调用 render，
+    /// 渲染管线应能处理零尺寸画布，不会因除零或空缓冲区而崩溃。
+    /// 适用于窗口最小化或隐藏时的场景。
+    #[test]
+    fn test_webview_render_with_zero_size_viewport() {
+        let mut wv = WebView::new(WebViewConfig {
+            width: 0,
+            height: 0,
+            ..Default::default()
+        });
+
+        // 加载内容后渲染——零视口不应 panic
+        let result = wv.load_html("<html><body><div>Zero viewport</div></body></html>", None);
+        assert!(result.timings.total_ms >= 0.0, "零视口 load_html 应返回非负耗时");
+
+        // render 在零视口下也不应 panic
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0, "零视口 render 应返回非负耗时");
+        assert_eq!(wv.config().width, 0, "视口宽度应为 0");
+        assert_eq!(wv.config().height, 0, "视口高度应为 0");
+
+        // resize 到正常尺寸后应恢复正常
+        wv.resize(800, 600);
+        let after_resize = wv.render();
+        assert!(after_resize.timings.total_ms >= 0.0, "恢复尺寸后 render 应成功");
+        assert_eq!(wv.config().width, 800);
+        assert_eq!(wv.config().height, 600);
+    }
+
+    /// 验证加载失败后通过 load_html 恢复，渲染结果反映恢复后的内容。
+    ///
+    /// 场景：load_url -> fail_load（模拟网络错误）-> load_html 恢复。
+    /// fail_load 后 last_render 保留之前的结果（可能为 None），
+    /// load_html 应覆盖缓存内容并产生新的渲染结果，
+    /// 且 WebView 状态应完全恢复为正常（不处于加载状态）。
+    #[test]
+    fn test_webview_render_after_load_failure_recovery() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let ec = events.clone();
+        wv.on_event(move |e| {
+            let label = match e {
+                WebViewEvent::LoadStart(u) => format!("LoadStart({u})"),
+                WebViewEvent::LoadEnd(u) => format!("LoadEnd({u})"),
+                WebViewEvent::LoadFailed(u, m) => format!("LoadFailed({u},{m})"),
+                WebViewEvent::TitleChanged(t) => format!("TitleChanged({t})"),
+                WebViewEvent::UrlChanged(u) => format!("UrlChanged({u})"),
+            };
+            ec.borrow_mut().push(label);
+        });
+
+        // 先成功加载一个页面
+        wv.load_url("https://good-page.com");
+        wv.complete_load("<html><body><div>Good content</div></body></html>", None);
+        assert!(!wv.is_loading());
+        assert!(wv.last_render().is_some());
+        let good_render_fills = wv.last_render().unwrap().primitives.fills.len();
+
+        // 导航到新 URL 但加载失败
+        wv.load_url("https://broken-page.com");
+        assert!(wv.is_loading());
+        wv.fail_load("connection refused");
+        assert!(!wv.is_loading(), "失败后 loading 应停止");
+        // last_render 保留之前成功的结果
+        assert!(wv.last_render().is_some(), "失败后应保留上次成功的渲染结果");
+
+        // 通过 load_html 恢复——加载新内容
+        let recovery_html = "<html><body><div>Recovery content</div></body></html>";
+        let recovery_css = "div { background-color: green; width: 200px; height: 100px; }";
+        let result = wv.load_html(recovery_html, Some(recovery_css));
+        assert!(result.timings.total_ms >= 0.0, "恢复 load_html 应返回非负耗时");
+        assert!(!wv.is_loading(), "load_html 后不应处于加载状态");
+        assert!(wv.last_render().is_some(), "恢复后应有渲染结果");
+
+        // 渲染结果应反映恢复后的内容（带 CSS，fills 应 > 无 CSS 时）
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0);
+        assert!(
+            render_result.primitives.fills.len() >= good_render_fills,
+            "恢复后的渲染结果应反映新加载的带 CSS 内容"
+        );
+
+        // 验证事件序列：LoadStart+UrlChanged+LoadEnd + LoadStart+UrlChanged+LoadFailed
+        // load_html 不触发事件
+        let recorded = events.borrow();
+        assert_eq!(recorded.len(), 6, "应有 6 个事件（成功加载 3 + 失败 3）");
+        assert!(recorded[5].starts_with("LoadFailed(https://broken-page.com"));
+    }
+
+    /// 验证连续调用 load_html 三次，每次渲染结果反映最新加载的内容。
+    ///
+    /// 场景：依次加载三份不同 HTML（含不同 CSS 样式），
+    /// 每次 load_html 后调用 render，验证 fills 数量随内容变化。
+    /// 最终 render 应反映第三次加载的内容，而非第一次或第二次。
+    #[test]
+    fn test_webview_consecutive_load_html_reflects_latest_content() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 第一次加载：带红色背景的 div
+        let html1 = "<html><body><div class=\"box\">Version 1</div></body></html>";
+        let css1 = ".box { background-color: red; width: 100px; height: 50px; }";
+        let result1 = wv.load_html(html1, Some(css1));
+        assert!(result1.timings.total_ms >= 0.0, "第一次 load_html 应成功");
+        let fills1 = wv.render().primitives.fills.len();
+
+        // 第二次加载：带蓝色背景的 div + 额外 div
+        let html2 = "<html><body>\
+            <div class=\"box\">Version 2</div>\
+            <div class=\"extra\">Extra</div>\
+            </body></html>";
+        // 注意：load_html 会重置 cached_css，仅使用传入的 CSS
+        let css2 = ".box { background-color: blue; width: 200px; height: 80px; }\
+                    .extra { background-color: green; width: 50px; height: 30px; }";
+        let result2 = wv.load_html(html2, Some(css2));
+        assert!(result2.timings.total_ms >= 0.0, "第二次 load_html 应成功");
+        let fills2 = wv.render().primitives.fills.len();
+
+        // 第三次加载：仅一个无样式的 div
+        let html3 = "<html><body><div>Version 3 - plain</div></body></html>";
+        let result3 = wv.load_html(html3, None);
+        assert!(result3.timings.total_ms >= 0.0, "第三次 load_html 应成功");
+        let fills3 = wv.render().primitives.fills.len();
+
+        // 验证第二次加载的 fills >= 第一次（更多带样式的元素）
+        assert!(
+            fills2 >= fills1,
+            "第二次加载（两个带样式 div）的 fills 应 >= 第一次（一个带样式 div），got {fills2} < {fills1}"
+        );
+
+        // 验证第三次加载的 fills <= 第二次（无 CSS，背景色消失）
+        assert!(
+            fills3 <= fills2,
+            "第三次加载（无 CSS）的 fills 应 <= 第二次（两个带样式 div），got {fills3} > {fills2}"
+        );
+
+        // 最终 render 应反映第三次的内容（无 CSS）
+        let final_render = wv.render();
+        assert_eq!(
+            final_render.primitives.fills.len(),
+            fills3,
+            "最终 render 应反映第三次加载的内容"
+        );
+    }
 }

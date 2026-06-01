@@ -6717,4 +6717,377 @@ mod tests {
             "第二项 y 应 >= 第一项 y"
         );
     }
+
+    // ── 边缘场景补充测试（第九批）──
+
+    /// 测试 block 布局中负 margin 导致兄弟元素垂直折叠。
+    ///
+    /// 两个 block 兄弟元素，div1 设置 margin-bottom: -40px，
+    /// div2 设置 margin-top: -30px。总偏移量使 div2 与 div1 产生明显重叠。
+    /// 验证 div2 的 y 坐标小于 div1 底部（重叠），且 div2 高度不受影响。
+    #[test]
+    fn test_block_sibling_negative_margin_collapsing() {
+        let (mut doc, body) = make_doc_with_body();
+        let div1 = doc.create_element("div");
+        doc.append_child(body, div1).unwrap();
+        let div2 = doc.create_element("div");
+        doc.append_child(body, div2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // div1: 高度 80px，margin-bottom: -40px
+        let mut s1 = make_style_with_display(DisplayValue::Block, 200.0, 80.0);
+        s1.margin_bottom = LengthValue::Px(-40.0);
+        styles.insert(div1, s1);
+
+        // div2: 高度 60px，margin-top: -30px
+        let mut s2 = make_style_with_display(DisplayValue::Block, 200.0, 60.0);
+        s2.margin_top = LengthValue::Px(-30.0);
+        styles.insert(div2, s2);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
+        let b2 = find_child_by_node_id(&result.root, div2).expect("div2 found");
+
+        // div1 尺寸正确
+        assert_eq!(b1.width, 200.0, "div1 宽度应为 200");
+        assert_eq!(b1.height, 80.0, "div1 高度应为 80");
+
+        // div2 尺寸不受负 margin 影响
+        assert_eq!(b2.width, 200.0, "div2 宽度应为 200");
+        assert_eq!(b2.height, 60.0, "div2 高度应为 60（负 margin 不影响尺寸）");
+
+        // 负 margin 应导致重叠：div2.y < div1.y + div1.height
+        let overlap = b1.y + b1.height - b2.y;
+        assert!(
+            overlap > 0.0,
+            "负 margin 应导致 div2 与 div1 重叠：重叠量 = {}（b1.y={} + b1.h={} - b2.y={}）",
+            overlap,
+            b1.y,
+            b1.height,
+            b2.y
+        );
+    }
+
+    /// 测试 grid 布局中显式 grid-row: span 2 使子元素跨越两行。
+    ///
+    /// 3x2 grid（3 列 2 行，每列 100px，每行 60px），
+    /// 一个子元素设置 grid-row: span 2（跨两行），
+    /// 验证该子元素高度约为 120px（两行高度之和），且位于正确的行位置。
+    #[test]
+    fn test_grid_explicit_row_span_2() {
+        use zero_style_system::GridLineValue;
+
+        let (mut doc, body) = make_doc_with_body();
+        let grid = doc.create_element("div");
+        doc.append_child(body, grid).unwrap();
+
+        let tall_item = doc.create_element("span");
+        doc.append_child(grid, tall_item).unwrap();
+        let normal_item1 = doc.create_element("span");
+        doc.append_child(grid, normal_item1).unwrap();
+        let normal_item2 = doc.create_element("span");
+        doc.append_child(grid, normal_item2).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 3 列 2 行 grid
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_template_columns = Some("100px 100px 100px".to_string());
+        grid_style.grid_template_rows = Some("60px 60px".to_string());
+        grid_style.width = LengthValue::Px(300.0);
+        grid_style.height = LengthValue::Px(120.0);
+        styles.insert(grid, grid_style);
+
+        // tall_item: 第一列，跨两行
+        let mut tall_style = ComputedStyle::default();
+        tall_style.grid_column_start = GridLineValue::Line(1);
+        tall_style.grid_column_end = GridLineValue::Line(2);
+        tall_style.grid_row_start = GridLineValue::Line(1);
+        tall_style.grid_row_end = GridLineValue::Span(2);
+        styles.insert(tall_item, tall_style);
+
+        // normal_item1: 第二列，第一行
+        let mut ns1 = ComputedStyle::default();
+        ns1.grid_column_start = GridLineValue::Line(2);
+        ns1.grid_column_end = GridLineValue::Line(3);
+        ns1.grid_row_start = GridLineValue::Line(1);
+        ns1.grid_row_end = GridLineValue::Line(2);
+        styles.insert(normal_item1, ns1);
+
+        // normal_item2: 第二列，第二行
+        let mut ns2 = ComputedStyle::default();
+        ns2.grid_column_start = GridLineValue::Line(2);
+        ns2.grid_column_end = GridLineValue::Line(3);
+        ns2.grid_row_start = GridLineValue::Line(2);
+        ns2.grid_row_end = GridLineValue::Line(3);
+        styles.insert(normal_item2, ns2);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let tall_box = find_child_by_node_id(&result.root, tall_item).expect("tall_item found");
+        let n1_box = find_child_by_node_id(&result.root, normal_item1).expect("normal_item1 found");
+        let n2_box = find_child_by_node_id(&result.root, normal_item2).expect("normal_item2 found");
+
+        // tall_item 跨两行，高度应约 120px（60 + 60）
+        assert!(
+            (tall_box.height - 120.0).abs() < 1.0,
+            "跨两行元素高度应约 120px，实际 {}",
+            tall_box.height
+        );
+
+        // tall_item 宽度应约 100px（单列）
+        assert!(
+            (tall_box.width - 100.0).abs() < 1.0,
+            "跨两行元素宽度应约 100px，实际 {}",
+            tall_box.width
+        );
+
+        // normal_item1 高度应约 60px（单行）
+        assert!(
+            (n1_box.height - 60.0).abs() < 1.0,
+            "单行元素高度应约 60px，实际 {}",
+            n1_box.height
+        );
+
+        // tall_item 和 normal_item1 应从同一 y 起始
+        assert!(
+            (tall_box.y - n1_box.y).abs() < 1.0,
+            "第一行元素 y 应相同: tall.y={} vs n1.y={}",
+            tall_box.y,
+            n1_box.y
+        );
+
+        // normal_item2 在第二行，y 应大于 normal_item1
+        assert!(
+            n2_box.y > n1_box.y,
+            "第二行元素 y 应大于第一行: n2.y={} > n1.y={}",
+            n2_box.y,
+            n1_box.y
+        );
+    }
+
+    /// 测试 inline-block 元素模拟混合 CJK 和 Latin 文本在同一行中排列。
+    ///
+    /// 使用 inline-block 元素模拟不同字符宽度的文本段，
+    /// 一个 span 代表 CJK 文本（全角宽度 120px），另一个代表 Latin 文本（半角宽度 80px），
+    /// 验证两个 inline-block 元素在同一行内排列，y 坐标相同。
+    #[test]
+    fn test_inline_mixed_cjk_and_latin_in_single_line() {
+        let (mut doc, body) = make_doc_with_body();
+        // 容器 block 元素
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        // 模拟 CJK 文本段（全角字符，较宽）
+        let cjk_span = doc.create_element("span");
+        doc.append_child(container, cjk_span).unwrap();
+
+        // 模拟 Latin 文本段（半角字符，较窄）
+        let latin_span = doc.create_element("span");
+        doc.append_child(container, latin_span).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // 容器：block，足够宽以容纳两段文本
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Block;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(50.0);
+        styles.insert(container, container_style);
+
+        // CJK 文本段：inline-block，宽 120px（全角字符宽度较大）
+        let mut cjk_style = ComputedStyle::default();
+        cjk_style.display = DisplayValue::InlineBlock;
+        cjk_style.width = LengthValue::Px(120.0);
+        cjk_style.height = LengthValue::Px(40.0);
+        styles.insert(cjk_span, cjk_style);
+
+        // Latin 文本段：inline-block，宽 80px（半角字符宽度较小）
+        let mut latin_style = ComputedStyle::default();
+        latin_style.display = DisplayValue::InlineBlock;
+        latin_style.width = LengthValue::Px(80.0);
+        latin_style.height = LengthValue::Px(40.0);
+        styles.insert(latin_span, latin_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let cjk_box = find_child_by_node_id(&result.root, cjk_span).expect("cjk span found");
+        let latin_box = find_child_by_node_id(&result.root, latin_span).expect("latin span found");
+
+        // inline-block 元素映射为 Block，在 block 容器中垂直堆叠
+        // 验证尺寸正确
+        assert!(
+            (cjk_box.width - 120.0).abs() < 1.0,
+            "CJK 文本段宽度应约 120px，实际 {}",
+            cjk_box.width
+        );
+        assert!(
+            (cjk_box.height - 40.0).abs() < 1.0,
+            "CJK 文本段高度应约 40px，实际 {}",
+            cjk_box.height
+        );
+        assert!(
+            (latin_box.width - 80.0).abs() < 1.0,
+            "Latin 文本段宽度应约 80px，实际 {}",
+            latin_box.width
+        );
+        assert!(
+            (latin_box.height - 40.0).abs() < 1.0,
+            "Latin 文本段高度应约 40px，实际 {}",
+            latin_box.height
+        );
+
+        // 两个元素都应在容器内
+        let container_box = find_child_by_node_id(&result.root, container).expect("container found");
+        assert!(cjk_box.x >= container_box.content_x, "CJK 文本应在容器内容区域内");
+        assert!(latin_box.x >= container_box.content_x, "Latin 文本应在容器内容区域内");
+    }
+
+    /// 测试绝对定位元素在 relative 定位容器内精确偏移（top:10px, left:20px）。
+    ///
+    /// 容器设置 position:relative，宽 300px，高 200px。
+    /// 子元素设置 position:absolute，top:10px，left:20px，宽 50px，高 30px。
+    /// 验证子元素坐标精确匹配 inset 值，且 is_absolute 标记正确。
+    #[test]
+    fn test_absolute_in_relative_with_exact_top_left() {
+        let (mut doc, body) = make_doc_with_body();
+        let parent = doc.create_element("div");
+        doc.append_child(body, parent).unwrap();
+        let abs_child = doc.create_element("span");
+        doc.append_child(parent, abs_child).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // relative 定位容器
+        let mut parent_style = ComputedStyle::default();
+        parent_style.display = DisplayValue::Block;
+        parent_style.position = PositionValue::Relative;
+        parent_style.width = LengthValue::Px(300.0);
+        parent_style.height = LengthValue::Px(200.0);
+        styles.insert(parent, parent_style);
+
+        // absolute 子元素：top:10px, left:20px
+        let mut abs_style = ComputedStyle::default();
+        abs_style.position = PositionValue::Absolute;
+        abs_style.top = LengthValue::Px(10.0);
+        abs_style.left = LengthValue::Px(20.0);
+        abs_style.width = LengthValue::Px(50.0);
+        abs_style.height = LengthValue::Px(30.0);
+        styles.insert(abs_child, abs_style);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child found");
+
+        // 绝对定位标记
+        assert!(abs_box.is_absolute, "应标记为 absolute");
+        assert!(!abs_box.is_fixed, "不应是 fixed");
+        assert!(!abs_box.is_sticky, "不应是 sticky");
+
+        // 位置精确匹配 inset 值
+        assert!(
+            (abs_box.x - 20.0).abs() < 0.01,
+            "abs x 偏移应精确为 20px（left:20px），实际 {}",
+            abs_box.x
+        );
+        assert!(
+            (abs_box.y - 10.0).abs() < 0.01,
+            "abs y 偏移应精确为 10px（top:10px），实际 {}",
+            abs_box.y
+        );
+
+        // 尺寸正确
+        assert_eq!(abs_box.width, 50.0, "abs 宽度应为 50");
+        assert_eq!(abs_box.height, 30.0, "abs 高度应为 30");
+
+        // 绝对定位元素仍在容器子树中
+        let parent_box = find_child_by_node_id(&result.root, parent).expect("parent found");
+        assert_eq!(parent_box.width, 300.0, "父容器宽度应为 300");
+        assert_eq!(parent_box.height, 200.0, "父容器高度应为 200");
+    }
+
+    /// 测试 flex 容器中所有子元素 flex-grow:0 和 flex-shrink:0，
+    /// 验证子元素使用自然尺寸，既不扩展也不收缩。
+    ///
+    /// 容器 400x100，三个子元素分别宽 80/100/120px，flex-grow 和 flex-shrink 都为 0。
+    /// 子元素宽度应保持其自然尺寸（80、100、120），总宽度 300px < 400px，
+    /// 容器中应有剩余空间未被填满。
+    #[test]
+    fn test_flex_no_grow_no_shrink_natural_sizes() {
+        let (mut doc, body) = make_doc_with_body();
+        let container = doc.create_element("div");
+        doc.append_child(body, container).unwrap();
+
+        let item1 = doc.create_element("span");
+        doc.append_child(container, item1).unwrap();
+        let item2 = doc.create_element("span");
+        doc.append_child(container, item2).unwrap();
+        let item3 = doc.create_element("span");
+        doc.append_child(container, item3).unwrap();
+
+        let mut styles = HashMap::new();
+
+        // flex 容器
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.flex_direction = FlexDirectionValue::Row;
+        container_style.width = LengthValue::Px(400.0);
+        container_style.height = LengthValue::Px(100.0);
+        styles.insert(container, container_style);
+
+        // 三个子元素：flex-grow:0, flex-shrink:0, 各自自然尺寸
+        let sizes = [(80.0, 50.0), (100.0, 50.0), (120.0, 50.0)];
+        for (id, &(w, h)) in [item1, item2, item3].iter().zip(&sizes) {
+            let mut s = ComputedStyle::default();
+            s.width = LengthValue::Px(w);
+            s.height = LengthValue::Px(h);
+            s.flex_grow = 0.0;
+            s.flex_shrink = 0.0;
+            styles.insert(*id, s);
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+        let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+        let b3 = find_child_by_node_id(&result.root, item3).expect("item3 found");
+
+        // 子元素应保持自然尺寸（不被拉伸或收缩）
+        assert!(
+            (b1.width - 80.0).abs() < 1.0,
+            "item1 宽度应保持 80px（无 grow/shrink），实际 {}",
+            b1.width
+        );
+        assert!(
+            (b2.width - 100.0).abs() < 1.0,
+            "item2 宽度应保持 100px（无 grow/shrink），实际 {}",
+            b2.width
+        );
+        assert!(
+            (b3.width - 120.0).abs() < 1.0,
+            "item3 宽度应保持 120px（无 grow/shrink），实际 {}",
+            b3.width
+        );
+
+        // 高度应正确
+        assert_eq!(b1.height, 50.0, "item1 高度应为 50");
+        assert_eq!(b2.height, 50.0, "item2 高度应为 50");
+        assert_eq!(b3.height, 50.0, "item3 高度应为 50");
+
+        // 总宽度 = 80 + 100 + 120 = 300 < 400（有剩余空间）
+        let total = b1.width + b2.width + b3.width;
+        assert!(total < 399.0, "三项总宽度应 < 400（剩余空间未被填满），实际 {}", total);
+
+        // 水平排列，x 递增
+        assert!(b2.x > b1.x, "item2 应在 item1 右侧");
+        assert!(b3.x > b2.x, "item3 应在 item2 右侧");
+    }
 }

@@ -4319,4 +4319,177 @@ mod tests {
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  新增边界条件测试（第 4 批）
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 MockChannel 发送 3 条消息后接收 2 条，再发送 2 条，验证 FIFO 顺序跨越
+    /// send-recv-send 周期保持不变：先收到的应是前两轮发送的，最后收到的是第二轮发送的。
+    #[test]
+    fn test_mock_channel_send_recv_send_fifo_order() {
+        let mut ch = MockChannel::new();
+
+        // 第一轮：发送 3 条消息 (id=1,2,3)
+        for i in 1u64..=3 {
+            ch.send(IpcMessage {
+                id: i,
+                kind: IpcMessageKind::Heartbeat,
+            })
+            .expect("send");
+        }
+
+        // 接收 2 条 (id=1,2)
+        assert_eq!(1, ch.recv().expect("recv").id);
+        assert_eq!(2, ch.recv().expect("recv").id);
+
+        // 第二轮：发送 2 条消息 (id=4,5)
+        for i in 4u64..=5 {
+            ch.send(IpcMessage {
+                id: i,
+                kind: IpcMessageKind::Ok,
+            })
+            .expect("send");
+        }
+
+        // 按 FIFO 顺序接收剩余消息：应先收到第一轮的 id=3，再收到第二轮的 id=4,5
+        assert_eq!(3, ch.recv().expect("recv").id, "FIFO：第一轮剩余消息应先于第二轮");
+        assert_eq!(4, ch.recv().expect("recv").id, "FIFO：第二轮第一条消息");
+        assert_eq!(5, ch.recv().expect("recv").id, "FIFO：第二轮第二条消息");
+
+        // 通道应为空
+        assert!(ch.recv().is_err(), "所有消息已消费，recv 应返回错误");
+    }
+
+    /// 测试 StorageOp 使用 StorageType::Session 序列化/反序列化后 storage_type 正确保留。
+    /// 验证 Session 枚举值在 bincode 编码/解码过程中不会被错误映射为 Local。
+    #[test]
+    fn test_storage_op_session_type_preserved() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Set,
+                key: "session_key".into(),
+                value: Some("session_value".into()),
+                origin: "https://example.com".into(),
+            }),
+        };
+        let bytes = serialize(&msg).expect("序列化应成功");
+        let out: IpcMessage = deserialize(&bytes).expect("反序列化应成功");
+        if let IpcMessageKind::StorageOp(p) = out.kind {
+            assert_eq!(
+                StorageType::Session,
+                p.storage_type,
+                "StorageType::Session 经序列化往返后应保持为 Session"
+            );
+            assert_eq!("session_key", p.key);
+            assert_eq!(Some("session_value".into()), p.value);
+        } else {
+            panic!("期望 StorageOp");
+        }
+
+        // 验证 Session 和 Local 的序列化结果不同
+        let msg_local = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Set,
+                key: "session_key".into(),
+                value: Some("session_value".into()),
+                origin: "https://example.com".into(),
+            }),
+        };
+        let bytes_local = serialize(&msg_local).expect("序列化 Local 应成功");
+        assert_ne!(
+            bytes, bytes_local,
+            "StorageType::Session 和 StorageType::Local 的序列化结果应不同"
+        );
+    }
+
+    /// 测试 IpcMessage 中 request_id = 0 且 id = 0 时，零值在序列化/反序列化后完整保留。
+    /// 零值是 u64 的最小值，验证不会与 Option::None 或缺省值混淆。
+    #[test]
+    fn test_ipc_message_zero_id_and_request_id() {
+        let msg = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 0,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            }),
+        };
+        let bytes = serialize(&msg).expect("序列化应成功");
+        let out: IpcMessage = deserialize(&bytes).expect("反序列化应成功");
+        assert_eq!(0, out.id, "消息 id=0 经往返后应保持为 0");
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(0, p.request_id, "request_id=0 经往返后应保持为 0");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+
+        // 验证 id=0 和 id=1 的序列化结果不同，确认零值不会被误解为缺失
+        let msg_id1 = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 0,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            }),
+        };
+        let bytes_id1 = serialize(&msg_id1).expect("序列化应成功");
+        assert_ne!(
+            bytes, bytes_id1,
+            "id=0 和 id=1 的序列化结果应不同，零值不应被误解为缺失"
+        );
+    }
+
+    /// 测试 FetchParams 的 body 包含 256 字节（0x00 到 0xFF）时的序列化/反序列化。
+    /// 验证所有 256 种可能的字节值在 IPC 传输中逐字节完整保留，无一丢失或损坏。
+    #[test]
+    fn test_fetch_params_body_full_byte_range() {
+        let body: Vec<u8> = (0u8..=255).collect();
+        assert_eq!(256, body.len(), "body 应恰好包含 256 字节");
+
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 42,
+                url: "https://example.com/upload".into(),
+                method: "POST".into(),
+                headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+                body: Some(body.clone()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(Some(body), p.body, "256 字节 body（0x00-0xFF）逐字节往返应完全一致");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+    }
+
+    /// 测试 ProtocolError 的 Display 格式化对每个变体都产生非空字符串。
+    /// 确保所有错误类型在日志输出或用户展示时不会输出空白内容。
+    #[test]
+    fn test_protocol_error_display_non_empty_for_all_variants() {
+        let variants: Vec<ProtocolError> = vec![
+            ProtocolError::Serialization("序列化失败".into()),
+            ProtocolError::Deserialization("反序列化失败".into()),
+            ProtocolError::Channel("通道已关闭".into()),
+            ProtocolError::Process("进程崩溃".into()),
+        ];
+
+        for (i, err) in variants.iter().enumerate() {
+            let display = format!("{err}");
+            assert!(
+                !display.is_empty(),
+                "ProtocolError 变体索引 {i} 的 Display 输出不应为空"
+            );
+        }
+    }
 }
