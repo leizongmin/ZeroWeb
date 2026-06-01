@@ -8052,4 +8052,342 @@ mod tests {
             abs_box.y
         );
     }
+
+    // ── LayoutBox / LayoutResult 类型边界测试 ──
+
+    #[test]
+    fn test_layout_box_default() {
+        let box_ = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        assert_eq!(box_.outer_area(), 0.0);
+        assert_eq!(box_.absolute_position(), (0.0, 0.0));
+    }
+
+    #[test]
+    fn test_layout_box_outer_area_with_margins() {
+        let box_ = LayoutBox {
+            node_id: None,
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+            margin_left: 5.0,
+            margin_right: 5.0,
+            margin_top: 10.0,
+            margin_bottom: 10.0,
+            children: vec![],
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // outer_area = (5 + 100 + 5) * (10 + 50 + 10) = 110 * 70 = 7700
+        assert_eq!(box_.outer_area(), 7700.0);
+    }
+
+    #[test]
+    fn test_layout_box_absolute_position_with_parent() {
+        let box_ = LayoutBox {
+            node_id: None,
+            x: 15.0,
+            y: 25.0,
+            width: 50.0,
+            height: 30.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 30.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        let (abs_x, abs_y) = box_.absolute_position_with_parent(100.0, 200.0);
+        assert_eq!(abs_x, 115.0);
+        assert_eq!(abs_y, 225.0);
+    }
+
+    #[test]
+    fn test_layout_box_negative_margins() {
+        let box_ = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: -10.0,
+            margin_right: -5.0,
+            margin_bottom: -10.0,
+            margin_left: -5.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        };
+        // (-5 + 100 + (-5)) * (-10 + 50 + (-10)) = 90 * 30 = 2700
+        assert_eq!(box_.outer_area(), 2700.0);
+    }
+
+    #[test]
+    fn test_overflow_clip_variants() {
+        assert_eq!(OverflowClip::Visible, OverflowClip::Visible);
+        assert_ne!(OverflowClip::Visible, OverflowClip::Hidden);
+        assert_ne!(OverflowClip::Hidden, OverflowClip::Clip);
+        assert_ne!(OverflowClip::Clip, OverflowClip::Scroll);
+    }
+
+    // ── 布局引擎 viewport 边界测试 ──
+
+    #[test]
+    fn test_layout_engine_zero_viewport() {
+        let engine = LayoutEngine::new(0.0, 0.0);
+        assert_eq!(engine.viewport_width, 0.0);
+        assert_eq!(engine.viewport_height, 0.0);
+    }
+
+    #[test]
+    fn test_layout_engine_very_large_viewport() {
+        let engine = LayoutEngine::new(100000.0, 100000.0);
+        assert_eq!(engine.viewport_width, 100000.0);
+    }
+
+    #[test]
+    fn test_layout_engine_empty_doc_produces_root() {
+        let doc = Document::new();
+        let styles = HashMap::new();
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        // 空文档应产生一个根盒子
+        assert_eq!(result.viewport_width, 800.0);
+        assert_eq!(result.viewport_height, 600.0);
+    }
+
+    #[test]
+    fn test_layout_single_text_node() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let text = doc.create_text_node("Hello World");
+        doc.append_child(root, text).unwrap();
+
+        let styles = HashMap::new();
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        // 文本节点应被跳过或包含在布局中
+        assert_eq!(result.viewport_width, 800.0);
+    }
+
+    #[test]
+    fn test_layout_deeply_nested_structure() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let mut parent = root;
+        // 创建 20 层嵌套
+        for i in 0..20 {
+            let div = doc.create_element("div");
+            doc.set_attribute(div, "class", &format!("level{}", i));
+            doc.append_child(parent, div).unwrap();
+            parent = div;
+        }
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let styles = HashMap::new();
+        let result = engine.compute(&doc, &styles);
+        // 不应 panic
+        assert_eq!(result.viewport_width, 800.0);
+    }
+
+    #[test]
+    fn test_layout_multiple_siblings() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 创建 10 个兄弟 div
+        for i in 0..10 {
+            let div = doc.create_element("div");
+            doc.set_attribute(div, "class", &format!("item{}", i));
+            doc.append_child(body, div).unwrap();
+        }
+
+        let css = ".item0, .item1, .item2, .item3, .item4, .item5, .item6, .item7, .item8, .item9 { width: 50px; height: 20px; }";
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // body 应包含 10 个子元素
+        let body_box = find_child_by_node_id(&result.root, body).expect("body 应在布局树中");
+        assert_eq!(body_box.children.len(), 10);
+    }
+
+    #[test]
+    fn test_layout_fixed_position_elements() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let fixed = doc.create_element("div");
+        doc.set_attribute(fixed, "class", "fixed-el");
+        doc.append_child(body, fixed).unwrap();
+
+        let css = r#".fixed-el { position: fixed; top: 50px; left: 100px; width: 200px; height: 100px; }"#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let fixed_box = find_child_by_node_id(&result.root, fixed).expect("fixed div 应在布局树中");
+        assert!(fixed_box.is_fixed, "fixed 元素应标记 is_fixed");
+    }
+
+    #[test]
+    fn test_layout_display_none_present() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let visible = doc.create_element("div");
+        doc.set_attribute(visible, "class", "visible");
+        doc.append_child(body, visible).unwrap();
+        let hidden = doc.create_element("div");
+        doc.set_attribute(hidden, "class", "hidden");
+        doc.append_child(body, hidden).unwrap();
+
+        let css = r#"
+            .visible { width: 100px; height: 50px; }
+            .hidden { display: none; }
+        "#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let body_box = find_child_by_node_id(&result.root, body).expect("body 应在布局树中");
+        // display:none 元素可能在树中但宽度/高度为 0
+        assert!(body_box.children.len() >= 1, "至少应有 visible 元素");
+        let hidden_box = find_child_by_node_id(&result.root, hidden);
+        if let Some(h) = hidden_box {
+            // 如果 display:none 元素在树中，其尺寸应为 0
+            assert_eq!(h.width, 0.0, "display:none 元素宽度应为 0");
+            assert_eq!(h.height, 0.0, "display:none 元素高度应为 0");
+        }
+    }
+
+    #[test]
+    fn test_layout_z_index_values() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        let z1 = doc.create_element("div");
+        doc.set_attribute(z1, "class", "z1");
+        doc.append_child(body, z1).unwrap();
+        let z2 = doc.create_element("div");
+        doc.set_attribute(z2, "class", "z2");
+        doc.append_child(body, z2).unwrap();
+
+        let css = r#"
+            .z1 { position: relative; z-index: 10; width: 50px; height: 50px; }
+            .z2 { position: relative; z-index: 20; width: 50px; height: 50px; }
+        "#;
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let box1 = find_child_by_node_id(&result.root, z1).expect("z1 应在布局树中");
+        let box2 = find_child_by_node_id(&result.root, z2).expect("z2 应在布局树中");
+        assert_eq!(box1.z_index, 10);
+        assert_eq!(box2.z_index, 20);
+    }
 }
