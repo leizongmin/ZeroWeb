@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-01
-**执行状态**: 14/16 crate 已实现，5176 个测试全绿，14 个 crate 有基准测试
+**执行状态**: 14/16 crate 已实现，5194 个测试全绿，14 个 crate 有基准测试
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（14 个有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 5176 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 5194 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 14/16 crate 有 criterion 基准 |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -156,6 +156,17 @@ Total: 5134 → 5157 (+23 tests)
 | canvas | **嵌套 save/restore line_width/多 arc 路径/零尺寸 resize/空路径 fill+stroke/global_alpha 边界** | 5 |
 | engine/paint | **border solid 四边/负坐标/超大尺寸/RGBA 钳位/多子节点布局** | 5 |
 Total: 5157 → 5176 (+19 tests)
+
+### -47. CSS Grid/position/box-model 集成 + render/layout 边界测试 + 18 个测试（本轮，5194 测试）
+
+新增 CSS Grid/position/box-model 属性管线集成测试、render-foundation 和 layout-engine 边界测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| integration | **grid-template-columns/rows、grid-auto-flow、display:grid** 管线；**position:absolute + top/left**；**margin/padding 简写**；**width/height** | 8 |
+| render-foundation | **Color lerp 边界/Rect 无交集扩展/ImageCache 零 max_entries/DamageTracker 同区域合并/Size 零面积** | 5 |
+| layout-engine | **LayoutBox 默认值/LayoutResult 视口/LayoutBox 子节点/OverflowClip 可见vs隐藏/内容区域计算** | 5 |
+Total: 5176 → 5194 (+18 tests)
 
 ### -42. CSS 渐变渲染管线集成 + 44 测试（上轮，5038 测试）
 
