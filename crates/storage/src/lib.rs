@@ -1531,4 +1531,270 @@ mod tests {
         assert!(apple.is_some());
         assert_eq!(apple.unwrap().value, serde_json::json!("1"));
     }
+
+    // ── 新增边界测试（edge case tests） ──
+
+    /// 测试 IndexedDB 事务在空 object store 列表上创建应成功。
+    ///
+    /// 验证 transaction 传入空 store 名称列表时，
+    /// 没有不存在的 store 需要校验，事务应成功创建。
+    #[test]
+    fn test_idb_transaction_with_empty_store_list() {
+        let mut db = IdbDatabase::new("test", 1);
+        // 不创建任何 store
+        let result = db.transaction(&[], IdbTransactionMode::ReadOnly);
+        // 空列表不应包含不存在的 store，应成功
+        assert!(result.is_ok(), "空 store 列表的事务应可创建");
+        let tx = result.unwrap();
+        assert_eq!(tx.store_names().len(), 0);
+        assert_eq!(tx.mode(), IdbTransactionMode::ReadOnly);
+    }
+
+    /// 测试 IDBKeyRange::only 对不同类型键的精确匹配行为。
+    ///
+    /// 验证 only(Number)、only(String)、only(Binary) 各自只匹配完全相等的键，
+    /// 跨类型键永远不匹配。
+    #[test]
+    fn test_idb_key_range_only_different_types() {
+        use crate::indexed_db::IdbKeyRange;
+
+        // only(Number) 只匹配相同数值
+        let num_range = IdbKeyRange::only(IdbKey::Number(42.0));
+        assert!(num_range.contains(&IdbKey::Number(42.0)));
+        assert!(!num_range.contains(&IdbKey::Number(43.0)));
+        // Number < String，所以 String 不在范围内
+        assert!(!num_range.contains(&IdbKey::String("42".into())));
+
+        // only(String) 只匹配相同字符串
+        let str_range = IdbKeyRange::only(IdbKey::String("hello".into()));
+        assert!(str_range.contains(&IdbKey::String("hello".into())));
+        assert!(!str_range.contains(&IdbKey::String("world".into())));
+        // Number < String，所以 Number 不在范围内
+        assert!(!str_range.contains(&IdbKey::Number(1.0)));
+
+        // only(Binary) 只匹配相同二进制数据
+        let bin_range = IdbKeyRange::only(IdbKey::Binary(vec![1, 2, 3]));
+        assert!(bin_range.contains(&IdbKey::Binary(vec![1, 2, 3])));
+        assert!(!bin_range.contains(&IdbKey::Binary(vec![1, 2, 4])));
+        // String < Binary，所以 String 不在范围内
+        assert!(!bin_range.contains(&IdbKey::String("hello".into())));
+    }
+
+    /// 测试 IndexedDB 游标 advance(0) 行为：应重置到初始位置。
+    ///
+    /// advance(0) 在当前实现中会将 current 设为 0（回到第一条记录）。
+    /// 本测试记录此行为。
+    #[test]
+    fn test_idb_cursor_advance_zero_resets_position() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("items", None, false).unwrap();
+        for i in 1..=4 {
+            db.add("items", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+                .unwrap();
+        }
+
+        let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+        // 初始位置：第 1 条（key=1）
+        assert_eq!(db.cursor_record(&cursor).unwrap().value, serde_json::json!(1));
+
+        // 前进到第 3 条
+        assert!(cursor.advance(2));
+        assert_eq!(db.cursor_record(&cursor).unwrap().value, serde_json::json!(3));
+
+        // advance(0) → 重置到第 1 条
+        assert!(cursor.advance(0));
+        assert_eq!(
+            db.cursor_record(&cursor).unwrap().value,
+            serde_json::json!(1),
+            "advance(0) 应重置游标到初始位置"
+        );
+    }
+
+    /// 测试 Cache API put 同一 URL 同一方法两次后的覆盖行为。
+    ///
+    /// 验证第二次 put 后：条目数仍为 1，match_request 返回最新响应，
+    /// keys() 只包含一个 URL，旧响应的头不残留。
+    #[test]
+    fn test_cache_put_same_url_overwrites_completely() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("assets");
+        let url = "https://example.com/app.js";
+
+        // 第一次 put
+        let resp1 = CacheResponse::ok(b"v1".to_vec()).with_header("X-Version", "1");
+        cache.put(CacheRequest::new(url), resp1).unwrap();
+
+        // 第二次 put 同一 URL → 应完全覆盖
+        let resp2 = CacheResponse::new(304, b"v2".to_vec()).with_header("X-Version", "2");
+        cache.put(CacheRequest::new(url), resp2).unwrap();
+
+        // 条目数应为 1
+        assert_eq!(cache.len(), 1, "同一 URL 覆盖后条目数应仍为 1");
+        assert_eq!(cache.keys().len(), 1);
+
+        // match_request 应返回第二次的响应
+        let matched = cache.match_request(&CacheRequest::new(url)).unwrap();
+        assert_eq!(matched.status, 304);
+        assert_eq!(matched.body, b"v2".to_vec());
+        assert_eq!(matched.headers.get("X-Version"), Some(&"2".to_string()));
+        // 第一次的头不应残留
+        assert_eq!(matched.headers.len(), 1, "覆盖后应只有新响应的头");
+    }
+
+    /// 测试 Cache API delete 对不存在的 URL 返回 false，不影响已有条目。
+    #[test]
+    fn test_cache_delete_nonexistent_url_no_side_effect() {
+        let mut cs = CacheStorage::new();
+        let cache = cs.open("api");
+
+        // 存入一个响应
+        cache
+            .put(
+                CacheRequest::new("https://example.com/real"),
+                CacheResponse::ok(b"data".to_vec()),
+            )
+            .unwrap();
+        assert_eq!(cache.len(), 1);
+
+        // 删除从未 put 的 URL
+        let deleted = cache.delete(&CacheRequest::new("https://example.com/phantom"));
+        assert!(!deleted, "删除不存在的 URL 应返回 false");
+
+        // 原有条目不受影响
+        assert_eq!(cache.len(), 1, "delete 不存在的 URL 不应影响已有条目");
+        assert!(
+            cache
+                .match_request(&CacheRequest::new("https://example.com/real"))
+                .is_some()
+        );
+    }
+
+    /// 测试 CacheStorage has 要求精确匹配缓存名称，不支持部分匹配。
+    #[test]
+    fn test_cache_storage_has_requires_exact_name() {
+        let mut cs = CacheStorage::new();
+        cs.open("assets-v1");
+
+        assert!(cs.has("assets-v1"), "完整名称应匹配");
+        assert!(!cs.has("assets"), "部分名称前缀不应匹配");
+        assert!(!cs.has("v1"), "部分名称后缀不应匹配");
+        assert!(!cs.has("assets-v1-extra"), "包含完整名称的超集不应匹配");
+    }
+
+    /// 测试 localStorage 设置空字符串值后 get 返回 Some("")（不是 None）。
+    #[test]
+    fn test_local_storage_empty_string_value_is_not_none() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 设置空字符串值
+        storage.set("blank", "").unwrap();
+        // get 应返回 Some("")，不是 None
+        assert_eq!(storage.get("blank"), Some(""), "空串值应返回 Some(\"\")，不是 None");
+        assert!(storage.contains_key("blank"));
+        assert_eq!(storage.len(), 1);
+        // used_size = key 长度 + value 长度 = 5 + 0 = 5
+        assert_eq!(storage.used_size(), 5);
+    }
+
+    /// 测试 localStorage get 不存在的键返回 None。
+    ///
+    /// 验证从未设置过的键、已删除的键、clear 后的键均返回 None。
+    #[test]
+    fn test_local_storage_get_nonexistent_returns_none() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 从未设置过的键
+        assert_eq!(storage.get("never_set"), None, "从未设置的键应返回 None");
+
+        // 设置后删除
+        storage.set("temporary", "value").unwrap();
+        storage.remove("temporary");
+        assert_eq!(storage.get("temporary"), None, "已删除的键应返回 None");
+
+        // 设置后 clear
+        storage.set("cleared", "data").unwrap();
+        storage.clear();
+        assert_eq!(storage.get("cleared"), None, "clear 后的键应返回 None");
+    }
+
+    /// 测试 IndexedDB 唯一索引允许插入不同索引值的记录，
+    /// 但拒绝插入相同索引值的记录（add 返回错误）。
+    #[test]
+    fn test_idb_unique_index_allows_different_rejects_same() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("accounts", None, false).unwrap();
+
+        // 插入第一条记录
+        db.add(
+            "accounts",
+            serde_json::json!({"username": "alice", "role": "admin"}),
+            Some(IdbKey::String("acc1".into())),
+        )
+        .unwrap();
+
+        // 创建唯一索引
+        db.create_index("accounts", "username_idx", "username", true, false)
+            .unwrap();
+
+        // 不同 username 应允许
+        db.add(
+            "accounts",
+            serde_json::json!({"username": "bob", "role": "user"}),
+            Some(IdbKey::String("acc2".into())),
+        )
+        .unwrap();
+
+        // 相同 username 应被拒绝（add 返回 Err）
+        let result = db.add(
+            "accounts",
+            serde_json::json!({"username": "alice", "role": "guest"}),
+            Some(IdbKey::String("acc3".into())),
+        );
+        assert!(result.is_err(), "唯一索引上插入重复值应返回错误");
+    }
+
+    /// 测试 IndexedDB multiEntry 索引与空数组值：
+    /// 空数组作为 tags 值时，索引不应为该记录创建任何条目。
+    #[test]
+    fn test_idb_multi_entry_index_empty_array_no_entries() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("docs", None, false).unwrap();
+
+        // 记录 1：tags 为空数组
+        db.add(
+            "docs",
+            serde_json::json!({"title": "Empty Tags", "tags": []}),
+            Some(IdbKey::String("d1".into())),
+        )
+        .unwrap();
+
+        // 记录 2：tags 有值
+        db.add(
+            "docs",
+            serde_json::json!({"title": "Has Tags", "tags": ["rust"]}),
+            Some(IdbKey::String("d2".into())),
+        )
+        .unwrap();
+
+        // 创建 multiEntry 索引
+        db.create_index("docs", "tags_idx", "tags", false, true).unwrap();
+
+        // 索引条目数应为 1（只有 "rust" 一个条目，空数组不产生任何索引条目）
+        assert_eq!(
+            db.count_from_index("docs", "tags_idx", None).unwrap(),
+            1,
+            "空数组不应产生索引条目"
+        );
+
+        // 查询 "rust" 只找到记录 2
+        let rust = db
+            .get_from_index("docs", "tags_idx", &IdbKey::String("rust".into()))
+            .unwrap();
+        assert_eq!(rust.len(), 1);
+        assert_eq!(rust[0].value["title"], "Has Tags");
+
+        // get_all_from_index 应返回 1 条（空数组记录不应出现）
+        let all = db.get_all_from_index("docs", "tags_idx").unwrap();
+        assert_eq!(all.len(), 1, "只有非空 tags 的记录应出现在索引中");
+    }
 }

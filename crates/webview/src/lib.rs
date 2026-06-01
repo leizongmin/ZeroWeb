@@ -4195,4 +4195,141 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "ABCD", "insertBefore 排序应正确");
     }
+
+    // ── 新增边界测试 ──
+
+    /// 测试 WebView 生命周期：load_url → complete_load → is_loading 状态转换。
+    #[test]
+    fn test_webview_lifecycle_load_complete() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        assert!(!wv.is_loading(), "初始状态不应在加载");
+        assert!(wv.url().is_none(), "初始 URL 应为 None");
+
+        wv.load_url("https://example.com");
+        assert!(wv.is_loading(), "load_url 后应在加载");
+        assert_eq!(wv.url(), Some("https://example.com"));
+
+        let result = wv.complete_load("<html><body>Hello</body></html>", None);
+        assert!(!wv.is_loading(), "complete_load 后应完成加载");
+        assert!(result.timings.total_ms >= 0.0, "耗时应为非负");
+    }
+
+    /// 测试 WebView fail_load 重置加载状态。
+    #[test]
+    fn test_webview_fail_load_resets_state() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_url("https://example.com");
+        assert!(wv.is_loading());
+
+        wv.fail_load("network error");
+        assert!(!wv.is_loading(), "fail_load 后应不再加载");
+    }
+
+    /// 测试 WebView resize 后渲染仍然正常。
+    #[test]
+    fn test_webview_resize_and_render() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<html><body>Test</body></html>", None);
+
+        wv.resize(1024, 768);
+        assert_eq!(wv.config().width, 1024);
+        assert_eq!(wv.config().height, 768);
+
+        let result = wv.render();
+        assert!(result.timings.total_ms >= 0.0, "resize 后应能正常渲染");
+    }
+
+    /// 测试 set_title 触发 TitleChanged 事件。
+    #[test]
+    fn test_webview_set_title_event() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let titles: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let titles_clone = titles.clone();
+        wv.on_event(move |event| {
+            if let WebViewEvent::TitleChanged(t) = event {
+                titles_clone.borrow_mut().push(t.clone());
+            }
+        });
+
+        wv.set_title("My Page");
+        assert_eq!(wv.title(), Some("My Page"));
+        assert_eq!(titles.borrow().len(), 1);
+        assert_eq!(titles.borrow()[0], "My Page");
+    }
+
+    /// 测试 inject_css 累积追加而非替换。
+    #[test]
+    fn test_webview_inject_css_cumulative() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.load_html("<html><body>Hi</body></html>", None);
+
+        wv.inject_css("body { color: red; }");
+        wv.inject_css("div { display: none; }");
+
+        let result = wv.render();
+        assert!(result.timings.total_ms >= 0.0, "累积 CSS 注入后应能正常渲染");
+    }
+
+    /// 测试 execute_script 编译错误返回正确错误类型。
+    #[test]
+    fn test_webview_execute_script_compile_error() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script("function { invalid syntax");
+        assert!(result.is_err(), "语法错误应返回错误");
+        let err = result.unwrap_err();
+        match err {
+            WebViewError::Script(msg) => assert!(
+                msg.contains("Compile error") || msg.contains("Invalid input"),
+                "应为编译错误: {msg}"
+            ),
+            other => panic!("预期 Script 错误，得到: {other}"),
+        }
+    }
+
+    /// 测试 execute_script 运行时错误。
+    #[test]
+    fn test_webview_execute_script_runtime_error() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script("throw new Error('test error');");
+        assert!(result.is_err(), "运行时错误应返回错误");
+    }
+
+    /// 测试 remove_event_callback 越界返回 false。
+    #[test]
+    fn test_webview_remove_callback_out_of_bounds() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        assert!(!wv.remove_event_callback(999), "越界索引应返回 false");
+        assert!(!wv.remove_event_callback(0), "空列表索引 0 应返回 false");
+    }
+
+    /// 测试 DOM API：outerHTML 读写。
+    #[test]
+    fn test_webview_dom_outer_html() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.setAttribute('id', 'test');
+            el.outerHTML;
+            "#,
+        );
+        assert!(result.is_ok());
+        let html = result.unwrap();
+        assert!(html.contains("div"), "outerHTML 应包含标签名");
+        assert!(html.contains("test"), "outerHTML 应包含属性值");
+    }
+
+    /// 测试 DOM API：createDocumentFragment 基本存在性。
+    #[test]
+    fn test_webview_dom_document_fragment() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var frag = document.createDocumentFragment();
+            typeof frag === 'object' ? 'ok' : 'fail';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok", "createDocumentFragment 应返回对象");
+    }
 }

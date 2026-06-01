@@ -4960,4 +4960,277 @@ mod tests {
         let b2 = serialize(&msg2).expect("s2");
         assert_eq!(b1, b2, "相同消息应产生确定性编码");
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  边界条件测试（第 5 批）：专项 edge case 覆盖
+    // ══════════════════════════════════════════════════════════
+
+    /// 测试 FetchParams method 字段大小写敏感性。
+    /// 验证小写 "get"、大写 "PATCH"、混合大小写 "delete" 在序列化往返后原样保留。
+    #[test]
+    fn test_fetch_params_method_case_sensitivity() {
+        for (i, method) in ["get", "PATCH", "delete"].iter().enumerate() {
+            let msg = IpcMessage {
+                id: i as u64,
+                kind: IpcMessageKind::FetchRequest(FetchParams {
+                    request_id: i as u64,
+                    url: "https://example.com".into(),
+                    method: method.to_string(),
+                    headers: vec![],
+                    body: None,
+                }),
+            };
+            let out = roundtrip(msg);
+            if let IpcMessageKind::FetchRequest(p) = out.kind {
+                assert_eq!(
+                    method, &p.method,
+                    "method 字段大小写应原样保留，期望 {:?}，实际 {:?}",
+                    method, p.method
+                );
+            } else {
+                panic!("期望 FetchRequest");
+            }
+        }
+    }
+
+    /// 测试 NavigateParams 自引用 referrer：url 和 referrer 设为相同值。
+    /// 验证序列化/反序列化后两个字段均保持原值，不互相干扰。
+    #[test]
+    fn test_navigate_self_referential_referrer() {
+        let same_url = "https://example.com/page";
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: same_url.into(),
+                referrer: Some(same_url.into()),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::Navigate(p) = out.kind {
+            assert_eq!(same_url, p.url, "url 应保持原值");
+            assert_eq!(Some(same_url.to_string()), p.referrer, "referrer 应与 url 相同");
+        } else {
+            panic!("期望 Navigate");
+        }
+    }
+
+    /// 测试 IpcMessageKind::Ok 与 Error("") 的序列化字节必须不同。
+    /// Ok 是无数据变体，Error("") 是空字符串变体，两者编码应有区别。
+    #[test]
+    fn test_ok_vs_error_empty_string_byte_distinctness() {
+        let msg_ok = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Ok,
+        };
+        let msg_err = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Error(String::new()),
+        };
+        let bytes_ok = serialize(&msg_ok).expect("序列化 Ok 应成功");
+        let bytes_err = serialize(&msg_err).expect("序列化 Error(\"\") 应成功");
+        assert_ne!(bytes_ok, bytes_err, "Ok 和 Error(\"\") 的序列化字节必须不同");
+    }
+
+    /// 测试 ProcessRole 的 Debug 输出包含预期的变体名称。
+    #[test]
+    fn test_process_role_debug_output() {
+        let browser_debug = format!("{:?}", ProcessRole::Browser);
+        assert!(browser_debug.contains("Browser"), "Browser Debug 输出应包含 'Browser'");
+        let renderer_debug = format!("{:?}", ProcessRole::Renderer);
+        assert!(
+            renderer_debug.contains("Renderer"),
+            "Renderer Debug 输出应包含 'Renderer'"
+        );
+    }
+
+    /// 测试 FetchResponseParams 常见 HTTP 状态码（100, 204, 304, 500, 503）的往返正确性。
+    #[test]
+    fn test_fetch_response_common_http_status_codes() {
+        for (i, code) in [100u16, 204, 304, 500, 503].iter().enumerate() {
+            let msg = IpcMessage {
+                id: i as u64,
+                kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                    request_id: i as u64,
+                    status_code: *code,
+                    headers: vec![],
+                    body: vec![],
+                }),
+            };
+            let out = roundtrip(msg);
+            if let IpcMessageKind::FetchResponse(p) = out.kind {
+                assert_eq!(*code, p.status_code, "状态码 {} 往返后应保持不变", code);
+            } else {
+                panic!("期望 FetchResponse，状态码 {}", code);
+            }
+        }
+    }
+
+    /// 测试 FetchParams headers 中包含非 ASCII（UTF-8）值时的往返正确性。
+    /// 某些 HTTP header 值可能包含国际化文本，验证 IPC 传输不会丢失或损坏 UTF-8 编码。
+    #[test]
+    fn test_fetch_params_non_ascii_header_values() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![
+                    ("X-Message".into(), "こんにちは世界".into()),
+                    ("X-Emoji".into(), "🎉🚀💻".into()),
+                    ("X-Accented".into(), "Ñoño café ☕".into()),
+                ],
+                body: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert_eq!(3, p.headers.len(), "应保留所有 3 个 header");
+            assert_eq!("こんにちは世界", p.headers[0].1);
+            assert_eq!("🎉🚀💻", p.headers[1].1);
+            assert_eq!("Ñoño café ☕", p.headers[2].1);
+        } else {
+            panic!("期望 FetchRequest");
+        }
+    }
+
+    /// 测试 StorageOpParams 在非 Set 操作（Get、Remove）时 value=Some("data") 的保留。
+    /// 虽然 Get/Remove 通常不需要 value，但协议层应允许 value 字段携带任意值而不丢失。
+    #[test]
+    fn test_storage_op_value_with_non_set_operations() {
+        // Get 操作带 value
+        let msg_get = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Get,
+                key: "my_key".into(),
+                value: Some("data".into()),
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out_get = roundtrip(msg_get);
+        if let IpcMessageKind::StorageOp(p) = out_get.kind {
+            assert_eq!(StorageOperation::Get, p.operation);
+            assert_eq!(Some("data".into()), p.value, "Get 操作的 value 应保留");
+        } else {
+            panic!("期望 StorageOp (Get)");
+        }
+
+        // Remove 操作带 value
+        let msg_remove = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Session,
+                operation: StorageOperation::Remove,
+                key: "my_key".into(),
+                value: Some("data".into()),
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out_remove = roundtrip(msg_remove);
+        if let IpcMessageKind::StorageOp(p) = out_remove.kind {
+            assert_eq!(StorageOperation::Remove, p.operation);
+            assert_eq!(Some("data".into()), p.value, "Remove 操作的 value 应保留");
+        } else {
+            panic!("期望 StorageOp (Remove)");
+        }
+    }
+
+    /// 测试 MockChannel 交替 send/recv 操作：发送一条、接收一条，循环 5 次。
+    /// 验证交替读写不会导致消息丢失或顺序混乱。
+    #[test]
+    fn test_mock_channel_interleaved_send_recv() {
+        let mut ch = MockChannel::new();
+
+        for i in 0u64..5 {
+            ch.send(IpcMessage {
+                id: i,
+                kind: IpcMessageKind::Heartbeat,
+            })
+            .expect("发送应成功");
+            let out = ch.recv().expect("接收应成功");
+            assert_eq!(i, out.id, "交替 send/recv：期望 id={}，实际 id={}", i, out.id);
+        }
+
+        // 通道应为空
+        assert!(ch.recv().is_err(), "交替操作后通道应为空");
+    }
+
+    /// 测试 MockChannel 满足 Send + Sync trait 约束（编译时检查）。
+    /// 验证 MockChannel 可以安全地跨线程使用。
+    #[test]
+    fn test_mock_channel_send_sync_compile_check() {
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+        let ch = MockChannel::new();
+        assert_send_sync(&ch);
+    }
+
+    /// 测试 FetchParams headers 为空 Vec 时的序列化/反序列化往返。
+    /// 空 Vec 与包含元素的 Vec 在编码上有区别，验证空 Vec 不会变成 None 或其他值。
+    #[test]
+    fn test_fetch_params_empty_headers_vec() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 1,
+                url: "https://example.com".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::FetchRequest(p) = out.kind {
+            assert!(p.headers.is_empty(), "空 headers Vec 往返后应保持为空 Vec");
+            assert_eq!(0, p.headers.len(), "headers 长度应为 0");
+        } else {
+            panic!("期望 FetchRequest");
+        }
+    }
+
+    /// 测试 StorageOpParams key 为空字符串时的序列化/反序列化往返。
+    /// 空 key 是合法值，不应被序列化器丢弃或转换为 None。
+    #[test]
+    fn test_storage_op_empty_key_roundtrip() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::StorageOp(StorageOpParams {
+                storage_type: StorageType::Local,
+                operation: StorageOperation::Get,
+                key: String::new(),
+                value: None,
+                origin: "https://example.com".into(),
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::StorageOp(p) = out.kind {
+            assert_eq!("", p.key, "空 key 往返后应保持为空字符串");
+            assert!(p.key.is_empty());
+        } else {
+            panic!("期望 StorageOp");
+        }
+    }
+
+    /// 测试 MouseEventParams 负坐标的序列化/反序列化往返。
+    /// 鼠标坐标在某些场景下可能为负值（如相对于子元素的坐标），验证 f32 负值完整保留。
+    #[test]
+    fn test_mouse_params_negative_coordinates() {
+        let msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: -100.5,
+                y: -200.75,
+                button: 0,
+                event_type: MouseEventType::Move,
+            }),
+        };
+        let out = roundtrip(msg);
+        if let IpcMessageKind::MouseEvent(p) = out.kind {
+            assert_eq!(-100.5, p.x, "负 x 坐标应完整保留");
+            assert_eq!(-200.75, p.y, "负 y 坐标应完整保留");
+        } else {
+            panic!("期望 MouseEvent");
+        }
+    }
 }

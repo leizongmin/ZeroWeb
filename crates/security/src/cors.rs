@@ -1171,4 +1171,37 @@ mod tests {
             "自定义 header 不应是简单请求"
         );
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试 CORS 预检请求中多个方法仅部分被允许时的拒绝行为。
+    ///
+    /// 预检请求通过 Access-Control-Request-Method 指定一个方法，
+    /// 该方法必须在 allow_methods 列表中。本测试验证当策略允许
+    /// GET/POST 但请求 PUT 时预检被拒绝，且响应头为空。
+    #[test]
+    fn test_cors_preflight_multiple_methods_partial_reject() {
+        let policy = CorsPolicy {
+            allow_origins: vec!["http://example.com".to_string()],
+            allow_methods: vec!["GET".to_string(), "POST".to_string()],
+            allow_headers: vec![],
+            allow_credentials: false,
+            max_age: Some(3600),
+        };
+        let origin = Origin::parse("http://example.com").unwrap();
+
+        // PUT 不在 allow_methods 中 → 预检拒绝
+        let headers = generate_preflight_response(&policy, &origin, "PUT", &[]);
+        assert!(headers.allow_origin.is_none(), "PUT 不在允许方法列表中应被预检拒绝");
+        assert!(headers.allow_methods.is_none(), "拒绝时不应返回 allow_methods");
+        assert!(headers.max_age.is_none(), "拒绝时不应返回 max_age");
+
+        // GET 在列表中 → 通过
+        let headers_get = generate_preflight_response(&policy, &origin, "GET", &[]);
+        assert!(headers_get.allow_origin.is_some(), "GET 应通过预检");
+        let methods = headers_get.allow_methods.as_ref().expect("应有 allow_methods");
+        assert!(methods.contains("GET"), "响应方法列表应包含 GET");
+        assert!(methods.contains("POST"), "响应方法列表应包含 POST");
+        assert!(!methods.contains("PUT"), "响应方法列表不应包含 PUT");
+    }
 }

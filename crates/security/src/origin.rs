@@ -264,4 +264,46 @@ mod tests {
         assert_ne!(a, g, "不同 host 的 Origin 不应相等");
         assert!(!a.is_same_origin(&g));
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试同源策略：http 默认端口 80 与 https 默认端口 443 的规范化。
+    ///
+    /// 当 URL 不显式指定端口时，http 默认 80，https 默认 443。
+    /// 显式指定默认端口与不指定应产生相同的 Origin（同源）。
+    #[test]
+    fn test_same_origin_default_port_normalization() {
+        // http: 默认端口规范化
+        let http_implicit = Origin::parse("http://example.com").unwrap();
+        let http_explicit = Origin::parse("http://example.com:80").unwrap();
+        assert_eq!(http_implicit.port, 80);
+        assert_eq!(http_explicit.port, 80);
+        assert!(
+            http_implicit.is_same_origin(&http_explicit),
+            "http 默认端口应规范化为同源"
+        );
+
+        // https: 默认端口规范化
+        let https_implicit = Origin::parse("https://example.com").unwrap();
+        let https_explicit = Origin::parse("https://example.com:443").unwrap();
+        assert_eq!(https_implicit.port, 443);
+        assert_eq!(https_explicit.port, 443);
+        assert!(
+            https_implicit.is_same_origin(&https_explicit),
+            "https 默认端口应规范化为同源"
+        );
+
+        // http:80 与 https:443 不同源
+        assert!(
+            !http_explicit.is_same_origin(&https_explicit),
+            "http:80 与 https:443 不是同源"
+        );
+
+        // 显式非默认端口不与默认端口同源
+        let http_8080 = Origin::parse("http://example.com:8080").unwrap();
+        assert!(
+            !http_implicit.is_same_origin(&http_8080),
+            "http:80 与 http:8080 不是同源"
+        );
+    }
 }

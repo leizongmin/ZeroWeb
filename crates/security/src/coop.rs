@@ -139,4 +139,57 @@ mod tests {
         assert!(is_restrictive_coop(CoopPolicy::SameOriginAllowPopups));
         assert!(is_restrictive_coop(CoopPolicy::SameOriginIncludingPopups));
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试 COOP SameOriginAllowPopups 在同源和跨源场景下的完整行为矩阵。
+    ///
+    /// SameOriginAllowPopups 策略允许跨源弹窗保留 opener 引用，
+    /// 但不允许 SameOrigin/SameOriginIncludingPopups 策略的导航方
+    /// 打开的弹窗保留 opener。
+    #[test]
+    fn test_coop_same_origin_allow_popups_full_matrix() {
+        // 跨源 + UnsafeNone 导航方 + SameOriginAllowPopups 响应方 → 允许
+        assert_eq!(
+            evaluate_coop(CoopPolicy::UnsafeNone, CoopPolicy::SameOriginAllowPopups, false),
+            CoopResult::Allowed,
+            "UnsafeNone + SameOriginAllowPopups 跨源应允许"
+        );
+
+        // 跨源 + SameOriginAllowPopups 导航方 + SameOriginAllowPopups 响应方 → 允许
+        assert_eq!(
+            evaluate_coop(
+                CoopPolicy::SameOriginAllowPopups,
+                CoopPolicy::SameOriginAllowPopups,
+                false
+            ),
+            CoopResult::Allowed,
+            "双方 SameOriginAllowPopups 跨源应允许"
+        );
+
+        // 跨源 + SameOrigin 导航方 + SameOriginAllowPopups 响应方 → 阻止
+        assert_eq!(
+            evaluate_coop(CoopPolicy::SameOrigin, CoopPolicy::SameOriginAllowPopups, false),
+            CoopResult::Blocked,
+            "SameOrigin 导航方 + SameOriginAllowPopups 响应方跨源应阻止"
+        );
+
+        // 同源 + SameOriginAllowPopups → 始终允许
+        assert_eq!(
+            evaluate_coop(
+                CoopPolicy::SameOriginAllowPopups,
+                CoopPolicy::SameOriginAllowPopups,
+                true
+            ),
+            CoopResult::Allowed,
+            "同源应始终允许"
+        );
+
+        // 同源 + SameOrigin 导航方 + SameOriginAllowPopups 响应方 → 允许
+        assert_eq!(
+            evaluate_coop(CoopPolicy::SameOrigin, CoopPolicy::SameOriginAllowPopups, true),
+            CoopResult::Allowed,
+            "同源时无论策略组合均应允许"
+        );
+    }
 }

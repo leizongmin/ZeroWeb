@@ -1104,4 +1104,93 @@ mod tests {
             "不在 script-src 白名单中的 worker URL 应被阻止"
         );
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试 CSP upgrade-insecure-requests 指令的解析与行为。
+    ///
+    /// upgrade-insecure-requests 是 CSP Level 3 指令，浏览器会将页面中的
+    /// HTTP URL 自动升级为 HTTPS。当前实现将其作为普通指令解析存储，
+    /// 不影响 is_resource_allowed 的检查逻辑。
+    #[test]
+    fn test_csp_upgrade_insecure_requests_directive() {
+        let csp = ContentSecurityPolicy::parse("upgrade-insecure-requests");
+        // upgrade-insecure-requests 作为指令存在于 directives 中
+        assert!(
+            csp.directives.iter().any(|d| d.name == "upgrade-insecure-requests"),
+            "upgrade-insecure-requests 应被解析为指令"
+        );
+        // 不影响资源加载判断（无 default-src 和具体指令 → 允许所有）
+        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", None));
+        assert!(csp.is_resource_allowed("img", "http://example.com/photo.jpg", None));
+
+        // 与 default-src 'none' 组合时，upgrade-insecure-requests 仍不影响阻止逻辑
+        let csp_combined = ContentSecurityPolicy::parse("default-src 'none'; upgrade-insecure-requests");
+        assert!(
+            !csp_combined.is_resource_allowed("script", "http://evil.com/bad.js", None),
+            "default-src 'none' 仍应阻止资源加载"
+        );
+    }
+
+    /// 测试 CSP strict-dynamic 与 nonce 组合时信任链的行为。
+    ///
+    /// 'strict-dynamic' 允许通过 nonce/hash 信任的脚本动态加载更多脚本，
+    /// 这些动态加载的脚本无需出现在源列表中。当前实现中 'strict-dynamic'
+    /// 作为普通值存储，不影响 URL 匹配逻辑——URL 匹配仍按源列表执行。
+    #[test]
+    fn test_csp_strict_dynamic_with_nonce() {
+        let csp = ContentSecurityPolicy::parse("script-src 'strict-dynamic' 'nonce-abc123'");
+        // nonce 匹配时内联脚本允许
+        assert!(
+            csp.is_inline_script_allowed(Some("abc123"), None),
+            "正确 nonce 应允许内联脚本"
+        );
+        // nonce 不匹配时内联脚本被阻止
+        assert!(
+            !csp.is_inline_script_allowed(Some("wrong"), None),
+            "错误 nonce 应阻止内联脚本"
+        );
+        // 无 nonce 时被阻止
+        assert!(!csp.is_inline_script_allowed(None, None), "无 nonce 应阻止内联脚本");
+        // 'strict-dynamic' 不影响 URL 前缀匹配——无 URL 在源列表中
+        assert!(
+            !csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None),
+            "strict-dynamic 不扩展 URL 白名单匹配"
+        );
+    }
+
+    /// 测试 CSP 导航指令（form-action、base-uri、frame-ancestors、navigate-to）
+    /// 不回退到 default-src 的行为。
+    ///
+    /// 这些指令属于导航/文档指令，不回退到 default-src。
+    /// 当这些指令不存在时，对应操作不受限制。
+    #[test]
+    fn test_csp_navigation_directives_no_fallback() {
+        let csp = ContentSecurityPolicy::parse("default-src 'none'");
+
+        // form-action 不存在 → 不回退到 default-src 'none' → 允许
+        assert!(
+            csp.is_form_action_allowed("https://evil.com/steal", None),
+            "form-action 不存在时应允许所有表单提交"
+        );
+
+        // base-uri 不存在 → 不回退到 default-src 'none' → 允许
+        assert!(
+            csp.is_base_uri_allowed("https://evil.com/base", None),
+            "base-uri 不存在时应允许所有 base URI"
+        );
+
+        // navigate-to 不存在 → 不回退到 default-src 'none' → 允许
+        assert!(
+            csp.is_navigate_to_allowed("https://evil.com/page", None),
+            "navigate-to 不存在时应允许所有导航"
+        );
+
+        // frame-ancestors 不存在 → 不回退到 default-src 'none' → 允许
+        let embedder = Origin::parse("https://evil.com").unwrap();
+        assert!(
+            csp.is_frame_ancestor_allowed(&embedder),
+            "frame-ancestors 不存在时应允许所有嵌入"
+        );
+    }
 }

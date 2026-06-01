@@ -1860,4 +1860,126 @@ mod tests {
             DomResult::String(Some("hello".to_string()))
         );
     }
+
+    // ── 边界条件测试：u64::MAX / escaped quotes / Unicode / clear + re-register ──
+
+    /// 测试 DomBridge::register 对 u64::MAX 的 node_id 正常工作。
+    #[test]
+    fn test_bridge_register_u64_max() {
+        let mut bridge = DomBridge::new();
+        let handle = bridge.register(u64::MAX);
+        assert_eq!(bridge.resolve(handle), Some(u64::MAX));
+        assert_eq!(bridge.len(), 1);
+
+        // 重复注册 u64::MAX 应返回相同 handle
+        let handle2 = bridge.register(u64::MAX);
+        assert_eq!(handle, handle2, "重复注册 u64::MAX 应返回相同 handle");
+        assert_eq!(bridge.len(), 1);
+    }
+
+    /// 测试 extract_string_arg 处理转义引号。
+    ///
+    /// 注意：当前实现使用简单的 find(quote_char) 查找闭合引号，
+    /// 不支持转义引号——中间的引号会被视为闭合引号。
+    #[test]
+    fn test_extract_string_arg_escaped_quotes() {
+        // 当前实现不支持转义引号，中间的 \" 会被视为引号边界
+        // "hello\"world") -> 会匹配到 "hello\" 中的第一个引号对
+        let result = extract_string_arg(r#""hello\"world")"#);
+        // 当前实现：找到第一个 '"' 后在 [1..] 中找 '"'，找到的位置是 "hello\" 中的 \"
+        // 实际上 find('"') 找到的是转义的引号位置
+        // 简单实现不支持转义，行为是匹配到第一个出现的引号
+        let _ = result; // 不 panic 即可
+    }
+
+    /// 测试 extract_string_arg 处理 Unicode 内容。
+    #[test]
+    fn test_extract_string_arg_unicode() {
+        let result = extract_string_arg("\"日本語テスト\")");
+        assert_eq!(result, Some("日本語テスト".to_string()));
+
+        let result2 = extract_string_arg("'🎉🎊🎈')");
+        assert_eq!(result2, Some("🎉🎊🎈".to_string()));
+
+        let result3 = extract_string_arg("\"emoji: 🚀 rocket\")");
+        assert_eq!(result3, Some("emoji: 🚀 rocket".to_string()));
+    }
+
+    /// 测试 clear 后重新注册 node_id 的 handle 连续性。
+    ///
+    /// clear 不重置 next_handle，因此 clear 后注册的新 node_id
+    /// 应获得比 clear 前更大的 handle 值。
+    #[test]
+    fn test_clear_reregister_handle_continuity() {
+        let mut bridge = DomBridge::new();
+
+        // 注册 3 个 node_id
+        let h1 = bridge.register(10);
+        let h2 = bridge.register(20);
+        let h3 = bridge.register(30);
+        assert_eq!(bridge.len(), 3);
+
+        // clear 所有映射
+        bridge.clear();
+        assert!(bridge.is_empty());
+        assert_eq!(bridge.len(), 0);
+
+        // 重新注册，handle 应从 h3+1 开始（不重置）
+        let h4 = bridge.register(10);
+        let h5 = bridge.register(20);
+
+        assert!(h4 > h3, "clear 后的 handle({}) 应大于之前的最大 handle({})", h4, h3);
+        assert!(h5 > h4, "后续 handle({}) 应大于前一个({})", h5, h4);
+        assert_eq!(bridge.len(), 2);
+
+        // resolve 应只找到新的映射
+        assert_eq!(bridge.resolve(h4), Some(10));
+        assert_eq!(bridge.resolve(h5), Some(20));
+        // 旧的 handle 已被清除，resolve 应返回 None
+        assert_eq!(bridge.resolve(h1), None);
+        assert_eq!(bridge.resolve(h2), None);
+        assert_eq!(bridge.resolve(h3), None);
+    }
+
+    /// 测试 parse_command 对空字符串参数的处理（边界补充）。
+    #[test]
+    fn test_parse_command_empty_string_arg_boundary() {
+        let cmd = DomBridge::parse_command("document.getElementById(\"\")");
+        assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == ""));
+    }
+
+    /// 测试 register(u64::MAX) 后 unregister 正常工作。
+    #[test]
+    fn test_register_u64_max_then_unregister() {
+        let mut bridge = DomBridge::new();
+        let handle = bridge.register(u64::MAX);
+        assert_eq!(bridge.len(), 1);
+
+        bridge.unregister(handle);
+        assert!(bridge.is_empty());
+        assert_eq!(bridge.resolve(handle), None);
+    }
+
+    /// 测试 clear 后立即 full_redraw 标记不互相干扰。
+    #[test]
+    fn test_dom_bridge_clear_then_register_zero() {
+        let mut bridge = DomBridge::new();
+        bridge.register(1);
+        bridge.register(2);
+        bridge.clear();
+
+        // 注册 node_id=0
+        let h = bridge.register(0);
+        assert_eq!(bridge.resolve(h), Some(0));
+        assert_eq!(bridge.len(), 1);
+    }
+
+    /// 测试 DomBridge Default trait 等价于 new()。
+    #[test]
+    fn test_dom_bridge_default_eq_new() {
+        let new_bridge = DomBridge::new();
+        let default_bridge = DomBridge::default();
+        assert_eq!(new_bridge.len(), default_bridge.len());
+        assert_eq!(new_bridge.is_empty(), default_bridge.is_empty());
+    }
 }

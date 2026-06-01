@@ -386,4 +386,82 @@ mod tests {
         let sandbox = IframeSandbox::parse("allow-top-navigation allow-top-navigation-by-user-activation");
         assert!(sandbox.allows_top_navigation());
     }
+
+    // ── 边界测试（round 23）──
+
+    /// 测试沙箱 allow-same-origin + allow-scripts 的危险组合。
+    ///
+    /// 根据 HTML 规范，当 iframe sandbox 同时设置 allow-same-origin 和
+    /// allow-scripts 时，嵌入页面可以通过 JavaScript 移除自身的 sandbox 属性，
+    /// 这等于完全绕过了沙箱保护。这是已知的不安全组合，浏览器会发出警告。
+    /// 此测试记录该行为：两个标志同时设置时均正常生效。
+    #[test]
+    fn test_sandbox_dangerous_same_origin_plus_scripts() {
+        let sandbox = IframeSandbox::parse("allow-same-origin allow-scripts");
+
+        // 两个标志均生效
+        assert!(sandbox.allows_scripts(), "allow-scripts 应允许脚本");
+        assert!(sandbox.allows_same_origin(), "allow-same-origin 应允许同源");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowScripts));
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowSameOrigin));
+
+        // effective_origin 保留原始源（非不透明源）
+        let iframe_origin = Origin::parse("https://example.com").unwrap();
+        assert_eq!(
+            sandbox.effective_origin(&iframe_origin),
+            SandboxOrigin::Normal(iframe_origin.clone()),
+            "allow-same-origin 时应保留原始源"
+        );
+
+        // 其他功能仍受限
+        assert!(!sandbox.allows_forms(), "不应允许表单提交");
+        assert!(!sandbox.allows_popups(), "不应允许弹窗");
+        assert!(!sandbox.allows_top_navigation(), "不应允许顶层导航");
+
+        // 对比：仅 allow-scripts 无 allow-same-origin → 不透明源
+        let sandbox_scripts_only = IframeSandbox::parse("allow-scripts");
+        assert_eq!(
+            sandbox_scripts_only.effective_origin(&iframe_origin),
+            SandboxOrigin::Opaque,
+            "仅 allow-scripts 时应为不透明源"
+        );
+    }
+
+    /// 测试沙箱 allow-top-navigation 与 allow-top-navigation-by-user-activation 组合。
+    ///
+    /// 当两个导航标志同时存在时，allow-top-navigation 优先级更高，
+    /// 无需用户激活即可导航顶层窗口。仅有 user-activation 标志时，
+    /// 非用户激活的导航应被阻止。
+    #[test]
+    fn test_sandbox_navigation_flags_combination() {
+        // 同时具有两个导航标志 → allow-top-navigation 优先
+        let sandbox_both = IframeSandbox::parse("allow-top-navigation allow-top-navigation-by-user-activation");
+        assert!(
+            check_sandbox_navigation(&sandbox_both, false),
+            "有 allow-top-navigation 时无需用户激活即可导航"
+        );
+        assert!(
+            check_sandbox_navigation(&sandbox_both, true),
+            "有 allow-top-navigation 时用户激活也可导航"
+        );
+
+        // 仅有 user-activation 标志 → 非激活时阻止
+        let sandbox_user_only = IframeSandbox::parse("allow-top-navigation-by-user-activation");
+        assert!(
+            !check_sandbox_navigation(&sandbox_user_only, false),
+            "仅有 user-activation 标志时非激活应阻止"
+        );
+        assert!(
+            check_sandbox_navigation(&sandbox_user_only, true),
+            "仅有 user-activation 标志时激活应允许"
+        );
+
+        // 无任何导航标志 → 始终阻止
+        let sandbox_none = IframeSandbox::parse("allow-scripts allow-forms");
+        assert!(!check_sandbox_navigation(&sandbox_none, false), "无导航标志时应阻止");
+        assert!(
+            !check_sandbox_navigation(&sandbox_none, true),
+            "无导航标志时即使激活也应阻止"
+        );
+    }
 }

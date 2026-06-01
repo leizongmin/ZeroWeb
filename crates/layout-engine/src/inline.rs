@@ -2926,4 +2926,110 @@ mod tests {
             ctx.lines[0].height
         );
     }
+
+    // ── is_cjk_character / estimate_string_width 边界条件测试 ──
+
+    /// 测试 is_cjk_character：CJK 统一表意文字基本区（U+4E00）。
+    #[test]
+    fn test_is_cjk_unified_ideographs() {
+        assert!(is_cjk_character('\u{4E00}'), "U+4E00 一 应为 CJK");
+        assert!(is_cjk_character('\u{9FFF}'), "U+9FFF 龠 应为 CJK");
+        assert!(is_cjk_character('中'), "'中' 应为 CJK");
+    }
+
+    /// 测试 is_cjk_character：CJK 扩展 A（U+3400..U+4DBF）。
+    #[test]
+    fn test_is_cjk_extension_a() {
+        assert!(is_cjk_character('\u{3400}'), "U+3400 应为 CJK");
+        assert!(is_cjk_character('\u{4DBF}'), "U+4DBF 应为 CJK");
+    }
+
+    /// 测试 is_cjk_character：平假名和片假名。
+    #[test]
+    fn test_is_cjk_hiragana_katakana() {
+        assert!(is_cjk_character('\u{3040}'), "U+3040 应为 CJK");
+        assert!(is_cjk_character('\u{309F}'), "U+309F 应为 CJK（平假名末尾）");
+        assert!(is_cjk_character('\u{30A0}'), "U+30A0 应为 CJK（片假名起始）");
+        assert!(is_cjk_character('\u{30FF}'), "U+30FF 应为 CJK（片假名末尾）");
+    }
+
+    /// 测试 is_cjk_character：韩文音节（U+AC00..U+D7AF）。
+    #[test]
+    fn test_is_cjk_korean_syllables() {
+        assert!(is_cjk_character('\u{AC00}'), "U+AC00 가 应为 CJK");
+        assert!(is_cjk_character('\u{D7AF}'), "U+D7AF 힣 应为 CJK");
+    }
+
+    /// 测试 is_cjk_character：全角形式（U+FF00..U+FFEF）。
+    #[test]
+    fn test_is_cjk_fullwidth_forms() {
+        assert!(is_cjk_character('\u{FF00}'), "U+FF00 全角感叹号应为 CJK");
+        assert!(is_cjk_character('\u{FFEF}'), "U+FFEF 应为 CJK");
+    }
+
+    /// 测试 is_cjk_character：非 CJK 字符返回 false。
+    #[test]
+    fn test_is_cjk_non_cjk_returns_false() {
+        assert!(!is_cjk_character('A'), "ASCII 大写字母不应为 CJK");
+        assert!(!is_cjk_character('z'), "ASCII 小写字母不应为 CJK");
+        assert!(!is_cjk_character('0'), "数字不应为 CJK");
+        assert!(!is_cjk_character(' '), "空格不应为 CJK");
+        assert!(!is_cjk_character('.'), "标点不应为 CJK");
+        assert!(!is_cjk_character('\u{00E9}'), "é 不应为 CJK");
+    }
+
+    /// 测试 estimate_string_width：空字符串宽度为 0。
+    #[test]
+    fn test_estimate_string_width_empty() {
+        assert!(estimate_string_width("", 16.0).abs() < 0.001, "空字符串宽度应为 0");
+    }
+
+    /// 测试 estimate_string_width：纯 ASCII 字符串。
+    #[test]
+    fn test_estimate_string_width_ascii() {
+        let width = estimate_string_width("Hello", 16.0);
+        // 5 个字母 × 16 × 0.55 = 44.0
+        let expected = 5.0 * 16.0 * 0.55;
+        assert!(
+            (width - expected).abs() < 0.001,
+            "纯 ASCII 宽度应为 {}，实际 {}",
+            expected,
+            width
+        );
+    }
+
+    /// 测试 estimate_string_width：纯 CJK 字符串。
+    #[test]
+    fn test_estimate_string_width_cjk() {
+        let width = estimate_string_width("中文", 16.0);
+        // 2 个 CJK 字符 × 16.0 = 32.0
+        let expected = 2.0 * 16.0;
+        assert!(
+            (width - expected).abs() < 0.001,
+            "纯 CJK 宽度应为 {}，实际 {}",
+            expected,
+            width
+        );
+    }
+
+    /// 测试 estimate_string_width：中英混合。
+    #[test]
+    fn test_estimate_string_width_mixed() {
+        let width = estimate_string_width("A中", 16.0);
+        // 'A' = 16×0.55 = 8.8, '中' = 16.0, 总 = 24.8
+        let expected = 16.0 * 0.55 + 16.0;
+        assert!(
+            (width - expected).abs() < 0.001,
+            "混合宽度应为 {}，实际 {}",
+            expected,
+            width
+        );
+    }
+
+    /// 测试 estimate_string_width：font_size 为 0 时所有宽度为 0。
+    #[test]
+    fn test_estimate_string_width_zero_font_size() {
+        let width = estimate_string_width("Hello世界", 0.0);
+        assert!(width.abs() < 0.001, "零 font_size 宽度应为 0，实际 {}", width);
+    }
 }
