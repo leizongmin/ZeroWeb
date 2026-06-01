@@ -3299,4 +3299,87 @@ mod tests {
             "含 counter-set 的元素应正常产生填充图元"
         );
     }
+
+    // ── 新增边界测试（第二批） ──
+
+    /// 测试渲染管线处理空 CSS 不 panic。
+    #[test]
+    fn test_pipeline_empty_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div>Hello</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "空 CSS 应正常完成");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+    }
+
+    /// 测试渲染管线处理仅文本节点不 panic。
+    #[test]
+    fn test_pipeline_text_only() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>Just plain text</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "纯文本应正常完成");
+        // 纯文本应产生 glyph 图元
+        assert!(!result.primitives.glyphs.is_empty(), "纯文本应产生 glyph");
+    }
+
+    /// 测试渲染管线处理深嵌套 HTML 不 panic。
+    #[test]
+    fn test_pipeline_deeply_nested_html() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // 20 层嵌套
+        let open: String = (0..20).map(|i| format!("<div class=\"l{i}\">")).collect();
+        let close: String = (0..20).map(|_| "</div>").collect();
+        let html = format!("<html><body>{open}Deep{close}</body></html>");
+        let result = pipeline.render_html(&html, "");
+        assert!(result.timings.total_ms >= 0.0, "深嵌套应正常完成");
+    }
+
+    /// 测试渲染管线处理含特殊字符的文本。
+    #[test]
+    fn test_pipeline_special_characters() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div>&lt;script&gt; &amp; "quotes" 'apostrophes'</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "特殊字符应正常完成");
+    }
+
+    /// 测试渲染管线处理多个背景颜色元素。
+    #[test]
+    fn test_pipeline_multiple_backgrounds() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="a">A</div>
+            <div class="b">B</div>
+            <div class="c">C</div>
+        </body></html>"#;
+        let css = r#"
+            .a { background-color: red; width: 100px; height: 50px; }
+            .b { background-color: green; width: 100px; height: 50px; }
+            .c { background-color: blue; width: 100px; height: 50px; }
+        "#;
+        let result = pipeline.render_html(html, css);
+        assert!(
+            result.primitives.fills.len() >= 3,
+            "3 个背景色元素应产生至少 3 个填充图元"
+        );
+    }
+
+    /// 测试渲染管线处理无效 HTML 容错。
+    #[test]
+    fn test_pipeline_malformed_html_recovery() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div><span>unclosed<div>nested</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "畸形 HTML 应容错完成");
+    }
+
+    /// 测试渲染管线处理零视口尺寸不 panic。
+    #[test]
+    fn test_pipeline_zero_viewport() {
+        let mut pipeline = RenderPipeline::new(0.0, 0.0);
+        let html = r#"<html><body><div>Text</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.timings.total_ms >= 0.0, "零视口应正常完成");
+    }
 }
