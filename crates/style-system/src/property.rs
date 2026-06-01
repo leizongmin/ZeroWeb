@@ -12397,4 +12397,95 @@ mod tests {
             zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
         );
     }
+
+    // ── background-image 渐变边界测试 ──
+
+    /// 测试 background-image 渐变值解析。
+    #[test]
+    fn test_edge_background_image_gradient() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "background-image",
+            "linear-gradient(red, blue)"
+        ));
+        assert!(matches!(
+            style.background_image,
+            BackgroundImageComputedValue::Gradient(..)
+        ));
+    }
+
+    /// 测试 background-image radial-gradient 解析。
+    #[test]
+    fn test_edge_background_image_radial_gradient() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "background-image",
+            "radial-gradient(circle, red, blue)"
+        ));
+        match &style.background_image {
+            BackgroundImageComputedValue::Gradient(g) => {
+                assert!(matches!(g, zero_css_parser::values::GradientValue::Radial(..)));
+            }
+            other => panic!("expected Gradient(Radial(..)), got {:?}", other),
+        }
+    }
+
+    /// 测试 background-image 默认值仍为 None。
+    #[test]
+    fn test_edge_background_image_default_still_none() {
+        let style = ComputedStyle::default();
+        assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    }
+
+    /// 测试 background-image 初始值重置。
+    #[test]
+    fn test_edge_background_image_initial_reset() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "background-image",
+            "linear-gradient(red, blue)"
+        ));
+        assert!(matches!(
+            style.background_image,
+            BackgroundImageComputedValue::Gradient(..)
+        ));
+        assert!(apply_initial_value(&mut style, "background-image"));
+        assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    }
+
+    /// 测试 background 简写展开渐变。
+    #[test]
+    fn test_edge_background_shorthand_gradient() {
+        use crate::shorthand::expand_shorthands;
+
+        let decls: Vec<(String, String, bool, (u32, u32, u32))> = vec![(
+            "background".to_string(),
+            "linear-gradient(red, blue)".to_string(),
+            false,
+            (0, 0, 1),
+        )];
+        let expanded = expand_shorthands(&decls);
+        let props: Vec<(&str, &str)> = expanded.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+        assert!(props.contains(&("background-image", "linear-gradient(red, blue)")));
+    }
+
+    /// 测试 background-image conic-gradient 解析。
+    #[test]
+    fn test_edge_background_image_conic_gradient() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "background-image",
+            "conic-gradient(from 45deg, red, blue)"
+        ));
+        match &style.background_image {
+            BackgroundImageComputedValue::Gradient(g) => {
+                assert!(matches!(g, zero_css_parser::values::GradientValue::Conic(..)));
+            }
+            other => panic!("expected Gradient(Conic(..)), got {:?}", other),
+        }
+    }
 }

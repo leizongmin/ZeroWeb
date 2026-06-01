@@ -4347,4 +4347,468 @@ mod cross_crate_pipeline {
         assert!((shadow.offset_x - 0.0).abs() < 0.01, "shadow offset_x 应为 0.0");
         assert!((shadow.offset_y - 0.0).abs() < 0.01, "shadow offset_y 应为 0.0");
     }
+
+    // ── CSS 渐变管线集成测试 ──
+
+    /// CSS linear-gradient 渲染管线集成测试。
+    ///
+    /// 解析 background-image: linear-gradient(to bottom, red, blue)，
+    /// 通过 style-system 计算样式，验证 background_image 为 Gradient 变体，
+    /// 方向为 ToBottom，色标有 2 个元素。
+    #[test]
+    fn test_linear_gradient_render_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "grad");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .grad { background-image: linear-gradient(to bottom, red, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Linear(lin) => {
+                    assert_eq!(
+                        lin.direction,
+                        zero_css_parser::values::GradientDirection::ToBottom,
+                        "linear-gradient 方向应为 ToBottom"
+                    );
+                    assert_eq!(lin.stops.len(), 2, "应有 2 个色标");
+                    assert_eq!(lin.repeating, false, "不应为 repeating");
+                }
+                other => panic!("渐变应为 Linear，实际为 {:?}", other),
+            },
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS radial-gradient 渲染管线集成测试。
+    ///
+    /// 解析 background-image: radial-gradient(circle, red, blue)，
+    /// 验证 background_image 为 Gradient 变体且包含 RadialGradient。
+    #[test]
+    fn test_radial_gradient_render_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "radial");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .radial { background-image: radial-gradient(circle, red, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Radial(rad) => {
+                    assert_eq!(rad.shape, zero_css_parser::values::RadialShape::Circle);
+                    assert_eq!(rad.stops.len(), 2, "应有 2 个色标");
+                }
+                other => panic!("渐变应为 Radial，实际为 {:?}", other),
+            },
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS linear-gradient 通过 background 简写管线集成测试。
+    ///
+    /// 解析 background: linear-gradient(to right, #ff0000, #0000ff)，
+    /// 验证 expand_background 简写将渐变路由到 background-image，
+    /// 最终 computed style 中 background_image 为 Gradient 变体。
+    #[test]
+    fn test_gradient_via_background_shorthand_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "bg-grad");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .bg-grad { background: linear-gradient(to right, #ff0000, #0000ff); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Linear(lin) => {
+                    assert_eq!(
+                        lin.direction,
+                        zero_css_parser::values::GradientDirection::ToRight,
+                        "background 简写展开后方向应为 ToRight"
+                    );
+                }
+                other => panic!("渐变应为 Linear，实际为 {:?}", other),
+            },
+            other => panic!("background 简写中的渐变应路由到 background-image，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS conic-gradient 管线集成测试。
+    ///
+    /// 解析 background-image: conic-gradient(red, blue, green)，
+    /// 验证 background_image 为 Gradient 变体且包含 ConicGradient。
+    #[test]
+    fn test_conic_gradient_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "conic");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .conic { background-image: conic-gradient(red, blue, green); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Conic(conic) => {
+                    assert_eq!(conic.stops.len(), 3, "应有 3 个色标");
+                    assert!(!conic.repeating, "不应为 repeating");
+                }
+                other => panic!("渐变应为 Conic，实际为 {:?}", other),
+            },
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS repeating-linear-gradient 管线集成测试。
+    ///
+    /// 解析 background-image: repeating-linear-gradient(45deg, red, blue 20px)，
+    /// 验证 repeating 标志为 true。
+    #[test]
+    fn test_repeating_linear_gradient_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "repeat-grad");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .repeat-grad { background-image: repeating-linear-gradient(45deg, red, blue 20px); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Linear(lin) => {
+                    assert!(lin.repeating, "repeating-linear-gradient 的 repeating 应为 true");
+                    assert_eq!(lin.stops.len(), 2, "应有 2 个色标");
+                }
+                other => panic!("渐变应为 Linear，实际为 {:?}", other),
+            },
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS linear-gradient 渐变不继承管线测试。
+    ///
+    /// 父元素设置 background-image: linear-gradient(red, blue)，
+    /// 子元素不显式设置，background-image 不可继承，
+    /// 验证子元素的 background_image 为默认值 None。
+    #[test]
+    fn test_gradient_not_inherited_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "parent-grad");
+        doc.append_child(body, parent).unwrap();
+
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "child-plain");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent-grad { background-image: linear-gradient(red, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 父元素应有渐变
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            matches!(
+                &parent_style.background_image,
+                zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
+            ),
+            "parent 的 background_image 应为 Gradient 变体"
+        );
+
+        // 子元素不应继承 background-image
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert_eq!(
+            child_style.background_image,
+            zero_style_system::property::BackgroundImageComputedValue::None,
+            "child 不应继承 parent 的 background-image，应为 None"
+        );
+    }
+
+    /// CSS linear-gradient + background-color 组合管线测试。
+    ///
+    /// 同时设置 background-color: white 和 background-image: linear-gradient(red, blue)，
+    /// 验证两个属性都被正确设置到 computed style 中。
+    #[test]
+    fn test_gradient_with_background_color_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "combo");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .combo {
+                background-color: white;
+                background-image: linear-gradient(red, blue);
+            }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+
+        // 验证 background-color 为白色
+        assert_eq!(
+            div_style.background_color,
+            zero_css_parser::values::ColorValue::Rgba(255, 255, 255, 255),
+            "background-color 应为 white (255, 255, 255, 255)"
+        );
+
+        // 验证 background-image 为渐变
+        assert!(
+            matches!(
+                &div_style.background_image,
+                zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
+            ),
+            "background_image 应为 Gradient 变体"
+        );
+    }
+
+    /// CSS linear-gradient 角度方向管线测试。
+    ///
+    /// 解析 background-image: linear-gradient(90deg, red, green, blue)，
+    /// 验证方向为 Angle(90.0)。
+    #[test]
+    fn test_linear_gradient_angle_direction_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "angle-grad");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .angle-grad { background-image: linear-gradient(90deg, red, green, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
+                zero_css_parser::values::GradientValue::Linear(lin) => {
+                    match &lin.direction {
+                        zero_css_parser::values::GradientDirection::Angle(a) => {
+                            assert!((a - 90.0).abs() < 0.01, "方向应为 Angle(90.0)，实际为 Angle({})", a);
+                        }
+                        other => panic!("方向应为 Angle 变体，实际为 {:?}", other),
+                    }
+                    assert_eq!(lin.stops.len(), 3, "应有 3 个色标");
+                }
+                other => panic!("渐变应为 Linear，实际为 {:?}", other),
+            },
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS radial-gradient 自定义位置管线测试。
+    ///
+    /// 解析 background-image: radial-gradient(circle at 25% 75%, red, blue)，
+    /// 验证 position_x 和 position_y 匹配预期值。
+    #[test]
+    fn test_radial_gradient_position_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "pos-grad");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .pos-grad { background-image: radial-gradient(circle at 25% 75%, red, blue); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => {
+                match grad {
+                    zero_css_parser::values::GradientValue::Radial(rad) => {
+                        // position_x 应为 25% → Percent(25.0)
+                        assert!(
+                            matches!(&rad.position_x, zero_css_parser::values::LengthValue::Percentage(p) if (*p - 25.0).abs() < 0.01),
+                            "position_x 应为 Percent(25.0)，实际为 {:?}",
+                            rad.position_x
+                        );
+                        // position_y 应为 75% → Percent(75.0)
+                        assert!(
+                            matches!(&rad.position_y, zero_css_parser::values::LengthValue::Percentage(p) if (*p - 75.0).abs() < 0.01),
+                            "position_y 应为 Percent(75.0)，实际为 {:?}",
+                            rad.position_y
+                        );
+                    }
+                    other => panic!("渐变应为 Radial，实际为 {:?}", other),
+                }
+            }
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
+
+    /// CSS linear-gradient 多色标管线测试。
+    ///
+    /// 解析 background-image: linear-gradient(to right, red 0%, green 50%, blue 100%)，
+    /// 验证有 3 个色标且位置正确。
+    #[test]
+    fn test_linear_gradient_multi_stop_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+        let div = doc.create_element("div");
+        doc.set_attribute(div, "class", "multi-stop");
+        doc.append_child(body, div).unwrap();
+
+        let css = r#"
+            .multi-stop { background-image: linear-gradient(to right, red 0%, green 50%, blue 100%); }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        let div_style = styles.get(&div).expect("div 应有计算样式");
+        match &div_style.background_image {
+            zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => {
+                match grad {
+                    zero_css_parser::values::GradientValue::Linear(lin) => {
+                        assert_eq!(lin.stops.len(), 3, "应有 3 个色标");
+
+                        // 验证第一个色标：red 0%
+                        assert_eq!(
+                            lin.stops[0].color,
+                            zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+                            "第一个色标颜色应为红色"
+                        );
+                        assert!(
+                            matches!(&lin.stops[0].position, Some(zero_css_parser::values::LengthValue::Percentage(p)) if (*p - 0.0).abs() < 0.01),
+                            "第一个色标位置应为 0%"
+                        );
+
+                        // 验证第二个色标：green 50%
+                        assert_eq!(
+                            lin.stops[1].color,
+                            zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255),
+                            "第二个色标颜色应为绿色"
+                        );
+                        assert!(
+                            matches!(&lin.stops[1].position, Some(zero_css_parser::values::LengthValue::Percentage(p)) if (*p - 50.0).abs() < 0.01),
+                            "第二个色标位置应为 50%"
+                        );
+
+                        // 验证第三个色标：blue 100%
+                        assert_eq!(
+                            lin.stops[2].color,
+                            zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255),
+                            "第三个色标颜色应为蓝色"
+                        );
+                        assert!(
+                            matches!(&lin.stops[2].position, Some(zero_css_parser::values::LengthValue::Percentage(p)) if (*p - 100.0).abs() < 0.01),
+                            "第三个色标位置应为 100%"
+                        );
+                    }
+                    other => panic!("渐变应为 Linear，实际为 {:?}", other),
+                }
+            }
+            other => panic!("background_image 应为 Gradient 变体，实际为 {:?}", other),
+        }
+    }
 }
