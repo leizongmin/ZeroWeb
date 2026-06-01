@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，5421 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge 事件系统已集成
+**执行状态**: 16/16 crate 已实现，5436 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge 事件系统 + 右键上下文菜单已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -38,7 +38,7 @@
 | webview | 168 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**默认配置/data URI/多次导航/CSS 注入后加载/状态转换**、**load 前注入/title 事件/零视口/失败恢复/连续 load**、**config 默认值/last_render 状态/resize+render/is_loading 初始状态/回调移除**、**事件系统集成测试（addEventListener/removeEventListener/dispatchEvent/CustomEvent/preventDefault/capture 端到端验证）** |
 | wasm-sandbox | 132 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理** |
 | script-sandbox | 52 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**52 个单元测试全绿** |
-| browser-shell | 93 | — | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**go_forward() 空历史下溢修复** |
+| browser-shell | 135 | — | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**go_forward() 空历史下溢修复**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项、子菜单、递归查找）** |
 
 ### 跨 crate 集成测试
 
@@ -103,7 +103,19 @@
 
 ## 最近完成的改进
 
-### -50. DOM Bridge + browser-shell 下载/设置/缩放/查找模型（本轮，5396 测试）
+### -51. DOM Bridge 事件系统 + WebView 事件集成测试 + 右键上下文菜单（本轮，5436 测试）
+
+新增 DOM Bridge 事件命令、WebView 端到端事件集成测试、browser-shell 右键上下文菜单：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| engine/dom_bridge | **AddEventListener/RemoveEventListener/DispatchEvent** DomCommand 变体；polyfill 新增完整事件系统（addEventListener、removeEventListener、dispatchEvent、CustomEvent） | 8 |
+| webview | **V8 + DOM polyfill 端到端事件测试**：addEventListener/removeEventListener/dispatchEvent 可用性、CustomEvent 构造、事件监听器触发、事件对象传递、preventDefault、capture 顺序、built-in 节点、attribute 往返 | 11 |
+| browser-shell/context_menu | **ContextMenu 数据模型**：MenuItem（action/separator/sub_menu）、ContextType（Page/Link/Image/Selection/Editable）、5 种场景默认菜单项、子菜单递归查找 | 15 |
+
+Total: 5396 → 5436 (+40 tests)
+
+### -50. DOM Bridge + browser-shell 下载/设置/缩放/查找模型（前轮，5396 测试）
 
 新增 DOM Bridge 模块和 browser-shell 四个数据模型：
 
@@ -987,7 +999,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M8 多进程架构 (IPC) | ✅ (protocol crate) |
 | M9 Canvas + Storage | ✅ |
 | M10 WebView API | ✅ (webview + integration tests) |
-| M11 浏览器应用 | 🔄 browser-shell 完成（120 测试）、zero-browser 应用入口完成、DOM Bridge 完成（37 测试） |
+| M11 浏览器应用 | 🔄 browser-shell 完成（135 测试）、zero-browser 应用入口完成、DOM Bridge 完成（40 测试）、WebView 事件集成（168 测试） |
 
 ---
 
