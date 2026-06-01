@@ -3144,4 +3144,166 @@ mod tests {
             "setAttribute/getAttribute roundtrip should work"
         );
     }
+
+    // ── Fetch API 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 fetch 函数在 polyfill 中可用。
+    #[test]
+    fn test_webview_fetch_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof fetch;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "fetch should be a function");
+    }
+
+    /// 测试 Headers 构造函数可用。
+    #[test]
+    fn test_webview_headers_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof Headers;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "Headers should be a function");
+    }
+
+    /// 测试 Response 构造函数可用。
+    #[test]
+    fn test_webview_response_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof Response;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "Response should be a function");
+    }
+
+    /// 测试 Request 构造函数可用。
+    #[test]
+    fn test_webview_request_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof Request;");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("function"), "Request should be a function");
+    }
+
+    /// 测试 Headers 方法正常工作。
+    #[test]
+    fn test_webview_headers_methods() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var h = new Headers();
+            h.append('Content-Type', 'text/html');
+            h.get('content-type');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "text/html",
+            "Headers.get should return appended value (case-insensitive)"
+        );
+    }
+
+    /// 测试 Headers.has 和 Headers.delete。
+    #[test]
+    fn test_webview_headers_has_delete() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var h = new Headers();
+            h.set('X-Test', 'yes');
+            var has1 = h.has('x-test');
+            h.delete('x-test');
+            var has2 = h.has('x-test');
+            has1 && !has2 ? 'ok' : 'fail';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok");
+    }
+
+    /// 测试 Response 属性。
+    #[test]
+    fn test_webview_response_properties() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var r = new Response('body text', { status: 200, statusText: 'OK' });
+            r.status + ',' + r.ok + ',' + r.statusText;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "200,true,OK",
+            "Response properties should be set correctly"
+        );
+    }
+
+    /// 测试 Response.text() 返回 Promise。
+    #[test]
+    fn test_webview_response_text() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result =
+            wv.execute_script_with_dom("var r = new Response('hello world', { status: 200 }); typeof r.text();");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "object",
+            "Response.text() should return a Promise (object)"
+        );
+    }
+
+    /// 测试 Response.json() 返回 Promise。
+    #[test]
+    fn test_webview_response_json() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result =
+            wv.execute_script_with_dom(r#"var r = new Response('{"name":"test"}', { status: 200 }); typeof r.json();"#);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "object",
+            "Response.json() should return a Promise (object)"
+        );
+    }
+
+    /// 测试 Response.ok 对错误状态码为 false。
+    #[test]
+    fn test_webview_response_not_ok() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            "var r = new Response(null, { status: 404, statusText: 'Not Found' }); String(r.ok);",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "false", "Response.ok should be false for 404");
+    }
+
+    /// 测试 Request 属性。
+    #[test]
+    fn test_webview_request_properties() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var req = new Request('https://example.com/api', { method: 'POST', body: 'data' });
+            req.url + ',' + req.method;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "https://example.com/api,POST",
+            "Request url and method should be set"
+        );
+    }
+
+    /// 测试 fetch 返回 Promise 对象。
+    #[test]
+    fn test_webview_fetch_returns_promise() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof fetch('https://example.com/test');");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("object"),
+            "fetch() should return a Promise (object type)"
+        );
+    }
 }

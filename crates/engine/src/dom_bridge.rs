@@ -477,6 +477,77 @@ pub fn generate_dom_api_polyfill() -> String {
     Object.assign(node, _elementProto);
     return node;
   };
+
+  // ── Fetch API Stub ──
+  // Provides globalThis.fetch, Headers, Request, Response constructors.
+  // fetch() returns a stub Response (status 200, empty body) since real
+  // network access is handled by the host runtime.
+
+  globalThis.Headers = function(init) {
+    this._headers = {};
+    if (init) {
+      if (typeof init === 'object') {
+        for (var key in init) {
+          if (init.hasOwnProperty(key)) this._headers[key.toLowerCase()] = String(init[key]);
+        }
+      }
+    }
+  };
+  globalThis.Headers.prototype.append = function(name, value) { this._headers[name.toLowerCase()] = String(value); };
+  globalThis.Headers.prototype.delete = function(name) { delete this._headers[name.toLowerCase()]; };
+  globalThis.Headers.prototype.get = function(name) { return this._headers[name.toLowerCase()] || null; };
+  globalThis.Headers.prototype.has = function(name) { return name.toLowerCase() in this._headers; };
+  globalThis.Headers.prototype.set = function(name, value) { this._headers[name.toLowerCase()] = String(value); };
+
+  globalThis.Request = function(input, init) {
+    init = init || {};
+    this.url = typeof input === 'string' ? input : (input && input.url || '');
+    this.method = init.method || 'GET';
+    this.headers = new globalThis.Headers(init.headers || {});
+    this.body = init.body || null;
+    this._signal = init.signal || null;
+  };
+
+  globalThis.Response = function(body, init) {
+    init = init || {};
+    this.body = body;
+    this.status = init.status || 200;
+    this.statusText = init.statusText || 'OK';
+    this.headers = new globalThis.Headers(init.headers || {});
+    this.ok = this.status >= 200 && this.status < 300;
+    this.type = 'default';
+    this.url = init.url || '';
+  };
+  globalThis.Response.prototype.json = function() {
+    return Promise.resolve(JSON.parse(this.body));
+  };
+  globalThis.Response.prototype.text = function() {
+    return Promise.resolve(this.body || '');
+  };
+  globalThis.Response.prototype.clone = function() {
+    return new globalThis.Response(this.body, {
+      status: this.status,
+      statusText: this.statusText,
+      headers: this.headers._headers,
+      url: this.url
+    });
+  };
+  globalThis.Response.error = function() {
+    var r = new globalThis.Response(null, { status: 0, statusText: '' });
+    r.type = 'error';
+    return r;
+  };
+
+  globalThis.fetch = function(input, init) {
+    var req = (input instanceof globalThis.Request) ? input : new globalThis.Request(input, init);
+    // Stub: return empty 200 response. Real network handled by host runtime.
+    return Promise.resolve(new globalThis.Response(null, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/plain' },
+      url: req.url
+    }));
+  };
 })();
 "#
     .to_string()
@@ -848,5 +919,35 @@ mod tests {
         // Verify the polyfill handles capture option
         assert!(polyfill.contains("capture"));
         assert!(polyfill.contains("_eventListeners"));
+    }
+
+    // ── Polyfill Fetch API 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_fetch_api() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.fetch"));
+        assert!(polyfill.contains("globalThis.Headers"));
+        assert!(polyfill.contains("globalThis.Request"));
+        assert!(polyfill.contains("globalThis.Response"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_response_methods() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("prototype.json"));
+        assert!(polyfill.contains("prototype.text"));
+        assert!(polyfill.contains("prototype.clone"));
+        assert!(polyfill.contains("Response.error"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_headers_methods() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("prototype.append"));
+        assert!(polyfill.contains("prototype.delete"));
+        assert!(polyfill.contains("prototype.get"));
+        assert!(polyfill.contains("prototype.has"));
+        assert!(polyfill.contains("prototype.set"));
     }
 }
