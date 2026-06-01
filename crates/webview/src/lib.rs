@@ -2687,4 +2687,179 @@ mod tests {
             "最终 render 应反映第三次加载的内容"
         );
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  边界条件测试：极大尺寸 Builder、inject_css 空字符串、最小 HTML、
+    //  TitleChanged 回调零触发、多次 inject_css 累积渲染
+    // ════════════════════════════════════════════════════════════════
+
+    /// 验证 WebViewBuilder 使用极大尺寸（u32::MAX）构建 WebView 不会 panic，
+    /// 且生成的 WebView 配置正确反映传入的尺寸。
+    ///
+    /// 边界场景：width/height 设为 u32 最大值，
+    /// 确保构建器不会因整数溢出或内存预分配失败而崩溃。
+    /// 后续 load_html 和 render 也应在极端视口下安全完成。
+    #[test]
+    fn test_webview_builder_very_large_dimensions() {
+        let mut wv = WebViewBuilder::new().width(u32::MAX).height(u32::MAX).build();
+
+        assert_eq!(wv.config().width, u32::MAX, "宽度应存储为 u32::MAX");
+        assert_eq!(wv.config().height, u32::MAX, "高度应存储为 u32::MAX");
+
+        // 极大视口下加载和渲染不应 panic
+        let html = "<html><body><div>Large viewport</div></body></html>";
+        let result = wv.load_html(html, None);
+        assert!(result.timings.total_ms >= 0.0, "极大视口渲染耗时应为非负");
+        assert!(wv.last_render().is_some());
+
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0, "极大视口下 re-render 应安全");
+    }
+
+    /// 验证 inject_css 传入空字符串不会 panic，且返回有效的渲染结果。
+    ///
+    /// 边界场景：在已有 HTML 内容的 WebView 上注入空 CSS，
+    /// 渲染管线应安全处理空字符串输入，
+    /// fills 数量应与注入前保持一致（空 CSS 不产生新的样式规则）。
+    #[test]
+    fn test_webview_inject_css_empty_string_preserves_fills() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body><div class=\"box\">Content</div></body></html>";
+        let css = ".box { background-color: red; width: 100px; height: 50px; }";
+
+        let after_load = wv.load_html(html, Some(css));
+        let fills_before = after_load.primitives.fills.len();
+        assert!(fills_before > 0, "带 CSS 的 load_html 应产生 fills");
+
+        // 注入空字符串 CSS
+        let after_inject = wv.inject_css("");
+        assert!(after_inject.timings.total_ms >= 0.0, "空 CSS 注入耗时应为非负");
+        assert_eq!(
+            after_inject.primitives.fills.len(),
+            fills_before,
+            "空 CSS 注入不应改变 fills 数量"
+        );
+
+        // render 也应保持一致
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_before,
+            "render 后 fills 应与注入空 CSS 前一致"
+        );
+    }
+
+    /// 验证 load_html 加载最小 HTML "<html></html>" 不会 panic，且返回有效渲染结果。
+    ///
+    /// 边界场景：传入仅含根元素、无 body、无内容的极简 HTML，
+    /// 确保 DOM 树构建和渲染管线不会因缺少 body 或内容为空而崩溃。
+    #[test]
+    fn test_webview_load_html_minimal_html_tag() {
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        let result = wv.load_html("<html></html>", None);
+        assert!(result.timings.total_ms >= 0.0, "最小 HTML 渲染耗时应为非负");
+        assert!(wv.last_render().is_some(), "最小 HTML 加载后应有渲染结果");
+        assert!(!wv.is_loading(), "load_html 不应将 WebView 置为加载状态");
+        assert!(wv.url().is_none(), "load_html 不应设置 URL");
+        assert!(wv.title().is_none(), "最小 HTML 不应产生标题");
+
+        // 后续操作应正常工作
+        let inject_result = wv.inject_css("body { margin: 0; }");
+        assert!(inject_result.timings.total_ms >= 0.0, "最小 HTML 上注入 CSS 不应 panic");
+
+        let render_result = wv.render();
+        assert!(render_result.timings.total_ms >= 0.0, "最小 HTML 重新渲染不应 panic");
+    }
+
+    /// 验证在未调用 set_title 时，TitleChanged 回调触发次数为零。
+    ///
+    /// 边界场景：注册 TitleChanged 监听后执行一系列操作
+    /// （load_url、complete_load、load_html、inject_css、render），
+    /// 由于所有操作均未调用 set_title，
+    /// TitleChanged 事件计数应始终保持为 0。
+    #[test]
+    fn test_webview_title_changed_zero_fires_without_set_title() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let title_change_count: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+        let tcc = title_change_count.clone();
+        wv.on_event(move |e| {
+            if matches!(e, WebViewEvent::TitleChanged(_)) {
+                *tcc.borrow_mut() += 1;
+            }
+        });
+
+        // 执行一系列操作——均不涉及 set_title
+        wv.load_html("<html><body><div>No title set</div></body></html>", None);
+        assert_eq!(*title_change_count.borrow(), 0, "load_html 后 TitleChanged 计数应为 0");
+
+        wv.load_url("https://titleless.com");
+        assert_eq!(*title_change_count.borrow(), 0, "load_url 后 TitleChanged 计数应为 0");
+
+        wv.complete_load("<html><body><div>Loaded</div></body></html>", None);
+        assert_eq!(
+            *title_change_count.borrow(),
+            0,
+            "complete_load 后 TitleChanged 计数应为 0"
+        );
+
+        wv.inject_css("div { color: blue; }");
+        assert_eq!(*title_change_count.borrow(), 0, "inject_css 后 TitleChanged 计数应为 0");
+
+        let _ = wv.render();
+        assert_eq!(*title_change_count.borrow(), 0, "render 后 TitleChanged 计数应为 0");
+
+        // 确认 title() 仍为 None
+        assert!(wv.title().is_none(), "未调用 set_title 时 title 应为 None");
+    }
+
+    /// 验证多次调用 inject_css 后 render 累积所有 CSS，fills 单调递增。
+    ///
+    /// 边界场景：连续注入三条独立 CSS 规则（分别匹配不同 class），
+    /// 每次注入后 fills 数量应 >= 上一次（CSS 累积而非替换）。
+    /// 最终 render 应使用所有累积的 CSS，fills 数量与最后一次 inject_css 一致。
+    #[test]
+    fn test_webview_render_accumulates_all_css_after_multiple_injects() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let html = "<html><body>\
+            <div class=\"a\">A</div>\
+            <div class=\"b\">B</div>\
+            <div class=\"c\">C</div>\
+            </body></html>";
+
+        // 初始加载（无 CSS）
+        let initial = wv.load_html(html, None);
+        let fills_initial = initial.primitives.fills.len();
+
+        // 第一次注入：为 .a 添加样式
+        let after_a = wv.inject_css(".a { background-color: red; width: 50px; height: 50px; }");
+        let fills_a = after_a.primitives.fills.len();
+        assert!(fills_a >= fills_initial, "第一次注入后 fills 应 >= 初始值");
+
+        // 第二次注入：为 .b 添加样式
+        let after_b = wv.inject_css(".b { background-color: green; width: 60px; height: 60px; }");
+        let fills_b = after_b.primitives.fills.len();
+        assert!(fills_b >= fills_a, "第二次注入后 fills 应 >= 第一次注入后");
+
+        // 第三次注入：为 .c 添加样式
+        let after_c = wv.inject_css(".c { background-color: blue; width: 70px; height: 70px; }");
+        let fills_c = after_c.primitives.fills.len();
+        assert!(fills_c >= fills_b, "第三次注入后 fills 应 >= 第二次注入后");
+
+        // render 应累积所有三条 CSS，fills 与最后一次 inject_css 一致
+        let after_render = wv.render();
+        assert_eq!(
+            after_render.primitives.fills.len(),
+            fills_c,
+            "render() 应使用累积的所有 CSS（.a + .b + .c），fills 数量应与最后一次 inject_css 一致"
+        );
+
+        // 再次 render 确认幂等
+        let after_rerender = wv.render();
+        assert_eq!(
+            after_rerender.primitives.fills.len(),
+            fills_c,
+            "第二次 render 的 fills 应与第一次 render 一致（幂等）"
+        );
+    }
 }

@@ -5099,6 +5099,39 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
     })
 }
 
+/// CSS list-style-image 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStyleImageValue {
+    /// none（默认值）— 无列表标记图片。
+    None,
+    /// url(<string>) — 列表标记图片。
+    Url(String),
+}
+
+/// 解析 CSS list-style-image 属性值。
+///
+/// 支持格式如 "none"、"url(marker.png)"。
+pub fn parse_list_style_image(value: &str) -> Option<ListStyleImageValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(ListStyleImageValue::None);
+    }
+    if value.starts_with("url(") && value.ends_with(')') {
+        let inner = value.get(4..value.len() - 1)?;
+        let url = inner.trim();
+        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
+            url.get(1..url.len() - 1)?
+        } else {
+            url
+        };
+        if url.is_empty() {
+            return None;
+        }
+        return Some(ListStyleImageValue::Url(url.to_string()));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7639,5 +7672,99 @@ mod tests {
         assert_eq!(result.offset_y, LengthValue::Px(3.0));
         assert_eq!(result.blur_radius, LengthValue::Px(0.0));
         assert_eq!(result.color, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    // ── list-style-image ──
+
+    #[test]
+    fn test_parse_list_style_image_none() {
+        assert_eq!(parse_list_style_image("none"), Some(ListStyleImageValue::None));
+    }
+
+    #[test]
+    fn test_parse_list_style_image_url() {
+        let v = parse_list_style_image("url(marker.png)").unwrap();
+        assert_eq!(v, ListStyleImageValue::Url("marker.png".to_string()));
+    }
+
+    #[test]
+    fn test_parse_list_style_image_quoted() {
+        let v = parse_list_style_image("url('star.gif')").unwrap();
+        assert_eq!(v, ListStyleImageValue::Url("star.gif".to_string()));
+    }
+
+    #[test]
+    fn test_parse_list_style_image_invalid() {
+        assert_eq!(parse_list_style_image("invalid"), None);
+        assert_eq!(parse_list_style_image(""), None);
+        assert_eq!(parse_list_style_image("url()"), None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边缘测试补充（round 21）
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 测试 parse_list_style_image 双引号 URL
+    /// 验证 url("bullet.png") 格式能正确剥离双引号并提取 URL
+    #[test]
+    fn test_parse_list_style_image_double_quoted_url() {
+        let v = parse_list_style_image("url(\"bullet.png\")").unwrap();
+        assert_eq!(v, ListStyleImageValue::Url("bullet.png".to_string()));
+    }
+
+    /// 测试 parse_border_image_source 大写 "NONE"（大小写不敏感）
+    /// CSS 属性值关键字应忽略大小写，NONE / none / None 均应解析为 None
+    #[test]
+    fn test_parse_border_image_source_case_insensitive_none() {
+        assert_eq!(parse_border_image_source("NONE"), Some(BorderImageSourceValue::None));
+        assert_eq!(parse_border_image_source("None"), Some(BorderImageSourceValue::None));
+        assert_eq!(parse_border_image_source("NoNe"), Some(BorderImageSourceValue::None));
+    }
+
+    /// 测试 parse_background_repeat 全部 6 个枚举值
+    /// 逐一验证 repeat / repeat-x / repeat-y / no-repeat / space / round 都能正确解析
+    #[test]
+    fn test_parse_background_repeat_all_values() {
+        assert_eq!(parse_background_repeat("repeat"), Some(BackgroundRepeatValue::Repeat));
+        assert_eq!(
+            parse_background_repeat("repeat-x"),
+            Some(BackgroundRepeatValue::RepeatX)
+        );
+        assert_eq!(
+            parse_background_repeat("repeat-y"),
+            Some(BackgroundRepeatValue::RepeatY)
+        );
+        assert_eq!(
+            parse_background_repeat("no-repeat"),
+            Some(BackgroundRepeatValue::NoRepeat)
+        );
+        assert_eq!(parse_background_repeat("space"), Some(BackgroundRepeatValue::Space));
+        assert_eq!(parse_background_repeat("round"), Some(BackgroundRepeatValue::Round));
+    }
+
+    /// 测试 parse_filter 的 drop-shadow 函数
+    /// 验证 drop-shadow(2 3 4 red) 能正确解析为 DropShadow 变体，
+    /// 其中包含 x/y/blur 偏移和命名颜色。
+    /// 注意：parse_drop_shadow 内部使用 f32::parse，参数应为纯数值而非 "2px" 格式。
+    #[test]
+    fn test_parse_filter_drop_shadow() {
+        let result = parse_filter("drop-shadow(2 3 4 red)");
+        match result {
+            Some(FilterValue::DropShadow(x, y, blur, color)) => {
+                assert_eq!(x, 2.0);
+                assert_eq!(y, 3.0);
+                assert_eq!(blur, 4.0);
+                assert_eq!(color, ColorValue::Rgba(255, 0, 0, 255));
+            }
+            _ => panic!("应为 DropShadow，实际得到 {result:?}"),
+        }
+    }
+
+    /// 测试 parse_box_shadow 颜色在开头时的拒绝行为
+    /// 输入 "red 5px 10px" 将颜色放在 offset-x 位置，parse_length("red") 会失败，
+    /// 解析器应返回 None 而非产生错误结果
+    #[test]
+    fn test_parse_box_shadow_color_at_start_returns_none() {
+        assert_eq!(parse_box_shadow("red 5px 10px"), None);
     }
 }

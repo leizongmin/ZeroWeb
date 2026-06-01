@@ -4250,4 +4250,161 @@ mod tests {
         assert!(!instance.has_func("any_func"), "has_func 对空模块应返回 false");
         assert!(!instance.has_func(""), "has_func 对空字符串应返回 false");
     }
+
+    // =======================================================================
+    // 新增测试：更多边界条件
+    // =======================================================================
+
+    /// 实例化一个没有任何导出的 WASM 模块，验证实例化成功、导出列表为空，
+    /// 且所有导出查询方法（has_func、has_memory、has_table）均返回 false。
+    #[test]
+    fn test_instantiate_module_with_no_exports() {
+        let sandbox = WasmSandbox::new();
+        // 模块只包含内部函数和内存，没有任何导出
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func $internal nop)
+                (memory 1)
+                (start $internal)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        assert!(module.exports().is_empty(), "无导出模块的 exports() 应为空");
+
+        // 实例化应成功（start 函数执行成功）
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+        assert!(!instance.has_func("anything"), "无导出函数时 has_func 应返回 false");
+        assert!(!instance.has_memory("mem"), "未导出内存时 has_memory 应返回 false");
+        assert!(!instance.has_table("tbl"), "无表导出时 has_table 应返回 false");
+    }
+
+    /// 调用函数时传入错误类型的参数（例如用 I64 调用期望 I32 参数的函数），
+    /// wasmi 应因类型不匹配而返回错误。
+    #[test]
+    fn test_call_with_wrong_param_type() {
+        let sandbox = WasmSandbox::new();
+        // 函数期望 i32 参数
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "double") (param i32) (result i32)
+                    local.get 0 local.get 0 i32.add)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 传入 I64 参数调用期望 I32 的函数 → 类型不匹配错误
+        let result = instance.call("double", &[WasmValue::I64(21)]);
+        assert!(result.is_err(), "传入错误类型的参数应返回错误");
+
+        // 传入 F32 参数调用期望 I32 的函数 → 类型不匹配错误
+        let result = instance.call("double", &[WasmValue::F32(21.0)]);
+        assert!(result.is_err(), "传入 F32 给期望 I32 的函数应返回错误");
+
+        // 传入 F64 参数调用期望 I32 的函数 → 类型不匹配错误
+        let result = instance.call("double", &[WasmValue::F64(21.0)]);
+        assert!(result.is_err(), "传入 F64 给期望 I32 的函数应返回错误");
+
+        // 正确类型（I32）调用应成功
+        let ok = instance.call("double", &[WasmValue::I32(21)]).expect("correct type");
+        assert_eq!(ok[0], WasmValue::I32(42), "正确类型调用应返回 42");
+    }
+
+    /// 在没有全局导出变量的模块上调用 get_global_export，应返回 None（对应 false 语义），
+    /// 验证不会 panic 或返回错误值。
+    #[test]
+    fn test_get_global_export_on_module_with_no_globals() {
+        let sandbox = WasmSandbox::new();
+        // 模块只有函数和内存导出，没有全局变量导出
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "answer") (result i32) i32.const 42)
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 查询不存在的全局导出应返回 None
+        assert!(
+            instance.get_global_export("counter").is_none(),
+            "模块没有全局导出时 get_global_export 应返回 None"
+        );
+        assert!(
+            instance.get_global_export("g").is_none(),
+            "任意名称的全局导出查询应返回 None"
+        );
+        assert!(
+            instance.get_global_export("").is_none(),
+            "空字符串全局导出查询应返回 None"
+        );
+
+        // 确认函数和内存导出不受影响
+        assert!(instance.has_func("answer"), "函数导出应仍可查询");
+        assert!(instance.has_memory("mem"), "内存导出应仍可查询");
+    }
+
+    /// 设置燃料为 0 后调用任何函数，应立即返回 FuelExhausted 错误，
+    /// 验证零燃料状态下沙箱完全阻止执行。
+    #[test]
+    fn test_set_fuel_zero_then_call_returns_error() {
+        let config = SandboxConfig::new().consume_fuel(true);
+        let sandbox = WasmSandbox::with_config(config);
+        let wasm = wat_to_wasm(
+            r#"(module
+                (func (export "simple") (result i32) i32.const 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 设置燃料为 0
+        instance.set_fuel(0).expect("set_fuel to 0");
+        // 确认 get_fuel 返回 0
+        assert_eq!(instance.get_fuel().expect("get_fuel"), 0, "燃料应为 0");
+
+        // 调用最简单的函数也应立即返回 FuelExhausted
+        let result = instance.call("simple", &[]);
+        assert!(
+            matches!(result, Err(WasmError::FuelExhausted)),
+            "燃料为 0 时调用应返回 FuelExhausted"
+        );
+
+        // 补充燃料后调用应成功
+        instance.set_fuel(100).expect("refuel");
+        let r = instance.call("simple", &[]).expect("call after refuel");
+        assert_eq!(r[0], WasmValue::I32(1), "补充燃料后调用应成功返回 1");
+    }
+
+    /// 对同一内存导出多次调用 read_memory，验证每次返回的数据完全一致，
+    /// 确认多次读取操作返回的是同一底层内存的快照（逻辑上同一引用）。
+    #[test]
+    fn test_multiple_read_memory_calls_return_same_data() {
+        let sandbox = WasmSandbox::new();
+        let wasm = wat_to_wasm(
+            r#"(module
+                (memory (export "mem") 1)
+            )"#,
+        );
+        let module = sandbox.compile(&wasm).expect("compile");
+        let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+        // 写入测试数据
+        instance.write_memory("mem", 0, b"HELLO").expect("write");
+
+        // 连续多次读取同一区域
+        let read1 = instance.read_memory("mem", 0, 5).expect("read 1");
+        let read2 = instance.read_memory("mem", 0, 5).expect("read 2");
+        let read3 = instance.read_memory("mem", 0, 5).expect("read 3");
+
+        assert_eq!(read1, read2, "第一次和第二次读取应返回相同数据");
+        assert_eq!(read2, read3, "第二次和第三次读取应返回相同数据");
+        assert_eq!(&read1, b"HELLO", "读取数据应与写入一致");
+
+        // memory_size 多次调用也应返回相同值
+        let size1 = instance.memory_size("mem").expect("size 1");
+        let size2 = instance.memory_size("mem").expect("size 2");
+        assert_eq!(size1, size2, "多次 memory_size 应返回相同大小");
+        assert_eq!(size1, 65536, "一页内存应为 65536 字节");
+    }
 }

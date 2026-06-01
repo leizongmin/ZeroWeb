@@ -7517,3 +7517,121 @@ fn test_insert_before_ref_node_not_child_of_parent() {
     let children = doc.child_nodes(parent);
     assert_eq!(children[0], existing_child, "原有的子节点应保持不变");
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 边缘用例补充测试（round 21）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 create_comment("") 空字符串注释节点的 nodeType 和 nodeName，
+/// 并验证它可以正常附加到元素节点上。
+#[test]
+fn test_create_comment_empty_string_attach_to_element() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    let comment = doc.create_comment("");
+
+    // 节点类型为 8 (Comment)
+    assert_eq!(doc.node_type(comment), Some(8), "注释节点 nodeType 应为 8");
+
+    // 将空注释附加到元素上
+    doc.append_child(elem, comment).unwrap();
+    assert_eq!(doc.child_count(elem), 1, "元素应有一个子节点");
+    assert_eq!(doc.child_nodes(elem)[0], comment, "子节点应为刚附加的注释");
+}
+
+/// 测试 get_elements_by_class_name 在所有元素都有 class 但无匹配指定类名时返回空。
+#[test]
+fn test_get_elements_by_class_name_no_match_all_have_class() {
+    let doc = parse_html(
+        "<html><body>\
+         <div class=\"foo bar\">a</div>\
+         <span class=\"foo baz\">b</span>\
+         <p class=\"bar baz\">c</p>\
+         </body></html>",
+    );
+    // 所有元素都有 class，但 "qux" 不存在于任何元素上
+    let result = doc.get_elements_by_class_name("qux");
+    assert!(result.is_empty(), "没有任何元素具有 class \"qux\"，应返回空列表");
+
+    // "foo" 应找到 2 个
+    let foo = doc.get_elements_by_class_name("foo");
+    assert_eq!(foo.len(), 2, "class \"foo\" 应匹配 2 个元素");
+}
+
+/// 测试 set_attribute 覆盖已有属性后，旧值完全消失，
+/// 属性计数保持为 1，且 has_attribute 仍然为 true。
+#[test]
+fn test_set_attribute_overwrite_old_value_gone() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("input");
+
+    doc.set_attribute(elem, "type", "text");
+    assert_eq!(doc.get_attribute(elem, "type"), Some("text".to_string()));
+    assert_eq!(doc.attribute_names(elem).len(), 1);
+
+    // 覆盖为 "password"
+    doc.set_attribute(elem, "type", "password");
+    assert_eq!(doc.get_attribute(elem, "type"), Some("password".to_string()));
+    // 旧值 "text" 不应再可获取
+    assert!(doc.has_attribute(elem, "type"));
+    // 属性计数仍为 1，没有重复
+    assert_eq!(doc.attribute_names(elem).len(), 1, "覆盖后属性数量应仍为 1");
+
+    // 再覆盖为 "hidden"，验证链式覆盖正确
+    doc.set_attribute(elem, "type", "hidden");
+    assert_eq!(doc.get_attribute(elem, "type"), Some("hidden".to_string()));
+    assert_eq!(doc.attribute_names(elem).len(), 1);
+}
+
+/// 测试 remove_child 在子节点属于另一个父节点时返回 NotAChild 错误。
+/// child 是 parent_b 的子节点，尝试从 parent_a 移除应失败。
+#[test]
+fn test_remove_child_wrong_parent() {
+    let mut doc = Document::new();
+    let parent_a = doc.create_element("div");
+    let parent_b = doc.create_element("section");
+    let child = doc.create_element("span");
+
+    doc.append_child(doc.root(), parent_a).unwrap();
+    doc.append_child(doc.root(), parent_b).unwrap();
+    // child 仅附加到 parent_b
+    doc.append_child(parent_b, child).unwrap();
+
+    // 尝试从 parent_a 移除 child（child 不是 parent_a 的子节点）
+    let result = doc.remove_child(parent_a, child);
+    assert!(result.is_err(), "child 不是 parent_a 的子节点，应返回错误");
+    match result {
+        Err(DomError::NotAChild { parent: p, child: c }) => {
+            assert_eq!(p, parent_a, "错误中的 parent 应为 parent_a");
+            assert_eq!(c, child, "错误中的 child 应为被尝试移除的节点");
+        }
+        other => panic!("预期 NotAChild 错误，实际得到: {:?}", other),
+    }
+
+    // child 仍在 parent_b 中，未被移除
+    assert_eq!(doc.parent_node(child), Some(parent_b), "child 仍应是 parent_b 的子节点");
+    assert_eq!(doc.child_count(parent_b), 1, "parent_b 子节点数应保持为 1");
+}
+
+/// 测试将 0 子节点的 DocumentFragment 追加到元素后，目标元素子节点不变。
+#[test]
+fn test_document_fragment_zero_children_append() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    doc.append_child(doc.root(), container).unwrap();
+
+    // 创建空片段（0 子节点）
+    let frag = doc.create_document_fragment();
+    assert_eq!(doc.child_count(frag), 0, "空片段应有 0 个子节点");
+
+    // 将空片段附加到 container
+    doc.append_child(container, frag).unwrap();
+
+    // container 应有 1 个子节点（片段本身），但片段内部没有子节点
+    assert_eq!(doc.child_count(container), 1, "container 应有 1 个子节点（空片段）");
+    let children = doc.child_nodes(container);
+    assert_eq!(children[0], frag, "container 的唯一子节点应为空片段");
+
+    // 片段内部仍为空
+    assert_eq!(doc.child_count(frag), 0, "片段内部应保持 0 个子节点");
+}

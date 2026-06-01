@@ -740,6 +740,15 @@ pub struct BorderImageOutsetComputedValue {
     pub left: BorderImageOutsetComputedComponent,
 }
 
+/// CSS list-style-image 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListStyleImageComputedValue {
+    /// none（默认值）。
+    None,
+    /// url(<string>)。
+    Url(String),
+}
+
 /// CSS text-shadow 计算值。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextShadowComputedValue {
@@ -1152,6 +1161,8 @@ pub enum PropertyValue {
     ListStyleType(zero_css_parser::values::ListStyleTypeValue),
     /// list-style-position 值。
     ListStylePosition(zero_css_parser::values::ListStylePositionValue),
+    /// list-style-image 值。
+    ListStyleImage(ListStyleImageComputedValue),
     /// overflow 值。
     Overflow(OverflowValue),
     /// flex-direction 值。
@@ -1454,6 +1465,8 @@ pub struct ComputedStyle {
     pub list_style_type: zero_css_parser::values::ListStyleTypeValue,
     /// list-style-position 属性。
     pub list_style_position: zero_css_parser::values::ListStylePositionValue,
+    /// list-style-image 属性。
+    pub list_style_image: ListStyleImageComputedValue,
     /// writing-mode 属性。
     pub writing_mode: WritingModeValue,
     /// width 属性。
@@ -1608,6 +1621,8 @@ pub struct ComputedStyle {
     pub gap: LengthValue,
     /// row-gap 属性。
     pub row_gap: LengthValue,
+    /// column-gap 属性。
+    pub column_gap: LengthValue,
     /// order 属性。
     pub order: i32,
 
@@ -1897,6 +1912,7 @@ impl Default for ComputedStyle {
             clear: zero_css_parser::values::ClearValue::None,
             list_style_type: zero_css_parser::values::ListStyleTypeValue::Disc,
             list_style_position: zero_css_parser::values::ListStylePositionValue::Outside,
+            list_style_image: ListStyleImageComputedValue::None,
             writing_mode: WritingModeValue::HorizontalTb,
             width: auto_length.clone(),
             height: auto_length.clone(),
@@ -1981,6 +1997,7 @@ impl Default for ComputedStyle {
             flex_basis: FlexBasisValue::Auto,
             gap: LengthValue::Px(0.0),
             row_gap: LengthValue::Px(0.0),
+            column_gap: LengthValue::Px(0.0),
             order: 0,
 
             // Grid
@@ -2204,6 +2221,7 @@ impl PropertyRegistry {
             "list-style-position" => Some(ListStylePosition(
                 zero_css_parser::values::ListStylePositionValue::Outside,
             )),
+            "list-style-image" => Some(ListStyleImage(ListStyleImageComputedValue::None)),
             "width" | "height" => Some(Length(LengthValue::Px(0.0))),
             "min-width" | "min-height" => Some(Length(LengthValue::Px(0.0))),
             "max-width" | "max-height" => Some(Length(LengthValue::Px(f64::INFINITY))),
@@ -2272,6 +2290,8 @@ impl PropertyRegistry {
             "flex-shrink" => Some(Number(1.0)),
             "flex-basis" => Some(FlexBasis(FlexBasisValue::Auto)),
             "gap" => Some(Length(LengthValue::Px(0.0))),
+            "column-gap" => Some(Length(LengthValue::Px(0.0))),
+            "row-gap" => Some(Length(LengthValue::Px(0.0))),
             "order" => Some(Integer(0)),
 
             // 定位
@@ -2499,6 +2519,7 @@ impl PropertyRegistry {
                 | "text-wrap"
                 | "hyphens"
                 | "text-shadow"
+                | "list-style-image"
         )
     }
 
@@ -2511,6 +2532,7 @@ impl PropertyRegistry {
             "clear",
             "list-style-type",
             "list-style-position",
+            "list-style-image",
             "width",
             "height",
             "min-width",
@@ -2570,6 +2592,7 @@ impl PropertyRegistry {
             "flex-shrink",
             "flex-basis",
             "gap",
+            "column-gap",
             "order",
             "top",
             "right",
@@ -2596,12 +2619,18 @@ impl PropertyRegistry {
             "grid-column-end",
             "grid-row-start",
             "grid-row-end",
+            "grid-template-columns",
+            "grid-template-rows",
+            "grid-template-areas",
+            "grid-auto-flow",
+            "row-gap",
             "grid-auto-rows",
             "grid-auto-columns",
             "outline-width",
             "outline-style",
             "outline-color",
             "outline-offset",
+            "transform",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",
@@ -3153,6 +3182,15 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "list-style-image" => {
+            if let Some(v) = zero_css_parser::values::parse_list_style_image(value) {
+                style.list_style_image = match v {
+                    zero_css_parser::values::ListStyleImageValue::None => ListStyleImageComputedValue::None,
+                    zero_css_parser::values::ListStyleImageValue::Url(url) => ListStyleImageComputedValue::Url(url),
+                };
+                return true;
+            }
+        }
         "width" => {
             if let Some(v) = parse_length_or_math(value) {
                 style.width = v;
@@ -3587,6 +3625,12 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
         "gap" => {
             if let Some(v) = parse_length_or_math(value) {
                 style.gap = v;
+                return true;
+            }
+        }
+        "column-gap" => {
+            if let Some(v) = parse_length_or_math(value) {
+                style.column_gap = v;
                 return true;
             }
         }
@@ -5085,6 +5129,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_shadow = parent.text_shadow.clone();
             true
         }
+        "list-style-image" => {
+            child.list_style_image = parent.list_style_image.clone();
+            true
+        }
         _ => false,
     }
 }
@@ -5118,6 +5166,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "list-style-position" => {
             style.list_style_position = default_style.list_style_position;
+            true
+        }
+        "list-style-image" => {
+            style.list_style_image = default_style.list_style_image;
             true
         }
         "width" => {
@@ -5396,6 +5448,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "gap" => {
             style.gap = default_style.gap;
+            true
+        }
+        "column-gap" => {
+            style.column_gap = default_style.column_gap;
             true
         }
         "row-gap" => {
@@ -11442,5 +11498,166 @@ mod tests {
         assert_eq!(style.box_shadow.blur_radius, 0.0);
         assert_eq!(style.box_shadow.spread_radius, 0.0);
         assert!(!style.box_shadow.inset, "默认 box-shadow 的 inset 应为 false");
+    }
+
+    // ── list-style-image ──
+
+    #[test]
+    fn test_apply_list_style_image_none() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "list-style-image", "none"));
+        assert_eq!(style.list_style_image, ListStyleImageComputedValue::None);
+    }
+
+    #[test]
+    fn test_apply_list_style_image_url() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "list-style-image", "url(star.png)"));
+        assert_eq!(
+            style.list_style_image,
+            ListStyleImageComputedValue::Url("star.png".to_string())
+        );
+    }
+
+    #[test]
+    fn test_apply_list_style_image_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "list-style-image", "invalid"));
+    }
+
+    #[test]
+    fn test_list_style_image_is_inherited() {
+        assert!(PropertyRegistry::is_inherited("list-style-image"));
+    }
+
+    #[test]
+    fn test_list_style_image_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"list-style-image"));
+    }
+
+    #[test]
+    fn test_list_style_image_initial_value() {
+        assert!(PropertyRegistry::initial_value("list-style-image").is_some());
+        let mut style = ComputedStyle::default();
+        style.list_style_image = ListStyleImageComputedValue::Url("test.png".to_string());
+        assert!(apply_initial_value(&mut style, "list-style-image"));
+        assert_eq!(style.list_style_image, ListStyleImageComputedValue::None);
+    }
+
+    // ── column-gap ──
+
+    #[test]
+    fn test_apply_column_gap_px() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "column-gap", "20px"));
+        assert_eq!(style.column_gap, LengthValue::Px(20.0));
+    }
+
+    #[test]
+    fn test_apply_column_gap_invalid() {
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "column-gap", "invalid"));
+    }
+
+    #[test]
+    fn test_column_gap_not_inherited() {
+        assert!(!PropertyRegistry::is_inherited("column-gap"));
+    }
+
+    #[test]
+    fn test_column_gap_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"column-gap"));
+    }
+
+    #[test]
+    fn test_transform_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"transform"));
+    }
+
+    #[test]
+    fn test_grid_template_in_known_properties() {
+        let props = PropertyRegistry::known_properties();
+        assert!(props.contains(&"grid-template-columns"));
+        assert!(props.contains(&"grid-template-rows"));
+        assert!(props.contains(&"grid-template-areas"));
+        assert!(props.contains(&"grid-auto-flow"));
+        assert!(props.contains(&"row-gap"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 边界测试 — list-style-image 继承 / column-gap 百分比 /
+    // transform 多函数 / grid-auto-flow dense / row-gap em
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// 验证 list-style-image 作为可继承属性，通过 inherit_property 从父元素传递到子元素。
+    /// 父元素设置 list-style-image: url(bullet.png)，子元素应完整继承该 URL 值。
+    #[test]
+    fn test_list_style_image_inheritance_through_inherit_property() {
+        // 构造父元素样式：设置 list-style-image
+        let mut parent = ComputedStyle::default();
+        assert!(apply_property_value(&mut parent, "list-style-image", "url(bullet.png)"));
+        assert_eq!(
+            parent.list_style_image,
+            ListStyleImageComputedValue::Url("bullet.png".to_string())
+        );
+
+        // 构造子元素样式：从父元素继承 list-style-image
+        let mut child = ComputedStyle::default();
+        assert!(inherit_property(&parent, &mut child, "list-style-image"));
+
+        // 子元素应获得与父元素完全相同的 list-style-image 值
+        assert_eq!(child.list_style_image, parent.list_style_image);
+    }
+
+    /// 验证 column-gap 接受百分比值。
+    /// 百分比在布局阶段相对于容器宽度计算，此处验证解析和存储正确性。
+    #[test]
+    fn test_column_gap_with_percentage_value() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "column-gap", "25%"));
+        assert_eq!(style.column_gap, LengthValue::Percentage(25.0));
+    }
+
+    /// 验证 transform 属性支持多个变换函数组合。
+    /// "translate(10px) rotate(45deg)" 应解析为包含两个 TransformFunction 的列表。
+    #[test]
+    fn test_transform_with_multiple_functions() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "transform",
+            "translate(10px) rotate(45deg)"
+        ));
+        match &style.transform {
+            zero_css_parser::values::TransformValue::List(fns) => {
+                assert_eq!(fns.len(), 2, "应包含两个变换函数");
+                // 第一个函数：translate(10px) → Translate(10.0, 0.0)
+                assert_eq!(fns[0], zero_css_parser::values::TransformFunction::Translate(10.0, 0.0));
+                // 第二个函数：rotate(45deg) → Rotate(45.0)
+                assert_eq!(fns[1], zero_css_parser::values::TransformFunction::Rotate(45.0));
+            }
+            other => panic!("transform 应为 List 变体，实际为: {other:?}"),
+        }
+    }
+
+    /// 验证 grid-auto-flow 仅使用 "dense" 关键字时，
+    /// 解析为 RowDense（等效于 "row dense"）。
+    #[test]
+    fn test_grid_auto_flow_dense_keyword() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "grid-auto-flow", "dense"));
+        assert_eq!(style.grid_auto_flow, GridAutoFlowValue::RowDense);
+    }
+
+    /// 验证 row-gap 接受 em 单位值。
+    /// em 值在计算样式阶段相对于当前 font-size 解析，此处验证原始值正确存储。
+    #[test]
+    fn test_row_gap_with_em_value() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "row-gap", "1.5em"));
+        assert_eq!(style.row_gap, LengthValue::Em(1.5));
     }
 }

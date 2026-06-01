@@ -7952,4 +7952,77 @@ mod tests {
         let c = grad.sample_color(0.5);
         assert_eq!(c, Color::GREEN, "零长度渐变在 offset=0.5 处应返回绿色");
     }
+
+    /// 测试 restore 在没有对应 save 时不 panic。
+    /// Canvas 规范要求多余的 restore 静默忽略，不应导致崩溃。
+    #[test]
+    fn test_restore_without_matching_save_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 栈为空时调用 restore — 不应 panic
+        ctx.restore();
+        ctx.restore();
+        ctx.restore();
+        // 画布状态应保持默认值不变
+        assert_eq!(ctx.global_alpha(), 1.0, "多余 restore 不应改变 global_alpha");
+        assert_eq!(ctx.line_width(), 1.0, "多余 restore 不应改变 line_width");
+    }
+
+    /// 测试 fill_text 传入空字符串时不 panic。
+    /// 空字符串没有字符需要渲染，应正常处理而不产生任何图元。
+    #[test]
+    fn test_fill_text_empty_string_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        ctx.fill_text("", 10.0, 20.0);
+        // 空字符串不应产生任何图元
+        assert!(
+            ctx.primitives().glyphs.is_empty(),
+            "空字符串 fill_text 不应产生 glyph 图元"
+        );
+    }
+
+    /// 测试 stroke_rect 使用零宽高时不 panic。
+    /// 零尺寸矩形的描边边框在数学上退化为点或线，实现应安全处理。
+    #[test]
+    fn test_stroke_rect_zero_width_height_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 零宽高 — 不应 panic
+        ctx.stroke_rect(50.0, 50.0, 0.0, 0.0);
+        // 零宽度非零高度
+        ctx.stroke_rect(25.0, 25.0, 0.0, 40.0);
+        // 非零宽度零高度
+        ctx.stroke_rect(25.0, 25.0, 40.0, 0.0);
+    }
+
+    /// 测试 create_radial_gradient 使用负半径（退化渐变）时不 panic。
+    /// 负半径在数学上无意义，但应能正常创建对象并添加停止点。
+    #[test]
+    fn test_radial_gradient_negative_radius_degenerate_no_panic() {
+        let ctx = CanvasContext::new(100, 100);
+        let mut grad = ctx.create_radial_gradient(50.0, 50.0, -10.0, 50.0, 50.0, -20.0);
+        grad.add_color_stop(0.0, Color::RED);
+        grad.add_color_stop(1.0, Color::BLUE);
+        // 负半径渐变不 panic，停止点正确保存
+        assert_eq!(grad.stops.len(), 2, "负半径渐变应能正常添加停止点");
+        assert_eq!(grad.r0, -10.0, "内圆半径应保持负值不变");
+        assert_eq!(grad.r1, -20.0, "外圆半径应保持负值不变");
+        // sample_color 不应 panic（RED 和 BLUE 在 0.5 处插值为 (128,0,128)）
+        let c = grad.sample_color(0.5);
+        assert_eq!(c, Color::rgba(128, 0, 128, 255), "负半径渐变采样应返回正确插值颜色");
+    }
+
+    /// 测试 clip 在没有当前路径（空裁剪）时不 panic。
+    /// 没有构建路径时直接调用 clip，应静默忽略而非崩溃。
+    #[test]
+    fn test_clip_no_current_path_no_panic() {
+        let mut ctx = CanvasContext::new(100, 100);
+        // 没有构建任何路径，直接 clip — 不应 panic
+        ctx.clip();
+        ctx.clip();
+        // 后续绘制操作应正常执行（裁剪区域未被设置）
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        // 画布内像素应有正常绘制结果
+        let pixel = ctx.get_image_data(5, 5, 1, 1);
+        assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "空 clip 后 fill_rect 应正常绘制");
+    }
 }
