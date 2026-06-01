@@ -21,7 +21,10 @@ use zero_render_foundation::primitive::{
     FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive, RenderPrimitives,
     ShadowPrimitive,
 };
-use zero_style_system::{BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue};
+use zero_style_system::{
+    BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue, TextDecorationLineValue,
+    TextTransformValue,
+};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -158,6 +161,9 @@ impl Painter {
         let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
 
         // 获取该节点对应的计算样式
+        // 记录绘制前的图元数量，用于 opacity 应用
+        let counts_before = PrimitiveCounts::snapshot(&self.primitives);
+
         let is_hidden = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
@@ -219,6 +225,15 @@ impl Painter {
             );
             clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
             clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && style.opacity < 1.0
+        {
+            let opacity = style.opacity as f32;
+            apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理
@@ -432,6 +447,47 @@ impl Painter {
         }
     }
 
+    /// 绘制文本装饰线（underline / overline / line-through）。
+    ///
+    /// 在文本字形下方/上方/中间生成细线填充图元。
+    /// line_width 为装饰线高度（固定为 ~1px），line_y 根据装饰类型定位。
+    fn paint_text_decoration(
+        &mut self,
+        base_x: f32,
+        baseline_y: f32,
+        font_size: f32,
+        total_width: f32,
+        color: Color,
+        decoration: &TextDecorationLineValue,
+    ) {
+        if total_width <= 0.0 {
+            return;
+        }
+        let line_width = (font_size * 0.06).max(1.0);
+
+        match decoration {
+            TextDecorationLineValue::None => {}
+            TextDecorationLineValue::Underline => {
+                let y = baseline_y + font_size * 0.15;
+                self.primitives
+                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+            }
+            TextDecorationLineValue::Overline => {
+                let y = baseline_y - font_size;
+                self.primitives
+                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+            }
+            TextDecorationLineValue::LineThrough => {
+                let y = baseline_y - font_size * 0.35;
+                self.primitives
+                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+            }
+            TextDecorationLineValue::Blink => {
+                // blink 在现代浏览器中通常不绘制（已弃用），跳过
+            }
+        }
+    }
+
     /// 获取生成的渲染图元（消费 painter）。
     pub fn into_primitives(self) -> RenderPrimitives {
         self.primitives
@@ -506,7 +562,10 @@ impl Painter {
                     let char_advance = fragment.font_size * 0.6;
                     let mut char_x = frag_base_x;
 
-                    for ch in fragment.text.chars() {
+                    // 应用 text-transform
+                    let transformed = apply_text_transform(&fragment.text, &style.text_transform);
+
+                    for ch in transformed.chars() {
                         // 文本阴影 glyph（在主字形之前绘制，确保阴影在底层）
                         if has_text_shadow {
                             self.primitives.add_glyph(GlyphPrimitive {
@@ -533,6 +592,17 @@ impl Painter {
                         });
                         char_x += char_advance;
                     }
+
+                    // 绘制文本装饰线（underline/overline/line-through）
+                    let text_width = char_advance * transformed.len() as f32;
+                    self.paint_text_decoration(
+                        frag_base_x,
+                        frag_base_y,
+                        fragment.font_size,
+                        text_width,
+                        color,
+                        &style.text_decoration_line,
+                    );
                 }
                 return;
             }
@@ -566,6 +636,16 @@ impl Painter {
             bitmap_width: None,
             bitmap_height: None,
         });
+
+        // 退化的文本装饰线
+        self.paint_text_decoration(
+            glyph_x,
+            glyph_y + font_size,
+            font_size,
+            font_size * 0.6,
+            color,
+            &style.text_decoration_line,
+        );
     }
 }
 
@@ -637,6 +717,84 @@ fn clip_glyphs(glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive],
         {
             g.glyph_id = 0; // 标记为不可见
             g.font_size = 0.0;
+        }
+    }
+}
+
+/// 渲染图元数量快照（用于 opacity 应用范围判断）。
+struct PrimitiveCounts {
+    fills: usize,
+    rounded_rects: usize,
+    gradients: usize,
+    shadows: usize,
+    images: usize,
+    glyphs: usize,
+    strokes: usize,
+}
+
+impl PrimitiveCounts {
+    /// 从当前 RenderPrimitives 创建快照。
+    fn snapshot(p: &RenderPrimitives) -> Self {
+        Self {
+            fills: p.fills.len(),
+            rounded_rects: p.rounded_rects.len(),
+            gradients: p.gradients.len(),
+            shadows: p.shadows.len(),
+            images: p.images.len(),
+            glyphs: p.glyphs.len(),
+            strokes: p.strokes.len(),
+        }
+    }
+}
+
+/// 对快照之后新增的所有图元应用 opacity（alpha 衰减）。
+fn apply_opacity_to_new_primitives(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, opacity: f32) {
+    for fill in primitives.fills.iter_mut().skip(from.fills) {
+        fill.color.a = (fill.color.a as f32 * opacity).round() as u8;
+    }
+    for rr in primitives.rounded_rects.iter_mut().skip(from.rounded_rects) {
+        rr.color.a = (rr.color.a as f32 * opacity).round() as u8;
+    }
+    for grad in primitives.gradients.iter_mut().skip(from.gradients) {
+        for stop in &mut grad.stops {
+            stop.color.a = (stop.color.a as f32 * opacity).round() as u8;
+        }
+    }
+    for shadow in primitives.shadows.iter_mut().skip(from.shadows) {
+        shadow.color.a = (shadow.color.a as f32 * opacity).round() as u8;
+    }
+    for img in primitives.images.iter_mut().skip(from.images) {
+        // ImagePrimitive 没有 color 字段，opacity 通过绘制时应用
+        let _ = img;
+    }
+    for glyph in primitives.glyphs.iter_mut().skip(from.glyphs) {
+        glyph.color.a = (glyph.color.a as f32 * opacity).round() as u8;
+    }
+    for stroke in primitives.strokes.iter_mut().skip(from.strokes) {
+        stroke.color.a = (stroke.color.a as f32 * opacity).round() as u8;
+    }
+}
+
+/// 根据 CSS text-transform 转换文本。
+fn apply_text_transform(text: &str, transform: &TextTransformValue) -> String {
+    match transform {
+        TextTransformValue::None => text.to_string(),
+        TextTransformValue::Uppercase => text.to_uppercase(),
+        TextTransformValue::Lowercase => text.to_lowercase(),
+        TextTransformValue::Capitalize => {
+            let mut result = String::with_capacity(text.len());
+            let mut prev_is_boundary = true;
+            for ch in text.chars() {
+                if prev_is_boundary && ch.is_alphabetic() {
+                    for c in ch.to_uppercase() {
+                        result.push(c);
+                    }
+                } else {
+                    result.push(ch);
+                }
+                prev_is_boundary = !ch.is_alphanumeric();
+            }
+            result
         }
     }
 }
