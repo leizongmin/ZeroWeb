@@ -5496,3 +5496,99 @@ fn test_edge_parse_background_image_invalid() {
     assert_eq!(parse_background_image("gradient(red, blue)"), None);
     assert_eq!(parse_background_image("url('')"), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 33. parse_background_image 渐变边界条件测试
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_background_image 识别 linear-gradient。
+fn test_parse_background_image_linear_gradient() {
+    let result = parse_background_image("linear-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Linear(lg)) => {
+            assert!(!lg.repeating);
+            assert!(lg.stops.len() >= 2);
+        }
+        other => panic!("Expected Gradient(Linear(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 识别 radial-gradient。
+fn test_parse_background_image_radial_gradient() {
+    let result = parse_background_image("radial-gradient(circle, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Radial(rg)) => {
+            assert_eq!(rg.shape, RadialShape::Circle);
+            assert!(rg.stops.len() >= 2);
+        }
+        other => panic!("Expected Gradient(Radial(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 识别 conic-gradient。
+fn test_parse_background_image_conic_gradient() {
+    let result = parse_background_image("conic-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Conic(cg)) => {
+            assert!(cg.stops.len() >= 2);
+        }
+        other => panic!("Expected Gradient(Conic(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 识别 repeating-linear-gradient。
+fn test_parse_background_image_repeating_linear_gradient() {
+    let result = parse_background_image("repeating-linear-gradient(red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Linear(lg)) => {
+            assert!(lg.repeating, "repeating flag should be true");
+        }
+        other => panic!("Expected Gradient(Linear(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 渐变大小写不敏感。
+fn test_parse_background_image_gradient_case_insensitive() {
+    let result = parse_background_image("Linear-Gradient(red, blue)");
+    assert!(result.is_some(), "Mixed-case gradient name should be recognized");
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Linear(_)) => {}
+        other => panic!("Expected Gradient(Linear(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 渐变方向解析。
+fn test_parse_background_image_gradient_direction() {
+    let result = parse_background_image("linear-gradient(to right, red, blue)");
+    assert!(result.is_some());
+    match result.unwrap() {
+        BackgroundImageValue::Gradient(GradientValue::Linear(lg)) => {
+            assert_eq!(lg.direction, GradientDirection::ToRight);
+        }
+        other => panic!("Expected Gradient(Linear(..)), got {:?}", other),
+    }
+}
+
+#[test]
+/// 测试 parse_background_image 无效渐变返回 None。
+fn test_parse_background_image_invalid_gradient() {
+    // "gradient(...)" is not a known gradient function name
+    assert_eq!(parse_background_image("gradient(red, blue)"), None);
+}
+
+#[test]
+/// 测试 parse_background_image 空渐变参数返回 None。
+fn test_parse_background_image_empty_gradient() {
+    // "linear-gradient()" with no color stops should return None
+    assert_eq!(parse_background_image("linear-gradient()"), None);
+}

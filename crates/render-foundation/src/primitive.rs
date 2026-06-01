@@ -1170,4 +1170,175 @@ mod tests {
         assert_eq!(bb.right(), 58.0);
         assert_eq!(bb.bottom(), 58.0);
     }
+
+    /// 测试 GradientPrimitive::Linear 加入 RenderPrimitives。
+    #[test]
+    fn test_gradient_primitive_linear_in_primitives() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::RED,
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::BLUE,
+                },
+            ],
+        });
+        assert_eq!(p.gradients.len(), 1);
+    }
+
+    /// 测试 GradientPrimitive::Radial 加入 RenderPrimitives。
+    #[test]
+    fn test_gradient_primitive_radial_in_primitives() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            kind: GradientKind::Radial {
+                cx: 50.0,
+                cy: 50.0,
+                inner_radius: 10.0,
+                outer_radius: 50.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::WHITE,
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::BLACK,
+                },
+            ],
+        });
+        assert_eq!(p.gradients.len(), 1);
+        if let GradientKind::Radial {
+            cx,
+            cy,
+            inner_radius,
+            outer_radius,
+        } = &p.gradients[0].kind
+        {
+            assert_eq!(*cx, 50.0);
+            assert_eq!(*cy, 50.0);
+            assert_eq!(*inner_radius, 10.0);
+            assert_eq!(*outer_radius, 50.0);
+        } else {
+            panic!("Expected Radial gradient kind");
+        }
+    }
+
+    /// 测试渐变 bounding_box 计算。
+    #[test]
+    fn test_gradient_bounding_box() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(10.0, 20.0, 100.0, 80.0),
+            kind: GradientKind::Linear {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 110.0,
+                y1: 20.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::RED,
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::BLUE,
+                },
+            ],
+        });
+        let bb = p.bounding_box().unwrap();
+        assert_eq!(bb.left(), 10.0);
+        assert_eq!(bb.top(), 20.0);
+        assert_eq!(bb.right(), 110.0);
+        assert_eq!(bb.bottom(), 100.0);
+    }
+
+    /// 测试多个渐变图元 bounding_box 合并。
+    #[test]
+    fn test_multiple_gradients_bounding_box() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(10.0, 20.0, 100.0, 80.0),
+            kind: GradientKind::Linear {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 110.0,
+                y1: 20.0,
+            },
+            stops: vec![],
+        });
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(200.0, 150.0, 50.0, 50.0),
+            kind: GradientKind::Radial {
+                cx: 225.0,
+                cy: 175.0,
+                inner_radius: 0.0,
+                outer_radius: 25.0,
+            },
+            stops: vec![],
+        });
+        let bb = p.bounding_box().unwrap();
+        // First: left=10, top=20, right=110, bottom=100
+        // Second: left=200, top=150, right=250, bottom=200
+        // Merged: left=10, top=20, right=250, bottom=200
+        assert_eq!(bb.left(), 10.0);
+        assert_eq!(bb.top(), 20.0);
+        assert_eq!(bb.right(), 250.0);
+        assert_eq!(bb.bottom(), 200.0);
+    }
+
+    /// 测试 GradientStop 顺序。
+    #[test]
+    fn test_gradient_stops_order() {
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::RED,
+                },
+                GradientStop {
+                    offset: 0.5,
+                    color: Color::GREEN,
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::BLUE,
+                },
+            ],
+        });
+        let stops = &p.gradients[0].stops;
+        assert_eq!(stops.len(), 3);
+        assert_eq!(stops[0].offset, 0.0);
+        assert_eq!(stops[1].offset, 0.5);
+        assert_eq!(stops[2].offset, 1.0);
+        // Verify order preserved: offsets must be monotonically increasing
+        for i in 1..stops.len() {
+            assert!(
+                stops[i].offset > stops[i - 1].offset,
+                "stops should be in ascending order"
+            );
+        }
+    }
 }
