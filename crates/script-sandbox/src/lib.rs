@@ -61,10 +61,7 @@ compile_error!("至少需要启用一个JS引擎feature: `v8` 或 `quickjs`");
 
 // ── 无feature gate时的占位实现（仅编译时检查） ──
 
-#[cfg(all(
-    test,
-    not(any(feature = "v8", feature = "quickjs"))
-))]
+#[cfg(all(test, not(any(feature = "v8", feature = "quickjs"))))]
 mod tests {
     #[test]
     fn placeholder() {

@@ -81,10 +81,7 @@ impl V8Sandbox {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
 
-        let isolate = self
-            .isolate
-            .as_mut()
-            .ok_or(ScriptError::NotInitialized)?;
+        let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
 
         let start = std::time::Instant::now();
 
@@ -127,10 +124,7 @@ impl V8Sandbox {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
 
-        let isolate = self
-            .isolate
-            .as_mut()
-            .ok_or(ScriptError::NotInitialized)?;
+        let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
 
         let start = std::time::Instant::now();
 
@@ -181,10 +175,7 @@ impl V8Sandbox {
     }
 
     /// 将V8值转换为JSON字符串。
-    fn value_to_json_string(
-        scope: &mut rusty_v8::HandleScope,
-        value: rusty_v8::Local<rusty_v8::Value>,
-    ) -> String {
+    fn value_to_json_string(scope: &mut rusty_v8::HandleScope, value: rusty_v8::Local<rusty_v8::Value>) -> String {
         let context = scope.get_current_context();
         let global = context.global(scope);
 
@@ -229,9 +220,7 @@ impl V8Sandbox {
                 .unwrap_or_default();
         }
 
-        let Ok(stringify_fn) =
-            rusty_v8::Local::<rusty_v8::Function>::try_from(stringify_val)
-        else {
+        let Ok(stringify_fn) = rusty_v8::Local::<rusty_v8::Function>::try_from(stringify_val) else {
             return value
                 .to_string(scope)
                 .map(|s| s.to_rust_string_lossy(scope))
@@ -345,18 +334,14 @@ mod tests {
     #[test]
     fn test_execute_function_call() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("(function() { return 'success'; })()")
-            .unwrap();
+        let result = sandbox.execute("(function() { return 'success'; })()").unwrap();
         assert_eq!(result.value, "success");
     }
 
     #[test]
     fn test_execute_object_creation() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("({ name: 'test', value: 123 })")
-            .unwrap();
+        let result = sandbox.execute("({ name: 'test', value: 123 })").unwrap();
         // V8的object toString返回"[object Object]"
         assert!(
             result.value.contains("test") || result.value.contains("[object Object]"),
@@ -404,18 +389,14 @@ mod tests {
     #[test]
     fn test_execute_json_parse() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("JSON.parse('{\"a\":1}').a")
-            .unwrap();
+        let result = sandbox.execute("JSON.parse('{\"a\":1}').a").unwrap();
         assert_eq!(result.value, "1");
     }
 
     #[test]
     fn test_execute_json_stringify() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("JSON.stringify({x: 1})")
-            .unwrap();
+        let result = sandbox.execute("JSON.stringify({x: 1})").unwrap();
         assert_eq!(result.value, "{\"x\":1}");
     }
 
@@ -436,27 +417,21 @@ mod tests {
     #[test]
     fn test_execute_destructuring() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("const {a, b} = {a: 1, b: 2}; a + b")
-            .unwrap();
+        let result = sandbox.execute("const {a, b} = {a: 1, b: 2}; a + b").unwrap();
         assert_eq!(result.value, "3");
     }
 
     #[test]
     fn test_execute_spread_operator() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("const arr = [1, 2, 3]; [...arr, 4].length")
-            .unwrap();
+        let result = sandbox.execute("const arr = [1, 2, 3]; [...arr, 4].length").unwrap();
         assert_eq!(result.value, "4");
     }
 
     #[test]
     fn test_execute_promise() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("Promise.resolve(42)")
-            .unwrap();
+        let result = sandbox.execute("Promise.resolve(42)").unwrap();
         assert!(result.value.contains("Promise") || result.value == "42");
     }
 
@@ -489,9 +464,7 @@ mod tests {
     #[test]
     fn test_execute_let_const() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("let a = 10; const b = 20; a + b")
-            .unwrap();
+        let result = sandbox.execute("let a = 10; const b = 20; a + b").unwrap();
         assert_eq!(result.value, "30");
     }
 
@@ -526,18 +499,14 @@ mod tests {
     #[test]
     fn test_execute_array_methods() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("[1, 2, 3].map(x => x * 2).join(',')")
-            .unwrap();
+        let result = sandbox.execute("[1, 2, 3].map(x => x * 2).join(',')").unwrap();
         assert_eq!(result.value, "2,4,6");
     }
 
     #[test]
     fn test_execute_string_methods() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        let result = sandbox
-            .execute("'hello world'.split(' ').join('-')")
-            .unwrap();
+        let result = sandbox.execute("'hello world'.split(' ').join('-')").unwrap();
         assert_eq!(result.value, "hello-world");
     }
 
