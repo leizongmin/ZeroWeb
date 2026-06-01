@@ -1828,4 +1828,3 @@ fn test_document_fragment_zero_children_append() {
     // 片段内部仍为空
     assert_eq!(doc.child_count(frag), 0, "片段内部应保持 0 个子节点");
 }
-

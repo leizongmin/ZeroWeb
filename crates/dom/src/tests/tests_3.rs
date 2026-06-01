@@ -1890,4 +1890,3 @@ fn test_parser_script_tag_content() {
     assert_eq!(ps.len(), 1, "script 后的 p 应正常解析");
     assert_eq!(doc.text_content(ps[0]), Some("after".to_string()));
 }
-

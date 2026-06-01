@@ -697,4 +697,260 @@ mod tests {
         assert!(debug.contains("2048"));
         assert!(debug.contains("200"));
     }
+
+    // ── 状态隔离测试 ──
+
+    #[test]
+    /// 测试多次 execute 调用之间变量不泄漏（每次创建新 Context）。
+    fn test_state_isolation_between_executions() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        // 第一次执行定义变量 x
+        let r1 = sandbox.execute("var x = 42; x").unwrap();
+        assert_eq!(r1.value, "42");
+        // 第二次执行应无法访问 x（新 Context）
+        let r2 = sandbox.execute("typeof x === 'undefined'");
+        match r2 {
+            Ok(result) => assert_eq!(
+                result.value, "true",
+                "variable from previous execution should not be visible"
+            ),
+            Err(ScriptError::RuntimeError(_)) => {} // 访问未定义变量抛出 ReferenceError 也是合法
+            Err(e) => panic!("Unexpected error: {e}"),
+        }
+    }
+
+    #[test]
+    /// 测试多个独立沙箱之间状态完全隔离。
+    fn test_state_isolation_between_sandboxes() {
+        let mut sandbox1 = V8Sandbox::new().unwrap();
+        let mut sandbox2 = V8Sandbox::new().unwrap();
+        sandbox1.execute("var secret = 123").unwrap();
+        let r2 = sandbox2.execute("typeof secret === 'undefined'");
+        assert_eq!(r2.unwrap().value, "true");
+    }
+
+    // ── execute_json 边界测试 ──
+
+    #[test]
+    /// 测试 execute_json 处理嵌套对象。
+    fn test_execute_json_nested_object() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("({a: {b: {c: 1}}})").unwrap();
+        assert!(result.value.contains("\"a\""));
+        assert!(result.value.contains("\"b\""));
+        assert!(result.value.contains("\"c\""));
+        assert!(result.value.contains("1"));
+    }
+
+    #[test]
+    /// 测试 execute_json 处理空对象。
+    fn test_execute_json_empty_object() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("({})").unwrap();
+        assert_eq!(result.value, "{}");
+    }
+
+    #[test]
+    /// 测试 execute_json 处理空数组。
+    fn test_execute_json_empty_array() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("([])").unwrap();
+        assert_eq!(result.value, "[]");
+    }
+
+    #[test]
+    /// 测试 execute_json 处理 null。
+    fn test_execute_json_null() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("null").unwrap();
+        assert_eq!(result.value, "null");
+    }
+
+    #[test]
+    /// 测试 execute_json 处理 boolean。
+    fn test_execute_json_boolean() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r1 = sandbox.execute_json("true").unwrap();
+        assert_eq!(r1.value, "true");
+        let r2 = sandbox.execute_json("false").unwrap();
+        assert_eq!(r2.value, "false");
+    }
+
+    #[test]
+    /// 测试 execute_json 处理 undefined（JSON 序列化为 undefined 通常是 undefined）。
+    fn test_execute_json_undefined() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("undefined").unwrap();
+        // JSON.stringify(undefined) 返回 undefined（非字符串），value_to_json_string 应处理
+        assert!(result.value == "null" || result.value == "undefined" || result.value.is_empty());
+    }
+
+    #[test]
+    /// 测试 execute_json 对语法错误返回 CompileError。
+    fn test_execute_json_syntax_error() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("function(");
+        assert!(matches!(result, Err(ScriptError::CompileError(_))));
+    }
+
+    #[test]
+    /// 测试 execute_json 对空脚本返回 InvalidInput。
+    fn test_execute_json_empty_script() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("");
+        assert!(matches!(result, Err(ScriptError::InvalidInput(_))));
+    }
+
+    #[test]
+    /// 测试 execute_json 处理含特殊字符的字符串。
+    fn test_execute_json_special_chars() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute_json("'hello\\nworld\\t!'").unwrap();
+        assert!(result.value.contains("hello"));
+    }
+
+    // ── 大脚本与性能边界测试 ──
+
+    #[test]
+    /// 测试执行较大脚本（10000 次循环）正常返回。
+    fn test_execute_large_loop() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let code = "var sum = 0; for (var i = 0; i < 10000; i++) { sum += i; } sum";
+        let result = sandbox.execute(code).unwrap();
+        assert_eq!(result.value, "49995000");
+    }
+
+    #[test]
+    /// 测试执行生成大字符串的脚本。
+    fn test_execute_large_string_concat() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let code = "var s = ''; for (var i = 0; i < 1000; i++) { s += 'a'; } s.length";
+        let result = sandbox.execute(code).unwrap();
+        assert_eq!(result.value, "1000");
+    }
+
+    // ── 更多 ES6+ 特性测试 ──
+
+    #[test]
+    /// 测试 Map 数据结构。
+    fn test_execute_map() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox
+            .execute("const m = new Map([[1,'a'],[2,'b']]); m.get(1)")
+            .unwrap();
+        assert_eq!(result.value, "a");
+    }
+
+    #[test]
+    /// 测试 Set 数据结构。
+    fn test_execute_set() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute("const s = new Set([1,2,2,3]); s.size").unwrap();
+        assert_eq!(result.value, "3");
+    }
+
+    #[test]
+    /// 测试 Symbol。
+    fn test_execute_symbol() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute("typeof Symbol('test')").unwrap();
+        assert_eq!(result.value, "symbol");
+    }
+
+    #[test]
+    /// 测试 Proxy。
+    fn test_execute_proxy() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox
+            .execute("const p = new Proxy({}, { get: (t, k) => k === 'name' ? 'zero' : undefined }); p.name")
+            .unwrap();
+        assert_eq!(result.value, "zero");
+    }
+
+    #[test]
+    /// 测试 async/await 语法（返回 Promise）。
+    fn test_execute_async_await() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute("(async () => 42)()").unwrap();
+        // V8 可能输出 Promise 对象或 42
+        assert!(result.value.contains("42") || result.value.contains("Promise"));
+    }
+
+    #[test]
+    /// 测试默认参数。
+    fn test_execute_default_parameters() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute("(function(x = 10) { return x; })()").unwrap();
+        assert_eq!(result.value, "10");
+    }
+
+    #[test]
+    /// 测试 rest 参数。
+    fn test_execute_rest_parameters() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox
+            .execute("(function(...args) { return args.length; })(1,2,3)")
+            .unwrap();
+        assert_eq!(result.value, "3");
+    }
+
+    #[test]
+    /// 测试 for...of 循环。
+    fn test_execute_for_of() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox
+            .execute("let sum = 0; for (const x of [1,2,3]) sum += x; sum")
+            .unwrap();
+        assert_eq!(result.value, "6");
+    }
+
+    #[test]
+    /// 测试 Object.entries / Object.values / Object.keys。
+    fn test_execute_object_static_methods() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r1 = sandbox.execute("Object.keys({a:1,b:2}).length").unwrap();
+        assert_eq!(r1.value, "2");
+        let r2 = sandbox
+            .execute("Object.values({a:1,b:2}).reduce((s,v)=>s+v,0)")
+            .unwrap();
+        assert_eq!(r2.value, "3");
+        let r3 = sandbox.execute("Object.entries({x:10}).length").unwrap();
+        assert_eq!(r3.value, "1");
+    }
+
+    #[test]
+    /// 测试 Array.isArray / Array.from / Array.of。
+    fn test_execute_array_static_methods() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r1 = sandbox.execute("Array.isArray([1,2])").unwrap();
+        assert_eq!(r1.value, "true");
+        let r2 = sandbox.execute("Array.from('abc').length").unwrap();
+        assert_eq!(r2.value, "3");
+        let r3 = sandbox.execute("Array.of(1,2,3).length").unwrap();
+        assert_eq!(r3.value, "3");
+    }
+
+    #[test]
+    /// 测试 JSON.parse / JSON.stringify 可用。
+    fn test_execute_json_builtins() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r1 = sandbox.execute("JSON.parse('{\"a\":1}').a").unwrap();
+        assert_eq!(r1.value, "1");
+        let r2 = sandbox.execute("JSON.stringify({b:2})").unwrap();
+        assert!(r2.value.contains("\"b\""));
+    }
+
+    #[test]
+    /// 测试 Math 常用方法。
+    fn test_execute_math_methods() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r1 = sandbox.execute("Math.max(1, 5, 3)").unwrap();
+        assert_eq!(r1.value, "5");
+        let r2 = sandbox.execute("Math.min(1, 5, 3)").unwrap();
+        assert_eq!(r2.value, "1");
+        let r3 = sandbox.execute("Math.round(2.7)").unwrap();
+        assert_eq!(r3.value, "3");
+        let r4 = sandbox.execute("Math.abs(-42)").unwrap();
+        assert_eq!(r4.value, "42");
+    }
 }
