@@ -194,14 +194,8 @@ mod tests {
     fn make_empty_shaper() -> TextShaper<'static> {
         static LOADER: std::sync::OnceLock<FontLoader> = std::sync::OnceLock::new();
         let loader = LOADER.get_or_init(FontLoader::new);
-        // Safety: FontLoader::new() 返回的对象在 OnceLock 中，生命周期为 'static
-        // 我们通过 unsafe 指向 static 引用，但由于 TextShaper 使用在测试中
-        // 且测试是同步的，这里使用 transmute 模拟 'static 生命周期
-        // 这是一个已知的测试限制
-        unsafe {
-            let loader_ref: &'static FontLoader = loader;
-            TextShaper::new(loader_ref, None)
-        }
+        // OnceLock 中存储的对象生命周期为 'static，无需 unsafe
+        TextShaper::new(loader, None)
     }
 
     /// 查找一个可用的系统字体文件

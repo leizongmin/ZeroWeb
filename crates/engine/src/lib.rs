@@ -32,7 +32,6 @@ mod tests {
     use zero_css_parser::values::ColorValue;
     use zero_layout_engine::LayoutBox;
     use zero_layout_engine::types::OverflowClip;
-    use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
     use zero_style_system::ComputedStyle;
 
@@ -444,7 +443,6 @@ mod tests {
     /// outline-width 为 0 时 paint_outline 提前返回，不应产生填充图元。
     #[test]
     fn test_outline_render_no_width() {
-        use zero_css_parser::values::VisibilityValue;
         use zero_style_system::property::OutlineStyleValue;
 
         let mut doc = zero_dom::Document::new();
@@ -1034,7 +1032,7 @@ mod tests {
         let html = "<html><body><p>Initial</p></body></html>";
 
         // 首次渲染
-        let first = pipeline.render_html(html, "");
+        let _first = pipeline.render_html(html, "");
         assert!(pipeline.layout().is_some());
 
         // 重新计算样式（无 CSS 变化）

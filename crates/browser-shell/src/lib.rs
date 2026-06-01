@@ -1562,8 +1562,8 @@ mod tests {
     fn test_tab_manager_move_tab_forward() {
         let mut manager = TabManager::new();
         let id1 = manager.create_tab(Some("https://a.com"));
-        let id2 = manager.create_tab(Some("https://b.com"));
-        let id3 = manager.create_tab(Some("https://c.com"));
+        let _id2 = manager.create_tab(Some("https://b.com"));
+        let _id3 = manager.create_tab(Some("https://c.com"));
         // [a, b, c] → move a to index 2 → [b, c, a]
         assert!(manager.move_tab(id1, 2));
         let urls: Vec<_> = manager.tabs().map(|t| t.url().unwrap()).collect();
@@ -1573,7 +1573,7 @@ mod tests {
     #[test]
     fn test_tab_manager_move_tab_backward() {
         let mut manager = TabManager::new();
-        let id1 = manager.create_tab(Some("https://a.com"));
+        let _id1 = manager.create_tab(Some("https://a.com"));
         let _id2 = manager.create_tab(Some("https://b.com"));
         let id3 = manager.create_tab(Some("https://c.com"));
         // [a, b, c] → move c to index 0 → [c, a, b]

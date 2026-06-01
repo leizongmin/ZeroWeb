@@ -553,12 +553,12 @@ mod tests {
     #[test]
     fn test_cache_gc_single_image_exceeds_max_bytes() {
         let mut cache = ImageCache::new(10, 16); // 仅允许 16 字节
-        let key1 = cache.insert(make_image(1, 1, 10)); // 4 字节
-        let key2 = cache.insert(make_image(1, 1, 20)); // 4 字节
+        let _key1 = cache.insert(make_image(1, 1, 10)); // 4 字节
+        let _key2 = cache.insert(make_image(1, 1, 20)); // 4 字节
         assert_eq!(cache.total_bytes(), 8);
 
         // 插入一个 4x4（64 字节）的图片，远超 max_bytes
-        let key_big = cache.insert(make_image(4, 4, 255)); // 64 字节
+        let _key_big = cache.insert(make_image(4, 4, 255)); // 64 字节
         assert!(cache.total_bytes() > 16);
 
         cache.gc();
