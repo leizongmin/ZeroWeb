@@ -266,9 +266,115 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 与 outline 类似，各部分顺序无关
         "column-rule" => expand_column_rule(value, important, specificity),
 
+        // ── border-image 简写 ──
+        "border-image" => expand_border_image(value, important, specificity),
+
         // ── 非简写，原样返回 ──
         _ => vec![mk(property, value)],
     }
+}
+
+/// 展开 border-image 简写。
+///
+/// CSS `border-image` 简写格式为：
+/// `border-image: source slice / width / outset repeat`
+///
+/// 简化实现：
+/// - 若值为 "none" → border-image-source: none
+/// - 若值含 url(...) → 提取为 source
+/// - 解析 slice、width（/ 后第一组）、outset（/ 后第二组）、repeat 关键字
+fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // 特殊值 "none" → 仅设置 source
+    if value == "none" {
+        return vec![mk("border-image-source", "none")];
+    }
+
+    let tokens = split_outside_parens(value);
+
+    // 提取 source（url(...) 或 none）
+    let mut source: Option<String> = None;
+    let mut remaining: Vec<String> = Vec::new();
+
+    for token in &tokens {
+        let t = token.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if source.is_none() && (t.starts_with("url(") || t == "none") {
+            source = Some(t.to_string());
+        } else {
+            remaining.push(t.to_string());
+        }
+    }
+
+    // 处理斜杠分隔：在 remaining 中将 "/ " 转为独立 token
+    // 按 "/" 分割 remaining 为最多 3 组：slice_part / width_part / outset_part
+    let mut slash_groups: Vec<Vec<String>> = vec![Vec::new()];
+    for token in &remaining {
+        if token == "/" {
+            slash_groups.push(Vec::new());
+        } else {
+            slash_groups.last_mut().unwrap().push(token.clone());
+        }
+    }
+
+    let mut source_val = "none".to_string();
+    let mut slice_val = String::new();
+    let mut width_val = String::new();
+    let mut outset_val = String::new();
+    let mut repeat_val = String::new();
+
+    if let Some(s) = source {
+        source_val = s;
+    }
+
+    // repeat 关键字
+    let is_repeat = |s: &str| matches!(s, "stretch" | "repeat" | "round" | "space");
+
+    // 从 slash_groups 中提取值
+    // 第一组（slice）：可能包含数字和 fill 关键字
+    // 第二组（width）：数字/长度
+    // 第三组（outset）：数字/长度
+    for (gi, group) in slash_groups.iter().enumerate() {
+        // 收集非 repeat 的 token 为组值，repeat 关键字单独记录
+        let mut group_tokens: Vec<String> = Vec::new();
+        for token in group {
+            if is_repeat(token) {
+                if repeat_val.is_empty() {
+                    repeat_val = token.clone();
+                }
+            } else {
+                group_tokens.push(token.clone());
+            }
+        }
+        let group_str = group_tokens.join(" ");
+
+        match gi {
+            0 => slice_val = group_str,
+            1 => width_val = group_str,
+            2 => outset_val = group_str,
+            _ => {}
+        }
+    }
+
+    let mut result = Vec::new();
+    result.push(mk("border-image-source", &source_val));
+    if !slice_val.is_empty() {
+        result.push(mk("border-image-slice", &slice_val));
+    }
+    if !width_val.is_empty() {
+        result.push(mk("border-image-width", &width_val));
+    }
+    if !outset_val.is_empty() {
+        result.push(mk("border-image-outset", &outset_val));
+    }
+    if !repeat_val.is_empty() {
+        result.push(mk("border-image-repeat", &repeat_val));
+    }
+    result
 }
 
 /// 解析 4 边简写的值部分。
@@ -2598,5 +2704,43 @@ mod tests {
         assert_eq!(result.len(), 3);
         assert!(result.iter().all(|(_, _, imp, _)| *imp));
         assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
+    }
+
+    // ── border-image 简写测试 ──
+
+    #[test]
+    fn test_border_image_shorthand_source_only() {
+        let result = expand_one("border-image", "url(test.png)", false, (0, 0, 1));
+        assert!(
+            result
+                .iter()
+                .any(|d| d.0 == "border-image-source" && d.1 == "url(test.png)")
+        );
+    }
+
+    #[test]
+    fn test_border_image_shorthand_slice() {
+        let result = expand_one("border-image", "25", false, (0, 0, 1));
+        assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "25"));
+    }
+
+    #[test]
+    fn test_border_image_shorthand_none() {
+        let result = expand_one("border-image", "none", false, (0, 0, 1));
+        assert!(result.iter().any(|d| d.0 == "border-image-source" && d.1 == "none"));
+    }
+
+    #[test]
+    fn test_border_image_shorthand_repeat() {
+        let result = expand_one("border-image", "25 round", false, (0, 0, 1));
+        assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "25"));
+        assert!(result.iter().any(|d| d.0 == "border-image-repeat" && d.1 == "round"));
+    }
+
+    #[test]
+    fn test_border_image_shorthand_with_slash() {
+        let result = expand_one("border-image", "25 / 2", false, (0, 0, 1));
+        assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "25"));
+        assert!(result.iter().any(|d| d.0 == "border-image-width" && d.1 == "2"));
     }
 }

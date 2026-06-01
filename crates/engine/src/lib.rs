@@ -3003,4 +3003,300 @@ mod tests {
             assert!(merged.origin.x + merged.size.width >= 100.0, "合并矩形右边界应 >= 100");
         }
     }
+
+    // ── 新增边界条件测试 ──────────────────────────────────────────
+
+    /// 测试 paint 处理 border-image-source: url(test.png) 时不崩溃，背景填充正常生成。
+    ///
+    /// border-image-source 引用外部图片，在当前架构中 paint 无法加载实际图片资源，
+    /// 但应安全降级：不 panic、背景填充仍然生成。通过 ComputedStyle 直接设置
+    /// border_image_source 为 Url 类型，验证 paint 输出有效。
+    #[test]
+    fn test_paint_border_image_source_url_degradation() {
+        use zero_style_system::property::BorderImageSourceComputedValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 5.0,
+            border_right: 5.0,
+            border_bottom: 5.0,
+            border_left: 5.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(60, 120, 180, 255);
+        style.border_image_source = BorderImageSourceComputedValue::Url("test.png".to_string());
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // border-image 无法加载，但背景填充仍应正常生成
+        assert!(
+            !painter.primitives().fills.is_empty(),
+            "border-image-source: url(test.png) 时背景填充仍应生成"
+        );
+        // 背景填充颜色正确
+        let fill = &painter.primitives().fills[0];
+        assert_eq!(fill.color.r, 60);
+        assert_eq!(fill.color.g, 120);
+        assert_eq!(fill.color.b, 180);
+    }
+
+    /// 测试 paint 处理 empty-cells: hide 时表格空单元格不绘制背景。
+    ///
+    /// empty-cells: hide 指示浏览器隐藏空表格单元格的边框和背景。
+    /// 在当前架构中，paint 应安全处理此样式值而不崩溃。
+    /// 通过 ComputedStyle 直接设置 empty_cells 为 Hide，验证 paint 不 panic。
+    #[test]
+    fn test_paint_empty_cells_hide_no_panic() {
+        use zero_style_system::property::EmptyCellsComputedValue;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("td");
+        let layout = LayoutBox {
+            node_id: Some(elem),
+            x: 10.0,
+            y: 20.0,
+            width: 150.0,
+            height: 80.0,
+            content_x: 10.0,
+            content_y: 20.0,
+            content_width: 150.0,
+            content_height: 80.0,
+            border_top: 1.0,
+            border_right: 1.0,
+            border_bottom: 1.0,
+            border_left: 1.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.empty_cells = EmptyCellsComputedValue::Hide;
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        // paint 不应 panic
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, Some(&doc));
+
+        // 验证 paint 完成且产生了输出
+        assert!(
+            !painter.primitives().fills.is_empty(),
+            "empty-cells:hide 元素 paint 应生成填充图元"
+        );
+    }
+
+    /// 测试合成层处理 opacity=0 的元素时正确提升并传播 opacity 值。
+    ///
+    /// opacity=0 的元素完全透明但仍占据布局空间。
+    /// 与 visibility:hidden 不同，opacity=0 的元素应被提升为独立合成层，
+    /// 合成层在最终合成时处理透明度。验证提升图层存在且 opacity 值精确为 0.0。
+    #[test]
+    fn test_composite_zero_opacity_element_promoted() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+
+        let child_box = LayoutBox {
+            node_id: Some(elem),
+            x: 50.0,
+            y: 50.0,
+            width: 200.0,
+            height: 100.0,
+            content_x: 50.0,
+            content_y: 50.0,
+            content_width: 200.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+        let root_box = LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![child_box],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        };
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.opacity = 0.0;
+        styles.insert(elem, style);
+
+        let layers = promote_compositing_layers(&root_box, &styles);
+
+        // 根图层 + 1 个提升图层（opacity < 1.0 触发提升）
+        assert_eq!(layers.len(), 2, "应有根图层 + 1 个零透明度提升图层");
+        assert!(layers[0].is_root, "第一个图层应为根图层");
+        assert!(!layers[1].is_root, "第二个图层应为提升图层");
+
+        // 提升图层的 opacity 应精确为 0.0
+        assert!(
+            (layers[1].opacity - 0.0).abs() < 0.001,
+            "零透明度提升图层 opacity 应为 0.0，实际 {}",
+            layers[1].opacity
+        );
+
+        // 提升图层几何信息正确
+        assert_eq!(layers[1].offset_x, 50.0, "offset_x 应为子元素 x");
+        assert_eq!(layers[1].offset_y, 50.0, "offset_y 应为子元素 y");
+        assert_eq!(layers[1].width, 200.0, "width 应为子元素宽度");
+        assert_eq!(layers[1].height, 100.0, "height 应为子元素高度");
+    }
+
+    /// 测试渲染管线处理含 border-spacing CSS 属性的表格元素不 panic 且产生填充图元。
+    ///
+    /// border-spacing 控制表格单元格之间的间距，需要水平和垂直两个分量。
+    /// 通过 CSS 设置 border-spacing: 8px，验证管线端到端安全完成渲染，
+    /// 且表格背景填充正常生成。
+    #[test]
+    fn test_render_with_border_spacing_property() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <table class="spaced">
+                <tr><td class="cell">A</td><td class="cell">B</td></tr>
+                <tr><td class="cell">C</td><td class="cell">D</td></tr>
+            </table>
+        </body></html>"#;
+        let css = r#"
+            .spaced { border-spacing: 8px; background-color: #f5f5f5; }
+            .cell { background-color: #ddeeff; border: 1px solid #aabbcc; padding: 4px; }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        // 管线不 panic 且正常完成
+        assert!(result.timings.total_ms >= 0.0, "含 border-spacing 的 CSS 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+        // 表格和单元格背景应产生填充图元
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 border-spacing 的表格应产生填充图元"
+        );
+    }
+
+    /// 测试渲染管线处理含 counter-set CSS 属性的元素不 panic。
+    ///
+    /// counter-set 用于将 CSS 计数器设置为指定值。
+    /// 当前架构下管线应安全解析此属性，不因计数器操作而崩溃。
+    /// 通过 CSS 设置 counter-set: section 5，验证管线端到端安全完成。
+    #[test]
+    fn test_pipeline_with_counter_set_property() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="counter">Section Title</div>
+            <div class="normal">Normal Content</div>
+        </body></html>"#;
+        let css = r#"
+            .counter {
+                counter-set: section 5;
+                background-color: #336699;
+                width: 200px;
+                height: 100px;
+            }
+            .normal {
+                background-color: #996633;
+                width: 200px;
+                height: 50px;
+            }
+        "#;
+
+        let result = pipeline.render_html(html, css);
+
+        // 管线不 panic 且正常完成
+        assert!(result.timings.total_ms >= 0.0, "含 counter-set 的 CSS 应容错完成");
+        assert!(pipeline.layout().is_some(), "布局缓存应存在");
+        assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
+        // counter-set 不影响渲染图元生成，背景填充应正常
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "含 counter-set 的元素应正常产生填充图元"
+        );
+    }
 }

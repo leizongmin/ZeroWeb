@@ -5179,6 +5179,26 @@ pub fn parse_border_spacing(value: &str) -> Option<BorderSpacingValue> {
     })
 }
 
+/// CSS counter-set 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CounterSetValue {
+    /// none — 不设置任何计数器。
+    None,
+    /// 计数器操作列表。
+    Actions(Vec<CounterActionValue>),
+}
+
+/// 解析 CSS counter-set 属性值。
+///
+/// 格式同 counter-reset："none" | "<name> <integer>"。
+pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(CounterSetValue::None);
+    }
+    parse_counter_list(v).map(CounterSetValue::Actions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7914,5 +7934,30 @@ mod tests {
     fn test_parse_list_style_image_url_with_spaces() {
         let v = parse_list_style_image("url(my image.png)").unwrap();
         assert_eq!(v, ListStyleImageValue::Url("my image.png".to_string()));
+    }
+
+    // ── counter-set 解析测试 ──
+
+    #[test]
+    fn test_parse_counter_set_none() {
+        assert_eq!(parse_counter_set("none"), Some(CounterSetValue::None));
+    }
+
+    #[test]
+    fn test_parse_counter_set_name_value() {
+        let v = parse_counter_set("section 5").unwrap();
+        match v {
+            CounterSetValue::Actions(actions) => {
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].name, "section");
+                assert_eq!(actions[0].value, Some(5));
+            }
+            _ => panic!("expected Actions"),
+        }
+    }
+
+    #[test]
+    fn test_parse_counter_set_invalid() {
+        assert_eq!(parse_counter_set(""), None);
     }
 }
