@@ -4643,6 +4643,7 @@ dependencies = [
  "zero-host-runtime",
  "zero-net",
  "zero-render-foundation",
+ "zero-script-sandbox",
 ]
 
 [[package]]

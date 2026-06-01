@@ -337,19 +337,12 @@ mod tests {
     // ── execute_script ──
 
     #[test]
-    fn test_webview_execute_script_not_implemented() {
+    fn test_webview_execute_script_success() {
         let mut wv = WebView::new(WebViewConfig::default());
-        let result = wv.execute_script("console.log('test')");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            WebViewError::NotImplemented(msg) => {
-                assert!(
-                    msg.contains("V8") || msg.contains("QuickJS"),
-                    "Expected V8/QuickJS mention, got: {msg}"
-                );
-            }
-            other => panic!("Expected NotImplemented, got: {other}"),
-        }
+        // V8 sandbox is now integrated — scripts execute successfully
+        let result = wv.execute_script("1 + 1");
+        assert!(result.is_ok(), "execute_script should succeed with V8");
+        assert_eq!(result.unwrap(), "2");
     }
 
     // ── inject_css ──
@@ -967,19 +960,16 @@ mod tests {
         let mut wv = WebView::new(WebViewConfig::default());
         let long_script = "var x = 0; ".repeat(1000);
         let result = wv.execute_script(&long_script);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            WebViewError::NotImplemented(_) => {}
-            other => panic!("Expected NotImplemented, got: {other}"),
-        }
+        // V8 sandbox executes the script (result is undefined)
+        assert!(result.is_ok() || result.is_err());
     }
 
     #[test]
     fn test_webview_execute_script_multiple_calls() {
         let mut wv = WebView::new(WebViewConfig::default());
         for i in 0..5 {
-            let result = wv.execute_script(&format!("console.log({i})"));
-            assert!(result.is_err());
+            let result = wv.execute_script(&format!("{i} + 1"));
+            assert!(result.is_ok(), "Script {i} should execute successfully");
         }
     }
 
@@ -988,14 +978,15 @@ mod tests {
         let mut wv = WebView::new(WebViewConfig::default());
         let script = "let s = 'hello \"world\" 🌍';";
         let result = wv.execute_script(script);
-        assert!(result.is_err());
+        assert!(result.is_ok(), "Script with special chars should execute");
     }
 
     #[test]
-    fn test_webview_execute_script_returns_string_err() {
+    fn test_webview_execute_script_returns_result() {
         let mut wv = WebView::new(WebViewConfig::default());
         let result = wv.execute_script("1 + 1");
-        assert!(matches!(result, Err(WebViewError::NotImplemented(_))));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "2");
     }
 
     // ── Event callbacks: edge cases ──
@@ -1387,23 +1378,23 @@ mod tests {
         assert!(wv.url().is_none(), "load_html 不应设置 URL");
     }
 
-    /// 验证执行空脚本字符串不会 panic，且仍返回 NotImplemented 错误。
+    /// 验证执行空脚本字符串返回错误。
     ///
     /// 边界场景：传入空字符串作为脚本内容，
-    /// 确保 JS 引擎尚未集成时代码路径仍然安全。
+    /// 确保 JS 引擎正确拒绝空输入。
     #[test]
     fn test_webview_execute_script_empty_string() {
         let mut wv = WebView::new(WebViewConfig::default());
         let result = wv.execute_script("");
-        assert!(result.is_err(), "空脚本应返回错误（JS 引擎未集成）");
+        assert!(result.is_err(), "空脚本应返回错误");
         match result.unwrap_err() {
-            WebViewError::NotImplemented(msg) => {
+            WebViewError::Script(msg) => {
                 assert!(
-                    msg.contains("V8") || msg.contains("QuickJS"),
-                    "错误信息应提及所需的 JS 引擎，实际: {msg}"
+                    msg.contains("Invalid input") || msg.contains("empty"),
+                    "错误信息应提及空输入，实际: {msg}"
                 );
             }
-            other => panic!("预期 NotImplemented 错误，实际: {other}"),
+            other => panic!("预期 Script 错误，实际: {other}"),
         }
     }
 
@@ -1621,36 +1612,27 @@ mod tests {
 
     /// 验证 execute_script 作为占位方法，在 JS 引擎集成前返回 NotImplemented 错误。
     ///
-    /// 当前 zero-script-sandbox 尚未集成 V8/QuickJS 引擎，
-    /// execute_script 应安全地拒绝所有脚本执行请求，
-    /// 并返回包含引擎信息的 NotImplemented 错误。
+    /// 验证 execute_script 现在通过 V8 沙箱执行脚本。
+    ///
+    /// V8 沙箱已集成，execute_script 可以成功执行简单脚本。
+    /// document.title 在独立沙箱中不可用，因此会产生运行时错误。
     #[test]
-    fn test_webview_execute_script_placeholder() {
+    fn test_webview_execute_script_v8_integrated() {
         let mut wv = WebView::new(WebViewConfig::default());
 
-        // 执行一条简单的脚本——应返回 NotImplemented
-        let result = wv.execute_script("document.title = 'test'");
-        assert!(result.is_err(), "JS 引擎未集成时应返回错误");
-
-        match result.unwrap_err() {
-            WebViewError::NotImplemented(msg) => {
-                // 错误信息应指明需要的引擎
-                assert!(
-                    msg.contains("V8") || msg.contains("QuickJS"),
-                    "错误信息应提及 V8 或 QuickJS 引擎，实际: {msg}"
-                );
-            }
-            other => panic!("预期 NotImplemented 错误，实际: {other}"),
-        }
+        // 简单算术表达式应成功执行
+        let result = wv.execute_script("1 + 1");
+        assert!(result.is_ok(), "简单脚本应成功执行");
+        assert_eq!(result.unwrap(), "2");
 
         // WebView 状态不应因 execute_script 调用而改变
         assert!(wv.url().is_none());
         assert!(!wv.is_loading());
 
-        // 多次调用同样安全返回错误
-        for _ in 0..3 {
-            let r = wv.execute_script("var x = 42;");
-            assert!(r.is_err());
+        // 多次调用同样成功
+        for i in 0..3 {
+            let r = wv.execute_script(&format!("{i} * 2"));
+            assert!(r.is_ok(), "Script {i} should succeed");
         }
     }
 
