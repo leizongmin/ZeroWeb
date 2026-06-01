@@ -3548,4 +3548,89 @@ mod tests {
             "localStorage and sessionStorage should be independent"
         );
     }
+
+    // ── MutationObserver 集成测试（通过 V8 + DOM polyfill 端到端验证）──
+
+    /// 测试 MutationObserver 构造函数存在。
+    #[test]
+    fn test_webview_mutation_observer_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("typeof MutationObserver;");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap().contains("function"),
+            "MutationObserver should be a function"
+        );
+    }
+
+    /// 测试 MutationObserver 可以创建并调用 observe。
+    #[test]
+    fn test_webview_mutation_observer_observe() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var callback = function(records) {};
+            var observer = new MutationObserver(callback);
+            var el = document.createElement('div');
+            observer.observe(el, { childList: true });
+            observer._observing ? 'observing' : 'not-observing';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "observing");
+    }
+
+    /// 测试 MutationObserver disconnect。
+    #[test]
+    fn test_webview_mutation_observer_disconnect() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var observer = new MutationObserver(function() {});
+            var el = document.createElement('div');
+            observer.observe(el, { attributes: true });
+            observer.disconnect();
+            observer._observing ? 'still' : 'disconnected';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "disconnected");
+    }
+
+    /// 测试 MutationObserver takeRecords 返回空数组。
+    #[test]
+    fn test_webview_mutation_observer_take_records() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result =
+            wv.execute_script_with_dom("var obs = new MutationObserver(function() {}); obs.takeRecords().length;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "0", "takeRecords should return empty array initially");
+    }
+
+    /// 测试 MutationRecord 构造函数。
+    #[test]
+    fn test_webview_mutation_record_exists() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom("var r = new MutationRecord('childList', null); r.type;");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "childList");
+    }
+
+    /// 测试 MutationRecord 属性。
+    #[test]
+    fn test_webview_mutation_record_properties() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var r = new MutationRecord('attributes', document.body);
+            r.addedNodes.length + ',' + r.removedNodes.length + ',' + (r.attributeName === null);
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "0,0,true",
+            "MutationRecord should have default properties"
+        );
+    }
 }
