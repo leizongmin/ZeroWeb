@@ -4606,4 +4606,358 @@ mod tests {
         let b2 = serialize(&forward).expect("serialize forward");
         assert_ne!(b1, b2, "GoBack 和 GoForward 应产生不同的字节");
     }
+
+    // ── message.rs 类型序列化 round-trip 测试 ──
+
+    /// 测试 NavigateParams 带 referrer 的 round-trip。
+    #[test]
+    fn test_navigate_params_with_referrer() {
+        use message::NavigateParams;
+        let params = NavigateParams {
+            url: "https://example.com/page".to_string(),
+            referrer: Some("https://google.com".to_string()),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: NavigateParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.url, "https://example.com/page");
+        assert_eq!(rt.referrer, Some("https://google.com".to_string()));
+    }
+
+    /// 测试 NavigateParams 无 referrer 的 round-trip。
+    #[test]
+    fn test_navigate_params_no_referrer() {
+        use message::NavigateParams;
+        let params = NavigateParams {
+            url: "https://example.com".to_string(),
+            referrer: None,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: NavigateParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.url, "https://example.com");
+        assert_eq!(rt.referrer, None);
+    }
+
+    /// 测试 FetchParams 带 body 的 round-trip。
+    #[test]
+    fn test_message_fetch_params_with_body() {
+        use message::FetchParams;
+        let params = FetchParams {
+            request_id: 42,
+            url: "https://api.example.com/data".to_string(),
+            method: "POST".to_string(),
+            headers: vec![
+                ("Content-Type".to_string(), "application/json".to_string()),
+                ("Authorization".to_string(), "Bearer token123".to_string()),
+            ],
+            body: Some(b"{\"key\": \"value\"}".to_vec()),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: FetchParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.request_id, 42);
+        assert_eq!(rt.method, "POST");
+        assert_eq!(rt.headers.len(), 2);
+        assert_eq!(rt.body.as_ref().unwrap().len(), 16);
+    }
+
+    /// 测试 FetchParams 无 body 的 round-trip。
+    #[test]
+    fn test_fetch_params_no_body() {
+        use message::FetchParams;
+        let params = FetchParams {
+            request_id: 1,
+            url: "https://example.com".to_string(),
+            method: "GET".to_string(),
+            headers: vec![],
+            body: None,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: FetchParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.method, "GET");
+        assert!(rt.body.is_none());
+    }
+
+    /// 测试 FetchResponseParams round-trip。
+    #[test]
+    fn test_fetch_response_params() {
+        use message::FetchResponseParams;
+        let params = FetchResponseParams {
+            request_id: 42,
+            status_code: 200,
+            headers: vec![("content-type".to_string(), "text/html".to_string())],
+            body: b"<html></html>".to_vec(),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: FetchResponseParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.status_code, 200);
+        assert_eq!(rt.body, b"<html></html>".to_vec());
+    }
+
+    /// 测试 FetchResponseParams 非 200 状态码。
+    #[test]
+    fn test_fetch_response_error_status() {
+        use message::FetchResponseParams;
+        let params = FetchResponseParams {
+            request_id: 5,
+            status_code: 404,
+            headers: vec![],
+            body: b"Not Found".to_vec(),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: FetchResponseParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.status_code, 404);
+    }
+
+    /// 测试 StorageOpParams 全类型 round-trip。
+    #[test]
+    fn test_storage_op_params_get() {
+        use message::{StorageOpParams, StorageOperation, StorageType};
+        let params = StorageOpParams {
+            storage_type: StorageType::Local,
+            operation: StorageOperation::Get,
+            key: "user_token".to_string(),
+            value: None,
+            origin: "https://example.com".to_string(),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: StorageOpParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.storage_type, StorageType::Local);
+        assert_eq!(rt.operation, StorageOperation::Get);
+        assert_eq!(rt.key, "user_token");
+        assert!(rt.value.is_none());
+    }
+
+    /// 测试 StorageOpParams Set 操作 round-trip。
+    #[test]
+    fn test_storage_op_params_set() {
+        use message::{StorageOpParams, StorageOperation, StorageType};
+        let params = StorageOpParams {
+            storage_type: StorageType::Session,
+            operation: StorageOperation::Set,
+            key: "session_id".to_string(),
+            value: Some("abc123".to_string()),
+            origin: "https://app.example.com".to_string(),
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: StorageOpParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.storage_type, StorageType::Session);
+        assert_eq!(rt.operation, StorageOperation::Set);
+        assert_eq!(rt.value, Some("abc123".to_string()));
+    }
+
+    /// 测试 StorageOperation 所有变体可序列化。
+    #[test]
+    fn test_storage_operation_all_variants() {
+        use message::StorageOperation;
+        let ops = [
+            StorageOperation::Get,
+            StorageOperation::Set,
+            StorageOperation::Remove,
+            StorageOperation::Clear,
+            StorageOperation::Length,
+            StorageOperation::Key,
+        ];
+        for op in &ops {
+            let bytes = bincode::serialize(op).expect("serialize");
+            let rt: StorageOperation = bincode::deserialize(&bytes).expect("deserialize");
+            assert_eq!(&rt, op);
+        }
+    }
+
+    /// 测试 StorageType 两种变体。
+    #[test]
+    fn test_storage_type_variants() {
+        use message::StorageType;
+        let local = bincode::serialize(&StorageType::Local).expect("s");
+        let session = bincode::serialize(&StorageType::Session).expect("s");
+        assert_ne!(local, session);
+        let rt_l: StorageType = bincode::deserialize(&local).expect("d");
+        let rt_s: StorageType = bincode::deserialize(&session).expect("d");
+        assert_eq!(rt_l, StorageType::Local);
+        assert_eq!(rt_s, StorageType::Session);
+    }
+
+    /// 测试 MouseEventParams round-trip。
+    #[test]
+    fn test_mouse_event_params_roundtrip() {
+        use message::{MouseEventParams, MouseEventType};
+        let params = MouseEventParams {
+            x: 150.5,
+            y: 200.75,
+            button: 1,
+            event_type: MouseEventType::DblClick,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: MouseEventParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert!((rt.x - 150.5).abs() < 0.01);
+        assert!((rt.y - 200.75).abs() < 0.01);
+        assert_eq!(rt.button, 1);
+        assert_eq!(rt.event_type, MouseEventType::DblClick);
+    }
+
+    /// 测试 MouseEventType 所有变体。
+    #[test]
+    fn test_mouse_event_type_all_variants() {
+        use message::MouseEventType;
+        let types = [
+            MouseEventType::Down,
+            MouseEventType::Up,
+            MouseEventType::Move,
+            MouseEventType::Click,
+            MouseEventType::DblClick,
+        ];
+        for t in &types {
+            let bytes = bincode::serialize(t).expect("serialize");
+            let rt: MouseEventType = bincode::deserialize(&bytes).expect("deserialize");
+            assert_eq!(&rt, t);
+        }
+    }
+
+    /// 测试 KeyboardEventParams 全修饰键 round-trip。
+    #[test]
+    fn test_keyboard_event_all_modifiers() {
+        use message::{KeyboardEventParams, KeyboardEventType};
+        let params = KeyboardEventParams {
+            key: "c".to_string(),
+            code: "KeyC".to_string(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            meta: true,
+            event_type: KeyboardEventType::Down,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: KeyboardEventParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert!(rt.ctrl && rt.shift && rt.alt && rt.meta);
+        assert_eq!(rt.key, "c");
+    }
+
+    /// 测试 KeyboardEventParams 无修饰键。
+    #[test]
+    fn test_keyboard_event_no_modifiers() {
+        use message::{KeyboardEventParams, KeyboardEventType};
+        let params = KeyboardEventParams {
+            key: "a".to_string(),
+            code: "KeyA".to_string(),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: KeyboardEventType::Press,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: KeyboardEventParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert!(!rt.ctrl && !rt.shift && !rt.alt && !rt.meta);
+    }
+
+    /// 测试 KeyboardEventType 所有变体。
+    #[test]
+    fn test_keyboard_event_type_all_variants() {
+        use message::KeyboardEventType;
+        let types = [KeyboardEventType::Down, KeyboardEventType::Up, KeyboardEventType::Press];
+        for t in &types {
+            let bytes = bincode::serialize(t).expect("serialize");
+            let rt: KeyboardEventType = bincode::deserialize(&bytes).expect("deserialize");
+            assert_eq!(&rt, t);
+        }
+    }
+
+    /// 测试 ScrollEventParams 负值 round-trip。
+    #[test]
+    fn test_scroll_event_negative_values() {
+        use message::ScrollEventParams;
+        let params = ScrollEventParams {
+            delta_x: -3.14,
+            delta_y: -159.265,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: ScrollEventParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert!((rt.delta_x - (-3.14)).abs() < 0.001);
+        assert!((rt.delta_y - (-159.265)).abs() < 0.001);
+    }
+
+    /// 测试 ScrollEventParams 零值 round-trip。
+    #[test]
+    fn test_scroll_event_zero_values() {
+        use message::ScrollEventParams;
+        let params = ScrollEventParams {
+            delta_x: 0.0,
+            delta_y: 0.0,
+        };
+        let bytes = bincode::serialize(&params).expect("serialize");
+        let rt: ScrollEventParams = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(rt.delta_x, 0.0);
+        assert_eq!(rt.delta_y, 0.0);
+    }
+
+    /// 测试 IpcMessageKind Heartbeat/CrashNotification round-trip。
+    #[test]
+    fn test_heartbeat_and_crash_roundtrip() {
+        let hb = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Heartbeat,
+        };
+        let rt = roundtrip(hb);
+        assert!(matches!(rt.kind, IpcMessageKind::Heartbeat));
+
+        let crash = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CrashNotification("segfault at 0xdead".to_string()),
+        };
+        let rt2 = roundtrip(crash);
+        match rt2.kind {
+            IpcMessageKind::CrashNotification(msg) => {
+                assert_eq!(msg, "segfault at 0xdead");
+            }
+            _ => panic!("Expected CrashNotification"),
+        }
+    }
+
+    /// 测试 IpcMessageKind Ok/Error round-trip。
+    #[test]
+    fn test_ok_error_roundtrip() {
+        let ok_msg = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Ok,
+        };
+        let rt = roundtrip(ok_msg);
+        assert!(matches!(rt.kind, IpcMessageKind::Ok));
+
+        let err_msg = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::Error("permission denied".to_string()),
+        };
+        let rt2 = roundtrip(err_msg);
+        match rt2.kind {
+            IpcMessageKind::Error(msg) => assert_eq!(msg, "permission denied"),
+            _ => panic!("Expected Error"),
+        }
+    }
+
+    /// 测试 ProcessRole 枚举值相等性（message 模块验证）。
+    #[test]
+    fn test_process_role_message_layer() {
+        use channel::ProcessRole;
+        assert_eq!(ProcessRole::Browser, ProcessRole::Browser);
+        assert_ne!(ProcessRole::Browser, ProcessRole::Renderer);
+        // Copy + Clone 特性验证
+        let r = ProcessRole::Renderer;
+        let cloned = r;
+        assert_eq!(r, cloned);
+    }
+
+    /// 测试空载荷消息的确定性编码。
+    #[test]
+    fn test_deterministic_encoding_empty_messages() {
+        let msg1 = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::LoadComplete,
+        };
+        let msg2 = IpcMessage {
+            id: 42,
+            kind: IpcMessageKind::LoadComplete,
+        };
+        let b1 = serialize(&msg1).expect("s1");
+        let b2 = serialize(&msg2).expect("s2");
+        assert_eq!(b1, b2, "相同消息应产生确定性编码");
+    }
 }
