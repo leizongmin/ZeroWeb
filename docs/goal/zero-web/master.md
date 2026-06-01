@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，5509 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
+**执行状态**: 16/16 crate 已实现，5515 个测试全绿，14 个 crate 有基准测试，V8 JS 引擎已集成，M11 浏览器应用 + DOM Bridge polyfill（事件/Fetch/console/timer/Web Storage/MutationObserver/IntersectionObserver/ResizeObserver）+ 地址栏自动补全 + 标签页拖拽排序 + 右键上下文菜单已集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
