@@ -606,6 +606,44 @@ pub fn generate_dom_api_polyfill() -> String {
 
   globalThis.localStorage = _createStorage();
   globalThis.sessionStorage = _createStorage();
+
+  // ── MutationObserver Stub ──
+  // Provides MutationObserver with observe/disconnect/takeRecords.
+  // Real observation by host runtime; stub records mutations for testing.
+
+  globalThis.MutationObserver = function(callback) {
+    this._callback = callback;
+    this._records = [];
+    this._observing = false;
+  };
+  globalThis.MutationObserver.prototype.observe = function(target, options) {
+    this._observing = true;
+    this._target = target;
+    this._options = options || {};
+  };
+  globalThis.MutationObserver.prototype.disconnect = function() {
+    this._observing = false;
+    this._target = null;
+    this._options = null;
+  };
+  globalThis.MutationObserver.prototype.takeRecords = function() {
+    var records = this._records;
+    this._records = [];
+    return records;
+  };
+
+  // MutationRecord constructor
+  globalThis.MutationRecord = function(type, target) {
+    this.type = type;
+    this.target = target;
+    this.addedNodes = [];
+    this.removedNodes = [];
+    this.previousSibling = null;
+    this.nextSibling = null;
+    this.attributeName = null;
+    this.attributeNamespace = null;
+    this.oldValue = null;
+  };
 })();
 "#
     .to_string()
@@ -1042,5 +1080,25 @@ mod tests {
         assert!(polyfill.contains("getItem"));
         assert!(polyfill.contains("setItem"));
         assert!(polyfill.contains("removeItem"));
+    }
+
+    // ── Polyfill MutationObserver 测试 ──
+
+    #[test]
+    fn test_polyfill_contains_mutation_observer() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.MutationObserver"));
+        assert!(polyfill.contains("prototype.observe"));
+        assert!(polyfill.contains("prototype.disconnect"));
+        assert!(polyfill.contains("prototype.takeRecords"));
+    }
+
+    #[test]
+    fn test_polyfill_contains_mutation_record() {
+        let polyfill = generate_dom_api_polyfill();
+        assert!(polyfill.contains("globalThis.MutationRecord"));
+        assert!(polyfill.contains("addedNodes"));
+        assert!(polyfill.contains("removedNodes"));
+        assert!(polyfill.contains("attributeName"));
     }
 }
