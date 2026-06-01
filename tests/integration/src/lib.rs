@@ -1331,6 +1331,7 @@ mod cross_crate_pipeline {
         ColorValue, DisplayValue, LengthValue, TransformFunction, TransformValue, parse_transform,
     };
     use zero_dom::Document;
+    use zero_engine::RenderPipeline;
     use zero_layout_engine::LayoutEngine;
     use zero_render_foundation::color::Color;
     use zero_style_system::{ComputedStyle, GridLineValue, StyleSystem};
@@ -3912,5 +3913,438 @@ mod cross_crate_pipeline {
             zero_style_system::property::JustifyItemsValue::Center,
             "div 的 justify-items 应为 Center"
         );
+    }
+
+    // ── 新增测试：box-shadow / text-shadow / background-image 渲染管线集成 ──
+
+    /// CSS box-shadow 渲染管线集成测试 — 验证 box-shadow 属性通过完整管线正确传递。
+    #[test]
+    fn test_box_shadow_render_pipeline() {
+        let html = r#"<html><body>
+            <div class="shadowed" style="width: 200px; height: 100px;">Box</div>
+        </body></html>"#;
+        let css = r#".shadowed { box-shadow: 5px 10px 20px blue; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 渲染应成功完成
+        assert!(result.timings.total_ms >= 0.0, "渲染应成功完成");
+        // 应生成至少一个 shadow 图元
+        assert!(
+            !result.primitives.shadows.is_empty(),
+            "box-shadow 应生成 ShadowPrimitive，实际 shadows 数量: {}",
+            result.primitives.shadows.len()
+        );
+
+        // 验证 shadow 参数
+        let shadow = &result.primitives.shadows[0];
+        assert!(
+            (shadow.offset_x - 5.0).abs() < 0.01,
+            "shadow offset_x 应为 5.0，实际为 {}",
+            shadow.offset_x
+        );
+        assert!(
+            (shadow.offset_y - 10.0).abs() < 0.01,
+            "shadow offset_y 应为 10.0，实际为 {}",
+            shadow.offset_y
+        );
+        assert!(
+            (shadow.blur_radius - 20.0).abs() < 0.01,
+            "shadow blur_radius 应为 20.0，实际为 {}",
+            shadow.blur_radius
+        );
+    }
+
+    /// CSS box-shadow 多值管线集成测试。
+    #[test]
+    fn test_box_shadow_with_background_color_pipeline() {
+        let html = r#"<html><body>
+            <div class="box" style="width: 200px; height: 100px;">Content</div>
+        </body></html>"#;
+        let css = r#"
+            .box { background-color: red; box-shadow: 3px 4px 10px rgba(0,0,0,0.5); }
+        "#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 应同时有 fills（背景色）和 shadows（box-shadow）
+        assert!(!result.primitives.fills.is_empty(), "background-color 应生成填充图元");
+        assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
+    }
+
+    /// CSS box-shadow 负偏移管线集成测试。
+    #[test]
+    fn test_box_shadow_negative_offset_pipeline() {
+        let html = r#"<html><body>
+            <div class="neg" style="width: 200px; height: 100px;">Neg</div>
+        </body></html>"#;
+        let css = r#".neg { box-shadow: -5px -3px 8px green; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        assert!(!result.primitives.shadows.is_empty(), "应有阴影图元");
+        let shadow = &result.primitives.shadows[0];
+        assert!(
+            (shadow.offset_x - (-5.0)).abs() < 0.01,
+            "shadow offset_x 应为 -5.0，实际为 {}",
+            shadow.offset_x
+        );
+        assert!(
+            (shadow.offset_y - (-3.0)).abs() < 0.01,
+            "shadow offset_y 应为 -3.0，实际为 {}",
+            shadow.offset_y
+        );
+        assert!(
+            (shadow.blur_radius - 8.0).abs() < 0.01,
+            "shadow blur_radius 应为 8.0，实际为 {}",
+            shadow.blur_radius
+        );
+    }
+
+    /// CSS box-shadow 默认值（无阴影）管线集成测试。
+    #[test]
+    fn test_box_shadow_none_pipeline() {
+        let html = r#"<html><body>
+            <div class="plain">Plain</div>
+        </body></html>"#;
+        let css = r#".plain { width: 200px; height: 100px; background-color: gray; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 无 box-shadow 时 shadows 应为空
+        assert!(
+            result.primitives.shadows.is_empty(),
+            "无 box-shadow 时不应生成阴影图元，实际数量: {}",
+            result.primitives.shadows.len()
+        );
+        // 背景色应生成 fills
+        assert!(!result.primitives.fills.is_empty(), "背景色应生成填充图元");
+    }
+
+    /// CSS text-shadow 渲染管线集成测试。
+    #[test]
+    fn test_text_shadow_render_pipeline() {
+        let html = r#"<html><body>
+            <div class="text" style="width: 200px; height: 50px; color: black; font-size: 16px;">Hello</div>
+        </body></html>"#;
+        let css = r#".text { text-shadow: 2px 3px red; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // text-shadow 会为每个字符生成额外的 shadow glyph
+        // 应有 glyph 生成（shadow glyphs + main glyphs）
+        assert!(
+            !result.primitives.glyphs.is_empty(),
+            "text-shadow 应生成 glyph 图元（shadow + main），实际数量: {}",
+            result.primitives.glyphs.len()
+        );
+
+        // 有 text-shadow 时 glyph 数量应多于无 shadow 的情况
+        // 因为每个字符会同时生成 shadow glyph 和 main glyph
+        let glyph_count = result.primitives.glyphs.len();
+        assert!(glyph_count >= 2, "至少应有 shadow + main 两个 glyph");
+    }
+
+    /// CSS text-shadow 多层属性管线集成测试。
+    #[test]
+    fn test_text_shadow_with_color_pipeline() {
+        let html = r#"<html><body>
+            <div class="shadow-text">Shadow</div>
+        </body></html>"#;
+        let css = r#"
+            .shadow-text {
+                width: 200px; height: 50px;
+                color: blue; font-size: 14px;
+                text-shadow: 1px 2px green;
+            }
+        "#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 验证 glyph 生成
+        assert!(!result.primitives.glyphs.is_empty(), "应有 glyph 生成");
+
+        // 查找 shadow glyph — 颜色应为 green (0, 128, 0)
+        let has_shadow_glyph = result
+            .primitives
+            .glyphs
+            .iter()
+            .any(|g| g.color.g > 100 && g.color.r == 0 && g.color.b == 0);
+        assert!(has_shadow_glyph, "应存在 green 颜色的 shadow glyph");
+
+        // 查找 main glyph — 颜色应为 blue (0, 0, 255)
+        let has_main_glyph = result
+            .primitives
+            .glyphs
+            .iter()
+            .any(|g| g.color.b == 255 && g.color.r == 0 && g.color.g == 0);
+        assert!(has_main_glyph, "应存在 blue 颜色的 main glyph");
+    }
+
+    /// CSS text-shadow 默认值管线集成测试。
+    #[test]
+    fn test_text_shadow_none_pipeline() {
+        let html = r#"<html><body>
+            <div class="no-shadow" style="width: 200px; height: 50px; color: black; font-size: 16px;">Text</div>
+        </body></html>"#;
+        let css = r#".no-shadow { }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 无 text-shadow 时，每个字符只有 1 个 main glyph，没有 shadow glyph
+        // 所有 glyph 的颜色应为主色（黑色或继承色）
+        // 不应有红色/绿色等 shadow 颜色的 glyph
+        assert!(!result.primitives.glyphs.is_empty(), "应生成主文本 glyph");
+    }
+
+    /// CSS background-image url() 渲染管线集成测试。
+    #[test]
+    fn test_background_image_url_render_pipeline() {
+        let html = r#"<html><body>
+            <div class="bg" style="width: 200px; height: 100px;">Background</div>
+        </body></html>"#;
+        let css = r#".bg { background-image: url(hero.png); }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 应生成 ImagePrimitive
+        assert!(
+            !result.primitives.images.is_empty(),
+            "background-image: url() 应生成 ImagePrimitive，实际数量: {}",
+            result.primitives.images.len()
+        );
+    }
+
+    /// CSS background-image none 管线集成测试。
+    #[test]
+    fn test_background_image_none_pipeline() {
+        let html = r#"<html><body>
+            <div class="no-bg" style="width: 200px; height: 100px; background-color: white;">NoImg</div>
+        </body></html>"#;
+        let css = r#".no-bg { background-image: none; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // background-image: none 不应生成 ImagePrimitive
+        assert!(
+            result.primitives.images.is_empty(),
+            "background-image: none 不应生成图片图元，实际数量: {}",
+            result.primitives.images.len()
+        );
+    }
+
+    /// CSS background-image 与 background-color 组合管线集成测试。
+    #[test]
+    fn test_background_image_with_color_pipeline() {
+        let html = r#"<html><body>
+            <div class="combo" style="width: 200px; height: 100px;">Combo</div>
+        </body></html>"#;
+        let css = r#"
+            .combo {
+                background-color: #f0f0f0;
+                background-image: url(bg.jpg);
+            }
+        "#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 应同时有 fills（背景色）和 images（背景图片）
+        assert!(!result.primitives.fills.is_empty(), "background-color 应生成填充图元");
+        assert!(!result.primitives.images.is_empty(), "background-image 应生成图片图元");
+    }
+
+    /// CSS box-shadow 继承性管线集成测试（box-shadow 不可继承）。
+    #[test]
+    fn test_box_shadow_not_inherited_render_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 父元素有 box-shadow
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "parent-shadow");
+        doc.append_child(body, parent).unwrap();
+
+        // 子元素不设置 box-shadow
+        let child = doc.create_element("p");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent-shadow { box-shadow: 5px 5px blue; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 父元素应有 box-shadow
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+            "parent 的 box-shadow offset_x 应为 5.0"
+        );
+
+        // 子元素不应继承 box-shadow（offset_x 应为默认值 0.0）
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.box_shadow.offset_x - 0.0).abs() < 0.01,
+            "child 不应继承 box-shadow，offset_x 应为 0.0，实际为 {}",
+            child_style.box_shadow.offset_x
+        );
+    }
+
+    /// CSS text-shadow 继承性管线集成测试（text-shadow 可继承）。
+    #[test]
+    fn test_text_shadow_inherited_pipeline() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html_el = doc.create_element("html");
+        doc.append_child(root, html_el).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html_el, body).unwrap();
+
+        // 父元素有 text-shadow
+        let parent = doc.create_element("div");
+        doc.set_attribute(parent, "class", "parent-shadow");
+        doc.append_child(body, parent).unwrap();
+
+        // 子元素不设置 text-shadow，应继承
+        let child = doc.create_element("span");
+        doc.set_attribute(child, "class", "child");
+        doc.append_child(parent, child).unwrap();
+
+        let css = r#"
+            .parent-shadow { text-shadow: 3px 4px orange; }
+        "#;
+        let stylesheet = CssParser::parse_stylesheet(css);
+
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+        // 父元素应有 text-shadow
+        let parent_style = styles.get(&parent).expect("parent 应有计算样式");
+        assert!(
+            (parent_style.text_shadow.offset_x - 3.0).abs() < 0.01,
+            "parent 的 text-shadow offset_x 应为 3.0"
+        );
+
+        // 子元素应继承 text-shadow
+        let child_style = styles.get(&child).expect("child 应有计算样式");
+        assert!(
+            (child_style.text_shadow.offset_x - 3.0).abs() < 0.01,
+            "child 应继承 text-shadow offset_x=3.0，实际为 {}",
+            child_style.text_shadow.offset_x
+        );
+        assert!(
+            (child_style.text_shadow.offset_y - 4.0).abs() < 0.01,
+            "child 应继承 text-shadow offset_y=4.0，实际为 {}",
+            child_style.text_shadow.offset_y
+        );
+    }
+
+    /// CSS box-shadow + outline 组合管线集成测试。
+    #[test]
+    fn test_box_shadow_with_outline_pipeline() {
+        let html = r#"<html><body>
+            <div class="combined" style="width: 200px; height: 100px;">Combined</div>
+        </body></html>"#;
+        let css = r#"
+            .combined {
+                box-shadow: 4px 6px 12px rgba(0,0,0,0.3);
+                outline: 2px solid red;
+            }
+        "#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 应同时有 shadows 和 outline fills
+        assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
+        // outline 生成 4 个 fill 图元
+        assert!(
+            result.primitives.fills.len() >= 4,
+            "outline 应生成 4 个填充图元，实际数量: {}",
+            result.primitives.fills.len()
+        );
+    }
+
+    /// CSS background-image + border + box-shadow 全组合管线集成测试。
+    #[test]
+    fn test_all_three_new_properties_combined_pipeline() {
+        let html = r#"<html><body>
+            <div class="all" style="width: 200px; height: 100px; color: black; font-size: 14px;">All</div>
+        </body></html>"#;
+        let css = r#"
+            .all {
+                background-color: #eee;
+                background-image: url(wallpaper.jpg);
+                box-shadow: 2px 3px 8px rgba(0,0,0,0.5);
+                text-shadow: 1px 1px red;
+                border: 1px solid #ccc;
+            }
+        "#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // 验证所有新属性都生成了图元
+        assert!(!result.primitives.images.is_empty(), "background-image 应生成图片图元");
+        assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
+        assert!(!result.primitives.fills.is_empty(), "背景色 + 边框应生成填充图元");
+        assert!(
+            !result.primitives.glyphs.is_empty(),
+            "text-shadow + 文本应生成 glyph 图元"
+        );
+
+        // glyph 数量应 >= 2（shadow glyph + main glyph）
+        assert!(
+            result.primitives.glyphs.len() >= 2,
+            "text-shadow 应使 glyph 数量翻倍（shadow + main），实际数量: {}",
+            result.primitives.glyphs.len()
+        );
+    }
+
+    /// CSS box-shadow 仅 spread-radius 管线集成测试。
+    #[test]
+    fn test_box_shadow_spread_only_pipeline() {
+        let html = r#"<html><body>
+            <div class="spread" style="width: 200px; height: 100px;">Spread</div>
+        </body></html>"#;
+        let css = r#".spread { box-shadow: 0 0 0 5px purple; }"#;
+
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+
+        // spread-only shadow 仍应生成 ShadowPrimitive（spread_radius=5）
+        assert!(
+            !result.primitives.shadows.is_empty(),
+            "spread-only box-shadow 应生成阴影图元，实际数量: {}",
+            result.primitives.shadows.len()
+        );
+
+        let shadow = &result.primitives.shadows[0];
+        assert!(
+            (shadow.spread_radius - 5.0).abs() < 0.01,
+            "shadow spread_radius 应为 5.0，实际为 {}",
+            shadow.spread_radius
+        );
+        assert!((shadow.offset_x - 0.0).abs() < 0.01, "shadow offset_x 应为 0.0");
+        assert!((shadow.offset_y - 0.0).abs() < 0.01, "shadow offset_y 应为 0.0");
     }
 }

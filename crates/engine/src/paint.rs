@@ -13,8 +13,9 @@ use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, RenderPrimitives};
-use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue};
+use zero_render_foundation::image_cache::ImageKey;
+use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, RenderPrimitives, ShadowPrimitive};
+use zero_style_system::{BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -85,9 +86,11 @@ impl Painter {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
             if !hidden {
+                self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
+                self.paint_background_image(box_node, abs_x, abs_y, style);
                 if box_node.border_top > 0.0
                     || box_node.border_right > 0.0
                     || box_node.border_bottom > 0.0
@@ -155,10 +158,16 @@ impl Painter {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
             if !hidden {
+                // 0. box-shadow（位于背景之下）
+                self.paint_box_shadow(box_node, abs_x, abs_y, style);
+
                 // 1. 背景色填充（根据 border-radius 生成圆角矩形图元）
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
+
+                // 1b. 背景图片（在背景色之上）
+                self.paint_background_image(box_node, abs_x, abs_y, style);
 
                 // 2. 边框填充（根据 border-radius 生成圆角边框图元）
                 if box_node.border_top > 0.0
@@ -172,7 +181,7 @@ impl Painter {
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
 
-                // 4. 文本内容绘制（使用行内格式化上下文处理换行）
+                // 4. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
                 self.paint_text(box_node, abs_x, abs_y, style, doc);
             }
 
@@ -366,6 +375,51 @@ impl Painter {
         );
     }
 
+    /// 绘制 box-shadow（盒阴影效果）。
+    ///
+    /// 在背景之下绘制 box-shadow，通过 ShadowPrimitive 表示。
+    /// 包含偏移、模糊半径、扩展半径和颜色信息。
+    /// 当所有阴影参数为零时跳过绘制。
+    fn paint_box_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let shadow = &style.box_shadow;
+
+        // 跳过无效阴影（所有参数为零时不可见）
+        if shadow.offset_x == 0.0 && shadow.offset_y == 0.0 && shadow.blur_radius == 0.0 && shadow.spread_radius == 0.0
+        {
+            return;
+        }
+
+        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        let color = color_value_to_render(&shadow.color);
+
+        self.primitives.add_shadow(ShadowPrimitive {
+            rect,
+            color,
+            offset_x: shadow.offset_x,
+            offset_y: shadow.offset_y,
+            blur_radius: shadow.blur_radius,
+            spread_radius: shadow.spread_radius,
+        });
+    }
+
+    /// 绘制背景图片。
+    ///
+    /// 当 background-image 为 Url 时，生成 ImagePrimitive 图元。
+    /// 使用 URL 字符串的哈希值作为 ImageKey（简化实现，实际图片加载由上层处理）。
+    fn paint_background_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        match &style.background_image {
+            BackgroundImageComputedValue::None => {}
+            BackgroundImageComputedValue::Url(url) => {
+                let key = simple_hash(url);
+                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                self.primitives.add_image(ImagePrimitive {
+                    rect,
+                    image_key: ImageKey::new(key),
+                });
+            }
+        }
+    }
+
     /// 获取生成的渲染图元（消费 painter）。
     pub fn into_primitives(self) -> RenderPrimitives {
         self.primitives
@@ -407,6 +461,14 @@ impl Painter {
 
         let color = color_value_to_render(&style.color);
 
+        // 文本阴影参数
+        let text_shadow = &style.text_shadow;
+        let has_text_shadow =
+            text_shadow.offset_x != 0.0 || text_shadow.offset_y != 0.0 || text_shadow.blur_radius != 0.0;
+        let shadow_ox = text_shadow.offset_x;
+        let shadow_oy = text_shadow.offset_y;
+        let shadow_color = color_value_to_render(&text_shadow.color);
+
         // 使用内容区域左上角作为文本起始位置
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -433,6 +495,20 @@ impl Painter {
                     let mut char_x = frag_base_x;
 
                     for ch in fragment.text.chars() {
+                        // 文本阴影 glyph（在主字形之前绘制，确保阴影在底层）
+                        if has_text_shadow {
+                            self.primitives.add_glyph(GlyphPrimitive {
+                                x: char_x + shadow_ox,
+                                y: frag_base_y + shadow_oy,
+                                font_size: fragment.font_size,
+                                color: shadow_color,
+                                glyph_id: ch as u32,
+                                font_id: default_font_id,
+                                bitmap_width: None,
+                                bitmap_height: None,
+                            });
+                        }
+
                         self.primitives.add_glyph(GlyphPrimitive {
                             x: char_x,
                             y: frag_base_y,
@@ -453,6 +529,20 @@ impl Painter {
         // 退化为单个占位 glyph（无 Document 或无文本子节点）
         let glyph_x = content_x + tx;
         let glyph_y = content_y + ty;
+
+        // 文本阴影占位 glyph
+        if has_text_shadow {
+            self.primitives.add_glyph(GlyphPrimitive {
+                x: glyph_x + shadow_ox,
+                y: glyph_y + font_size + shadow_oy,
+                font_size,
+                color: shadow_color,
+                glyph_id: 0,
+                font_id: default_font_id,
+                bitmap_width: None,
+                bitmap_height: None,
+            });
+        }
 
         self.primitives.add_glyph(GlyphPrimitive {
             x: glyph_x,
@@ -577,6 +667,15 @@ fn length_to_f32(v: &LengthValue) -> f32 {
     }
 }
 
+/// 简单的字符串哈希函数（用于从 URL 字符串生成 ImageKey）。
+fn simple_hash(s: &str) -> u64 {
+    let mut hash: u64 = 5381;
+    for byte in s.bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(byte as u64);
+    }
+    hash
+}
+
 impl Default for Painter {
     fn default() -> Self {
         Self::new()
@@ -659,6 +758,8 @@ mod tests {
     use super::*;
     use zero_css_parser::values::ColorValue;
     use zero_layout_engine::types::OverflowClip;
+    use zero_style_system::BoxShadowComputedValue;
+    use zero_style_system::TextShadowComputedValue;
 
     /// 测试空布局树不产生任何图元。
     #[test]
@@ -4338,5 +4439,616 @@ mod tests {
             right_fill.rect.origin.y, 3.0,
             "右侧边框 y 应为 3（从 top 边框下方开始）"
         );
+    }
+
+    // ── 新增测试：box-shadow 渲染 ──────────────────────────────
+
+    /// 测试 box-shadow 生成 ShadowPrimitive。
+    #[test]
+    fn test_paint_box_shadow_basic() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.shadows.len(), 1, "应生成 1 个阴影图元");
+        let shadow = &prims.shadows[0];
+        assert_eq!(shadow.offset_x, 4.0);
+        assert_eq!(shadow.offset_y, 4.0);
+        assert_eq!(shadow.blur_radius, 8.0);
+        assert_eq!(shadow.spread_radius, 0.0);
+        assert_eq!(shadow.color, Color::rgba(0, 0, 0, 128));
+    }
+
+    /// 测试 box-shadow 所有参数为零时不生成阴影。
+    #[test]
+    fn test_paint_box_shadow_zero_values_skip() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().shadows.is_empty(),
+            "所有参数为零时不应生成阴影图元"
+        );
+    }
+
+    /// 测试 box-shadow 仅 offset 非零时生成阴影。
+    #[test]
+    fn test_paint_box_shadow_offset_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 5.0,
+            offset_y: 3.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().shadows.len(),
+            1,
+            "仅 offset 非零时应生成 1 个阴影图元"
+        );
+    }
+
+    /// 测试 box-shadow 仅 blur 非零时生成阴影。
+    #[test]
+    fn test_paint_box_shadow_blur_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 10.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().shadows.len(),
+            1,
+            "仅 blur 非零时应生成 1 个阴影图元"
+        );
+    }
+
+    /// 测试 box-shadow 仅 spread 非零时生成阴影。
+    #[test]
+    fn test_paint_box_shadow_spread_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 5.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert_eq!(
+            painter.primitives().shadows.len(),
+            1,
+            "仅 spread 非零时应生成 1 个阴影图元"
+        );
+    }
+
+    /// 测试 box-shadow 颜色正确传递。
+    #[test]
+    fn test_paint_box_shadow_color() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(255, 0, 0, 255),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let shadow = &painter.primitives().shadows[0];
+        assert_eq!(shadow.color, Color::rgb(255, 0, 0), "阴影颜色应为红色");
+    }
+
+    /// 测试 box-shadow 与背景色同时生成。
+    #[test]
+    fn test_paint_box_shadow_with_background() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.fills.len(), 1, "应生成 1 个背景填充");
+        assert_eq!(prims.shadows.len(), 1, "应生成 1 个阴影图元");
+    }
+
+    // ── 新增测试：background-image 渲染 ──────────────────────────
+
+    /// 测试 background-image: url() 生成 ImagePrimitive。
+    #[test]
+    fn test_paint_background_image_url() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.images.len(), 1, "应生成 1 个图片图元");
+        assert_eq!(prims.images[0].rect.size.width, 100.0);
+        assert_eq!(prims.images[0].rect.size.height, 50.0);
+    }
+
+    /// 测试 background-image: none 不生成 ImagePrimitive。
+    #[test]
+    fn test_paint_background_image_none() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_image = BackgroundImageComputedValue::None;
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().images.is_empty(),
+            "background-image:none 不应生成图片图元"
+        );
+    }
+
+    /// 测试 background-image 与背景色同时生成。
+    #[test]
+    fn test_paint_background_image_with_color() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.background_image = BackgroundImageComputedValue::Url("bg.png".to_string());
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.fills.len(), 1, "应生成 1 个背景填充");
+        assert_eq!(prims.images.len(), 1, "应生成 1 个图片图元");
+    }
+
+    /// 测试 background-image URL 哈希一致性。
+    #[test]
+    fn test_paint_background_image_url_hash_consistency() {
+        let mut doc1 = zero_dom::Document::new();
+        let elem1 = doc1.create_element("div");
+        let layout1 = make_box(Some(elem1), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles1 = HashMap::new();
+        let mut style1 = ComputedStyle::default();
+        style1.background_image = BackgroundImageComputedValue::Url("same.png".to_string());
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style1.color = ColorValue::CurrentColor;
+        styles1.insert(elem1, style1);
+
+        let mut painter1 = Painter::new();
+        painter1.paint(&layout1, &styles1, None);
+        let key1 = painter1.primitives().images[0].image_key.clone();
+
+        let mut doc2 = zero_dom::Document::new();
+        let elem2 = doc2.create_element("div");
+        let layout2 = make_box(Some(elem2), 10.0, 20.0, 80.0, 40.0);
+
+        let mut styles2 = HashMap::new();
+        let mut style2 = ComputedStyle::default();
+        style2.background_image = BackgroundImageComputedValue::Url("same.png".to_string());
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style2.color = ColorValue::CurrentColor;
+        styles2.insert(elem2, style2);
+
+        let mut painter2 = Painter::new();
+        painter2.paint(&layout2, &styles2, None);
+        let key2 = painter2.primitives().images[0].image_key.clone();
+
+        assert_eq!(key1, key2, "相同 URL 应产生相同的 ImageKey");
+    }
+
+    // ── 新增测试：text-shadow 渲染 ──────────────────────────────
+
+    /// 测试 text-shadow 生成阴影 glyph。
+    #[test]
+    fn test_paint_text_shadow_basic() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 2.0,
+            offset_y: 2.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        // 阴影 glyph + 主 glyph = 2
+        assert_eq!(prims.glyphs.len(), 2, "应生成 2 个 glyph（阴影 + 主）");
+
+        // 阴影 glyph 在前
+        let shadow_glyph = &prims.glyphs[0];
+        assert_eq!(
+            shadow_glyph.color,
+            Color::rgba(0, 0, 0, 128),
+            "阴影 glyph 颜色应为半透明黑色"
+        );
+
+        // 主 glyph 在后
+        let main_glyph = &prims.glyphs[1];
+        assert_eq!(main_glyph.color, Color::rgb(0, 0, 0), "主 glyph 颜色应为黑色");
+
+        // 阴影 glyph 位置偏移 (2, 2)
+        assert_eq!(shadow_glyph.x, main_glyph.x + 2.0, "阴影 glyph x 偏移 2");
+        assert_eq!(shadow_glyph.y, main_glyph.y + 2.0, "阴影 glyph y 偏移 2");
+    }
+
+    /// 测试 text-shadow 所有参数为零时不生成额外 glyph。
+    #[test]
+    fn test_paint_text_shadow_zero_skip() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        // text-shadow 全为零 → 只有 1 个主 glyph，没有阴影 glyph
+        assert_eq!(
+            painter.primitives().glyphs.len(),
+            1,
+            "text-shadow 全为零时只应生成 1 个主 glyph"
+        );
+    }
+
+    /// 测试 text-shadow 仅 offset_y 非零时生成阴影 glyph。
+    #[test]
+    fn test_paint_text_shadow_offset_y_only() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 3.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.glyphs.len(), 2, "应生成 2 个 glyph（阴影 + 主）");
+
+        // 阴影 glyph y 偏移 3
+        let shadow_glyph = &prims.glyphs[0];
+        let main_glyph = &prims.glyphs[1];
+        assert_eq!(shadow_glyph.x, main_glyph.x, "阴影 glyph x 不偏移");
+        assert_eq!(shadow_glyph.y, main_glyph.y + 3.0, "阴影 glyph y 偏移 3");
+    }
+
+    /// 测试 text-shadow 颜色正确传递。
+    #[test]
+    fn test_paint_text_shadow_color() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 2.0,
+            offset_y: 2.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(255, 0, 0, 255),
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let shadow_glyph = &painter.primitives().glyphs[0];
+        assert_eq!(shadow_glyph.color, Color::rgb(255, 0, 0), "阴影 glyph 颜色应为红色");
+    }
+
+    /// 测试 text-shadow 与 transform 结合。
+    #[test]
+    fn test_paint_text_shadow_with_transform() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 2.0,
+            offset_y: 2.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        };
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(10.0, 20.0)]);
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert_eq!(prims.glyphs.len(), 2, "应生成 2 个 glyph（阴影 + 主）");
+
+        // 主 glyph 位置应包含 transform 偏移
+        let main_glyph = &prims.glyphs[1];
+        // text_x = abs_x(0) + tx(10) = 10
+        assert_eq!(main_glyph.x, 10.0, "主 glyph x 应包含 translate(10)");
+        // text_y = abs_y(0) + ty(20) + font_size(16) = 36
+        assert_eq!(main_glyph.y, 36.0, "主 glyph y 应包含 translate(20) + font_size");
+
+        // 阴影 glyph 也应包含 transform 偏移 + shadow offset
+        let shadow_glyph = &prims.glyphs[0];
+        assert_eq!(
+            shadow_glyph.x,
+            main_glyph.x + 2.0,
+            "阴影 glyph x 应包含 translate + shadow offset"
+        );
+        assert_eq!(
+            shadow_glyph.y,
+            main_glyph.y + 2.0,
+            "阴影 glyph y 应包含 translate + shadow offset"
+        );
+    }
+
+    // ── 新增测试：组合渲染 ──────────────────────────────────
+
+    /// 测试 box-shadow + background-color + border + text-shadow 全组合。
+    #[test]
+    fn test_paint_combined_box_shadow_background_border_text_shadow() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 2.0, 2.0, 2.0, 2.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.text_shadow = TextShadowComputedValue {
+            offset_x: 1.0,
+            offset_y: 1.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(128, 128, 128, 128),
+        };
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        // 1 background fill + 4 border fills = 5 fills
+        assert_eq!(prims.fills.len(), 5, "应生成 5 个填充（1 背景 + 4 边框）");
+        // 1 shadow
+        assert_eq!(prims.shadows.len(), 1, "应生成 1 个 box-shadow");
+        // 2 glyphs (shadow glyph + main glyph)
+        assert_eq!(prims.glyphs.len(), 2, "应生成 2 个 glyph（text-shadow + 主文本）");
+    }
+
+    /// 测试 visibility:hidden 时 box-shadow 和 background-image 不绘制。
+    #[test]
+    fn test_paint_visibility_hidden_no_shadow_no_image() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.visibility = VisibilityValue::Hidden;
+        style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let prims = painter.primitives();
+        assert!(prims.shadows.is_empty(), "visibility:hidden 不应生成阴影");
+        assert!(prims.images.is_empty(), "visibility:hidden 不应生成图片");
+        assert!(prims.fills.is_empty(), "visibility:hidden 不应生成填充");
+    }
+
+    /// 测试 paint_in_rect 正确绘制 box-shadow。
+    #[test]
+    fn test_paint_in_rect_with_box_shadow() {
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.box_shadow = BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        };
+        // 设置 color 为 CurrentColor 以避免生成 glyph
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        // 脏区域完全覆盖节点
+        let dirty_rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+
+        let mut painter = Painter::new();
+        painter.paint_in_rect(&layout, &styles, &dirty_rect, None);
+
+        assert_eq!(painter.primitives().shadows.len(), 1, "paint_in_rect 应生成 box-shadow");
     }
 }
