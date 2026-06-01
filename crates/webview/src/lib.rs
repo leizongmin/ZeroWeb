@@ -4038,4 +4038,161 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "object", "createDocumentFragment 应返回对象");
     }
+
+    // ── DOM 交互场景端到端测试 ──
+
+    /// 场景：构建 todo 列表，使用多种 DOM API 组合。
+    #[test]
+    fn test_webview_dom_todo_list_scenario() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var list = document.createElement('ul');
+            list.setAttribute('id', 'todo-list');
+            list.classList.add('list');
+
+            var items = ['Buy milk', 'Read book', 'Write code'];
+            for (var i = 0; i < items.length; i++) {
+                var li = document.createElement('li');
+                li.textContent = items[i];
+                li.classList.add('item');
+                li.style.setProperty('color', 'black');
+                list.appendChild(li);
+            }
+
+            var count = list.children.length;
+            var firstText = list.firstChild.textContent;
+            var hasListClass = list.classList.contains('list');
+            count + '|' + firstText + '|' + hasListClass;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "3|Buy milk|true", "todo 列表场景应正确使用 DOM API");
+    }
+
+    /// 场景：DOM 遍历和修改。
+    #[test]
+    fn test_webview_dom_traversal_and_modification() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var container = document.createElement('div');
+            var c1 = document.createElement('span');
+            c1.textContent = 'A';
+            var c2 = document.createElement('span');
+            c2.textContent = 'B';
+            var c3 = document.createElement('span');
+            c3.textContent = 'C';
+            container.appendChild(c1);
+            container.appendChild(c2);
+            container.appendChild(c3);
+
+            // 遍历并收集文本
+            var text = '';
+            var child = container.firstChild;
+            while (child) {
+                text += child.textContent;
+                child = child.nextSibling;
+            }
+
+            // 移除中间节点
+            container.removeChild(c2);
+
+            text + '|' + container.children.length;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABC|2", "遍历和修改场景应正确工作");
+    }
+
+    /// 场景：classList 与 setAttribute('class', ...) 同步。
+    #[test]
+    fn test_webview_dom_classlist_attribute_sync() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.classList.add('active');
+            el.classList.add('visible');
+            var classFromAttr = el.getAttribute('class');
+            var fromClassName = el.className;
+            classFromAttr === fromClassName ? 'sync' : 'mismatch';
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "sync", "classList 和 class 属性应同步");
+    }
+
+    /// 场景：style.cssText 解析和修改。
+    #[test]
+    fn test_webview_dom_style_parse_and_modify() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var el = document.createElement('div');
+            el.style.cssText = 'color: red; font-size: 16px';
+            var color = el.style.getPropertyValue('color');
+            el.style.setProperty('margin', '10px');
+            el.style.removeProperty('font-size');
+            var hasFontSize = el.style.getPropertyValue('font-size');
+            color + '|' + (hasFontSize === '' ? 'removed' : 'present');
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "red|removed", "style 解析和修改场景应正确工作");
+    }
+
+    /// 场景：replaceChild 替换后检查父子关系。
+    #[test]
+    fn test_webview_dom_replace_child_parent_tracking() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var old = document.createElement('span');
+            old.textContent = 'old';
+            parent.appendChild(old);
+
+            var replacement = document.createElement('p');
+            replacement.textContent = 'new';
+            parent.replaceChild(replacement, old);
+
+            var newChild = parent.firstChild;
+            var oldHasNoParent = old.parentNode === null;
+            newChild.tagName + '|' + newChild.textContent + '|' + oldHasNoParent;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "P|new|true", "replaceChild 应正确更新父子关系");
+    }
+
+    /// 场景：insertBefore 结合 appendChild 顺序验证。
+    #[test]
+    fn test_webview_dom_insert_ordering() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        let result = wv.execute_script_with_dom(
+            r#"
+            var parent = document.createElement('div');
+            var a = document.createElement('span'); a.textContent = 'A';
+            var b = document.createElement('span'); b.textContent = 'B';
+            var c = document.createElement('span'); c.textContent = 'C';
+            var d = document.createElement('span'); d.textContent = 'D';
+
+            parent.appendChild(a);
+            parent.appendChild(c);
+            parent.insertBefore(b, c);  // [A, B, C]
+            parent.insertBefore(d, null); // null → 追加到末尾 [A, B, C, D]
+
+            var order = '';
+            var child = parent.firstChild;
+            while (child) {
+                order += child.textContent;
+                child = child.nextSibling;
+            }
+            order;
+            "#,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ABCD", "insertBefore 排序应正确");
+    }
 }
