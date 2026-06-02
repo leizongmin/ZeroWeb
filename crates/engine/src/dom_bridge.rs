@@ -1045,6 +1045,46 @@ pub fn generate_dom_api_polyfill() -> String {
     this.left = this.x;
   };
 
+  // ── PerformanceObserver Stub ──
+  // Provides PerformanceObserver for observing performance entries.
+  // Real observation by host runtime; stub records registrations.
+
+  globalThis.PerformanceObserver = function(callback) {
+    this._callback = callback;
+    this._observing = [];
+    this._supportedEntryTypes = ['mark', 'measure', 'navigation', 'resource', 'paint'];
+  };
+  globalThis.PerformanceObserver.prototype.observe = function(options) {
+    var types = (options && options.type) ? [options.type] : (options && options.entryTypes) || [];
+    for (var i = 0; i < types.length; i++) {
+      if (this._observing.indexOf(types[i]) === -1) {
+        this._observing.push(types[i]);
+      }
+    }
+  };
+  globalThis.PerformanceObserver.prototype.disconnect = function() {
+    this._observing = [];
+  };
+  globalThis.PerformanceObserver.prototype.takeRecords = function() {
+    return [];
+  };
+  globalThis.PerformanceObserver.supportedEntryTypes = ['mark', 'measure', 'navigation', 'resource', 'paint'];
+
+  // ── Performance API Stub ──
+  // Basic performance.now() and performance.mark/measure.
+
+  globalThis.performance = {
+    now: function() { return Date.now(); },
+    mark: function(name) { return { name: name, entryType: 'mark', startTime: Date.now(), duration: 0 }; },
+    measure: function(name, startMark, endMark) { return { name: name, entryType: 'measure', startTime: 0, duration: 0 }; },
+    getEntries: function() { return []; },
+    getEntriesByType: function(type) { return []; },
+    getEntriesByName: function(name) { return []; },
+    clearMarks: function() {},
+    clearMeasures: function() {},
+    timeOrigin: Date.now()
+  };
+
   // ── WebAssembly API Stub ──
   // Provides the WebAssembly JavaScript API surface.
   // Real compilation and execution by host runtime (zero-wasm-sandbox).

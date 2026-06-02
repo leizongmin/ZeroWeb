@@ -1121,3 +1121,190 @@ fn test_webview_execute_script_with_dom_empty() {
         "Empty user script with polyfill should not panic"
     );
 }
+
+// ════════════════════════════════════════════════════════════════
+//  边界条件测试：Service Worker 注册表默认状态、生命周期异常、extract_origin
+// ════════════════════════════════════════════════════════════════
+
+/// 验证新创建的 WebView 的 Service Worker 注册表为空。
+///
+/// 边界场景：WebView 刚创建时，sw_registry 应无任何注册，
+/// len 应为 0，is_empty 应为 true，active_count 应为 0。
+#[test]
+fn test_sw_registry_default_empty() {
+    let wv = WebView::new(WebViewConfig::default());
+    let registry = wv.service_worker_registry();
+    assert!(registry.is_empty(), "新 WebView 的 SW 注册表应为空");
+    assert_eq!(registry.len(), 0, "注册数量应为 0");
+    assert_eq!(registry.active_count(), 0, "活跃 SW 数量应为 0");
+    assert!(
+        registry.active_origins().is_empty(),
+        "活跃 origin 列表应为空"
+    );
+}
+
+/// 验证在未安装 Service Worker 的情况下直接调用 activate 应失败。
+///
+/// 边界场景：register_service_worker 后 SW 处于 Registered 状态，
+/// activate 要求 SW 处于 Installed 状态，跳过 install 直接 activate 应返回 false。
+/// SW 的状态应保持为 Registered，不被错误修改。
+#[test]
+fn test_sw_activate_before_install() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+
+    // 未调用 install_service_worker，直接尝试 activate
+    let result = wv.activate_service_worker(id);
+    assert!(!result, "未安装时 activate 应返回 false");
+
+    // 状态应保持为 Registered
+    let reg = wv.service_worker_registry().get(id).unwrap();
+    assert_eq!(
+        reg.state,
+        zero_storage::ServiceWorkerState::Registered,
+        "激活失败后状态应保持为 Registered"
+    );
+    assert_eq!(
+        wv.service_worker_registry().active_count(),
+        0,
+        "不应有活跃的 SW"
+    );
+}
+
+/// 验证对已激活的 Service Worker 再次调用 activate 应失败。
+///
+/// 边界场景：SW 已走完 register → install → activate 生命周期，
+/// 处于 Activated 状态。再次调用 activate 时，activate 内部检查
+/// 状态不是 Installed，应返回 false。
+/// SW 的状态和活跃映射不应被破坏。
+#[test]
+fn test_sw_double_activate() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+    assert!(wv.install_service_worker(id));
+    assert!(wv.activate_service_worker(id));
+
+    // 第二次 activate 应失败
+    let result = wv.activate_service_worker(id);
+    assert!(!result, "重复 activate 应返回 false");
+
+    // 状态应保持为 Activated
+    let reg = wv.service_worker_registry().get(id).unwrap();
+    assert_eq!(
+        reg.state,
+        zero_storage::ServiceWorkerState::Activated,
+        "重复激活后状态应保持为 Activated"
+    );
+    assert!(
+        reg.is_active(),
+        "SW 仍应为活跃状态"
+    );
+    assert_eq!(
+        wv.service_worker_registry().active_count(),
+        1,
+        "活跃 SW 数量应保持为 1"
+    );
+}
+
+/// 验证 extract_origin 对 http:// URL 正确提取 origin（不含端口）。
+///
+/// 边界场景：http:// URL 默认端口 80 不出现在 origin 字符串中，
+/// extract_origin 应返回 "http://example.com"。
+#[test]
+fn test_sw_extract_origin_http() {
+    assert_eq!(
+        WebView::extract_origin("http://example.com/path"),
+        Some("http://example.com".to_string()),
+        "http:// URL 应正确提取 origin"
+    );
+    assert_eq!(
+        WebView::extract_origin("http://example.com:8080/api/data?q=1"),
+        Some("http://example.com:8080".to_string()),
+        "http:// URL 带端口应包含端口号"
+    );
+    assert_eq!(
+        WebView::extract_origin("http://example.com:80/default-port"),
+        Some("http://example.com".to_string()),
+        "http:// 默认端口 80 应被省略"
+    );
+}
+
+/// 验证 extract_origin 对不含端口的 https:// URL 正确提取 origin。
+///
+/// 边界场景：https:// URL 无显式端口时，origin 不包含端口部分。
+/// 同时验证路径和查询参数不包含在 origin 中。
+#[test]
+fn test_sw_extract_origin_no_port() {
+    assert_eq!(
+        WebView::extract_origin("https://example.com/page.html"),
+        Some("https://example.com".to_string()),
+        "无端口的 https:// URL 应提取 origin 不含端口"
+    );
+    assert_eq!(
+        WebView::extract_origin("https://app.example.com:3000/dashboard?tab=overview"),
+        Some("https://app.example.com:3000".to_string()),
+        "带端口的 URL 应包含端口号"
+    );
+    assert_eq!(
+        WebView::extract_origin("https://example.com"),
+        Some("https://example.com".to_string()),
+        "无路径的 URL 也应正确提取 origin"
+    );
+}
+
+/// 验证通过 service_worker_registry_mut 将响应放入缓存后，
+/// intercept_fetch 返回 Cached 结果。
+///
+/// 场景：register → install → activate 一个 SW，然后通过
+/// service_worker_registry_mut 获取活跃 SW 的 cache_storage，
+/// open 一个命名缓存并 put 一个请求-响应对。
+/// 最后调用 intercept_fetch 验证返回 FetchInterceptResult::Cached，
+/// 且缓存的响应内容与写入时一致。
+#[test]
+fn test_sw_cache_put_and_match_via_webview() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+    assert!(wv.install_service_worker(id));
+    assert!(wv.activate_service_worker(id));
+
+    // 通过 service_worker_registry_mut 缓存一个响应
+    let request = zero_storage::CacheRequest::new("https://example.com/api/data.json");
+    let response = zero_storage::CacheResponse::ok(br#"{"status":"ok"}"#.to_vec());
+    let _ = wv.service_worker_registry_mut()
+        .get_active_mut("https://example.com")
+        .unwrap()
+        .cache_storage
+        .open("api-cache")
+        .put(request.clone(), response);
+
+    // intercept_fetch 应返回 Cached
+    let result = wv
+        .service_worker_registry()
+        .intercept_fetch(&request, "https://example.com");
+    match result {
+        zero_storage::FetchInterceptResult::Cached(resp) => {
+            assert_eq!(resp.status, 200, "缓存响应状态码应为 200");
+            assert_eq!(
+                resp.body,
+                br#"{"status":"ok"}"#.to_vec(),
+                "缓存响应体应与写入时一致"
+            );
+        }
+        other => {
+            panic!(
+                "intercept_fetch 应返回 Cached，实际返回: {:?}",
+                other
+            );
+        }
+    }
+
+    // 不在缓存中的请求应返回 PassThrough（有活跃 SW 但无缓存命中）
+    let uncached = zero_storage::CacheRequest::new("https://example.com/other.html");
+    let uncached_result = wv
+        .service_worker_registry()
+        .intercept_fetch(&uncached, "https://example.com");
+    assert!(
+        matches!(uncached_result, zero_storage::FetchInterceptResult::PassThrough),
+        "未缓存的请求应返回 PassThrough"
+    );
+}
