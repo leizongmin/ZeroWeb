@@ -5203,6 +5203,7 @@ dependencies = [
  "zero-net",
  "zero-render-foundation",
  "zero-script-sandbox",
+ "zero-storage",
 ]
 
 [[package]]

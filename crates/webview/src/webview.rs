@@ -6,6 +6,7 @@ use std::rc::Rc;
 use zero_engine::{PipelineTimings, RenderPipeline};
 use zero_net::{HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
+use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
 
 use crate::WebViewError;
 
@@ -90,6 +91,8 @@ pub struct WebView {
     cached_css: String,
     /// 事件回调列表。
     event_callbacks: Vec<EventCallback>,
+    /// Service Worker 注册表。
+    sw_registry: ServiceWorkerRegistry,
 }
 
 impl WebView {
@@ -110,6 +113,7 @@ impl WebView {
             cached_html: String::new(),
             cached_css: String::new(),
             event_callbacks: Vec::new(),
+            sw_registry: ServiceWorkerRegistry::new(),
         }
     }
 
@@ -157,6 +161,13 @@ impl WebView {
         render_result
     }
 
+    /// 从 URL 中提取 origin（scheme + host + port）。
+    ///
+    /// `"https://example.com:8443/path?q=1"` → `"https://example.com:8443"`
+    pub fn extract_origin(url: &str) -> Option<String> {
+        url::Url::parse(url).ok().map(|u| u.origin().ascii_serialization())
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
@@ -173,6 +184,38 @@ impl WebView {
 
         if old_url.as_deref() != Some(url) {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
+        }
+
+        // 尝试 Service Worker 拦截
+        if let Some(origin) = Self::extract_origin(url) {
+            let request = CacheRequest::new(url);
+            match self.sw_registry.intercept_fetch(&request, &origin) {
+                FetchInterceptResult::Cached(response)
+                | FetchInterceptResult::Responded(response) => {
+                    tracing::info!("Service Worker intercepted fetch for {url}");
+                    let html = String::from_utf8(response.body).map_err(|e| {
+                        self.loading = false;
+                        self.emit_event(&WebViewEvent::LoadFailed(
+                            url.to_string(),
+                            format!("SW response body is not valid UTF-8: {e}"),
+                        ));
+                        WebViewError::Navigation(format!("SW response body is not valid UTF-8: {e}"))
+                    })?;
+                    let render_result = self.load_html(&html, None);
+                    self.loading = false;
+                    self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
+                    return Ok(render_result);
+                }
+                FetchInterceptResult::Error(msg) => {
+                    self.loading = false;
+                    let full_msg = format!("Service Worker error for {url}: {msg}");
+                    self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), full_msg.clone()));
+                    return Err(WebViewError::Navigation(full_msg));
+                }
+                FetchInterceptResult::PassThrough | FetchInterceptResult::NoWorker => {
+                    // 继续正常网络请求
+                }
+            }
         }
 
         // 发起 HTTP 请求
@@ -368,5 +411,41 @@ impl WebView {
         };
         self.last_render = Some(render_result.clone());
         render_result
+    }
+
+    /// 注册 Service Worker。
+    ///
+    /// 返回新注册的 ID。
+    pub fn register_service_worker(&mut self, script_url: &str, scope: &str, origin: &str) -> u64 {
+        self.sw_registry.register(script_url, scope, origin)
+    }
+
+    /// 安装 Service Worker。
+    ///
+    /// 将指定 ID 的 SW 推进到 `Installed` 状态。
+    pub fn install_service_worker(&mut self, id: u64) -> bool {
+        self.sw_registry.install(id)
+    }
+
+    /// 激活 Service Worker。
+    ///
+    /// 将指定 ID 的 SW 推进到 `Activated` 状态，使其可以拦截 fetch 请求。
+    pub fn activate_service_worker(&mut self, id: u64) -> bool {
+        self.sw_registry.activate(id)
+    }
+
+    /// 注销 Service Worker。
+    pub fn unregister_service_worker(&mut self, id: u64) -> bool {
+        self.sw_registry.unregister(id)
+    }
+
+    /// 获取 Service Worker 注册表（只读）。
+    pub fn service_worker_registry(&self) -> &ServiceWorkerRegistry {
+        &self.sw_registry
+    }
+
+    /// 获取 Service Worker 注册表（可变）。
+    pub fn service_worker_registry_mut(&mut self) -> &mut ServiceWorkerRegistry {
+        &mut self.sw_registry
     }
 }
