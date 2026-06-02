@@ -26,3 +26,5 @@ pub const BOOKMARKS_BAR_HEIGHT: f32 = 26.0;
 pub const FIND_BAR_HEIGHT: f32 = 36.0;
 /// 状态栏高度
 pub const STATUS_BAR_HEIGHT: f32 = 22.0;
+/// 下载栏高度（有活跃下载时显示）
+pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;

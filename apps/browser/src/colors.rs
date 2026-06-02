@@ -247,3 +247,24 @@ pub const BOOKMARKS_BAR_ICON: Color = Color {
     b: 7,
     a: 255,
 };
+/// 下载进度条背景色
+pub const DOWNLOAD_BAR_BG: Color = Color {
+    r: 40,
+    g: 40,
+    b: 40,
+    a: 255,
+};
+/// 下载进度条填充色
+pub const DOWNLOAD_BAR_FILL: Color = Color {
+    r: 66,
+    g: 133,
+    b: 244,
+    a: 255,
+};
+/// 下载进度条文字色
+pub const DOWNLOAD_BAR_TEXT: Color = Color {
+    r: 220,
+    g: 220,
+    b: 220,
+    a: 255,
+};
