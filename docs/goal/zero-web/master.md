@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-03
-**执行状态**: 16/16 crate 已实现，7034 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（目标 95%+）
+**执行状态**: 16/16 crate 已实现，7310 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（93.29% 行覆盖率，目标 95%+）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 7034 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 7310 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,7 +103,32 @@
 
 ## 最近完成的改进
 
-### -61. 测试覆盖率提升第五轮（本轮，7034 测试）
+### -62. 测试覆盖率提升第六轮（本轮，7310 测试）
+
+系统化提升核心 crate 的单元测试覆盖率，修复前一轮遗留的编译/断言错误，新增 276 个测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| css-parser/tests_1..4 | **parser/tokenizer/color/types/animation 覆盖率测试**：animation direction/fill-mode/play-state/name/duration/iteration-count 解析、color 边界（hex/rgb/hsl/命名颜色）、tokenizer 边界、supports_condition、media_query、parse_stylesheet 全路径 | +86 |
+| dom/tests_7_parser | **HTML parser 覆盖率测试**：空文档、嵌套结构、错误恢复、实体解码、void 元素、注释、script/style、表单元素、大文档 | +28 |
+| render-foundation | **GPU/CPU renderer 覆盖率测试**：gpu renderer 状态管理、cpu renderer 像素操作、config 默认值、font loader 边界 | +21 |
+| style-system/matcher_extra | **matcher 覆盖率测试**：选择器验证、@container 条件、@supports 条件、@layer 规则、specificity 边界 | +18 |
+| webview/more_coverage | **webview 覆盖率测试**：Service Worker 生命周期、脚本错误、WASM 错误、CSS 注入、回调移除、导航状态 | +21 |
+| 修复 | 修复前轮遗留的 19 个编译错误和断言错误（shorthand_coverage.rs、matcher_coverage.rs、tests_4.rs 挂起/失败测试） | — |
+
+覆盖率提升（llvm-cov）：
+- 总体行覆盖率: 93.06% → 93.29%（目标 95%+）
+- 总体函数覆盖率: 92.51% → 92.77%
+
+主要剩余覆盖率缺口：
+- dom/parser.rs: 61.64% → 仍有较大缺口（295 行未覆盖）
+- render-foundation/gpu/renderer.rs: 76.66%（281 行）
+- css-parser/parser.rs: 85.16%（192 行）
+- host-runtime/window.rs: 27.59%（需要 GPU/窗口硬件）
+
+Total: 7034 → 7310 (+276 tests, 0 files exceed 2000-line limit)
+
+### -61. 测试覆盖率提升第五轮（前轮，7034 测试）
 
 系统化提升核心 crate 的单元测试覆盖率，聚焦 apply.rs/matcher/shorthand parse.rs、IDB types、webview uncovered paths，新增 142 个测试：
 
