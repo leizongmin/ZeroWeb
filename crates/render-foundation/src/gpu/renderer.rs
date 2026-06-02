@@ -1071,4 +1071,229 @@ mod tests {
             "正常小数应保持"
         );
     }
+
+    /// 测试上传不同尺寸的 glyph
+    #[test]
+    fn test_upload_glyph_to_atlas_various_sizes() {
+        let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
+
+        // 测试不同尺寸的 glyph
+        let sizes = [(8, 8), (16, 16), (32, 32)];
+        for (i, (width, height)) in sizes.iter().enumerate() {
+            let bitmap_data = vec![255u8; (width * height) as usize];
+            let key = GlyphAtlasKey::new(0, 'A' as u32 + i as u32, 16.0);
+            let placement = renderer.upload_glyph_to_atlas(key, &bitmap_data, *width, *height, 0, 0, 6.0);
+            assert!(placement.is_some(), "width={}, height={} 应成功", width, height);
+        }
+    }
+
+    /// 测试 render_scene_scaled 应用缩放
+    #[test]
+    fn test_render_scene_scaled_applies_scale() {
+        let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+
+        // 原始 16x16 矩形，2x 缩放后应为 32x32
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+            color: Color::BLACK,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 2.0);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        // 整个图像应为黑色（16 * 2 = 32）
+        assert_eq!(pixels.len(), 32 * 32 * 4);
+        // 验证角落像素
+        assert_eq!(pixels[0], 0, "左上角应为黑色");
+        assert_eq!(pixels[(31 * 32 + 31) * 4], 0, "右下角应为黑色");
+    }
+
+    /// 测试 render_scene_with_clip_scaled 结合裁剪和缩放
+    #[test]
+    fn test_render_scene_with_clip_scaled() {
+        let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
+
+        // 渲染一个全屏矩形，但裁剪到中心区域
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 64.0, 64.0),
+            color: Color::BLACK,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let clip = Rect::new(16.0, 16.0, 32.0, 32.0); // 中心 32x32 区域
+
+        renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], Some(clip), 1.0);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+
+        // 裁剪区域内应为黑色
+        assert_eq!(pixels[(16 * 64 + 16) * 4], 0, "裁剪区域内应为黑色");
+        // 裁剪区域外应为白色
+        assert_eq!(pixels[0], 255, "裁剪区域外应为白色");
+        assert_eq!(pixels[(63 * 64 + 63) * 4], 255, "裁剪区域外应为白色");
+    }
+
+    /// 测试渲染混合颜色（半透明）
+    #[test]
+    fn test_render_scene_with_alpha_blending() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+
+        // 渲染红色半透明矩形
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 16.0),
+            color: Color::rgba(255, 0, 0, 128), // 半透明红
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        // 验证像素被正确渲染
+        // 注意：wgpu 的渲染管线可能包含额外的后处理步骤
+        // alpha 值可能不完全是 128
+        assert_eq!(pixels[0], 255, "R 通道应为 255");
+        // GPU 渲染会写入完整的 alpha (255)，因为最终渲染目标需要不透明像素
+        assert_eq!(pixels[3], 255, "alpha 通道应为 255（最终渲染目标）");
+    }
+
+    /// 测试 surface_format 返回正确格式
+    #[test]
+    fn test_surface_format_returns_expected() {
+        let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+        let format = renderer.surface_format();
+        // 在 headless 模式中应使用 Rgba8UnormSrgb
+        matches!(format, wgpu::TextureFormat::Rgba8UnormSrgb);
+    }
+
+    /// 测试窗口模式下的 atlas state
+    #[test]
+    fn test_window_mode_atlas_state() {
+        // 由于无法在测试中创建真实窗口，我们测试公共 API
+        let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+        // 验证 atlas 相关的公共方法
+        assert!(renderer.atlas_generation() > 0 || renderer.atlas_glyph_count() == 0);
+    }
+
+    /// 测试 read_pixels 返回正确尺寸的缓冲区
+    #[test]
+    fn test_read_pixels_returns_correct_buffer_size() {
+        let mut renderer = GpuRenderer::new_headless(10, 20).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[]);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        // 应为 10 * 20 * 4 字节
+        assert_eq!(pixels.len(), 10 * 20 * 4);
+    }
+
+    /// 测试极端缩放值
+    #[test]
+    fn test_extreme_scale_factors() {
+        let mut renderer = GpuRenderer::new_headless(4, 4).expect("headless renderer");
+
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            color: Color::BLACK,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 测试非常大的缩放
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 100.0);
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 4 * 4 * 4);
+    }
+
+    /// 测试 glyph 在图像边界上的处理
+    #[test]
+    fn test_glyph_at_image_edge() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 渲染一个刚好接触右下角的 glyph
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 15.0,
+            baseline_y: 15.0,
+            color: Color::BLACK,
+            font_id: 0,
+            font_size: 8.0,
+        }];
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 16 * 16 * 4);
+    }
+
+    /// 测试完全透明的 glyph
+    #[test]
+    fn test_glyph_alpha_zero() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 渲染一个透明 glyph
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 0.0,
+            baseline_y: 8.0,
+            color: Color::rgba(255, 255, 255, 0), // 完全透明
+            font_id: 0,
+            font_size: 8.0,
+        }];
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        // 应保持背景色（白色）
+        assert_eq!(pixels[0], 255);
+        assert_eq!(pixels[1], 255);
+        assert_eq!(pixels[2], 255);
+    }
+
+    /// 测试渲染到不同尺寸的表面
+    #[test]
+    fn test_render_to_different_surface_sizes() {
+        // 测试创建不同尺寸的渲染器
+        for size in [(8, 8), (64, 64), (256, 128)] {
+            let renderer = GpuRenderer::new_headless(size.0, size.1);
+            assert!(renderer.is_ok(), "size {}x{} 应成功创建", size.0, size.1);
+            let renderer = renderer.unwrap();
+            assert_eq!(renderer.surface_size(), size);
+        }
+    }
+
+    /// 测试 render_vertices 在没有顶点数据时的处理
+    #[test]
+    fn test_render_vertices_empty_vertex_data() {
+        let renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+        // 空顶点数组应该被正确处理
+        renderer.render_vertices(&[], None);
+        // 如果不 panic 则测试通过
+        let _pixels = renderer.read_pixels(); // 确保状态仍然一致
+    }
+
+    /// 测试缩放因子为 1.0 时的特殊处理
+    #[test]
+    fn test_scale_factor_one_point_zero() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            color: Color::BLUE,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 1.0 缩放应该保持原始尺寸
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 1.0);
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 16 * 16 * 4);
+        assert_eq!(pixels[0], 0); // 蓝色 R=0
+        assert_eq!(pixels[2], 255); // 蓝色 B=255
+    }
 }

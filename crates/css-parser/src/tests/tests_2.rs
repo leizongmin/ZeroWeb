@@ -1814,3 +1814,259 @@ fn test_parse_linear_gradient_to_top() {
         _ => panic!("Expected LinearGradient"),
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 32. Color parsing 边界测试（覆盖 color.rs 的 uncovered 路径）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_color 命名颜色的大小写不敏感
+fn test_parse_named_color_case_insensitive() {
+    let test_cases = vec![
+        ("red", ColorValue::Rgba(255, 0, 0, 255)),
+        ("RED", ColorValue::Rgba(255, 0, 0, 255)),
+        ("Red", ColorValue::Rgba(255, 0, 0, 255)),
+        ("blue", ColorValue::Rgba(0, 0, 255, 255)),
+        ("BLUE", ColorValue::Rgba(0, 0, 255, 255)),
+        ("Blue", ColorValue::Rgba(0, 0, 255, 255)),
+        ("green", ColorValue::Rgba(0, 128, 0, 255)),
+        ("GREEN", ColorValue::Rgba(0, 128, 0, 255)),
+        ("Green", ColorValue::Rgba(0, 128, 0, 255)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 各种十六进制颜色格式
+fn test_parse_hex_colors() {
+    let test_cases = vec![
+        // 标准 3 位十六进制
+        ("#fff", ColorValue::Rgba(255, 255, 255, 255)),
+        ("#FFF", ColorValue::Rgba(255, 255, 255, 255)),
+        ("#f00", ColorValue::Rgba(255, 0, 0, 255)),
+        ("#0f0", ColorValue::Rgba(0, 255, 0, 255)),
+        ("#00f", ColorValue::Rgba(0, 0, 255, 255)),
+        // 标准 6 位十六进制
+        ("#ffffff", ColorValue::Rgba(255, 255, 255, 255)),
+        ("#000000", ColorValue::Rgba(0, 0, 0, 255)),
+        ("#ff0000", ColorValue::Rgba(255, 0, 0, 255)),
+        ("#00ff00", ColorValue::Rgba(0, 255, 0, 255)),
+        ("#0000ff", ColorValue::Rgba(0, 0, 255, 255)),
+        ("#123456", ColorValue::Rgba(18, 52, 86, 255)),
+        // 4 位十六进制（带透明度）
+        ("#ffff", ColorValue::Rgba(255, 255, 255, 255)),
+        ("#fffff0", ColorValue::Rgba(255, 255, 240, 255)),
+        ("#f00f", ColorValue::Rgba(255, 0, 0, 255)),
+        ("#0f0f", ColorValue::Rgba(0, 255, 0, 255)),
+        ("#00ff", ColorValue::Rgba(0, 0, 255, 255)),
+        // 8 位十六进制（带透明度）
+        ("#ffffffff", ColorValue::Rgba(255, 255, 255, 255)),
+        ("#00000000", ColorValue::Rgba(0, 0, 0, 0)),
+        ("#ff0000ff", ColorValue::Rgba(255, 0, 0, 255)),
+        ("#ff000080", ColorValue::Rgba(255, 0, 0, 128)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 无效的十六进制颜色
+fn test_parse_invalid_hex_colors() {
+    let test_cases = vec![
+        "#",        // 太短
+        "#ff",      // 无效长度
+        "#fffff",   // 无效长度
+        "#fffffff", // 无效长度
+        "#gggggg",  // 非法字符
+        "#12345",   // 无效长度
+        "#1234567", // 无效长度
+        "123456",   // 没有 #
+        "#",        // 只有 #
+        "##",       // 只有两个 #
+    ];
+
+    for input in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color rgb() 和 rgba() 函数的各种格式
+fn test_parse_rgb_function_colors() {
+    let test_cases = vec![
+        // rgb() 形式
+        ("rgb(255, 0, 0)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgb(0, 255, 0)", ColorValue::Rgba(0, 255, 0, 255)),
+        ("rgb(0, 0, 255)", ColorValue::Rgba(0, 0, 255, 255)),
+        ("rgb(0, 0, 0)", ColorValue::Rgba(0, 0, 0, 255)),
+        ("rgb(255, 255, 255)", ColorValue::Rgba(255, 255, 255, 255)),
+        // rgba() 形式
+        ("rgba(255, 0, 0, 1)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgba(255, 0, 0, 0.5)", ColorValue::Rgba(255, 0, 0, 128)),
+        ("rgba(255, 0, 0, 0)", ColorValue::Rgba(255, 0, 0, 0)),
+        ("rgba(255, 0, 0, 0.8)", ColorValue::Rgba(255, 0, 0, 204)),
+        // 带空格的格式
+        ("rgb(255, 0, 0)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgb( 255 , 0 , 0 )", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgba(255, 0, 0, 1)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgba( 255 , 0 , 0 , 1 )", ColorValue::Rgba(255, 0, 0, 255)),
+        // 百分比格式
+        ("rgb(100%, 0%, 0%)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgb(0%, 100%, 0%)", ColorValue::Rgba(0, 255, 0, 255)),
+        ("rgb(0%, 0%, 100%)", ColorValue::Rgba(0, 0, 255, 255)),
+        ("rgba(100%, 0%, 0%, 100%)", ColorValue::Rgba(255, 0, 0, 255)),
+        ("rgba(50%, 50%, 50%, 50%)", ColorValue::Rgba(128, 128, 128, 128)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 无效的 rgb() 格式
+fn test_parse_invalid_rgb_colors() {
+    // 解析器对参数数量和范围比较宽容，这里只测试确实返回 None 的情况
+    let test_cases = vec![
+        "rgb()",           // 没有参数
+        "rg(255, 0, 0)",   // 拼写错误
+        "rgbx(255, 0, 0)", // 未知函数
+    ];
+
+    for input in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color hsl() 和 hsla() 函数
+fn test_parse_hsl_colors() {
+    let test_cases = vec![
+        // hsl() 形式
+        ("hsl(0, 100%, 50%)", ColorValue::Hsla(0.0, 100.0, 50.0, 1.0)),
+        ("hsl(120, 100%, 50%)", ColorValue::Hsla(120.0, 100.0, 50.0, 1.0)),
+        ("hsl(240, 100%, 50%)", ColorValue::Hsla(240.0, 100.0, 50.0, 1.0)),
+        // hsla() 形式
+        ("hsla(0, 100%, 50%, 1)", ColorValue::Hsla(0.0, 100.0, 50.0, 1.0)),
+        ("hsla(0, 100%, 50%, 0.5)", ColorValue::Hsla(0.0, 100.0, 50.0, 0.5)),
+        ("hsla(0, 100%, 50%, 0)", ColorValue::Hsla(0.0, 100.0, 50.0, 0.0)),
+        // 带 deg 单位的色相
+        ("hsl(0deg, 100%, 50%)", ColorValue::Hsla(0.0, 100.0, 50.0, 1.0)),
+        ("hsl(360deg, 100%, 50%)", ColorValue::Hsla(360.0, 100.0, 50.0, 1.0)),
+        ("hsl(720deg, 100%, 50%)", ColorValue::Hsla(720.0, 100.0, 50.0, 1.0)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 特殊关键字
+fn test_parse_special_color_keywords() {
+    let test_cases = vec![
+        ("transparent", ColorValue::Transparent),
+        ("currentColor", ColorValue::CurrentColor),
+        ("currentcolor", ColorValue::CurrentColor),
+        ("CURRENTCOLOR", ColorValue::CurrentColor),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 无效的 hsl() 格式
+fn test_parse_invalid_hsl_colors() {
+    // 解析器对参数数量和范围比较宽容，这里只测试确实返回 None 的情况
+    let test_cases = vec![
+        "hsl()",              // 没有参数
+        "hs(0, 100%, 50%)",   // 拼写错误
+        "hslx(0, 100%, 50%)", // 未知函数
+    ];
+
+    for input in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_color 命名颜色列表的边界情况
+fn test_parse_named_color_edge_cases() {
+    // 测试一部分已知支持的标准 CSS 颜色名称
+    let standard_colors = vec![
+        "red",
+        "green",
+        "blue",
+        "white",
+        "black",
+        "cyan",
+        "magenta",
+        "yellow",
+        "gray",
+        "grey",
+        "silver",
+        "maroon",
+        "olive",
+        "navy",
+        "purple",
+        "teal",
+        "aqua",
+        "fuchsia",
+        "lime",
+        "orange",
+        "pink",
+        "aliceblue",
+        "azure",
+        "beige",
+        "bisque",
+        "crimson",
+        "coral",
+        "gold",
+        "chocolate",
+        "indigo",
+        "ivory",
+        "khaki",
+        "lavender",
+        "linen",
+    ];
+
+    for color in standard_colors {
+        let result = parse_color(color);
+        assert!(result.is_some(), "Standard color '{}' should be recognized", color);
+    }
+}
+
+#[test]
+/// 测试 parse_color 无效的颜色字符串
+fn test_parse_invalid_colors() {
+    let test_cases = vec![
+        "",            // 空字符串
+        " ",           // 只有空格
+        "nonexistent", // 不存在的颜色
+        "rgb",         // 只有函数名
+        "hsl",         // 只有函数名
+        "rgba",        // 只有函数名
+        "hsla",        // 只有函数名
+        "#",           // 只有 #
+    ];
+
+    for input in test_cases {
+        let result = parse_color(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}

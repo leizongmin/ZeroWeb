@@ -9,7 +9,7 @@ pub use loader::FontLoader;
 pub use shaper::{ShapedGlyph, ShapedLine, TextShaper, measure_text_width};
 
 /// 字体描述
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDesc {
     /// 字体族名称
     pub family: String,
@@ -35,6 +35,24 @@ impl FontDesc {
             family: family.to_string(),
             weight: 700,
             italic: false,
+        }
+    }
+
+    /// 创建斜体字体描述
+    pub fn italic(family: &str) -> Self {
+        Self {
+            family: family.to_string(),
+            weight: 400,
+            italic: true,
+        }
+    }
+
+    /// 创建自定义字体描述
+    pub fn new(family: &str, weight: u16, italic: bool) -> Self {
+        Self {
+            family: family.to_string(),
+            weight,
+            italic,
         }
     }
 }
