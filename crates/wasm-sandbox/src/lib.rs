@@ -1,25 +1,34 @@
 //! # zero-wasm-sandbox
 //!
-//! 非页面 WASM 运行时（wasmi）。
+//! WASM 运行时沙箱。
 //!
-//! 用于插件、扩展能力或受控计算任务。
-//! 基于 wasmi 纯 Rust WASM 解释器实现。
+//! 支持两种后端：
+//! - **wasmi**（默认）— 纯 Rust 解释器，适用于插件和扩展
+//! - **wasmtime** — JIT 编译器，适用于页面级 WASM 执行
+//!
+//! 同时启用两者时，使用 wasmtime 后端（JIT 性能更优）。
 
 #![warn(missing_docs)]
 
 mod types;
 pub use types::*;
 
-#[cfg(feature = "wasmi")]
+#[cfg(feature = "wasmtime")]
+mod wasmtime_backend;
+
+#[cfg(feature = "wasmtime")]
+pub use wasmtime_backend::*;
+
+#[cfg(all(feature = "wasmi", not(feature = "wasmtime")))]
 mod wasmi_backend;
 
-#[cfg(feature = "wasmi")]
+#[cfg(all(feature = "wasmi", not(feature = "wasmtime")))]
 pub use wasmi_backend::*;
 
-#[cfg(not(feature = "wasmi"))]
+#[cfg(not(any(feature = "wasmi", feature = "wasmtime")))]
 mod stub_backend;
 
-#[cfg(not(feature = "wasmi"))]
+#[cfg(not(any(feature = "wasmi", feature = "wasmtime")))]
 pub use stub_backend::*;
 
 #[cfg(test)]
