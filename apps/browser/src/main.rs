@@ -4,17 +4,23 @@
 //! WebView（页面渲染）和 HostRuntime（窗口管理）。
 
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use softbuffer::{Context as SoftbufferContext, Surface as SoftbufferSurface};
 use zero_browser_shell::{BrowserShell, TabId};
 use zero_host_runtime::event::AppEvent;
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_render_foundation::color::Color;
+use zero_render_foundation::config::RenderMode;
+use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::primitive::FillPrimitive;
 use zero_webview::WebViewBuilder;
+
+type CpuSurface = SoftbufferSurface<Arc<winit::window::Window>, Arc<winit::window::Window>>;
 
 /// 浏览器 UI 布局常量
 mod layout {
@@ -162,6 +168,10 @@ struct BrowserApp {
     webviews: HashMap<TabId, zero_webview::WebView>,
     /// GPU 渲染器
     gpu_renderer: Option<GpuRenderer>,
+    /// CPU 软件渲染窗口 surface
+    cpu_surface: Option<CpuSurface>,
+    /// 渲染模式
+    render_mode: RenderMode,
     /// 字体加载器
     font_loader: FontLoader,
     /// Glyph 缓存
@@ -176,13 +186,17 @@ struct BrowserApp {
     address_bar_focused: bool,
     /// 窗口尺寸
     window_size: (u32, u32),
+    /// 窗口物理像素尺寸
+    physical_size: (u32, u32),
+    /// 窗口缩放因子
+    scale_factor: f32,
     /// 是否需要重绘
     needs_redraw: bool,
 }
 
 impl BrowserApp {
     /// 创建新的浏览器应用
-    fn new() -> Self {
+    fn new(render_mode: RenderMode) -> Self {
         let mut font_loader = FontLoader::new();
         let font_id = load_system_font(&mut font_loader);
 
@@ -196,6 +210,8 @@ impl BrowserApp {
             shell: BrowserShell::new(),
             webviews: HashMap::new(),
             gpu_renderer: None,
+            cpu_surface: None,
+            render_mode,
             font_loader,
             glyph_cache: GlyphCache::new(8192),
             font_id,
@@ -203,6 +219,8 @@ impl BrowserApp {
             address_bar_text: String::new(),
             address_bar_focused: false,
             window_size: (1024, 768),
+            physical_size: (1024, 768),
+            scale_factor: 1.0,
             needs_redraw: true,
         }
     }
@@ -407,6 +425,10 @@ impl BrowserApp {
 
     /// 初始化 GPU 渲染器
     fn init_gpu(&mut self, window: &Arc<winit::window::Window>) {
+        if matches!(self.render_mode, RenderMode::Cpu) {
+            return;
+        }
+
         match GpuRenderer::new_for_window(Arc::clone(window)) {
             Ok(renderer) => {
                 tracing::info!("GPU renderer initialized (format: {:?})", renderer.surface_format());
@@ -415,7 +437,32 @@ impl BrowserApp {
                 self.needs_redraw = true;
             }
             Err(e) => {
-                tracing::error!("GPU renderer init failed: {e}");
+                if matches!(self.render_mode, RenderMode::Gpu) {
+                    tracing::error!("GPU renderer init failed: {e}");
+                } else {
+                    tracing::warn!("GPU renderer init failed: {e}; using CPU renderer");
+                }
+            }
+        }
+    }
+
+    /// 初始化 CPU 软件渲染 surface
+    fn init_cpu_surface(&mut self, window: &Arc<winit::window::Window>) {
+        if self.cpu_surface.is_some() {
+            return;
+        }
+
+        match SoftbufferContext::new(Arc::clone(window))
+            .and_then(|context| SoftbufferSurface::new(&context, Arc::clone(window)))
+        {
+            Ok(surface) => {
+                tracing::info!("CPU renderer initialized");
+                self.cpu_surface = Some(surface);
+                self.surface_configured = false;
+                self.needs_redraw = true;
+            }
+            Err(err) => {
+                tracing::error!("CPU renderer init failed: {err}");
             }
         }
     }
@@ -425,12 +472,68 @@ impl BrowserApp {
         let mut gpu = self.gpu_renderer.take();
         if let Some(ref mut renderer) = gpu {
             self.render_frame(renderer, width, height);
+        } else if self.cpu_surface.is_some() {
+            self.render_cpu(width, height);
         }
         self.gpu_renderer = gpu;
     }
 
     /// 渲染一帧
     fn render_frame(&mut self, gpu: &mut GpuRenderer, width: u32, height: u32) {
+        let (fills, glyphs) = self.build_scene(width, height);
+        gpu.render_scene_scaled(
+            &fills,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            &glyphs,
+            self.scale_factor,
+        );
+    }
+
+    fn render_cpu(&mut self, width: u32, height: u32) {
+        let (fills, glyphs) = self.build_scene(width, height);
+        let fb = render_scene_to_framebuffer(
+            width,
+            height,
+            self.scale_factor,
+            &fills,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            &glyphs,
+        );
+        let Some(surface) = self.cpu_surface.as_mut() else {
+            return;
+        };
+
+        let sw = match NonZeroU32::new(fb.width) {
+            Some(width) => width,
+            None => return,
+        };
+        let sh = match NonZeroU32::new(fb.height) {
+            Some(height) => height,
+            None => return,
+        };
+
+        if let Err(err) = surface.resize(sw, sh) {
+            tracing::error!("CPU surface resize failed: {err}");
+            return;
+        }
+        let mut buffer = match surface.buffer_mut() {
+            Ok(buffer) => buffer,
+            Err(err) => {
+                tracing::error!("CPU surface buffer failed: {err}");
+                return;
+            }
+        };
+        for (dst, rgba) in buffer.iter_mut().zip(fb.data.chunks_exact(4)) {
+            *dst = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | rgba[2] as u32;
+        }
+        if let Err(err) = buffer.present() {
+            tracing::error!("CPU surface present failed: {err}");
+        }
+    }
+
+    fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
         let font_size = 14.0_f32;
@@ -494,7 +597,7 @@ impl BrowserApp {
         // 10. 页面内容
         self.render_page_content(&mut glyphs, width, page_y, font_size);
 
-        gpu.render_scene(&fills, &self.font_loader, &mut self.glyph_cache, &glyphs);
+        (fills, glyphs)
     }
 
     /// 渲染标签页
@@ -775,18 +878,74 @@ fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
     })
 }
 
+fn parse_render_mode_from_args() -> Result<RenderMode, String> {
+    let mut args = std::env::args().skip(1);
+    let mut cli_mode = None;
+
+    while let Some(arg) = args.next() {
+        if arg == "--help" || arg == "-h" {
+            print_usage();
+            std::process::exit(0);
+        }
+
+        if let Some(value) = arg.strip_prefix("--renderer=") {
+            cli_mode = Some(value.parse()?);
+            continue;
+        }
+
+        if arg == "--renderer" {
+            let value = args
+                .next()
+                .ok_or_else(|| format!("--renderer requires {}", RenderMode::values()))?;
+            cli_mode = Some(value.parse()?);
+        }
+    }
+
+    Ok(cli_mode.or(RenderMode::from_env()?).unwrap_or_default())
+}
+
+fn print_usage() {
+    println!("Usage: zero-browser [--renderer {}]", RenderMode::values());
+    println!("Environment: {}={}", RenderMode::ENV_VAR, RenderMode::values());
+}
+
+fn logical_size_from_window(window: &winit::window::Window) -> ((u32, u32), f32) {
+    let physical = window.inner_size();
+    let scale = normalized_window_scale(window.scale_factor());
+    let logical_width = ((physical.width as f32 / scale).round() as u32).max(1);
+    let logical_height = ((physical.height as f32 / scale).round() as u32).max(1);
+    ((logical_width, logical_height), scale)
+}
+
+fn normalized_window_scale(scale: f64) -> f32 {
+    if scale.is_finite() && scale > 0.0 {
+        scale as f32
+    } else {
+        1.0
+    }
+}
+
 fn main() {
     // 初始化日志
     tracing_subscriber::fmt().init();
 
     tracing::info!("ZeroBrowser starting...");
+    let render_mode = match parse_render_mode_from_args() {
+        Ok(mode) => mode,
+        Err(err) => {
+            tracing::error!("{err}");
+            print_usage();
+            std::process::exit(2);
+        }
+    };
+    tracing::info!("Renderer mode: {render_mode}");
 
     let config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
         .with_resizable(true);
 
     let runtime = HostRuntime::new(config);
-    let mut app = BrowserApp::new();
+    let mut app = BrowserApp::new(render_mode);
 
     // 加载欢迎页
     app.new_tab(None);
@@ -799,12 +958,29 @@ fn main() {
                 if !app.surface_configured {
                     if let Some(ref win) = window
                         && app.gpu_renderer.is_none()
+                        && app.cpu_surface.is_none()
                     {
-                        app.init_gpu(win);
+                        let (logical_size, scale_factor) = logical_size_from_window(win);
+                        let physical_size = win.inner_size();
+                        app.window_size = logical_size;
+                        app.physical_size = (physical_size.width, physical_size.height);
+                        app.scale_factor = scale_factor;
+
+                        match app.render_mode {
+                            RenderMode::Cpu => app.init_cpu_surface(win),
+                            RenderMode::Gpu | RenderMode::Auto => {
+                                app.init_gpu(win);
+                                if app.gpu_renderer.is_none() && matches!(app.render_mode, RenderMode::Auto) {
+                                    app.init_cpu_surface(win);
+                                }
+                            }
+                        }
                     }
                     if let Some(ref mut gpu) = app.gpu_renderer {
-                        let (w, h) = app.window_size;
+                        let (w, h) = app.physical_size;
                         gpu.configure_surface(w, h);
+                        app.surface_configured = true;
+                    } else if app.cpu_surface.is_some() {
                         app.surface_configured = true;
                     }
                 }
@@ -813,9 +989,33 @@ fn main() {
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
                 tracing::debug!("Window resized: {width}x{height}");
-                app.window_size = (width, height);
+                app.physical_size = (width, height);
+                if let Some(ref win) = window {
+                    let (logical_size, scale_factor) = logical_size_from_window(win);
+                    app.window_size = logical_size;
+                    app.scale_factor = scale_factor;
+                } else {
+                    app.window_size = (width, height);
+                    app.scale_factor = 1.0;
+                }
                 if let Some(ref mut gpu) = app.gpu_renderer {
                     gpu.configure_surface(width, height);
+                }
+                app.needs_redraw = true;
+            }
+            AppEvent::ScaleFactorChanged { scale_factor } => {
+                tracing::debug!("Window scale factor changed: {scale_factor}");
+                if let Some(ref win) = window {
+                    let physical_size = win.inner_size();
+                    let (logical_size, normalized_scale) = logical_size_from_window(win);
+                    app.physical_size = (physical_size.width, physical_size.height);
+                    app.window_size = logical_size;
+                    app.scale_factor = normalized_scale;
+                    if let Some(ref mut gpu) = app.gpu_renderer {
+                        gpu.configure_surface(physical_size.width, physical_size.height);
+                    }
+                } else {
+                    app.scale_factor = normalized_window_scale(scale_factor);
                 }
                 app.needs_redraw = true;
             }
@@ -835,6 +1035,12 @@ fn main() {
                 app.address_bar_focused = false;
             }
             _ => {}
+        }
+
+        if app.needs_redraw
+            && let Some(ref win) = window
+        {
+            win.request_redraw();
         }
     }) {
         tracing::error!("Event loop error: {e}");

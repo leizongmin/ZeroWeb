@@ -136,6 +136,9 @@ impl<F: FnMut(AppEvent)> BasicApp<'_, F> {
                     height: size.height,
                 });
             }
+            winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                (self.on_event)(AppEvent::ScaleFactorChanged { scale_factor });
+            }
             winit::event::WindowEvent::RedrawRequested => {
                 (self.on_event)(AppEvent::RedrawRequested);
                 if let Some(ref win) = self.window {
@@ -252,6 +255,9 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
                     },
                     win_ref,
                 );
+            }
+            winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                (self.on_event)(AppEvent::ScaleFactorChanged { scale_factor }, win_ref);
             }
             winit::event::WindowEvent::RedrawRequested => {
                 (self.on_event)(AppEvent::RedrawRequested, win_ref);
