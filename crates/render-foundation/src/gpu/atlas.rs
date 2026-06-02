@@ -233,12 +233,12 @@ impl GlyphAtlas {
 
     /// 为上传 glyph 位图数据创建临时缓冲区（含对齐填充）
     pub fn create_upload_buffer(bitmap_data: &[u8], width: u32) -> Vec<u8> {
+        if width == 0 || bitmap_data.is_empty() {
+            return Vec::new();
+        }
+
         let bytes_per_row = width.next_multiple_of(256).max(256) as usize;
-        let height = if width == 0 {
-            0
-        } else {
-            bitmap_data.len() / width as usize
-        };
+        let height = bitmap_data.len() / width as usize;
         let mut buf = vec![0u8; bytes_per_row * height];
         for (row, chunk) in bitmap_data.chunks_exact(width as usize).enumerate() {
             buf[row * bytes_per_row..row * bytes_per_row + chunk.len()].copy_from_slice(chunk);
@@ -370,6 +370,12 @@ mod tests {
         let buf = GlyphAtlas::create_upload_buffer(&data, 10);
         let bytes_per_row = 10u32.next_multiple_of(256).max(256) as usize;
         assert_eq!(buf.len(), bytes_per_row * 10);
+    }
+
+    #[test]
+    fn test_atlas_upload_buffer_zero_width_is_empty() {
+        let buf = GlyphAtlas::create_upload_buffer(&[], 0);
+        assert!(buf.is_empty());
     }
 
     #[test]

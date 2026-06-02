@@ -215,6 +215,10 @@ impl GpuRenderer {
         y_offset: i16,
         advance: f32,
     ) -> Option<crate::gpu::atlas::AtlasPlacement> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+
         match self
             .atlas
             .place(key.clone(), width, height, x_offset, y_offset, advance)
@@ -939,5 +943,15 @@ mod tests {
         }
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 16 * 16 * 4);
+    }
+
+    #[test]
+    fn test_gpu_renderer_zero_sized_glyph_does_not_enter_atlas() {
+        let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+
+        let placement = renderer.upload_glyph_to_atlas(GlyphAtlasKey::new(0, ' ' as u32, 16.0), &[], 0, 0, 0, 0, 6.0);
+
+        assert!(placement.is_none());
+        assert_eq!(renderer.atlas_glyph_count(), 0);
     }
 }
