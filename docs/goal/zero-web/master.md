@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，6494 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固进行中
+**执行状态**: 16/16 crate 已实现，6542 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率 91.55%（目标 95%+）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 6494 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 6542 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,24 +103,24 @@
 
 ## 最近完成的改进
 
-### -57. M13 权限模型 + 资源预加载 + 站点隔离 + 文件拆分（本轮，6494 测试）
+### -57. M13 权限模型 + 资源预加载 + 站点隔离 + 测试覆盖率提升（本轮，6542 测试）
 
-新增权限模型、资源预加载和站点隔离三个核心模块，完成所有超大文件拆分：
+新增权限模型、资源预加载和站点隔离三个核心模块，完成所有超大文件拆分，提升测试覆盖率：
 
 | 模块 | 新增内容 | 新增测试 |
 |------|----------|----------|
-| security/permission | **PermissionManager**：11 种 Web API 权限（camera/microphone/geolocation/notifications/clipboard/fullscreen/pointer-lock/screen-capture/background-sync/persistent-storage）、3 种状态（Granted/Denied/Prompt）、按 origin 隔离存储、grant/deny/revoke/revoke_all_for_origin 操作 | +18 |
-| engine/preload | **ResourcePreloader**：4 种资源提示（preload/prefetch/preconnect/dns-prefetch）、5 级优先级排序（Critical/High/Medium/Low/Idle）、URL 去重（高优先级覆盖）、生命周期追踪（Pending→Loading→Loaded/Failed）、`<link>` 属性解析 | +19 |
-| security/site_isolation | **SiteIsolationManager**：3 种隔离策略（None/SiteIsolated/StrictOrigin）、site-per-process 模型、注册域名提取（简化 eTLD+1）、进程映射（站点→进程）、跨站 iframe DOM 访问阻止 | +22 |
+| security/permission | **PermissionManager**：11 种 Web API 权限、3 种状态、按 origin 隔离存储 | +18 |
+| engine/preload | **ResourcePreloader**：4 种资源提示、5 级优先级排序、URL 去重、生命周期追踪 | +19 |
+| security/site_isolation | **SiteIsolationManager**：3 种隔离策略、site-per-process 模型、跨站 DOM 阻止 | +22 |
+| canvas/path_tests | Path2D 单元测试（arc_to/round_rect/ellipse/is_point_in_path） | +9 |
+| protocol/comprehensive_coverage | IpcMessage/NavigateParams/FetchParams/ProcessRole/ProtocolError 测试 | +10 |
+| style-system/matcher/nth_container | nth-child/nth-of-type/pseudo-classes/container/supports/attribute 测试 | +29 |
 
-文件拆分：
-- `security/src/lib.rs`: 2093 → 55 行（内联测试提取为外部模块）
-- `security/src/lib_tests.rs`: 核心测试（1146 行）
-- `security/src/lib_tests_extra.rs`: 扩展边界测试（896 行）
-- `browser/src/app.rs` → `app.rs` + `app_render.rs`
-- `host-runtime/src/window.rs` → `window.rs` + `window_tests.rs`
+覆盖率提升（llvm-cov nightly）：
+- canvas/path.rs: 56.42% → 96.09%
+- 总体行覆盖率: 91.55%（目标 95%+）
 
-Total: 6435 → 6494 (+59 tests, 0 files exceed 2000-line limit)
+Total: 6435 → 6542 (+107 tests, 0 files exceed 2000-line limit)
 
 ### -56. 全 crate 边界条件测试覆盖率提升第三轮（前轮，6037 测试）
 
