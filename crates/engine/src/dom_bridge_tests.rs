@@ -959,3 +959,38 @@ fn test_polyfill_webassembly_exports() {
     assert!(polyfill.contains("memory"));
     assert!(polyfill.contains("grow"));
 }
+
+// ── Polyfill navigator.serviceWorker 测试 ──
+
+#[test]
+fn test_polyfill_contains_service_worker_api() {
+    let polyfill = generate_dom_api_polyfill();
+    assert!(polyfill.contains("navigator.serviceWorker"));
+    assert!(polyfill.contains("register"));
+    assert!(polyfill.contains("getRegistration"));
+    assert!(polyfill.contains("getRegistrations"));
+}
+
+#[test]
+fn test_polyfill_service_worker_register_options() {
+    let polyfill = generate_dom_api_polyfill();
+    assert!(polyfill.contains("scope"));
+    assert!(polyfill.contains("scriptURL"));
+    assert!(polyfill.contains("unregister"));
+    assert!(polyfill.contains("update"));
+}
+
+#[test]
+fn test_polyfill_service_worker_lifecycle() {
+    let polyfill = generate_dom_api_polyfill();
+    assert!(polyfill.contains("installing"));
+    assert!(polyfill.contains("waiting"));
+    assert!(polyfill.contains("active"));
+    assert!(polyfill.contains("_controller"));
+}
+
+#[test]
+fn test_polyfill_contains_navigator() {
+    let polyfill = generate_dom_api_polyfill();
+    assert!(polyfill.contains("globalThis.navigator"));
+}
