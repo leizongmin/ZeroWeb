@@ -473,6 +473,9 @@ impl GpuRenderer {
 
                 self.queue.submit(std::iter::once(encoder.finish()));
                 output.present();
+                // 等待 wl_surface.commit() 在函数返回前完成，避免 Wayland
+                // 下窗口失焦后延迟 commit 导致的 compositor 协议错误。
+                self.device.poll(wgpu::Maintain::Wait);
             }
             (None, Some(tex)) => {
                 // 无头模式
