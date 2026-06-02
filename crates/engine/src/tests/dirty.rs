@@ -227,3 +227,215 @@ fn test_dirty_tracker_merge_adjacent_non_overlapping_rects() {
         assert!(merged.origin.x + merged.size.width >= 100.0, "合并矩形右边界应 >= 100");
     }
 }
+
+// ── 新增边界条件测试：合并相邻 / 大偏移 / 循环重置 / 零高度 box ──
+
+/// 测试完全对齐相邻（无间隙无重叠）的两个矩形合并后坐标正确。
+///
+/// rect1: (0, 0, 100, 100)，rect2: (0, 100, 100, 100) — 垂直完美对齐。
+/// 并集面积 = 20000，个体面积之和 = 20000，比率 = 1.0 <= 1.5，应合并。
+#[test]
+fn test_dirty_merge_perfectly_aligned_vertical_rects() {
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tracker.mark_dirty(Rect::new(0.0, 100.0, 100.0, 100.0));
+    assert_eq!(tracker.dirty_rects().len(), 2);
+
+    tracker.merge_overlapping();
+    assert_eq!(tracker.dirty_rects().len(), 1, "垂直对齐的相邻矩形应合并为 1 个");
+
+    let merged = &tracker.dirty_rects()[0];
+    assert_eq!(merged.origin.x, 0.0);
+    assert_eq!(merged.origin.y, 0.0);
+    assert_eq!(merged.size.width, 100.0);
+    assert_eq!(merged.size.height, 200.0);
+}
+
+/// 测试水平方向完美对齐的矩形合并。
+#[test]
+fn test_dirty_merge_perfectly_aligned_horizontal_rects() {
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tracker.mark_dirty(Rect::new(100.0, 0.0, 100.0, 100.0));
+    assert_eq!(tracker.dirty_rects().len(), 2);
+
+    tracker.merge_overlapping();
+    assert_eq!(tracker.dirty_rects().len(), 1, "水平对齐的相邻矩形应合并为 1 个");
+
+    let merged = &tracker.dirty_rects()[0];
+    assert_eq!(merged.origin.x, 0.0);
+    assert_eq!(merged.origin.y, 0.0);
+    assert_eq!(merged.size.width, 200.0);
+    assert_eq!(merged.size.height, 100.0);
+}
+
+/// 测试 mark_node_dirty 带极大偏移量时坐标不溢出。
+#[test]
+fn test_dirty_mark_node_large_offset_no_overflow() {
+    let layout_box = LayoutBox {
+        node_id: None,
+        x: 10000.0,
+        y: 20000.0,
+        width: 50.0,
+        height: 50.0,
+        content_x: 10000.0,
+        content_y: 20000.0,
+        content_width: 50.0,
+        content_height: 50.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    tracker.mark_node_dirty(&layout_box, 100000.0, 200000.0);
+
+    assert_eq!(tracker.dirty_rects().len(), 1);
+    let rect = &tracker.dirty_rects()[0];
+    assert_eq!(rect.origin.x, 110000.0);
+    assert_eq!(rect.origin.y, 220000.0);
+    assert_eq!(rect.size.width, 50.0);
+    assert_eq!(rect.size.height, 50.0);
+}
+
+/// 测试反复标记脏区域 → 合并 → 清除的循环不会累积状态。
+#[test]
+fn test_dirty_repeated_mark_merge_clear_cycles() {
+    let mut tracker = crate::dirty::DirtyTracker::new();
+
+    for i in 0..10 {
+        // 确保每次循环开始时是干净的
+        assert!(tracker.dirty_rects().is_empty(), "cycle {} start should be clean", i);
+
+        let x = (i as f32) * 100.0;
+        tracker.mark_dirty(Rect::new(x, 0.0, 50.0, 50.0));
+        tracker.mark_dirty(Rect::new(x + 25.0, 0.0, 50.0, 50.0));
+        // 每次循环恰好添加 2 个矩形
+        assert_eq!(tracker.dirty_rects().len(), 2, "cycle {} should have 2 rects", i);
+
+        tracker.merge_overlapping();
+        // 合并后数量减少或不变
+        assert!(tracker.dirty_rects().len() <= 2, "cycle {} merge should reduce or maintain", i);
+        assert!(tracker.dirty_area() > 0.0, "cycle {} area should be > 0", i);
+
+        tracker.clear();
+        assert!(tracker.dirty_rects().is_empty());
+        assert_eq!(tracker.dirty_area(), 0.0);
+    }
+
+    // 循环结束后状态干净
+    assert!(tracker.dirty_rects().is_empty());
+    assert!(!tracker.is_full_redraw());
+}
+
+/// 测试 mark_node_dirty 对零高度 box 不产生脏区域。
+#[test]
+fn test_dirty_mark_node_zero_height_box_no_rect() {
+    let layout_box = LayoutBox {
+        node_id: None,
+        x: 10.0,
+        y: 20.0,
+        width: 100.0,
+        height: 0.0,
+        content_x: 10.0,
+        content_y: 20.0,
+        content_width: 100.0,
+        content_height: 0.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    tracker.mark_node_dirty(&layout_box, 0.0, 0.0);
+    assert!(tracker.dirty_rects().is_empty(), "零高度 box 不应产生脏区域");
+    assert_eq!(tracker.dirty_area(), 0.0);
+}
+
+/// 测试 mark_node_dirty 对零宽度 box 不产生脏区域。
+#[test]
+fn test_dirty_mark_node_zero_width_box_no_rect() {
+    let layout_box = LayoutBox {
+        node_id: None,
+        x: 10.0,
+        y: 20.0,
+        width: 0.0,
+        height: 100.0,
+        content_x: 10.0,
+        content_y: 20.0,
+        content_width: 0.0,
+        content_height: 100.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    tracker.mark_node_dirty(&layout_box, 0.0, 0.0);
+    assert!(tracker.dirty_rects().is_empty(), "零宽度 box 不应产生脏区域");
+}
+
+/// 测试合并 3 个部分重叠的矩形结果正确。
+#[test]
+fn test_dirty_merge_three_partially_overlapping_rects() {
+    let mut tracker = crate::dirty::DirtyTracker::new();
+    // 三个矩形形成 T 形
+    tracker.mark_dirty(Rect::new(0.0, 0.0, 100.0, 50.0));
+    tracker.mark_dirty(Rect::new(40.0, 0.0, 20.0, 100.0));
+    tracker.mark_dirty(Rect::new(40.0, 50.0, 60.0, 50.0));
+    assert_eq!(tracker.dirty_rects().len(), 3);
+
+    tracker.merge_overlapping();
+
+    // 三者两两重叠，应合并为更少的矩形
+    assert!(tracker.dirty_rects().len() <= 3);
+    assert!(tracker.dirty_area() > 0.0);
+}

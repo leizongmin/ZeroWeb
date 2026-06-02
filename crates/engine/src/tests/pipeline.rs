@@ -969,3 +969,134 @@ fn test_pipeline_zero_viewport() {
     let result = pipeline.render_html(html, "");
     assert!(result.timings.total_ms >= 0.0, "零视口应正常完成");
 }
+
+// ── 新增边界条件测试：viewport 访问 / recompute 不渲染 / 顺序渲染 / 缓存布局重用 ──
+
+/// 测试极小视口尺寸（0.5 x 0.5）渲染不 panic。
+#[test]
+fn test_pipeline_tiny_viewport_sub_pixel() {
+    let mut pipeline = RenderPipeline::new(0.5, 0.5);
+    let html = "<html><body><div>Tiny</div></body></html>";
+    let result = pipeline.render_html(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert_eq!(pipeline.viewport_width(), 0.5);
+    assert_eq!(pipeline.viewport_height(), 0.5);
+}
+
+/// 测试 recompute_styles 不先调用 render_html 也能正常工作，
+/// 验证缓存的布局结果被正确设置。
+#[test]
+fn test_pipeline_recompute_without_prior_render() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    assert!(pipeline.layout().is_none(), "fresh pipeline should have no cached layout");
+
+    let html = r#"<html><body><div class="box">Content</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let css = r#".box { background-color: green; width: 200px; height: 100px; }"#;
+    let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+
+    let (primitives, _styles, layout) = pipeline.recompute_styles(&doc, &stylesheets);
+
+    // 布局应被设置
+    assert!(layout.viewport_width > 0.0, "layout viewport_width should be positive");
+    assert!(pipeline.layout().is_some(), "cached layout should be set after recompute");
+    // CSS 应产生填充图元
+    assert!(!primitives.fills.is_empty(), "CSS should produce fills");
+}
+
+/// 测试连续 5 次顺序渲染相同内容，每次填充图元数量完全一致。
+#[test]
+fn test_pipeline_sequential_renders_consistent() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="a">A</div><div class="b">B</div></body></html>"#;
+    let css = r#"
+        .a { background-color: red; width: 200px; height: 100px; }
+        .b { background-color: blue; width: 150px; height: 75px; }
+    "#;
+
+    let mut fill_counts = Vec::new();
+    for _ in 0..5 {
+        let result = pipeline.render_html(html, css);
+        fill_counts.push(result.primitives.fills.len());
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    // 所有渲染次数应产生相同数量的填充图元
+    let first = fill_counts[0];
+    for (i, &count) in fill_counts.iter().enumerate() {
+        assert_eq!(count, first, "render {} fill count should match first render", i);
+    }
+}
+
+/// 测试缓存的布局在 render_html 后被正确更新。
+#[test]
+fn test_pipeline_cached_layout_updates_across_renders() {
+    let mut pipeline = RenderPipeline::new(640.0, 480.0);
+    assert!(pipeline.layout().is_none());
+
+    // 第一次渲染
+    let html1 = "<html><body><div>First</div></body></html>";
+    let _r1 = pipeline.render_html(html1, "");
+    let layout1 = pipeline.layout().unwrap().clone();
+    assert_eq!(layout1.viewport_width, 640.0);
+    assert_eq!(layout1.viewport_height, 480.0);
+    let _child_count1 = layout1.root.children.len();
+
+    // 第二次渲染不同内容
+    let html2 = "<html><body><p>A</p><p>B</p><p>C</p></body></html>";
+    let _r2 = pipeline.render_html(html2, "");
+    let layout2 = pipeline.layout().unwrap();
+    assert_eq!(layout2.viewport_width, 640.0, "viewport_width should stay the same");
+    assert_eq!(layout2.viewport_height, 480.0, "viewport_height should stay the same");
+    // 布局树应已更新（不同内容可能不同子节点数）
+    // 只需验证布局被更新（不为空）
+    assert!(!layout2.root.children.is_empty(), "layout should have children after second render");
+}
+
+/// 测试 render_html 后再 recompute_styles，缓存的布局被第二次 recompute 正确覆盖。
+#[test]
+fn test_pipeline_cached_layout_overwrite_by_recompute() {
+    let mut pipeline = RenderPipeline::new(1024.0, 768.0);
+    let html = "<html><body><div class=\"box\">Content</div></body></html>";
+
+    // render_html 设置缓存布局
+    let _ = pipeline.render_html(html, ".box { background-color: red; width: 100px; height: 50px; }");
+    assert!(pipeline.layout().is_some());
+
+    // recompute_styles 覆盖缓存布局
+    let doc = zero_dom::parse_html(html);
+    let css = ".box { background-color: blue; width: 200px; height: 100px; }";
+    let ss = vec![zero_css_parser::Parser::parse_stylesheet(css)];
+    let (_, _, layout) = pipeline.recompute_styles(&doc, &ss);
+
+    // 验证布局被更新
+    assert_eq!(layout.viewport_width, 1024.0);
+    assert_eq!(layout.viewport_height, 768.0);
+    assert!(pipeline.layout().is_some());
+    let cached = pipeline.layout().unwrap();
+    assert_eq!(cached.viewport_width, 1024.0);
+    assert_eq!(cached.viewport_height, 768.0);
+}
+
+/// 测试 render_html 返回的 RenderResult 布局和 pipeline.layout() 缓存一致。
+#[test]
+fn test_pipeline_render_result_matches_cached_layout() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>Match</div></body></html>";
+    let result = pipeline.render_html(html, "");
+
+    let cached = pipeline.layout().unwrap();
+    assert_eq!(
+        result.layout.viewport_width, cached.viewport_width,
+        "result and cached viewport_width should match"
+    );
+    assert_eq!(
+        result.layout.viewport_height, cached.viewport_height,
+        "result and cached viewport_height should match"
+    );
+    assert_eq!(
+        result.layout.root.children.len(),
+        cached.root.children.len(),
+        "result and cached root children count should match"
+    );
+}

@@ -1014,3 +1014,141 @@ fn test_paint_empty_cells_hide_no_panic() {
         "empty-cells:hide 元素 paint 应生成填充图元"
     );
 }
+
+// ── 新增边界条件测试：box-shadow 负偏移 / gradient 角度 / helper 函数 ──
+
+/// 测试渲染管线处理含负偏移 box-shadow 的 CSS 不崩溃。
+///
+/// box-shadow 的 x/y 偏移为负值（阴影向左上方投射），
+/// 验证渲染管线安全完成且背景填充正常生成。
+#[test]
+fn test_paint_box_shadow_negative_offset() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="shadow">Negative Shadow</div></body></html>"#;
+    let css = r#"
+        .shadow {
+            background-color: #4488cc;
+            width: 200px;
+            height: 100px;
+            box-shadow: -10px -5px 8px 2px rgba(0, 0, 0, 0.4);
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "negative box-shadow offset should not crash");
+    assert!(pipeline.layout().is_some());
+    assert!(
+        !result.primitives.fills.is_empty(),
+        "element with negative box-shadow should produce fills"
+    );
+}
+
+/// 测试渲染管线处理零扩散 box-shadow 不崩溃。
+#[test]
+fn test_paint_box_shadow_zero_spread() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="shadow">Zero Spread</div></body></html>"#;
+    let css = r#"
+        .shadow {
+            background-color: #336699;
+            width: 200px;
+            height: 100px;
+            box-shadow: 5px 5px 10px 0px rgba(0, 0, 0, 0.3);
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "zero-spread box-shadow should not crash");
+    assert!(!result.primitives.fills.is_empty());
+}
+
+/// 测试渲染管线处理 inset box-shadow 不崩溃。
+#[test]
+fn test_paint_box_shadow_inset() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="inset">Inset Shadow</div></body></html>"#;
+    let css = r#"
+        .inset {
+            background-color: #dddddd;
+            width: 200px;
+            height: 100px;
+            box-shadow: inset 3px 3px 5px rgba(0, 0, 0, 0.5);
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "inset box-shadow should not crash");
+    assert!(!result.primitives.fills.is_empty());
+}
+
+/// 测试渲染管线处理含角度渐变的 CSS 不崩溃。
+///
+/// linear-gradient(45deg, red, blue) 使用角度渐变方向，
+/// 验证渲染管线安全处理角度计算。
+#[test]
+fn test_paint_gradient_with_angle() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="gradient">Angled</div></body></html>"#;
+    let css = r#"
+        .gradient {
+            background: linear-gradient(45deg, #ff0000, #0000ff);
+            width: 200px;
+            height: 200px;
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "angled gradient should not crash");
+    assert!(pipeline.layout().is_some());
+}
+
+/// 测试渲染管线处理 0deg 渐变不崩溃。
+#[test]
+fn test_paint_gradient_0deg() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="g">Zero Deg</div></body></html>"#;
+    let css = r#"
+        .g {
+            background: linear-gradient(0deg, #ff0000, #00ff00);
+            width: 200px;
+            height: 100px;
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "0deg gradient should not crash");
+}
+
+/// 测试渲染管线处理 180deg 渐变不崩溃。
+#[test]
+fn test_paint_gradient_180deg() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="g">180 Deg</div></body></html>"#;
+    let css = r#"
+        .g {
+            background: linear-gradient(180deg, #000000, #ffffff);
+            width: 200px;
+            height: 100px;
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "180deg gradient should not crash");
+}
+
+/// 测试渲染管线处理 360deg 渐变（等同于 0deg）不崩溃。
+#[test]
+fn test_paint_gradient_360deg() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="g">360 Deg</div></body></html>"#;
+    let css = r#"
+        .g {
+            background: linear-gradient(360deg, #ff0000, #0000ff);
+            width: 200px;
+            height: 100px;
+        }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "360deg gradient should not crash");
+}

@@ -2,3 +2,4 @@
 
 mod advanced;
 mod basic;
+mod edge_cases;
