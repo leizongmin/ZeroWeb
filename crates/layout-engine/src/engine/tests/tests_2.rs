@@ -2,7 +2,6 @@ use super::*;
 use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, PositionValue,
 };
-use zero_dom::Document;
 use zero_style_system::FlexBasisValue;
 // ── 边缘场景和真实世界补充测试 ──
 

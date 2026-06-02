@@ -1,8 +1,6 @@
 // Auto-generated test file — split from layout-engine/inline.rs
 use super::super::*;
-use zero_css_parser::values::VerticalAlignValue as VA;
 
-use super::*;
 
 /// 测试文本分割为单词。
 #[test]

@@ -1,7 +1,7 @@
 //! 路径表示 — Canvas 2D 路径命令与 Path2D。
 
 /// 路径命令。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PathCommand {
     /// 移动到指定点。
     MoveTo(f32, f32),
@@ -151,7 +151,7 @@ impl Path2D {
     }
 
     /// 将路径命令扁平化为顶点列表（x, y 交替）。
-    fn flatten_to_vertices(&self) -> Vec<f32> {
+    pub fn flatten_to_vertices(&self) -> Vec<f32> {
         let mut vertices = Vec::new();
         let mut current_x = 0.0f32;
         let mut current_y = 0.0f32;
@@ -321,7 +321,7 @@ impl Path2D {
 }
 
 /// 使用射线法（ray casting）判断点是否在多边形内部。
-fn point_in_polygon(px: f32, py: f32, points: &[(f32, f32)]) -> bool {
+pub fn point_in_polygon(px: f32, py: f32, points: &[(f32, f32)]) -> bool {
     let n = points.len();
     if n < 3 {
         return false;

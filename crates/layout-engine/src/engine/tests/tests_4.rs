@@ -2,7 +2,6 @@ use super::*;
 use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue, PositionValue,
 };
-use zero_dom::Document;
 // ── 边缘场景补充测试（第五批）──
 
 /// 测试 display:none 父元素隐藏其子元素。

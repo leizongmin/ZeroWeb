@@ -1,7 +1,6 @@
 // Auto-generated test file — split from layout-engine/types.rs
 use super::super::*;
 
-use super::*;
 
 /// 测试默认 LayoutBox 的基本属性。
 #[test]
