@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，6472 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固进行中
+**执行状态**: 16/16 crate 已实现，6494 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固进行中
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 6472 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 6494 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -31,7 +31,7 @@
 | render-foundation | 300 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积**、**20 非重叠 rect/Color lerp 透明/缓存 GC 优先级/帧缓冲四角/圆角矩形包围盒** |
 | host-runtime | 192 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码**、**连续 resize/全修饰键/中键/IME 空/键盘释放**、**HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** |
 | net | 286 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界** |
-| security | 359 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、HSTS、**权限模型**（PermissionManager：11 种权限类型、3 种状态、按 origin 隔离存储）、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵** |
+| security | 381 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、HSTS、**权限模型**（PermissionManager：11 种权限类型、3 种状态、按 origin 隔离存储）、**站点隔离**（SiteIsolationManager：3 种策略、site-per-process 模型、跨站 DOM 访问阻止）、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵** |
 | protocol | 174 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标** |
 | storage | 330 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）** |
 | canvas | 362 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp**、**gradient 多 stop/radial gradient/fillRule/lineDash/measure_text/shadow 属性**、**createImageData/getTransform/transform() 乘法/miterLimit/textDirection**、**同心圆渐变/路径跨 resize/退化变换/脏矩形越界/零长度渐变**、**嵌套 save/restore/clear_rect/translate+scale/line_width 边界/fillText/stroke_rect 零/putImageData roundtrip** |
@@ -103,14 +103,15 @@
 
 ## 最近完成的改进
 
-### -57. M13 权限模型 + 资源预加载 + 文件拆分（本轮，6472 测试）
+### -57. M13 权限模型 + 资源预加载 + 站点隔离 + 文件拆分（本轮，6494 测试）
 
-新增权限模型和资源预加载两个核心模块，完成所有超大文件拆分：
+新增权限模型、资源预加载和站点隔离三个核心模块，完成所有超大文件拆分：
 
 | 模块 | 新增内容 | 新增测试 |
 |------|----------|----------|
 | security/permission | **PermissionManager**：11 种 Web API 权限（camera/microphone/geolocation/notifications/clipboard/fullscreen/pointer-lock/screen-capture/background-sync/persistent-storage）、3 种状态（Granted/Denied/Prompt）、按 origin 隔离存储、grant/deny/revoke/revoke_all_for_origin 操作 | +18 |
 | engine/preload | **ResourcePreloader**：4 种资源提示（preload/prefetch/preconnect/dns-prefetch）、5 级优先级排序（Critical/High/Medium/Low/Idle）、URL 去重（高优先级覆盖）、生命周期追踪（Pending→Loading→Loaded/Failed）、`<link>` 属性解析 | +19 |
+| security/site_isolation | **SiteIsolationManager**：3 种隔离策略（None/SiteIsolated/StrictOrigin）、site-per-process 模型、注册域名提取（简化 eTLD+1）、进程映射（站点→进程）、跨站 iframe DOM 访问阻止 | +22 |
 
 文件拆分：
 - `security/src/lib.rs`: 2093 → 55 行（内联测试提取为外部模块）
@@ -119,7 +120,7 @@
 - `browser/src/app.rs` → `app.rs` + `app_render.rs`
 - `host-runtime/src/window.rs` → `window.rs` + `window_tests.rs`
 
-Total: 6435 → 6472 (+37 tests, 0 files exceed 2000-line limit)
+Total: 6435 → 6494 (+59 tests, 0 files exceed 2000-line limit)
 
 ### -56. 全 crate 边界条件测试覆盖率提升第三轮（前轮，6037 测试）
 
@@ -1095,7 +1096,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载  ❌ 站点隔离 ❌ V8 快照优化 |
+| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离  ❌ V8 快照优化 |
 
 ---
 
@@ -1132,12 +1133,11 @@ Total: 6219 → 6378 tests (+159)
 
 ## 下一步优先级
 
-1. **站点隔离**（高优先级，M13 剩余）— 跨站 iframe 在独立渲染进程中，防止 DOM 访问
-2. **WPT 测试扩展**（高优先级）— 扩展 WPT runner 测试用例，追踪 HTML/CSS/DOM 标准合规性通过率
-3. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
-4. **V8 快照优化**（中优先级，M13 剩余）— 减少沙箱创建开销
-5. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
-6. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
+1. **WPT 测试扩展**（高优先级）— 扩展 WPT runner 测试用例，追踪 HTML/CSS/DOM 标准合规性通过率
+2. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
+3. **V8 快照优化**（中优先级，M13 剩余）— 减少沙箱创建开销
+4. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
+5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
 
 ---
 
