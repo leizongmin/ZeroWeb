@@ -6,3 +6,5 @@ mod apply_coverage_extra;
 mod basic;
 mod edge;
 mod helpers;
+mod matcher_coverage;
+mod shorthand_coverage;
