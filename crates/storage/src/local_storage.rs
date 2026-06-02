@@ -454,4 +454,175 @@ mod tests {
         assert_eq!(storage.len(), 2);
         assert_eq!(storage.used_size(), 5);
     }
+
+    // ── localStorage 边界条件测试 ──
+
+    /// 测试 WebStorage 空键名被拒绝。
+    #[test]
+    fn test_web_storage_empty_key_rejected() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        let result = storage.set("", "value");
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let msg = format!("{e}");
+            assert!(msg.contains("empty") || msg.contains("cannot be empty"));
+        }
+    }
+
+    /// 测试 WebStorage 多次 clear 后状态一致。
+    #[test]
+    fn test_web_storage_multiple_clear() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 第一次 clear（空存储）
+        storage.clear();
+        assert!(storage.is_empty());
+        assert_eq!(storage.used_size(), 0);
+
+        // 写入数据后 clear
+        storage.set("a", "1").unwrap();
+        storage.clear();
+        assert!(storage.is_empty());
+
+        // 再次 clear（已清空）
+        storage.clear();
+        assert!(storage.is_empty());
+        assert_eq!(storage.len(), 0);
+        assert_eq!(storage.used_size(), 0);
+    }
+
+    /// 测试 WebStorage 用更长的值覆盖已有键，used_size 应增加。
+    #[test]
+    fn test_web_storage_overwrite_with_longer_value() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("k", "a").unwrap(); // 1 + 1 = 2
+        assert_eq!(storage.used_size(), 2);
+
+        let old = storage.set("k", "abcdef").unwrap(); // 1 + 6 = 7
+        assert_eq!(old, Some("a".to_string()));
+        assert_eq!(storage.used_size(), 7);
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.get("k"), Some("abcdef"));
+    }
+
+    /// 测试 WebStorage 配额限制下更新值为恰好等于配额的值。
+    #[test]
+    fn test_web_storage_quota_exact_update() {
+        let mut storage = WebStorage::new_with_max_size(StorageType::Local, "test", 20);
+
+        // 初始占 10 字节
+        storage.set("ab", "12345678").unwrap(); // 2 + 8 = 10
+
+        // 更新为恰好占 20 字节（填满配额）
+        let result = storage.set("ab", "123456789012345678");
+        assert!(result.is_ok(), "更新到恰好等于配额应成功");
+        assert_eq!(storage.used_size(), 20);
+
+        // 再加任何新键都应失败
+        assert!(storage.set("x", "y").is_err());
+    }
+
+    /// 测试 WebStorage contains_key 对空字符串键名。
+    #[test]
+    fn test_web_storage_contains_empty_key() {
+        let storage = WebStorage::new(StorageType::Local, "https://example.com");
+        // 空键名不允许 set，所以 contains_key("") 应始终为 false
+        assert!(!storage.contains_key(""));
+    }
+
+    /// 测试 WebStorage 在极小配额（1 字节）下的行为。
+    #[test]
+    fn test_web_storage_tiny_quota() {
+        let mut storage = WebStorage::new_with_max_size(StorageType::Session, "test", 1);
+        // 键长度 1 + 值长度 0 = 1，恰好等于配额
+        let result = storage.set("k", "");
+        assert!(result.is_ok(), "1 字节配额 + 空值应成功");
+        assert_eq!(storage.used_size(), 1);
+
+        // 任何其他操作都会超配额
+        assert!(storage.set("k", "x").is_err());
+        assert!(storage.set("a", "b").is_err());
+    }
+
+    /// 测试 WebStorage remove 返回被删除的旧值。
+    #[test]
+    fn test_web_storage_remove_returns_old_value() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("key1", "value1").unwrap();
+        storage.set("key2", "value2").unwrap();
+
+        let old1 = storage.remove("key1");
+        assert_eq!(old1, Some("value1".to_string()));
+
+        let old2 = storage.remove("key2");
+        assert_eq!(old2, Some("value2".to_string()));
+
+        assert!(storage.is_empty());
+    }
+
+    /// 测试 WebStorage set 返回旧值的完整语义。
+    #[test]
+    fn test_web_storage_set_returns_old_value_semantics() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+
+        // 首次设置：返回 None
+        let result = storage.set("token", "abc");
+        assert_eq!(result.unwrap(), None);
+
+        // 覆盖：返回旧值
+        let result = storage.set("token", "def");
+        assert_eq!(result.unwrap(), Some("abc".to_string()));
+
+        // 再次覆盖：返回上一次的值
+        let result = storage.set("token", "ghi");
+        assert_eq!(result.unwrap(), Some("def".to_string()));
+
+        // 删除后重新设置：返回 None
+        storage.remove("token");
+        let result = storage.set("token", "jkl");
+        assert_eq!(result.unwrap(), None);
+    }
+
+    /// 测试 WebStorage key() 在 remove 后索引保持有效。
+    #[test]
+    fn test_web_storage_key_after_remove() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        storage.set("a", "1").unwrap();
+        storage.set("b", "2").unwrap();
+        storage.set("c", "3").unwrap();
+
+        // 删除中间的键
+        storage.remove("b");
+        assert_eq!(storage.len(), 2);
+
+        // 遍历所有剩余键
+        let mut keys: Vec<String> = (0..storage.len())
+            .filter_map(|i| storage.key(i).map(|s| s.to_string()))
+            .collect();
+        keys.sort();
+        assert_eq!(keys, vec!["a", "c"]);
+    }
+
+    /// 测试 WebStorage 大量键的 set/get 性能（回归测试）。
+    #[test]
+    fn test_web_storage_many_keys() {
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        let count = 500;
+
+        for i in 0..count {
+            storage.set(&format!("key-{i}"), &format!("value-{i}")).unwrap();
+        }
+        assert_eq!(storage.len(), count);
+
+        // 随机验证几个
+        assert_eq!(storage.get("key-0"), Some("value-0"));
+        assert_eq!(storage.get("key-250"), Some("value-250"));
+        assert_eq!(storage.get("key-499"), Some("value-499"));
+        assert_eq!(storage.get("key-500"), None);
+
+        // clear 后全部清空
+        storage.clear();
+        assert!(storage.is_empty());
+        assert_eq!(storage.get("key-0"), None);
+    }
 }

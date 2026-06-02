@@ -1018,4 +1018,57 @@ mod tests {
         assert!(placement.is_none());
         assert_eq!(renderer.atlas_glyph_count(), 0);
     }
+
+    /// 测试 GlyphDraw Clone 派生
+    ///
+    /// 验证 GlyphDraw 结构体可以正确克隆，且克隆后字段值完全一致。
+    #[test]
+    fn test_glyph_draw_clone() {
+        let gd = GlyphDraw {
+            ch: 'Z',
+            x: 42.0,
+            baseline_y: 88.0,
+            color: Color::GREEN,
+            font_id: 3,
+            font_size: 24.0,
+        };
+        let gd2 = gd.clone();
+        assert_eq!(gd2.ch, 'Z');
+        assert_eq!(gd2.x, 42.0);
+        assert_eq!(gd2.baseline_y, 88.0);
+        assert_eq!(gd2.font_id, 3);
+        assert_eq!(gd2.font_size, 24.0);
+    }
+
+    /// 测试 render_scene 使用空填充和空 glyph 列表
+    ///
+    /// 验证渲染空场景后回读像素全为白色（清除色），且不 panic。
+    #[test]
+    fn test_render_scene_both_empty_inputs() {
+        let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[]);
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        // 白色背景
+        for chunk in pixels.chunks_exact(4) {
+            assert_eq!(chunk, [255, 255, 255, 255]);
+        }
+    }
+
+    /// 测试 normalize_scale_factor 对各种边界输入的处理
+    #[test]
+    fn test_normalize_scale_factor_edge_cases() {
+        assert_eq!(normalize_scale_factor(0.0), 1.0, "零缩放应回退为 1.0");
+        assert_eq!(normalize_scale_factor(-1.0), 1.0, "负缩放应回退为 1.0");
+        assert_eq!(normalize_scale_factor(f32::NAN), 1.0, "NaN 应回退为 1.0");
+        assert_eq!(normalize_scale_factor(f32::INFINITY), 1.0, "Infinity 应回退为 1.0");
+        assert_eq!(normalize_scale_factor(f32::NEG_INFINITY), 1.0, "-Infinity 应回退为 1.0");
+        assert!((normalize_scale_factor(2.0) - 2.0).abs() < f32::EPSILON, "正常值应保持");
+        assert!(
+            (normalize_scale_factor(0.5) - 0.5).abs() < f32::EPSILON,
+            "正常小数应保持"
+        );
+    }
 }

@@ -86,7 +86,11 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         home = settings.home_url,
         js = if settings.javascript_enabled { "是" } else { "否" },
         cookies = if settings.cookies_enabled { "是" } else { "否" },
-        block_3p = if settings.block_third_party_cookies { "是" } else { "否" },
+        block_3p = if settings.block_third_party_cookies {
+            "是"
+        } else {
+            "否"
+        },
         dnt = if settings.do_not_track { "是" } else { "否" },
         bookmarks = if settings.show_bookmarks_bar { "是" } else { "否" },
         zoom = (settings.default_zoom * 100.0) as u32,

@@ -758,4 +758,59 @@ mod tests {
         assert_eq!(size.width, 0.0);
         assert_eq!(size.height, 0.0);
     }
+
+    /// 测试 GC 在 max_bytes=0 时清除所有条目
+    ///
+    /// 当最大字节限制为 0 时，任何非零大小的图片都会被 GC 淘汰。
+    #[test]
+    fn test_cache_gc_zero_max_bytes() {
+        let mut cache = ImageCache::new(100, 0);
+        let k1 = cache.insert(make_image(1, 1, 10));
+        assert_eq!(cache.len(), 1);
+
+        cache.gc();
+        assert!(cache.is_empty(), "max_bytes=0 时 GC 应淘汰所有条目");
+        assert!(cache.ref_count(&k1).is_none());
+    }
+
+    /// 测试释放所有条目后 GC 清空缓存
+    ///
+    /// 所有条目 ref_count 降为 0 后，GC 应移除全部。
+    #[test]
+    fn test_cache_gc_after_release_all() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let k1 = cache.insert(make_image(1, 1, 10));
+        let k2 = cache.insert(make_image(2, 2, 20));
+        let k3 = cache.insert(make_image(3, 3, 30));
+
+        cache.release(&k1);
+        cache.release(&k2);
+        cache.release(&k3);
+
+        cache.gc();
+        assert!(cache.is_empty(), "释放全部引用后 GC 应清空缓存");
+    }
+
+    /// 测试插入 1x1 图片后 total_bytes 正确
+    ///
+    /// 1x1 RGBA 图片占用 4 字节。
+    #[test]
+    fn test_cache_total_bytes_single_pixel() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        cache.insert(make_image(1, 1, 255));
+        assert_eq!(cache.total_bytes(), 4, "1x1 RGBA 图片应为 4 字节");
+    }
+
+    /// 测试多次 clear 后 generation 持续递增
+    #[test]
+    fn test_cache_clear_generation_multiple() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        assert_eq!(cache.generation(), 0);
+        cache.clear();
+        assert_eq!(cache.generation(), 1);
+        cache.clear();
+        assert_eq!(cache.generation(), 2);
+        cache.clear();
+        assert_eq!(cache.generation(), 3);
+    }
 }

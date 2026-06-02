@@ -363,4 +363,69 @@ mod tests {
         assert_eq!(desc.weight, 300);
         assert!(desc.italic);
     }
+
+    /// 测试加载空字节数据返回错误
+    ///
+    /// 空的 &[u8] 不是有效字体，load_font 应返回 ParseFailed 错误。
+    #[test]
+    fn test_font_loader_empty_data() {
+        let mut loader = FontLoader::new();
+        let result = loader.load_font(&[]);
+        assert!(result.is_err(), "空数据应返回错误");
+    }
+
+    /// 测试字体 ID 单调递增
+    ///
+    /// 连续加载多个字体会分配 0, 1, 2... 的递增 ID。
+    #[test]
+    fn test_font_loader_id_monotonically_increases() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let id0 = loader.load_font(&font_data).unwrap();
+        let id1 = loader.load_font(&font_data).unwrap();
+        let id2 = loader.load_font(&font_data).unwrap();
+        assert_eq!(id0, 0);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert!(id0 < id1 && id1 < id2, "字体 ID 应严格递增");
+    }
+
+    /// 测试加载非常短（但非空）的无效数据
+    ///
+    /// 仅 1 字节的数据不是有效字体格式。
+    #[test]
+    fn test_font_loader_single_byte_data() {
+        let mut loader = FontLoader::new();
+        let result = loader.load_font(&[0x00]);
+        assert!(result.is_err(), "单字节数据应返回解析错误");
+    }
+
+    /// 测试光栅化控制字符不 panic
+    ///
+    /// 光栅化 NULL 字符（U+0000）等控制字符应返回有效结果或至少不崩溃。
+    #[test]
+    fn test_font_loader_rasterize_control_char() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load");
+
+        // NULL 字符
+        let result = loader.rasterize_glyph(font_id, '\0', 16.0);
+        // fontdue 应能处理，即使结果可能是空的 glyph
+        assert!(result.is_ok(), "光栅化 NULL 字符不应失败");
+    }
 }

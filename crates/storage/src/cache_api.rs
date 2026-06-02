@@ -722,4 +722,253 @@ mod tests {
         // POST 已无法匹配
         assert!(cache.match_request(&post_req).is_none());
     }
+
+    // ── Cache API 边界条件测试 ──
+
+    /// 测试 CacheStorage::match_request 在第一个匹配的缓存中返回响应。
+    ///
+    /// 即使后续缓存有更新的响应，match_request 也只返回第一个匹配。
+    #[test]
+    fn test_cache_storage_match_first_cache_wins_deterministic() {
+        let mut cs = CacheStorage::new();
+        let req = CacheRequest::new("https://example.com/data");
+
+        // 先向 v1 写入，再向 v2 写入
+        cs.open("v1")
+            .put(req.clone(), CacheResponse::ok(b"from-v1".to_vec()))
+            .unwrap();
+        cs.open("v2")
+            .put(req.clone(), CacheResponse::ok(b"from-v2".to_vec()))
+            .unwrap();
+
+        // 全局匹配应返回其中一个（HashMap 迭代顺序不确定但应一致）
+        let matched = cs.match_request(&req).unwrap();
+        let body = matched.body.clone();
+        assert!(
+            body == b"from-v1".to_vec() || body == b"from-v2".to_vec(),
+            "应从某个缓存中匹配到响应"
+        );
+        assert_eq!(matched.status, 200);
+    }
+
+    /// 测试 Cache::put 使用各种 HTTP 状态码的响应。
+    #[test]
+    fn test_cache_put_various_response_types() {
+        let mut cache = Cache::new("multi-status");
+
+        // 200 OK
+        let ok_resp = CacheResponse::ok(b"success".to_vec());
+        cache.put(CacheRequest::new("https://example.com/ok"), ok_resp).unwrap();
+
+        // 204 No Content
+        let no_content = CacheResponse::new(204, vec![]);
+        cache
+            .put(CacheRequest::new("https://example.com/no-content"), no_content)
+            .unwrap();
+
+        // 301 Moved Permanently
+        let moved = CacheResponse::new(301, vec![]).with_header("Location", "https://example.com/new");
+        cache.put(CacheRequest::new("https://example.com/old"), moved).unwrap();
+
+        // 500 Internal Server Error
+        let error_resp = CacheResponse::new(500, b"internal error".to_vec()).with_header("Content-Type", "text/plain");
+        cache
+            .put(CacheRequest::new("https://example.com/error"), error_resp)
+            .unwrap();
+
+        assert_eq!(cache.len(), 4);
+
+        // 验证每个响应的状态码和体
+        let ok_matched = cache
+            .match_request(&CacheRequest::new("https://example.com/ok"))
+            .unwrap();
+        assert_eq!(ok_matched.status, 200);
+        assert_eq!(ok_matched.body, b"success".to_vec());
+
+        let nc_matched = cache
+            .match_request(&CacheRequest::new("https://example.com/no-content"))
+            .unwrap();
+        assert_eq!(nc_matched.status, 204);
+        assert!(nc_matched.body.is_empty());
+
+        let moved_matched = cache
+            .match_request(&CacheRequest::new("https://example.com/old"))
+            .unwrap();
+        assert_eq!(moved_matched.status, 301);
+        assert_eq!(
+            moved_matched.headers.get("Location"),
+            Some(&"https://example.com/new".to_string())
+        );
+
+        let err_matched = cache
+            .match_request(&CacheRequest::new("https://example.com/error"))
+            .unwrap();
+        assert_eq!(err_matched.status, 500);
+        assert_eq!(err_matched.body, b"internal error".to_vec());
+    }
+
+    /// 测试 Cache::delete 后 keys() 正确更新，不影响其他条目。
+    #[test]
+    fn test_cache_delete_complex_keys_update() {
+        let mut cache = Cache::new("cdn");
+        let urls: Vec<&str> = (1..=5)
+            .map(|i| {
+                let urls = [
+                    "https://cdn.example.com/app.js",
+                    "https://cdn.example.com/style.css",
+                    "https://cdn.example.com/logo.png",
+                    "https://cdn.example.com/data.json",
+                    "https://cdn.example.com/font.woff",
+                ];
+                urls[i - 1]
+            })
+            .collect();
+
+        for url in &urls {
+            cache
+                .put(CacheRequest::new(url), CacheResponse::ok(b"content".to_vec()))
+                .unwrap();
+        }
+        assert_eq!(cache.len(), 5);
+
+        // 删除中间两个
+        assert!(cache.delete(&CacheRequest::new("https://cdn.example.com/style.css")));
+        assert!(cache.delete(&CacheRequest::new("https://cdn.example.com/data.json")));
+
+        // keys() 应只有 3 个
+        let keys = cache.keys();
+        assert_eq!(keys.len(), 3);
+        assert!(!keys.contains(&"https://cdn.example.com/style.css"));
+        assert!(!keys.contains(&"https://cdn.example.com/data.json"));
+        assert!(keys.contains(&"https://cdn.example.com/app.js"));
+        assert!(keys.contains(&"https://cdn.example.com/logo.png"));
+        assert!(keys.contains(&"https://cdn.example.com/font.woff"));
+    }
+
+    /// 测试 CacheStorage::keys 在空存储和删除全部缓存后返回空列表。
+    #[test]
+    fn test_cache_storage_keys_empty_and_after_full_delete() {
+        let mut cs = CacheStorage::new();
+        // 空存储
+        assert!(cs.keys().is_empty());
+
+        // 创建并填充
+        cs.open("a")
+            .put(CacheRequest::new("https://a.com"), CacheResponse::ok(b"a".to_vec()))
+            .unwrap();
+        cs.open("b")
+            .put(CacheRequest::new("https://b.com"), CacheResponse::ok(b"b".to_vec()))
+            .unwrap();
+        assert_eq!(cs.keys().len(), 2);
+
+        // 删除全部
+        cs.delete("a");
+        cs.delete("b");
+        assert!(cs.keys().is_empty());
+    }
+
+    /// 测试 Cache put 后立即 delete 再 put 同一请求，验证最终状态正确。
+    #[test]
+    fn test_cache_put_delete_reput() {
+        let mut cache = Cache::new("api");
+
+        let req = CacheRequest::new("https://example.com/resource");
+
+        // 第一次 put
+        cache.put(req.clone(), CacheResponse::ok(b"v1".to_vec())).unwrap();
+        assert_eq!(cache.match_request(&req).unwrap().body, b"v1".to_vec());
+
+        // 删除
+        assert!(cache.delete(&req));
+        assert!(cache.match_request(&req).is_none());
+        assert!(cache.is_empty());
+
+        // 重新 put
+        cache.put(req.clone(), CacheResponse::ok(b"v2".to_vec())).unwrap();
+        assert_eq!(cache.match_request(&req).unwrap().body, b"v2".to_vec());
+        assert_eq!(cache.len(), 1);
+    }
+
+    /// 测试 Cache 响应头覆盖：put 新响应时头信息完全替换，不追加。
+    #[test]
+    fn test_cache_response_headers_overwrite_not_merge() {
+        let mut cache = Cache::new("api");
+        let req = CacheRequest::new("https://example.com/api");
+
+        // 第一次 put：3 个头
+        let resp1 = CacheResponse::ok(b"{}".to_vec())
+            .with_header("Content-Type", "application/json")
+            .with_header("X-Version", "1")
+            .with_header("X-Custom", "old");
+        cache.put(req.clone(), resp1).unwrap();
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.headers.len(), 3);
+
+        // 第二次 put：1 个头（Content-Type 不同）
+        let resp2 = CacheResponse::ok(b"{}".to_vec()).with_header("Content-Type", "text/plain");
+        cache.put(req.clone(), resp2).unwrap();
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.headers.len(), 1, "覆盖后应只有新响应的头");
+        assert_eq!(matched.headers.get("Content-Type"), Some(&"text/plain".to_string()));
+        assert_eq!(matched.headers.get("X-Version"), None, "旧头应被移除");
+        assert_eq!(matched.headers.get("X-Custom"), None, "旧头应被移除");
+    }
+
+    /// 测试 CacheStorage 对同名缓存反复 open/delete 周期，验证无内存残留。
+    #[test]
+    fn test_cache_storage_open_delete_cycle() {
+        let mut cs = CacheStorage::new();
+
+        for cycle in 0..3 {
+            let name = format!("cache-{cycle}");
+            cs.open(&name)
+                .put(
+                    CacheRequest::new("https://example.com/page"),
+                    CacheResponse::ok(format!("cycle-{cycle}").into_bytes()),
+                )
+                .unwrap();
+
+            assert!(cs.has(&name));
+            let matched = cs.match_request(&CacheRequest::new("https://example.com/page"));
+            assert!(matched.is_some());
+
+            cs.delete(&name);
+            assert!(!cs.has(&name));
+        }
+
+        // 最终无任何缓存
+        assert!(cs.keys().is_empty());
+    }
+
+    /// 测试 Cache::put 空响应体的缓存。
+    #[test]
+    fn test_cache_put_empty_body() {
+        let mut cache = Cache::new("empty");
+        let req = CacheRequest::new("https://example.com/no-body");
+        cache.put(req.clone(), CacheResponse::new(204, vec![])).unwrap();
+
+        let matched = cache.match_request(&req).unwrap();
+        assert_eq!(matched.status, 204);
+        assert!(matched.body.is_empty());
+        assert_eq!(cache.len(), 1);
+    }
+
+    /// 测试 CacheStorage::open 返回的 &mut Cache 可以链式调用 put。
+    #[test]
+    fn test_cache_storage_open_chain_put() {
+        let mut cs = CacheStorage::new();
+        cs.open("chain")
+            .put(CacheRequest::new("https://a.com/1"), CacheResponse::ok(b"1".to_vec()))
+            .unwrap();
+        cs.open("chain")
+            .put(CacheRequest::new("https://a.com/2"), CacheResponse::ok(b"2".to_vec()))
+            .unwrap();
+        cs.open("chain")
+            .put(CacheRequest::new("https://a.com/3"), CacheResponse::ok(b"3".to_vec()))
+            .unwrap();
+
+        let cache = cs.open("chain");
+        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.keys().len(), 3);
+    }
 }

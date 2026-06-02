@@ -4853,6 +4853,16 @@ dependencies = [
 [[package]]
 name = "zero-wpt-runner"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zero-css-parser",
+ "zero-dom",
+ "zero-engine",
+ "zero-layout-engine",
+ "zero-render-foundation",
+ "zero-style-system",
+]
 
 [[package]]
 name = "zerocopy"

@@ -1373,7 +1373,16 @@ fn test_composite_multiple_opacity_layers_values() {
     // 验证每个提升图层的 opacity 值（按 z_index=0 排序，顺序应为 DOM 顺序）
     let opacities: Vec<f32> = layers[1..].iter().map(|l| l.opacity).collect();
     // 允许任意顺序，但三个值必须都存在
-    assert!(opacities.iter().any(|&o| (o - 0.1).abs() < 0.001), "should have opacity ~0.1");
-    assert!(opacities.iter().any(|&o| (o - 0.5).abs() < 0.001), "should have opacity ~0.5");
-    assert!(opacities.iter().any(|&o| (o - 0.9).abs() < 0.001), "should have opacity ~0.9");
+    assert!(
+        opacities.iter().any(|&o| (o - 0.1).abs() < 0.001),
+        "should have opacity ~0.1"
+    );
+    assert!(
+        opacities.iter().any(|&o| (o - 0.5).abs() < 0.001),
+        "should have opacity ~0.5"
+    );
+    assert!(
+        opacities.iter().any(|&o| (o - 0.9).abs() < 0.001),
+        "should have opacity ~0.9"
+    );
 }

@@ -315,4 +315,69 @@ mod tests {
         assert_eq!(bm.y_offset, 5);
         assert!((bm.advance - 12.5).abs() < f32::EPSILON);
     }
+
+    /// 测试 get_or_insert_with 在零容量缓存中触发淘汰后仍能插入
+    ///
+    /// max_entries=0 时 get_or_insert_with 应能淘汰并插入新条目。
+    #[test]
+    fn test_cache_get_or_insert_zero_capacity() {
+        let mut cache = GlyphCache::new(0);
+        let key = GlyphKey::new(0, 65, 16.0);
+        let result = cache.get_or_insert_with(key.clone(), || Ok(make_bitmap(&[42], 1, 1)));
+        assert!(result.is_ok(), "零容量缓存应能通过 get_or_insert 插入");
+        // 淘汰逻辑移除一半（0/2 = 0），但随后直接插入
+        assert!(cache.get(&key).is_some());
+    }
+
+    /// 测试缓存错误不插入后再次调用成功
+    ///
+    /// 第一次 get_or_insert_with 返回 Err 不应阻止后续对相同 key 的调用。
+    #[test]
+    fn test_cache_failed_insert_retriable() {
+        let mut cache = GlyphCache::new(100);
+        let key = GlyphKey::new(0, 65, 16.0);
+
+        // 第一次失败
+        let result = cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
+        assert!(result.is_err());
+        assert!(cache.get(&key).is_none(), "失败后缓存不应有条目");
+
+        // 第二次成功
+        let result = cache.get_or_insert_with(key.clone(), || Ok(make_bitmap(&[99], 1, 1)));
+        assert!(result.is_ok());
+        assert_eq!(cache.get(&key).unwrap().data[0], 99);
+    }
+
+    /// 测试 estimated_memory 对多个条目的累加
+    ///
+    /// 插入多个不同大小的 bitmap 后验证 estimated_memory 正确累加。
+    #[test]
+    fn test_cache_estimated_memory_multiple_entries() {
+        let mut cache = GlyphCache::new(100);
+
+        cache.insert(GlyphKey::new(0, 65, 16.0), make_bitmap(&[0; 100], 10, 10));
+        cache.insert(GlyphKey::new(0, 66, 16.0), make_bitmap(&[0; 200], 10, 20));
+        cache.insert(GlyphKey::new(0, 67, 16.0), make_bitmap(&[0; 50], 5, 10));
+
+        let mem = cache.estimated_memory();
+        // 每条还应加上 size_of::<GlyphBitmap>()
+        let bitmap_size = std::mem::size_of::<GlyphBitmap>();
+        assert!(
+            mem >= 100 + 200 + 50 + bitmap_size * 3,
+            "内存估算应包含所有条目数据和结构体大小"
+        );
+    }
+
+    /// 测试 GlyphKey::new 对零和负 font_size 的处理
+    ///
+    /// font_size 为 0 时 round() 为 0；font_size 为负数时
+    /// round() 产生负整数，转换为 u16 时 Rust 会饱和为 0。
+    #[test]
+    fn test_glyph_key_zero_and_negative_font_size() {
+        let key_zero = GlyphKey::new(0, 65, 0.0);
+        assert_eq!(key_zero.size_px, 0, "font_size=0 应 round 为 0");
+
+        let key_neg = GlyphKey::new(0, 65, -10.4);
+        assert_eq!(key_neg.size_px, 0, "font_size<0 的 round 值转 u16 应饱和为 0");
+    }
 }

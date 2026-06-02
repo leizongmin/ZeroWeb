@@ -20,7 +20,11 @@ fn test_navigate_referrer_with_whitespace_chars() {
     };
     let out = roundtrip(msg);
     if let IpcMessageKind::Navigate(p) = out.kind {
-        assert_eq!(Some(referrer.to_string()), p.referrer, "含空白字符的 referrer 往返应完全一致");
+        assert_eq!(
+            Some(referrer.to_string()),
+            p.referrer,
+            "含空白字符的 referrer 往返应完全一致"
+        );
     } else {
         panic!("期望 Navigate");
     }
@@ -79,7 +83,11 @@ fn test_navigate_referrer_with_nul_byte() {
     };
     let out = roundtrip(msg);
     if let IpcMessageKind::Navigate(p) = out.kind {
-        assert_eq!(Some(referrer.to_string()), p.referrer, "含 NUL 字节的 referrer 不应被截断");
+        assert_eq!(
+            Some(referrer.to_string()),
+            p.referrer,
+            "含 NUL 字节的 referrer 不应被截断"
+        );
     } else {
         panic!("期望 Navigate");
     }
@@ -344,8 +352,16 @@ fn test_scroll_event_extreme_float_values() {
     };
     let out_tiny = roundtrip(msg_tiny);
     if let IpcMessageKind::ScrollEvent(p) = out_tiny.kind {
-        assert_eq!(tiny.to_bits(), p.delta_x.to_bits(), "极小正次正规数 delta_x 位模式应保留");
-        assert_eq!((-tiny).to_bits(), p.delta_y.to_bits(), "极小负次正规数 delta_y 位模式应保留");
+        assert_eq!(
+            tiny.to_bits(),
+            p.delta_x.to_bits(),
+            "极小正次正规数 delta_x 位模式应保留"
+        );
+        assert_eq!(
+            (-tiny).to_bits(),
+            p.delta_y.to_bits(),
+            "极小负次正规数 delta_y 位模式应保留"
+        );
     } else {
         panic!("期望 ScrollEvent");
     }
@@ -537,7 +553,10 @@ fn test_protocol_error_display_unicode_message() {
     let err = ProtocolError::Process("进程崩溃：内存溢出 💥".into());
     let display = format!("{err}");
     assert!(display.contains("Process error"), "应包含错误类型前缀");
-    assert!(display.contains("进程崩溃：内存溢出 💥"), "Unicode 错误消息应被完整保留");
+    assert!(
+        display.contains("进程崩溃：内存溢出 💥"),
+        "Unicode 错误消息应被完整保留"
+    );
 }
 
 // ══════════════════════════════════════════════════════════
