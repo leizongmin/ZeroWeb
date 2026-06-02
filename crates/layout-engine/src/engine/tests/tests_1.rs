@@ -1,10 +1,9 @@
 use super::*;
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue,
+    AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue,
     PositionValue,
 };
 use zero_dom::Document;
-use zero_style_system::FlexBasisValue;
 
 /// 创建带指定 display 和 size 的 ComputedStyle。
 

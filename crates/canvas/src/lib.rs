@@ -7,5 +7,9 @@
 pub mod context;
 pub mod path;
 
+// 测试模块仅在测试时编译
+#[cfg(test)]
+mod path_tests;
+
 pub use context::*;
 pub use path::*;
