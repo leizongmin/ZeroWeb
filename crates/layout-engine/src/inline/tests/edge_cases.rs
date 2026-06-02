@@ -1,0 +1,312 @@
+// 边界条件和极端值测试 — inline 模块私有函数和公共函数。
+use super::super::*;
+
+// ── is_cjk_character 边界条件 ──
+
+/// 测试 is_cjk_character：CJK 兼容表意文字（U+F900..U+FAFF）。
+#[test]
+fn test_is_cjk_compatibility_ideographs() {
+    assert!(is_cjk_character('\u{F900}'), "U+F900 应为 CJK");
+    assert!(is_cjk_character('\u{FAFF}'), "U+FAFF 应为 CJK");
+    assert!(is_cjk_character('\u{F92F}'), "U+F92F 应为 CJK（兼容表意文字中间值）");
+}
+
+/// 测试 is_cjk_character：CJK 符号和标点（U+3000..U+303F）。
+#[test]
+fn test_is_cjk_symbols_and_punctuation() {
+    assert!(is_cjk_character('\u{3000}'), "U+3000 全角空格应为 CJK");
+    assert!(is_cjk_character('\u{3001}'), "U+3001 、应为 CJK");
+    assert!(is_cjk_character('\u{3002}'), "U+3002 。应为 CJK");
+    assert!(is_cjk_character('\u{303F}'), "U+303F 应为 CJK（符号末尾）");
+}
+
+/// 测试 is_cjk_character：CJK 部首补充（U+2E80..U+2EFF）。
+#[test]
+fn test_is_cjk_radicals_supplement() {
+    assert!(is_cjk_character('\u{2E80}'), "U+2E80 应为 CJK（部首补充起始）");
+    assert!(is_cjk_character('\u{2EFF}'), "U+2EFF 应为 CJK（部首补充末尾）");
+}
+
+/// 测试 is_cjk_character：CJK 基本区和扩展 A 之间的边界。
+#[test]
+fn test_is_cjk_boundary_between_extension_a_and_basic() {
+    // U+4DBF 是扩展 A 的末尾
+    assert!(is_cjk_character('\u{4DBF}'), "U+4DBF 扩展 A 末尾应为 CJK");
+    // U+4E00 是基本区的起始
+    assert!(is_cjk_character('\u{4E00}'), "U+4E00 基本区起始应为 CJK");
+    // U+4DC0 不在任何范围内
+    assert!(!is_cjk_character('\u{4DC0}'), "U+4DC0 不在 CJK 范围内");
+}
+
+/// 测试 is_cjk_character：拉丁扩展字符不为 CJK。
+#[test]
+fn test_is_cjk_latin_extended() {
+    assert!(!is_cjk_character('\u{0100}'), "Ā 不应为 CJK");
+    assert!(!is_cjk_character('\u{024F}'), "ɏ 不应为 CJK");
+}
+
+/// 测试 is_cjk_character：阿拉伯文字不为 CJK。
+#[test]
+fn test_is_cjk_arabic() {
+    assert!(!is_cjk_character('\u{0627}'), "ا 不应为 CJK");
+    assert!(!is_cjk_character('\u{0649}'), "ى 不应为 CJK");
+}
+
+/// 测试 is_cjk_character：西里尔字母不为 CJK。
+#[test]
+fn test_is_cjk_cyrillic() {
+    assert!(!is_cjk_character('\u{0410}'), "А 不应为 CJK");
+    assert!(!is_cjk_character('\u{044F}'), "я 不应为 CJK");
+}
+
+// ── estimate_char_width 边界条件 ──
+
+/// 测试 estimate_char_width：数字宽度比例。
+#[test]
+fn test_estimate_char_width_digit_ratio() {
+    let font_size = 16.0;
+    let digit_width = estimate_char_width('5', font_size);
+    let expected = font_size * 0.5;
+    assert!(
+        (digit_width - expected).abs() < 0.01,
+        "数字 '5' 宽度应为 {}，实际 {}",
+        expected,
+        digit_width
+    );
+}
+
+/// 测试 estimate_char_width：制表符按默认 Unicode 字符宽度计算。
+#[test]
+fn test_estimate_char_width_tab_character() {
+    let font_size = 16.0;
+    let tab_width = estimate_char_width('\t', font_size);
+    // '\t' 不是 ASCII 空白字符中的空格，但 is_ascii_whitespace 返回 true
+    assert!(
+        (tab_width - font_size * 0.25).abs() < 0.01,
+        "制表符应被视为空白字符，宽度应为 {}，实际 {}",
+        font_size * 0.25,
+        tab_width
+    );
+}
+
+/// 测试 estimate_char_width：换行符按空白字符计算。
+#[test]
+fn test_estimate_char_width_newline_character() {
+    let font_size = 16.0;
+    let nl_width = estimate_char_width('\n', font_size);
+    // '\n' 是 ASCII 空白字符
+    assert!(
+        (nl_width - font_size * 0.25).abs() < 0.01,
+        "换行符应被视为空白字符，宽度应为 {}，实际 {}",
+        font_size * 0.25,
+        nl_width
+    );
+}
+
+/// 测试 estimate_char_width：font_size 为负值时的行为。
+#[test]
+fn test_estimate_char_width_negative_font_size() {
+    let width = estimate_char_width('A', -16.0);
+    // 负 font_size 应产生负宽度，不 panic
+    assert!(width < 0.0, "负 font_size 应产生负宽度，实际 {}", width);
+}
+
+/// 测试 estimate_char_width：Unicode 非 CJK 字符使用默认宽度。
+#[test]
+fn test_estimate_char_width_unicode_non_cjk() {
+    let font_size = 16.0;
+    // U+00E9 = é，既不是 ASCII 也不是 CJK
+    let width = estimate_char_width('\u{00E9}', font_size);
+    let expected = font_size * 0.5;
+    assert!(
+        (width - expected).abs() < 0.01,
+        "Unicode 非 CJK 字符应使用默认宽度 {}，实际 {}",
+        expected,
+        width
+    );
+}
+
+// ── estimate_string_width 边界条件 ──
+
+/// 测试 estimate_string_width：包含多种字符类型的混合字符串。
+#[test]
+fn test_estimate_string_width_mixed_types() {
+    let font_size = 16.0;
+    // 'A' (ASCII字母) + ' ' (空格) + '1' (数字) + '.' (标点) + '中' (CJK)
+    let width = estimate_string_width("A 1.中", font_size);
+    let expected = 16.0 * 0.55 + 16.0 * 0.25 + 16.0 * 0.5 + 16.0 * 0.4 + 16.0;
+    assert!(
+        (width - expected).abs() < 0.01,
+        "混合类型宽度应为 {}，实际 {}",
+        expected,
+        width
+    );
+}
+
+/// 测试 estimate_string_width：负 font_size 产生负总宽度。
+#[test]
+fn test_estimate_string_width_negative_font_size() {
+    let width = estimate_string_width("ABC", -10.0);
+    assert!(width < 0.0, "负 font_size 应产生负宽度，实际 {}", width);
+}
+
+/// 测试 estimate_string_width：仅包含空格的字符串。
+#[test]
+fn test_estimate_string_width_spaces_only() {
+    let width = estimate_string_width("   ", 16.0);
+    let expected = 3.0 * 16.0 * 0.25;
+    assert!(
+        (width - expected).abs() < 0.01,
+        "仅空格字符串宽度应为 {}，实际 {}",
+        expected,
+        width
+    );
+}
+
+// ── InlineFormattingContext 边界条件 ──
+
+/// 测试负容器宽度时不会 panic。
+#[test]
+fn test_negative_container_width_no_panic() {
+    let mut ctx = InlineFormattingContext::new(-100.0);
+    let runs = vec![TextRun {
+        text: "Hello".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+    }];
+    // 不应 panic
+    ctx.break_into_lines(runs);
+    // 负宽度下行为未定义，只要不 panic 即可
+    assert!(!ctx.lines.is_empty(), "即使容器宽度为负也应产生行盒");
+}
+
+/// 测试极端窄容器（接近 0 但不为 0）中单字符换行。
+#[test]
+fn test_very_narrow_container_single_char_per_line() {
+    let mut ctx = InlineFormattingContext::new(1.0);
+    let runs = vec![TextRun {
+        text: "a b c d".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+    }];
+    ctx.break_into_lines(runs);
+    // 极窄容器中每个单词应单独一行
+    assert!(
+        ctx.lines.len() >= 4,
+        "极窄容器中每个单词应单独一行，实际 {} 行",
+        ctx.lines.len()
+    );
+}
+
+/// 测试 TextAlign 枚举的 Default trait。
+#[test]
+fn test_text_align_default() {
+    assert_eq!(TextAlign::default(), TextAlign::Left);
+}
+
+/// 测试 inline-block 宽度为零时不影响布局。
+#[test]
+fn test_zero_width_inline_block() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![
+        InlineItem::InlineBlock(InlineBlockBox {
+            width: 0.0,
+            height: 30.0,
+            node_id: NodeId::default(),
+            vertical_align: VerticalAlignValue::Baseline,
+        }),
+        InlineItem::Text(TextRun {
+            text: "After".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }),
+    ];
+    ctx.break_items_into_lines(items);
+
+    // 零宽 inline-block + 文本应在同一行
+    assert_eq!(ctx.lines.len(), 1, "零宽 inline-block 不应触发换行");
+    assert_eq!(ctx.lines[0].runs.len(), 2, "应有 2 个片段");
+}
+
+/// 测试 inline-block 高度为零时行盒高度由文本决定。
+#[test]
+fn test_zero_height_inline_block() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![
+        InlineItem::Text(TextRun {
+            text: "Text".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+        }),
+        InlineItem::InlineBlock(InlineBlockBox {
+            width: 50.0,
+            height: 0.0,
+            node_id: NodeId::default(),
+            vertical_align: VerticalAlignValue::Baseline,
+        }),
+    ];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 1);
+    // 行盒高度应取 max(20, 0) = 20
+    assert!(
+        (ctx.lines[0].height - 20.0).abs() < 0.01,
+        "行盒高度应取 max(文本行高20, inline-block高度0) = 20，实际 {}",
+        ctx.lines[0].height
+    );
+}
+
+// ── split_into_words 边界条件 ──
+
+/// 测试 split_into_words：单个单词。
+#[test]
+fn test_split_into_words_single_word() {
+    let ctx = InlineFormattingContext::new(800.0);
+    let words = ctx.split_into_words("Hello");
+    assert_eq!(words.len(), 1);
+    assert_eq!(words[0], "Hello ");
+}
+
+/// 测试 split_into_words：仅空白字符。
+#[test]
+fn test_split_into_words_whitespace_only() {
+    let ctx = InlineFormattingContext::new(800.0);
+    let words = ctx.split_into_words("   ");
+    assert!(words.is_empty(), "仅空白字符不应产生单词");
+}
+
+// ── resolve_font_metrics 边界条件 ──
+
+/// 测试 resolve_font_metrics：零值 font-size。
+#[test]
+fn test_resolve_font_metrics_zero_font_size() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(0.0);
+    let (font_size, line_height) = resolve_font_metrics(Some(&style));
+    assert!((font_size - 0.0).abs() < 0.01, "font_size 应为 0");
+    assert!((line_height - 0.0).abs() < 0.01, "line_height 应为 0 * 1.2 = 0");
+}
+
+/// 测试 resolve_font_metrics：极大 font-size。
+#[test]
+fn test_resolve_font_metrics_large_font_size() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(10000.0);
+    let (font_size, line_height) = resolve_font_metrics(Some(&style));
+    assert!((font_size - 10000.0).abs() < 0.01);
+    let expected_lh = 10000.0 * 1.2;
+    assert!(
+        (line_height - expected_lh).abs() < 0.01,
+        "line_height 应为 {}，实际 {}",
+        expected_lh,
+        line_height
+    );
+}

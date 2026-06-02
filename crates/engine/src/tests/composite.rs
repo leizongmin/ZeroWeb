@@ -967,3 +967,413 @@ fn test_composite_zero_opacity_element_promoted() {
     assert_eq!(layers[1].width, 200.0, "width 应为子元素宽度");
     assert_eq!(layers[1].height, 100.0, "height 应为子元素高度");
 }
+
+// ── 新增边界条件测试：z-index 排序 / opacity 边界 / 提升图层 ──
+
+/// 测试 20 个图层按 z-index 升序排序正确。
+///
+/// 构造 20 个元素分别设置 z-index 为 -10 到 9，
+/// 验证合成后 21 个图层（root + 20 promoted）按 z-index 严格升序排列。
+#[test]
+fn test_composite_20_layers_sorted() {
+    use zero_style_system::property::ZIndexValue;
+
+    let mut doc = zero_dom::Document::new();
+    let num = 20;
+    let mut elements = Vec::with_capacity(num);
+    let mut child_boxes = Vec::with_capacity(num);
+
+    for i in 0..num {
+        let elem = doc.create_element("div");
+        elements.push(elem);
+        child_boxes.push(LayoutBox {
+            node_id: Some(elem),
+            x: (i as f32) * 5.0,
+            y: 0.0,
+            width: 40.0,
+            height: 40.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 40.0,
+            content_height: 40.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            z_index: 0,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+        });
+    }
+
+    let root_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: child_boxes,
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    for (i, &elem) in elements.iter().enumerate() {
+        let mut style = ComputedStyle::default();
+        style.z_index = ZIndexValue::Integer(i as i32 - 10);
+        styles.insert(elem, style);
+    }
+
+    let layers = promote_compositing_layers(&root_box, &styles);
+
+    // root + 20 promoted layers
+    assert_eq!(layers.len(), 21, "root + 20 promoted layers");
+    assert!(layers[0].is_root);
+
+    // 验证严格升序
+    for i in 1..layers.len() - 1 {
+        assert!(
+            layers[i].z_index <= layers[i + 1].z_index,
+            "layers[{}].z_index ({}) should be <= layers[{}].z_index ({})",
+            i,
+            layers[i].z_index,
+            i + 1,
+            layers[i + 1].z_index
+        );
+    }
+
+    // 首尾验证
+    assert_eq!(layers[1].z_index, -10, "first promoted layer z_index should be -10");
+    assert_eq!(layers[20].z_index, 9, "last promoted layer z_index should be 9");
+}
+
+/// 测试 opacity=1.0 不触发提升，opacity 略低于 1.0 触发提升。
+#[test]
+fn test_composite_opacity_boundary_promotion() {
+    let mut doc = zero_dom::Document::new();
+    let elem_full = doc.create_element("div");
+    let elem_slight = doc.create_element("div");
+
+    let child_full = LayoutBox {
+        node_id: Some(elem_full),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 50.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 100.0,
+        content_height: 50.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+    let child_slight = LayoutBox {
+        node_id: Some(elem_slight),
+        x: 0.0,
+        y: 50.0,
+        width: 100.0,
+        height: 50.0,
+        content_x: 0.0,
+        content_y: 50.0,
+        content_width: 100.0,
+        content_height: 50.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+    let root_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![child_full, child_slight],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    let mut style_full = ComputedStyle::default();
+    style_full.opacity = 1.0;
+    styles.insert(elem_full, style_full);
+
+    let mut style_slight = ComputedStyle::default();
+    style_slight.opacity = 0.999;
+    styles.insert(elem_slight, style_slight);
+
+    let layers = promote_compositing_layers(&root_box, &styles);
+
+    // root + 1 promoted (只有 opacity=0.999 的被提升)
+    assert_eq!(layers.len(), 2, "opacity=1.0 不提升，opacity=0.999 提升");
+    assert!(layers[0].is_root);
+
+    // 提升图层 opacity 应为 0.999
+    assert!(
+        (layers[1].opacity - 0.999).abs() < 0.001,
+        "promoted layer opacity should be ~0.999, got {}",
+        layers[1].opacity
+    );
+}
+
+/// 测试 opacity 为极小正值（0.001）时仍被提升且 opacity 值正确传播。
+#[test]
+fn test_composite_opacity_very_small_positive() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+
+    let child_box = LayoutBox {
+        node_id: Some(elem),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 50.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 100.0,
+        content_height: 50.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+    let root_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![child_box],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.opacity = 0.001;
+    styles.insert(elem, style);
+
+    let layers = promote_compositing_layers(&root_box, &styles);
+
+    assert_eq!(layers.len(), 2, "极小正 opacity 应触发提升");
+    assert!(
+        (layers[1].opacity - 0.001).abs() < 0.0001,
+        "promoted layer opacity should be ~0.001, got {}",
+        layers[1].opacity
+    );
+}
+
+/// 测试多个 opacity 不同的提升图层，opacity 值各自正确。
+#[test]
+fn test_composite_multiple_opacity_layers_values() {
+    let mut doc = zero_dom::Document::new();
+    let e1 = doc.create_element("div");
+    let e2 = doc.create_element("div");
+    let e3 = doc.create_element("div");
+
+    let make_child = |elem_id: zero_dom::NodeId, y: f32| LayoutBox {
+        node_id: Some(elem_id),
+        x: 0.0,
+        y,
+        width: 100.0,
+        height: 50.0,
+        content_x: 0.0,
+        content_y: y,
+        content_width: 100.0,
+        content_height: 50.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let root_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![make_child(e1, 0.0), make_child(e2, 50.0), make_child(e3, 100.0)],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    let mut s1 = ComputedStyle::default();
+    s1.opacity = 0.1;
+    styles.insert(e1, s1);
+
+    let mut s2 = ComputedStyle::default();
+    s2.opacity = 0.5;
+    styles.insert(e2, s2);
+
+    let mut s3 = ComputedStyle::default();
+    s3.opacity = 0.9;
+    styles.insert(e3, s3);
+
+    let layers = promote_compositing_layers(&root_box, &styles);
+
+    // root + 3 promoted
+    assert_eq!(layers.len(), 4, "root + 3 opacity-promoted layers");
+
+    // 验证每个提升图层的 opacity 值（按 z_index=0 排序，顺序应为 DOM 顺序）
+    let opacities: Vec<f32> = layers[1..].iter().map(|l| l.opacity).collect();
+    // 允许任意顺序，但三个值必须都存在
+    assert!(opacities.iter().any(|&o| (o - 0.1).abs() < 0.001), "should have opacity ~0.1");
+    assert!(opacities.iter().any(|&o| (o - 0.5).abs() < 0.001), "should have opacity ~0.5");
+    assert!(opacities.iter().any(|&o| (o - 0.9).abs() < 0.001), "should have opacity ~0.9");
+}
