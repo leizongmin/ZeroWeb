@@ -152,10 +152,10 @@ impl HstsStore {
             // 逐级检查父域名
             for i in 1..parts.len() - 1 {
                 let parent = parts[i..].join(".");
-                if let Some(directive) = self.entries.get(&parent) {
-                    if !directive.is_expired() && directive.include_subdomains {
-                        return true;
-                    }
+                if let Some(directive) = self.entries.get(&parent)
+                    && !directive.is_expired() && directive.include_subdomains
+                {
+                    return true;
                 }
             }
         }
