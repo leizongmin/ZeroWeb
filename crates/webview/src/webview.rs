@@ -448,4 +448,52 @@ impl WebView {
     pub fn service_worker_registry_mut(&mut self) -> &mut ServiceWorkerRegistry {
         &mut self.sw_registry
     }
+
+    /// 编译并执行 WASM 模块。
+    ///
+    /// 使用 zero-wasm-sandbox 编译 WASM 字节码，实例化后调用指定的导出函数。
+    /// 返回函数调用结果的字符串表示。
+    ///
+    /// # 参数
+    /// - `wasm_bytes`: WASM 模块的二进制字节
+    /// - `function_name`: 要调用的导出函数名
+    /// - `args`: 传递给函数的参数
+    ///
+    /// # 错误
+    /// - [`WebViewError::Script`] — WASM 编译、实例化或调用错误
+    pub fn execute_wasm(
+        &self,
+        wasm_bytes: &[u8],
+        function_name: &str,
+        args: &[zero_wasm_sandbox::WasmValue],
+    ) -> Result<String, WebViewError> {
+        tracing::debug!(
+            "execute_wasm: {} bytes, function: {}",
+            wasm_bytes.len(),
+            function_name
+        );
+
+        let sandbox = zero_wasm_sandbox::WasmSandbox::new();
+        let module = sandbox.compile(wasm_bytes).map_err(|e| {
+            WebViewError::Script(format!("WASM compile error: {e}"))
+        })?;
+
+        let mut instance = module.instantiate(&sandbox).map_err(|e| {
+            WebViewError::Script(format!("WASM instantiate error: {e}"))
+        })?;
+
+        let results = instance.call(function_name, args).map_err(|e| {
+            WebViewError::Script(format!("WASM call error: {e}"))
+        })?;
+
+        if results.is_empty() {
+            Ok("void".to_string())
+        } else {
+            Ok(results
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", "))
+        }
+    }
 }

@@ -1365,6 +1365,60 @@ fn test_webview_dom_document_fragment() {
     assert_eq!(result.unwrap(), "ok", "createDocumentFragment 应返回对象");
 }
 
+// ── WASM 执行测试 ──
+
+/// 最小的 WASM 模块：导出一个 `add` 函数 (i32) -> (i32)，返回 42。
+///
+/// 手工编码的 WASM 二进制：
+/// - magic + version: 00 61 73 6d 01 00 00 00
+/// - type section: (i32) -> (i32)
+/// - function section: type index 0
+/// - export section: "add" → function 0
+/// - code section: i32.const 42, end
+fn minimal_wasm_add_module() -> Vec<u8> {
+    vec![
+        0x00, 0x61, 0x73, 0x6d, // magic
+        0x01, 0x00, 0x00, 0x00, // version
+        // type section (id=1)
+        0x01, 0x06, 0x01, 0x60, 0x01, 0x7f, 0x01, 0x7f,
+        // function section (id=3)
+        0x03, 0x02, 0x01, 0x00,
+        // export section (id=7)
+        0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
+        // code section (id=10)
+        0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x41, 0x2a, 0x6a, 0x0b,
+    ]
+}
+
+/// 测试 WASM 模块编译和执行。
+#[test]
+fn test_webview_execute_wasm_add() {
+    let wv = WebView::new(WebViewConfig::default());
+    let wasm_bytes = minimal_wasm_add_module();
+    let args = vec![zero_wasm_sandbox::WasmValue::I32(8)];
+    let result = wv.execute_wasm(&wasm_bytes, "add", &args);
+    assert!(result.is_ok(), "WASM execution should succeed: {:?}", result);
+    // add(x) = x + 42 = 8 + 42 = 50
+    assert_eq!(result.unwrap().trim(), "i32(50)");
+}
+
+/// 测试 WASM 执行无效字节码。
+#[test]
+fn test_webview_execute_wasm_invalid_bytes() {
+    let wv = WebView::new(WebViewConfig::default());
+    let result = wv.execute_wasm(&[0x00, 0x01, 0x02], "func", &[]);
+    assert!(result.is_err(), "Invalid WASM should return error");
+}
+
+/// 测试 WASM 执行不存在的函数。
+#[test]
+fn test_webview_execute_wasm_missing_function() {
+    let wv = WebView::new(WebViewConfig::default());
+    let wasm_bytes = minimal_wasm_add_module();
+    let result = wv.execute_wasm(&wasm_bytes, "nonexistent", &[]);
+    assert!(result.is_err(), "Missing function should return error");
+}
+
 // ── Service Worker 集成测试 ──
 
 /// 测试 Service Worker 注册 + 安装 + 激活完整生命周期。
@@ -1422,7 +1476,7 @@ fn test_sw_intercept_cached_response() {
     // 手动缓存一个响应
     let request = zero_storage::CacheRequest::new("https://example.com/cached.html");
     let response = zero_storage::CacheResponse::ok(b"<html><body>Cached</body></html>".to_vec());
-    wv.service_worker_registry_mut()
+    let _ = wv.service_worker_registry_mut()
         .get_active_mut("https://example.com")
         .unwrap()
         .cache_storage

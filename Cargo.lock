@@ -5204,6 +5204,7 @@ dependencies = [
  "zero-render-foundation",
  "zero-script-sandbox",
  "zero-storage",
+ "zero-wasm-sandbox",
 ]
 
 [[package]]
