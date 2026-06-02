@@ -10,7 +10,7 @@ use crate::values::{
     ContainerTypeValue, CursorValue, FloatValue, GradientDirection, GradientValue, LengthValue, ListStylePositionValue,
     ListStyleTypeValue, ObjectFitValue, RadialShape, RadialSize, ResizeValue, ScrollSnapAlignValue, ScrollSnapAxis,
     ScrollSnapStopValue, ScrollSnapTypeValue, TableLayoutValue, TextDecorationLineValue, TextOverflowValue,
-    TextTransformValue, TimeUnit, TransformFunction, TransformValue, VarReference, WritingModeValue, eval_calc,
+    TextTransformValue, TimeUnit, TransformFunction, TransformValue, WritingModeValue, eval_calc,
     eval_calc_with_context, parse_animation_direction, parse_animation_duration, parse_animation_fill_mode,
     parse_animation_iteration_count, parse_animation_name, parse_animation_play_state, parse_background_image,
     parse_border_collapse, parse_box_shadow, parse_calc, parse_caption_side, parse_clear, parse_color,

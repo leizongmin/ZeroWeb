@@ -2,11 +2,10 @@
 use super::super::*;
 use super::helpers::*;
 
-use super::*;
 use zero_css_parser::ast::{
     ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
 };
-use zero_css_parser::values::{BoxSizingValue, ColorValue, DisplayValue, LengthValue, OverflowValue};
+use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
 use zero_dom::{Document, NodeId};
 
 /// 创建测试 DOM：html > body > div#main > p.text

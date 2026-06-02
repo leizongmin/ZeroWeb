@@ -4,7 +4,7 @@ use super::super::*;
 pub use zero_css_parser::ast::{
     ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
 };
-pub use zero_css_parser::values::{BoxSizingValue, ColorValue, DisplayValue, LengthValue, OverflowValue};
+pub use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
 pub use zero_dom::{Document, NodeId};
 
 /// 创建测试 DOM：html > body > div#main > p.text
