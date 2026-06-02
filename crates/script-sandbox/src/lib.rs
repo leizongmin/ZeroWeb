@@ -15,6 +15,12 @@ mod v8_runtime;
 #[cfg(feature = "v8")]
 pub use v8_runtime::*;
 
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+mod quickjs_runtime;
+
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+pub use quickjs_runtime::*;
+
 /// 脚本执行错误类型。
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptError {
@@ -58,13 +64,3 @@ pub struct SandboxConfig {
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]
 compile_error!("至少需要启用一个JS引擎feature: `v8` 或 `quickjs`");
-
-// ── 无feature gate时的占位实现（仅编译时检查） ──
-
-#[cfg(all(test, not(any(feature = "v8", feature = "quickjs"))))]
-mod tests {
-    #[test]
-    fn placeholder() {
-        // 无feature gate时编译失败，不会到达此测试
-    }
-}
