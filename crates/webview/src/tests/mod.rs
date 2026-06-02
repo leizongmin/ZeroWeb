@@ -3,5 +3,6 @@
 mod advanced;
 mod basic;
 mod builder_nav;
+mod coverage;
 mod edge;
 mod integration;
