@@ -394,4 +394,48 @@ mod tests {
         // pixel_count 应为 1
         assert_eq!(fb.pixel_count(), 1);
     }
+
+    /// 测试 FrameBuffer resize 到相同尺寸后数据保持正确
+    ///
+    /// 创建帧缓冲后设置像素，再以相同尺寸创建新帧缓冲，
+    /// 验证新帧缓冲为空（不保留旧数据）。
+    #[test]
+    fn test_frame_buffer_resize_same_size() {
+        let mut fb = FrameBuffer::new(10, 10);
+        fb.set_pixel(5, 5, [255, 0, 0, 255]);
+
+        // 模拟 resize 到相同尺寸（实际是新建）
+        fb = FrameBuffer::new(10, 10);
+        assert_eq!(fb.get_pixel(5, 5), [0, 0, 0, 0], "新帧缓冲应为初始黑色");
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+    }
+
+    /// 测试 FrameBuffer 缩小尺寸后数据正确
+    ///
+    /// 从较大帧缓冲缩小到较小尺寸，验证像素读写仅在有效范围内。
+    #[test]
+    fn test_frame_buffer_shrink_size() {
+        let mut fb = FrameBuffer::new(100, 100);
+        fb.set_pixel(50, 50, [128, 128, 128, 255]);
+
+        // 缩小到 10x10
+        fb = FrameBuffer::new(10, 10);
+        assert_eq!(fb.data.len(), 10 * 10 * 4);
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 0]);
+        fb.set_pixel(9, 9, [200, 100, 50, 255]);
+        assert_eq!(fb.get_pixel(9, 9), [200, 100, 50, 255]);
+    }
+
+    /// 测试 FrameBuffer from_rgba 使用极大值 u32 验证不 panic
+    ///
+    /// 由于 u32 溢出风险，不应使用极大值创建。
+    /// 此测试验证 from_rgba 对数据大小不匹配的错误处理。
+    #[test]
+    fn test_frame_buffer_from_rgba_mismatch_single_byte() {
+        // 提供比期望少 1 个字节的数据
+        let data = vec![0u8; 10 * 10 * 4 - 1];
+        let fb = FrameBuffer::from_rgba(data, 10, 10);
+        assert!(fb.is_err(), "数据少 1 字节应返回错误");
+    }
 }

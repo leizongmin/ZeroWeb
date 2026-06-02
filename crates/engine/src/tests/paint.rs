@@ -1035,7 +1035,10 @@ fn test_paint_box_shadow_negative_offset() {
     "#;
 
     let result = pipeline.render_html(html, css);
-    assert!(result.timings.total_ms >= 0.0, "negative box-shadow offset should not crash");
+    assert!(
+        result.timings.total_ms >= 0.0,
+        "negative box-shadow offset should not crash"
+    );
     assert!(pipeline.layout().is_some());
     assert!(
         !result.primitives.fills.is_empty(),
@@ -1058,7 +1061,10 @@ fn test_paint_box_shadow_zero_spread() {
     "#;
 
     let result = pipeline.render_html(html, css);
-    assert!(result.timings.total_ms >= 0.0, "zero-spread box-shadow should not crash");
+    assert!(
+        result.timings.total_ms >= 0.0,
+        "zero-spread box-shadow should not crash"
+    );
     assert!(!result.primitives.fills.is_empty());
 }
 

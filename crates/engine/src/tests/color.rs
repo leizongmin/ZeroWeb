@@ -185,7 +185,11 @@ fn test_length_to_f32_non_px_units_return_zero() {
     assert_eq!(length_to_f32(&LengthValue::Rem(16.0)), 0.0, "Rem should return 0.0");
     assert_eq!(length_to_f32(&LengthValue::Vh(50.0)), 0.0, "Vh should return 0.0");
     assert_eq!(length_to_f32(&LengthValue::Vw(50.0)), 0.0, "Vw should return 0.0");
-    assert_eq!(length_to_f32(&LengthValue::Percentage(50.0)), 0.0, "Percentage should return 0.0");
+    assert_eq!(
+        length_to_f32(&LengthValue::Percentage(50.0)),
+        0.0,
+        "Percentage should return 0.0"
+    );
 }
 
 /// 测试 length_to_f32 对 Px(0.0) 精确返回 0.0。

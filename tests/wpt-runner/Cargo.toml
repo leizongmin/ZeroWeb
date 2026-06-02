@@ -1,7 +1,17 @@
 [package]
 name = "zero-wpt-runner"
-version = "0.1.0"
-edition = "2024"
-license = "UNLICENSED"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+zero-engine = { workspace = true }
+zero-dom = { workspace = true }
+zero-css-parser = { workspace = true }
+zero-style-system = { workspace = true }
+zero-layout-engine = { workspace = true }
+zero-render-foundation = { workspace = true }
+
+[dev-dependencies]

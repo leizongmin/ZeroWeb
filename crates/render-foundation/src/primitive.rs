@@ -1341,4 +1341,59 @@ mod tests {
             );
         }
     }
+
+    /// 测试 RenderPrimitives::default 等价于 new
+    ///
+    /// 验证 default() 和 new() 都产生空的图元列表。
+    #[test]
+    fn test_render_primitives_default_equals_new() {
+        let p1 = RenderPrimitives::new();
+        let p2 = RenderPrimitives::default();
+        assert!(p1.is_empty());
+        assert!(p2.is_empty());
+        assert_eq!(p1.len(), 0);
+        assert_eq!(p2.len(), 0);
+    }
+
+    /// 测试 bounding_box 包含重合点时返回 None
+    ///
+    /// 当所有图元只有一个点（面积为 0）时，
+    /// min_x == max_x 或 min_y == max_y，bounding_box 应返回 None。
+    #[test]
+    fn test_bounding_box_coincident_points() {
+        let mut p = RenderPrimitives::new();
+        // 零面积矩形
+        p.add_fill(Rect::new(10.0, 10.0, 0.0, 0.0), Color::BLACK);
+        // left == right (10.0 == 10.0) 和 top == bottom (10.0 == 10.0)
+        assert!(p.bounding_box().is_none(), "零面积矩形不应产生包围盒");
+    }
+
+    /// 测试 path_stroke 空 vertices 不影响 bounding_box
+    #[test]
+    fn test_bounding_box_empty_path_stroke_vertices() {
+        let mut p = RenderPrimitives::new();
+        p.add_path_stroke(vec![], Color::BLACK, 1.0, false);
+        assert!(p.bounding_box().is_none(), "空 path_stroke 不应产生包围盒");
+    }
+
+    /// 测试 add_glyph 多次添加后 len 正确
+    #[test]
+    fn test_add_glyph_multiple() {
+        let mut p = RenderPrimitives::new();
+        for i in 0..10 {
+            p.add_glyph(GlyphPrimitive {
+                x: i as f32,
+                y: 0.0,
+                font_size: 12.0,
+                color: Color::BLACK,
+                glyph_id: i,
+                font_id: FontId(0),
+                bitmap_width: None,
+                bitmap_height: None,
+            });
+        }
+        assert_eq!(p.glyphs.len(), 10);
+        assert_eq!(p.len(), 10);
+        assert!(!p.is_empty());
+    }
 }

@@ -458,4 +458,94 @@ mod tests {
         let p = result.unwrap();
         assert!((p.placement.advance - 15.5).abs() < f32::EPSILON);
     }
+
+    /// 测试 atlas 坐标映射：连续放置的 glyph 的 x 坐标单调递增
+    ///
+    /// 验证同一行内 glyph 的 x 坐标严格递增（行式打包）。
+    #[test]
+    fn test_atlas_coordinates_monotonically_increase() {
+        let mut atlas = GlyphAtlas::new();
+        let mut prev_x = 0u32;
+
+        for i in 0..20u32 {
+            let key = GlyphAtlasKey::new(0, i + 100, 16.0);
+            let result = atlas.place(key, 8, 8, 0, 0, 8.0).unwrap();
+            if i > 0 {
+                assert!(
+                    result.placement.x > prev_x || result.placement.y > 0,
+                    "同一行 x 应递增或换行"
+                );
+            }
+            prev_x = result.placement.x;
+        }
+    }
+
+    /// 测试 atlas 放置完整图集后返回 None
+    ///
+    /// 使用超大尺寸填满 atlas，验证 place 返回 None。
+    #[test]
+    fn test_atlas_full_with_single_large_glyph() {
+        let mut atlas = GlyphAtlas::new();
+        // 放一个 2048x2048 的 glyph 恰好占满整个 atlas
+        let key = GlyphAtlasKey::new(0, 1, 16.0);
+        let result = atlas.place(key, 2048, 2048, 0, 0, 2048.0);
+        assert!(result.is_some(), "2048x2048 应刚好放得下");
+        let r = result.unwrap();
+        assert_eq!(r.placement.x, 0);
+        assert_eq!(r.placement.y, 0);
+
+        // 再放一个应失败
+        let key2 = GlyphAtlasKey::new(0, 2, 16.0);
+        let result2 = atlas.place(key2, 1, 1, 0, 0, 1.0);
+        assert!(result2.is_none(), "图集已满应返回 None");
+    }
+
+    /// 测试 atlas clear 递增 generation
+    ///
+    /// 连续清空 atlas 多次，验证 generation 每次递增。
+    #[test]
+    fn test_atlas_clear_generation_increments() {
+        let mut atlas = GlyphAtlas::new();
+        assert_eq!(atlas.generation(), 0);
+
+        atlas.clear();
+        assert_eq!(atlas.generation(), 1);
+
+        atlas.clear();
+        assert_eq!(atlas.generation(), 2);
+
+        atlas.clear();
+        assert_eq!(atlas.generation(), 3);
+    }
+
+    /// 测试 atlas 放置后通过 get 查找的一致性
+    ///
+    /// 放置 glyph 后，通过 get 查找应返回完全一致的放置信息。
+    #[test]
+    fn test_atlas_place_and_get_consistency() {
+        let mut atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(5, 'M' as u32, 20.0);
+        let result = atlas.place(key.clone(), 15, 18, -2, 3, 12.0).unwrap();
+
+        let got = atlas.get(&key).expect("应能查找到已放置的 glyph");
+        assert_eq!(got.x, result.placement.x);
+        assert_eq!(got.y, result.placement.y);
+        assert_eq!(got.width, 15);
+        assert_eq!(got.height, 18);
+        assert_eq!(got.x_offset, -2);
+        assert_eq!(got.y_offset, 3);
+        assert!((got.advance - 12.0).abs() < f32::EPSILON);
+    }
+
+    /// 测试 atlas 放置 0 高度 glyph 仍然成功
+    ///
+    /// 高度为 0 的 glyph 应被放置在 atlas 中，不导致 panic。
+    #[test]
+    fn test_atlas_place_zero_height_glyph() {
+        let mut atlas = GlyphAtlas::new();
+        let key = GlyphAtlasKey::new(0, 1, 16.0);
+        let result = atlas.place(key, 10, 0, 0, 0, 10.0);
+        assert!(result.is_some(), "0 高度 glyph 应能放置");
+        assert_eq!(result.unwrap().placement.height, 0);
+    }
 }

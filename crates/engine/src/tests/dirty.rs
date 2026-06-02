@@ -331,7 +331,11 @@ fn test_dirty_repeated_mark_merge_clear_cycles() {
 
         tracker.merge_overlapping();
         // 合并后数量减少或不变
-        assert!(tracker.dirty_rects().len() <= 2, "cycle {} merge should reduce or maintain", i);
+        assert!(
+            tracker.dirty_rects().len() <= 2,
+            "cycle {} merge should reduce or maintain",
+            i
+        );
         assert!(tracker.dirty_area() > 0.0, "cycle {} area should be > 0", i);
 
         tracker.clear();

@@ -12,3 +12,5 @@ pub use types::*;
 mod tests_advanced;
 #[cfg(test)]
 mod tests_basic;
+#[cfg(test)]
+mod tests_edge;

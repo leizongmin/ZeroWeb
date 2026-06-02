@@ -536,4 +536,73 @@ mod tests {
             assert_eq!(glyph.code_point, ' ');
         }
     }
+
+    /// 测试非常长的字符串整形不 panic
+    ///
+    /// 对 10000 个字符的字符串执行单行整形，验证不发生栈溢出或 panic。
+    #[test]
+    fn test_shape_very_long_string() {
+        let shaper = make_empty_shaper();
+        let long_text: String = "A".repeat(10_000);
+        let glyphs = shaper.shape_single_line(&long_text, 16.0);
+        assert_eq!(glyphs.len(), 10_000, "应产生 10000 个 glyph");
+        // 所有 advance 应一致
+        for g in &glyphs {
+            assert!((g.advance_x - 16.0 * 0.6).abs() < 0.01);
+        }
+    }
+
+    /// 测试 shape_with_line_wrap 使用负行宽返回空行
+    ///
+    /// 传入负数 max_line_width 时，shape_with_line_wrap 应返回单空行。
+    #[test]
+    fn test_shape_with_line_wrap_negative_width() {
+        let shaper = make_empty_shaper();
+        let lines = shaper.shape_with_line_wrap("Hello", 16.0, -100.0);
+        assert_eq!(lines.len(), 1, "负宽度应返回单行");
+        assert!(lines[0].glyphs.is_empty(), "负宽度应返回空 glyph");
+    }
+
+    /// 测试仅含换行符的文本
+    ///
+    /// 多个连续换行符应产生多个空行，且没有 glyph。
+    #[test]
+    fn test_shape_only_newlines() {
+        let shaper = make_empty_shaper();
+        let lines = shaper.shape_with_line_wrap("\n\n\n", 16.0, 1000.0);
+        assert_eq!(lines.len(), 3, "3 个换行符应产生 3 行");
+        for line in &lines {
+            assert!(line.glyphs.is_empty(), "仅换行符的行不应有 glyph");
+            assert_eq!(line.width, 0.0, "仅换行符的行宽度应为 0");
+        }
+    }
+
+    /// 测试无空格的长文本在窄宽度下强制折行
+    ///
+    /// 当文本没有空格且宽度不足时，应在超限处强制折行。
+    #[test]
+    fn test_shape_wrap_no_spaces_narrow() {
+        let shaper = make_empty_shaper();
+        // "ABCDEFGH" 每个字符 advance ≈ 9.6，max_width = 20
+        // 第 3 个字符后宽度 ≈ 28.8 > 20，应强制折行
+        let lines = shaper.shape_with_line_wrap("ABCDEFGH", 16.0, 20.0);
+        assert!(lines.len() >= 2, "无空格窄宽度应产生多行，实际 {} 行", lines.len());
+        // 所有 glyph 都应存在
+        let total_glyphs: usize = lines.iter().map(|l| l.glyphs.len()).sum();
+        assert_eq!(total_glyphs, 8, "总共应有 8 个 glyph");
+    }
+
+    /// 测试 Unicode 特殊字符（表情符号、控制字符）整形不 panic
+    ///
+    /// 包含零宽连接符、组合字符等特殊 Unicode 字符的文本应能整形，
+    /// 每个码点对应一个 glyph。
+    #[test]
+    fn test_shape_unicode_special_characters() {
+        let shaper = make_empty_shaper();
+        let text = "a\u{0308}\u{20DD}"; // a + 组合分音符 + 组合圆圈
+        let glyphs = shaper.shape_single_line(text, 16.0);
+        assert_eq!(glyphs.len(), 3, "3 个码点应产生 3 个 glyph");
+        // 无字体时 glyph_id 等于 code_point
+        assert_eq!(glyphs[0].glyph_id, 'a' as u32);
+    }
 }

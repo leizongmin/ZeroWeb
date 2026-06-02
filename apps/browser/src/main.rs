@@ -280,7 +280,10 @@ mod tests {
         app.handle_key("Control", true);
         app.handle_key("l", true);
         assert!(app.address_bar_focused, "Ctrl+L should focus address bar");
-        assert!(app.address_bar_text().is_empty(), "Ctrl+L should clear address bar text");
+        assert!(
+            app.address_bar_text().is_empty(),
+            "Ctrl+L should clear address bar text"
+        );
     }
 
     /// 验证 Ctrl+D 添加书签（当前页面）。
@@ -342,7 +345,9 @@ mod tests {
         let mut app = BrowserApp::new(RenderMode::Cpu);
 
         // 添加一个活跃下载
-        app.shell.downloads_mut().start_download("https://example.com/file.zip", "file.zip");
+        app.shell
+            .downloads_mut()
+            .start_download("https://example.com/file.zip", "file.zip");
 
         // 构建场景应不 panic
         let (fills, glyphs) = app.build_scene_for_test(800, 600);

@@ -988,7 +988,10 @@ fn test_pipeline_tiny_viewport_sub_pixel() {
 #[test]
 fn test_pipeline_recompute_without_prior_render() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
-    assert!(pipeline.layout().is_none(), "fresh pipeline should have no cached layout");
+    assert!(
+        pipeline.layout().is_none(),
+        "fresh pipeline should have no cached layout"
+    );
 
     let html = r#"<html><body><div class="box">Content</div></body></html>"#;
     let doc = zero_dom::parse_html(html);
@@ -999,7 +1002,10 @@ fn test_pipeline_recompute_without_prior_render() {
 
     // 布局应被设置
     assert!(layout.viewport_width > 0.0, "layout viewport_width should be positive");
-    assert!(pipeline.layout().is_some(), "cached layout should be set after recompute");
+    assert!(
+        pipeline.layout().is_some(),
+        "cached layout should be set after recompute"
+    );
     // CSS 应产生填充图元
     assert!(!primitives.fills.is_empty(), "CSS should produce fills");
 }
@@ -1050,7 +1056,10 @@ fn test_pipeline_cached_layout_updates_across_renders() {
     assert_eq!(layout2.viewport_height, 480.0, "viewport_height should stay the same");
     // 布局树应已更新（不同内容可能不同子节点数）
     // 只需验证布局被更新（不为空）
-    assert!(!layout2.root.children.is_empty(), "layout should have children after second render");
+    assert!(
+        !layout2.root.children.is_empty(),
+        "layout should have children after second render"
+    );
 }
 
 /// 测试 render_html 后再 recompute_styles，缓存的布局被第二次 recompute 正确覆盖。

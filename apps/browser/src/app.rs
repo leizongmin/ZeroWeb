@@ -194,11 +194,7 @@ impl BrowserApp {
 
     /// 测试用：构建场景（暴露私有方法给测试模块）
     #[cfg(test)]
-    pub fn build_scene_for_test(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    pub fn build_scene_for_test(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
         self.build_scene(width, height)
     }
 
@@ -225,10 +221,7 @@ impl BrowserApp {
     /// 计算网页内容区域物理像素尺寸
     pub fn content_physical_size(&self) -> (u32, u32) {
         let s = self.scale_factor;
-        let chrome_h = (layout::TOOLBAR_HEIGHT
-            + layout::BOOKMARKS_BAR_HEIGHT
-            + layout::STATUS_BAR_HEIGHT)
-            * s;
+        let chrome_h = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT + layout::STATUS_BAR_HEIGHT) * s;
         let content_w = self.physical_size.0;
         let content_h = (self.physical_size.1 as f32 - chrome_h).max(0.0) as u32;
         (content_w, content_h)
@@ -494,7 +487,13 @@ impl BrowserApp {
                     let next = self
                         .context_menu
                         .hovered_index
-                        .map(|i| if i > 0 { i - 1 } else { self.context_menu.items.len() - 1 })
+                        .map(|i| {
+                            if i > 0 {
+                                i - 1
+                            } else {
+                                self.context_menu.items.len() - 1
+                            }
+                        })
                         .unwrap_or(self.context_menu.items.len() - 1);
                     self.context_menu.hovered_index = Some(next);
                     self.needs_redraw = true;
@@ -824,9 +823,12 @@ impl BrowserApp {
                 }
             }
             let autocomplete_top = tab_bar_h + addr_bar_h;
-            let autocomplete_height =
-                self.autocomplete.suggestions.len().min(layout::AUTOCOMPLETE_MAX_VISIBLE) as f32
-                    * autocomplete_row_h;
+            let autocomplete_height = self
+                .autocomplete
+                .suggestions
+                .len()
+                .min(layout::AUTOCOMPLETE_MAX_VISIBLE) as f32
+                * autocomplete_row_h;
             if y_f >= autocomplete_top && y_f < autocomplete_top + autocomplete_height {
                 return;
             }
@@ -898,10 +900,7 @@ impl BrowserApp {
         }
 
         // 5. 查找栏区域点击
-        if self.shell.find_state().is_active()
-            && y_f >= chrome_top
-            && y_f < chrome_top + layout::FIND_BAR_HEIGHT * s
-        {
+        if self.shell.find_state().is_active() && y_f >= chrome_top && y_f < chrome_top + layout::FIND_BAR_HEIGHT * s {
             let close_x = width - 40.0 * s;
             if x_f >= close_x {
                 self.shell.find_close();
@@ -1063,7 +1062,13 @@ impl BrowserApp {
 
         let row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
         let index = (row_offset / row_h) as usize;
-        if index < self.autocomplete.suggestions.len().min(layout::AUTOCOMPLETE_MAX_VISIBLE) {
+        if index
+            < self
+                .autocomplete
+                .suggestions
+                .len()
+                .min(layout::AUTOCOMPLETE_MAX_VISIBLE)
+        {
             Some(index)
         } else {
             None
@@ -1097,7 +1102,9 @@ impl BrowserApp {
     pub fn init_cpu_surface(
         &mut self,
         window: &std::sync::Arc<winit::window::Window>,
-        cpu_surface: &mut Option<softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>>,
+        cpu_surface: &mut Option<
+            softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
+        >,
     ) {
         if cpu_surface.is_some() {
             return;
@@ -1133,7 +1140,9 @@ impl BrowserApp {
         &mut self,
         width: u32,
         height: u32,
-        cpu_surface: &mut Option<softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>>,
+        cpu_surface: &mut Option<
+            softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
+        >,
     ) {
         use std::num::NonZeroU32;
 
@@ -1230,7 +1239,13 @@ impl BrowserApp {
 
         // 10. 加载指示器
         if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
-            fills.push(rect_fill(0.0, chrome_top, width as f32, 2.0 * s, colors::LOADING_INDICATOR));
+            fills.push(rect_fill(
+                0.0,
+                chrome_top,
+                width as f32,
+                2.0 * s,
+                colors::LOADING_INDICATOR,
+            ));
         }
 
         // 11. 页面内容（含滚动偏移）
@@ -1279,8 +1294,7 @@ impl BrowserApp {
 
         let new_tab_btn_w = 32.0 * s;
         let available_width = width as f32 - new_tab_btn_w;
-        let tab_w = (available_width / tab_count as f32)
-            .clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
+        let tab_w = (available_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
 
         self.tab_layout.clear();
         let mut x = 0.0_f32;
@@ -1307,7 +1321,15 @@ impl BrowserApp {
                 let label = tab.title().unwrap_or_else(|| tab.url().unwrap_or("New Tab"));
                 let max_chars = ((tab_w - 40.0 * s) / (font_size * 0.6)).max(3.0) as usize;
                 let truncated: String = label.chars().take(max_chars).collect();
-                draw_text(&truncated, x + 10.0 * s, 8.0 * s, font_size, colors::TAB_TEXT, fid, glyphs);
+                draw_text(
+                    &truncated,
+                    x + 10.0 * s,
+                    8.0 * s,
+                    font_size,
+                    colors::TAB_TEXT,
+                    fid,
+                    glyphs,
+                );
             }
 
             if let Some(fid) = self.font_id {
@@ -1400,11 +1422,25 @@ impl BrowserApp {
             } else {
                 colors::ADDRESS_BAR_TEXT
             };
-            draw_text(&display_text, bar_x + 10.0 * s, bar_y + 3.0 * s, font_size, color, fid, glyphs);
+            draw_text(
+                &display_text,
+                bar_x + 10.0 * s,
+                bar_y + 3.0 * s,
+                font_size,
+                color,
+                fid,
+                glyphs,
+            );
 
             if self.address_bar_focused {
                 let cursor_x = bar_x + 10.0 * s + self.address_bar_text.len() as f32 * font_size * 0.6;
-                fills.push(rect_fill(cursor_x, bar_y + 4.0 * s, 1.5 * s, bar_h - 8.0 * s, colors::ADDRESS_BAR_TEXT));
+                fills.push(rect_fill(
+                    cursor_x,
+                    bar_y + 4.0 * s,
+                    1.5 * s,
+                    bar_h - 8.0 * s,
+                    colors::ADDRESS_BAR_TEXT,
+                ));
             }
         }
     }
@@ -1445,7 +1481,15 @@ impl BrowserApp {
             // 书签图标
             draw_text("★", bx, by, font_size, colors::BOOKMARKS_BAR_ICON, fid, glyphs);
             // 标签文本
-            draw_text(label, bx + 14.0 * s, by, font_size, colors::BOOKMARKS_BAR_TEXT, fid, glyphs);
+            draw_text(
+                label,
+                bx + 14.0 * s,
+                by,
+                font_size,
+                colors::BOOKMARKS_BAR_TEXT,
+                fid,
+                glyphs,
+            );
 
             bx += item_w + 8.0 * s;
             if bx > width as f32 - 40.0 * s {
@@ -1495,7 +1539,15 @@ impl BrowserApp {
         }
 
         if !title.is_empty() {
-            draw_text(&title, 20.0 * s, y + 20.0 * s, 24.0 * s, colors::PAGE_TITLE, fid, glyphs);
+            draw_text(
+                &title,
+                20.0 * s,
+                y + 20.0 * s,
+                24.0 * s,
+                colors::PAGE_TITLE,
+                fid,
+                glyphs,
+            );
             y += 52.0 * s;
         }
 
@@ -1543,7 +1595,15 @@ impl BrowserApp {
             None => return false,
         };
 
-        append_webview_primitives(primitives, fills, glyphs, 0.0, y_offset - scroll_y, fallback_font_id, 1.0)
+        append_webview_primitives(
+            primitives,
+            fills,
+            glyphs,
+            0.0,
+            y_offset - scroll_y,
+            fallback_font_id,
+            1.0,
+        )
     }
 
     /// 渲染查找栏
@@ -1565,7 +1625,13 @@ impl BrowserApp {
         let bar_w = 320.0 * s;
         let bar_x = width as f32 - bar_w - 10.0 * s;
 
-        fills.push(rect_fill(bar_x, y, bar_w, layout::FIND_BAR_HEIGHT * s, colors::FIND_BAR_BG));
+        fills.push(rect_fill(
+            bar_x,
+            y,
+            bar_w,
+            layout::FIND_BAR_HEIGHT * s,
+            colors::FIND_BAR_BG,
+        ));
 
         let display = if self.find_input.is_empty() {
             "Find...".to_string()
@@ -1577,16 +1643,40 @@ impl BrowserApp {
         } else {
             colors::FIND_BAR_TEXT
         };
-        draw_text(&display, bar_x + 10.0 * s, y + 5.0 * s, font_size, text_color, fid, glyphs);
+        draw_text(
+            &display,
+            bar_x + 10.0 * s,
+            y + 5.0 * s,
+            font_size,
+            text_color,
+            fid,
+            glyphs,
+        );
 
         let find_state = self.shell.find_state();
         if find_state.total_matches() > 0 {
             let match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
             let match_x = bar_x + bar_w - 130.0 * s;
-            draw_text(&match_text, match_x, y + 5.0 * s, font_size, colors::FIND_MATCH_TEXT, fid, glyphs);
+            draw_text(
+                &match_text,
+                match_x,
+                y + 5.0 * s,
+                font_size,
+                colors::FIND_MATCH_TEXT,
+                fid,
+                glyphs,
+            );
         } else if !self.find_input.is_empty() {
             let no_match_x = bar_x + bar_w - 130.0 * s;
-            draw_text("No matches", no_match_x, y + 5.0 * s, font_size, colors::FIND_MATCH_TEXT, fid, glyphs);
+            draw_text(
+                "No matches",
+                no_match_x,
+                y + 5.0 * s,
+                font_size,
+                colors::FIND_MATCH_TEXT,
+                fid,
+                glyphs,
+            );
         }
 
         let btn_y = y + 5.0 * s;
@@ -1687,12 +1777,7 @@ impl BrowserApp {
     }
 
     /// 渲染右键上下文菜单
-    fn render_context_menu(
-        &self,
-        fills: &mut Vec<FillPrimitive>,
-        glyphs: &mut Vec<GlyphDraw>,
-        s: f32,
-    ) {
+    fn render_context_menu(&self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, s: f32) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
@@ -1710,23 +1795,59 @@ impl BrowserApp {
 
         // 菜单边框
         let border_w = 1.0 * s;
-        fills.push(rect_fill(menu_x, menu_y, menu_w, border_w, colors::CONTEXT_MENU_SEPARATOR));
-        fills.push(rect_fill(menu_x, menu_y + menu_h - border_w, menu_w, border_w, colors::CONTEXT_MENU_SEPARATOR));
-        fills.push(rect_fill(menu_x, menu_y, border_w, menu_h, colors::CONTEXT_MENU_SEPARATOR));
-        fills.push(rect_fill(menu_x + menu_w - border_w, menu_y, border_w, menu_h, colors::CONTEXT_MENU_SEPARATOR));
+        fills.push(rect_fill(
+            menu_x,
+            menu_y,
+            menu_w,
+            border_w,
+            colors::CONTEXT_MENU_SEPARATOR,
+        ));
+        fills.push(rect_fill(
+            menu_x,
+            menu_y + menu_h - border_w,
+            menu_w,
+            border_w,
+            colors::CONTEXT_MENU_SEPARATOR,
+        ));
+        fills.push(rect_fill(
+            menu_x,
+            menu_y,
+            border_w,
+            menu_h,
+            colors::CONTEXT_MENU_SEPARATOR,
+        ));
+        fills.push(rect_fill(
+            menu_x + menu_w - border_w,
+            menu_y,
+            border_w,
+            menu_h,
+            colors::CONTEXT_MENU_SEPARATOR,
+        ));
 
         for (i, label) in self.context_menu.items.iter().enumerate() {
             let row_y = menu_y + i as f32 * row_h;
             let is_hovered = self.context_menu.hovered_index == Some(i);
 
             if is_hovered {
-                fills.push(rect_fill(menu_x + border_w, row_y, menu_w - 2.0 * border_w, row_h, colors::CONTEXT_MENU_HOVER_BG));
+                fills.push(rect_fill(
+                    menu_x + border_w,
+                    row_y,
+                    menu_w - 2.0 * border_w,
+                    row_h,
+                    colors::CONTEXT_MENU_HOVER_BG,
+                ));
             }
 
             // 分隔线项
             if label == "---" {
                 let sep_y = row_y + row_h / 2.0;
-                fills.push(rect_fill(menu_x + 12.0 * s, sep_y, menu_w - 24.0 * s, border_w, colors::CONTEXT_MENU_SEPARATOR));
+                fills.push(rect_fill(
+                    menu_x + 12.0 * s,
+                    sep_y,
+                    menu_w - 24.0 * s,
+                    border_w,
+                    colors::CONTEXT_MENU_SEPARATOR,
+                ));
                 continue;
             }
 
@@ -1766,7 +1887,15 @@ impl BrowserApp {
         let zoom = self.shell.zoom();
         if (zoom - 1.0).abs() > f32::EPSILON {
             let zoom_text = format!("{}%", (zoom * 100.0) as u32);
-            draw_text(&zoom_text, 10.0 * s, status_y + 3.0 * s, 11.0 * s, colors::STATUS_TEXT, fid, glyphs);
+            draw_text(
+                &zoom_text,
+                10.0 * s,
+                status_y + 3.0 * s,
+                11.0 * s,
+                colors::STATUS_TEXT,
+                fid,
+                glyphs,
+            );
         }
 
         let tab_count = self.shell.tab_count();
