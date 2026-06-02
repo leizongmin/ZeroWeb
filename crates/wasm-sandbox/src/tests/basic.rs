@@ -1029,3 +1029,177 @@ fn test_memory_size_one_page() {
     // One WASM page = 65536 bytes
     assert_eq!(size, 65536);
 }
+
+// =======================================================================
+// 新增边界测试：函数参数数量错误、全局导出读取、WasmValue Display、
+//               SandboxConfig 链式调用、空魔数头编译、LinkerConfig 多函数
+// =======================================================================
+
+/// 测试调用函数时传入错误数量的参数，应优雅地返回错误而非 panic。
+/// 分别测试传入 0 个和 3 个参数调用一个需要 2 个 i32 参数的函数。
+#[test]
+fn test_call_function_wrong_param_count_error() {
+    let sandbox = WasmSandbox::new();
+    let wasm = wat_to_wasm(
+        r#"(module
+            (func (export "add") (param i32 i32) (result i32)
+                local.get 0 local.get 1 i32.add)
+        )"#,
+    );
+    let module = sandbox.compile(&wasm).expect("compile");
+    let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+    // 传入 0 个参数（期望 2 个）
+    let result = instance.call("add", &[]);
+    assert!(result.is_err(), "0 个参数调用 add 应返回错误");
+
+    // 传入 3 个参数（期望 2 个）
+    let result = instance.call("add", &[WasmValue::I32(1), WasmValue::I32(2), WasmValue::I32(3)]);
+    assert!(result.is_err(), "3 个参数调用 add 应返回错误");
+
+    // 正确数量参数调用应成功
+    let ok = instance
+        .call("add", &[WasmValue::I32(10), WasmValue::I32(20)])
+        .expect("correct count");
+    assert_eq!(ok[0], WasmValue::I32(30), "正确数量参数应返回 30");
+}
+
+/// 测试导出并读取 i32 全局变量，验证 get_global_export 返回正确值。
+#[test]
+fn test_global_export_i32_read_value() {
+    let sandbox = WasmSandbox::new();
+    let wasm = wat_to_wasm(
+        r#"(module
+            (global (export "magic") i32 (i32.const 42))
+        )"#,
+    );
+    let module = sandbox.compile(&wasm).expect("compile");
+    let instance = module.instantiate(&sandbox).expect("instantiate");
+
+    let val = instance.get_global_export("magic").expect("read global");
+    assert_eq!(val, WasmValue::I32(42), "全局导出 magic 应为 i32(42)");
+
+    // 不存在的全局应返回 None
+    assert!(
+        instance.get_global_export("no_such_global").is_none(),
+        "不存在的全局导出应返回 None"
+    );
+}
+
+/// 测试 WasmValue Display 对 F32 和 F64 的格式化输出。
+/// 验证格式化字符串包含类型前缀和数值。
+#[test]
+fn test_wasm_value_display_f32_f64() {
+    // F32 格式化
+    let f32_str = format!("{}", WasmValue::F32(3.14));
+    assert!(
+        f32_str.starts_with("f32("),
+        "F32 Display 应以 'f32(' 开头，实际: {f32_str}"
+    );
+    assert!(f32_str.ends_with(')'), "F32 Display 应以 ')' 结尾，实际: {f32_str}");
+    assert!(
+        f32_str.contains("3.14"),
+        "F32(3.14) Display 应包含 '3.14'，实际: {f32_str}"
+    );
+
+    // F64 格式化
+    let f64_str = format!("{}", WasmValue::F64(2.718281828));
+    assert!(
+        f64_str.starts_with("f64("),
+        "F64 Display 应以 'f64(' 开头，实际: {f64_str}"
+    );
+    assert!(f64_str.ends_with(')'), "F64 Display 应以 ')' 结尾，实际: {f64_str}");
+    assert!(
+        f64_str.contains("2.718"),
+        "F64(2.718...) Display 应包含 '2.718'，实际: {f64_str}"
+    );
+
+    // 特殊值 F32 NaN
+    let nan_str = format!("{}", WasmValue::F32(f32::NAN));
+    assert!(nan_str.starts_with("f32("), "F32(NaN) Display 应以 'f32(' 开头");
+
+    // 特殊值 F64 正无穷
+    let inf_str = format!("{}", WasmValue::F64(f64::INFINITY));
+    assert!(inf_str.starts_with("f64("), "F64(Inf) Display 应以 'f64(' 开头");
+}
+
+/// 测试 SandboxConfig 链式调用 consume_fuel(true).consume_fuel(false)，
+/// 最终 consume_fuel 应为 false（后者覆盖前者）。
+#[test]
+fn test_sandbox_config_chaining_overwrite() {
+    let config = SandboxConfig::new().consume_fuel(true).consume_fuel(false);
+    assert!(
+        !config.is_consume_fuel(),
+        "consume_fuel(true).consume_fuel(false) 最终应为 false"
+    );
+
+    // 反向链式：false → true
+    let config2 = SandboxConfig::new().consume_fuel(false).consume_fuel(true);
+    assert!(
+        config2.is_consume_fuel(),
+        "consume_fuel(false).consume_fuel(true) 最终应为 true"
+    );
+
+    // 单次设置为 true
+    let config3 = SandboxConfig::new().consume_fuel(true);
+    assert!(config3.is_consume_fuel(), "consume_fuel(true) 应为 true");
+}
+
+/// 测试编译仅包含 WASM 魔数头（4 字节）的输入，
+/// 缺少版本号和后续内容，应返回 InvalidBinary 错误。
+#[test]
+fn test_compile_empty_magic_header_only() {
+    let sandbox = WasmSandbox::new();
+
+    // 仅 WASM 魔数 `\0asm`，无版本号
+    let result = sandbox.compile(&[0x00, 0x61, 0x73, 0x6D]);
+    assert!(result.is_err(), "仅魔数头应编译失败");
+    assert!(
+        matches!(result, Err(WasmError::InvalidBinary(_))),
+        "仅魔数头应返回 InvalidBinary 错误"
+    );
+
+    // 魔数前缀 + 部分版本号（5 字节）
+    let result = sandbox.compile(&[0x00, 0x61, 0x73, 0x6D, 0x01]);
+    assert!(result.is_err(), "不完整的版本号应编译失败");
+    assert!(
+        matches!(result, Err(WasmError::InvalidBinary(_))),
+        "不完整版本号应返回 InvalidBinary 错误"
+    );
+}
+
+/// 测试 LinkerConfig 注册多个函数后，functions() 返回所有注册的函数。
+#[test]
+fn test_linker_config_multiple_functions_returns_all() {
+    let mut linker = LinkerConfig::new();
+    assert!(linker.functions().is_empty(), "空 LinkerConfig 的 functions() 应为空");
+
+    linker.define(HostFunction::new(
+        "env",
+        "fn_a",
+        vec![WasmValueType::I32],
+        vec![WasmValueType::I32],
+        |_, _| Ok(()),
+    ));
+    linker.define(HostFunction::new(
+        "env",
+        "fn_b",
+        vec![WasmValueType::F64],
+        vec![WasmValueType::F64],
+        |_, _| Ok(()),
+    ));
+    linker.define(HostFunction::new("math", "fn_c", vec![], vec![], |_, _| Ok(())));
+
+    let fns = linker.functions();
+    assert_eq!(fns.len(), 3, "应注册了 3 个主机函数");
+
+    // 验证每个函数的 module 和 name 正确
+    assert_eq!(fns[0].module, "env");
+    assert_eq!(fns[0].name, "fn_a");
+
+    assert_eq!(fns[1].module, "env");
+    assert_eq!(fns[1].name, "fn_b");
+
+    assert_eq!(fns[2].module, "math");
+    assert_eq!(fns[2].name, "fn_c");
+}

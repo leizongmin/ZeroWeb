@@ -617,4 +617,174 @@ mod tests {
         let registry = ServiceWorkerRegistry::new();
         assert!(registry.is_empty());
     }
+
+    #[test]
+    fn test_advance_state_from_redundant() {
+        let mut reg =
+            ServiceWorkerRegistration::new(1, "/sw.js", "/", "https://example.com");
+        reg.state = ServiceWorkerState::Redundant;
+        assert!(!reg.advance_state());
+        assert_eq!(reg.state, ServiceWorkerState::Redundant);
+    }
+
+    #[test]
+    fn test_activate_nonexistent() {
+        let mut registry = ServiceWorkerRegistry::new();
+        assert!(!registry.activate(999));
+    }
+
+    #[test]
+    fn test_install_nonexistent() {
+        let mut registry = ServiceWorkerRegistry::new();
+        assert!(!registry.install(999));
+    }
+
+    #[test]
+    fn test_multiple_registrations_same_origin() {
+        let mut registry = ServiceWorkerRegistry::new();
+
+        let id1 = registry.register("/sw-v1.js", "/", "https://example.com");
+        let id2 = registry.register("/sw-v2.js", "/", "https://example.com");
+        let id3 = registry.register("/sw-v3.js", "/", "https://example.com");
+
+        registry.install(id1);
+        registry.activate(id1);
+        registry.install(id2);
+        registry.activate(id2);
+        registry.install(id3);
+        registry.activate(id3);
+
+        // Only the last activated SW should be the active one
+        assert_eq!(registry.get(id1).unwrap().state, ServiceWorkerState::Redundant);
+        assert_eq!(registry.get(id2).unwrap().state, ServiceWorkerState::Redundant);
+        assert!(registry.get(id3).unwrap().is_active());
+
+        let active = registry.get_active("https://example.com").unwrap();
+        assert_eq!(active.id, id3);
+        assert_eq!(active.script_url, "/sw-v3.js");
+        assert_eq!(registry.active_count(), 1);
+    }
+
+    #[test]
+    fn test_unregister_non_active() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let id = registry.register("/sw.js", "/", "https://example.com");
+
+        // Unregister without installing/activating
+        assert!(registry.unregister(id));
+        assert!(registry.get(id).is_none());
+        assert_eq!(registry.len(), 0);
+        assert_eq!(registry.active_count(), 0);
+    }
+
+    #[test]
+    fn test_intercept_fetch_wrong_origin() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let id = registry.register("/sw.js", "/", "https://a.com");
+        registry.install(id);
+        registry.activate(id);
+
+        let request = CacheRequest::new("https://b.com/page.html");
+        let result = registry.intercept_fetch(&request, "https://b.com");
+        assert!(matches!(result, FetchInterceptResult::NoWorker));
+    }
+
+    #[test]
+    fn test_cache_response_and_intercept() {
+        let mut registry = ServiceWorkerRegistry::new();
+
+        // Register → install → activate
+        let id = registry.register("/sw.js", "/app/", "https://example.com");
+        assert!(registry.install(id));
+        assert!(registry.activate(id));
+        assert!(registry.get(id).unwrap().is_active());
+
+        // Cache a response
+        let req = CacheRequest::new("https://example.com/app/data.json");
+        let resp = CacheResponse::ok(br#"{"status":"ok"}"#.to_vec());
+        assert!(registry.cache_response("https://example.com", "api-cache", req.clone(), resp));
+
+        // Intercept should return the cached response
+        let result = registry.intercept_fetch(&req, "https://example.com");
+        match result {
+            FetchInterceptResult::Cached(r) => {
+                assert_eq!(r.status, 200);
+                assert_eq!(r.body, br#"{"status":"ok"}"#.to_vec());
+            }
+            other => panic!("expected Cached, got {:?}", other),
+        }
+
+        // A URL outside scope should not be intercepted
+        let other_req = CacheRequest::new("https://example.com/other/page.html");
+        let other_result = registry.intercept_fetch(&other_req, "https://example.com");
+        assert!(matches!(other_result, FetchInterceptResult::NoWorker));
+    }
+
+    #[test]
+    fn test_scope_matching_full_url() {
+        let reg =
+            ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
+
+        // Full URLs should match based on path (host is not checked when scope is a path)
+        assert!(reg.is_in_scope("https://example.com/app/page.html"));
+        assert!(reg.is_in_scope("https://example.com/app/sub/deep.html"));
+        assert!(!reg.is_in_scope("https://example.com/other/page.html"));
+        // Note: scope is a path ("/app/"), so host is not considered —
+        // "https://other.com/app/page.html" still matches because the path starts with "/app/"
+        assert!(reg.is_in_scope("https://other.com/app/page.html"));
+
+        // Verify a full-URL scope does consider host
+        let reg2 =
+            ServiceWorkerRegistration::new(2, "/sw.js", "https://example.com/app/", "https://example.com");
+        assert!(reg2.is_in_scope("https://example.com/app/page.html"));
+        assert!(!reg2.is_in_scope("https://other.com/app/page.html"));
+    }
+
+    #[test]
+    fn test_scope_matching_query_string() {
+        let reg =
+            ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
+
+        // Query strings should be ignored for scope matching
+        assert!(reg.is_in_scope("/app/page.html?q=1"));
+        assert!(reg.is_in_scope("/app/page.html?foo=bar&baz=2"));
+        assert!(reg.is_in_scope("https://example.com/app/page.html?v=2"));
+    }
+
+    #[test]
+    fn test_get_active_mut() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let id = registry.register("/sw.js", "/", "https://example.com");
+        registry.install(id);
+        registry.activate(id);
+
+        {
+            let active = registry.get_active_mut("https://example.com").unwrap();
+            assert_eq!(active.id, id);
+            active.script_content = Some("console.log('sw')".to_string());
+        }
+
+        let reg = registry.get(id).unwrap();
+        assert_eq!(reg.script_content, Some("console.log('sw')".to_string()));
+    }
+
+    #[test]
+    fn test_register_sequential_ids() {
+        let mut registry = ServiceWorkerRegistry::new();
+
+        let id0 = registry.register("/sw0.js", "/", "https://a.com");
+        let id1 = registry.register("/sw1.js", "/", "https://b.com");
+        let id2 = registry.register("/sw2.js", "/", "https://c.com");
+
+        assert_eq!(id0, 0);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+    }
+
+    #[test]
+    fn test_active_origins_empty() {
+        let registry = ServiceWorkerRegistry::new();
+        let origins = registry.active_origins();
+        assert!(origins.is_empty());
+    }
 }
