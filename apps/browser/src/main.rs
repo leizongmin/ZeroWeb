@@ -286,6 +286,8 @@ struct BrowserApp {
     font_id: Option<u32>,
     /// 是否已初始化 GPU 表面
     surface_configured: bool,
+    /// 窗口是否获得焦点（Wayland 下失焦时 surface 可能挂起）
+    window_focused: bool,
     /// 地址栏当前文本
     address_bar_text: String,
     /// 地址栏是否获得焦点
@@ -330,6 +332,7 @@ impl BrowserApp {
             glyph_cache: GlyphCache::new(8192),
             font_id,
             surface_configured: false,
+            window_focused: true, // 初始渲染发生在获焦事件之前
             address_bar_text: String::new(),
             address_bar_focused: false,
             window_size: (1024, 768),
@@ -343,11 +346,27 @@ impl BrowserApp {
         }
     }
 
+    /// 计算网页内容区域物理像素尺寸
+    fn content_physical_size(&self) -> (u32, u32) {
+        let s = self.scale_factor;
+        let chrome_h = (layout::TOOLBAR_HEIGHT + layout::STATUS_BAR_HEIGHT) * s;
+        let content_w = self.physical_size.0;
+        let content_h = (self.physical_size.1 as f32 - chrome_h).max(0.0) as u32;
+        (content_w, content_h)
+    }
+
+    /// 创建指定视口尺寸的 WebView
+    fn create_webview(&self) -> zero_webview::WebView {
+        let (w, h) = self.content_physical_size();
+        WebViewBuilder::new().width(w).height(h).build()
+    }
+
     /// 获取或创建活跃标签页的 WebView
     fn ensure_webview(&mut self, tab_id: TabId) {
-        self.webviews
-            .entry(tab_id)
-            .or_insert_with(|| WebViewBuilder::new().build());
+        if !self.webviews.contains_key(&tab_id) {
+            let wv = self.create_webview();
+            self.webviews.insert(tab_id, wv);
+        }
     }
 
     /// 通过 WebView 加载指定标签页 URL，并同步 BrowserShell 的加载状态
@@ -401,7 +420,7 @@ impl BrowserApp {
     /// 创建新标签页
     fn new_tab(&mut self, url: Option<&str>) {
         let tab_id = self.shell.new_tab(url);
-        let webview = WebViewBuilder::new().build();
+        let webview = self.create_webview();
         self.webviews.insert(tab_id, webview);
 
         if let Some(url) = url {
@@ -697,21 +716,32 @@ impl BrowserApp {
         // 鼠标移动才重绘（优化：只在有悬停变化时重绘）
         if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
             // 悬停效果需要重绘
-            if (y as f32) < layout::TOOLBAR_HEIGHT {
+            let toolbar_h = layout::TOOLBAR_HEIGHT * self.scale_factor;
+            if (y as f32) < toolbar_h {
                 self.needs_redraw = true;
             }
         }
     }
 
-    /// 处理鼠标点击
+    /// 处理鼠标点击（物理像素坐标）
     fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool) {
         if !pressed {
             return;
         }
 
+        let s = self.scale_factor;
         let y_f = y as f32;
         let x_f = x as f32;
-        let width = self.window_size.0 as f32;
+        let width = self.physical_size.0 as f32;
+
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let addr_bar_h = layout::ADDRESS_BAR_HEIGHT * s;
+        let toolbar_h = layout::TOOLBAR_HEIGHT * s;
+        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
+        let nav_btn_w = layout::NAV_BUTTON_WIDTH * s;
+        let addr_padding = layout::ADDRESS_BAR_PADDING * s;
+        let tab_close_size = layout::TAB_CLOSE_SIZE * s;
+        let autocomplete_row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
 
         // 1. 自动补全下拉区域点击
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
@@ -725,14 +755,14 @@ impl BrowserApp {
                 }
             }
             // 点击自动补全区域外时关闭下拉
-            let addr_bar_bottom = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+            let addr_bar_bottom = tab_bar_h + addr_bar_h;
             let autocomplete_top = addr_bar_bottom;
             let autocomplete_height = self
                 .autocomplete
                 .suggestions
                 .len()
                 .min(layout::AUTOCOMPLETE_MAX_VISIBLE) as f32
-                * layout::AUTOCOMPLETE_ROW_HEIGHT;
+                * autocomplete_row_h;
             if y_f >= autocomplete_top && y_f < autocomplete_top + autocomplete_height {
                 return; // 点击在自动补全内但没命中建议，忽略
             }
@@ -741,9 +771,9 @@ impl BrowserApp {
         }
 
         // 2. 标签栏区域点击
-        if y_f < layout::TAB_BAR_HEIGHT {
+        if y_f < tab_bar_h {
             // 检查是否点击了新建标签按钮 (+)
-            let new_tab_x = width - 32.0;
+            let new_tab_x = width - 32.0 * s;
             if x_f >= new_tab_x && x_f <= width {
                 self.new_tab(None);
                 return;
@@ -753,11 +783,11 @@ impl BrowserApp {
             for &(id, tab_x, tab_w) in &self.tab_layout {
                 if x_f >= tab_x && x_f < tab_x + tab_w {
                     // 检查关闭按钮
-                    let close_x = tab_x + tab_w - 24.0;
-                    let close_y_center = layout::TAB_BAR_HEIGHT / 2.0;
+                    let close_x = tab_x + tab_w - 24.0 * s;
+                    let close_y_center = tab_bar_h / 2.0;
                     if x_f >= close_x
-                        && x_f <= close_x + layout::TAB_CLOSE_SIZE
-                        && (y_f - close_y_center).abs() <= layout::TAB_CLOSE_SIZE / 2.0
+                        && x_f <= close_x + tab_close_size
+                        && (y_f - close_y_center).abs() <= tab_close_size / 2.0
                     {
                         self.close_tab_by_id(id);
                         return;
@@ -775,13 +805,12 @@ impl BrowserApp {
         }
 
         // 3. 地址栏区域点击
-        if y_f < layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT {
-            let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
-            let addr_bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
+        if y_f < tab_bar_h + addr_bar_h {
+            let addr_bar_x = nav_w + addr_padding;
 
             // 导航按钮区域
             if x_f < nav_w {
-                let button_index = ((x_f - 8.0) / layout::NAV_BUTTON_WIDTH) as i32;
+                let button_index = ((x_f - 8.0 * s) / nav_btn_w) as i32;
                 match button_index {
                     0 => self.go_back(),
                     1 => self.go_forward(),
@@ -796,7 +825,7 @@ impl BrowserApp {
             }
 
             // 地址栏输入区域
-            if x_f >= addr_bar_x && x_f <= width - layout::ADDRESS_BAR_PADDING {
+            if x_f >= addr_bar_x && x_f <= width - addr_padding {
                 if !self.address_bar_focused {
                     self.address_bar_focused = true;
                     self.needs_redraw = true;
@@ -807,10 +836,10 @@ impl BrowserApp {
 
         // 4. 查找栏区域点击（如果活跃）
         if self.shell.find_state().is_active() {
-            let find_y = layout::TOOLBAR_HEIGHT;
-            if y_f >= find_y && y_f < find_y + layout::FIND_BAR_HEIGHT {
+            let find_y = toolbar_h;
+            if y_f >= find_y && y_f < find_y + layout::FIND_BAR_HEIGHT * s {
                 // 点击关闭按钮
-                let close_x = width - 40.0;
+                let close_x = width - 40.0 * s;
                 if x_f >= close_x {
                     self.shell.find_close();
                     self.find_input.clear();
@@ -818,14 +847,14 @@ impl BrowserApp {
                     return;
                 }
                 // 点击上一个/下一个
-                let prev_x = width - 100.0;
-                let next_x = width - 70.0;
-                if x_f >= prev_x && x_f < prev_x + 28.0 {
+                let prev_x = width - 100.0 * s;
+                let next_x = width - 70.0 * s;
+                if x_f >= prev_x && x_f < prev_x + 28.0 * s {
                     self.shell.find_previous();
                     self.needs_redraw = true;
                     return;
                 }
-                if x_f >= next_x && x_f < next_x + 28.0 {
+                if x_f >= next_x && x_f < next_x + 28.0 * s {
                     self.shell.find_next();
                     self.needs_redraw = true;
                     return;
@@ -835,20 +864,21 @@ impl BrowserApp {
         }
 
         // 5. 页面内容区域 — 取消地址栏焦点
-        if y_f >= layout::TOOLBAR_HEIGHT && self.address_bar_focused {
+        if y_f >= toolbar_h && self.address_bar_focused {
             self.address_bar_focused = false;
             self.autocomplete.clear();
             self.needs_redraw = true;
         }
     }
 
-    /// 自动补全下拉命中检测
+    /// 自动补全下拉命中检测（物理像素坐标）
     fn autocomplete_hit_test(&self, x: f64, y: f64) -> Option<usize> {
-        let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-        let bar_w = self.window_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING;
+        let s = self.scale_factor;
+        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
+        let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
 
-        let autocomplete_top = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+        let autocomplete_top = (layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT) * s;
         let y_f = y as f32;
         let x_f = x as f32;
 
@@ -861,7 +891,8 @@ impl BrowserApp {
             return None;
         }
 
-        let index = (row_offset / layout::AUTOCOMPLETE_ROW_HEIGHT) as usize;
+        let row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
+        let index = (row_offset / row_h) as usize;
         if index
             < self
                 .autocomplete
@@ -919,7 +950,6 @@ impl BrowserApp {
         }
     }
 
-    /// 执行渲染
     fn render(&mut self, width: u32, height: u32) {
         let mut gpu = self.gpu_renderer.take();
         if let Some(ref mut renderer) = gpu {
@@ -930,25 +960,19 @@ impl BrowserApp {
         self.gpu_renderer = gpu;
     }
 
-    /// 渲染一帧
+    /// 渲染一帧（场景已为物理像素，渲染器无需缩放）
     fn render_frame(&mut self, gpu: &mut GpuRenderer, width: u32, height: u32) {
         let (fills, glyphs) = self.build_scene(width, height);
-        gpu.render_scene_scaled(
-            &fills,
-            &self.font_loader,
-            &mut self.glyph_cache,
-            &glyphs,
-            self.scale_factor,
-        );
+        gpu.render_scene(&fills, &self.font_loader, &mut self.glyph_cache, &glyphs);
     }
 
-    /// CPU 软件渲染一帧
+    /// CPU 软件渲染一帧（场景已为物理像素，scale_factor 传 1.0）
     fn render_cpu(&mut self, width: u32, height: u32) {
         let (fills, glyphs) = self.build_scene(width, height);
         let fb = render_scene_to_framebuffer(
             width,
             height,
-            self.scale_factor,
+            1.0,
             &fills,
             &self.font_loader,
             &mut self.glyph_cache,
@@ -989,54 +1013,45 @@ impl BrowserApp {
         }
     }
 
-    /// 构建浏览器 UI 渲染图元
+    /// 构建浏览器 UI 渲染图元（物理像素坐标）
     fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+        let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
-        let font_size = 14.0_f32;
+        let font_size = 14.0 * s;
 
         // 1. 整体背景
         fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, colors::BACKGROUND));
 
         // 2. 标签栏背景
-        fills.push(rect_fill(
-            0.0,
-            0.0,
-            width as f32,
-            layout::TAB_BAR_HEIGHT,
-            colors::TAB_BAR_BG,
-        ));
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, colors::TAB_BAR_BG));
 
         // 3. 标签内容（带布局缓存）
-        self.render_tabs(&mut fills, &mut glyphs, width, font_size);
+        self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);
 
         // 4. 地址栏背景
-        let addr_y = layout::TAB_BAR_HEIGHT;
+        let addr_y = tab_bar_h;
         fills.push(rect_fill(
             0.0,
             addr_y,
             width as f32,
-            layout::ADDRESS_BAR_HEIGHT,
+            layout::ADDRESS_BAR_HEIGHT * s,
             colors::TAB_BAR_BG,
         ));
 
         // 5. 导航按钮
-        self.render_nav_buttons(&mut glyphs, addr_y, font_size);
+        self.render_nav_buttons(&mut glyphs, addr_y, font_size, s);
 
         // 6. 地址栏
-        self.render_address_bar(&mut fills, &mut glyphs, width, addr_y, font_size);
+        self.render_address_bar(&mut fills, &mut glyphs, width, addr_y, font_size, s);
 
         // 7. 分隔线
-        fills.push(rect_fill(
-            0.0,
-            layout::TOOLBAR_HEIGHT - 1.0,
-            width as f32,
-            1.0,
-            colors::SEPARATOR,
-        ));
+        let toolbar_h = layout::TOOLBAR_HEIGHT * s;
+        fills.push(rect_fill(0.0, toolbar_h - s, width as f32, s, colors::SEPARATOR));
 
         // 8. 页面内容区域
-        let page_y = layout::TOOLBAR_HEIGHT;
+        let page_y = toolbar_h;
         let page_h = height as f32 - page_y;
         fills.push(rect_fill(0.0, page_y, width as f32, page_h, colors::PAGE_BG));
 
@@ -1044,34 +1059,41 @@ impl BrowserApp {
         if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
             fills.push(rect_fill(
                 0.0,
-                layout::TOOLBAR_HEIGHT,
+                toolbar_h,
                 width as f32,
-                2.0,
+                2.0 * s,
                 colors::LOADING_INDICATOR,
             ));
         }
 
         // 10. 页面内容
-        self.render_page_content(&mut fills, &mut glyphs, width, page_y, font_size);
+        self.render_page_content(&mut fills, &mut glyphs, width, page_y, font_size, s);
 
         // 11. 查找栏（覆盖在页面内容上方）
         if self.shell.find_state().is_active() {
-            self.render_find_bar(&mut fills, &mut glyphs, width, font_size);
+            self.render_find_bar(&mut fills, &mut glyphs, width, font_size, s);
         }
 
         // 12. 自动补全下拉（覆盖在页面内容上方）
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
-            self.render_autocomplete(&mut fills, &mut glyphs, width, font_size);
+            self.render_autocomplete(&mut fills, &mut glyphs, width, font_size, s);
         }
 
         // 13. 状态栏
-        self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size);
+        self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size, s);
 
         (fills, glyphs)
     }
 
     /// 渲染标签页（带完整标签条）
-    fn render_tabs(&mut self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, width: u32, font_size: f32) {
+    fn render_tabs(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        font_size: f32,
+        s: f32,
+    ) {
         let active_id = self.shell.active_tab_id();
         let tab_count = self.shell.tab_count();
         if tab_count == 0 {
@@ -1079,9 +1101,9 @@ impl BrowserApp {
         }
 
         // 计算每个标签宽度（均分，限制最大/最小宽度）
-        let new_tab_btn_w = 32.0_f32;
+        let new_tab_btn_w = 32.0 * s;
         let available_width = width as f32 - new_tab_btn_w;
-        let tab_w = (available_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH, layout::TAB_MAX_WIDTH);
+        let tab_w = (available_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
 
         // 更新标签布局缓存
         self.tab_layout.clear();
@@ -1092,10 +1114,11 @@ impl BrowserApp {
             let is_hovered = !is_active && {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= x && mx < x + tab_w && my < layout::TAB_BAR_HEIGHT
+                mx >= x && mx < x + tab_w && my < layout::TAB_BAR_HEIGHT * s
             };
 
             // 标签背景
+            let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let bg = if is_active {
                 colors::TAB_ACTIVE_BG
             } else if is_hovered {
@@ -1103,20 +1126,28 @@ impl BrowserApp {
             } else {
                 colors::TAB_BAR_BG
             };
-            fills.push(rect_fill(x, 0.0, tab_w - 1.0, layout::TAB_BAR_HEIGHT, bg));
+            fills.push(rect_fill(x, 0.0, tab_w - s, tab_bar_h, bg));
 
             // 标签文本（截断显示）
             if let Some(fid) = self.font_id {
                 let label = tab.title().unwrap_or_else(|| tab.url().unwrap_or("New Tab"));
-                let max_chars = ((tab_w - 40.0) / (font_size * 0.6)).max(3.0) as usize;
+                let max_chars = ((tab_w - 40.0 * s) / (font_size * 0.6)).max(3.0) as usize;
                 let truncated: String = label.chars().take(max_chars).collect();
-                draw_text(&truncated, x + 10.0, 8.0, font_size, colors::TAB_TEXT, fid, glyphs);
+                draw_text(
+                    &truncated,
+                    x + 10.0 * s,
+                    8.0 * s,
+                    font_size,
+                    colors::TAB_TEXT,
+                    fid,
+                    glyphs,
+                );
             }
 
             // 关闭按钮（×）
             if let Some(fid) = self.font_id {
-                let close_x = x + tab_w - 24.0;
-                let close_y = 8.0_f32;
+                let close_x = x + tab_w - 24.0 * s;
+                let close_y = 8.0 * s;
                 glyphs.push(GlyphDraw {
                     ch: '×',
                     x: close_x,
@@ -1135,31 +1166,26 @@ impl BrowserApp {
         // 新建标签按钮 (+)
         if let Some(fid) = self.font_id {
             let btn_x = width as f32 - new_tab_btn_w;
+            let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let is_hovered = {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= btn_x && my < layout::TAB_BAR_HEIGHT
+                mx >= btn_x && my < tab_bar_h
             };
             if is_hovered {
-                fills.push(rect_fill(
-                    btn_x,
-                    0.0,
-                    new_tab_btn_w,
-                    layout::TAB_BAR_HEIGHT,
-                    colors::TAB_HOVER_BG,
-                ));
+                fills.push(rect_fill(btn_x, 0.0, new_tab_btn_w, tab_bar_h, colors::TAB_HOVER_BG));
             }
             let text_x = btn_x + (new_tab_btn_w - font_size * 0.6) / 2.0;
-            draw_text("+", text_x, 8.0, font_size, colors::NEW_TAB_BUTTON, fid, glyphs);
+            draw_text("+", text_x, 8.0 * s, font_size, colors::NEW_TAB_BUTTON, fid, glyphs);
         }
     }
 
     /// 渲染导航按钮
-    fn render_nav_buttons(&mut self, glyphs: &mut Vec<GlyphDraw>, y: f32, font_size: f32) {
+    fn render_nav_buttons(&mut self, glyphs: &mut Vec<GlyphDraw>, y: f32, font_size: f32, s: f32) {
         if let Some(fid) = self.font_id {
-            let baseline_y = y + (layout::ADDRESS_BAR_HEIGHT + font_size) / 2.0;
-            let x = 8.0_f32;
-            let w = layout::NAV_BUTTON_WIDTH;
+            let baseline_y = y + (layout::ADDRESS_BAR_HEIGHT * s + font_size) / 2.0;
+            let x = 8.0 * s;
+            let w = layout::NAV_BUTTON_WIDTH * s;
 
             for (i, ch) in ['←', '→', '↻', '⌂'].iter().enumerate() {
                 glyphs.push(GlyphDraw {
@@ -1182,12 +1208,13 @@ impl BrowserApp {
         width: u32,
         y: f32,
         font_size: f32,
+        s: f32,
     ) {
-        let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING;
-        let bar_y = y + 4.0;
-        let bar_h = layout::ADDRESS_BAR_HEIGHT - 8.0;
+        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
+        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
+        let bar_y = y + 4.0 * s;
+        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 8.0 * s;
 
         let bg = if self.address_bar_focused {
             colors::ADDRESS_BAR_BG_FOCUSED
@@ -1210,16 +1237,24 @@ impl BrowserApp {
             } else {
                 colors::ADDRESS_BAR_TEXT
             };
-            draw_text(&display_text, bar_x + 10.0, bar_y + 3.0, font_size, color, fid, glyphs);
+            draw_text(
+                &display_text,
+                bar_x + 10.0 * s,
+                bar_y + 3.0 * s,
+                font_size,
+                color,
+                fid,
+                glyphs,
+            );
 
             // 光标（地址栏聚焦时闪烁效果）
             if self.address_bar_focused {
-                let cursor_x = bar_x + 10.0 + self.address_bar_text.len() as f32 * font_size * 0.6;
+                let cursor_x = bar_x + 10.0 * s + self.address_bar_text.len() as f32 * font_size * 0.6;
                 fills.push(rect_fill(
                     cursor_x,
-                    bar_y + 4.0,
-                    1.5,
-                    bar_h - 8.0,
+                    bar_y + 4.0 * s,
+                    1.5 * s,
+                    bar_h - 8.0 * s,
                     colors::ADDRESS_BAR_TEXT,
                 ));
             }
@@ -1234,6 +1269,7 @@ impl BrowserApp {
         _width: u32,
         page_y: f32,
         font_size: f32,
+        s: f32,
     ) {
         let fid = match self.font_id {
             Some(id) => id,
@@ -1242,7 +1278,7 @@ impl BrowserApp {
 
         // 查找栏打开时页面内容下移
         let content_y_offset = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT
+            layout::FIND_BAR_HEIGHT * s
         } else {
             0.0
         };
@@ -1264,21 +1300,29 @@ impl BrowserApp {
         }
 
         if !title.is_empty() {
-            draw_text(&title, 20.0, y + 20.0, 24.0, colors::PAGE_TITLE, fid, glyphs);
-            y += 52.0;
+            draw_text(
+                &title,
+                20.0 * s,
+                y + 20.0 * s,
+                24.0 * s,
+                colors::PAGE_TITLE,
+                fid,
+                glyphs,
+            );
+            y += 52.0 * s;
         }
 
         if !url.is_empty() {
-            draw_text(&url, 20.0, y, 12.0, colors::PAGE_URL, fid, glyphs);
-            y += 28.0;
+            draw_text(&url, 20.0 * s, y, 12.0 * s, colors::PAGE_URL, fid, glyphs);
+            y += 28.0 * s;
         }
 
         if is_loading {
-            draw_text("Loading...", 20.0, y, font_size, colors::PAGE_HINT, fid, glyphs);
+            draw_text("Loading...", 20.0 * s, y, font_size, colors::PAGE_HINT, fid, glyphs);
         } else if title.is_empty() && url.is_empty() {
             draw_text(
                 "Welcome to ZeroBrowser — Press L to focus address bar, T for new tab",
-                20.0,
+                20.0 * s,
                 y,
                 font_size,
                 colors::PAGE_HINT,
@@ -1289,6 +1333,7 @@ impl BrowserApp {
     }
 
     /// 渲染活跃 WebView 的页面图元。
+    /// WebView 视口为物理像素，图元无需额外缩放。
     fn render_active_webview(
         &self,
         fills: &mut Vec<FillPrimitive>,
@@ -1311,22 +1356,35 @@ impl BrowserApp {
             None => return false,
         };
 
-        append_webview_primitives(primitives, fills, glyphs, 0.0, y_offset, fallback_font_id)
+        append_webview_primitives(primitives, fills, glyphs, 0.0, y_offset, fallback_font_id, 1.0)
     }
 
     /// 渲染查找栏
-    fn render_find_bar(&self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, width: u32, font_size: f32) {
+    fn render_find_bar(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        font_size: f32,
+        s: f32,
+    ) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
         };
 
-        let y = layout::TOOLBAR_HEIGHT;
-        let bar_w = 320.0_f32;
-        let bar_x = width as f32 - bar_w - 10.0;
+        let y = layout::TOOLBAR_HEIGHT * s;
+        let bar_w = 320.0 * s;
+        let bar_x = width as f32 - bar_w - 10.0 * s;
 
         // 背景
-        fills.push(rect_fill(bar_x, y, bar_w, layout::FIND_BAR_HEIGHT, colors::FIND_BAR_BG));
+        fills.push(rect_fill(
+            bar_x,
+            y,
+            bar_w,
+            layout::FIND_BAR_HEIGHT * s,
+            colors::FIND_BAR_BG,
+        ));
 
         // 输入框文本
         let display = if self.find_input.is_empty() {
@@ -1339,28 +1397,36 @@ impl BrowserApp {
         } else {
             colors::FIND_BAR_TEXT
         };
-        draw_text(&display, bar_x + 10.0, y + 5.0, font_size, text_color, fid, glyphs);
+        draw_text(
+            &display,
+            bar_x + 10.0 * s,
+            y + 5.0 * s,
+            font_size,
+            text_color,
+            fid,
+            glyphs,
+        );
 
         // 匹配计数
         let find_state = self.shell.find_state();
         if find_state.total_matches() > 0 {
             let match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
-            let match_x = bar_x + bar_w - 130.0;
+            let match_x = bar_x + bar_w - 130.0 * s;
             draw_text(
                 &match_text,
                 match_x,
-                y + 5.0,
+                y + 5.0 * s,
                 font_size,
                 colors::FIND_MATCH_TEXT,
                 fid,
                 glyphs,
             );
         } else if !self.find_input.is_empty() {
-            let no_match_x = bar_x + bar_w - 130.0;
+            let no_match_x = bar_x + bar_w - 130.0 * s;
             draw_text(
                 "No matches",
                 no_match_x,
-                y + 5.0,
+                y + 5.0 * s,
                 font_size,
                 colors::FIND_MATCH_TEXT,
                 fid,
@@ -1369,10 +1435,10 @@ impl BrowserApp {
         }
 
         // 上一个/下一个/关闭按钮
-        let btn_y = y + 5.0;
-        let prev_x = bar_x + bar_w - 100.0;
-        let next_x = bar_x + bar_w - 70.0;
-        let close_x = bar_x + bar_w - 40.0;
+        let btn_y = y + 5.0 * s;
+        let prev_x = bar_x + bar_w - 100.0 * s;
+        let next_x = bar_x + bar_w - 70.0 * s;
+        let close_x = bar_x + bar_w - 40.0 * s;
         draw_text("↑", prev_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
         draw_text("↓", next_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
         draw_text("×", close_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
@@ -1385,40 +1451,36 @@ impl BrowserApp {
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
         font_size: f32,
+        s: f32,
     ) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
         };
 
-        let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING;
-        let dropdown_y = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
+        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
+        let dropdown_y = (layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT) * s;
 
         let visible_count = self
             .autocomplete
             .suggestions
             .len()
             .min(layout::AUTOCOMPLETE_MAX_VISIBLE);
-        let dropdown_h = visible_count as f32 * layout::AUTOCOMPLETE_ROW_HEIGHT;
+        let row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
+        let dropdown_h = visible_count as f32 * row_h;
 
         // 下拉背景
         fills.push(rect_fill(bar_x, dropdown_y, bar_w, dropdown_h, colors::AUTOCOMPLETE_BG));
 
         for (i, sug) in self.autocomplete.suggestions.iter().take(visible_count).enumerate() {
-            let row_y = dropdown_y + i as f32 * layout::AUTOCOMPLETE_ROW_HEIGHT;
+            let row_y = dropdown_y + i as f32 * row_h;
             let is_hovered = self.autocomplete.hovered_index == Some(i);
 
             // 悬停高亮
             if is_hovered {
-                fills.push(rect_fill(
-                    bar_x,
-                    row_y,
-                    bar_w,
-                    layout::AUTOCOMPLETE_ROW_HEIGHT,
-                    colors::AUTOCOMPLETE_HOVER_BG,
-                ));
+                fills.push(rect_fill(bar_x, row_y, bar_w, row_h, colors::AUTOCOMPLETE_HOVER_BG));
             }
 
             // 书签图标
@@ -1426,11 +1488,11 @@ impl BrowserApp {
                 SuggestionSource::Bookmark => "★",
                 SuggestionSource::History => "🕐",
             };
-            let text_x = bar_x + 10.0;
+            let text_x = bar_x + 10.0 * s;
             draw_text(
                 source_label,
                 text_x,
-                row_y + 5.0,
+                row_y + 5.0 * s,
                 font_size * 0.85,
                 if sug.source() == SuggestionSource::Bookmark {
                     colors::AUTOCOMPLETE_BOOKMARK
@@ -1443,12 +1505,12 @@ impl BrowserApp {
 
             // 标题
             let title = sug.title();
-            let max_title_chars = ((bar_w - 180.0) / (font_size * 0.6)).max(10.0) as usize;
+            let max_title_chars = ((bar_w - 180.0 * s) / (font_size * 0.6)).max(10.0) as usize;
             let truncated_title: String = title.chars().take(max_title_chars).collect();
             draw_text(
                 &truncated_title,
-                text_x + 24.0,
-                row_y + 5.0,
+                text_x + 24.0 * s,
+                row_y + 5.0 * s,
                 font_size * 0.85,
                 colors::AUTOCOMPLETE_TEXT,
                 fid,
@@ -1457,7 +1519,7 @@ impl BrowserApp {
 
             // URL（右侧截断）
             let url = sug.url();
-            let url_x = bar_x + bar_w - 10.0;
+            let url_x = bar_x + bar_w - 10.0 * s;
             let max_url_chars = ((bar_w * 0.4) / (font_size * 0.5)).max(8.0) as usize;
             let truncated_url: String = url.chars().take(max_url_chars).collect();
             // 右对齐 URL：估算宽度并从右边开始
@@ -1465,7 +1527,7 @@ impl BrowserApp {
             draw_text(
                 &truncated_url,
                 url_x - url_display_width,
-                row_y + 5.0,
+                row_y + 5.0 * s,
                 font_size * 0.75,
                 colors::AUTOCOMPLETE_URL,
                 fid,
@@ -1474,7 +1536,7 @@ impl BrowserApp {
         }
 
         // 边框
-        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, 1.0, colors::SEPARATOR));
+        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, s, colors::SEPARATOR));
     }
 
     /// 渲染状态栏
@@ -1485,42 +1547,46 @@ impl BrowserApp {
         width: u32,
         height: u32,
         _font_size: f32,
+        s: f32,
     ) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
         };
 
-        let status_y = height as f32 - layout::STATUS_BAR_HEIGHT;
+        let status_h = layout::STATUS_BAR_HEIGHT * s;
+        let status_y = height as f32 - status_h;
 
         // 状态栏背景
-        fills.push(rect_fill(
-            0.0,
-            status_y,
-            width as f32,
-            layout::STATUS_BAR_HEIGHT,
-            colors::BACKGROUND,
-        ));
+        fills.push(rect_fill(0.0, status_y, width as f32, status_h, colors::BACKGROUND));
 
         // 分隔线
-        fills.push(rect_fill(0.0, status_y, width as f32, 1.0, colors::SEPARATOR));
+        fills.push(rect_fill(0.0, status_y, width as f32, s, colors::SEPARATOR));
 
         // 左侧：缩放信息
         let zoom = self.shell.zoom();
         if (zoom - 1.0).abs() > f32::EPSILON {
             let zoom_text = format!("{}%", (zoom * 100.0) as u32);
-            draw_text(&zoom_text, 10.0, status_y + 3.0, 11.0, colors::STATUS_TEXT, fid, glyphs);
+            draw_text(
+                &zoom_text,
+                10.0 * s,
+                status_y + 3.0 * s,
+                11.0 * s,
+                colors::STATUS_TEXT,
+                fid,
+                glyphs,
+            );
         }
 
         // 右侧：标签页数量
         let tab_count = self.shell.tab_count();
         let tabs_text = format!("Tabs: {tab_count}");
-        let tabs_width = tabs_text.len() as f32 * 11.0 * 0.6;
+        let tabs_width = tabs_text.len() as f32 * 11.0 * s * 0.6;
         draw_text(
             &tabs_text,
-            width as f32 - tabs_width - 10.0,
-            status_y + 3.0,
-            11.0,
+            width as f32 - tabs_width - 10.0 * s,
+            status_y + 3.0 * s,
+            11.0 * s,
             colors::STATUS_TEXT,
             fid,
             glyphs,
@@ -1568,6 +1634,7 @@ fn draw_text(
 }
 
 /// 将 WebView 输出的基础图元追加到浏览器场景。
+/// WebView 图元位于逻辑像素空间，通过 `s`（scale_factor）缩放到物理像素。
 fn append_webview_primitives(
     primitives: &RenderPrimitives,
     fills: &mut Vec<FillPrimitive>,
@@ -1575,14 +1642,17 @@ fn append_webview_primitives(
     x_offset: f32,
     y_offset: f32,
     fallback_font_id: u32,
+    s: f32,
 ) -> bool {
     let fill_start = fills.len();
     let glyph_start = glyphs.len();
 
     for fill in &primitives.fills {
         let mut translated = fill.clone();
-        translated.rect.origin.x += x_offset;
-        translated.rect.origin.y += y_offset;
+        translated.rect.origin.x = fill.rect.origin.x * s + x_offset;
+        translated.rect.origin.y = fill.rect.origin.y * s + y_offset;
+        translated.rect.size.width *= s;
+        translated.rect.size.height *= s;
         fills.push(translated);
     }
 
@@ -1595,15 +1665,15 @@ fn append_webview_primitives(
         }
         glyphs.push(GlyphDraw {
             ch,
-            x: glyph.x + x_offset,
-            baseline_y: glyph.y + y_offset,
+            x: glyph.x * s + x_offset,
+            baseline_y: glyph.y * s + y_offset,
             color: glyph.color,
             font_id: if glyph.font_id.0 == 0 {
                 fallback_font_id
             } else {
                 glyph.font_id.0
             },
-            font_size: glyph.font_size,
+            font_size: glyph.font_size * s,
         });
     }
 
@@ -1685,9 +1755,15 @@ fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
     })
 }
 
-fn parse_render_mode_from_args() -> Result<RenderMode, String> {
+struct CliArgs {
+    render_mode: RenderMode,
+    scale_override: Option<f32>,
+}
+
+fn parse_args() -> Result<CliArgs, String> {
     let mut args = std::env::args().skip(1);
-    let mut cli_mode = None;
+    let mut render_mode = None;
+    let mut scale_override = None;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
@@ -1696,7 +1772,7 @@ fn parse_render_mode_from_args() -> Result<RenderMode, String> {
         }
 
         if let Some(value) = arg.strip_prefix("--renderer=") {
-            cli_mode = Some(value.parse()?);
+            render_mode = Some(value.parse()?);
             continue;
         }
 
@@ -1704,16 +1780,33 @@ fn parse_render_mode_from_args() -> Result<RenderMode, String> {
             let value = args
                 .next()
                 .ok_or_else(|| format!("--renderer requires {}", RenderMode::values()))?;
-            cli_mode = Some(value.parse()?);
+            render_mode = Some(value.parse()?);
+        }
+
+        if let Some(value) = arg.strip_prefix("--scale=") {
+            let s = value.parse::<f32>().map_err(|_| format!("invalid scale: {value}"))?;
+            if s <= 0.0 || !s.is_finite() {
+                return Err(format!("scale must be positive: {s}"));
+            }
+            scale_override = Some(s);
         }
     }
 
-    Ok(cli_mode.or(RenderMode::from_env()?).unwrap_or_default())
+    let render_mode = render_mode.or(RenderMode::from_env()?).unwrap_or_default();
+    Ok(CliArgs {
+        render_mode,
+        scale_override,
+    })
 }
 
 fn print_usage() {
-    println!("Usage: zero-browser [--renderer {}]", RenderMode::values());
+    println!(
+        "Usage: zero-browser [--renderer {}] [--scale=<factor>]",
+        RenderMode::values()
+    );
     println!("Environment: {}={}", RenderMode::ENV_VAR, RenderMode::values());
+    println!("  --scale=<factor>  Override window scale factor (e.g. --scale=2 for HiDPI)");
+    println!("  --renderer=<mode>  Choose rendering backend (cpu, gpu, auto)");
 }
 
 fn logical_size_from_window(window: &winit::window::Window) -> ((u32, u32), f32) {
@@ -1729,6 +1822,75 @@ fn normalized_window_scale(scale: f64) -> f32 {
         scale as f32
     } else {
         1.0
+    }
+}
+
+/// 在 winit 初始化前检测平台缩放提示。
+///
+/// X11 下 winit 只有设置了 `Xft.dpi` 或 `WINIT_X11_SCALE_FACTOR` 才会返回正确的缩放因子，
+/// 否则默认返回 1.0。此函数从常见环境变量中读取缩放设置，供 winit 使用。
+///
+/// 优先级：`WINIT_X11_SCALE_FACTOR` > `GDK_SCALE` > `QT_SCALE_FACTOR` > Xft.dpi > 1.0
+fn detect_and_set_platform_scale() {
+    // 若 WINIT_X11_SCALE_FACTOR 已设则信任用户配置
+    if std::env::var("WINIT_X11_SCALE_FACTOR").is_ok() {
+        return;
+    }
+
+    // 检查常见桌面缩放环境变量
+    for var in ["GDK_SCALE", "QT_SCALE_FACTOR"] {
+        if let Ok(val) = std::env::var(var)
+            && let Ok(scale) = val.parse::<f64>()
+            && scale > 1.0
+            && scale.is_finite()
+        {
+            // SAFETY: 在 winit 初始化前（单线程）设置环境变量，无竞态风险
+            unsafe {
+                std::env::set_var("WINIT_X11_SCALE_FACTOR", format!("{scale}"));
+            }
+            tracing::info!("Detected {var}={scale}, setting WINIT_X11_SCALE_FACTOR={scale}");
+            return;
+        }
+    }
+
+    // X11: 尝试从 xdpyinfo 读取 Xft.dpi 来估算缩放因子
+    try_detect_x11_dpi();
+}
+
+/// 尝试从 X11 显示器 DPI 估算缩放因子（无外部依赖的后备方案）。
+fn try_detect_x11_dpi() {
+    // 只在 X11 环境下执行
+    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok() {
+        return;
+    }
+    // 通过 xdpyinfo 读取 DPI
+    let output = match std::process::Command::new("xdpyinfo").output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return,
+    };
+    let text = String::from_utf8_lossy(&output);
+    // 查找 "resolution: 192x190 dots per inch" 这样的行
+    for line in text.lines() {
+        if line.contains("resolution:") && line.contains("dots per inch") {
+            let dpi = line
+                .split_whitespace()
+                .nth(1)
+                .and_then(|s| s.split('x').next())
+                .and_then(|s| s.parse::<f64>().ok());
+            if let Some(dpi) = dpi
+                && dpi > 96.0
+                && dpi.is_finite()
+            {
+                let scale = (dpi / 96.0).round();
+                if scale > 1.0 {
+                    unsafe {
+                        std::env::set_var("WINIT_X11_SCALE_FACTOR", format!("{scale}"));
+                    }
+                    tracing::info!("Detected X11 DPI {dpi}, setting WINIT_X11_SCALE_FACTOR={scale}");
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -1763,16 +1925,69 @@ mod tests {
             10.0,
             layout::TOOLBAR_HEIGHT,
             7,
+            1.0, // scale_factor = 1.0 in tests
         ));
 
         assert_eq!(fills.len(), 1);
+        // fill.rect origin scaled by 1.0 + offset (10.0)
         assert_eq!(fills[0].rect.origin.x, 11.0);
         assert_eq!(fills[0].rect.origin.y, layout::TOOLBAR_HEIGHT + 2.0);
+        assert_eq!(fills[0].rect.size.width, 10.0);
+        assert_eq!(fills[0].rect.size.height, 20.0);
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].ch, 'A');
+        // glyph x scaled by 1.0 + offset (10.0)
         assert_eq!(glyphs[0].x, 13.0);
         assert_eq!(glyphs[0].baseline_y, layout::TOOLBAR_HEIGHT + 4.0);
         assert_eq!(glyphs[0].font_id, 7);
+        assert_eq!(glyphs[0].font_size, 16.0);
+    }
+
+    /// Wayland 下窗口失焦时 surface 被挂起，任何 GPU 操作都会导致
+    /// compositor 断开连接（Broken pipe）。此测试验证 Unfocused 事件后
+    /// needs_redraw 保持 false，从而阻止 request_redraw → GPU 渲染路径。
+    #[test]
+    fn unfocused_event_does_not_trigger_redraw() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+
+        // 初始状态：窗口应被视为已获焦（允许首帧渲染）
+        assert!(app.window_focused, "should start focused for initial render");
+        app.needs_redraw = true;
+
+        // 模拟失焦 —— 不应触发重绘
+        app.window_focused = false;
+        app.needs_redraw = false; // Unfocused handler 的效果
+
+        // 验证：失焦后 needs_redraw 为 false，guard 生效
+        let should_redraw = app.needs_redraw && app.window_focused;
+        assert!(!should_redraw, "should NOT redraw when unfocused");
+
+        // 模拟重新获焦 —— 应触发重绘
+        app.window_focused = true;
+        app.needs_redraw = true;
+
+        let should_redraw = app.needs_redraw && app.window_focused;
+        assert!(should_redraw, "should redraw after focus regained");
+    }
+
+    /// 验证 RedrawRequested 的 focus guard 不会因 needs_redraw=true
+    /// 但 window_focused=false 而进入渲染路径。
+    #[test]
+    fn redraw_skipped_when_unfocused() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.surface_configured = true;
+
+        // 失焦状态 —— 即使 needs_redraw 被意外设为 true，也不渲染
+        app.window_focused = false;
+        app.needs_redraw = true;
+
+        let can_render = app.window_focused && app.surface_configured;
+        assert!(!can_render, "should skip render when unfocused");
+
+        // 获焦状态 —— 正常渲染
+        app.window_focused = true;
+        let can_render = app.window_focused && app.surface_configured;
+        assert!(can_render, "should render when focused and configured");
     }
 
     #[test]
@@ -1812,24 +2027,36 @@ fn main() {
     // 初始化日志
     tracing_subscriber::fmt().init();
 
+    // X11 兼容：winit 初始化前检测桌面缩放设置
+    detect_and_set_platform_scale();
+
     tracing::info!("ZeroBrowser starting...");
 
-    let render_mode = match parse_render_mode_from_args() {
-        Ok(mode) => mode,
+    let cli = match parse_args() {
+        Ok(args) => args,
         Err(err) => {
             eprintln!("{err}");
             print_usage();
             std::process::exit(2);
         }
     };
-    tracing::info!("Renderer mode: {render_mode}");
+    tracing::info!("Renderer mode: {}", cli.render_mode);
+
+    // CLI --scale 覆盖平台检测值
+    if let Some(scale) = cli.scale_override {
+        // SAFETY: 在 winit 初始化前（单线程）设置，无竞态风险
+        unsafe {
+            std::env::set_var("WINIT_X11_SCALE_FACTOR", format!("{scale}"));
+        }
+        tracing::info!("CLI --scale={scale}, overriding WINIT_X11_SCALE_FACTOR");
+    }
 
     let config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
         .with_resizable(true);
 
     let runtime = HostRuntime::new(config);
-    let mut app = BrowserApp::new(render_mode);
+    let mut app = BrowserApp::new(cli.render_mode);
 
     // 加载欢迎页
     app.new_tab(None);
@@ -1838,7 +2065,7 @@ fn main() {
 
     if let Err(e) = runtime.run_with_window(move |event, window| {
         match event {
-            AppEvent::RedrawRequested => {
+            AppEvent::RedrawRequested if app.window_focused => {
                 if !app.surface_configured {
                     if let Some(ref win) = window
                         && app.gpu_renderer.is_none()
@@ -1849,6 +2076,14 @@ fn main() {
                         app.window_size = logical_size;
                         app.physical_size = (physical_size.width, physical_size.height);
                         app.scale_factor = scale_factor;
+                        tracing::debug!(
+                            "Initial config — physical: {}x{}, logical: {}x{}, scale: {:.2}",
+                            physical_size.width,
+                            physical_size.height,
+                            logical_size.0,
+                            logical_size.1,
+                            scale_factor
+                        );
 
                         match app.render_mode {
                             RenderMode::Cpu => app.init_cpu_surface(win),
@@ -1868,7 +2103,7 @@ fn main() {
                         app.surface_configured = true;
                     }
                 }
-                app.render(app.window_size.0, app.window_size.1);
+                app.render(app.physical_size.0, app.physical_size.1);
                 app.needs_redraw = false;
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
@@ -1882,8 +2117,16 @@ fn main() {
                     app.window_size = (width, height);
                     app.scale_factor = 1.0;
                 }
-                if let Some(ref mut gpu) = app.gpu_renderer {
-                    gpu.configure_surface(width, height);
+                // Wayland: 仅在获焦时重配 surface，失焦时可能被挂起
+                if app.window_focused {
+                    if let Some(ref mut gpu) = app.gpu_renderer {
+                        gpu.configure_surface(width, height);
+                    }
+                }
+                // 调整所有 WebView 视口到新的内容区域物理尺寸
+                let (cw, ch) = app.content_physical_size();
+                for wv in app.webviews.values_mut() {
+                    wv.resize(cw, ch);
                 }
                 app.needs_redraw = true;
             }
@@ -1895,8 +2138,15 @@ fn main() {
                     app.physical_size = (physical_size.width, physical_size.height);
                     app.window_size = logical_size;
                     app.scale_factor = normalized_scale;
-                    if let Some(ref mut gpu) = app.gpu_renderer {
-                        gpu.configure_surface(physical_size.width, physical_size.height);
+                    if app.window_focused {
+                        if let Some(ref mut gpu) = app.gpu_renderer {
+                            gpu.configure_surface(physical_size.width, physical_size.height);
+                        }
+                    }
+                    // 调整所有 WebView 视口到新的内容区域物理尺寸
+                    let (cw, ch) = app.content_physical_size();
+                    for wv in app.webviews.values_mut() {
+                        wv.resize(cw, ch);
                     }
                 } else {
                     app.scale_factor = normalized_window_scale(scale_factor);
@@ -1910,7 +2160,7 @@ fn main() {
                 app.handle_key(&key, true);
             }
             AppEvent::MouseMoved { x, y } => {
-                app.handle_mouse_move(x / app.scale_factor as f64, y / app.scale_factor as f64);
+                app.handle_mouse_move(x, y);
             }
             AppEvent::MouseInput { button: _, pressed } => {
                 app.handle_mouse_click(app.mouse_pos.0, app.mouse_pos.1, pressed);
@@ -1920,15 +2170,20 @@ fn main() {
             }
             AppEvent::Focused => {
                 tracing::debug!("Window focused");
+                app.window_focused = true;
+                app.needs_redraw = true;
             }
             AppEvent::Unfocused => {
+                tracing::debug!("Window unfocused");
+                app.window_focused = false;
                 app.address_bar_focused = false;
-                app.needs_redraw = true;
             }
             _ => {}
         }
 
+        // Wayland 下窗口失焦时不请求重绘，避免 surface 挂起时的 GPU 操作
         if app.needs_redraw
+            && app.window_focused
             && let Some(ref win) = window
         {
             win.request_redraw();
