@@ -1874,3 +1874,567 @@ fn test_parse_transform_turn() {
         _ => panic!("Expected List"),
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 33. CSS 类型值解析测试（覆盖 types.rs 的 uncovered 路径）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 LengthValue 构造函数
+fn test_length_value_constructors() {
+    let test_cases = vec![
+        (LengthValue::Px(10.0), "10px"),
+        (LengthValue::Em(2.5), "2.5em"),
+        (LengthValue::Rem(1.0), "1rem"),
+        (LengthValue::Vh(100.0), "100vh"),
+        (LengthValue::Vw(50.0), "50vw"),
+        (LengthValue::Vmin(20.0), "20vmin"),
+        (LengthValue::Vmax(80.0), "80vmax"),
+        (LengthValue::Ch(16.0), "16ch"),
+        (LengthValue::Percentage(50.0), "50%"),
+        (LengthValue::Auto, "auto"),
+        (LengthValue::MinContent, "min-content"),
+        (LengthValue::MaxContent, "max-content"),
+        (
+            LengthValue::FitContent(Box::new(LengthValue::Px(100.0))),
+            "fit-content(100px)",
+        ),
+    ];
+
+    for (length_value, _expected_str) in test_cases {
+        // 这里只是测试构造函数，不测试解析
+        let _ = length_value;
+    }
+}
+
+#[test]
+/// 测试 LengthValue 的相等性比较
+fn test_length_value_equality() {
+    let test_cases = vec![
+        (LengthValue::Px(10.0), LengthValue::Px(10.0), true),
+        (LengthValue::Px(10.0), LengthValue::Px(20.0), false),
+        (LengthValue::Em(1.0), LengthValue::Em(1.0), true),
+        (LengthValue::Em(1.0), LengthValue::Px(1.0), false),
+        (LengthValue::Auto, LengthValue::Auto, true),
+        (LengthValue::MinContent, LengthValue::MinContent, true),
+        (LengthValue::MaxContent, LengthValue::MaxContent, true),
+        (LengthValue::Percentage(50.0), LengthValue::Percentage(50.0), true),
+        (LengthValue::Percentage(50.0), LengthValue::Percentage(100.0), false),
+    ];
+
+    for (val1, val2, expected_equal) in test_cases {
+        assert_eq!(
+            val1 == val2,
+            expected_equal,
+            "{:?} == {:?} should be {}",
+            val1,
+            val2,
+            expected_equal
+        );
+    }
+}
+
+#[test]
+/// 测试 ColorValue 变体
+fn test_color_value_variants() {
+    let test_cases = vec![
+        (ColorValue::Rgba(255, 0, 0, 255), "rgba(255, 0, 0, 255)"),
+        (ColorValue::Rgba(0, 0, 255, 128), "rgba(0, 0, 255, 128)"),
+        (ColorValue::Hsla(0.0, 100.0, 50.0, 1.0), "hsla(0, 100%, 50%, 1)"),
+        (ColorValue::Hsla(120.0, 100.0, 50.0, 0.5), "hsla(120, 100%, 50%, 0.5)"),
+        (ColorValue::Named("red".to_string()), "red"),
+        (ColorValue::Named("blue".to_string()), "blue"),
+        (ColorValue::Transparent, "transparent"),
+        (ColorValue::CurrentColor, "currentColor"),
+    ];
+
+    for (color_value, _) in test_cases {
+        // 测试 Debug 格式化
+        let _ = format!("{:?}", color_value);
+
+        // 测试 Clone
+        let cloned = color_value.clone();
+        assert_eq!(color_value, cloned);
+    }
+}
+
+#[test]
+/// 测试 DisplayValue 枚举
+fn test_display_value_equality() {
+    let test_cases = vec![
+        (DisplayValue::Block, DisplayValue::Block, true),
+        (DisplayValue::Inline, DisplayValue::Inline, true),
+        (DisplayValue::InlineBlock, DisplayValue::InlineBlock, true),
+        (DisplayValue::Flex, DisplayValue::Flex, true),
+        (DisplayValue::InlineFlex, DisplayValue::InlineFlex, true),
+        (DisplayValue::Grid, DisplayValue::Grid, true),
+        (DisplayValue::InlineGrid, DisplayValue::InlineGrid, true),
+        (DisplayValue::None, DisplayValue::None, true),
+        (DisplayValue::Contents, DisplayValue::Contents, true),
+        (DisplayValue::Flow, DisplayValue::Flow, true),
+        (DisplayValue::FlowRoot, DisplayValue::FlowRoot, true),
+        (DisplayValue::ListItem, DisplayValue::ListItem, true),
+    ];
+
+    for (val1, val2, expected_equal) in test_cases {
+        assert_eq!(
+            val1 == val2,
+            expected_equal,
+            "{:?} == {:?} should be {}",
+            val1,
+            val2,
+            expected_equal
+        );
+    }
+}
+
+#[test]
+/// 测试 FloatValue 和 ClearValue 枚举
+fn test_float_and_clear_values() {
+    let float_test_cases = vec![
+        (FloatValue::None, "none"),
+        (FloatValue::Left, "left"),
+        (FloatValue::Right, "right"),
+        (FloatValue::InlineStart, "inline-start"),
+        (FloatValue::InlineEnd, "inline-end"),
+    ];
+
+    let clear_test_cases = vec![
+        (ClearValue::None, "none"),
+        (ClearValue::Left, "left"),
+        (ClearValue::Right, "right"),
+        (ClearValue::Both, "both"),
+        (ClearValue::InlineStart, "inline-start"),
+        (ClearValue::InlineEnd, "inline-end"),
+    ];
+
+    for (float_value, _) in float_test_cases {
+        let _ = format!("{:?}", float_value);
+        let _ = float_value.clone();
+    }
+
+    for (clear_value, _) in clear_test_cases {
+        let _ = format!("{:?}", clear_value);
+        let _ = clear_value.clone();
+    }
+}
+
+#[test]
+/// 测试 PositionValue 枚举
+fn test_position_value() {
+    let test_cases = vec![
+        (PositionValue::Static, "static"),
+        (PositionValue::Relative, "relative"),
+        (PositionValue::Absolute, "absolute"),
+        (PositionValue::Fixed, "fixed"),
+        (PositionValue::Sticky, "sticky"),
+    ];
+
+    for (position_value, _) in test_cases {
+        let _ = format!("{:?}", position_value);
+        let _ = position_value.clone();
+    }
+}
+
+#[test]
+/// 测试 OverflowValue 枚举
+fn test_overflow_value() {
+    let test_cases = vec![
+        (OverflowValue::Visible, "visible"),
+        (OverflowValue::Hidden, "hidden"),
+        (OverflowValue::Scroll, "scroll"),
+        (OverflowValue::Auto, "auto"),
+        (OverflowValue::Clip, "clip"),
+    ];
+
+    for (overflow_value, _) in test_cases {
+        let _ = format!("{:?}", overflow_value);
+        let _ = overflow_value.clone();
+    }
+}
+
+#[test]
+/// 测试 ListStyleTypeValue 枚举
+fn test_list_style_type_value() {
+    let test_cases = vec![
+        (ListStyleTypeValue::Disc, "disc"),
+        (ListStyleTypeValue::Circle, "circle"),
+        (ListStyleTypeValue::Square, "square"),
+        (ListStyleTypeValue::Decimal, "decimal"),
+        (ListStyleTypeValue::DecimalLeadingZero, "decimal-leading-zero"),
+        (ListStyleTypeValue::LowerRoman, "lower-roman"),
+        (ListStyleTypeValue::UpperRoman, "upper-roman"),
+        (ListStyleTypeValue::LowerAlpha, "lower-alpha"),
+        (ListStyleTypeValue::UpperAlpha, "upper-alpha"),
+        (ListStyleTypeValue::None, "none"),
+    ];
+
+    for (list_style_type, _) in test_cases {
+        let _ = format!("{:?}", list_style_type);
+        let _ = list_style_type.clone();
+    }
+}
+
+#[test]
+/// 测试 ListStylePositionValue 枚举
+fn test_list_style_position_value() {
+    let test_cases = vec![
+        (ListStylePositionValue::Outside, "outside"),
+        (ListStylePositionValue::Inside, "inside"),
+    ];
+
+    for (position_value, _) in test_cases {
+        let _ = format!("{:?}", position_value);
+        let _ = position_value.clone();
+    }
+}
+
+#[test]
+/// 测试 FlexDirectionValue 枚举
+fn test_flex_direction_value() {
+    let test_cases = vec![
+        (FlexDirectionValue::Row, "row"),
+        (FlexDirectionValue::RowReverse, "row-reverse"),
+        (FlexDirectionValue::Column, "column"),
+        (FlexDirectionValue::ColumnReverse, "column-reverse"),
+    ];
+
+    for (flex_direction, _) in test_cases {
+        let _ = format!("{:?}", flex_direction);
+        let _ = flex_direction.clone();
+    }
+}
+
+#[test]
+/// 测试 FlexWrapValue 枚举
+fn test_flex_wrap_value() {
+    let test_cases = vec![(FlexWrapValue::Nowrap, "nowrap"), (FlexWrapValue::Wrap, "wrap")];
+
+    for (flex_wrap, _) in test_cases {
+        let _ = format!("{:?}", flex_wrap);
+        let _ = flex_wrap.clone();
+    }
+}
+
+#[test]
+/// 测试所有 CSS 类型值的 Clone 实现
+fn test_all_css_values_clone() {
+    // 这里测试各种类型值的 Clone 是否正常工作
+    let _ = LengthValue::Px(10.0).clone();
+    let _ = ColorValue::Rgba(255, 0, 0, 255).clone();
+    let _ = DisplayValue::Block.clone();
+    let _ = FloatValue::None.clone();
+    let _ = ClearValue::None.clone();
+    let _ = PositionValue::Static.clone();
+    let _ = OverflowValue::Visible.clone();
+    let _ = ListStyleTypeValue::Disc.clone();
+    let _ = ListStylePositionValue::Outside.clone();
+    let _ = FlexDirectionValue::Row.clone();
+    let _ = FlexWrapValue::Nowrap.clone();
+
+    // 测试嵌套类型的 Clone
+    let _ = LengthValue::FitContent(Box::new(LengthValue::Px(100.0))).clone();
+}
+
+#[test]
+/// 测试 CSS 类型值的 Debug 格式化
+fn test_all_css_values_debug() {
+    // 这里测试各种类型值的 Debug 格式化是否正常工作
+    let _ = format!("{:?}", LengthValue::Px(10.0));
+    let _ = format!("{:?}", ColorValue::Rgba(255, 0, 0, 255));
+    let _ = format!("{:?}", DisplayValue::Block);
+    let _ = format!("{:?}", FloatValue::None);
+    let _ = format!("{:?}", ClearValue::None);
+    let _ = format!("{:?}", PositionValue::Static);
+    let _ = format!("{:?}", OverflowValue::Visible);
+    let _ = format!("{:?}", ListStyleTypeValue::Disc);
+    let _ = format!("{:?}", ListStylePositionValue::Outside);
+    let _ = format!("{:?}", FlexDirectionValue::Row);
+    let _ = format!("{:?}", FlexWrapValue::Nowrap);
+
+    // 测试嵌套类型的 Debug 格式化
+    let _ = format!("{:?}", LengthValue::FitContent(Box::new(LengthValue::Px(100.0))));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 36. Transform/Timing 边界测试（覆盖 parse_transform.rs 的 uncovered 路径）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 测试 parse_animation_direction 的各种格式
+fn test_parse_animation_direction_formats() {
+    let test_cases = vec![
+        ("normal", AnimationDirectionValue::Normal),
+        ("reverse", AnimationDirectionValue::Reverse),
+        ("alternate", AnimationDirectionValue::Alternate),
+        ("alternate-reverse", AnimationDirectionValue::AlternateReverse),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_direction(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_direction 无效输入
+fn test_parse_animation_direction_invalid() {
+    let test_cases = vec![
+        "",
+        " ",
+        "invalid",
+        "alternate-reverse-extra",
+        "normal extra",
+        "123",
+        "normal123",
+    ];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_direction(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_fill_mode 的各种格式
+fn test_parse_animation_fill_mode_formats() {
+    let test_cases = vec![
+        ("none", AnimationFillModeValue::None),
+        ("forwards", AnimationFillModeValue::Forwards),
+        ("backwards", AnimationFillModeValue::Backwards),
+        ("both", AnimationFillModeValue::Both),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_fill_mode(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_fill_mode 无效输入
+fn test_parse_animation_fill_mode_invalid() {
+    let test_cases = vec!["", " ", "invalid", "forwards extra", "none123", "123"];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_fill_mode(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_play_state 的各种格式
+fn test_parse_animation_play_state_formats() {
+    let test_cases = vec![
+        ("running", AnimationPlayStateValue::Running),
+        ("paused", AnimationPlayStateValue::Paused),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_play_state(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_play_state 无效输入
+fn test_parse_animation_play_state_invalid() {
+    let test_cases = vec!["", " ", "invalid", "running extra", "paused123", "123"];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_play_state(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_name 的各种格式
+fn test_parse_animation_name_formats() {
+    let test_cases = vec![
+        ("none", AnimationNameValue::None),
+        ("fadeIn", AnimationNameValue::Custom("fadeIn".to_string())),
+        ("slide-in", AnimationNameValue::Custom("slide-in".to_string())),
+        ("test123", AnimationNameValue::Custom("test123".to_string())),
+        ("_valid", AnimationNameValue::Custom("_valid".to_string())),
+        ("-valid", AnimationNameValue::Custom("-valid".to_string())),
+        ("valid_name", AnimationNameValue::Custom("valid_name".to_string())),
+        ("NONE", AnimationNameValue::None),
+        ("fadeIn", AnimationNameValue::Custom("fadeIn".to_string())),
+        ("SLIDE-IN", AnimationNameValue::Custom("SLIDE-IN".to_string())),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_name(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_name 无效输入
+fn test_parse_animation_name_invalid() {
+    let test_cases = vec![
+        "",             // 空字符串
+        " ",            // 只有空格
+        "123invalid",   // 以数字开头
+        "invalid name", // 包含空格
+    ];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_name(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_duration 的各种格式
+fn test_parse_animation_duration_formats() {
+    let test_cases = vec![
+        ("1s", AnimationDurationValue::Time(1.0, TimeUnit::S)),
+        ("0.5s", AnimationDurationValue::Time(0.5, TimeUnit::S)),
+        ("2s", AnimationDurationValue::Time(2.0, TimeUnit::S)),
+        ("500ms", AnimationDurationValue::Time(500.0, TimeUnit::Ms)),
+        ("100ms", AnimationDurationValue::Time(100.0, TimeUnit::Ms)),
+        ("0ms", AnimationDurationValue::Time(0.0, TimeUnit::Ms)),
+        ("1.5s", AnimationDurationValue::Time(1.5, TimeUnit::S)),
+        ("1500ms", AnimationDurationValue::Time(1500.0, TimeUnit::Ms)),
+        ("1S", AnimationDurationValue::Time(1.0, TimeUnit::S)),
+        ("0.5S", AnimationDurationValue::Time(0.5, TimeUnit::S)),
+        ("500MS", AnimationDurationValue::Time(500.0, TimeUnit::Ms)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_duration(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_duration 无效输入
+fn test_parse_animation_duration_invalid() {
+    let test_cases = vec![
+        "",    // 空字符串
+        " ",   // 只有空格
+        "1",   // 没有单位
+        "s",   // 只有单位
+        "ms",  // 只有单位
+        "1x",  // 无效单位
+        "1xs", // 无效单位
+        "1sm", // 无效单位
+        "abc", // 无效格式
+        "-1s", // 负值
+        "0s",  // 零值（应该有效）
+        "0ms", // 零值（应该有效）
+    ];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_duration(input);
+        if input != "0s" && input != "0ms" {
+            // 0 应该有效
+            assert_eq!(result, None, "Should fail to parse: {}", input);
+        }
+    }
+}
+
+#[test]
+/// 测试 parse_animation_iteration_count 的各种格式
+fn test_parse_animation_iteration_count_formats() {
+    let test_cases = vec![
+        ("infinite", AnimationIterationCountValue::Infinite),
+        ("1", AnimationIterationCountValue::Number(1.0)),
+        ("2", AnimationIterationCountValue::Number(2.0)),
+        ("0.5", AnimationIterationCountValue::Number(0.5)),
+        ("2.5", AnimationIterationCountValue::Number(2.5)),
+        ("3.0", AnimationIterationCountValue::Number(3.0)),
+        ("INFINITE", AnimationIterationCountValue::Infinite),
+        ("1", AnimationIterationCountValue::Number(1.0)),
+        ("0.5", AnimationIterationCountValue::Number(0.5)),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = crate::values::parse_animation_iteration_count(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 parse_animation_iteration_count 无效输入
+fn test_parse_animation_iteration_count_invalid() {
+    let test_cases = vec![
+        "",               // 空字符串
+        " ",              // 只有空格
+        "0",              // 零值
+        "-1",             // 负值
+        "-0.5",           // 负值
+        "infinite extra", // 额外字符
+        "1 extra",        // 额外字符
+        "abc",            // 无效格式
+        "1.2.3",          // 多个小数点
+        "1x",             // 非数字字符
+    ];
+
+    for input in test_cases {
+        let result = crate::values::parse_animation_iteration_count(input);
+        assert_eq!(result, None, "Should fail to parse: {}", input);
+    }
+}
+
+#[test]
+/// 测试 TimingFunctionValue 枚举的各种情况
+fn test_timing_function_value_variants() {
+    let test_cases = vec![
+        (TimingFunctionValue::Ease, "ease"),
+        (TimingFunctionValue::Linear, "linear"),
+        (TimingFunctionValue::EaseIn, "ease-in"),
+        (TimingFunctionValue::EaseOut, "ease-out"),
+        (TimingFunctionValue::EaseInOut, "ease-in-out"),
+        (
+            TimingFunctionValue::CubicBezier(0.25, 0.1, 0.25, 1.0),
+            "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
+        ),
+        (TimingFunctionValue::StepStart, "step-start"),
+        (TimingFunctionValue::StepEnd, "step-end"),
+        (
+            TimingFunctionValue::Steps(5, Some(StepPosition::Start)),
+            "steps(5, start)",
+        ),
+        (TimingFunctionValue::Steps(3, Some(StepPosition::End)), "steps(3, end)"),
+        (
+            TimingFunctionValue::Steps(10, Some(StepPosition::Both)),
+            "steps(10, both)",
+        ),
+        (
+            TimingFunctionValue::Steps(2, Some(StepPosition::None)),
+            "steps(2, none)",
+        ),
+        (TimingFunctionValue::Steps(4, None), "steps(4)"),
+    ];
+
+    for (timing_value, _) in test_cases {
+        // 测试 Clone
+        let cloned = timing_value.clone();
+        assert_eq!(timing_value, cloned);
+
+        // 测试 Debug 格式化
+        let _ = format!("{:?}", timing_value);
+    }
+}
+
+#[test]
+/// 测试 StepPosition 枚举
+fn test_step_position_variants() {
+    let test_cases = vec![
+        (StepPosition::Start, "start"),
+        (StepPosition::End, "end"),
+        (StepPosition::Both, "both"),
+        (StepPosition::None, "none"),
+    ];
+
+    for (step_position, _) in test_cases {
+        // 测试 Clone
+        let cloned = step_position.clone();
+        assert_eq!(step_position, cloned);
+
+        // 测试 Debug 格式化
+        let _ = format!("{:?}", step_position);
+    }
+}

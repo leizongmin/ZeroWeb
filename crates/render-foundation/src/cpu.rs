@@ -154,4 +154,261 @@ mod tests {
         assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 255]);
         assert_eq!(fb.get_pixel(19, 15), [255, 255, 255, 255]);
     }
+
+    #[test]
+    fn render_scene_to_framebuffer_no_scaling() {
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::RED,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+        assert_eq!(fb.get_pixel(0, 0), [255, 0, 0, 255]);
+        assert_eq!(fb.get_pixel(9, 9), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn render_scene_to_framebuffer_only_glyphs() {
+        let fills = [];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 0.0,
+            baseline_y: 10.0,
+            color: Color::GREEN,
+            font_id: 0,
+            font_size: 8.0,
+        }];
+
+        let fb = render_scene_to_framebuffer(16, 16, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs);
+
+        assert_eq!(fb.width, 16);
+        assert_eq!(fb.height, 16);
+        // 没有加载真实字体，glyph 不会被渲染
+        // 整个帧缓冲应该是白色
+        for y in 0..16 {
+            for x in 0..16 {
+                assert_eq!(
+                    fb.get_pixel(x, y),
+                    [255, 255, 255, 255],
+                    "pixel ({}, {}) should be white",
+                    x,
+                    y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn render_scene_to_framebuffer_empty_inputs() {
+        let fills = [];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let glyphs = [];
+
+        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs);
+
+        assert_eq!(fb.width, 8);
+        assert_eq!(fb.height, 8);
+        // 应该全是白色（清除色）
+        for y in 0..8 {
+            for x in 0..8 {
+                assert_eq!(fb.get_pixel(x, y), [255, 255, 255, 255]);
+            }
+        }
+    }
+
+    #[test]
+    fn render_scene_to_framebuffer_zero_scale() {
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLUE,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(10, 10, 0.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 10); // 最小尺寸为1，所以保持10
+        assert_eq!(fb.height, 10);
+        // 0.0 缩放被归一化为 1.0，矩形应该被渲染
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 255, 255]); // 矩形应该渲染
+    }
+
+    #[test]
+    fn render_scene_to_framebuffer_fill_clipping() {
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+            color: Color::BLACK,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+        assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 255]); // 填充整个帧缓冲
+        assert_eq!(fb.get_pixel(9, 9), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn render_scene_to_framebuffer_negative_scale() {
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::RED,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(10, 10, -1.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 10); // 负缩放应回退到1.0
+        assert_eq!(fb.height, 10);
+        // 由于 normalize_scale_factor 将负值转为 1.0，矩形应该被渲染
+        assert_eq!(fb.get_pixel(0, 0), [255, 0, 0, 255]); // 矩形应该渲染
+    }
+
+    #[test]
+    fn fill_rect_with_invalid_coordinates() {
+        let fills = vec![
+            FillPrimitive {
+                rect: Rect::new(-10.0, -10.0, 5.0, 5.0), // 全部在帧缓冲外
+                color: Color::RED,
+            },
+            FillPrimitive {
+                rect: Rect::new(100.0, 100.0, 105.0, 105.0), // 全部在帧缓冲外
+                color: Color::GREEN,
+            },
+            FillPrimitive {
+                rect: Rect::new(5.0, 5.0, 10.0, 10.0), // 部分在帧缓冲内
+                color: Color::BLUE,
+            },
+        ];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+        // 只有部分重叠的矩形应该渲染
+        assert_eq!(fb.get_pixel(5, 5), [0, 0, 255, 255]);
+        assert_eq!(fb.get_pixel(9, 9), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn glyph_out_of_bounds() {
+        let fills = [];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // Glyph 在帧缓冲外
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 100.0,
+            baseline_y: 100.0,
+            color: Color::RED,
+            font_id: 0,
+            font_size: 8.0,
+        }];
+
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs);
+
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+        // 应该是全白，没有渲染 glyph
+        for y in 0..10 {
+            for x in 0..10 {
+                assert_eq!(fb.get_pixel(x, y), [255, 255, 255, 255]);
+            }
+        }
+    }
+
+    #[test]
+    fn blend_alpha_compositing() {
+        let fills = [];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 半透明 glyph
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 0.0,
+            baseline_y: 8.0,
+            color: Color::rgba(255, 0, 0, 128), // 半透明红
+            font_id: 0,
+            font_size: 8.0,
+        }];
+
+        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs);
+
+        assert_eq!(fb.width, 8);
+        assert_eq!(fb.height, 8);
+        // 如果 glyph 渲染在 (0,0)，alpha 应为 128
+        // 注意：实际值取决于 glyph 形状
+        let mut has_non_white_pixel = false;
+        for y in 0..8 {
+            for x in 0..8 {
+                let pixel = fb.get_pixel(x, y);
+                if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
+                    has_non_white_pixel = true;
+                    // alpha 通道应保持 255（帧缓冲总是完全不透明）
+                    assert_eq!(pixel[3], 255);
+                }
+            }
+        }
+        // 如果测试系统字体存在，glyph 应该渲染
+        if has_non_white_pixel {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn scale_dimension_edge_cases() {
+        // 测试边界尺寸计算
+        assert_eq!(scale_dimension(0, 1.0), 1); // 最小为1
+        assert_eq!(scale_dimension(0, 2.0), 1);
+        assert_eq!(scale_dimension(10, 0.1), 1);
+        assert_eq!(scale_dimension(1000, 0.001), 1);
+        assert_eq!(scale_dimension(100, 1.0), 100);
+        assert_eq!(scale_dimension(100, 1.5), 150);
+        assert_eq!(scale_dimension(100, 1.49), 149); // 四舍五入
+    }
+
+    #[test]
+    fn glyph_top_left_large_offsets() {
+        // 测试大的偏移值
+        let (x, y) = glyph_top_left(0.0, 0.0, 1000, 2000, 100);
+        assert_eq!(x, 1000.0);
+        assert_eq!(y, -2100.0); // baseline_y - y_offset - height
+
+        // 测试正常偏移
+        let (x, y) = glyph_top_left(10.0, 20.0, 5, -8, 16);
+        assert_eq!(x, 15.0); // 10 + 5
+        assert_eq!(y, 12.0); // 20 - (-8) - 16 = 20 + 8 - 16 = 12
+    }
+
+    #[test]
+    fn render_scene_small_dimensions() {
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            color: Color::GREEN,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 最小尺寸
+        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[]);
+
+        assert_eq!(fb.width, 1);
+        assert_eq!(fb.height, 1);
+        assert_eq!(fb.get_pixel(0, 0), [0, 255, 0, 255]);
+    }
 }

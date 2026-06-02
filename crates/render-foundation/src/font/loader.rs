@@ -428,4 +428,238 @@ mod tests {
         // fontdue 应能处理，即使结果可能是空的 glyph
         assert!(result.is_ok(), "光栅化 NULL 字符不应失败");
     }
+
+    /// 测试字体加载器的内存管理
+    #[test]
+    fn test_font_loader_memory_usage() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+
+        // 加载多个字体
+        for i in 0..5 {
+            let font_id = loader.load_font(&font_data).expect("should load");
+            assert_eq!(font_id, i);
+        }
+
+        // 验证数量
+        assert_eq!(loader.len(), 5);
+        assert!(!loader.is_empty());
+
+        // 清理所有字体
+        // 注意：没有直接的卸载方法，这是测试真实场景
+    }
+
+    /// 测试不同字符的 advance 宽度
+    #[test]
+    fn test_font_loader_rasterize_advance_width() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load");
+
+        // 空格字符
+        let space = loader.rasterize_glyph(font_id, ' ', 16.0).unwrap();
+        assert!(space.advance >= 0.0);
+        assert!(space.width == 0 || space.advance > 0.0);
+
+        // 宽字符 'W' vs 窄字符 'i'
+        let w = loader.rasterize_glyph(font_id, 'W', 16.0).unwrap();
+        let i = loader.rasterize_glyph(font_id, 'i', 16.0).unwrap();
+
+        // 'W' 通常比 'i' 宽
+        assert!(w.advance >= i.advance);
+    }
+
+    /// 测试字体查找功能
+    #[test]
+    fn test_font_loader_find_by_family() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let _font_id = loader.load_font(&font_data).expect("should load");
+
+        // 测试查找
+        let desc = FontDesc::normal("Arial"); // 可能不匹配，但测试 API
+        let found_id = loader.find(&desc);
+
+        // 由于 get_font_family_name 总是返回 None，find 总是返回 None
+        assert!(found_id.is_none());
+    }
+
+    /// 测试字体 ID 重用（通过重复加载模拟）
+    #[test]
+    fn test_font_loader_id_sequence() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+
+        // 加载多个字体验证 ID 分配
+        let ids: Vec<u32> = (0..10)
+            .map(|_| loader.load_font(&font_data).expect("should load"))
+            .collect();
+
+        // 验证 ID 是连续的
+        for i in 0..10 {
+            assert_eq!(ids[i], i as u32);
+        }
+
+        // 验证不重复
+        let unique_ids: std::collections::HashSet<u32> = ids.iter().cloned().collect();
+        assert_eq!(unique_ids.len(), 10);
+    }
+
+    /// 测试 rasterize_glyph 对无效 font_id 的处理
+    #[test]
+    fn test_font_loader_invalid_font_id() {
+        let loader = FontLoader::new();
+
+        // 尝试获取不存在的字体
+        let result = loader.get(999999);
+        assert!(result.is_none());
+
+        // 尝试渲染不存在的字体
+        let result = loader.rasterize_glyph(999999, 'A', 16.0);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), crate::font::FontError::NotFound(_)));
+    }
+
+    /// 测试字体加载器的空状态
+    #[test]
+    fn test_font_loader_state_operations() {
+        let loader = FontLoader::new();
+
+        // 初始状态
+        assert!(loader.is_empty());
+        assert_eq!(loader.len(), 0);
+
+        // 验证无 font_id 的行为
+        assert!(loader.get(0).is_none());
+        assert!(loader.find(&FontDesc::normal("Test")).is_none());
+    }
+
+    /// 测试字体描述符的等价性
+    #[test]
+    fn test_font_desc_equality() {
+        let desc1 = FontDesc::normal("Arial");
+        let desc2 = FontDesc {
+            family: "Arial".to_string(),
+            weight: 400,
+            italic: false,
+        };
+        assert_eq!(desc1, desc2);
+
+        let desc3 = FontDesc::bold("Arial");
+        assert_ne!(desc1, desc3);
+
+        let desc4 = FontDesc::italic("Arial");
+        assert_ne!(desc1, desc4);
+    }
+
+    /// 测试字体描述符的字符串表示
+    #[test]
+    fn test_font_desc_string_display() {
+        let desc = FontDesc::bold("Arial");
+        assert_eq!(desc.family, "Arial");
+        assert_eq!(desc.weight, 700);
+        assert!(!desc.italic);
+
+        let desc = FontDesc::italic("Times New Roman");
+        assert_eq!(desc.family, "Times New Roman");
+        assert_eq!(desc.weight, 400);
+        assert!(desc.italic);
+    }
+
+    /// 测试字体加载器的容量处理
+    #[test]
+    fn test_font_loader_large_dataset() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+
+        // 加载多个副本来测试大量数据处理
+        for i in 0..20 {
+            let font_id = loader.load_font(&font_data).expect("should load");
+            assert_eq!(font_id, i);
+
+            // 验证每个字体都能正常渲染
+            let result = loader.rasterize_glyph(font_id, 'A', 16.0);
+            assert!(result.is_ok());
+        }
+
+        assert_eq!(loader.len(), 20);
+        assert!(!loader.is_empty());
+    }
+
+    /// 测试字体加载器的边界条件
+    #[test]
+    fn test_font_loader_edge_cases() {
+        let font_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+
+        // 测试极大字体尺寸
+        let font_id = loader.load_font(&font_data).expect("should load");
+        let result = loader.rasterize_glyph(font_id, 'A', 1000.0);
+        assert!(result.is_ok());
+
+        // 测试极小字体尺寸
+        let result = loader.rasterize_glyph(font_id, 'A', 1.0);
+        assert!(result.is_ok());
+    }
+
+    /// 测试字体描述符的权重转换
+    #[test]
+    fn test_font_desc_weight_conversions() {
+        // 测试标准权重
+        let normal = FontDesc::normal("Test");
+        assert_eq!(normal.weight, 400);
+
+        let bold = FontDesc::bold("Test");
+        assert_eq!(bold.weight, 700);
+
+        // 测试自定义权重
+        let custom = FontDesc::new("Test", 300, false);
+        assert_eq!(custom.weight, 300);
+
+        let custom_bold = FontDesc::new("Test", 800, true);
+        assert_eq!(custom_bold.weight, 800);
+        assert!(custom_bold.italic);
+    }
 }

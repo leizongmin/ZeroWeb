@@ -7,4 +7,5 @@ mod basic;
 mod edge;
 mod helpers;
 mod matcher_coverage;
+mod matcher_extra;
 mod shorthand_coverage;
