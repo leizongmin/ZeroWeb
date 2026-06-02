@@ -1,11 +1,11 @@
 //! 绘制命令生成器 — Painter 结构体及其绘制方法。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use zero_css_parser::values::ColorValue;
 use zero_css_parser::values::LengthValue;
 use zero_css_parser::values::VisibilityValue;
-use zero_dom::{Document, NodeId};
+use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::InlineFormattingContext;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -27,6 +27,8 @@ use super::helpers::{
 pub struct Painter {
     /// 生成的渲染图元列表。
     primitives: RenderPrimitives,
+    /// 已由父级行内格式化上下文绘制过文本的节点。
+    painted_inline_nodes: HashSet<NodeId>,
 }
 
 impl Painter {
@@ -34,6 +36,7 @@ impl Painter {
     pub fn new() -> Self {
         Self {
             primitives: RenderPrimitives::new(),
+            painted_inline_nodes: HashSet::new(),
         }
     }
 
@@ -546,6 +549,10 @@ impl Painter {
 
         // 尝试使用行内格式化上下文（需要 Document 和 DOM 节点）
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
+            if self.painted_inline_nodes.contains(&node_id) || !has_direct_paintable_text(doc, node_id) {
+                return;
+            }
+
             let container_width = box_node.content_width;
             let mut inline_ctx = InlineFormattingContext::new(container_width);
             inline_ctx.layout(doc, node_id, &HashMap::new());
@@ -554,6 +561,8 @@ impl Painter {
             if !fragments.is_empty() {
                 // 有文本片段 — 为每个片段中的每个字符生成独立 glyph
                 for fragment in fragments {
+                    self.painted_inline_nodes.insert(fragment.node_id);
+
                     let frag_base_x = content_x + fragment.x + tx;
                     let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
                     let char_advance = fragment.font_size * 0.6;
@@ -650,4 +659,13 @@ impl Default for Painter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn has_direct_paintable_text(doc: &Document, node_id: NodeId) -> bool {
+    doc.child_nodes(node_id).iter().any(|child_id| {
+        matches!(
+            doc.get(*child_id).map(|node| &node.kind),
+            Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
+        )
+    })
 }

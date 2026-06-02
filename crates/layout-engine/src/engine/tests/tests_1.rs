@@ -46,6 +46,36 @@ fn test_compute_block_vertical_stack() {
     assert!(result.root.width > 0.0);
 }
 
+/// 测试纯文本 block 元素具有内容高度，兄弟节点不会重叠。
+#[test]
+fn test_compute_text_blocks_have_nonzero_height() {
+    let (mut doc, body) = make_doc_with_body();
+    let first = doc.create_element("p");
+    let first_text = doc.create_text_node("First paragraph");
+    doc.append_child(first, first_text).unwrap();
+    doc.append_child(body, first).unwrap();
+    let second = doc.create_element("p");
+    let second_text = doc.create_text_node("Second paragraph");
+    doc.append_child(second, second_text).unwrap();
+    doc.append_child(body, second).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(first, make_style_with_display(DisplayValue::Block, 0.0, 0.0));
+    styles.insert(second, make_style_with_display(DisplayValue::Block, 0.0, 0.0));
+
+    let engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let first_box = find_child_by_node_id(&result.root, first).unwrap();
+    let second_box = find_child_by_node_id(&result.root, second).unwrap();
+
+    assert!(first_box.height > 0.0, "first text block should have height");
+    assert!(second_box.height > 0.0, "second text block should have height");
+    assert!(
+        second_box.y >= first_box.y + first_box.height,
+        "second text block should be laid out after first: first={first_box:?}, second={second_box:?}"
+    );
+}
+
 /// 测试 flex row 布局。
 #[test]
 fn test_compute_flex_row() {

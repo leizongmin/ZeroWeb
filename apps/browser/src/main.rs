@@ -17,7 +17,7 @@ use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
-use zero_render_foundation::primitive::FillPrimitive;
+use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
 use zero_webview::WebViewBuilder;
 
 type CpuSurface = SoftbufferSurface<Arc<winit::window::Window>, Arc<winit::window::Window>>;
@@ -170,13 +170,6 @@ mod colors {
         r: 150,
         g: 150,
         b: 150,
-        a: 255,
-    };
-    /// 页面正文颜色
-    pub const PAGE_BODY: Color = Color {
-        r: 80,
-        g: 80,
-        b: 80,
         a: 255,
     };
     /// 状态栏文字颜色
@@ -357,6 +350,34 @@ impl BrowserApp {
             .or_insert_with(|| WebViewBuilder::new().build());
     }
 
+    /// 通过 WebView 加载指定标签页 URL，并同步 BrowserShell 的加载状态
+    fn fetch_tab_url(&mut self, tab_id: TabId, url: &str) {
+        let result = match self.webviews.get_mut(&tab_id) {
+            Some(wv) => wv.fetch_url(url),
+            None => return,
+        };
+
+        match result {
+            Ok(_) => {
+                let title = self
+                    .webviews
+                    .get(&tab_id)
+                    .and_then(|wv| wv.title().map(str::to_string))
+                    .unwrap_or_else(|| url.to_string());
+                self.shell.on_page_loaded(&title);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch URL: {e}, loading error page");
+                let error = e.to_string();
+                let error_page = generate_error_page(url, &error);
+                if let Some(wv) = self.webviews.get_mut(&tab_id) {
+                    wv.load_html(&error_page, None);
+                }
+                self.shell.on_page_error(&error);
+            }
+        }
+    }
+
     /// 导航到指定 URL
     fn navigate_to(&mut self, url: &str) {
         let url = normalize_url(url, &self.shell);
@@ -372,19 +393,7 @@ impl BrowserApp {
         };
         self.ensure_webview(tab_id);
 
-        // 尝试通过 WebView 加载页面
-        let result = match self.webviews.get_mut(&tab_id) {
-            Some(wv) => wv.fetch_url(&url),
-            None => return,
-        };
-
-        if let Err(e) = result {
-            tracing::warn!("Failed to fetch URL: {e}, loading error page");
-            let error_page = generate_error_page(&url, &e.to_string());
-            if let Some(wv) = self.webviews.get_mut(&tab_id) {
-                wv.load_html(&error_page, None);
-            }
-        }
+        self.fetch_tab_url(tab_id, &url);
 
         self.needs_redraw = true;
     }
@@ -454,9 +463,7 @@ impl BrowserApp {
             None => return,
         };
 
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            let _ = wv.fetch_url(&url);
-        }
+        self.fetch_tab_url(tab_id, &url);
 
         self.needs_redraw = true;
     }
@@ -476,9 +483,7 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            let _ = wv.fetch_url(&url);
-        }
+        self.fetch_tab_url(tab_id, &url);
 
         self.needs_redraw = true;
     }
@@ -498,9 +503,7 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            let _ = wv.fetch_url(&url);
-        }
+        self.fetch_tab_url(tab_id, &url);
 
         self.needs_redraw = true;
     }
@@ -1049,7 +1052,7 @@ impl BrowserApp {
         }
 
         // 10. 页面内容
-        self.render_page_content(&mut glyphs, width, page_y, font_size);
+        self.render_page_content(&mut fills, &mut glyphs, width, page_y, font_size);
 
         // 11. 查找栏（覆盖在页面内容上方）
         if self.shell.find_state().is_active() {
@@ -1224,7 +1227,14 @@ impl BrowserApp {
     }
 
     /// 渲染页面内容
-    fn render_page_content(&mut self, glyphs: &mut Vec<GlyphDraw>, _width: u32, page_y: f32, font_size: f32) {
+    fn render_page_content(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        _width: u32,
+        page_y: f32,
+        font_size: f32,
+    ) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
@@ -1249,6 +1259,10 @@ impl BrowserApp {
 
         let mut y = page_y + content_y_offset;
 
+        if !is_loading && self.render_active_webview(fills, glyphs, y, fid) {
+            return;
+        }
+
         if !title.is_empty() {
             draw_text(&title, 20.0, y + 20.0, 24.0, colors::PAGE_TITLE, fid, glyphs);
             y += 52.0;
@@ -1271,17 +1285,33 @@ impl BrowserApp {
                 fid,
                 glyphs,
             );
-        } else {
-            // 尝试显示 WebView 的 URL 信息
-            let tab_id = match self.shell.active_tab_id() {
-                Some(id) => id,
-                None => return,
-            };
-            if let Some(wv) = self.webviews.get(&tab_id) {
-                let info = format!("Content from: {}", wv.url().unwrap_or("(none)"));
-                draw_text(&info, 20.0, y, font_size, colors::PAGE_BODY, fid, glyphs);
-            }
         }
+    }
+
+    /// 渲染活跃 WebView 的页面图元。
+    fn render_active_webview(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        y_offset: f32,
+        fallback_font_id: u32,
+    ) -> bool {
+        let tab_id = match self.shell.active_tab_id() {
+            Some(id) => id,
+            None => return false,
+        };
+
+        let primitives = match self
+            .webviews
+            .get(&tab_id)
+            .and_then(|wv| wv.last_render())
+            .map(|render| &render.primitives)
+        {
+            Some(primitives) => primitives,
+            None => return false,
+        };
+
+        append_webview_primitives(primitives, fills, glyphs, 0.0, y_offset, fallback_font_id)
     }
 
     /// 渲染查找栏
@@ -1537,6 +1567,49 @@ fn draw_text(
     }
 }
 
+/// 将 WebView 输出的基础图元追加到浏览器场景。
+fn append_webview_primitives(
+    primitives: &RenderPrimitives,
+    fills: &mut Vec<FillPrimitive>,
+    glyphs: &mut Vec<GlyphDraw>,
+    x_offset: f32,
+    y_offset: f32,
+    fallback_font_id: u32,
+) -> bool {
+    let fill_start = fills.len();
+    let glyph_start = glyphs.len();
+
+    for fill in &primitives.fills {
+        let mut translated = fill.clone();
+        translated.rect.origin.x += x_offset;
+        translated.rect.origin.y += y_offset;
+        fills.push(translated);
+    }
+
+    for glyph in &primitives.glyphs {
+        let Some(ch) = char::from_u32(glyph.glyph_id) else {
+            continue;
+        };
+        if ch == '\0' {
+            continue;
+        }
+        glyphs.push(GlyphDraw {
+            ch,
+            x: glyph.x + x_offset,
+            baseline_y: glyph.y + y_offset,
+            color: glyph.color,
+            font_id: if glyph.font_id.0 == 0 {
+                fallback_font_id
+            } else {
+                glyph.font_id.0
+            },
+            font_size: glyph.font_size,
+        });
+    }
+
+    fills.len() > fill_start || glyphs.len() > glyph_start
+}
+
 /// URL 规范化 — 支持 URL 和搜索引擎回退
 fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("http://") || input.starts_with("https://") {
@@ -1656,6 +1729,82 @@ fn normalized_window_scale(scale: f64) -> f32 {
         scale as f32
     } else {
         1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_render_foundation::geometry::Rect;
+    use zero_render_foundation::primitive::{FontId, GlyphPrimitive};
+
+    #[test]
+    fn append_webview_primitives_translates_fills_and_glyphs() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));
+        primitives.add_glyph(GlyphPrimitive {
+            x: 3.0,
+            y: 4.0,
+            font_size: 16.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 'A' as u32,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+
+        let mut fills = Vec::new();
+        let mut glyphs = Vec::new();
+
+        assert!(append_webview_primitives(
+            &primitives,
+            &mut fills,
+            &mut glyphs,
+            10.0,
+            layout::TOOLBAR_HEIGHT,
+            7,
+        ));
+
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].rect.origin.x, 11.0);
+        assert_eq!(fills[0].rect.origin.y, layout::TOOLBAR_HEIGHT + 2.0);
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].ch, 'A');
+        assert_eq!(glyphs[0].x, 13.0);
+        assert_eq!(glyphs[0].baseline_y, layout::TOOLBAR_HEIGHT + 4.0);
+        assert_eq!(glyphs[0].font_id, 7);
+    }
+
+    #[test]
+    fn build_scene_renders_loaded_webview_content() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.font_id = Some(0);
+
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+        app.shell.navigate("https://example.test");
+        app.webviews.get_mut(&tab_id).unwrap().load_html(
+            "<html><body><p>Example Domain</p></body></html>",
+            Some("body { color: black; } p { color: black; font-size: 16px; }"),
+        );
+        app.shell.on_page_loaded("Example Domain");
+
+        let (_fills, glyphs) = app.build_scene(800, 600);
+        let page_text: String = glyphs
+            .iter()
+            .filter(|glyph| glyph.baseline_y >= layout::TOOLBAR_HEIGHT)
+            .map(|glyph| glyph.ch)
+            .collect();
+
+        assert!(
+            page_text.contains("Example"),
+            "page glyphs should include WebView text, got {page_text:?}"
+        );
+        assert!(!page_text.contains("Loading"), "loaded page should not show Loading");
+        assert!(
+            !page_text.contains("Content from"),
+            "loaded page should not use the old URL-only fallback"
+        );
     }
 }
 

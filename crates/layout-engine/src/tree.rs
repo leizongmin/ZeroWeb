@@ -14,7 +14,7 @@ use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
 struct BuildContext {
     /// taffy 布局树。
-    taffy: TaffyTree<()>,
+    taffy: TaffyTree<NodeId>,
     /// DOM NodeId → taffy NodeId 映射。
     node_map: HashMap<NodeId, taffy::NodeId>,
     /// taffy NodeId → DOM NodeId 反向映射。
@@ -49,7 +49,7 @@ pub fn build_layout_tree(
     styles: &HashMap<NodeId, ComputedStyle>,
     _viewport_width: f32,
     _viewport_height: f32,
-) -> (TaffyTree<()>, taffy::NodeId, HashMap<taffy::NodeId, NodeId>) {
+) -> (TaffyTree<NodeId>, taffy::NodeId, HashMap<taffy::NodeId, NodeId>) {
     let mut ctx = BuildContext::new();
 
     // 找到第一个元素节点作为根（通常是 document > html）
@@ -152,9 +152,11 @@ fn build_subtree(
 
     // 创建 taffy 节点
     let taffy_id = if child_taffy_ids.is_empty() {
-        ctx.taffy.new_leaf(taffy_style).unwrap()
+        ctx.taffy.new_leaf_with_context(taffy_style, dom_id).unwrap()
     } else {
-        ctx.taffy.new_with_children(taffy_style, &child_taffy_ids).unwrap()
+        let id = ctx.taffy.new_with_children(taffy_style, &child_taffy_ids).unwrap();
+        ctx.taffy.set_node_context(id, Some(dom_id)).unwrap();
+        id
     };
 
     // 记录映射
