@@ -1,6 +1,5 @@
 // Auto-generated test file — split from style-system/lib.rs
 use super::super::*;
-use super::helpers::*;
 
 use zero_css_parser::ast::{
     ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,

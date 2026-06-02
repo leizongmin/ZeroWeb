@@ -6,3 +6,4 @@ mod builder_nav;
 mod coverage;
 mod edge;
 mod integration;
+mod uncovered_paths;
