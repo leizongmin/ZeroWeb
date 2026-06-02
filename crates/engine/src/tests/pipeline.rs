@@ -856,6 +856,64 @@ fn test_pipeline_text_only() {
     // 纯文本应产生 glyph 图元
     assert!(!result.primitives.glyphs.is_empty(), "纯文本应产生 glyph");
 }
+
+/// 文本只应由拥有直接文本子节点的元素绘制一次。
+///
+/// 之前 html/body 等祖先会递归收集后代 textContent，导致同一段文字在相近坐标重复绘制。
+#[test]
+fn test_pipeline_does_not_duplicate_nested_text_glyphs() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><p>Example <b>Domain</b></p></body></html>"#;
+    let css = "html, body, p, b { color: black; font-size: 16px; }";
+
+    let result = pipeline.render_html(html, css);
+    let glyph_text: String = result
+        .primitives
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id))
+        .collect();
+
+    assert_eq!(
+        glyph_text.matches("Example").count(),
+        1,
+        "ancestor elements should not duplicate direct text, got {glyph_text:?}"
+    );
+    assert_eq!(
+        glyph_text.matches("Domain").count(),
+        1,
+        "inline child text should not be repainted by the child after the parent inline context, got {glyph_text:?}"
+    );
+}
+
+/// 多个文本 block 的 glyph baseline 应随布局向下推进。
+#[test]
+fn test_pipeline_text_blocks_have_distinct_baselines() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><p>First paragraph</p><p>Second paragraph</p></body></html>"#;
+    let css = "body, p { color: black; font-size: 16px; }";
+
+    let result = pipeline.render_html(html, css);
+    let first_y = result
+        .primitives
+        .glyphs
+        .iter()
+        .find(|glyph| char::from_u32(glyph.glyph_id) == Some('F'))
+        .map(|glyph| glyph.y)
+        .expect("first paragraph glyph should exist");
+    let second_y = result
+        .primitives
+        .glyphs
+        .iter()
+        .find(|glyph| char::from_u32(glyph.glyph_id) == Some('S'))
+        .map(|glyph| glyph.y)
+        .expect("second paragraph glyph should exist");
+
+    assert!(
+        second_y > first_y,
+        "second paragraph should render below first paragraph: first_y={first_y}, second_y={second_y}"
+    );
+}
 /// 测试渲染管线处理深嵌套 HTML 不 panic。
 #[test]
 fn test_pipeline_deeply_nested_html() {

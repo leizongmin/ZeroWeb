@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 use taffy::prelude::*;
 use zero_css_parser::values::{OverflowValue, PositionValue};
-use zero_dom::{Document, NodeId};
+use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
+use crate::inline::InlineFormattingContext;
 use crate::tree::build_layout_tree;
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 
@@ -58,7 +59,17 @@ impl LayoutEngine {
             width: AvailableSpace::Definite(self.viewport_width),
             height: AvailableSpace::Definite(self.viewport_height),
         };
-        let _ = taffy_tree.compute_layout(root_id, available_space);
+        let _ = taffy_tree.compute_layout_with_measure(
+            root_id,
+            available_space,
+            |known_dimensions, available_space, _node_id, context, _style| {
+                let dom_id = match context {
+                    Some(id) => *id,
+                    None => return Size::ZERO,
+                };
+                measure_text_content(doc, styles, dom_id, known_dimensions, available_space)
+            },
+        );
 
         // 3. 提取 LayoutBox 树
         let mut root_box = Self::extract_layout(&taffy_tree, root_id, &taffy_to_dom, styles);
@@ -77,7 +88,7 @@ impl LayoutEngine {
 
     /// 从 taffy 布局结果中提取 LayoutBox 树。
     fn extract_layout(
-        taffy: &TaffyTree<()>,
+        taffy: &TaffyTree<NodeId>,
         taffy_id: taffy::NodeId,
         taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
@@ -149,6 +160,46 @@ impl LayoutEngine {
             z_index,
         }
     }
+}
+
+fn measure_text_content(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+) -> Size<f32> {
+    if !has_direct_text(doc, dom_id) {
+        return Size::ZERO;
+    }
+
+    let width = known_dimensions
+        .width
+        .or(available_space.width.into_option())
+        .unwrap_or(f32::INFINITY)
+        .max(0.0);
+    let mut inline_ctx = InlineFormattingContext::new(width);
+    inline_ctx.layout(doc, dom_id, styles);
+
+    let measured_width = inline_ctx
+        .all_fragments()
+        .iter()
+        .map(|fragment| fragment.x + fragment.width)
+        .fold(0.0_f32, f32::max);
+
+    Size {
+        width: known_dimensions.width.unwrap_or(measured_width),
+        height: known_dimensions.height.unwrap_or(inline_ctx.total_height()),
+    }
+}
+
+fn has_direct_text(doc: &Document, dom_id: NodeId) -> bool {
+    doc.child_nodes(dom_id).iter().any(|child_id| {
+        matches!(
+            doc.get(*child_id).map(|node| &node.kind),
+            Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
+        )
+    })
 }
 
 /// 将 OverflowValue 转换为 OverflowClip。
