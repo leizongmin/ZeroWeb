@@ -11,6 +11,7 @@ zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-net = { workspace = true }
 zero-script-sandbox = { workspace = true }
+zero-storage = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }

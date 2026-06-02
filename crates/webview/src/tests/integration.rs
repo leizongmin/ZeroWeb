@@ -1364,3 +1364,124 @@ fn test_webview_dom_document_fragment() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "ok", "createDocumentFragment 应返回对象");
 }
+
+// ── Service Worker 集成测试 ──
+
+/// 测试 Service Worker 注册 + 安装 + 激活完整生命周期。
+#[test]
+fn test_sw_register_install_activate() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+    assert!(wv.install_service_worker(id));
+    assert!(wv.activate_service_worker(id));
+
+    let reg = wv.service_worker_registry().get(id).unwrap();
+    assert_eq!(reg.script_url, "/sw.js");
+    assert!(reg.is_active());
+}
+
+/// 测试 Service Worker 注销。
+#[test]
+fn test_sw_unregister() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+    wv.install_service_worker(id);
+    wv.activate_service_worker(id);
+    assert!(wv.unregister_service_worker(id));
+    assert!(wv.service_worker_registry().get(id).is_none());
+}
+
+/// 测试 Service Worker 版本替换。
+#[test]
+fn test_sw_version_replacement() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id1 = wv.register_service_worker("/sw-v1.js", "/", "https://example.com");
+    wv.install_service_worker(id1);
+    wv.activate_service_worker(id1);
+
+    let id2 = wv.register_service_worker("/sw-v2.js", "/", "https://example.com");
+    wv.install_service_worker(id2);
+    wv.activate_service_worker(id2);
+
+    // 旧 SW 应被标记为废弃
+    assert_eq!(
+        wv.service_worker_registry().get(id1).unwrap().state,
+        zero_storage::ServiceWorkerState::Redundant
+    );
+    assert!(wv.service_worker_registry().get(id2).unwrap().is_active());
+}
+
+/// 测试 Service Worker fetch 拦截（缓存命中）。
+#[test]
+fn test_sw_intercept_cached_response() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+    wv.install_service_worker(id);
+    wv.activate_service_worker(id);
+
+    // 手动缓存一个响应
+    let request = zero_storage::CacheRequest::new("https://example.com/cached.html");
+    let response = zero_storage::CacheResponse::ok(b"<html><body>Cached</body></html>".to_vec());
+    wv.service_worker_registry_mut()
+        .get_active_mut("https://example.com")
+        .unwrap()
+        .cache_storage
+        .open("v1")
+        .put(request.clone(), response);
+
+    // fetch_url 应被拦截并返回缓存内容
+    // 注意：这需要网络可用，因为我们测试的是拦截路径
+    // 用 load_html 模拟已缓存的结果更可控
+    let reg = wv.service_worker_registry();
+    let intercept = reg.intercept_fetch(&request, "https://example.com");
+    assert!(matches!(intercept, zero_storage::FetchInterceptResult::Cached(_)));
+}
+
+/// 测试 Service Worker 不影响无 SW 的请求。
+#[test]
+fn test_sw_no_worker_pass_through() {
+    let wv = WebView::new(WebViewConfig::default());
+    let request = zero_storage::CacheRequest::new("https://example.com/page.html");
+    let result = wv.service_worker_registry().intercept_fetch(&request, "https://example.com");
+    assert!(matches!(result, zero_storage::FetchInterceptResult::NoWorker));
+}
+
+/// 测试 Service Worker 作用域匹配。
+#[test]
+fn test_sw_scope_matching() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/app/", "https://example.com");
+    wv.install_service_worker(id);
+    wv.activate_service_worker(id);
+
+    let reg = wv.service_worker_registry().get_active("https://example.com").unwrap();
+    assert!(reg.is_in_scope("https://example.com/app/page.html"));
+    assert!(reg.is_in_scope("/app/sub/page.html"));
+    assert!(!reg.is_in_scope("https://example.com/other/page.html"));
+}
+
+/// 测试 Service Worker 非法操作（重复安装）。
+#[test]
+fn test_sw_invalid_operations() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let id = wv.register_service_worker("/sw.js", "/", "https://example.com");
+
+    assert!(wv.install_service_worker(id));
+    assert!(!wv.install_service_worker(id)); // 重复安装应失败
+    assert!(!wv.activate_service_worker(999)); // 不存在的 ID
+}
+
+/// 测试 extract_origin 辅助函数。
+#[test]
+fn test_extract_origin() {
+    assert_eq!(
+        WebView::extract_origin("https://example.com/path?q=1"),
+        Some("https://example.com".to_string())
+    );
+    assert_eq!(
+        WebView::extract_origin("https://example.com:8443/path"),
+        Some("https://example.com:8443".to_string())
+    );
+    assert_eq!(WebView::extract_origin("not-a-url"), None);
+}
+

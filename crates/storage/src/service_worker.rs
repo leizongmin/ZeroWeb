@@ -274,10 +274,9 @@ impl ServiceWorkerRegistry {
         // 将旧的活跃 SW 标记为废弃
         if let Some(&old_id) = self.active_by_origin.get(&origin)
             && old_id != id
+            && let Some(old_reg) = self.registrations.get_mut(&old_id)
         {
-            if let Some(old_reg) = self.registrations.get_mut(&old_id) {
-                old_reg.mark_redundant();
-            }
+            old_reg.mark_redundant();
         }
 
         // 推进新 SW 的状态
