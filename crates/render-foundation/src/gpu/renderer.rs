@@ -5,6 +5,7 @@
 //! - **无头模式**: 渲染到纹理后回读像素（CPU 后备 / 测试用）
 
 use crate::color::Color;
+use crate::cpu::glyph_top_left;
 use crate::font::cache::GlyphCache;
 use crate::font::loader::FontLoader;
 use crate::geometry::Rect;
@@ -293,7 +294,20 @@ impl GpuRenderer {
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
     ) {
-        self.render_scene_with_clip(fills, font_loader, glyph_cache, glyphs, None);
+        self.render_scene_scaled(fills, font_loader, glyph_cache, glyphs, 1.0);
+    }
+
+    /// 渲染填充矩形和 glyph 文本到当前表面，并应用逻辑像素到物理像素的缩放。
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_scene_scaled(
+        &mut self,
+        fills: &[FillPrimitive],
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        glyphs: &[GlyphDraw],
+        scale_factor: f32,
+    ) {
+        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, None, scale_factor);
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域）
@@ -306,16 +320,31 @@ impl GpuRenderer {
         glyphs: &[GlyphDraw],
         clip_rect: Option<Rect>,
     ) {
+        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, clip_rect, 1.0);
+    }
+
+    /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域和缩放）。
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_scene_with_clip_scaled(
+        &mut self,
+        fills: &[FillPrimitive],
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        glyphs: &[GlyphDraw],
+        clip_rect: Option<Rect>,
+        scale_factor: f32,
+    ) {
+        let scale = normalize_scale_factor(scale_factor);
         let mut vertices: Vec<f32> = Vec::new();
 
         // 1. 填充矩形
         for fill in fills {
             push_fill_quad(
                 &mut vertices,
-                fill.rect.left(),
-                fill.rect.top(),
-                fill.rect.right(),
-                fill.rect.bottom(),
+                fill.rect.left() * scale,
+                fill.rect.top() * scale,
+                fill.rect.right() * scale,
+                fill.rect.bottom() * scale,
                 fill.color,
             );
         }
@@ -325,20 +354,21 @@ impl GpuRenderer {
         let glyph_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = glyphs
             .iter()
             .filter_map(|gd| {
-                let cache_key = crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, gd.font_size);
+                let physical_font_size = gd.font_size * scale;
+                let cache_key = crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, physical_font_size);
                 glyph_cache
                     .get_or_insert_with(cache_key, || {
-                        font_loader.rasterize_glyph(gd.font_id, gd.ch, gd.font_size)
+                        font_loader.rasterize_glyph(gd.font_id, gd.ch, physical_font_size)
                     })
                     .ok()
                     .map(|bitmap| {
                         (
                             gd.ch,
-                            gd.x,
-                            gd.baseline_y,
+                            gd.x * scale,
+                            gd.baseline_y * scale,
                             gd.color,
                             gd.font_id,
-                            gd.font_size,
+                            physical_font_size,
                             bitmap.clone(),
                         )
                     })
@@ -361,8 +391,13 @@ impl GpuRenderer {
             };
 
             let (u0, v0, u1, v1) = placement.uv();
-            let gx = x + placement.x_offset as f32;
-            let gy = baseline_y + placement.y_offset as f32;
+            let (gx, gy) = glyph_top_left(
+                x,
+                baseline_y,
+                placement.x_offset,
+                placement.y_offset,
+                placement.height as u16,
+            );
             let gw = placement.width as f32;
             let gh = placement.height as f32;
             let (r, g, b) = color_to_f32(color);
@@ -376,7 +411,7 @@ impl GpuRenderer {
             vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
         }
 
-        self.render_vertices(&vertices, clip_rect);
+        self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
     }
 
     /// 使用顶点数据执行渲染
@@ -696,6 +731,23 @@ fn color_to_f32(color: Color) -> (f32, f32, f32) {
     (color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0)
 }
 
+fn normalize_scale_factor(scale_factor: f32) -> f32 {
+    if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    }
+}
+
+fn scale_rect(rect: Rect, scale: f32) -> Rect {
+    Rect::new(
+        rect.origin.x * scale,
+        rect.origin.y * scale,
+        rect.size.width * scale,
+        rect.size.height * scale,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,6 +785,15 @@ mod tests {
         }
         // 5 × 6 × 7 = 210
         assert_eq!(vertices.len(), 210);
+    }
+
+    #[test]
+    fn test_scale_rect_scales_origin_and_size() {
+        let rect = scale_rect(Rect::new(2.0, 3.0, 10.0, 20.0), 2.0);
+        assert_eq!(rect.origin.x, 4.0);
+        assert_eq!(rect.origin.y, 6.0);
+        assert_eq!(rect.size.width, 20.0);
+        assert_eq!(rect.size.height, 40.0);
     }
 
     /// 测试无头模式 GPU 渲染器创建

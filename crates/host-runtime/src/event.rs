@@ -82,6 +82,11 @@ pub enum AppEvent {
         /// 新高度
         height: u32,
     },
+    /// 窗口缩放因子变更（例如移动到 Retina/HiDPI 屏幕）
+    ScaleFactorChanged {
+        /// 新缩放因子
+        scale_factor: f64,
+    },
     /// 窗口关闭请求
     CloseRequested,
     /// 窗口获得焦点
@@ -206,6 +211,16 @@ mod tests {
             assert_eq!(height, 1080);
         } else {
             panic!("Expected Resized variant");
+        }
+    }
+
+    #[test]
+    fn test_app_event_scale_factor_changed_value() {
+        let event = AppEvent::ScaleFactorChanged { scale_factor: 2.0 };
+        if let AppEvent::ScaleFactorChanged { scale_factor } = event {
+            assert!((scale_factor - 2.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected ScaleFactorChanged variant");
         }
     }
 

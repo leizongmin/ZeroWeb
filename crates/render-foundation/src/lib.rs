@@ -13,6 +13,8 @@
 #![warn(missing_docs)]
 
 pub mod color;
+pub mod config;
+pub mod cpu;
 pub mod font;
 pub mod geometry;
 pub mod gpu;

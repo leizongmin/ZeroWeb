@@ -3,15 +3,22 @@
 //! M1 里程碑 demo：创建桌面窗口，使用 wgpu GPU 渲染 "Hello ZeroWeb" 文本。
 //! 演示 render-foundation GPU 渲染器 + host-runtime 窗口管理的集成。
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
+
+use softbuffer::{Context as SoftbufferContext, Surface as SoftbufferSurface};
 use zero_host_runtime::event::AppEvent;
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_render_foundation::color::Color;
+use zero_render_foundation::config::RenderMode;
+use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::primitive::FillPrimitive;
 use zero_render_foundation::surface::FrameBuffer;
+
+type CpuSurface = SoftbufferSurface<Arc<winit::window::Window>, Arc<winit::window::Window>>;
 
 /// 尝试加载系统字体，返回字体 ID
 fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
@@ -80,10 +87,61 @@ fn get_font5x7(ch: char) -> [u8; 7] {
     }
 }
 
+fn parse_render_mode_from_args() -> Result<RenderMode, String> {
+    let mut args = std::env::args().skip(1);
+    let mut cli_mode = None;
+
+    while let Some(arg) = args.next() {
+        if arg == "--help" || arg == "-h" {
+            print_usage();
+            std::process::exit(0);
+        }
+
+        if let Some(value) = arg.strip_prefix("--renderer=") {
+            cli_mode = Some(value.parse()?);
+            continue;
+        }
+
+        if arg == "--renderer" {
+            let value = args
+                .next()
+                .ok_or_else(|| format!("--renderer requires {}", RenderMode::values()))?;
+            cli_mode = Some(value.parse()?);
+        }
+    }
+
+    Ok(cli_mode.or(RenderMode::from_env()?).unwrap_or_default())
+}
+
+fn print_usage() {
+    println!("Usage: webview-demo [--renderer {}]", RenderMode::values());
+    println!("Environment: {}={}", RenderMode::ENV_VAR, RenderMode::values());
+}
+
+fn logical_size_from_window(window: &winit::window::Window) -> ((u32, u32), f32) {
+    let physical = window.inner_size();
+    let scale = normalized_window_scale(window.scale_factor());
+    let logical_width = ((physical.width as f32 / scale).round() as u32).max(1);
+    let logical_height = ((physical.height as f32 / scale).round() as u32).max(1);
+    ((logical_width, logical_height), scale)
+}
+
+fn normalized_window_scale(scale: f64) -> f32 {
+    if scale.is_finite() && scale > 0.0 {
+        scale as f32
+    } else {
+        1.0
+    }
+}
+
 /// 应用状态 — 在事件循环中持续维护
 struct DemoState {
     /// GPU 渲染器（可选 — 如果 GPU 不可用则降级到 CPU 渲染）
     gpu_renderer: Option<GpuRenderer>,
+    /// CPU 软件渲染窗口 surface
+    cpu_surface: Option<CpuSurface>,
+    /// 渲染模式
+    render_mode: RenderMode,
     /// 字体加载器
     font_loader: FontLoader,
     /// Glyph 缓存
@@ -94,10 +152,16 @@ struct DemoState {
     surface_configured: bool,
     /// 是否需要重绘
     needs_redraw: bool,
+    /// 窗口逻辑尺寸
+    logical_size: (u32, u32),
+    /// 窗口物理尺寸
+    physical_size: (u32, u32),
+    /// 窗口缩放因子
+    scale_factor: f32,
 }
 
 impl DemoState {
-    fn new() -> Self {
+    fn new(render_mode: RenderMode) -> Self {
         let mut font_loader = FontLoader::new();
         let font_id = load_system_font(&mut font_loader);
 
@@ -109,16 +173,25 @@ impl DemoState {
 
         Self {
             gpu_renderer: None,
+            cpu_surface: None,
+            render_mode,
             font_loader,
             glyph_cache: GlyphCache::new(8192),
             font_id,
             surface_configured: false,
             needs_redraw: true,
+            logical_size: (800, 600),
+            physical_size: (800, 600),
+            scale_factor: 1.0,
         }
     }
 
     /// 尝试初始化 GPU 渲染器
     fn init_gpu(&mut self, window: &Arc<winit::window::Window>) {
+        if matches!(self.render_mode, RenderMode::Cpu) {
+            return;
+        }
+
         match GpuRenderer::new_for_window(Arc::clone(window)) {
             Ok(renderer) => {
                 println!("wgpu GPU 渲染器初始化成功 (format: {:?})", renderer.surface_format());
@@ -127,7 +200,32 @@ impl DemoState {
                 self.needs_redraw = true;
             }
             Err(e) => {
-                eprintln!("GPU 渲染器初始化失败: {e}，将使用 CPU 后备渲染");
+                if matches!(self.render_mode, RenderMode::Gpu) {
+                    eprintln!("GPU 渲染器初始化失败: {e}");
+                } else {
+                    eprintln!("GPU 渲染器初始化失败: {e}，将使用 CPU 后备渲染");
+                }
+            }
+        }
+    }
+
+    /// 初始化 CPU 软件渲染 surface
+    fn init_cpu_surface(&mut self, window: &Arc<winit::window::Window>) {
+        if self.cpu_surface.is_some() {
+            return;
+        }
+
+        match SoftbufferContext::new(Arc::clone(window))
+            .and_then(|context| SoftbufferSurface::new(&context, Arc::clone(window)))
+        {
+            Ok(surface) => {
+                println!("CPU 软件渲染器初始化成功");
+                self.cpu_surface = Some(surface);
+                self.surface_configured = false;
+                self.needs_redraw = true;
+            }
+            Err(e) => {
+                eprintln!("CPU 软件渲染器初始化失败: {e}");
             }
         }
     }
@@ -138,11 +236,67 @@ impl DemoState {
         let mut gpu = self.gpu_renderer.take();
         if let Some(ref mut renderer) = gpu {
             self.render_gpu(renderer, width, height);
+        } else if self.cpu_surface.is_some() {
+            self.render_cpu(width, height);
         }
         self.gpu_renderer = gpu;
     }
 
     fn render_gpu(&mut self, gpu: &mut GpuRenderer, width: u32, height: u32) {
+        let (fills, glyphs) = self.build_scene(width, height);
+        gpu.render_scene_scaled(
+            &fills,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            &glyphs,
+            self.scale_factor,
+        );
+    }
+
+    fn render_cpu(&mut self, width: u32, height: u32) {
+        let (fills, glyphs) = self.build_scene(width, height);
+        let fb = render_scene_to_framebuffer(
+            width,
+            height,
+            self.scale_factor,
+            &fills,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            &glyphs,
+        );
+        let Some(surface) = self.cpu_surface.as_mut() else {
+            return;
+        };
+
+        let sw = match NonZeroU32::new(fb.width) {
+            Some(width) => width,
+            None => return,
+        };
+        let sh = match NonZeroU32::new(fb.height) {
+            Some(height) => height,
+            None => return,
+        };
+
+        if let Err(e) = surface.resize(sw, sh) {
+            eprintln!("CPU surface resize 失败: {e}");
+            return;
+        }
+        let mut buffer = match surface.buffer_mut() {
+            Ok(buffer) => buffer,
+            Err(e) => {
+                eprintln!("CPU surface buffer 失败: {e}");
+                return;
+            }
+        };
+        for (dst, rgba) in buffer.iter_mut().zip(fb.data.chunks_exact(4)) {
+            *dst = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | rgba[2] as u32;
+        }
+        if let Err(e) = buffer.present() {
+            eprintln!("CPU surface present 失败: {e}");
+        }
+    }
+
+    fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
         let text = "Hello ZeroWeb!";
         let font_size = 32.0f32;
         let text_color = Color::rgb(33, 33, 33); // 深灰色文本
@@ -192,13 +346,23 @@ impl DemoState {
             }
         }
 
-        gpu.render_scene(&fills, &self.font_loader, &mut self.glyph_cache, &glyphs);
+        (fills, glyphs)
     }
 }
 
 fn main() {
     println!("ZeroWeb WebView Demo (wgpu GPU 渲染)");
     println!("正在初始化...");
+
+    let render_mode = match parse_render_mode_from_args() {
+        Ok(mode) => mode,
+        Err(err) => {
+            eprintln!("{err}");
+            print_usage();
+            std::process::exit(2);
+        }
+    };
+    println!("渲染模式: {render_mode}");
 
     // CPU 后备：仍然生成 PPM 文件
     let mut fb = FrameBuffer::new(800, 600);
@@ -267,7 +431,7 @@ fn main() {
 
     // 我们需要在事件循环中访问窗口来创建 GPU 表面
     // HostRuntime 现在传递窗口引用
-    let mut state = DemoState::new();
+    let mut state = DemoState::new(render_mode);
 
     println!("进入事件循环...");
     if let Err(e) = runtime.run_with_window(move |event, window| {
@@ -276,26 +440,69 @@ fn main() {
                 if !state.surface_configured {
                     if let Some(ref win) = window
                         && state.gpu_renderer.is_none()
+                        && state.cpu_surface.is_none()
                     {
-                        state.init_gpu(win);
+                        let (logical_size, scale_factor) = logical_size_from_window(win);
+                        let physical = win.inner_size();
+                        state.logical_size = logical_size;
+                        state.physical_size = (physical.width, physical.height);
+                        state.scale_factor = scale_factor;
+
+                        match state.render_mode {
+                            RenderMode::Cpu => state.init_cpu_surface(win),
+                            RenderMode::Gpu | RenderMode::Auto => {
+                                state.init_gpu(win);
+                                if state.gpu_renderer.is_none() && matches!(state.render_mode, RenderMode::Auto) {
+                                    state.init_cpu_surface(win);
+                                }
+                            }
+                        }
                     }
                     if let Some(ref mut gpu) = state.gpu_renderer {
-                        gpu.configure_surface(800, 600);
+                        let (w, h) = state.physical_size;
+                        gpu.configure_surface(w, h);
+                        state.surface_configured = true;
+                    } else if state.cpu_surface.is_some() {
                         state.surface_configured = true;
                     }
                 }
                 // 每帧都重绘（GPU 渲染需要持续刷新）
-                state.render(800, 600);
+                state.render(state.logical_size.0, state.logical_size.1);
                 state.needs_redraw = false;
             }
             AppEvent::Resized { width, height } => {
                 println!("窗口大小变更: {width}x{height}");
                 if width > 0 && height > 0 {
+                    state.physical_size = (width, height);
+                    if let Some(ref win) = window {
+                        let (logical_size, scale_factor) = logical_size_from_window(win);
+                        state.logical_size = logical_size;
+                        state.scale_factor = scale_factor;
+                    } else {
+                        state.logical_size = (width, height);
+                        state.scale_factor = 1.0;
+                    }
                     if let Some(ref mut gpu) = state.gpu_renderer {
                         gpu.configure_surface(width, height);
                     }
                     state.needs_redraw = true;
                 }
+            }
+            AppEvent::ScaleFactorChanged { scale_factor } => {
+                println!("窗口缩放因子变更: {scale_factor}");
+                if let Some(ref win) = window {
+                    let physical = win.inner_size();
+                    let (logical_size, normalized_scale) = logical_size_from_window(win);
+                    state.physical_size = (physical.width, physical.height);
+                    state.logical_size = logical_size;
+                    state.scale_factor = normalized_scale;
+                    if let Some(ref mut gpu) = state.gpu_renderer {
+                        gpu.configure_surface(physical.width, physical.height);
+                    }
+                } else {
+                    state.scale_factor = normalized_window_scale(scale_factor);
+                }
+                state.needs_redraw = true;
             }
             AppEvent::CloseRequested => {
                 println!("窗口关闭请求");
@@ -307,6 +514,12 @@ fn main() {
                 println!("窗口失去焦点");
             }
             _ => {}
+        }
+
+        if state.needs_redraw
+            && let Some(ref win) = window
+        {
+            win.request_redraw();
         }
     }) {
         eprintln!("事件循环错误: {e}");
