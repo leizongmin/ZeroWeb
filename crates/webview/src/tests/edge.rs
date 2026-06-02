@@ -1137,10 +1137,7 @@ fn test_sw_registry_default_empty() {
     assert!(registry.is_empty(), "新 WebView 的 SW 注册表应为空");
     assert_eq!(registry.len(), 0, "注册数量应为 0");
     assert_eq!(registry.active_count(), 0, "活跃 SW 数量应为 0");
-    assert!(
-        registry.active_origins().is_empty(),
-        "活跃 origin 列表应为空"
-    );
+    assert!(registry.active_origins().is_empty(), "活跃 origin 列表应为空");
 }
 
 /// 验证在未安装 Service Worker 的情况下直接调用 activate 应失败。
@@ -1164,11 +1161,7 @@ fn test_sw_activate_before_install() {
         zero_storage::ServiceWorkerState::Registered,
         "激活失败后状态应保持为 Registered"
     );
-    assert_eq!(
-        wv.service_worker_registry().active_count(),
-        0,
-        "不应有活跃的 SW"
-    );
+    assert_eq!(wv.service_worker_registry().active_count(), 0, "不应有活跃的 SW");
 }
 
 /// 验证对已激活的 Service Worker 再次调用 activate 应失败。
@@ -1195,15 +1188,8 @@ fn test_sw_double_activate() {
         zero_storage::ServiceWorkerState::Activated,
         "重复激活后状态应保持为 Activated"
     );
-    assert!(
-        reg.is_active(),
-        "SW 仍应为活跃状态"
-    );
-    assert_eq!(
-        wv.service_worker_registry().active_count(),
-        1,
-        "活跃 SW 数量应保持为 1"
-    );
+    assert!(reg.is_active(), "SW 仍应为活跃状态");
+    assert_eq!(wv.service_worker_registry().active_count(), 1, "活跃 SW 数量应保持为 1");
 }
 
 /// 验证 extract_origin 对 http:// URL 正确提取 origin（不含端口）。
@@ -1270,7 +1256,8 @@ fn test_sw_cache_put_and_match_via_webview() {
     // 通过 service_worker_registry_mut 缓存一个响应
     let request = zero_storage::CacheRequest::new("https://example.com/api/data.json");
     let response = zero_storage::CacheResponse::ok(br#"{"status":"ok"}"#.to_vec());
-    let _ = wv.service_worker_registry_mut()
+    let _ = wv
+        .service_worker_registry_mut()
         .get_active_mut("https://example.com")
         .unwrap()
         .cache_storage
@@ -1284,17 +1271,10 @@ fn test_sw_cache_put_and_match_via_webview() {
     match result {
         zero_storage::FetchInterceptResult::Cached(resp) => {
             assert_eq!(resp.status, 200, "缓存响应状态码应为 200");
-            assert_eq!(
-                resp.body,
-                br#"{"status":"ok"}"#.to_vec(),
-                "缓存响应体应与写入时一致"
-            );
+            assert_eq!(resp.body, br#"{"status":"ok"}"#.to_vec(), "缓存响应体应与写入时一致");
         }
         other => {
-            panic!(
-                "intercept_fetch 应返回 Cached，实际返回: {:?}",
-                other
-            );
+            panic!("intercept_fetch 应返回 Cached，实际返回: {:?}", other);
         }
     }
 

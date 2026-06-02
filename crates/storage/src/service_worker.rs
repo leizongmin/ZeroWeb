@@ -533,7 +533,7 @@ mod tests {
         let request = CacheRequest::new("https://example.com/cached.html");
         let response = CacheResponse::ok(b"cached content".to_vec());
         let cache = registry.get_active_mut("https://example.com").unwrap();
-        cache.cache_storage.open("v1").put(request.clone(), response);
+        let _ = cache.cache_storage.open("v1").put(request.clone(), response);
 
         // 拦截应该返回缓存
         let result = registry.intercept_fetch(&request, "https://example.com");
@@ -620,8 +620,7 @@ mod tests {
 
     #[test]
     fn test_advance_state_from_redundant() {
-        let mut reg =
-            ServiceWorkerRegistration::new(1, "/sw.js", "/", "https://example.com");
+        let mut reg = ServiceWorkerRegistration::new(1, "/sw.js", "/", "https://example.com");
         reg.state = ServiceWorkerState::Redundant;
         assert!(!reg.advance_state());
         assert_eq!(reg.state, ServiceWorkerState::Redundant);
@@ -722,8 +721,7 @@ mod tests {
 
     #[test]
     fn test_scope_matching_full_url() {
-        let reg =
-            ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
+        let reg = ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
 
         // Full URLs should match based on path (host is not checked when scope is a path)
         assert!(reg.is_in_scope("https://example.com/app/page.html"));
@@ -734,16 +732,14 @@ mod tests {
         assert!(reg.is_in_scope("https://other.com/app/page.html"));
 
         // Verify a full-URL scope does consider host
-        let reg2 =
-            ServiceWorkerRegistration::new(2, "/sw.js", "https://example.com/app/", "https://example.com");
+        let reg2 = ServiceWorkerRegistration::new(2, "/sw.js", "https://example.com/app/", "https://example.com");
         assert!(reg2.is_in_scope("https://example.com/app/page.html"));
         assert!(!reg2.is_in_scope("https://other.com/app/page.html"));
     }
 
     #[test]
     fn test_scope_matching_query_string() {
-        let reg =
-            ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
+        let reg = ServiceWorkerRegistration::new(1, "/sw.js", "/app/", "https://example.com");
 
         // Query strings should be ignored for scope matching
         assert!(reg.is_in_scope("/app/page.html?q=1"));

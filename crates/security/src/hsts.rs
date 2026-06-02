@@ -153,7 +153,8 @@ impl HstsStore {
             for i in 1..parts.len() - 1 {
                 let parent = parts[i..].join(".");
                 if let Some(directive) = self.entries.get(&parent)
-                    && !directive.is_expired() && directive.include_subdomains
+                    && !directive.is_expired()
+                    && directive.include_subdomains
                 {
                     return true;
                 }
@@ -173,7 +174,9 @@ impl HstsStore {
 
         // 提取 host
         let after_scheme = &url[7..]; // skip "http://"
-        let host_end = after_scheme.find(&['/', '?', '#', ':'][..]).unwrap_or(after_scheme.len());
+        let host_end = after_scheme
+            .find(&['/', '?', '#', ':'][..])
+            .unwrap_or(after_scheme.len());
         let host = &after_scheme[..host_end];
 
         if self.is_secure(host) {

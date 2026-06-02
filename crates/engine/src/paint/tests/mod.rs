@@ -3,4 +3,5 @@
 mod advanced;
 mod basic;
 mod effects;
+mod helpers;
 mod visual;

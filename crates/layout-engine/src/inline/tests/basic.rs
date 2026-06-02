@@ -1,7 +1,6 @@
 // Auto-generated test file — split from layout-engine/inline.rs
 use super::super::*;
 
-
 /// 测试文本分割为单词。
 #[test]
 fn test_split_into_words() {

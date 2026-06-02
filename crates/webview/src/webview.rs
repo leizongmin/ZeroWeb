@@ -190,8 +190,7 @@ impl WebView {
         if let Some(origin) = Self::extract_origin(url) {
             let request = CacheRequest::new(url);
             match self.sw_registry.intercept_fetch(&request, &origin) {
-                FetchInterceptResult::Cached(response)
-                | FetchInterceptResult::Responded(response) => {
+                FetchInterceptResult::Cached(response) | FetchInterceptResult::Responded(response) => {
                     tracing::info!("Service Worker intercepted fetch for {url}");
                     let html = String::from_utf8(response.body).map_err(|e| {
                         self.loading = false;
@@ -467,33 +466,25 @@ impl WebView {
         function_name: &str,
         args: &[zero_wasm_sandbox::WasmValue],
     ) -> Result<String, WebViewError> {
-        tracing::debug!(
-            "execute_wasm: {} bytes, function: {}",
-            wasm_bytes.len(),
-            function_name
-        );
+        tracing::debug!("execute_wasm: {} bytes, function: {}", wasm_bytes.len(), function_name);
 
         let sandbox = zero_wasm_sandbox::WasmSandbox::new();
-        let module = sandbox.compile(wasm_bytes).map_err(|e| {
-            WebViewError::Script(format!("WASM compile error: {e}"))
-        })?;
+        let module = sandbox
+            .compile(wasm_bytes)
+            .map_err(|e| WebViewError::Script(format!("WASM compile error: {e}")))?;
 
-        let mut instance = module.instantiate(&sandbox).map_err(|e| {
-            WebViewError::Script(format!("WASM instantiate error: {e}"))
-        })?;
+        let mut instance = module
+            .instantiate(&sandbox)
+            .map_err(|e| WebViewError::Script(format!("WASM instantiate error: {e}")))?;
 
-        let results = instance.call(function_name, args).map_err(|e| {
-            WebViewError::Script(format!("WASM call error: {e}"))
-        })?;
+        let results = instance
+            .call(function_name, args)
+            .map_err(|e| WebViewError::Script(format!("WASM call error: {e}")))?;
 
         if results.is_empty() {
             Ok("void".to_string())
         } else {
-            Ok(results
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(", "))
+            Ok(results.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "))
         }
     }
 }

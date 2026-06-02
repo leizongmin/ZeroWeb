@@ -1380,12 +1380,9 @@ fn minimal_wasm_add_module() -> Vec<u8> {
         0x00, 0x61, 0x73, 0x6d, // magic
         0x01, 0x00, 0x00, 0x00, // version
         // type section (id=1)
-        0x01, 0x06, 0x01, 0x60, 0x01, 0x7f, 0x01, 0x7f,
-        // function section (id=3)
-        0x03, 0x02, 0x01, 0x00,
-        // export section (id=7)
-        0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
-        // code section (id=10)
+        0x01, 0x06, 0x01, 0x60, 0x01, 0x7f, 0x01, 0x7f, // function section (id=3)
+        0x03, 0x02, 0x01, 0x00, // export section (id=7)
+        0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00, // code section (id=10)
         0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x41, 0x2a, 0x6a, 0x0b,
     ]
 }
@@ -1476,7 +1473,8 @@ fn test_sw_intercept_cached_response() {
     // 手动缓存一个响应
     let request = zero_storage::CacheRequest::new("https://example.com/cached.html");
     let response = zero_storage::CacheResponse::ok(b"<html><body>Cached</body></html>".to_vec());
-    let _ = wv.service_worker_registry_mut()
+    let _ = wv
+        .service_worker_registry_mut()
         .get_active_mut("https://example.com")
         .unwrap()
         .cache_storage
@@ -1496,7 +1494,9 @@ fn test_sw_intercept_cached_response() {
 fn test_sw_no_worker_pass_through() {
     let wv = WebView::new(WebViewConfig::default());
     let request = zero_storage::CacheRequest::new("https://example.com/page.html");
-    let result = wv.service_worker_registry().intercept_fetch(&request, "https://example.com");
+    let result = wv
+        .service_worker_registry()
+        .intercept_fetch(&request, "https://example.com");
     assert!(matches!(result, zero_storage::FetchInterceptResult::NoWorker));
 }
 
@@ -1538,4 +1538,3 @@ fn test_extract_origin() {
     );
     assert_eq!(WebView::extract_origin("not-a-url"), None);
 }
-

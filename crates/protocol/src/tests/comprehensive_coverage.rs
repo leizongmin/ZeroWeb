@@ -159,8 +159,8 @@ fn test_process_role_debug_and_clone_comprehensive() {
 
     // 测试 Copy 和 Clone 语义
     let role1 = ProcessRole::Browser;
-    let role2 = role1;  // Copy
-    let role3 = role1.clone();  // Clone
+    let role2 = role1; // Copy
+    let role3 = role1.clone(); // Clone
     assert_eq!(role1, role2);
     assert_eq!(role1, role3);
     assert_ne!(role1, ProcessRole::Renderer);

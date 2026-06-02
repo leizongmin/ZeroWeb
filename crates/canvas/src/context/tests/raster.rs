@@ -246,8 +246,7 @@ fn test_flatten_round_rect_two_radii() {
 #[test]
 fn test_flatten_round_rect_three_radii() {
     let mut verts = Vec::new();
-    let (_cx, _cy) =
-        CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0, 12.0, 6.0]);
+    let (_cx, _cy) = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0, 12.0, 6.0]);
     assert!(!verts.is_empty(), "should produce vertices for 3-radii round rect");
 }
 
@@ -311,15 +310,18 @@ fn test_compute_arc_to_geometry_collinear() {
 fn test_compute_arc_to_geometry_normal() {
     let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0);
     // 正常情况：切点不在控制点上
-    assert_ne!((t1x, t1y), (50.0, 0.0), "tangent point should differ from control for normal case");
+    assert_ne!(
+        (t1x, t1y),
+        (50.0, 0.0),
+        "tangent point should differ from control for normal case"
+    );
     assert_ne!((t2x, t2y), (50.0, 0.0), "tangent point 2 should differ from control");
 }
 
 #[test]
 fn test_compute_arc_to_geometry_coincident_points() {
     // 起点和控制点重合 → len1=0 → 退化为控制点
-    let (t1x, t1y, t2x, t2y) =
-        CanvasContext::compute_arc_to_geometry(50.0, 0.0, 50.0, 0.0, 100.0, 0.0, 20.0);
+    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(50.0, 0.0, 50.0, 0.0, 100.0, 0.0, 20.0);
     assert_eq!(t1x, 50.0);
     assert_eq!(t1y, 0.0);
     assert_eq!(t2x, 50.0);
@@ -329,8 +331,7 @@ fn test_compute_arc_to_geometry_coincident_points() {
 #[test]
 fn test_compute_arc_to_geometry_control2_coincident() {
     // 控制点1和终点重合 → len2=0 → 退化为控制点
-    let (t1x, t1y, t2x, t2y) =
-        CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 50.0, 50.0, 50.0, 20.0);
+    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 50.0, 50.0, 50.0, 20.0);
     assert_eq!(t1x, 50.0);
     assert_eq!(t1y, 50.0);
     assert_eq!(t2x, 50.0);
@@ -345,7 +346,10 @@ fn test_flatten_arc_to_normal() {
     CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4);
     assert!(!verts.is_empty(), "normal arc should produce vertices");
     // 每个段 4 个 f32 (x1,y1,x2,y2)
-    assert!(verts.len() >= 4 * 4, "should have >= 4 arc segments + 1 connecting line");
+    assert!(
+        verts.len() >= 4 * 4,
+        "should have >= 4 arc segments + 1 connecting line"
+    );
 }
 
 #[test]
@@ -356,7 +360,11 @@ fn test_flatten_arc_to_degenerate() {
     // 零半径 → t1==t2 → 在切点重合检查处直接返回（无连接线因为 current!=t1 也不满足）
     // 或者只产生连接线但不产生弧线段
     // 最多 4 floats (连接线), 不应有弧线段
-    assert!(verts.len() <= 4, "zero-radius arc should produce no arc segments, got {} floats", verts.len());
+    assert!(
+        verts.len() <= 4,
+        "zero-radius arc should produce no arc segments, got {} floats",
+        verts.len()
+    );
 }
 
 #[test]
@@ -413,7 +421,8 @@ fn test_flatten_path_bezier_curve() {
 fn test_flatten_path_arc() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
-    ctx.current_path.arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0);
+    ctx.current_path
+        .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0);
     let verts = ctx.flatten_path();
     assert_eq!(verts.len(), 64, "arc = 16 segments × 4");
 }
@@ -444,7 +453,8 @@ fn test_flatten_path_close_already_at_start() {
 fn test_flatten_path_ellipse_command() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 10.0);
-    ctx.current_path.ellipse(50.0, 50.0, 40.0, 30.0, 0.0, -std::f32::consts::FRAC_PI_2, 0.0);
+    ctx.current_path
+        .ellipse(50.0, 50.0, 40.0, 30.0, 0.0, -std::f32::consts::FRAC_PI_2, 0.0);
     let verts = ctx.flatten_path();
     assert_eq!(verts.len(), 64, "ellipse = 16 segments × 4");
 }
@@ -792,7 +802,10 @@ fn test_composite_pixel_source_in() {
     ctx.composite_operation = CompositeOperation::SourceIn;
     let src = Color::rgba(255, 0, 0, 200);
     let (r, _g, _b, a) = ctx.composite_pixel(src, 0, 0, 255, 128);
-    assert!(a > 0, "source-in should produce nonzero alpha when dst is partially transparent");
+    assert!(
+        a > 0,
+        "source-in should produce nonzero alpha when dst is partially transparent"
+    );
 }
 
 #[test]

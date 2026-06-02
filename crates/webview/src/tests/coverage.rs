@@ -88,7 +88,10 @@ fn test_execute_wasm_missing_function() {
 fn test_execute_wasm_add_module() {
     let wv = WebView::new(WebViewConfig::default());
     let wasm_bytes = wasm_add_module();
-    let args = vec![zero_wasm_sandbox::WasmValue::I32(3), zero_wasm_sandbox::WasmValue::I32(4)];
+    let args = vec![
+        zero_wasm_sandbox::WasmValue::I32(3),
+        zero_wasm_sandbox::WasmValue::I32(4),
+    ];
     let result = wv.execute_wasm(&wasm_bytes, "add", &args);
     assert!(result.is_ok(), "valid WASM should succeed");
     assert_eq!(result.unwrap(), "i32(7)");
