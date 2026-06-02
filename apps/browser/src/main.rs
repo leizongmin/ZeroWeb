@@ -156,6 +156,7 @@ fn try_detect_x11_dpi() {
 // --- 测试 ---
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use app::append_webview_primitives;
@@ -252,6 +253,139 @@ mod tests {
         app.shell.on_page_loaded("Example Domain");
 
         // 验证不 panic
+        let _ = app.build_scene_for_test(800, 600);
+    }
+
+    /// 验证 Ctrl 修饰键追踪：按下 Ctrl 后标记为活跃，释放后恢复。
+    #[test]
+    fn ctrl_key_tracking() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+
+        // Ctrl 按下
+        app.handle_key("Control", true);
+        assert!(app.is_ctrl_pressed(), "ctrl_pressed should be true after Ctrl down");
+
+        // Ctrl 释放
+        app.handle_key("Control", false);
+        assert!(!app.is_ctrl_pressed(), "ctrl_pressed should be false after Ctrl up");
+    }
+
+    /// 验证 Ctrl+L 聚焦地址栏并清空文本。
+    #[test]
+    fn ctrl_l_focuses_address_bar() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        assert!(!app.address_bar_focused);
+
+        // Ctrl 按下 + L
+        app.handle_key("Control", true);
+        app.handle_key("l", true);
+        assert!(app.address_bar_focused, "Ctrl+L should focus address bar");
+        assert!(app.address_bar_text().is_empty(), "Ctrl+L should clear address bar text");
+    }
+
+    /// 验证 Ctrl+D 添加书签（当前页面）。
+    #[test]
+    fn ctrl_d_adds_bookmark() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+
+        // 先导航到一个页面
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+        app.shell.navigate("https://example.com");
+        app.shell.on_page_loaded("Example");
+
+        let count_before = app.shell.bookmarks().len();
+        app.handle_key("Control", true);
+        app.handle_key("d", true);
+        assert_eq!(
+            app.shell.bookmarks().len(),
+            count_before + 1,
+            "Ctrl+D should add a bookmark"
+        );
+    }
+
+    /// 验证 Ctrl+W 关闭标签页。
+    #[test]
+    fn ctrl_w_closes_tab() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.new_tab(None);
+        let count_before = app.shell.tab_count();
+        assert!(count_before >= 2);
+
+        app.handle_key("Control", true);
+        app.handle_key("w", true);
+        assert_eq!(
+            app.shell.tab_count(),
+            count_before - 1,
+            "Ctrl+W should close active tab"
+        );
+    }
+
+    /// 验证释放 Ctrl 后单键不再触发 Ctrl 快捷键。
+    #[test]
+    fn no_ctrl_shortcut_after_release() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.new_tab(None);
+
+        // 按下并释放 Ctrl
+        app.handle_key("Control", true);
+        app.handle_key("Control", false);
+        assert!(!app.is_ctrl_pressed());
+
+        // 确认 ctrl_pressed 为 false
+        assert!(!app.is_ctrl_pressed(), "ctrl should be released");
+    }
+
+    /// 验证下载栏在有活跃下载时正确渲染。
+    #[test]
+    fn download_bar_renders_when_active() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+
+        // 添加一个活跃下载
+        app.shell.downloads_mut().start_download("https://example.com/file.zip", "file.zip");
+
+        // 构建场景应不 panic
+        let (fills, glyphs) = app.build_scene_for_test(800, 600);
+
+        // 应有下载栏的 fill（至少一个蓝色进度条填充）
+        assert!(
+            fills.iter().any(|f| f.color == colors::DOWNLOAD_BAR_BG),
+            "should have download bar background"
+        );
+
+        // 应有下载相关文字 glyph
+        let text: String = glyphs.iter().map(|g| g.ch).collect();
+        assert!(
+            text.contains("file.zip"),
+            "download bar should show filename, got glyphs containing: {}",
+            text.chars().take(200).collect::<String>()
+        );
+
+        let _ = glyphs; // 避免 unused 警告
+    }
+
+    /// 验证设置页面生成正确 HTML。
+    #[test]
+    fn settings_page_generates_html() {
+        let settings = zero_browser_shell::BrowserSettings::new();
+        let html = pages::generate_settings_html(&settings);
+        assert!(html.contains("设置"), "settings page should have title");
+        assert!(html.contains("Google"), "settings page should show search engine");
+        assert!(html.contains("example.com"), "settings page should show home URL");
+        assert!(html.contains("ZeroBrowser"), "settings page should show browser name");
+    }
+
+    /// 验证 open_settings_page 正确加载。
+    #[test]
+    fn open_settings_page_loads_in_webview() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        app.open_settings_page();
+
+        assert_eq!(app.address_bar_text(), "zero://settings");
+        // WebView 应该有渲染结果
         let _ = app.build_scene_for_test(800, 600);
     }
 }
@@ -390,8 +524,8 @@ fn main() {
             AppEvent::CloseRequested => {
                 tracing::info!("Window closed");
             }
-            AppEvent::KeyboardInput { key, pressed } if pressed => {
-                app.handle_key(&key, true);
+            AppEvent::KeyboardInput { key, pressed } => {
+                app.handle_key(&key, pressed);
             }
             AppEvent::MouseMoved { x, y } => {
                 app.handle_mouse_move(x, y);

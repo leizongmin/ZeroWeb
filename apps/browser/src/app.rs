@@ -105,6 +105,10 @@ pub struct BrowserApp {
     pub needs_redraw: bool,
     /// 鼠标位置（用于悬停检测）
     pub mouse_pos: (f64, f64),
+    /// Ctrl 键是否按住
+    ctrl_pressed: bool,
+    /// Shift 键是否按住
+    shift_pressed: bool,
     /// 自动补全状态
     autocomplete: AutocompleteState,
     /// 查找栏输入文本
@@ -145,6 +149,8 @@ impl BrowserApp {
             scale_factor: 1.0,
             needs_redraw: true,
             mouse_pos: (0.0, 0.0),
+            ctrl_pressed: false,
+            shift_pressed: false,
             autocomplete: AutocompleteState::new(),
             find_input: String::new(),
             tab_layout: Vec::new(),
@@ -202,6 +208,18 @@ impl BrowserApp {
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.load_html(html, css);
         }
+    }
+
+    /// 测试用：获取 Ctrl 修饰键状态
+    #[cfg(test)]
+    pub fn is_ctrl_pressed(&self) -> bool {
+        self.ctrl_pressed
+    }
+
+    /// 测试用：获取地址栏文本
+    #[cfg(test)]
+    pub fn address_bar_text(&self) -> &str {
+        &self.address_bar_text
     }
 
     /// 计算网页内容区域物理像素尺寸
@@ -389,6 +407,21 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 打开设置页面（about:preferences）
+    pub fn open_settings_page(&mut self) {
+        let html = pages::generate_settings_html(self.shell.settings());
+        let tab_id = match self.shell.active_tab_id() {
+            Some(id) => id,
+            None => return,
+        };
+        self.ensure_webview(tab_id);
+        if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.load_html(&html, None);
+        }
+        self.address_bar_text = "zero://settings".to_string();
+        self.needs_redraw = true;
+    }
+
     /// 处理鼠标滚轮滚动
     pub fn handle_scroll(&mut self, delta: zero_host_runtime::event::MouseScrollDelta) {
         // 上下文菜单打开时不滚动
@@ -431,7 +464,25 @@ impl BrowserApp {
     }
 
     /// 处理键盘输入
-    pub fn handle_key(&mut self, key: &str, _pressed: bool) {
+    pub fn handle_key(&mut self, key: &str, pressed: bool) {
+        // 追踪修饰键状态
+        match key {
+            "Control" => {
+                self.ctrl_pressed = pressed;
+                return;
+            }
+            "Shift" => {
+                self.shift_pressed = pressed;
+                return;
+            }
+            _ => {}
+        }
+
+        // 只处理按键按下事件
+        if !pressed {
+            return;
+        }
+
         // 上下文菜单打开时，Escape 关闭菜单，其他按键忽略
         if self.context_menu.visible {
             match key {
@@ -578,6 +629,55 @@ impl BrowserApp {
     }
 
     fn handle_global_key(&mut self, key: &str) {
+        // Ctrl 修饰键快捷键
+        if self.ctrl_pressed {
+            match key {
+                "l" | "L" => {
+                    self.address_bar_focused = true;
+                    self.address_bar_text.clear();
+                    self.needs_redraw = true;
+                }
+                "t" | "T" => {
+                    self.new_tab(None);
+                }
+                "w" | "W" => {
+                    self.close_active_tab();
+                }
+                "r" | "R" => {
+                    self.refresh_page();
+                }
+                "f" | "F" => {
+                    self.find_input.clear();
+                    self.shell.find_close();
+                    self.needs_redraw = true;
+                }
+                "d" | "D" => {
+                    // 收藏当前页面
+                    self.shell.add_bookmark();
+                    self.needs_redraw = true;
+                }
+                "+" | "=" => {
+                    self.shell.zoom_in();
+                    self.needs_redraw = true;
+                }
+                "-" => {
+                    self.shell.zoom_out();
+                    self.needs_redraw = true;
+                }
+                "0" => {
+                    self.shell.zoom_reset();
+                    self.needs_redraw = true;
+                }
+                "," => {
+                    // Ctrl+, 打开设置页面
+                    self.open_settings_page();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // 无修饰键的全局快捷键（保留兼容无 Ctrl 的单键模式）
         match key {
             "l" => {
                 self.address_bar_focused = true;
@@ -1151,7 +1251,12 @@ impl BrowserApp {
             self.render_context_menu(&mut fills, &mut glyphs, s);
         }
 
-        // 15. 状态栏
+        // 15. 下载进度条（有活跃下载时显示在状态栏上方）
+        if self.shell.downloads().active_count() > 0 {
+            self.render_download_bar(&mut fills, &mut glyphs, width, height, font_size, s);
+        }
+
+        // 16. 状态栏
         self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size, s);
 
         (fills, glyphs)
@@ -1682,6 +1787,84 @@ impl BrowserApp {
     fn update_address_bar_from_active_tab(&mut self) {
         if let Some(tab) = self.shell.active_tab() {
             self.address_bar_text = tab.url().unwrap_or("").to_string();
+        }
+    }
+
+    /// 渲染下载进度条（状态栏上方）
+    fn render_download_bar(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        _font_size: f32,
+        s: f32,
+    ) {
+        let fid = match self.font_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let bar_h = layout::DOWNLOAD_BAR_HEIGHT * s;
+        let status_h = layout::STATUS_BAR_HEIGHT * s;
+        let bar_y = height as f32 - status_h - bar_h;
+
+        // 背景
+        fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, colors::DOWNLOAD_BAR_BG));
+
+        // 显示第一个活跃下载的信息
+        let downloads = self.shell.downloads();
+        let active: Vec<_> = downloads.iter().filter(|d| d.is_active()).collect();
+        if let Some(dl) = active.first() {
+            let font_size = 11.0 * s;
+
+            // 文件名
+            let name_text = dl.filename();
+            draw_text(
+                name_text,
+                10.0 * s,
+                bar_y + 6.0 * s,
+                font_size,
+                colors::DOWNLOAD_BAR_TEXT,
+                fid,
+                glyphs,
+            );
+
+            // 进度条
+            let progress = dl.progress();
+            let bar_width = 120.0 * s;
+            let bar_start_x = width as f32 - bar_width - 80.0 * s;
+            let bar_top = bar_y + 8.0 * s;
+            let bar_inner_h = 6.0 * s;
+
+            // 进度条背景
+            fills.push(rect_fill(
+                bar_start_x,
+                bar_top,
+                bar_width,
+                bar_inner_h,
+                colors::SEPARATOR,
+            ));
+            // 进度条填充
+            fills.push(rect_fill(
+                bar_start_x,
+                bar_top,
+                bar_width * progress,
+                bar_inner_h,
+                colors::DOWNLOAD_BAR_FILL,
+            ));
+
+            // 百分比文字
+            let pct_text = format!("{:.0}%", progress * 100.0);
+            draw_text(
+                &pct_text,
+                bar_start_x + bar_width + 8.0 * s,
+                bar_y + 6.0 * s,
+                font_size,
+                colors::DOWNLOAD_BAR_TEXT,
+                fid,
+                glyphs,
+            );
         }
     }
 }
