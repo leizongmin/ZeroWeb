@@ -10,6 +10,7 @@
 //! - [`dirty`] — 脏区域追踪，管理需要重绘的屏幕区域
 //! - [`composite`] — 合成层逻辑，决定元素图层分配
 //! - [`pipeline`] — 端到端渲染管线，编排 HTML→CSS→Layout→Paint
+//! - [`preload`] — 资源预加载，解析 `<link rel="preload/prefetch">` 提示
 
 #![warn(missing_docs)]
 
@@ -18,12 +19,14 @@ pub mod dirty;
 pub mod dom_bridge;
 pub mod paint;
 pub mod pipeline;
+pub mod preload;
 
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;
 pub use paint::*;
 pub use pipeline::*;
+pub use preload::*;
 
 #[cfg(test)]
 mod tests;
