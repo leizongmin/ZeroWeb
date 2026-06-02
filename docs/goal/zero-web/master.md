@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-03
-**执行状态**: 16/16 crate 已实现，6692 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率 92.76%（目标 95%+）
+**执行状态**: 16/16 crate 已实现，6852 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（目标 95%+）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -25,9 +25,9 @@
 |-------|------|------|------|
 | dom | 503 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains**、**TreeWalker 深度优先遍历**、**get_elements_by_class_name/set_id/create_comment/insert_before/inner_text**、**NodeIterator 遍历**、**clone_node fragment/replace_child invalid/wildcard tag/nested text_content/insert_before invalid ref**、**HTML 解析器测试（实体/void 元素/错误恢复/Unicode/大文档）**、**MutationObserver 回调/记录验证**、**Event 传播/stopPropagation/stopImmediatePropagation/非冒泡事件**、**节点比较/文档工厂/DOMTokenList 边界/Range 空/序列化 DOCTYPE/TreeWalker 混合/Event 断连节点** |
 | css-parser | 738 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字**、**word-break 属性**、**writing-mode 属性**、**text-decoration-line/text-transform/letter-spacing/word-spacing**、**3D transform 函数**、**媒体查询 only/逗号 OR/prefers-color-scheme/prefers-reduced-motion/pointer/resolution**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**counter-reset/counter-increment/content/quotes**、**page-break/box-decoration-break/image-rendering/isolation**、**overflow-wrap/text-align-last/font-variant-numeric**、**direction/unicode-bidi/tab-size**、**column-count/column-width/object-fit/filter**、**border-image-source/slice/width/repeat/outset** |
-| style-system | 1053 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、**matcher 覆盖率测试（SubsequentSibling/PseudoElement/nth-last-child/nth-last-of-type/nth-of-type/:not/:is/:where/:lang/:has NextSibling+SubsequentSibling/container 范围/操作符/冒号语法/@supports AND/OR/NOT/@media+@container 集成/属性选择器 DashMatch/Prefix/Suffix/Substring）** |
+| style-system | 1160 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、**matcher 覆盖率测试（SubsequentSibling/PseudoElement/nth-last-child/nth-last-of-type/nth-of-type/:not/:is/:where/:lang/:has NextSibling+SubsequentSibling/container 范围/操作符/冒号语法/@supports AND/OR/NOT/@media+@container 集成/属性选择器 DashMatch/Prefix/Suffix/Substring）**、**apply_property_value 全分支覆盖测试（107 测试覆盖所有 CSS 属性）** |
 | layout-engine | 477 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块**、**grid 3x3 区域/auto-fill minmax/命名区域解析/百分比 gap**、**grid dense/span/min-max 约束**、**负 margin 合并/grid 行跨行/混合 CJK-Latin/absolute-in-relative/flex 不增长**、**grid 全跨/flex gap/大 padding/absolute 拉伸/inline-block 百分比**、**CJK 字符检测/字符串宽度估算/converter 私有函数/overflow 转换/fixed 视口调整/absolute_position 边界** |
-| engine | 568 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**资源预加载**（ResourcePreloader：preload/prefetch/preconnect/dns-prefetch、优先级排序、URL 去重、生命周期追踪）、**DOM Bridge（polyfill: 事件系统 + Fetch API + console + setTimeout/setInterval + insertBefore/replaceChild/cloneNode + CSSStyleDeclaration + DOMTokenList + innerHTML/outerHTML + textContent/innerText + 导航属性）**、**opacity/text-decoration/text-transform 渲染集成**、**命令解析边界测试**、**DomBridge 句柄映射边界**、**DomResult 构造/相等性**、**paint 辅助函数边界/compositing 默认值/dirty 坐标验证/pipeline 状态/dom_bridge 边界** |
+| engine | 621 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**资源预加载**（ResourcePreloader：preload/prefetch/preconnect/dns-prefetch、优先级排序、URL 去重、生命周期追踪）、**DOM Bridge（polyfill: 事件系统 + Fetch API + console + setTimeout/setInterval + insertBefore/replaceChild/cloneNode + CSSStyleDeclaration + DOMTokenList + innerHTML/outerHTML + textContent/innerText + 导航属性）**、**opacity/text-decoration/text-transform 渲染集成**、**命令解析边界测试**、**DomBridge 句柄映射边界**、**DomResult 构造/相等性**、**paint 辅助函数边界/compositing 默认值/dirty 坐标验证/pipeline 状态/dom_bridge 边界**、**paint helpers 覆盖率测试（radial gradient 4 种 size 变体、所有 linear gradient 方向、opacity 全图元类型、clip start index、text transform 边界）** |
 | render-foundation | 300 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积**、**20 非重叠 rect/Color lerp 透明/缓存 GC 优先级/帧缓冲四角/圆角矩形包围盒** |
 | host-runtime | 192 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码**、**连续 resize/全修饰键/中键/IME 空/键盘释放**、**HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** |
 | net | 286 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界** |
@@ -103,7 +103,21 @@
 
 ## 最近完成的改进
 
-### -59. 测试覆盖率提升第三轮（本轮，6692 测试，覆盖率 92.76%）
+### -60. 测试覆盖率提升第四轮（本轮，6852 测试）
+
+系统化提升核心 crate 的单元测试覆盖率，新增 160 个测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| style-system/apply_coverage | **apply_property_value 全分支覆盖**：107 个测试覆盖所有 CSS 属性的 apply_property_value 分支（display、position、transform、grid、flex、animation、transition、scroll-snap、logical properties、border-image、box-shadow、text-shadow、background、contain、filter、appearance 等） | +107 |
+| engine/paint/helpers | **helpers 覆盖率测试**：radial gradient 4 种 size 变体（ClosestSide/FarthestSide/ClosestCorner/Length）、所有 linear gradient 方向、opacity 全图元类型（fill/rounded_rect/glyph/stroke/shadow/image）、clip_fills/clip_glyphs start index、text transform 边界（空串/Unicode/单字符/纯数字） | +22 |
+| style-system | 修复 unused_must_use 警告（matcher/tests/coverage.rs）和 unused import（tests/helpers.rs） | — |
+| storage | 修复 unused_must_use 警告（service_worker.rs） | — |
+| 全 workspace | `cargo fmt` 格式化 | — |
+
+Total: 6692 → 6852 (+160 tests, 0 files exceed 2000-line limit)
+
+### -59. 测试覆盖率提升第三轮（前轮，6692 测试，覆盖率 92.76%）
 
 系统化提升核心 crate 的单元测试覆盖率，新增 150 个测试：
 
