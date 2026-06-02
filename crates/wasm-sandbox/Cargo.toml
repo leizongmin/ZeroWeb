@@ -16,6 +16,7 @@ wasmi = ["dep:wasmi"]
 [dependencies.wasmtime]
 version = "29"
 default-features = false
+features = ["runtime", "cranelift", "std"]
 optional = true
 
 [dependencies.wasmi]
