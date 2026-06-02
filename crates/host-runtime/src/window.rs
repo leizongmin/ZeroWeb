@@ -11,6 +11,52 @@ use crate::event::{
 use crate::{HostError, HostResult};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnixBackendPreference {
+    X11,
+    Wayland,
+}
+
+fn parse_unix_backend_preference(raw: &str) -> Option<UnixBackendPreference> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "x11" => Some(UnixBackendPreference::X11),
+        "wayland" => Some(UnixBackendPreference::Wayland),
+        _ => None,
+    }
+}
+
+fn unix_backend_preference_from_env() -> Option<UnixBackendPreference> {
+    std::env::var("WINIT_UNIX_BACKEND")
+        .ok()
+        .as_deref()
+        .and_then(parse_unix_backend_preference)
+}
+
+fn build_event_loop() -> HostResult<winit::event_loop::EventLoop<()>> {
+    let mut builder = winit::event_loop::EventLoop::builder();
+
+    #[cfg(target_os = "linux")]
+    {
+        match unix_backend_preference_from_env() {
+            Some(UnixBackendPreference::X11) => {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+
+                tracing::info!("Forcing winit backend: x11");
+                builder.with_x11();
+            }
+            Some(UnixBackendPreference::Wayland) => {
+                use winit::platform::wayland::EventLoopBuilderExtWayland;
+
+                tracing::info!("Forcing winit backend: wayland");
+                builder.with_wayland();
+            }
+            None => {}
+        }
+    }
+
+    builder.build().map_err(|e| HostError::EventLoopError(e.to_string()))
+}
+
 /// 窗口配置
 #[derive(Clone)]
 pub struct WindowConfig {
@@ -22,6 +68,8 @@ pub struct WindowConfig {
     pub height: u32,
     /// 是否可调整大小
     pub resizable: bool,
+    /// 是否显示系统窗口装饰
+    pub decorations: bool,
 }
 
 impl WindowConfig {
@@ -32,6 +80,7 @@ impl WindowConfig {
             width: 800,
             height: 600,
             resizable: true,
+            decorations: true,
         }
     }
 
@@ -45,6 +94,12 @@ impl WindowConfig {
     /// 设置是否可调整大小
     pub fn with_resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
+        self
+    }
+
+    /// 设置是否显示系统窗口装饰
+    pub fn with_decorations(mut self, decorations: bool) -> Self {
+        self.decorations = decorations;
         self
     }
 }
@@ -67,12 +122,13 @@ impl HostRuntime {
     where
         F: FnMut(AppEvent) + 'static,
     {
-        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| HostError::EventLoopError(e.to_string()))?;
+        let event_loop = build_event_loop()?;
 
         let window_attrs = winit::window::WindowAttributes::default()
             .with_title(&self.config.title)
             .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
-            .with_resizable(self.config.resizable);
+            .with_resizable(self.config.resizable)
+            .with_decorations(self.config.decorations);
 
         event_loop
             .run_app(&mut BasicApp::new_basic(window_attrs, &mut on_event))
@@ -89,12 +145,13 @@ impl HostRuntime {
     where
         F: FnMut(AppEvent, Option<Arc<winit::window::Window>>) + 'static,
     {
-        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| HostError::EventLoopError(e.to_string()))?;
+        let event_loop = build_event_loop()?;
 
         let window_attrs = winit::window::WindowAttributes::default()
             .with_title(&self.config.title)
             .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
-            .with_resizable(self.config.resizable);
+            .with_resizable(self.config.resizable)
+            .with_decorations(self.config.decorations);
 
         event_loop
             .run_app(&mut GpuApp::new_with_window(window_attrs, &mut on_event))
@@ -141,9 +198,6 @@ impl<F: FnMut(AppEvent)> BasicApp<'_, F> {
             }
             winit::event::WindowEvent::RedrawRequested => {
                 (self.on_event)(AppEvent::RedrawRequested);
-                if let Some(ref win) = self.window {
-                    win.request_redraw();
-                }
             }
             winit::event::WindowEvent::Focused(focused) => {
                 let event = if focused {
@@ -199,7 +253,9 @@ impl<F: FnMut(AppEvent)> winit::application::ApplicationHandler<()> for BasicApp
             && let Some(attrs) = self.window_attrs.take()
         {
             let win = event_loop.create_window(attrs).expect("Failed to create window");
-            self.window = Some(Arc::new(win));
+            let win = Arc::new(win);
+            win.request_redraw();
+            self.window = Some(win);
         }
     }
 
@@ -261,9 +317,6 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
             }
             winit::event::WindowEvent::RedrawRequested => {
                 (self.on_event)(AppEvent::RedrawRequested, win_ref);
-                if let Some(ref win) = self.window {
-                    win.request_redraw();
-                }
             }
             winit::event::WindowEvent::Focused(focused) => {
                 (self.on_event)(
@@ -335,7 +388,9 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application:
             && let Some(attrs) = self.window_attrs.take()
         {
             let win = event_loop.create_window(attrs).expect("Failed to create window");
-            self.window = Some(Arc::new(win));
+            let win = Arc::new(win);
+            win.request_redraw();
+            self.window = Some(win);
         }
     }
 
@@ -373,14 +428,19 @@ mod tests {
         assert_eq!(config.width, 800);
         assert_eq!(config.height, 600);
         assert!(config.resizable);
+        assert!(config.decorations);
     }
 
     #[test]
     fn test_window_config_builder() {
-        let config = WindowConfig::new("Test").with_size(1024, 768).with_resizable(false);
+        let config = WindowConfig::new("Test")
+            .with_size(1024, 768)
+            .with_resizable(false)
+            .with_decorations(false);
         assert_eq!(config.width, 1024);
         assert_eq!(config.height, 768);
         assert!(!config.resizable);
+        assert!(!config.decorations);
     }
 
     #[test]
@@ -422,6 +482,31 @@ mod tests {
         let mut config = WindowConfig::new("Original");
         config.title = "Modified".to_string();
         assert_eq!(config.title, "Modified");
+    }
+
+    #[test]
+    fn test_parse_unix_backend_preference_x11() {
+        assert_eq!(parse_unix_backend_preference("x11"), Some(UnixBackendPreference::X11));
+        assert_eq!(parse_unix_backend_preference(" X11 "), Some(UnixBackendPreference::X11));
+    }
+
+    #[test]
+    fn test_parse_unix_backend_preference_wayland() {
+        assert_eq!(
+            parse_unix_backend_preference("wayland"),
+            Some(UnixBackendPreference::Wayland)
+        );
+        assert_eq!(
+            parse_unix_backend_preference(" WayLand "),
+            Some(UnixBackendPreference::Wayland)
+        );
+    }
+
+    #[test]
+    fn test_parse_unix_backend_preference_invalid() {
+        assert_eq!(parse_unix_backend_preference(""), None);
+        assert_eq!(parse_unix_backend_preference("xorg"), None);
+        assert_eq!(parse_unix_backend_preference("weston"), None);
     }
 
     #[test]

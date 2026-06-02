@@ -579,4 +579,3 @@ fn test_webview_config_url_auto_loaded_via_builder() {
     let wv_builder = WebViewBuilder::new().url("https://example.com").build();
     assert_eq!(wv_builder.url(), Some("https://example.com"));
 }
-

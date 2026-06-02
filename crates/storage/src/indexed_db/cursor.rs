@@ -2,8 +2,8 @@
 
 use std::cell::RefCell;
 
-use crate::StorageError;
 use super::types::*;
+use crate::StorageError;
 
 /// 游标方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -208,4 +208,3 @@ impl IdbTransaction {
         self.db_version
     }
 }
-

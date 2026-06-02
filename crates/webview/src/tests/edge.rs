@@ -1121,4 +1121,3 @@ fn test_webview_execute_script_with_dom_empty() {
         "Empty user script with polyfill should not panic"
     );
 }
-

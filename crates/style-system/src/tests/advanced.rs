@@ -1432,15 +1432,13 @@ fn test_container_query_min_width_applies() {
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
             name: None,
-            condition: zero_css_parser::ast::ContainerCondition::Size(
-                zero_css_parser::ast::ContainerSizeCondition {
-                    feature: "min-width".to_string(),
-                    value: "400px".to_string(),
-                    operator: None,
-                    range_min: None,
-                    range_max: None,
-                },
-            ),
+            condition: zero_css_parser::ast::ContainerCondition::Size(zero_css_parser::ast::ContainerSizeCondition {
+                feature: "min-width".to_string(),
+                value: "400px".to_string(),
+                operator: None,
+                range_min: None,
+                range_max: None,
+            }),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1469,15 +1467,13 @@ fn test_container_query_min_width_not_applies() {
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
             name: None,
-            condition: zero_css_parser::ast::ContainerCondition::Size(
-                zero_css_parser::ast::ContainerSizeCondition {
-                    feature: "min-width".to_string(),
-                    value: "400px".to_string(),
-                    operator: None,
-                    range_min: None,
-                    range_max: None,
-                },
-            ),
+            condition: zero_css_parser::ast::ContainerCondition::Size(zero_css_parser::ast::ContainerSizeCondition {
+                feature: "min-width".to_string(),
+                value: "400px".to_string(),
+                operator: None,
+                range_min: None,
+                range_max: None,
+            }),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1506,15 +1502,13 @@ fn test_container_query_max_width() {
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
             name: None,
-            condition: zero_css_parser::ast::ContainerCondition::Size(
-                zero_css_parser::ast::ContainerSizeCondition {
-                    feature: "max-width".to_string(),
-                    value: "600px".to_string(),
-                    operator: None,
-                    range_min: None,
-                    range_max: None,
-                },
-            ),
+            condition: zero_css_parser::ast::ContainerCondition::Size(zero_css_parser::ast::ContainerSizeCondition {
+                feature: "max-width".to_string(),
+                value: "600px".to_string(),
+                operator: None,
+                range_min: None,
+                range_max: None,
+            }),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1543,15 +1537,13 @@ fn test_container_query_range_syntax() {
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
             name: None,
-            condition: zero_css_parser::ast::ContainerCondition::Size(
-                zero_css_parser::ast::ContainerSizeCondition {
-                    feature: "width".to_string(),
-                    value: String::new(),
-                    operator: None,
-                    range_min: Some("200px".to_string()),
-                    range_max: Some("500px".to_string()),
-                },
-            ),
+            condition: zero_css_parser::ast::ContainerCondition::Size(zero_css_parser::ast::ContainerSizeCondition {
+                feature: "width".to_string(),
+                value: String::new(),
+                operator: None,
+                range_min: Some("200px".to_string()),
+                range_max: Some("500px".to_string()),
+            }),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1588,15 +1580,13 @@ fn test_container_query_no_context() {
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
             name: None,
-            condition: zero_css_parser::ast::ContainerCondition::Size(
-                zero_css_parser::ast::ContainerSizeCondition {
-                    feature: "min-width".to_string(),
-                    value: "400px".to_string(),
-                    operator: None,
-                    range_min: None,
-                    range_max: None,
-                },
-            ),
+            condition: zero_css_parser::ast::ContainerCondition::Size(zero_css_parser::ast::ContainerSizeCondition {
+                feature: "min-width".to_string(),
+                value: "400px".to_string(),
+                operator: None,
+                range_min: None,
+                range_max: None,
+            }),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {

@@ -899,6 +899,5 @@ pub fn resolve_grid_placement(
     (rs, re, cs, ce)
 }
 
-
 #[cfg(test)]
 mod tests;

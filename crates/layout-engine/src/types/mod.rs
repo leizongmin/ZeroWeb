@@ -119,6 +119,5 @@ pub struct LayoutResult {
     pub viewport_height: f32,
 }
 
-
 #[cfg(test)]
 mod tests;

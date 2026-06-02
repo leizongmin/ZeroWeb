@@ -1,8 +1,8 @@
 // Test file split from matcher.rs — core selector matching tests
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector,
-    Selector, SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
+    SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
 

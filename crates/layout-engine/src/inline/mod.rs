@@ -554,6 +554,5 @@ impl InlineFormattingContext {
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-
 #[cfg(test)]
 mod tests;

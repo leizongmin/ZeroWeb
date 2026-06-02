@@ -1234,4 +1234,3 @@ fn test_vertical_align_bottom_in_line() {
         fragment.y
     );
 }
-
