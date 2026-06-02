@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，6378 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M12 高级 Web 能力进行中（Service Worker 集成 + WebAssembly JS API + PerformanceObserver）
+**执行状态**: 16/16 crate 已实现，6389 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M12 高级 Web 能力基本完成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 6378 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 6389 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -1076,7 +1076,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M9 Canvas + Storage | ✅ |
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
-| M12 高级 Web 能力 | 🔄 进行中 — Service Worker 集成（注册/安装/激活/注销/fetch 拦截 ✅）、WebAssembly JS API polyfill ✅、PerformanceObserver + performance API ✅、QuickJS feature gate ✅、Cache API ✅；缺：页面级 WASM 真实执行（JS→wasm-sandbox 桥接）、Service Worker JS API（navigator.serviceWorker polyfill）|
+| M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
 
 ---
 
@@ -1106,19 +1106,18 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] 页面级 WASM 真实执行 — JS 中 WebAssembly.instantiate() 调用 wasm-sandbox 编译执行
-- [ ] Service Worker JS API — navigator.serviceWorker.register() polyfill
-- [ ] WPT 通过率持续追踪
+- [ ] WPT 通过率持续追踪和扩展（当前 85 内建测试）
+- [ ] 页面级 WASM JS→wasm-sandbox 自动桥接（当前需要通过 Rust API 调用）
 
 ---
 
 ## 下一步优先级
 
-1. **M12 剩余项**（高优先级）— 页面级 WASM 真实执行（JS→wasm-sandbox 桥接）、Service Worker JS API（navigator.serviceWorker polyfill）
-2. **WPT 测试基础设施**（高优先级）— 扩展 WPT runner，开始追踪 HTML/CSS/DOM 标准合规性
-3. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
-4. **M13 性能优化**（中优先级）— 渲染管线优化、增量布局、JS 执行优化
-5. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
+1. **WPT 测试扩展**（高优先级）— 扩展 WPT runner 测试用例，追踪 HTML/CSS/DOM 标准合规性通过率
+2. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
+3. **M13 性能优化**（中优先级）— 渲染管线优化、增量布局、JS 执行优化
+4. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
+5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
 
 ---
 
