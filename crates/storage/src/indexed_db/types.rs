@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::StorageError;
 use super::cursor::{CursorDirection, IdbCursor, IdbCursorWithValue, IdbTransaction};
+use crate::StorageError;
 
 /// IndexedDB 键类型。
 #[derive(Debug, Clone, PartialEq)]

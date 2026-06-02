@@ -21,8 +21,7 @@ fn test_webview_dom_add_event_listener_exists() {
 #[test]
 fn test_webview_dom_remove_event_listener_exists() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result =
-        wv.execute_script_with_dom("var el = document.createElement('div'); typeof el.removeEventListener;");
+    let result = wv.execute_script_with_dom("var el = document.createElement('div'); typeof el.removeEventListener;");
     assert!(result.is_ok());
     assert!(
         result.unwrap().contains("function"),
@@ -278,8 +277,7 @@ fn test_webview_response_properties() {
 #[test]
 fn test_webview_response_text() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result =
-        wv.execute_script_with_dom("var r = new Response('hello world', { status: 200 }); typeof r.text();");
+    let result = wv.execute_script_with_dom("var r = new Response('hello world', { status: 200 }); typeof r.text();");
     assert!(result.is_ok());
     assert_eq!(
         result.unwrap(),
@@ -306,9 +304,8 @@ fn test_webview_response_json() {
 #[test]
 fn test_webview_response_not_ok() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.execute_script_with_dom(
-        "var r = new Response(null, { status: 404, statusText: 'Not Found' }); String(r.ok);",
-    );
+    let result = wv
+        .execute_script_with_dom("var r = new Response(null, { status: 404, statusText: 'Not Found' }); String(r.ok);");
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "false", "Response.ok should be false for 404");
 }
@@ -637,8 +634,7 @@ fn test_webview_mutation_observer_disconnect() {
 #[test]
 fn test_webview_mutation_observer_take_records() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result =
-        wv.execute_script_with_dom("var obs = new MutationObserver(function() {}); obs.takeRecords().length;");
+    let result = wv.execute_script_with_dom("var obs = new MutationObserver(function() {}); obs.takeRecords().length;");
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "0", "takeRecords should return empty array initially");
 }

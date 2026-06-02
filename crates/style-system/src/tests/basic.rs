@@ -647,10 +647,7 @@ fn test_supports_with_regular_rules() {
                 }],
             }),
             Rule::Supports(zero_css_parser::ast::SupportsRule {
-                condition: zero_css_parser::ast::SupportsCondition::Property(
-                    "display".to_string(),
-                    "grid".to_string(),
-                ),
+                condition: zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "grid".to_string()),
                 rules: vec![Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
                     declarations: vec![Declaration {
@@ -974,4 +971,3 @@ fn test_grid_default_values_no_css() {
     assert_eq!(div_style.grid_auto_rows, None);
     assert_eq!(div_style.grid_auto_columns, None);
 }
-

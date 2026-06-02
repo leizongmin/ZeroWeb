@@ -273,6 +273,5 @@ fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<Strin
     props
 }
 
-
 #[cfg(test)]
 mod tests;

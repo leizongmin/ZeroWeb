@@ -139,6 +139,11 @@ impl BrowserShell {
         self.tabs.active_tab()
     }
 
+    /// 遍历所有标签页。
+    pub fn tabs(&self) -> impl Iterator<Item = &crate::tab::Tab> {
+        self.tabs.tabs()
+    }
+
     /// 获取活跃标签页的可变引用。
     pub fn active_tab_mut(&mut self) -> Option<&mut crate::tab::Tab> {
         self.tabs.active_tab_mut()

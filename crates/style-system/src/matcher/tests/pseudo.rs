@@ -2,8 +2,8 @@
 use super::super::*;
 use super::core::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector,
-    Selector, SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
+    SubclassSelector, TypeSelector,
 };
 use zero_dom::{Document, NodeId};
 
@@ -468,9 +468,7 @@ fn test_has_direct_child_match() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("div".to_string())),
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
-                        inner_sel,
-                    ]))],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![inner_sel]))],
                 },
                 None,
             )],

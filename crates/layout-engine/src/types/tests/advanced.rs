@@ -1,7 +1,6 @@
 // Auto-generated test file — split from layout-engine/types.rs
 use super::super::*;
 
-
 /// 测试 LayoutResult 零视口尺寸。
 ///
 /// 视口宽度或高度为 0 是合法的（例如最小化窗口），

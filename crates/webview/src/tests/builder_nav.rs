@@ -336,4 +336,3 @@ fn test_webview_multiple_load_url_without_complete() {
     wv.complete_load("<html><body>B</body></html>", None);
     assert_eq!(wv.url(), Some("https://b.com"));
 }
-

@@ -412,8 +412,7 @@ fn test_parse_grid_template_areas_2x2() {
 /// 测试 parse_grid_template_areas 解析 3x3 区域。
 #[test]
 fn test_parse_grid_template_areas_3x3() {
-    let areas =
-        parse_grid_template_areas("\"header header header\" \"sidebar main main\" \"sidebar footer footer\"");
+    let areas = parse_grid_template_areas("\"header header header\" \"sidebar main main\" \"sidebar footer footer\"");
     assert_eq!(areas.len(), 4);
 
     // header: row 1-2, col 1-4（跨三列）

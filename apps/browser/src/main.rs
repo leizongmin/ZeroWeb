@@ -8,7 +8,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use softbuffer::{Context as SoftbufferContext, Surface as SoftbufferSurface};
-use zero_browser_shell::{BrowserShell, TabId};
+use zero_browser_shell::{BrowserShell, SuggestionSource, TabId};
 use zero_host_runtime::event::AppEvent;
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_render_foundation::color::Color;
@@ -34,9 +34,23 @@ mod layout {
     pub const TOOLBAR_HEIGHT: f32 = TAB_BAR_HEIGHT + ADDRESS_BAR_HEIGHT;
     /// 导航按钮宽度
     pub const NAV_BUTTON_WIDTH: f32 = 32.0;
+    /// 单个标签最小宽度
+    pub const TAB_MIN_WIDTH: f32 = 100.0;
+    /// 单个标签最大宽度
+    pub const TAB_MAX_WIDTH: f32 = 240.0;
+    /// 标签关闭按钮大小
+    pub const TAB_CLOSE_SIZE: f32 = 16.0;
+    /// 自动补全下拉最大显示条数
+    pub const AUTOCOMPLETE_MAX_VISIBLE: usize = 6;
+    /// 自动补全下拉行高
+    pub const AUTOCOMPLETE_ROW_HEIGHT: f32 = 28.0;
+    /// 查找栏高度
+    pub const FIND_BAR_HEIGHT: f32 = 36.0;
+    /// 状态栏高度
+    pub const STATUS_BAR_HEIGHT: f32 = 22.0;
 }
 
-/// 浏览器 UI 颜色（使用 const 构造 Color）
+/// 浏览器 UI 颜色
 mod colors {
     use super::Color;
     /// 窗口背景色（深灰）
@@ -60,11 +74,25 @@ mod colors {
         b: 60,
         a: 255,
     };
+    /// 非活跃标签悬停背景色
+    pub const TAB_HOVER_BG: Color = Color {
+        r: 50,
+        g: 50,
+        b: 50,
+        a: 255,
+    };
     /// 标签文字颜色
     pub const TAB_TEXT: Color = Color {
         r: 200,
         g: 200,
         b: 200,
+        a: 255,
+    };
+    /// 标签关闭按钮颜色
+    pub const TAB_CLOSE: Color = Color {
+        r: 150,
+        g: 150,
+        b: 150,
         a: 255,
     };
     /// 地址栏背景色
@@ -158,6 +186,91 @@ mod colors {
         b: 120,
         a: 255,
     };
+    /// 自动补全下拉背景色
+    pub const AUTOCOMPLETE_BG: Color = Color {
+        r: 45,
+        g: 45,
+        b: 45,
+        a: 255,
+    };
+    /// 自动补全悬停背景色
+    pub const AUTOCOMPLETE_HOVER_BG: Color = Color {
+        r: 60,
+        g: 60,
+        b: 60,
+        a: 255,
+    };
+    /// 自动补全文字颜色
+    pub const AUTOCOMPLETE_TEXT: Color = Color {
+        r: 220,
+        g: 220,
+        b: 220,
+        a: 255,
+    };
+    /// 自动补全 URL 颜色
+    pub const AUTOCOMPLETE_URL: Color = Color {
+        r: 140,
+        g: 140,
+        b: 140,
+        a: 255,
+    };
+    /// 自动补全书签标记颜色
+    pub const AUTOCOMPLETE_BOOKMARK: Color = Color {
+        r: 255,
+        g: 193,
+        b: 7,
+        a: 255,
+    };
+    /// 查找栏背景色
+    pub const FIND_BAR_BG: Color = Color {
+        r: 50,
+        g: 50,
+        b: 50,
+        a: 245,
+    };
+    /// 查找栏文字颜色
+    pub const FIND_BAR_TEXT: Color = Color {
+        r: 220,
+        g: 220,
+        b: 220,
+        a: 255,
+    };
+    /// 查找栏匹配数颜色
+    pub const FIND_MATCH_TEXT: Color = Color {
+        r: 160,
+        g: 160,
+        b: 160,
+        a: 255,
+    };
+    /// 新建标签按钮颜色
+    pub const NEW_TAB_BUTTON: Color = Color {
+        r: 160,
+        g: 160,
+        b: 160,
+        a: 255,
+    };
+}
+
+/// 自动补全建议缓存
+struct AutocompleteState {
+    /// 当前显示的建议列表
+    suggestions: Vec<zero_browser_shell::Suggestion>,
+    /// 鼠标悬停的索引
+    hovered_index: Option<usize>,
+}
+
+impl AutocompleteState {
+    fn new() -> Self {
+        Self {
+            suggestions: Vec::new(),
+            hovered_index: None,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.suggestions.clear();
+        self.hovered_index = None;
+    }
 }
 
 /// 浏览器应用状态
@@ -192,6 +305,14 @@ struct BrowserApp {
     scale_factor: f32,
     /// 是否需要重绘
     needs_redraw: bool,
+    /// 鼠标位置（用于悬停检测）
+    mouse_pos: (f64, f64),
+    /// 自动补全状态
+    autocomplete: AutocompleteState,
+    /// 查找栏输入文本
+    find_input: String,
+    /// 标签页布局缓存：每个标签页的 (x, width) 位置信息
+    tab_layout: Vec<(TabId, f32, f32)>,
 }
 
 impl BrowserApp {
@@ -222,6 +343,10 @@ impl BrowserApp {
             physical_size: (1024, 768),
             scale_factor: 1.0,
             needs_redraw: true,
+            mouse_pos: (0.0, 0.0),
+            autocomplete: AutocompleteState::new(),
+            find_input: String::new(),
+            tab_layout: Vec::new(),
         }
     }
 
@@ -234,11 +359,12 @@ impl BrowserApp {
 
     /// 导航到指定 URL
     fn navigate_to(&mut self, url: &str) {
-        let url = normalize_url(url);
+        let url = normalize_url(url, &self.shell);
         tracing::info!("Navigating to: {url}");
 
         self.shell.navigate(&url);
         self.address_bar_text = url.clone();
+        self.autocomplete.clear();
 
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
@@ -295,6 +421,19 @@ impl BrowserApp {
             self.update_address_bar_from_active_tab();
             self.needs_redraw = true;
         }
+    }
+
+    /// 关闭指定 ID 的标签页
+    fn close_tab_by_id(&mut self, id: TabId) {
+        self.webviews.remove(&id);
+        self.shell.close_tab(id);
+
+        if self.shell.is_empty() {
+            self.new_tab(None);
+        }
+
+        self.update_address_bar_from_active_tab();
+        self.needs_redraw = true;
     }
 
     /// 刷新当前页面
@@ -368,27 +507,107 @@ impl BrowserApp {
 
     /// 处理键盘输入
     fn handle_key(&mut self, key: &str, _pressed: bool) {
-        if self.address_bar_focused {
+        if self.shell.find_state().is_active() {
+            // 查找栏获得焦点
+            match key {
+                "Enter" => {
+                    if self.find_input.is_empty() {
+                        self.shell.find_close();
+                    } else if self.shell.find_state().total_matches() == 0 {
+                        self.shell.find_start(&self.find_input.clone());
+                    } else {
+                        self.shell.find_next();
+                    }
+                    self.needs_redraw = true;
+                }
+                "Escape" => {
+                    self.shell.find_close();
+                    self.find_input.clear();
+                    self.needs_redraw = true;
+                }
+                "Backspace" => {
+                    self.find_input.pop();
+                    if self.find_input.is_empty() {
+                        self.shell.find_close();
+                    } else {
+                        self.shell.find_start(&self.find_input);
+                    }
+                    self.needs_redraw = true;
+                }
+                _ => {
+                    if key.len() == 1 {
+                        self.find_input.push_str(key);
+                        self.shell.find_start(&self.find_input);
+                        self.needs_redraw = true;
+                    }
+                }
+            }
+        } else if self.address_bar_focused {
             match key {
                 "Enter" => {
                     let url = self.address_bar_text.trim().to_string();
                     if !url.is_empty() {
-                        self.navigate_to(&url);
+                        // 如果有高亮的自动补全建议，使用建议的 URL
+                        let nav_url = if let Some(idx) = self.autocomplete.hovered_index {
+                            self.autocomplete
+                                .suggestions
+                                .get(idx)
+                                .map(|s| s.url().to_string())
+                                .unwrap_or(url)
+                        } else {
+                            url
+                        };
+                        self.navigate_to(&nav_url);
                     }
                     self.address_bar_focused = false;
+                    self.autocomplete.clear();
                 }
                 "Escape" => {
                     self.address_bar_focused = false;
+                    self.autocomplete.clear();
                     self.update_address_bar_from_active_tab();
                 }
                 "Backspace" => {
                     self.address_bar_text.pop();
+                    self.update_autocomplete();
                     self.needs_redraw = true;
+                }
+                "Down" => {
+                    // 选择下一个自动补全建议
+                    if !self.autocomplete.suggestions.is_empty() {
+                        let next = self
+                            .autocomplete
+                            .hovered_index
+                            .map(|i| (i + 1).min(self.autocomplete.suggestions.len() - 1))
+                            .unwrap_or(0);
+                        self.autocomplete.hovered_index = Some(next);
+                        self.needs_redraw = true;
+                    }
+                }
+                "Up" => {
+                    // 选择上一个自动补全建议
+                    if let Some(i) = self.autocomplete.hovered_index {
+                        if i > 0 {
+                            self.autocomplete.hovered_index = Some(i - 1);
+                        } else {
+                            self.autocomplete.hovered_index = None;
+                        }
+                        self.needs_redraw = true;
+                    }
+                }
+                "Tab" => {
+                    // Tab 键补全第一个建议
+                    if let Some(sug) = self.autocomplete.suggestions.first() {
+                        self.address_bar_text = sug.url().to_string();
+                        self.autocomplete.clear();
+                        self.needs_redraw = true;
+                    }
                 }
                 _ => {
                     // 单字符输入
                     if key.len() == 1 {
                         self.address_bar_text.push_str(key);
+                        self.update_autocomplete();
                         self.needs_redraw = true;
                     }
                 }
@@ -418,8 +637,238 @@ impl BrowserApp {
                 "Home" => {
                     self.navigate_to("https://example.com");
                 }
+                "f" => {
+                    // Ctrl+F: 打开查找栏
+                    self.find_input.clear();
+                    self.shell.find_close();
+                    self.needs_redraw = true;
+                }
+                "+" | "=" => {
+                    self.shell.zoom_in();
+                    self.needs_redraw = true;
+                }
+                "-" => {
+                    self.shell.zoom_out();
+                    self.needs_redraw = true;
+                }
+                "0" => {
+                    self.shell.zoom_reset();
+                    self.needs_redraw = true;
+                }
+                "n" => {
+                    // 查找下一个
+                    self.shell.find_next();
+                    self.find_input = self.shell.find_state().query().to_string();
+                    self.needs_redraw = true;
+                }
                 _ => {}
             }
+        }
+    }
+
+    /// 更新自动补全建议
+    fn update_autocomplete(&mut self) {
+        let query = self.address_bar_text.trim();
+        if query.is_empty() {
+            self.autocomplete.clear();
+            return;
+        }
+        self.autocomplete.suggestions = self.shell.suggest(query);
+        self.autocomplete.hovered_index = None;
+    }
+
+    /// 处理鼠标移动
+    fn handle_mouse_move(&mut self, x: f64, y: f64) {
+        let old_pos = self.mouse_pos;
+        self.mouse_pos = (x, y);
+
+        // 检查自动补全悬停
+        if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
+            let hovered = self.autocomplete_hit_test(x, y);
+            if hovered != self.autocomplete.hovered_index {
+                self.autocomplete.hovered_index = hovered;
+                self.needs_redraw = true;
+            }
+        }
+
+        // 鼠标移动才重绘（优化：只在有悬停变化时重绘）
+        if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
+            // 悬停效果需要重绘
+            if (y as f32) < layout::TOOLBAR_HEIGHT {
+                self.needs_redraw = true;
+            }
+        }
+    }
+
+    /// 处理鼠标点击
+    fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool) {
+        if !pressed {
+            return;
+        }
+
+        let y_f = y as f32;
+        let x_f = x as f32;
+        let width = self.window_size.0 as f32;
+
+        // 1. 自动补全下拉区域点击
+        if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
+            if let Some(idx) = self.autocomplete_hit_test(x, y) {
+                let url = self.autocomplete.suggestions.get(idx).map(|s| s.url().to_string());
+                if let Some(url) = url {
+                    self.navigate_to(&url);
+                    self.address_bar_focused = false;
+                    self.autocomplete.clear();
+                    return;
+                }
+            }
+            // 点击自动补全区域外时关闭下拉
+            let addr_bar_bottom = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+            let autocomplete_top = addr_bar_bottom;
+            let autocomplete_height = self
+                .autocomplete
+                .suggestions
+                .len()
+                .min(layout::AUTOCOMPLETE_MAX_VISIBLE) as f32
+                * layout::AUTOCOMPLETE_ROW_HEIGHT;
+            if y_f >= autocomplete_top && y_f < autocomplete_top + autocomplete_height {
+                return; // 点击在自动补全内但没命中建议，忽略
+            }
+            // 点击自动补全外，关闭它
+            self.autocomplete.clear();
+        }
+
+        // 2. 标签栏区域点击
+        if y_f < layout::TAB_BAR_HEIGHT {
+            // 检查是否点击了新建标签按钮 (+)
+            let new_tab_x = width - 32.0;
+            if x_f >= new_tab_x && x_f <= width {
+                self.new_tab(None);
+                return;
+            }
+
+            // 检查是否点击了标签页
+            for &(id, tab_x, tab_w) in &self.tab_layout {
+                if x_f >= tab_x && x_f < tab_x + tab_w {
+                    // 检查关闭按钮
+                    let close_x = tab_x + tab_w - 24.0;
+                    let close_y_center = layout::TAB_BAR_HEIGHT / 2.0;
+                    if x_f >= close_x
+                        && x_f <= close_x + layout::TAB_CLOSE_SIZE
+                        && (y_f - close_y_center).abs() <= layout::TAB_CLOSE_SIZE / 2.0
+                    {
+                        self.close_tab_by_id(id);
+                        return;
+                    }
+                    // 切换标签页
+                    if Some(id) != self.shell.active_tab_id() {
+                        self.shell.switch_tab(id);
+                        self.update_address_bar_from_active_tab();
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
+            }
+            return;
+        }
+
+        // 3. 地址栏区域点击
+        if y_f < layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT {
+            let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
+            let addr_bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
+
+            // 导航按钮区域
+            if x_f < nav_w {
+                let button_index = ((x_f - 8.0) / layout::NAV_BUTTON_WIDTH) as i32;
+                match button_index {
+                    0 => self.go_back(),
+                    1 => self.go_forward(),
+                    2 => self.refresh_page(),
+                    3 => {
+                        let home = self.shell.settings().home_url.clone();
+                        self.navigate_to(&home);
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            // 地址栏输入区域
+            if x_f >= addr_bar_x && x_f <= width - layout::ADDRESS_BAR_PADDING {
+                if !self.address_bar_focused {
+                    self.address_bar_focused = true;
+                    self.needs_redraw = true;
+                }
+                return;
+            }
+        }
+
+        // 4. 查找栏区域点击（如果活跃）
+        if self.shell.find_state().is_active() {
+            let find_y = layout::TOOLBAR_HEIGHT;
+            if y_f >= find_y && y_f < find_y + layout::FIND_BAR_HEIGHT {
+                // 点击关闭按钮
+                let close_x = width - 40.0;
+                if x_f >= close_x {
+                    self.shell.find_close();
+                    self.find_input.clear();
+                    self.needs_redraw = true;
+                    return;
+                }
+                // 点击上一个/下一个
+                let prev_x = width - 100.0;
+                let next_x = width - 70.0;
+                if x_f >= prev_x && x_f < prev_x + 28.0 {
+                    self.shell.find_previous();
+                    self.needs_redraw = true;
+                    return;
+                }
+                if x_f >= next_x && x_f < next_x + 28.0 {
+                    self.shell.find_next();
+                    self.needs_redraw = true;
+                    return;
+                }
+                return;
+            }
+        }
+
+        // 5. 页面内容区域 — 取消地址栏焦点
+        if y_f >= layout::TOOLBAR_HEIGHT && self.address_bar_focused {
+            self.address_bar_focused = false;
+            self.autocomplete.clear();
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 自动补全下拉命中检测
+    fn autocomplete_hit_test(&self, x: f64, y: f64) -> Option<usize> {
+        let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
+        let bar_w = self.window_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING;
+
+        let autocomplete_top = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+        let y_f = y as f32;
+        let x_f = x as f32;
+
+        if x_f < bar_x || x_f > bar_x + bar_w || y_f < autocomplete_top {
+            return None;
+        }
+
+        let row_offset = y_f - autocomplete_top;
+        if row_offset < 0.0 {
+            return None;
+        }
+
+        let index = (row_offset / layout::AUTOCOMPLETE_ROW_HEIGHT) as usize;
+        if index
+            < self
+                .autocomplete
+                .suggestions
+                .len()
+                .min(layout::AUTOCOMPLETE_MAX_VISIBLE)
+        {
+            Some(index)
+        } else {
+            None
         }
     }
 
@@ -490,6 +939,7 @@ impl BrowserApp {
         );
     }
 
+    /// CPU 软件渲染一帧
     fn render_cpu(&mut self, width: u32, height: u32) {
         let (fills, glyphs) = self.build_scene(width, height);
         let fb = render_scene_to_framebuffer(
@@ -518,6 +968,7 @@ impl BrowserApp {
             tracing::error!("CPU surface resize failed: {err}");
             return;
         }
+
         let mut buffer = match surface.buffer_mut() {
             Ok(buffer) => buffer,
             Err(err) => {
@@ -525,14 +976,17 @@ impl BrowserApp {
                 return;
             }
         };
+
         for (dst, rgba) in buffer.iter_mut().zip(fb.data.chunks_exact(4)) {
             *dst = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | rgba[2] as u32;
         }
+
         if let Err(err) = buffer.present() {
             tracing::error!("CPU surface present failed: {err}");
         }
     }
 
+    /// 构建浏览器 UI 渲染图元
     fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
@@ -550,7 +1004,7 @@ impl BrowserApp {
             colors::TAB_BAR_BG,
         ));
 
-        // 3. 标签内容
+        // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size);
 
         // 4. 地址栏背景
@@ -597,10 +1051,23 @@ impl BrowserApp {
         // 10. 页面内容
         self.render_page_content(&mut glyphs, width, page_y, font_size);
 
+        // 11. 查找栏（覆盖在页面内容上方）
+        if self.shell.find_state().is_active() {
+            self.render_find_bar(&mut fills, &mut glyphs, width, font_size);
+        }
+
+        // 12. 自动补全下拉（覆盖在页面内容上方）
+        if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
+            self.render_autocomplete(&mut fills, &mut glyphs, width, font_size);
+        }
+
+        // 13. 状态栏
+        self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size);
+
         (fills, glyphs)
     }
 
-    /// 渲染标签页
+    /// 渲染标签页（带完整标签条）
     fn render_tabs(&mut self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, width: u32, font_size: f32) {
         let active_id = self.shell.active_tab_id();
         let tab_count = self.shell.tab_count();
@@ -608,39 +1075,79 @@ impl BrowserApp {
             return;
         }
 
-        // 活跃标签
-        if let Some(tab) = self.shell.active_tab() {
+        // 计算每个标签宽度（均分，限制最大/最小宽度）
+        let new_tab_btn_w = 32.0_f32;
+        let available_width = width as f32 - new_tab_btn_w;
+        let tab_w = (available_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH, layout::TAB_MAX_WIDTH);
+
+        // 更新标签布局缓存
+        self.tab_layout.clear();
+        let mut x = 0.0_f32;
+
+        for tab in self.shell.tabs() {
             let is_active = Some(tab.id()) == active_id;
-            let tab_w = (width as f32 / tab_count as f32).min(240.0);
+            let is_hovered = !is_active && {
+                let mx = self.mouse_pos.0 as f32;
+                let my = self.mouse_pos.1 as f32;
+                mx >= x && mx < x + tab_w && my < layout::TAB_BAR_HEIGHT
+            };
 
-            fills.push(rect_fill(
-                0.0,
-                0.0,
-                tab_w - 1.0,
-                layout::TAB_BAR_HEIGHT,
-                if is_active {
-                    colors::TAB_ACTIVE_BG
-                } else {
-                    colors::TAB_BAR_BG
-                },
-            ));
+            // 标签背景
+            let bg = if is_active {
+                colors::TAB_ACTIVE_BG
+            } else if is_hovered {
+                colors::TAB_HOVER_BG
+            } else {
+                colors::TAB_BAR_BG
+            };
+            fills.push(rect_fill(x, 0.0, tab_w - 1.0, layout::TAB_BAR_HEIGHT, bg));
 
-            let label = tab.url().unwrap_or("New Tab");
-            let display = strip_protocol(label);
-            let truncated: String = display.chars().take(20).collect();
-
+            // 标签文本（截断显示）
             if let Some(fid) = self.font_id {
-                draw_text(&truncated, 12.0, 10.0, font_size, colors::TAB_TEXT, fid, glyphs);
+                let label = tab.title().unwrap_or_else(|| tab.url().unwrap_or("New Tab"));
+                let max_chars = ((tab_w - 40.0) / (font_size * 0.6)).max(3.0) as usize;
+                let truncated: String = label.chars().take(max_chars).collect();
+                draw_text(&truncated, x + 10.0, 8.0, font_size, colors::TAB_TEXT, fid, glyphs);
             }
+
+            // 关闭按钮（×）
+            if let Some(fid) = self.font_id {
+                let close_x = x + tab_w - 24.0;
+                let close_y = 8.0_f32;
+                glyphs.push(GlyphDraw {
+                    ch: '×',
+                    x: close_x,
+                    baseline_y: close_y + font_size,
+                    color: colors::TAB_CLOSE,
+                    font_id: fid,
+                    font_size: font_size * 0.8,
+                });
+            }
+
+            // 保存布局信息
+            self.tab_layout.push((tab.id(), x, tab_w));
+            x += tab_w;
         }
 
-        // 多标签提示
-        if tab_count > 1
-            && let Some(fid) = self.font_id
-        {
-            let x = 244.0_f32;
-            let text = format!("+{} tabs", tab_count - 1);
-            draw_text(&text, x, 10.0, font_size, colors::TAB_TEXT, fid, glyphs);
+        // 新建标签按钮 (+)
+        if let Some(fid) = self.font_id {
+            let btn_x = width as f32 - new_tab_btn_w;
+            let is_hovered = {
+                let mx = self.mouse_pos.0 as f32;
+                let my = self.mouse_pos.1 as f32;
+                mx >= btn_x && my < layout::TAB_BAR_HEIGHT
+            };
+            if is_hovered {
+                fills.push(rect_fill(
+                    btn_x,
+                    0.0,
+                    new_tab_btn_w,
+                    layout::TAB_BAR_HEIGHT,
+                    colors::TAB_HOVER_BG,
+                ));
+            }
+            let text_x = btn_x + (new_tab_btn_w - font_size * 0.6) / 2.0;
+            draw_text("+", text_x, 8.0, font_size, colors::NEW_TAB_BUTTON, fid, glyphs);
         }
     }
 
@@ -701,14 +1208,33 @@ impl BrowserApp {
                 colors::ADDRESS_BAR_TEXT
             };
             draw_text(&display_text, bar_x + 10.0, bar_y + 3.0, font_size, color, fid, glyphs);
+
+            // 光标（地址栏聚焦时闪烁效果）
+            if self.address_bar_focused {
+                let cursor_x = bar_x + 10.0 + self.address_bar_text.len() as f32 * font_size * 0.6;
+                fills.push(rect_fill(
+                    cursor_x,
+                    bar_y + 4.0,
+                    1.5,
+                    bar_h - 8.0,
+                    colors::ADDRESS_BAR_TEXT,
+                ));
+            }
         }
     }
 
     /// 渲染页面内容
-    fn render_page_content(&mut self, glyphs: &mut Vec<GlyphDraw>, width: u32, page_y: f32, font_size: f32) {
+    fn render_page_content(&mut self, glyphs: &mut Vec<GlyphDraw>, _width: u32, page_y: f32, font_size: f32) {
         let fid = match self.font_id {
             Some(id) => id,
             None => return,
+        };
+
+        // 查找栏打开时页面内容下移
+        let content_y_offset = if self.shell.find_state().is_active() {
+            layout::FIND_BAR_HEIGHT
+        } else {
+            0.0
         };
 
         // 收集活跃标签信息
@@ -721,23 +1247,25 @@ impl BrowserApp {
             None => return,
         };
 
+        let mut y = page_y + content_y_offset;
+
         if !title.is_empty() {
-            draw_text(&title, 20.0, page_y + 20.0, 24.0, colors::PAGE_TITLE, fid, glyphs);
+            draw_text(&title, 20.0, y + 20.0, 24.0, colors::PAGE_TITLE, fid, glyphs);
+            y += 52.0;
         }
 
         if !url.is_empty() {
-            draw_text(&url, 20.0, page_y + 52.0, 12.0, colors::PAGE_URL, fid, glyphs);
+            draw_text(&url, 20.0, y, 12.0, colors::PAGE_URL, fid, glyphs);
+            y += 28.0;
         }
 
-        let content_y = page_y + 80.0;
-
         if is_loading {
-            draw_text("Loading...", 20.0, content_y, font_size, colors::PAGE_HINT, fid, glyphs);
+            draw_text("Loading...", 20.0, y, font_size, colors::PAGE_HINT, fid, glyphs);
         } else if title.is_empty() && url.is_empty() {
             draw_text(
                 "Welcome to ZeroBrowser — Press L to focus address bar, T for new tab",
                 20.0,
-                content_y,
+                y,
                 font_size,
                 colors::PAGE_HINT,
                 fid,
@@ -751,17 +1279,217 @@ impl BrowserApp {
             };
             if let Some(wv) = self.webviews.get(&tab_id) {
                 let info = format!("Content from: {}", wv.url().unwrap_or("(none)"));
-                draw_text(&info, 20.0, content_y, font_size, colors::PAGE_BODY, fid, glyphs);
+                draw_text(&info, 20.0, y, font_size, colors::PAGE_BODY, fid, glyphs);
             }
         }
+    }
 
-        // 底部状态栏
-        let status_y = self.window_size.1 as f32 - 24.0;
-        let status = format!("Tabs: {}", self.shell.tab_count());
-        draw_text(
-            &status,
-            width as f32 - 100.0,
+    /// 渲染查找栏
+    fn render_find_bar(&self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, width: u32, font_size: f32) {
+        let fid = match self.font_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let y = layout::TOOLBAR_HEIGHT;
+        let bar_w = 320.0_f32;
+        let bar_x = width as f32 - bar_w - 10.0;
+
+        // 背景
+        fills.push(rect_fill(bar_x, y, bar_w, layout::FIND_BAR_HEIGHT, colors::FIND_BAR_BG));
+
+        // 输入框文本
+        let display = if self.find_input.is_empty() {
+            "Find...".to_string()
+        } else {
+            self.find_input.clone()
+        };
+        let text_color = if self.find_input.is_empty() {
+            colors::FIND_MATCH_TEXT
+        } else {
+            colors::FIND_BAR_TEXT
+        };
+        draw_text(&display, bar_x + 10.0, y + 5.0, font_size, text_color, fid, glyphs);
+
+        // 匹配计数
+        let find_state = self.shell.find_state();
+        if find_state.total_matches() > 0 {
+            let match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
+            let match_x = bar_x + bar_w - 130.0;
+            draw_text(
+                &match_text,
+                match_x,
+                y + 5.0,
+                font_size,
+                colors::FIND_MATCH_TEXT,
+                fid,
+                glyphs,
+            );
+        } else if !self.find_input.is_empty() {
+            let no_match_x = bar_x + bar_w - 130.0;
+            draw_text(
+                "No matches",
+                no_match_x,
+                y + 5.0,
+                font_size,
+                colors::FIND_MATCH_TEXT,
+                fid,
+                glyphs,
+            );
+        }
+
+        // 上一个/下一个/关闭按钮
+        let btn_y = y + 5.0;
+        let prev_x = bar_x + bar_w - 100.0;
+        let next_x = bar_x + bar_w - 70.0;
+        let close_x = bar_x + bar_w - 40.0;
+        draw_text("↑", prev_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
+        draw_text("↓", next_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
+        draw_text("×", close_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
+    }
+
+    /// 渲染自动补全下拉
+    fn render_autocomplete(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        font_size: f32,
+    ) {
+        let fid = match self.font_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
+        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING;
+        let dropdown_y = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT;
+
+        let visible_count = self
+            .autocomplete
+            .suggestions
+            .len()
+            .min(layout::AUTOCOMPLETE_MAX_VISIBLE);
+        let dropdown_h = visible_count as f32 * layout::AUTOCOMPLETE_ROW_HEIGHT;
+
+        // 下拉背景
+        fills.push(rect_fill(bar_x, dropdown_y, bar_w, dropdown_h, colors::AUTOCOMPLETE_BG));
+
+        for (i, sug) in self.autocomplete.suggestions.iter().take(visible_count).enumerate() {
+            let row_y = dropdown_y + i as f32 * layout::AUTOCOMPLETE_ROW_HEIGHT;
+            let is_hovered = self.autocomplete.hovered_index == Some(i);
+
+            // 悬停高亮
+            if is_hovered {
+                fills.push(rect_fill(
+                    bar_x,
+                    row_y,
+                    bar_w,
+                    layout::AUTOCOMPLETE_ROW_HEIGHT,
+                    colors::AUTOCOMPLETE_HOVER_BG,
+                ));
+            }
+
+            // 书签图标
+            let source_label = match sug.source() {
+                SuggestionSource::Bookmark => "★",
+                SuggestionSource::History => "🕐",
+            };
+            let text_x = bar_x + 10.0;
+            draw_text(
+                source_label,
+                text_x,
+                row_y + 5.0,
+                font_size * 0.85,
+                if sug.source() == SuggestionSource::Bookmark {
+                    colors::AUTOCOMPLETE_BOOKMARK
+                } else {
+                    colors::AUTOCOMPLETE_URL
+                },
+                fid,
+                glyphs,
+            );
+
+            // 标题
+            let title = sug.title();
+            let max_title_chars = ((bar_w - 180.0) / (font_size * 0.6)).max(10.0) as usize;
+            let truncated_title: String = title.chars().take(max_title_chars).collect();
+            draw_text(
+                &truncated_title,
+                text_x + 24.0,
+                row_y + 5.0,
+                font_size * 0.85,
+                colors::AUTOCOMPLETE_TEXT,
+                fid,
+                glyphs,
+            );
+
+            // URL（右侧截断）
+            let url = sug.url();
+            let url_x = bar_x + bar_w - 10.0;
+            let max_url_chars = ((bar_w * 0.4) / (font_size * 0.5)).max(8.0) as usize;
+            let truncated_url: String = url.chars().take(max_url_chars).collect();
+            // 右对齐 URL：估算宽度并从右边开始
+            let url_display_width = truncated_url.len() as f32 * font_size * 0.5;
+            draw_text(
+                &truncated_url,
+                url_x - url_display_width,
+                row_y + 5.0,
+                font_size * 0.75,
+                colors::AUTOCOMPLETE_URL,
+                fid,
+                glyphs,
+            );
+        }
+
+        // 边框
+        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, 1.0, colors::SEPARATOR));
+    }
+
+    /// 渲染状态栏
+    fn render_status_bar(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        _font_size: f32,
+    ) {
+        let fid = match self.font_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let status_y = height as f32 - layout::STATUS_BAR_HEIGHT;
+
+        // 状态栏背景
+        fills.push(rect_fill(
+            0.0,
             status_y,
+            width as f32,
+            layout::STATUS_BAR_HEIGHT,
+            colors::BACKGROUND,
+        ));
+
+        // 分隔线
+        fills.push(rect_fill(0.0, status_y, width as f32, 1.0, colors::SEPARATOR));
+
+        // 左侧：缩放信息
+        let zoom = self.shell.zoom();
+        if (zoom - 1.0).abs() > f32::EPSILON {
+            let zoom_text = format!("{}%", (zoom * 100.0) as u32);
+            draw_text(&zoom_text, 10.0, status_y + 3.0, 11.0, colors::STATUS_TEXT, fid, glyphs);
+        }
+
+        // 右侧：标签页数量
+        let tab_count = self.shell.tab_count();
+        let tabs_text = format!("Tabs: {tab_count}");
+        let tabs_width = tabs_text.len() as f32 * 11.0 * 0.6;
+        draw_text(
+            &tabs_text,
+            width as f32 - tabs_width - 10.0,
+            status_y + 3.0,
             11.0,
             colors::STATUS_TEXT,
             fid,
@@ -809,18 +1537,24 @@ fn draw_text(
     }
 }
 
-/// URL 规范化
-fn normalize_url(input: &str) -> String {
+/// URL 规范化 — 支持 URL 和搜索引擎回退
+fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("http://") || input.starts_with("https://") {
-        input.to_string()
-    } else if input.contains('.') && !input.contains(' ') {
-        format!("https://{input}")
-    } else {
-        input.to_string()
+        return input.to_string();
     }
+    if input.starts_with("ftp://") || input.starts_with("file://") || input.starts_with("data:") {
+        return input.to_string();
+    }
+    // 包含点且无空格 → 可能是域名
+    if input.contains('.') && !input.contains(' ') {
+        return format!("https://{input}");
+    }
+    // 看起来不像 URL → 使用搜索引擎
+    shell.settings().search(input)
 }
 
 /// 去除 URL 协议前缀
+#[allow(dead_code)]
 fn strip_protocol(url: &str) -> &str {
     if let Some(rest) = url.strip_prefix("https://") {
         rest
@@ -930,10 +1664,11 @@ fn main() {
     tracing_subscriber::fmt().init();
 
     tracing::info!("ZeroBrowser starting...");
+
     let render_mode = match parse_render_mode_from_args() {
         Ok(mode) => mode,
         Err(err) => {
-            tracing::error!("{err}");
+            eprintln!("{err}");
             print_usage();
             std::process::exit(2);
         }
@@ -1025,14 +1760,21 @@ fn main() {
             AppEvent::KeyboardInput { key, pressed } if pressed => {
                 app.handle_key(&key, true);
             }
-            AppEvent::MouseInput { button: _, pressed: _ } => {
-                // 未来：处理鼠标点击（地址栏聚焦、标签切换等）
+            AppEvent::MouseMoved { x, y } => {
+                app.handle_mouse_move(x / app.scale_factor as f64, y / app.scale_factor as f64);
+            }
+            AppEvent::MouseInput { button: _, pressed } => {
+                app.handle_mouse_click(app.mouse_pos.0, app.mouse_pos.1, pressed);
+            }
+            AppEvent::MouseWheel { delta: _ } => {
+                // 未来：页面滚动
             }
             AppEvent::Focused => {
                 tracing::debug!("Window focused");
             }
             AppEvent::Unfocused => {
                 app.address_bar_focused = false;
+                app.needs_redraw = true;
             }
             _ => {}
         }
