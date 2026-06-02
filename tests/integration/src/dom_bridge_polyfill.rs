@@ -765,3 +765,50 @@ fn test_polyfill_webassembly_memory() {
     // 所以我们只验证 polyfill 语法正确，不验证异步行为
     let _ = result; // 不 panic 即可
 }
+
+// ── navigator.serviceWorker 测试 ──
+
+#[test]
+fn test_polyfill_navigator_service_worker_exists() {
+    let result = eval_polyfill(
+        r#"
+        typeof navigator.serviceWorker === 'object' ? 'yes' : 'no';
+        "#,
+    );
+    assert_eq!(result.trim(), "yes", "navigator.serviceWorker 应存在");
+}
+
+#[test]
+fn test_polyfill_service_worker_register() {
+    let result = eval_polyfill(
+        r#"
+        var p = navigator.serviceWorker.register('/sw.js');
+        typeof p === 'object' ? 'promise' : typeof p;
+        "#,
+    );
+    assert_eq!(result.trim(), "promise", "register() 应返回 Promise");
+}
+
+#[test]
+fn test_polyfill_service_worker_register_with_scope() {
+    let result = eval_polyfill(
+        r#"
+        navigator.serviceWorker.register('/sw.js', { scope: '/app/' });
+        var regs = navigator.serviceWorker._registrations;
+        regs.length === 1 && regs[0]._scope === '/app/' ? 'ok' : 'fail:' + regs.length;
+        "#,
+    );
+    assert_eq!(result.trim(), "ok", "register 应记录 scope 选项");
+}
+
+#[test]
+fn test_polyfill_service_worker_get_registrations() {
+    let result = eval_polyfill(
+        r#"
+        navigator.serviceWorker.register('/sw.js');
+        navigator.serviceWorker.getRegistrations instanceof Function
+            ? 'has-method' : 'no-method';
+        "#,
+    );
+    assert_eq!(result.trim(), "has-method", "getRegistrations 方法应存在");
+}

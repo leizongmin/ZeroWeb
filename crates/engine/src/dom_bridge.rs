@@ -1175,6 +1175,67 @@ pub fn generate_dom_api_polyfill() -> String {
       return true;
     }
   };
+
+  // ── navigator.serviceWorker API Stub ──
+  // Provides navigator.serviceWorker.register() for JS-based SW registration.
+  // The host runtime (WebView) processes registrations via DomCommand.
+
+  if (!globalThis.navigator) globalThis.navigator = {};
+  globalThis.navigator.serviceWorker = {
+    _registrations: [],
+    _controller: null,
+    _ready: Promise.resolve(null),
+
+    register: function(scriptURL, options) {
+      if (!scriptURL || typeof scriptURL !== 'string') {
+        return Promise.reject(new TypeError('ServiceWorker.register: scriptURL is required'));
+      }
+      var scope = (options && options.scope) || scriptURL.substring(0, scriptURL.lastIndexOf('/') + 1);
+      var reg = {
+        _scriptURL: scriptURL,
+        _scope: scope,
+        installing: null,
+        waiting: null,
+        active: null,
+        scope: scope,
+        unregister: function() { return Promise.resolve(true); },
+        update: function() { return Promise.resolve(); }
+      };
+      this._registrations.push(reg);
+      // Simulate install → activate lifecycle
+      reg.installing = { scriptURL: scriptURL, state: 'installing' };
+      var self = this;
+      // Simulate async lifecycle transitions
+      setTimeout(function() {
+        reg.waiting = { scriptURL: scriptURL, state: 'installed' };
+        reg.installing = null;
+      }, 0);
+      setTimeout(function() {
+        reg.active = { scriptURL: scriptURL, state: 'activated' };
+        reg.waiting = null;
+        self._controller = reg.active;
+      }, 0);
+      return Promise.resolve(reg);
+    },
+
+    getRegistration: function(scope) {
+      for (var i = 0; i < this._registrations.length; i++) {
+        if (!scope || this._registrations[i].scope === scope) {
+          return Promise.resolve(this._registrations[i]);
+        }
+      }
+      return Promise.resolve(undefined);
+    },
+
+    getRegistrations: function() {
+      return Promise.resolve(this._registrations.slice());
+    },
+
+    ready: Promise.resolve(null),
+
+    oncontrollerchange: null,
+    onmessage: null
+  };
 })();
 "#
     .to_string()
