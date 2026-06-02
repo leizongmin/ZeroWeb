@@ -139,10 +139,13 @@ impl PermissionManager {
     /// 返回更新后的权限状态。
     pub fn grant(&mut self, origin: &Origin, permission: PermissionName, timestamp: u64) -> PermissionState {
         let key = PermissionKey::new(origin, permission);
-        self.permissions.insert(key, PermissionEntry {
-            state: PermissionState::Granted,
-            timestamp,
-        });
+        self.permissions.insert(
+            key,
+            PermissionEntry {
+                state: PermissionState::Granted,
+                timestamp,
+            },
+        );
         PermissionState::Granted
     }
 
@@ -152,10 +155,13 @@ impl PermissionManager {
     /// 返回更新后的权限状态。
     pub fn deny(&mut self, origin: &Origin, permission: PermissionName, timestamp: u64) -> PermissionState {
         let key = PermissionKey::new(origin, permission);
-        self.permissions.insert(key, PermissionEntry {
-            state: PermissionState::Denied,
-            timestamp,
-        });
+        self.permissions.insert(
+            key,
+            PermissionEntry {
+                state: PermissionState::Denied,
+                timestamp,
+            },
+        );
         PermissionState::Denied
     }
 
@@ -296,7 +302,10 @@ mod tests {
         let origin = test_origin();
 
         mgr.grant(&origin, PermissionName::Geolocation, 1000);
-        assert_eq!(mgr.query(&origin, PermissionName::Geolocation), PermissionState::Granted);
+        assert_eq!(
+            mgr.query(&origin, PermissionName::Geolocation),
+            PermissionState::Granted
+        );
 
         mgr.revoke(&origin, PermissionName::Geolocation);
         assert_eq!(mgr.query(&origin, PermissionName::Geolocation), PermissionState::Prompt);

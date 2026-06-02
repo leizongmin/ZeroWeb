@@ -222,15 +222,13 @@ impl SiteIsolationManager {
                 let site = Site::from_origin(origin);
                 self.site_to_process.get(&site).cloned()
             }
-            IsolationPolicy::StrictOriginIsolated => {
-                self.processes.iter().find_map(|(pid, proc)| {
-                    if proc.locked_origin.as_ref() == Some(origin) {
-                        Some(pid.clone())
-                    } else {
-                        None
-                    }
-                })
-            }
+            IsolationPolicy::StrictOriginIsolated => self.processes.iter().find_map(|(pid, proc)| {
+                if proc.locked_origin.as_ref() == Some(origin) {
+                    Some(pid.clone())
+                } else {
+                    None
+                }
+            }),
         }
     }
 

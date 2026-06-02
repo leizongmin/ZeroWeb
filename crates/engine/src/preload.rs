@@ -179,9 +179,7 @@ impl ResourceHint {
         integrity: Option<&str>,
     ) -> Option<Self> {
         let hint_type = parse_resource_hint(rel)?;
-        let resource_type = as_value
-            .map(parse_resource_type)
-            .unwrap_or(ResourceType::Other);
+        let resource_type = as_value.map(parse_resource_type).unwrap_or(ResourceType::Other);
 
         let priority = Self::infer_priority(hint_type, resource_type);
 
@@ -257,8 +255,7 @@ impl ResourcePreloader {
         crossorigin: bool,
         integrity: Option<&str>,
     ) -> bool {
-        if let Some(hint) = ResourceHint::from_link_attrs(url, rel, as_value, crossorigin, integrity)
-        {
+        if let Some(hint) = ResourceHint::from_link_attrs(url, rel, as_value, crossorigin, integrity) {
             self.register(hint);
             true
         } else {
@@ -354,14 +351,9 @@ mod tests {
 
     #[test]
     fn test_resource_hint_from_link_attrs_preload() {
-        let hint = ResourceHint::from_link_attrs(
-            "https://cdn.example.com/app.js",
-            "preload",
-            Some("script"),
-            false,
-            None,
-        )
-        .unwrap();
+        let hint =
+            ResourceHint::from_link_attrs("https://cdn.example.com/app.js", "preload", Some("script"), false, None)
+                .unwrap();
 
         assert_eq!(hint.url, "https://cdn.example.com/app.js");
         assert_eq!(hint.hint_type, ResourceHintType::Preload);
@@ -392,27 +384,19 @@ mod tests {
 
     #[test]
     fn test_resource_hint_unknown_rel_returns_none() {
-        let result = ResourceHint::from_link_attrs(
-            "style.css",
-            "stylesheet",
-            Some("style"),
-            false,
-            None,
-        );
+        let result = ResourceHint::from_link_attrs("style.css", "stylesheet", Some("style"), false, None);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_preload_style_is_critical() {
-        let hint = ResourceHint::from_link_attrs("style.css", "preload", Some("style"), false, None)
-            .unwrap();
+        let hint = ResourceHint::from_link_attrs("style.css", "preload", Some("style"), false, None).unwrap();
         assert_eq!(hint.priority, LoadPriority::Critical);
     }
 
     #[test]
     fn test_preload_font_is_high() {
-        let hint = ResourceHint::from_link_attrs("font.woff2", "preload", Some("font"), true, None)
-            .unwrap();
+        let hint = ResourceHint::from_link_attrs("font.woff2", "preload", Some("font"), true, None).unwrap();
         assert_eq!(hint.priority, LoadPriority::High);
     }
 

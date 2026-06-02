@@ -1,7 +1,6 @@
 // Auto-generated test file — split from layout-engine/converter.rs
 use super::super::*;
 
-
 /// 测试 Block display 转换。
 #[test]
 fn test_convert_block_display() {

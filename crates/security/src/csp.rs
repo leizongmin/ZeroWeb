@@ -1472,9 +1472,17 @@ mod tests {
         let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'none'");
         let reported: Arc<Mutex<Vec<(String, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
         let r_clone = reported.clone();
-        csp_ro.check_resource("script", "https://evil.com/script.js", None, Some(&move |url, dir, blocked| {
-            r_clone.lock().unwrap().push((url.to_string(), dir.to_string(), blocked.to_string()));
-        }));
+        csp_ro.check_resource(
+            "script",
+            "https://evil.com/script.js",
+            None,
+            Some(&move |url, dir, blocked| {
+                r_clone
+                    .lock()
+                    .unwrap()
+                    .push((url.to_string(), dir.to_string(), blocked.to_string()));
+            }),
+        );
         assert_eq!(reported.lock().unwrap().len(), 1);
         assert_eq!(reported.lock().unwrap()[0].1, "script-src");
     }

@@ -704,9 +704,8 @@ fn test_mixed_content_upgrade_edge_urls() {
 /// 验证 child-src 存在时优先使用 child-src，而非 script-src。
 #[test]
 fn test_csp_worker_src_fallback_prefers_child_over_script() {
-    let csp = ContentSecurityPolicy::parse(
-        "default-src 'none'; child-src https://child.com; script-src https://script.com",
-    );
+    let csp =
+        ContentSecurityPolicy::parse("default-src 'none'; child-src https://child.com; script-src https://script.com");
     // worker-src 不存在 → 回退到 child-src（而非 script-src）
     assert!(
         csp.is_worker_allowed("https://child.com/worker.js", None),

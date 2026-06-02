@@ -11,7 +11,7 @@ fn test_arc_to_various_angles_and_radii() {
 
     // 测试不同半径
     path.arc_to(50.0, 0.0, 50.0, 50.0, 10.0);
-    path.arc_to(50.0, 0.0, 50.0, 50.0, 0.0);  // 零半径
+    path.arc_to(50.0, 0.0, 50.0, 50.0, 0.0); // 零半径
     path.arc_to(50.0, 0.0, 50.0, 50.0, 100.0); // 大半径
 
     // 测试不同角度配置
@@ -155,7 +155,15 @@ fn test_ellipse_various_parameters() {
     path.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
 
     // 旋转椭圆
-    path.ellipse(50.0, 50.0, 30.0, 20.0, std::f32::consts::FRAC_PI_4, 0.0, std::f32::consts::PI);
+    path.ellipse(
+        50.0,
+        50.0,
+        30.0,
+        20.0,
+        std::f32::consts::FRAC_PI_4,
+        0.0,
+        std::f32::consts::PI,
+    );
 
     // 圆（rx == ry）
     path.ellipse(100.0, 100.0, 25.0, 25.0, 0.0, 0.0, std::f32::consts::TAU);
@@ -352,7 +360,7 @@ fn test_point_in_polygon_edge_cases() {
         (0.0, 0.0),
         (100.0, 0.0),
         (100.0, 50.0),
-        (50.0, 50.0),  // 凹角
+        (50.0, 50.0), // 凹角
         (50.0, 100.0),
         (0.0, 100.0),
     ];

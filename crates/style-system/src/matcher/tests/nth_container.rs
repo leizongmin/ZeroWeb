@@ -1,8 +1,8 @@
 // Matcher nth/has/container/supports 扩展测试
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, ComplexSelector, CompoundSelector, NthPattern,
-    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, ComplexSelector, CompoundSelector, NthPattern, PseudoClassSelector, Selector,
+    SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
 
@@ -319,9 +319,10 @@ fn test_supports_or_condition() {
 #[test]
 fn test_supports_not_condition() {
     use zero_css_parser::ast::SupportsCondition;
-    let _ = evaluate_supports_condition(&SupportsCondition::Not(Box::new(
-        SupportsCondition::Property("display".to_string(), "grid".to_string()),
-    )));
+    let _ = evaluate_supports_condition(&SupportsCondition::Not(Box::new(SupportsCondition::Property(
+        "display".to_string(),
+        "grid".to_string(),
+    ))));
 }
 
 #[test]

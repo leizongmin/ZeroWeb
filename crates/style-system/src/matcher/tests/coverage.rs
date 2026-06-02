@@ -2,11 +2,11 @@
 use super::super::*;
 use zero_css_parser::ast::{
     AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, ContainerCondition,
-    ContainerRule, ContainerSizeCondition, NthPattern, PseudoClassSelector, PseudoElementSelector,
-    Selector, SubclassSelector, SupportsCondition, TypeSelector,
+    ContainerRule, ContainerSizeCondition, NthPattern, PseudoClassSelector, PseudoElementSelector, Selector,
+    SubclassSelector, SupportsCondition, TypeSelector,
 };
 use zero_css_parser::media_query::{
-    MediaContext, MediaType, PrefersColorSchemeValue, PointerValue, ReducedMotionValue,
+    MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
 };
 use zero_dom::Document;
 
@@ -14,11 +14,7 @@ use zero_dom::Document;
 use super::core::make_tag_selector;
 
 /// 辅助：构建 2 部分选择器（带组合器）
-fn make_compound_with_combinator(
-    type1: &str,
-    combinator: Combinator,
-    type2: &str,
-) -> Selector {
+fn make_compound_with_combinator(type1: &str, combinator: Combinator, type2: &str) -> Selector {
     Selector {
         complex: ComplexSelector {
             parts: vec![
@@ -61,13 +57,13 @@ fn make_nested_dom() -> (Document, Vec<zero_dom::NodeId>) {
     let mut doc = Document::new();
     let root = doc.root();
     let parent = doc.create_element("div");
-    doc.append_child(root, parent);
+    let _ = doc.append_child(root, parent);
     let child1 = doc.create_element("span");
-    doc.append_child(parent, child1);
+    let _ = doc.append_child(parent, child1);
     let child2 = doc.create_element("p");
-    doc.append_child(parent, child2);
+    let _ = doc.append_child(parent, child2);
     let grandchild = doc.create_element("em");
-    doc.append_child(child1, grandchild);
+    let _ = doc.append_child(child1, grandchild);
     (doc, vec![root, parent, child1, child2, grandchild])
 }
 
@@ -116,7 +112,10 @@ fn test_subsequent_sibling_combinator() {
     let child2 = nodes[3]; // p
 
     let sel = make_compound_with_combinator("span", Combinator::SubsequentSibling, "p");
-    assert!(matches_selector(&doc, child2, &sel), "p after span should match span ~ p");
+    assert!(
+        matches_selector(&doc, child2, &sel),
+        "p after span should match span ~ p"
+    );
 }
 
 #[test]
@@ -125,7 +124,10 @@ fn test_subsequent_sibling_no_match() {
     let child1 = nodes[2]; // span
 
     let sel_rev = make_compound_with_combinator("p", Combinator::SubsequentSibling, "span");
-    assert!(!matches_selector(&doc, child1, &sel_rev), "span before p should NOT match p ~ span");
+    assert!(
+        !matches_selector(&doc, child1, &sel_rev),
+        "span before p should NOT match p ~ span"
+    );
 }
 
 // ── PseudoElement 返回 false ──
@@ -139,15 +141,18 @@ fn test_pseudo_element_never_matches() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: None,
-                    subclass_selectors: vec![SubclassSelector::PseudoElement(
-                        PseudoElementSelector::Standard("before".to_string()),
-                    )],
+                    subclass_selectors: vec![SubclassSelector::PseudoElement(PseudoElementSelector::Standard(
+                        "before".to_string(),
+                    ))],
                 },
                 None,
             )],
         },
     };
-    assert!(!matches_selector(&doc, child1, &sel), "pseudo-element should never match DOM element");
+    assert!(
+        !matches_selector(&doc, child1, &sel),
+        "pseudo-element should never match DOM element"
+    );
 }
 
 // ── :nth-last-child 测试 ──
@@ -159,7 +164,10 @@ fn test_nth_last_child() {
     let child2 = nodes[3]; // p — 倒数第1
 
     let sel_last = make_pseudo_selector(PseudoClassSelector::NthLastChild(NthPattern { a: 0, b: 1 }));
-    assert!(matches_selector(&doc, child2, &sel_last), "p is last child (nth-last-child(1))");
+    assert!(
+        matches_selector(&doc, child2, &sel_last),
+        "p is last child (nth-last-child(1))"
+    );
 
     let sel_2nd_last = make_pseudo_selector(PseudoClassSelector::NthLastChild(NthPattern { a: 0, b: 2 }));
     assert!(matches_selector(&doc, child1, &sel_2nd_last), "span is 2nd from last");
@@ -246,26 +254,28 @@ fn test_has_next_sibling() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("div".to_string())),
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![Selector {
-                        complex: ComplexSelector {
-                            parts: vec![
-                                (
-                                    CompoundSelector {
-                                        type_selector: Some(TypeSelector::Tag("span".to_string())),
-                                        subclass_selectors: vec![],
-                                    },
-                                    Some(Combinator::NextSibling),
-                                ),
-                                (
-                                    CompoundSelector {
-                                        type_selector: Some(TypeSelector::Tag("p".to_string())),
-                                        subclass_selectors: vec![],
-                                    },
-                                    None,
-                                ),
-                            ],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                        Selector {
+                            complex: ComplexSelector {
+                                parts: vec![
+                                    (
+                                        CompoundSelector {
+                                            type_selector: Some(TypeSelector::Tag("span".to_string())),
+                                            subclass_selectors: vec![],
+                                        },
+                                        Some(Combinator::NextSibling),
+                                    ),
+                                    (
+                                        CompoundSelector {
+                                            type_selector: Some(TypeSelector::Tag("p".to_string())),
+                                            subclass_selectors: vec![],
+                                        },
+                                        None,
+                                    ),
+                                ],
+                            },
                         },
-                    }]))],
+                    ]))],
                 },
                 None,
             )],
@@ -283,26 +293,28 @@ fn test_has_subsequent_sibling() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("div".to_string())),
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![Selector {
-                        complex: ComplexSelector {
-                            parts: vec![
-                                (
-                                    CompoundSelector {
-                                        type_selector: Some(TypeSelector::Tag("span".to_string())),
-                                        subclass_selectors: vec![],
-                                    },
-                                    Some(Combinator::SubsequentSibling),
-                                ),
-                                (
-                                    CompoundSelector {
-                                        type_selector: Some(TypeSelector::Tag("p".to_string())),
-                                        subclass_selectors: vec![],
-                                    },
-                                    None,
-                                ),
-                            ],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                        Selector {
+                            complex: ComplexSelector {
+                                parts: vec![
+                                    (
+                                        CompoundSelector {
+                                            type_selector: Some(TypeSelector::Tag("span".to_string())),
+                                            subclass_selectors: vec![],
+                                        },
+                                        Some(Combinator::SubsequentSibling),
+                                    ),
+                                    (
+                                        CompoundSelector {
+                                            type_selector: Some(TypeSelector::Tag("p".to_string())),
+                                            subclass_selectors: vec![],
+                                        },
+                                        None,
+                                    ),
+                                ],
+                            },
                         },
-                    }]))],
+                    ]))],
                 },
                 None,
             )],
@@ -343,10 +355,16 @@ fn test_container_context_with_size() {
 fn test_container_range_syntax() {
     let rule = make_container_rule_advanced("width", Some("200px"), Some("500px"), None, "", vec![]);
     let ctx = ContainerContext::with_size(300.0, 600.0);
-    assert!(evaluate_container_condition(&rule, Some(&ctx)), "300px is within [200px, 500px]");
+    assert!(
+        evaluate_container_condition(&rule, Some(&ctx)),
+        "300px is within [200px, 500px]"
+    );
 
     let ctx_outside = ContainerContext::with_size(600.0, 600.0);
-    assert!(!evaluate_container_condition(&rule, Some(&ctx_outside)), "600px is outside [200px, 500px]");
+    assert!(
+        !evaluate_container_condition(&rule, Some(&ctx_outside)),
+        "600px is outside [200px, 500px]"
+    );
 }
 
 #[test]
@@ -391,14 +409,20 @@ fn test_container_operator_lte() {
 fn test_container_colon_min_width() {
     let rule = make_container_rule("min-width", "400px", vec![]);
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    assert!(evaluate_container_condition(&rule, Some(&ctx)), "500px >= min-width 400px");
+    assert!(
+        evaluate_container_condition(&rule, Some(&ctx)),
+        "500px >= min-width 400px"
+    );
 }
 
 #[test]
 fn test_container_colon_max_height() {
     let rule = make_container_rule("max-height", "600px", vec![]);
     let ctx = ContainerContext::with_size(800.0, 500.0);
-    assert!(evaluate_container_condition(&rule, Some(&ctx)), "500px <= max-height 600px");
+    assert!(
+        evaluate_container_condition(&rule, Some(&ctx)),
+        "500px <= max-height 600px"
+    );
 }
 
 #[test]
@@ -452,7 +476,10 @@ fn test_supports_selector_consecutive_combinators() {
 #[test]
 fn test_supports_selector_starts_with_combinator() {
     let cond = SupportsCondition::Selector("> div".to_string());
-    assert!(!evaluate_supports_condition(&cond), "selector starting with > is invalid");
+    assert!(
+        !evaluate_supports_condition(&cond),
+        "selector starting with > is invalid"
+    );
 }
 
 // ── is_property_supported 更多属性 ──
@@ -477,7 +504,10 @@ fn test_property_supported_transform() {
 
 #[test]
 fn test_property_supported_unknown() {
-    assert!(!is_property_supported("unknown-property", "value"), "unknown property not supported");
+    assert!(
+        !is_property_supported("unknown-property", "value"),
+        "unknown property not supported"
+    );
 }
 
 // ── collect_from_rules @supports 规则集成 ──
@@ -515,21 +545,29 @@ fn test_collect_with_container_rule() {
     let child1 = nodes[2]; // span
 
     use zero_css_parser::ast::{Declaration, Rule, StyleRule};
-    let container_rule = make_container_rule("min-width", "400px", vec![Rule::Style(StyleRule {
-        selectors: vec![make_tag_selector("span")],
-        declarations: vec![Declaration {
-            property: "color".to_string(),
-            value: "blue".to_string(),
-            important: false,
-        }],
-    })]);
+    let container_rule = make_container_rule(
+        "min-width",
+        "400px",
+        vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("span")],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                important: false,
+            }],
+        })],
+    );
     let stylesheets = vec![zero_css_parser::Stylesheet {
         rules: vec![Rule::Container(container_rule)],
     }];
 
     let ctx = ContainerContext::with_size(500.0, 600.0);
     let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, None, Some(&ctx));
-    assert_eq!(decls.len(), 1, "should match span inside @container(min-width:400px) when width=500");
+    assert_eq!(
+        decls.len(),
+        1,
+        "should match span inside @container(min-width:400px) when width=500"
+    );
 }
 
 #[test]
@@ -538,14 +576,18 @@ fn test_collect_container_no_context() {
     let child1 = nodes[2]; // span
 
     use zero_css_parser::ast::{Declaration, Rule, StyleRule};
-    let container_rule = make_container_rule("width", "400px", vec![Rule::Style(StyleRule {
-        selectors: vec![make_tag_selector("span")],
-        declarations: vec![Declaration {
-            property: "color".to_string(),
-            value: "blue".to_string(),
-            important: false,
-        }],
-    })]);
+    let container_rule = make_container_rule(
+        "width",
+        "400px",
+        vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("span")],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                important: false,
+            }],
+        })],
+    );
     let stylesheets = vec![zero_css_parser::Stylesheet {
         rules: vec![Rule::Container(container_rule)],
     }];
@@ -621,7 +663,10 @@ fn test_collect_with_media_rule_not_matching() {
         resolution_dpi: 96.0,
     };
     let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, Some(&media_ctx), None);
-    assert!(decls.is_empty(), "media query should NOT match when viewport=800px < 1200px");
+    assert!(
+        decls.is_empty(),
+        "media query should NOT match when viewport=800px < 1200px"
+    );
 }
 
 // ── 属性选择器特殊匹配 ──
@@ -646,7 +691,10 @@ fn test_attribute_dash_match() {
             )],
         },
     };
-    assert!(matches_selector(&doc, child1, &sel), "en-US starts with en- → dash-match");
+    assert!(
+        matches_selector(&doc, child1, &sel),
+        "en-US starts with en- → dash-match"
+    );
 }
 
 #[test]
@@ -725,5 +773,8 @@ fn test_nth_child_no_parent() {
     let mut doc = Document::new();
     let orphan = doc.create_element("div");
     let sel = make_pseudo_selector(PseudoClassSelector::NthChild(NthPattern { a: 0, b: 1 }));
-    assert!(!matches_selector(&doc, orphan, &sel), "orphan has no parent → nth-child fails");
+    assert!(
+        !matches_selector(&doc, orphan, &sel),
+        "orphan has no parent → nth-child fails"
+    );
 }
