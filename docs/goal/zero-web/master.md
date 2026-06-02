@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-02
-**执行状态**: 16/16 crate 已实现，6219 个测试全绿（+157 边界条件测试），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M11 浏览器应用功能完成
+**执行状态**: 16/16 crate 已实现，6378 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M12 高级 Web 能力进行中（Service Worker 集成 + WebAssembly JS API + PerformanceObserver）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 6037 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 6378 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -33,10 +33,10 @@
 | net | 286 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界** |
 | security | 304 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵** |
 | protocol | 174 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标** |
-| storage | 259 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组** |
+| storage | 330 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）** |
 | canvas | 362 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**resize/clear/stroke_zero/negative_translate/restore_nosave/globalAlpha_clamp**、**gradient 多 stop/radial gradient/fillRule/lineDash/measure_text/shadow 属性**、**createImageData/getTransform/transform() 乘法/miterLimit/textDirection**、**同心圆渐变/路径跨 resize/退化变换/脏矩形越界/零长度渐变**、**嵌套 save/restore/clear_rect/translate+scale/line_width 边界/fillText/stroke_rect 零/putImageData roundtrip** |
-| webview | 251 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**事件系统集成测试**、**Fetch API 端到端测试**、**console/timer API 端到端测试（log/warn/error/time/setTimeout/setInterval）**、**DOM API 端到端测试**、**生命周期状态/resize+render/事件回调/CSS 累积注入/脚本错误/回调移除/outerHTML/documentFragment** |
-| wasm-sandbox | 158 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap** |
+| webview | 265 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**状态机**、**配置**、**多次导航/注入 CSS/自定义视口**、**事件系统集成测试**、**Fetch API 端到端测试**、**console/timer API 端到端测试**、**DOM API 端到端测试**、**生命周期状态/resize+render/事件回调/CSS 累积注入/脚本错误/回调移除/outerHTML/documentFragment**、**SW 边界测试（6 个：lifecycle/origin/cache round-trip）** |
+| wasm-sandbox | 164 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap**、**边界测试（6 个：错误参数/global export/Display/config 链/空模块/多函数 linker）** |
 | script-sandbox | 77 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）、77 个单元测试全绿** |
 | browser-shell | 209 | ✅ | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）**、**Tab 拖拽边界/导航历史边界/Bookmarks 过滤/History clear+search/Download 移除/Autocomplete 空查询+大小写/BrowserShell 导航清空前进/Settings 搜索/ContextMenu 子菜单查找** |
 
@@ -44,7 +44,7 @@
 
 | 测试模块 | 测试数 | 覆盖场景 |
 |----------|--------|----------|
-| DOM Bridge Polyfill (V8) | 53 | createElement/textNode/setAttribute/appendChild/insertBefore/cloneNode/textContent/replaceChild/DocumentFragment/getElementById/CSSStyleDeclaration/DOMTokenList/navigation properties/innerHTML/outerHTML/Fetch/Headers/Response/Storage/MutationObserver/CustomEvent/IntersectionObserver/ResizeObserver/setTimeout/setInterval |
+| DOM Bridge Polyfill (V8) | 58 | createElement/textNode/setAttribute/appendChild/insertBefore/cloneNode/textContent/replaceChild/DocumentFragment/getElementById/CSSStyleDeclaration/DOMTokenList/navigation properties/innerHTML/outerHTML/Fetch/Headers/Response/Storage/MutationObserver/CustomEvent/IntersectionObserver/ResizeObserver/WebAssembly/PerformanceObserver/setTimeout/setInterval |
 | CSS + Style System | 3 | 样式计算、级联优先级、继承 |
 | Render Pipeline | 4 | 完整管线、CSS 集成、耗时分解、复杂页面 |
 | Net + Security | 3 | 同源判断、CORS 策略、安全上下文 |
@@ -1076,18 +1076,49 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M9 Canvas + Storage | ✅ |
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
+| M12 高级 Web 能力 | 🔄 进行中 — Service Worker 集成（注册/安装/激活/注销/fetch 拦截 ✅）、WebAssembly JS API polyfill ✅、PerformanceObserver + performance API ✅、QuickJS feature gate ✅、Cache API ✅；缺：页面级 WASM 真实执行（JS→wasm-sandbox 桥接）、Service Worker JS API（navigator.serviceWorker polyfill）|
+
+---
+
+## M12 进度详情
+
+### -1. Service Worker 集成 + WebAssembly JS API + PerformanceObserver（本轮）
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| storage/service_worker | **Service Worker 注册表**：完整生命周期状态机（Registered→Installing→Installed→Activating→Activated→Redundant）、scope 匹配（路径/完整 URL）、fetch 拦截（缓存命中/PassThrough/NoWorker/Error）、Cache API 集成、origin 级管理、版本替换 | 12 |
+| webview | **Service Worker 集成到 WebView**：fetch_url 拦截（SW 优先于网络请求）、register/install/activate/unregister API、service_worker_registry() 访问器、origin 提取辅助函数 | 8 |
+| engine/dom_bridge | **WebAssembly JS API polyfill**：compile()、instantiate()、validate() 桩实现，记录模块和实例；**PerformanceObserver polyfill**：observe/disconnect/takeRecords、supportedEntryTypes；**performance API**：now()/mark()/measure()/getEntries() | 6 |
+| wasm-sandbox | 边界测试：错误参数/global export/Display/config 链/空模块/多函数 linker | 6 |
+| engine | dom_bridge.rs 文件拆分（2077→1145 + 948 行 tests） | — |
+
+Total: 6219 → 6378 tests (+159)
+
+### 已完成的 M12 交付物
+
+- [x] Service Worker 基础（注册、生命周期、scope 匹配、fetch 拦截）— storage crate + webview 集成
+- [x] Cache API — storage crate 已有
+- [x] QuickJS feature gate — script-sandbox 已有（V8/QuickJS 双后端）
+- [x] WASM 运行时 — wasm-sandbox 已有（wasmi/wasmtime 双后端）
+- [x] WebAssembly JS API polyfill — engine dom_bridge
+- [x] Observer API — MutationObserver/IntersectionObserver/ResizeObserver/PerformanceObserver polyfills
+- [x] performance API — performance.now/mark/measure polyfill
+
+### M12 剩余工作
+
+- [ ] 页面级 WASM 真实执行 — JS 中 WebAssembly.instantiate() 调用 wasm-sandbox 编译执行
+- [ ] Service Worker JS API — navigator.serviceWorker.register() polyfill
+- [ ] WPT 通过率持续追踪
 
 ---
 
 ## 下一步优先级
 
-1. **WPT 测试基础设施**（高优先级）— 搭建 WPT runner，开始追踪 HTML/CSS/DOM 标准合规性
-2. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
-3. **浏览器应用增强**（中优先级）— 拖拽排序标签页、下载文件触发、设置持久化
-2. **DOM API 绑定**（高优先级）— JS → DOM bindings（document.getElementById、querySelector 等）
-3. **事件系统集成**（高优先级）— JS 事件系统（addEventListener、事件冒泡/捕获）
-4. **更多 Canvas API**（中优先级）— OffscreenCanvas、line_join/line_cap、更多合成模式测试
-5. **Fetch API**（中优先级）— JS 中发起网络请求
+1. **M12 剩余项**（高优先级）— 页面级 WASM 真实执行（JS→wasm-sandbox 桥接）、Service Worker JS API（navigator.serviceWorker polyfill）
+2. **WPT 测试基础设施**（高优先级）— 扩展 WPT runner，开始追踪 HTML/CSS/DOM 标准合规性
+3. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题
+4. **M13 性能优化**（中优先级）— 渲染管线优化、增量布局、JS 执行优化
+5. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
 
 ---
 
