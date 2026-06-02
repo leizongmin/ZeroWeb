@@ -2,6 +2,7 @@
 //! 索引创建与 multiEntry、游标反向迭代等边界场景。
 
 use super::super::*;
+use std::cmp::Ordering;
 
 /// 测试 IDBDatabase 重建后（模拟 close/reopen）数据独立性。
 ///
@@ -484,4 +485,419 @@ fn test_idb_multi_entry_nested_array_as_single_key() {
     let tag_3 = db.get_from_index("matrix", "tags_idx", &IdbKey::Number(3.0)).unwrap();
     assert_eq!(tag_3.len(), 1);
     assert_eq!(tag_3[0].value["name"], "row2");
+}
+
+// ── 新增测试：提高 types.rs 覆盖率 ──
+
+/// 测试 IdbKey 的跨类型比较行为，确保所有组合都被测试。
+#[test]
+fn test_idb_key_cross_type_comparisons() {
+    // Number vs String
+    let num = IdbKey::Number(42.0);
+    let str_key = IdbKey::String("hello".into());
+    assert!(num < str_key, "Number < String");
+    assert!(str_key > num, "String > Number");
+
+    // Number vs Binary
+    let binary = IdbKey::Binary(vec![1, 2, 3]);
+    assert!(num < binary, "Number < Binary");
+    assert!(binary > num, "Binary > Number");
+
+    // Number vs Array
+    let array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert!(num < array, "Number < Array");
+    assert!(array > num, "Array > Number");
+
+    // String vs Number
+    let str_num = IdbKey::String("123".into());
+    let another_num = IdbKey::Number(123.0);
+    assert!(str_num > another_num, "String > Number");
+    assert!(another_num < str_num, "Number < String");
+
+    // String vs Binary
+    assert!(str_key < binary, "String < Binary");
+    assert!(binary > str_key, "Binary > String");
+
+    // String vs Array
+    assert!(str_key < array, "String < Array");
+    assert!(array > str_key, "Array > String");
+
+    // Binary vs Number
+    let _binary2 = IdbKey::Binary(vec![1, 2, 4]);
+    assert!(binary > another_num, "Binary > Number");
+    assert!(another_num < binary, "Number < Binary");
+
+    // Binary vs String
+    assert!(binary > str_key, "Binary > String");
+    assert!(str_key < binary, "String < Binary");
+
+    // Binary vs Binary - content comparison
+    let binary3 = IdbKey::Binary(vec![1, 2, 3]);
+    let binary4 = IdbKey::Binary(vec![1, 2, 4]);
+    assert!(binary3 < binary4, "Binary: [1,2,3] < [1,2,4]");
+    assert!(binary3 == binary3, "Binary: equal content equals");
+    assert!(binary3 < binary4);
+
+    // Binary vs Array
+    assert!(binary < array, "Binary < Array");
+    assert!(array > binary, "Array > Binary");
+
+    // Array vs Number
+    let _array2 = IdbKey::Array(vec![IdbKey::Number(2.0)]);
+    assert!(array > another_num, "Array > Number");
+    assert!(another_num < array, "Number < Array");
+
+    // Array vs String
+    assert!(array > str_key, "Array > String");
+    assert!(str_key < array, "String < Array");
+
+    // Array vs Binary
+    assert!(array > binary, "Array > Binary");
+    assert!(binary < array, "Binary < Array");
+
+    // Array vs Array - lexicographic compare
+    let arr1 = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::String("a".into())]);
+    let arr2 = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::String("b".into())]);
+    let arr3 = IdbKey::Array(vec![IdbKey::Number(2.0), IdbKey::String("a".into())]);
+    assert!(arr1 < arr2, "Array: [1,'a'] < [1,'b']");
+    assert!(arr1 < arr3, "Array: [1,'a'] < [2,'a']");
+    assert!(arr2 < arr3, "Array: [1,'b'] < [2,'a']");
+}
+
+/// 测试使用 Array 键创建记录，间接测试 json_value_to_idb_key 的数组路径。
+#[test]
+fn test_json_value_to_idb_key_indirect_test() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("test_store", None, false).unwrap();
+
+    // 创建带嵌套数组的记录，这会通过 json_value_to_idb_key 进行索引提取
+    db.add(
+        "test_store",
+        serde_json::json!({"name": "test", "tags": [1, "two", [3]]}),
+        Some(IdbKey::Number(1.0)),
+    )
+    .unwrap();
+
+    // 创建索引，这会使用 extract_keys（内部调用 json_value_to_idb_key）
+    db.create_index("test_store", "tags_idx", "tags", false, true).unwrap();
+
+    // 查询特定标签
+    let results = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::Number(1.0))
+        .unwrap();
+    assert_eq!(results.len(), 1, "数字标签 1 应该匹配");
+    assert_eq!(results[0].value["name"], "test");
+
+    // 查询字符串标签
+    let results = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::String("two".into()))
+        .unwrap();
+    assert_eq!(results.len(), 1, "字符串标签 'two' 应该匹配");
+    assert_eq!(results[0].value["name"], "test");
+}
+
+/// 测试 Binary 键的创建和比较。
+#[test]
+fn test_idb_binary_key_operations() {
+    // 创建不同的 Binary 键
+    let b1 = IdbKey::Binary(vec![1, 2, 3]);
+    let b2 = IdbKey::Binary(vec![1, 2, 4]);
+    let b3 = IdbKey::Binary(vec![1, 2, 3, 4]);
+    let b4 = IdbKey::Binary(vec![0, 1, 2]);
+
+    // 排序测试
+    assert!(b1 < b2, "相同前缀，比较元素值");
+    assert!(b1 < b3, "短序列小于长序列（前缀相同）");
+    assert!(b4 < b1, "比较第一个不同元素");
+    assert!(b1 == b1, "自身相等");
+
+    // Binary 键在排序顺序中应该按字典序排列
+    let mut binary_keys = vec![b1.clone(), b2.clone(), b3.clone(), b4.clone()];
+    binary_keys.sort();
+
+    // 第一个应该是 b4 [0,1,2]
+    assert!(matches!(&binary_keys[0], IdbKey::Binary(b) if b == &[0, 1, 2]));
+    // 最后一个应该是 b2 [1,2,4]（字典序大于 [1,2,3] 和 [1,2,3,4]）
+    assert!(matches!(&binary_keys[3], IdbKey::Binary(b) if b == &[1, 2, 4]));
+}
+
+/// 测试 IdbKey 的 Hash 行为。
+#[test]
+fn test_idb_key_hash_consistency() {
+    use std::collections::HashSet;
+    use std::collections::hash_map::HashMap;
+
+    // 相同键应该 Hash 相同
+    let key1 = IdbKey::Number(42.0);
+    let key2 = IdbKey::Number(42.0);
+    let key3 = IdbKey::Number(43.0);
+
+    let mut set = HashSet::new();
+    set.insert(key1.clone());
+    assert!(set.contains(&key2), "相同的键应该 hash 到同一个位置");
+    assert!(!set.contains(&key3), "不同的键应该 hash 到不同位置");
+
+    // 不同类型但相同的数值应该有不同的 hash（因为 discriminant 不同）
+    let num_key = IdbKey::Number(42.0);
+    let str_key = IdbKey::String("42.0".into());
+    let mut set2 = HashSet::new();
+    set2.insert(num_key.clone());
+    set2.insert(str_key.clone());
+    assert_eq!(set2.len(), 2, "Number 和 String 类型不同，即使值相同也应有不同 hash");
+
+    // 测试 HashMap 中的使用
+    let mut map = HashMap::new();
+    map.insert(num_key.clone(), "value1");
+    map.insert(str_key.clone(), "value2");
+    assert_eq!(map.get(&IdbKey::Number(42.0)), Some(&"value1"));
+    assert_eq!(map.get(&IdbKey::String("42.0".into())), Some(&"value2"));
+}
+
+/// 测试 Array 键的边界情况。
+#[test]
+fn test_idb_array_key_edge_cases() {
+    // 空数组键
+    let empty_array = IdbKey::Array(vec![]);
+    let single_array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert!(empty_array < single_array, "空数组 < 非空数组");
+
+    // 嵌套数组键
+    let nested1 = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::Array(vec![IdbKey::Number(2.0)])]);
+    let nested2 = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::Array(vec![IdbKey::Number(3.0)])]);
+    assert!(nested1 < nested2, "嵌套数组按元素比较");
+
+    // 混合类型数组键
+    let mixed_array = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("hello".into()),
+        IdbKey::Binary(vec![1, 2]),
+    ]);
+    let mixed_array2 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("world".into()),
+        IdbKey::Binary(vec![1, 2]),
+    ]);
+    assert!(mixed_array < mixed_array2, "混合类型数组按字典序比较");
+
+    // 长度不同的数组：前缀相同，短的更小
+    let short = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::String("a".into())]);
+    let long = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("a".into()),
+        IdbKey::Number(2.0),
+    ]);
+    assert!(short < long, "短数组 < 长数组（前缀相同）");
+
+    // 自相等
+    let self_array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert!(self_array == self_array);
+}
+
+/// 测试 KeyRange contains 方法与各种边界类型。
+#[test]
+fn test_idb_key_range_contains_with_bounds() {
+    let key1 = IdbKey::Number(1.0);
+    let key2 = IdbKey::Number(2.0);
+    let key3 = IdbKey::Number(3.0);
+
+    // Open lower bound (1.0,)
+    let open_lower = IdbKeyRange::lower_bound(key1.clone(), true);
+    assert!(!open_lower.contains(&key1), "开下界不包含 1.0");
+    assert!(open_lower.contains(&key2), "开下界包含 2.0");
+    assert!(open_lower.contains(&key3), "开下界包含 3.0");
+
+    // Open upper bound ,3.0)
+    let open_upper = IdbKeyRange::upper_bound(key3.clone(), true);
+    assert!(open_upper.contains(&key1), "开上界包含 1.0");
+    assert!(open_upper.contains(&key2), "开上界包含 2.0");
+    assert!(!open_upper.contains(&key3), "开上界不包含 3.0");
+
+    // Both bounds open (1.0, 3.0)
+    let both_open = IdbKeyRange::bound(key1.clone(), key3.clone(), true, true);
+    assert!(!both_open.contains(&key1), "双开下界不包含 1.0");
+    assert!(both_open.contains(&key2), "双开包含 2.0");
+    assert!(!both_open.contains(&key3), "双开上界不包含 3.0");
+
+    // Both bounds closed [1.0, 3.0]
+    let both_closed = IdbKeyRange::bound(key1.clone(), key3.clone(), false, false);
+    assert!(both_closed.contains(&key1), "双闭下界包含 1.0");
+    assert!(both_closed.contains(&key2), "双闭包含 2.0");
+    assert!(both_closed.contains(&key3), "双闭上界包含 3.0");
+
+    // 使用 String 键测试
+    let str1 = IdbKey::String("a".into());
+    let str2 = IdbKey::String("b".into());
+    let str3 = IdbKey::String("c".into());
+
+    let string_range = IdbKeyRange::bound(str1.clone(), str3.clone(), false, true);
+    assert!(string_range.contains(&str1), "闭下界包含 'a'");
+    assert!(string_range.contains(&str2), "包含 'b'");
+    assert!(!string_range.contains(&str3), "开上界不包含 'c'");
+
+    // 空范围
+    let empty_range = IdbKeyRange::bound(key2.clone(), key1.clone(), false, false);
+    assert!(!empty_range.contains(&key1));
+    assert!(!empty_range.contains(&key2));
+    assert!(!empty_range.contains(&key3));
+}
+
+/// 测试 multiEntry 索引在复杂场景下的行为，间接测试 extract_keys 的处理逻辑。
+#[test]
+fn test_index_multi_entry_complex_behavior() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("test_store", None, false).unwrap();
+
+    // 插入带复杂数组标签的记录
+    db.add(
+        "test_store",
+        serde_json::json!({"name": "Item1", "tags": ["rust", "web", null, 42, true]}),
+        Some(IdbKey::Number(1.0)),
+    )
+    .unwrap();
+
+    db.add(
+        "test_store",
+        serde_json::json!({"name": "Item2", "tags": ["web", "db"]}),
+        Some(IdbKey::Number(2.0)),
+    )
+    .unwrap();
+
+    db.add(
+        "test_store",
+        serde_json::json!({"name": "Item3", "tags": []}),
+        Some(IdbKey::Number(3.0)),
+    )
+    .unwrap();
+
+    // 创建 multiEntry 索引
+    db.create_index("test_store", "tags_idx", "tags", false, true).unwrap();
+
+    // 查询 "rust" 标签
+    let rust_items = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::String("rust".into()))
+        .unwrap();
+    assert_eq!(rust_items.len(), 1);
+    assert_eq!(rust_items[0].value["name"], "Item1");
+
+    // 查询 "web" 标签（出现两次）
+    let web_items = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::String("web".into()))
+        .unwrap();
+    assert_eq!(web_items.len(), 2);
+
+    // 查询数字标签 42
+    let num_items = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::Number(42.0))
+        .unwrap();
+    assert_eq!(num_items.len(), 1);
+    assert_eq!(num_items[0].value["name"], "Item1");
+
+    // 查询不存在的标签
+    let non_items = db
+        .get_from_index("test_store", "tags_idx", &IdbKey::String("python".into()))
+        .unwrap();
+    assert_eq!(non_items.len(), 0);
+
+    // 查询空数组的记录
+    // 注意：空数组在 multiEntry 下不产生任何索引键
+    let count = db.count_from_index("test_store", "tags_idx", None).unwrap();
+    // 应该是 5（rust, web, web, db, 42） - Item3 的空数组不产生索引键
+    assert_eq!(count, 5);
+}
+
+/// 测试 IdbKey 的相等性实现（由 PartialEq 派生）。
+#[test]
+fn test_idb_key_equality() {
+    // 相同类型，相同值
+    let num1 = IdbKey::Number(42.0);
+    let num2 = IdbKey::Number(42.0);
+    assert_eq!(num1, num2);
+
+    let str1 = IdbKey::String("hello".into());
+    let str2 = IdbKey::String("hello".into());
+    assert_eq!(str1, str2);
+
+    let bin1 = IdbKey::Binary(vec![1, 2, 3]);
+    let bin2 = IdbKey::Binary(vec![1, 2, 3]);
+    assert_eq!(bin1, bin2);
+
+    let arr1 = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    let arr2 = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert_eq!(arr1, arr2);
+
+    // 不同类型，即使值"相等"也不等
+    let num_42 = IdbKey::Number(42.0);
+    let str_42 = IdbKey::String("42.0".into());
+    assert_ne!(num_42, str_42);
+
+    // 嵌套数组相等性
+    let nested1 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![IdbKey::String("a".into())]),
+    ]);
+    let nested2 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![IdbKey::String("a".into())]),
+    ]);
+    assert_eq!(nested1, nested2);
+
+    // 长度不同的数组不相等
+    let short_arr = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    let long_arr = IdbKey::Array(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+    assert_ne!(short_arr, long_arr);
+}
+
+/// 测试 IdbKey 的 PartialOrd 实现。
+#[test]
+fn test_idb_key_partial_ord() {
+    // Number 类型
+    let num1 = IdbKey::Number(1.0);
+    let num2 = IdbKey::Number(2.0);
+    assert_eq!(num1.partial_cmp(&num2), Some(Ordering::Less));
+    assert_eq!(num2.partial_cmp(&num1), Some(Ordering::Greater));
+    assert_eq!(num1.partial_cmp(&num1), Some(Ordering::Equal));
+
+    // 跨类型比较应该返回 None（但我们的实现通过 cmp_key 返回 Some）
+    let num = IdbKey::Number(1.0);
+    let str_key = IdbKey::String("1".into());
+    // 按照我们的 cmp_key 实现，Number < String
+    assert_eq!(num.partial_cmp(&str_key), Some(Ordering::Less));
+    assert_eq!(str_key.partial_cmp(&num), Some(Ordering::Greater));
+
+    // NaN 的特殊处理
+    let nan_key = IdbKey::Number(f64::NAN);
+    let normal_key = IdbKey::Number(1.0);
+    // 当前实现：NaN 的 partial_cmp 返回 Some(Ordering::Equal)（通过 Ord 实现）
+    // NaN 与任何值的比较都返回 Equal（通过 partial_cmp().unwrap_or(Ordering::Equal)）
+    assert_eq!(nan_key.partial_cmp(&normal_key), Some(Ordering::Equal));
+    assert_eq!(nan_key.partial_cmp(&nan_key), Some(Ordering::Equal));
+}
+
+/// 测试 IdbKey 的 Clone 行为。
+#[test]
+fn test_idb_key_clone() {
+    let original = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("test".into()),
+        IdbKey::Binary(vec![1, 2, 3]),
+    ]);
+
+    let cloned = original.clone();
+
+    // 值相等
+    assert_eq!(original, cloned);
+
+    // 修改克隆不应该影响原对象（对于引用类型）
+    let mut cloned_arr = if let IdbKey::Array(arr) = cloned {
+        arr
+    } else {
+        panic!("Expected Array");
+    };
+    let new_key = IdbKey::String("modified".into());
+    cloned_arr[1] = new_key;
+
+    // 原对象不应被修改
+    if let IdbKey::Array(arr) = &original {
+        assert!(matches!(&arr[1], IdbKey::String(s) if s == "test"));
+    }
 }

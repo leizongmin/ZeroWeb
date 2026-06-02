@@ -792,7 +792,7 @@ fn test_composite_pixel_destination_over() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.composite_operation = CompositeOperation::DestinationOver;
     let src = Color::rgba(255, 0, 0, 128);
-    let (r, _g, _b, a) = ctx.composite_pixel(src, 0, 0, 255, 255);
+    let (_r, _g, _b, a) = ctx.composite_pixel(src, 0, 0, 255, 255);
     assert!(a > 0, "destination-over should produce nonzero alpha");
 }
 
@@ -801,7 +801,7 @@ fn test_composite_pixel_source_in() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.composite_operation = CompositeOperation::SourceIn;
     let src = Color::rgba(255, 0, 0, 200);
-    let (r, _g, _b, a) = ctx.composite_pixel(src, 0, 0, 255, 128);
+    let (_r, _g, _b, a) = ctx.composite_pixel(src, 0, 0, 255, 128);
     assert!(
         a > 0,
         "source-in should produce nonzero alpha when dst is partially transparent"
@@ -813,7 +813,7 @@ fn test_composite_pixel_destination_in() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.composite_operation = CompositeOperation::DestinationIn;
     let src = Color::rgba(255, 0, 0, 128);
-    let (r, _g, _b, a) = ctx.composite_pixel(src, 0, 255, 0, 200);
+    let (_r, _g, _b, a) = ctx.composite_pixel(src, 0, 255, 0, 200);
     assert!(a > 0, "destination-in should produce nonzero alpha");
 }
 
