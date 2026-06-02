@@ -82,6 +82,7 @@ struct CacheEntry {
 }
 
 /// 单个 Cache（等价于 Web API 的 Cache）。
+#[derive(Debug, Clone)]
 pub struct Cache {
     /// 缓存名称。
     name: String,
@@ -157,6 +158,7 @@ impl Cache {
 }
 
 /// CacheStorage（等价于 Web API 的 CacheStorage）。
+#[derive(Debug, Clone)]
 pub struct CacheStorage {
     /// 按名称组织的缓存实例。
     caches: HashMap<String, Cache>,
