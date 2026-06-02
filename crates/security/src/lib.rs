@@ -1,6 +1,6 @@
 //! # zero-security
 //!
-//! 安全模型 — CORS、CSP、同源策略、沙箱、混合内容检测、COOP、COEP、权限管理。
+//! 安全模型 — CORS、CSP、同源策略、沙箱、混合内容检测、COOP、COEP、权限管理、站点隔离。
 
 #![warn(missing_docs)]
 
@@ -13,6 +13,7 @@ pub mod mixed_content;
 pub mod origin;
 pub mod permission;
 pub mod sandbox;
+pub mod site_isolation;
 
 pub use coep::*;
 pub use coop::*;
@@ -23,6 +24,7 @@ pub use mixed_content::*;
 pub use origin::*;
 pub use permission::*;
 pub use sandbox::*;
+pub use site_isolation::*;
 
 use thiserror::Error;
 
