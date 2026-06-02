@@ -9,16 +9,19 @@
 //! - [`tree`] — DOM 树到 taffy 树的构建
 //! - [`engine`] — LayoutEngine 协调器
 //! - [`inline`] — 行内格式化上下文（文本布局、行换行）
+//! - [`dirty`] — 布局脏标记追踪器（增量布局）
 
 #![warn(missing_docs)]
 
 pub mod converter;
+pub mod dirty;
 pub mod engine;
 pub mod inline;
 pub mod tree;
 pub mod types;
 
 pub use converter::*;
+pub use dirty::*;
 pub use engine::*;
 pub use inline::*;
 pub use tree::*;
