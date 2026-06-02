@@ -4,6 +4,10 @@
 
 use crate::origin::Origin;
 
+/// CSP 违规报告回调函数类型。
+/// 参数：(url, directive, blocked_uri)
+type CspReportCallback = dyn Fn(&str, &str, &str);
+
 /// CSP 指令。
 #[derive(Debug, Clone)]
 pub struct CspDirective {
@@ -428,6 +432,171 @@ impl ContentSecurityPolicy {
             return true;
         };
         self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    // ---- 资源类型便捷方法 ----
+
+    /// 检查 connect-src（Fetch、XHR、WebSocket、EventSource）。
+    ///
+    /// 回退到 default-src。
+    pub fn is_connect_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self.find_directive_or_default("connect-src");
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 font-src（@font-face、CSS Font Loading API）。
+    ///
+    /// 回退到 default-src。
+    pub fn is_font_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self.find_directive_or_default("font-src");
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 media-src（<audio>、<video>、<track>）。
+    ///
+    /// 回退到 default-src。
+    pub fn is_media_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self.find_directive_or_default("media-src");
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 object-src（<object>、<embed>、<applet>）。
+    ///
+    /// 回退到 default-src。注意：object-src 不匹配 nonce/hash，
+    /// 只匹配源表达式。
+    pub fn is_object_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self.find_directive_or_default("object-src");
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 frame-src（<frame>、<iframe>）。
+    ///
+    /// 回退顺序：frame-src → child-src → default-src。
+    pub fn is_frame_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self
+            .find_directive("frame-src")
+            .or_else(|| self.find_directive("child-src"))
+            .or_else(|| self.find_directive("default-src"));
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 img-src（<img>、<picture>、CSS background-image 等）。
+    ///
+    /// 回退到 default-src。
+    pub fn is_image_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self.find_directive_or_default("img-src");
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 script-src-elem（<script> 元素，不含内联事件处理器）。
+    ///
+    /// 回退顺序：script-src-elem → script-src → default-src。
+    pub fn is_script_element_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self
+            .find_directive("script-src-elem")
+            .or_else(|| self.find_directive("script-src"))
+            .or_else(|| self.find_directive("default-src"));
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查 style-src-elem（<style> 元素、<link rel="stylesheet">）。
+    ///
+    /// 回退顺序：style-src-elem → style-src → default-src。
+    pub fn is_style_element_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
+        let directive = self
+            .find_directive("style-src-elem")
+            .or_else(|| self.find_directive("style-src"))
+            .or_else(|| self.find_directive("default-src"));
+        let Some(directive) = directive else { return true };
+        self.check_source_list(&directive.values, url, document_origin)
+    }
+
+    /// 检查是否启用了 upgrade-insecure-requests 指令。
+    ///
+    /// 启用时，浏览器自动将 HTTP 请求升级为 HTTPS。
+    pub fn has_upgrade_insecure_requests(&self) -> bool {
+        self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
+    }
+
+    /// 获取 report-uri 指令值（CSP 违规报告地址）。
+    ///
+    /// 返回报告 URI，如果未设置返回 `None`。
+    pub fn report_uri(&self) -> Option<&str> {
+        self.find_directive("report-uri")
+            .and_then(|d| d.values.first().map(|s| s.as_str()))
+    }
+
+    /// 获取 report-to 指令值（CSP Level 3 报告组名）。
+    ///
+    /// 返回报告组名，如果未设置返回 `None`。
+    pub fn report_to(&self) -> Option<&str> {
+        self.find_directive("report-to")
+            .and_then(|d| d.values.first().map(|s| s.as_str()))
+    }
+}
+
+/// Report-Only CSP — 仅报告不阻止。
+///
+/// 从 `Content-Security-Policy-Report-Only` 头解析。
+/// 所有违规仅发送报告而不阻止资源加载。
+#[derive(Debug, Clone)]
+pub struct ContentSecurityPolicyReportOnly {
+    /// 内部 CSP 策略。
+    policy: ContentSecurityPolicy,
+}
+
+impl ContentSecurityPolicyReportOnly {
+    /// 从 Content-Security-Policy-Report-Only 头值解析。
+    pub fn parse(header_value: &str) -> Self {
+        Self {
+            policy: ContentSecurityPolicy::parse(header_value),
+        }
+    }
+
+    /// 检查资源加载是否会被阻止（Report-Only 模式始终返回 true）。
+    ///
+    /// 如果资源违反策略，记录违规报告但不阻止。
+    /// `report_callback` 在违规时被调用（url, directive, blocked_uri）。
+    pub fn check_resource(
+        &self,
+        resource_type: &str,
+        url: &str,
+        document_origin: Option<&Origin>,
+        report_callback: Option<&CspReportCallback>,
+    ) -> bool {
+        let allowed = self.policy.is_resource_allowed(resource_type, url, document_origin);
+        if !allowed && let Some(cb) = report_callback {
+            let directive_name = format!("{resource_type}-src");
+            cb(url, &directive_name, url);
+        }
+        // Report-Only 永远不阻止
+        true
+    }
+
+    /// 检查内联脚本是否会被阻止（Report-Only 始终允许）。
+    pub fn check_inline_script(
+        &self,
+        nonce: Option<&str>,
+        hash: Option<&str>,
+        report_callback: Option<&CspReportCallback>,
+    ) -> bool {
+        let allowed = self.policy.is_inline_script_allowed(nonce, hash);
+        if !allowed && let Some(cb) = report_callback {
+            cb("inline", "script-src", "inline-script");
+        }
+        true
+    }
+
+    /// 获取底层策略引用（用于报告生成）。
+    pub fn policy(&self) -> &ContentSecurityPolicy {
+        &self.policy
     }
 }
 
@@ -1192,5 +1361,127 @@ mod tests {
             csp.is_frame_ancestor_allowed(&embedder),
             "frame-ancestors 不存在时应允许所有嵌入"
         );
+    }
+
+    // ---- 资源类型便捷方法测试 ----
+
+    #[test]
+    fn test_connect_src() {
+        let csp = ContentSecurityPolicy::parse("connect-src https://api.example.com");
+        assert!(csp.is_connect_allowed("https://api.example.com/ws", None));
+        assert!(!csp.is_connect_allowed("https://other.com/api", None));
+    }
+
+    #[test]
+    fn test_connect_src_fallback() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'");
+        // 无 connect-src 时回退到 default-src
+        let origin = Origin::parse("https://example.com").unwrap();
+        assert!(csp.is_connect_allowed("https://example.com/api", Some(&origin)));
+    }
+
+    #[test]
+    fn test_font_src() {
+        let csp = ContentSecurityPolicy::parse("font-src https://fonts.example.com");
+        assert!(csp.is_font_allowed("https://fonts.example.com/font.woff", None));
+        assert!(!csp.is_font_allowed("https://other.com/font.woff", None));
+    }
+
+    #[test]
+    fn test_media_src() {
+        let csp = ContentSecurityPolicy::parse("media-src https://media.example.com");
+        assert!(csp.is_media_allowed("https://media.example.com/video.mp4", None));
+        assert!(!csp.is_media_allowed("https://other.com/audio.mp3", None));
+    }
+
+    #[test]
+    fn test_object_src() {
+        let csp = ContentSecurityPolicy::parse("object-src 'none'");
+        assert!(!csp.is_object_allowed("https://example.com/plugin.swf", None));
+    }
+
+    #[test]
+    fn test_frame_src_with_fallback() {
+        let csp = ContentSecurityPolicy::parse("child-src https://frames.example.com");
+        // frame-src 不存在，回退到 child-src
+        assert!(csp.is_frame_allowed("https://frames.example.com/page", None));
+    }
+
+    #[test]
+    fn test_img_src() {
+        let csp = ContentSecurityPolicy::parse("img-src https://img.example.com");
+        assert!(csp.is_image_allowed("https://img.example.com/logo.png", None));
+        assert!(!csp.is_image_allowed("https://other.com/img.png", None));
+    }
+
+    #[test]
+    fn test_script_src_elem_fallback() {
+        let csp = ContentSecurityPolicy::parse("script-src https://scripts.example.com");
+        // script-src-elem 不存在，回退到 script-src
+        assert!(csp.is_script_element_allowed("https://scripts.example.com/app.js", None));
+    }
+
+    #[test]
+    fn test_style_src_elem_fallback() {
+        let csp = ContentSecurityPolicy::parse("style-src 'self'");
+        let origin = Origin::parse("https://example.com").unwrap();
+        // style-src-elem 不存在，回退到 style-src
+        assert!(csp.is_style_element_allowed("https://example.com/style.css", Some(&origin)));
+    }
+
+    #[test]
+    fn test_has_upgrade_insecure_requests() {
+        let csp = ContentSecurityPolicy::parse("upgrade-insecure-requests");
+        assert!(csp.has_upgrade_insecure_requests());
+        let csp_no = ContentSecurityPolicy::parse("default-src 'self'");
+        assert!(!csp_no.has_upgrade_insecure_requests());
+    }
+
+    #[test]
+    fn test_report_uri() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-uri /csp-report");
+        assert_eq!(csp.report_uri(), Some("/csp-report"));
+        let csp_no = ContentSecurityPolicy::parse("default-src 'self'");
+        assert!(csp_no.report_uri().is_none());
+    }
+
+    #[test]
+    fn test_report_to() {
+        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-to csp-endpoint");
+        assert_eq!(csp.report_to(), Some("csp-endpoint"));
+    }
+
+    // ---- Report-Only 测试 ----
+
+    #[test]
+    fn test_report_only_always_allows() {
+        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'none'");
+        // 即使策略是 'none'，report-only 也允许所有资源
+        assert!(csp_ro.check_resource("script", "https://evil.com/script.js", None, None));
+    }
+
+    #[test]
+    fn test_report_only_inline_always_allows() {
+        let csp_ro = ContentSecurityPolicyReportOnly::parse("script-src 'none'");
+        assert!(csp_ro.check_inline_script(None, None, None));
+    }
+
+    #[test]
+    fn test_report_only_callback() {
+        use std::sync::{Arc, Mutex};
+        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'none'");
+        let reported: Arc<Mutex<Vec<(String, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let r_clone = reported.clone();
+        csp_ro.check_resource("script", "https://evil.com/script.js", None, Some(&move |url, dir, blocked| {
+            r_clone.lock().unwrap().push((url.to_string(), dir.to_string(), blocked.to_string()));
+        }));
+        assert_eq!(reported.lock().unwrap().len(), 1);
+        assert_eq!(reported.lock().unwrap()[0].1, "script-src");
+    }
+
+    #[test]
+    fn test_report_only_policy_access() {
+        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'self'; report-uri /reports");
+        assert_eq!(csp_ro.policy().report_uri(), Some("/reports"));
     }
 }
