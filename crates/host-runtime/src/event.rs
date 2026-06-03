@@ -1781,6 +1781,296 @@ mod tests {
         assert!(!element_state_to_pressed(winit::event::ElementState::Released));
     }
 
+    // ── 新增覆盖率测试 ──
+
+    /// 验证：Event::Touch with multiple touch points (phase: Started/Moved/Ended/Cancelled)
+    #[test]
+    fn test_touch_event_multiple_touch_points() {
+        // 创建多个触摸点，每个都有不同的阶段
+        let touch1 = TouchEvent {
+            id: 0,
+            phase: TouchPhase::Started,
+            x: 100.0,
+            y: 200.0,
+        };
+        let touch2 = TouchEvent {
+            id: 1,
+            phase: TouchPhase::Moved,
+            x: 150.0,
+            y: 250.0,
+        };
+        let touch3 = TouchEvent {
+            id: 2,
+            phase: TouchPhase::Ended,
+            x: 200.0,
+            y: 300.0,
+        };
+        let touch4 = TouchEvent {
+            id: 3,
+            phase: TouchPhase::Cancelled,
+            x: 250.0,
+            y: 350.0,
+        };
+
+        // 验证每个触摸点的数据
+        assert_eq!(touch1.phase, TouchPhase::Started);
+        assert_eq!(touch2.phase, TouchPhase::Moved);
+        assert_eq!(touch3.phase, TouchPhase::Ended);
+        assert_eq!(touch4.phase, TouchPhase::Cancelled);
+
+        // 验证坐标
+        assert!((touch1.x - 100.0).abs() < f64::EPSILON);
+        assert!((touch1.y - 200.0).abs() < f64::EPSILON);
+        assert!((touch2.x - 150.0).abs() < f64::EPSILON);
+        assert!((touch2.y - 250.0).abs() < f64::EPSILON);
+
+        // 验证 AppEvent::Touch 包装
+        let app_touch1 = AppEvent::Touch(touch1);
+        let app_touch2 = AppEvent::Touch(touch2);
+        let app_touch3 = AppEvent::Touch(touch3);
+        let app_touch4 = AppEvent::Touch(touch4);
+
+        // 解包并验证
+        match (app_touch1, app_touch2, app_touch3, app_touch4) {
+            (AppEvent::Touch(t1), AppEvent::Touch(t2), AppEvent::Touch(t3), AppEvent::Touch(t4)) => {
+                assert_eq!(t1.phase, TouchPhase::Started);
+                assert_eq!(t2.phase, TouchPhase::Moved);
+                assert_eq!(t3.phase, TouchPhase::Ended);
+                assert_eq!(t4.phase, TouchPhase::Cancelled);
+            }
+            _ => panic!("Expected all to be Touch events"),
+        }
+    }
+
+    /// 验证：AppEvent::ScaleChanged with various scale factors
+    #[test]
+    fn test_scale_changed_event() {
+        let scales: Vec<f64> = vec![
+            1.0,  // 正常比例
+            2.0,  // Retina 屏幕比例
+            0.5,  // 缩小
+            1.25, // 1.25x 比例
+            1.75, // 1.75x 比例
+        ];
+
+        for scale in scales {
+            let event = AppEvent::ScaleFactorChanged { scale_factor: scale };
+            if let AppEvent::ScaleFactorChanged { scale_factor } = event {
+                assert!(
+                    (scale_factor - scale).abs() < f64::EPSILON,
+                    "Scale factor should match: expected {}, got {}",
+                    scale,
+                    scale_factor
+                );
+            } else {
+                panic!("Expected ScaleFactorChanged event");
+            }
+        }
+    }
+
+    /// 验证：Event::Ime with Preedit/Commit/Disconnected variants
+    #[test]
+    fn test_ime_event_full_range() {
+        // 测试 IME 的所有变体
+        let enabled = AppEvent::Ime(ImeEvent::Enabled);
+        let preedit = AppEvent::Ime(ImeEvent::Preedit {
+            text: "正在输入...".to_string(),
+            cursor: Some((0, 5)),
+        });
+        let commit = AppEvent::Ime(ImeEvent::Commit("输入完成".to_string()));
+        let disabled = AppEvent::Ime(ImeEvent::Disabled);
+
+        // 验证每个变体
+        match enabled {
+            AppEvent::Ime(ImeEvent::Enabled) => (),
+            _ => panic!("Expected Enabled IME event"),
+        }
+
+        match preedit {
+            AppEvent::Ime(ImeEvent::Preedit { text, cursor }) => {
+                assert_eq!(text, "正在输入...");
+                assert_eq!(cursor, Some((0, 5)));
+            }
+            _ => panic!("Expected Preedit IME event"),
+        }
+
+        match commit {
+            AppEvent::Ime(ImeEvent::Commit(text)) => {
+                assert_eq!(text, "输入完成");
+            }
+            _ => panic!("Expected Commit IME event"),
+        }
+
+        match disabled {
+            AppEvent::Ime(ImeEvent::Disabled) => (),
+            _ => panic!("Expected Disabled IME event"),
+        }
+    }
+
+    /// 验证：Event::Destroyed handling
+    #[test]
+    fn test_destroyed_event() {
+        // 由于当前代码中没有 AppEvent::Destroyed，这里测试其他事件的生命周期
+        // 确保 AppEvent 的所有变体都能正确处理
+        let events = vec![
+            AppEvent::RedrawRequested,
+            AppEvent::CloseRequested,
+            AppEvent::Focused,
+            AppEvent::Unfocused,
+        ];
+
+        for event in events {
+            // 验证 Debug 格式化不会 panic
+            let debug_str = format!("{:?}", event);
+            assert!(!debug_str.is_empty(), "Debug format should not be empty");
+        }
+    }
+
+    /// 验证：Event::MouseEnter/Leave with coordinates (basic)
+    #[test]
+    fn test_mouse_enter_leave_coordinates_basic() {
+        // 当前使用 AppEvent::MouseMoved 来表示进入和离开事件
+        let mouse_enter = AppEvent::MouseMoved { x: 0.0, y: 0.0 };
+        let mouse_leave = AppEvent::MouseMoved { x: 1920.0, y: 1080.0 };
+
+        // 验证进入事件坐标
+        match mouse_enter {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((x - 0.0).abs() < f64::EPSILON);
+                assert!((y - 0.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected MouseMoved event for enter"),
+        }
+
+        // 验证离开事件坐标
+        match mouse_leave {
+            AppEvent::MouseMoved { x, y } => {
+                assert!((x - 1920.0).abs() < f64::EPSILON);
+                assert!((y - 1080.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected MouseMoved event for leave"),
+        }
+    }
+
+    /// 验证：Event::Scroll with both line and pixel delta
+    #[test]
+    fn test_scroll_delta_both_types() {
+        // 测试像素滚动
+        let pixel_scroll = AppEvent::MouseWheel {
+            delta: MouseScrollDelta::PixelDelta(10.0, -5.0),
+        };
+        match pixel_scroll {
+            AppEvent::MouseWheel {
+                delta: MouseScrollDelta::PixelDelta(x, y),
+            } => {
+                assert!((x - 10.0).abs() < f64::EPSILON);
+                assert!((y - (-5.0)).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected PixelDelta scroll"),
+        }
+
+        // 测试行滚动
+        let line_scroll = AppEvent::MouseWheel {
+            delta: MouseScrollDelta::LineDelta(2.0, -1.0),
+        };
+        match line_scroll {
+            AppEvent::MouseWheel {
+                delta: MouseScrollDelta::LineDelta(x, y),
+            } => {
+                assert!((x - 2.0f32).abs() < f32::EPSILON);
+                assert!((y - (-1.0f32)).abs() < f32::EPSILON);
+            }
+            _ => panic!("Expected LineDelta scroll"),
+        }
+    }
+
+    /// 验证：Converting events from winit events (MockEvent conversion paths)
+    #[test]
+    fn test_winit_event_conversions() {
+        // 测试从 winit 事件到 AppEvent 的完整转换路径
+
+        // Mock 事件 - 由于无法直接构造 winit::event::WindowEvent，
+        // 这里测试转换函数的逻辑
+
+        // 测试 element_state_to_pressed
+        let pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
+        assert!(pressed);
+
+        let released = element_state_to_pressed(winit::event::ElementState::Released);
+        assert!(!released);
+
+        // 测试 convert_mouse_button
+        let all_buttons = [
+            winit::event::MouseButton::Left,
+            winit::event::MouseButton::Right,
+            winit::event::MouseButton::Middle,
+            winit::event::MouseButton::Back,
+            winit::event::MouseButton::Forward,
+            winit::event::MouseButton::Other(42),
+        ];
+
+        for winit_btn in all_buttons {
+            let converted = convert_mouse_button(winit_btn);
+            // 验证转换不会 panic
+            match winit_btn {
+                winit::event::MouseButton::Left => assert_eq!(converted, MouseButton::Left),
+                winit::event::MouseButton::Right => assert_eq!(converted, MouseButton::Right),
+                winit::event::MouseButton::Middle => assert_eq!(converted, MouseButton::Middle),
+                winit::event::MouseButton::Back => assert_eq!(converted, MouseButton::Back),
+                winit::event::MouseButton::Forward => assert_eq!(converted, MouseButton::Forward),
+                winit::event::MouseButton::Other(n) => assert_eq!(converted, MouseButton::Other(n)),
+            }
+        }
+
+        // 测试 convert_scroll_delta
+        let pixel_delta = winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(5.0, -3.0));
+        let converted_pixel = convert_scroll_delta(pixel_delta);
+        assert_eq!(converted_pixel, MouseScrollDelta::PixelDelta(5.0, -3.0));
+
+        let line_delta = winit::event::MouseScrollDelta::LineDelta(1.0, -0.5);
+        let converted_line = convert_scroll_delta(line_delta);
+        assert_eq!(converted_line, MouseScrollDelta::LineDelta(1.0, -0.5));
+
+        // 测试 convert_ime
+        let ime_enabled = convert_ime(winit::event::Ime::Enabled);
+        assert_eq!(ime_enabled, ImeEvent::Enabled);
+
+        let ime_preedit = convert_ime(winit::event::Ime::Preedit("test".to_string(), None));
+        assert_eq!(
+            ime_preedit,
+            ImeEvent::Preedit {
+                text: "test".to_string(),
+                cursor: None,
+            }
+        );
+
+        let ime_commit = convert_ime(winit::event::Ime::Commit("commit".to_string()));
+        assert_eq!(ime_commit, ImeEvent::Commit("commit".to_string()));
+
+        let ime_disabled = convert_ime(winit::event::Ime::Disabled);
+        assert_eq!(ime_disabled, ImeEvent::Disabled);
+
+        // 测试 convert_touch_phase
+        let all_touch_phases = [
+            winit::event::TouchPhase::Started,
+            winit::event::TouchPhase::Moved,
+            winit::event::TouchPhase::Ended,
+            winit::event::TouchPhase::Cancelled,
+        ];
+
+        let expected_phases = [
+            TouchPhase::Started,
+            TouchPhase::Moved,
+            TouchPhase::Ended,
+            TouchPhase::Cancelled,
+        ];
+
+        for (winit_phase, expected) in all_touch_phases.iter().zip(expected_phases.iter()) {
+            let converted = convert_touch_phase(*winit_phase);
+            assert_eq!(converted, *expected);
+        }
+    }
+
     // ── 新增边界测试（第二轮） ──
 
     /// 测试 MouseButton 枚举比较语义（补充）。

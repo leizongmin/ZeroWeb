@@ -7,6 +7,7 @@ use zero_css_parser::values::PositionValue;
 use zero_layout_engine::types::OverflowClip;
 use zero_style_system::ComputedStyle;
 
+#[test]
 fn test_compositing_reason_opacity_only() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");

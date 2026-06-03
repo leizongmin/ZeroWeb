@@ -4,24 +4,21 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{
     ColorValue, ConicGradient, GradientColorStop, GradientDirection, GradientValue, LengthValue, LinearGradient,
-    RadialGradient, RadialShape, RadialSize, TransformFunction, TransformValue, VisibilityValue,
+    RadialGradient, RadialShape, RadialSize, VisibilityValue,
 };
-use zero_dom::{Document, NodeId};
+use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, GradientKind};
+use zero_render_foundation::primitive::GradientKind;
 use zero_style_system::{
-    BackgroundImageComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle, OutlineStyleValue,
-    TextDecorationLineValue, TextShadowComputedValue, TextTransformValue,
+    BackgroundImageComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle, TextDecorationLineValue,
+    TextShadowComputedValue, TextTransformValue,
 };
 
-use super::super::color::{color_value_to_render, hsla_to_rgba, named_color_to_render};
-use super::super::helpers::{
-    BorderRadiusSpec, apply_transform_offset, clip_fills, clip_glyphs, convert_color_stops, gradient_to_primitive,
-    length_to_f32, linear_direction_to_kind, simple_hash,
-};
+use super::super::color::named_color_to_render;
+use super::super::helpers::{gradient_to_primitive, length_to_f32, linear_direction_to_kind, simple_hash};
 use super::super::painter::Painter;
 
 /// 辅助函数：创建简单 LayoutBox。
