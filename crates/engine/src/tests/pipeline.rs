@@ -1043,7 +1043,7 @@ fn test_pipeline_cached_layout_updates_across_renders() {
     // 第一次渲染
     let html1 = "<html><body><div>First</div></body></html>";
     let _r1 = pipeline.render_html(html1, "");
-    let layout1 = pipeline.layout().unwrap().clone();
+    let layout1 = pipeline.layout().unwrap();
     assert_eq!(layout1.viewport_width, 640.0);
     assert_eq!(layout1.viewport_height, 480.0);
     let _child_count1 = layout1.root.children.len();

@@ -953,4 +953,168 @@ mod tests {
         let r4 = sandbox.execute("Math.abs(-42)").unwrap();
         assert_eq!(r4.value, "42");
     }
+
+    /// 验证：V8Sandbox::with_config() with custom heap limit and timeout
+    #[test]
+    fn test_v8_sandbox_with_config_custom() {
+        let custom_config = SandboxConfig {
+            heap_limit: 64 * 1024 * 1024, // 64MB
+            timeout_ms: 10000,
+        };
+        let sandbox = V8Sandbox::with_config(custom_config);
+        assert!(sandbox.is_ok(), "Custom config should create sandbox successfully");
+
+        let mut sandbox = sandbox.unwrap();
+
+        // 测试能够执行脚本
+        let result = sandbox.execute("1 + 1");
+        assert!(result.is_ok(), "Sandbox with custom config should execute scripts");
+        assert_eq!(result.unwrap().value, "2");
+    }
+
+    /// 验证：ScriptError variants: timeout errors, memory limit errors
+    #[test]
+    fn test_script_error_variants() {
+        // 测试各种 ScriptError 变体
+        let errors = [
+            ScriptError::CompileError("syntax error".to_string()),
+            ScriptError::RuntimeError("reference error".to_string()),
+            ScriptError::Timeout("5s".to_string()),
+            ScriptError::NotInitialized,
+            ScriptError::InvalidInput("empty".to_string()),
+            ScriptError::EngineUnavailable("v8".to_string()),
+        ];
+
+        for error in errors {
+            // 测试每个错误的 Display 实现
+            let error_str = error.to_string();
+            assert!(!error_str.is_empty(), "Error string should not be empty");
+        }
+
+        // 验证错误类型的区分
+        let compile_error = ScriptError::CompileError("syntax".to_string());
+        let runtime_error = ScriptError::RuntimeError("runtime".to_string());
+        let timeout_error = ScriptError::Timeout("5s".to_string());
+
+        assert_ne!(compile_error.to_string(), runtime_error.to_string());
+        assert_ne!(compile_error.to_string(), timeout_error.to_string());
+    }
+
+    /// 验证：execute_json with arrays, nested objects, null
+    #[test]
+    fn test_execute_json_complex_values() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+
+        // 测试数组
+        let array_result = sandbox.execute_json("[1, 2, 3, 'hello', null]").unwrap();
+        assert!(array_result.value.contains("["));
+        assert!(array_result.value.contains("]"));
+        assert!(array_result.value.contains("1"));
+        assert!(array_result.value.contains("hello"));
+
+        // 测试嵌套对象
+        let nested_result = sandbox
+            .execute_json("({person: {name: 'John', age: 30, hobbies: ['reading', 'coding']}})")
+            .unwrap();
+        assert!(nested_result.value.contains("John"));
+        assert!(nested_result.value.contains("30"));
+        assert!(nested_result.value.contains("reading"));
+
+        // 测试 null
+        let null_result = sandbox.execute_json("null").unwrap();
+        assert_eq!(null_result.value, "null");
+    }
+
+    /// 验证：v8_version() returns non-empty string
+    #[test]
+    fn test_v8_version_non_empty() {
+        let version = V8Sandbox::v8_version();
+        assert!(!version.is_empty(), "V8 version should not be empty");
+        assert!(version.contains('.'), "Version should contain dots");
+
+        // 版本号应该符合语义化版本格式 (major.minor.patch)
+        let parts: Vec<&str> = version.split('.').collect();
+        assert!(parts.len() >= 2, "Version should have at least major and minor");
+
+        // 主要版本号应该是数字
+        if let Ok(major) = parts[0].parse::<u32>() {
+            assert!(major > 0, "Major version should be positive");
+        }
+    }
+
+    /// 验证：Empty script execution (should return InvalidInput)
+    #[test]
+    fn test_empty_script_execution() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+
+        // 测试空字符串
+        let result = sandbox.execute("");
+        assert!(matches!(result, Err(ScriptError::InvalidInput(_))));
+
+        // 测试只有空白字符
+        let result = sandbox.execute("   ");
+        assert!(matches!(result, Err(ScriptError::InvalidInput(_))));
+
+        // 测试只有换行符
+        let result = sandbox.execute("\n\t\r");
+        assert!(matches!(result, Err(ScriptError::InvalidInput(_))));
+    }
+
+    /// 验证：Script returning undefined
+    #[test]
+    fn test_script_returning_undefined() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+
+        // 测试直接返回 undefined
+        let result = sandbox.execute("undefined");
+        assert!(result.is_ok(), "Should execute undefined without error");
+        assert_eq!(result.unwrap().value, "undefined");
+
+        // 测试没有显式返回的函数
+        let result = sandbox.execute("(function() {})()");
+        assert!(result.is_ok(), "Should execute function without return");
+        assert_eq!(result.unwrap().value, "undefined");
+
+        // 测试变量声明但没有赋值
+        let result = sandbox.execute("var x; x");
+        assert!(result.is_ok(), "Should declare variable without value");
+        assert_eq!(result.unwrap().value, "undefined");
+    }
+
+    /// 验证：Script with syntax error (verify error type)
+    #[test]
+    fn test_script_with_syntax_error() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+
+        // 测试各种语法错误
+        let syntax_error_scripts = [
+            "function(",        // 函数定义不完整
+            "var = 1",          // 缺少变量名
+            "if {",             // if 语句不完整
+            "for ()",           // for 循环缺少条件
+            "42)",              // 多余的括号
+            "'unclosed string", // 未闭合的字符串
+        ];
+
+        for script in syntax_error_scripts {
+            let result = sandbox.execute(script);
+            assert!(
+                matches!(result, Err(ScriptError::CompileError(_))),
+                "Script '{}' should return CompileError",
+                script
+            );
+        }
+
+        // 验证编译错误消息不为空
+        let result = sandbox.execute("function(");
+        if let Err(ScriptError::CompileError(msg)) = result {
+            assert!(!msg.is_empty(), "Compile error message should not be empty");
+            assert!(
+                msg.contains("syntax") || msg.contains("error") || msg.contains("unexpected"),
+                "Error message should indicate syntax issue"
+            );
+        } else {
+            panic!("Expected CompileError");
+        }
+    }
 }
