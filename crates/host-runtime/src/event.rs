@@ -197,5 +197,5 @@ pub(crate) fn convert_keyboard_input(
 }
 
 #[cfg(test)]
-#[path = "event_tests.rs"]
+#[path = "event_tests/mod.rs"]
 mod tests;
