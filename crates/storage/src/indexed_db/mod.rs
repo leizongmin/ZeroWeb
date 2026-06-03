@@ -18,3 +18,5 @@ mod tests_edge;
 mod types_coverage;
 #[cfg(test)]
 mod types_coverage2;
+#[cfg(test)]
+mod types_coverage3;

@@ -68,6 +68,7 @@ pub(super) fn class_sel(cls: &str) -> Selector {
 
 mod coverage_round3;
 mod coverage_round4;
+mod coverage_round5;
 mod tests_1;
 mod tests_2;
 mod tests_3;
