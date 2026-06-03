@@ -304,3 +304,148 @@ fn test_key_cursor_advance() {
     assert!(cursor.key().is_some());
     assert!(cursor.advance(1));
 }
+
+// ── 覆盖 types.rs 剩余未覆盖行 ──
+
+/// 覆盖 line 235: extract_keys 中 key_path 不存在于 JSON 值时返回空 Vec
+#[test]
+fn test_extract_keys_missing_key_path() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", Some("id"), false).unwrap();
+
+    // 创建索引，key_path 为 "tags"（JSON 中不存在此字段）
+    db.create_index("items", "tag_idx", "tags", false, false).unwrap();
+
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    // 添加一个不含 "tags" 字段的记录 — extract_keys 返回空 Vec（line 235）
+    db.tx_add(&tx, "items", json!({"id": 1, "name": "a"}), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 记录存在但索引中无匹配
+    let record = db.get("items", &IdbKey::Number(1.0)).unwrap();
+    assert_eq!(record.value["name"], "a");
+
+    // 从索引查询应返回空（因为 key_path 不匹配，没有索引条目）
+    let idx_result = db
+        .get_from_index("items", "tag_idx", &IdbKey::String("nonexistent".to_string()))
+        .unwrap();
+    assert!(idx_result.is_empty());
+}
+
+/// 覆盖 line 542: add_entry_from_record 在新增记录（非覆盖）时被调用
+#[test]
+fn test_add_record_with_index_triggers_add_entry() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", Some("id"), false).unwrap();
+
+    // 创建索引
+    db.create_index("items", "cat_idx", "cat", false, false).unwrap();
+
+    // 添加第一条记录 — 走 else 分支（新增），触发 line 542
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_add(&tx, "items", json!({"id": 1, "cat": "x"}), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 添加第二条记录 — 同样走 else 分支
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_add(&tx, "items", json!({"id": 2, "cat": "y"}), Some(IdbKey::Number(2.0)))
+        .unwrap();
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 验证索引正常工作 — 通过 get_from_index 查询
+    let result = db
+        .get_from_index("items", "cat_idx", &IdbKey::String("x".to_string()))
+        .unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].value["id"], 1);
+}
+
+/// 覆盖 lines 996-999: tx_put 中 auto_increment 为 true 且 key 为 None
+#[test]
+fn test_tx_put_auto_increment() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, true).unwrap(); // auto_increment = true
+
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    // key 为 None，auto_increment = true → 走 lines 996-999
+    let key = db.tx_put(&tx, "items", json!({"name": "auto"}), None).unwrap();
+    assert_eq!(key, IdbKey::Number(1.0)); // 第一个自动生成 key = 1
+
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 验证记录已存储
+    let record = db.get("items", &IdbKey::Number(1.0)).unwrap();
+    assert_eq!(record.value["name"], "auto");
+
+    // 再添加一条，key 应该自增为 2
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    let key2 = db.tx_put(&tx, "items", json!({"name": "auto2"}), None).unwrap();
+    assert_eq!(key2, IdbKey::Number(2.0));
+}
+
+/// 覆盖 line 1027: tx_delete 中匹配 TxMutation::Delete 等其他 variant 的 _ => false
+#[test]
+fn test_tx_delete_with_prior_delete_mutation() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", Some("id"), false).unwrap();
+
+    // 先添加一条记录
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_add(&tx, "items", json!({"id": 1}), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 在同一事务中先 put 一条，再 delete — 确保 _ => false (line 1027) 被覆盖
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_put(&tx, "items", json!({"id": 2}), Some(IdbKey::Number(2.0)))
+        .unwrap();
+    // delete 会遍历 mutations，遇到 Put 匹配成功，然后添加 Delete mutation
+    let found1 = db.tx_delete(&tx, "items", &IdbKey::Number(2.0)).unwrap();
+    assert!(found1); // put 在 buffer 中存在
+
+    // 再次 delete 同一个 key — 此时 mutations 里有 Put 和 Delete，
+    // 遍历时 Delete variant 命中 _ => false (line 1027)
+    let found2 = db.tx_delete(&tx, "items", &IdbKey::Number(2.0)).unwrap();
+    // 第二次 delete：mutations 中有 Put (match), Delete (_ => false)
+    // exists_in_buffer = true (因为 Put 匹配到了)
+    assert!(found2);
+}
+
+/// 覆盖 line 1063: tx_get 中匹配不相关的 mutation（_ => {} 跳过）
+#[test]
+fn test_tx_get_skips_unrelated_mutations() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", Some("id"), false).unwrap();
+
+    // 添加两条记录
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_add(&tx, "items", json!({"id": 1, "val": "a"}), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    db.tx_add(&tx, "items", json!({"id": 2, "val": "b"}), Some(IdbKey::Number(2.0)))
+        .unwrap();
+    let mut tx = tx;
+    db.commit_tx(&mut tx).unwrap();
+
+    // 新事务：put key=1，然后 get key=2
+    // tx_get 遍历 mutations 时遇到 Put{key=1}（不匹配 key=2），走 _ => {} (line 1063)
+    let tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_put(
+        &tx,
+        "items",
+        json!({"id": 1, "val": "updated"}),
+        Some(IdbKey::Number(1.0)),
+    )
+    .unwrap();
+
+    // get key=2 会遍历 mutations，Put{key=1} 不匹配，走 _ => {} 跳过
+    let result = db.tx_get(&tx, "items", &IdbKey::Number(2.0)).unwrap();
+    assert!(result.is_some());
+    assert_eq!(result.unwrap().value["val"], "b");
+}
