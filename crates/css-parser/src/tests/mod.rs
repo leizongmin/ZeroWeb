@@ -70,6 +70,7 @@ mod coverage_round3;
 mod coverage_round4;
 mod coverage_round5;
 mod coverage_round6;
+mod coverage_round7;
 mod tests_1;
 mod tests_10;
 mod tests_11;
