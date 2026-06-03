@@ -158,3 +158,10 @@ fn test_history_clear_then_search_empty() {
     assert!(hist.search("example").next().is_none(), "清除后搜索应返回空");
     assert!(hist.search("test").next().is_none(), "清除后搜索应返回空");
 }
+
+#[test]
+fn test_history_default() {
+    let hist = History::default();
+    assert!(hist.is_empty());
+    assert_eq!(hist.len(), 0);
+}
