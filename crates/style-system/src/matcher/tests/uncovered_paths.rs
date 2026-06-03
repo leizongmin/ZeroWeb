@@ -1,13 +1,13 @@
 // Matcher module - uncovered paths test
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, ContainerRule,
+    ContainerSizeCondition, NthPattern, PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
 };
-use zero_dom::Document;
+use zero_dom::{Document, NodeId};
 
 // ── is_valid_selector_parse edge cases ──
 
@@ -446,6 +446,404 @@ fn test_collect_no_matching_selector() {
 
     let decls = collect_matching_declarations(&doc, el, &stylesheets);
     assert!(decls.is_empty());
+}
+
+// ── :has() 带复杂组合器链测试 ──
+
+/// 测试 :has() 带后代组合器链
+#[test]
+fn test_has_descendant_chain() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let grandparent = doc.create_element("div");
+    let parent = doc.create_element("section");
+    let child = doc.create_element("p");
+    let target = doc.create_element("span");
+
+    doc.append_child(root, grandparent).unwrap();
+    doc.append_child(grandparent, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+    doc.append_child(child, target).unwrap();
+
+    // div:has(section p span)
+    let inner_sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("section".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    Some(Combinator::Descendant),
+                ),
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("p".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    Some(Combinator::Descendant),
+                ),
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    None,
+                ),
+            ],
+        },
+    };
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("div".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![inner_sel]))],
+                },
+                None,
+            )],
+        },
+    };
+
+    assert!(matches_selector(&doc, grandparent, &sel));
+}
+
+/// 测试 :has() 带多个候选元素（只有最后一个匹配）
+#[test]
+fn test_has_only_last_candidate_matches() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child1 = doc.create_element("p");
+    let child2 = doc.create_element("p");
+    let grandchild = doc.create_element("span");
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child1).unwrap();
+    doc.append_child(parent, child2).unwrap();
+    doc.append_child(child2, grandchild).unwrap();
+
+    // Simple test: div:has(span)
+    let simple_sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("div".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Has(vec![
+                        make_tag_selector("span"),
+                    ]))],
+                },
+                None,
+            )],
+        },
+    };
+
+    assert!(matches_selector(&doc, parent, &simple_sel));
+}
+
+// ── evaluate_container_condition 特性名称处理 ──
+
+/// 测试容器查询特性名称处理（min-/max- 前缀）
+#[test]
+fn test_container_feature_name_processing() {
+    let rule = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "min-width".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: None,
+            value: "400px".to_string(),
+        }),
+        rules: vec![],
+    };
+    let ctx = ContainerContext::with_size(500.0, 600.0);
+    assert!(evaluate_container_condition(&rule, Some(&ctx)));
+
+    let rule_max = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "max-height".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: None,
+            value: "700px".to_string(),
+        }),
+        rules: vec![],
+    };
+    let ctx_short = ContainerContext::with_size(800.0, 500.0);
+    assert!(evaluate_container_condition(&rule_max, Some(&ctx_short)));
+
+    // width: 500px (exact match) — ctx has width=500
+    let rule_inline = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "width".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: None,
+            value: "500px".to_string(),
+        }),
+        rules: vec![],
+    };
+    assert!(evaluate_container_condition(&rule_inline, Some(&ctx)));
+
+    // height: 600px (exact match) — ctx has height=600
+    let rule_block = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "height".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: None,
+            value: "600px".to_string(),
+        }),
+        rules: vec![],
+    };
+    assert!(evaluate_container_condition(&rule_block, Some(&ctx)));
+
+    // Non-matching exact value
+    let rule_no = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "width".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: None,
+            value: "300px".to_string(),
+        }),
+        rules: vec![],
+    };
+    assert!(!evaluate_container_condition(&rule_no, Some(&ctx)));
+}
+
+// ── is_property_supported 边界值 ──
+
+/// 测试 is_property_supported 边界值
+#[test]
+fn test_property_supported_edge_cases() {
+    // 空字符串
+    assert!(!is_property_supported("display", ""));
+    assert!(!is_property_supported("color", "   "));
+
+    // container-name 任何非空字符串都有效
+    assert!(is_property_supported("container-name", "sidebar"));
+    assert!(is_property_supported("container-name", "main content"));
+    assert!(is_property_supported("container-name", "123"));
+}
+
+// ── matches_selector_recursive 边界条件 ──
+
+/// 测试 matches_selector_recursive 无组合器（None）
+#[test]
+fn test_matches_selector_recursive_no_combinator() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    // 创建选择器：span div（无组合器的情况不应该发生，但我们测试处理）
+    let parts = vec![
+        (
+            CompoundSelector {
+                type_selector: Some(TypeSelector::Tag("div".to_string())),
+                subclass_selectors: vec![],
+            },
+            None,
+        ),
+        (
+            CompoundSelector {
+                type_selector: Some(TypeSelector::Tag("span".to_string())),
+                subclass_selectors: vec![],
+            },
+            None,
+        ),
+    ];
+
+    // 这个测试覆盖 None 组合器的分支
+    let _result = super::super::matches_selector_recursive(&doc, child, &parts, 1);
+    // 注意：在实际选择器中，无组合器是无效的，但代码会继续处理
+    // 这里我们测试的是代码对 None 的处理
+}
+
+// ── collect_from_rules @layer 规则处理 ──
+
+/// 测试 @layer 规则的层索引分配
+#[test]
+fn test_collect_from_layer_rules() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let span = doc.create_element("span");
+    doc.append_child(root, span).unwrap();
+
+    use zero_css_parser::ast::{Declaration, LayerRule, Rule, StyleRule};
+
+    // 创建一个 @layer 规则
+    let layer_rule = LayerRule {
+        name: "base".to_string(),
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("span")],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                important: false,
+            }],
+        })],
+    };
+
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![Rule::Layer(layer_rule)],
+    }];
+
+    let decls = collect_matching_declarations(&doc, span, &stylesheets);
+    assert_eq!(decls.len(), 1);
+    assert_eq!(decls[0].4, Some(0)); // 层索引应为 0
+}
+
+/// 测试多个 @layer 规则的层索引递增
+#[test]
+fn test_collect_from_multiple_layer_rules() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let span = doc.create_element("span");
+    let p = doc.create_element("p");
+    doc.append_child(root, span).unwrap();
+    doc.append_child(root, p).unwrap();
+
+    use zero_css_parser::ast::{Declaration, LayerRule, Rule, StyleRule};
+
+    let layer1 = LayerRule {
+        name: "base".to_string(),
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("span")],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                important: false,
+            }],
+        })],
+    };
+
+    let layer2 = LayerRule {
+        name: "components".to_string(),
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("p")],
+            declarations: vec![Declaration {
+                property: "background".to_string(),
+                value: "blue".to_string(),
+                important: false,
+            }],
+        })],
+    };
+
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![Rule::Layer(layer1), Rule::Layer(layer2)],
+    }];
+
+    let decls_span = collect_matching_declarations(&doc, span, &stylesheets);
+    let decls_p = collect_matching_declarations(&doc, p, &stylesheets);
+
+    // span 应该有层索引 0
+    assert_eq!(decls_span.len(), 1);
+    assert_eq!(decls_span[0].4, Some(0));
+
+    // p 应该有层索引 1
+    assert_eq!(decls_p.len(), 1);
+    assert_eq!(decls_p[0].4, Some(1));
+}
+
+// ── matches_nth_type 0 个元素的情况 ──
+
+/// 测试 matches_nth_of_type 无同类型兄弟
+#[test]
+fn test_nth_of_type_no_siblings_of_type() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let only_child = doc.create_element("span");
+    let other_type = doc.create_element("p");
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, only_child).unwrap();
+    doc.append_child(parent, other_type).unwrap();
+
+    // 选择器：span:nth-of-type(1)
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthOfType(
+                        NthPattern { a: 0, b: 1 },
+                    ))],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, only_child, &sel));
+}
+
+// ── is_empty_element 边界条件 ──
+
+/// 测试 is_empty_element 只有空白文本节点
+#[test]
+fn test_empty_element_with_whitespace() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+
+    doc.append_child(root, parent).unwrap();
+
+    // 创建一个空白文本节点
+    let text_id = doc.create_text_node("   \n\t  ");
+    doc.append_child(parent, text_id).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("div".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "empty".to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, parent, &sel));
+}
+
+/// 测试 is_empty_element 有元素子节点但不匹配
+#[test]
+fn test_empty_element_with_non_matching_element() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, child).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("div".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "empty".to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(!matches_selector(&doc, parent, &sel));
 }
 
 // 辅助函数

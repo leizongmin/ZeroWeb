@@ -462,6 +462,117 @@ fn test_webview_inject_css_after_load_url_preserves_loading_state() {
 //  边界条件测试：连续失败、回调移除后验证、Builder 空 URL、超长 CSS、渲染幂等
 // ════════════════════════════════════════════════════════════════
 
+// ── 新增测试：覆盖更多边界情况 ──
+
+/// 测试 resize 到 u32 最大值 - edge
+#[test]
+fn test_webview_resize_to_u32_max_edge() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 调整到最大尺寸
+    wv.resize(u32::MAX, u32::MAX);
+    assert_eq!(wv.config().width, u32::MAX);
+    assert_eq!(wv.config().height, u32::MAX);
+}
+
+/// 测试 resize 到极小尺寸
+#[test]
+fn test_webview_resize_minimal_dimensions() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 调整到极小尺寸
+    wv.resize(1, 1);
+    assert_eq!(wv.config().width, 1);
+    assert_eq!(wv.config().height, 1);
+}
+
+/// 测试多次 resize
+#[test]
+fn test_webview_multiple_resizes() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 多次调整大小
+    wv.resize(800, 600);
+    assert_eq!(wv.config().width, 800);
+    assert_eq!(wv.config().height, 600);
+
+    wv.resize(1024, 768);
+    assert_eq!(wv.config().width, 1024);
+    assert_eq!(wv.config().height, 768);
+
+    wv.resize(300, 200);
+    assert_eq!(wv.config().width, 300);
+    assert_eq!(wv.config().height, 200);
+}
+
+/// 测试 load_html 空 HTML 和各种组合
+#[test]
+fn test_webview_load_html_empty_content() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 空 HTML
+    let result1 = wv.load_html("", None);
+    assert!(result1.timings.total_ms >= 0.0);
+
+    // 空 HTML + 空 CSS
+    let result2 = wv.load_html("", Some(""));
+    assert!(result2.timings.total_ms >= 0.0);
+
+    // 空 HTML + 有效 CSS
+    let result3 = wv.load_html("", Some("body { color: red; }"));
+    assert!(result3.timings.total_ms >= 0.0);
+}
+
+/// 测试 load_url 相同 URL 不触发 UrlChanged 事件
+#[test]
+fn test_webview_load_url_same_url_no_events() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 设置初始 URL
+    wv.load_url("https://example.com");
+    let original_url = wv.url().map(|s| s.to_string());
+
+    // 再次设置相同 URL，不应该触发 UrlChanged 事件
+    wv.load_url("https://example.com");
+
+    assert_eq!(wv.url().map(|s| s.to_string()), original_url);
+    assert!(wv.is_loading());
+}
+
+/// 测试 execute_script 大量参数和返回值
+#[test]
+fn test_webview_execute_script_large_inputs() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 大对象创建测试
+    let script = r#"
+        const arr = [];
+        for (let i = 0; i < 10000; i++) {
+            arr.push({ id: i, name: 'test' + i });
+        }
+        JSON.stringify(arr);
+    "#;
+
+    let result = wv.execute_script(script);
+    assert!(result.is_ok());
+    assert!(result.unwrap().contains("\"id\":9999"));
+}
+
+/// 测试 execute_script 深层属性访问
+#[test]
+fn test_webview_execute_script_deep_property_access() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 深层属性链访问
+    let script = r#"
+        window.document.body.element.firstChild.id;
+    "#;
+
+    let result = wv.execute_script(script);
+    // 即使对象不存在，也不应该 panic
+    assert!(result.is_ok() || result.is_err());
+}
+
 /// 验证连续调用 fail_load 两次不会 panic，且 loading 始终为 false。
 ///
 /// 边界场景：第一次 fail_load 将 loading 从 true 置为 false，

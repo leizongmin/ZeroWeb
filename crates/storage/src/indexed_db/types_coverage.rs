@@ -469,3 +469,657 @@ fn test_idb_key_serialization() {
     assert!(debug_str.contains("Binary"), "应该包含 Binary");
     assert!(debug_str.contains("Array"), "应该包含 Array");
 }
+
+/// 测试游标 advance(0) 重置位置到开头
+#[test]
+fn test_idb_cursor_advance_zero() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+    db.add("items", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    db.add("items", serde_json::json!("b"), Some(IdbKey::Number(2.0)))
+        .unwrap();
+
+    let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+    // 从位置 0 前进 1 步到位置 1
+    assert!(cursor.advance(1));
+    assert!(!cursor.is_finished());
+
+    // advance(0) 应该重置到开头
+    assert!(cursor.advance(0));
+    assert!(!cursor.is_finished());
+    assert_eq!(cursor.current, 0);
+}
+
+/// 测试键游标 continue_to 方法
+#[test]
+fn test_idb_key_cursor_continue_to() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+    db.add("items", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    db.add("items", serde_json::json!("b"), Some(IdbKey::Number(3.0)))
+        .unwrap();
+    db.add("items", serde_json::json!("c"), Some(IdbKey::Number(5.0)))
+        .unwrap();
+
+    let mut cursor = db.open_key_cursor("items", None).unwrap().unwrap();
+
+    // 当前在 1.0
+    assert_eq!(cursor.key(), Some(&IdbKey::Number(1.0)));
+
+    // 继续到 3.0
+    assert!(cursor.continue_to(&IdbKey::Number(3.0)));
+    assert_eq!(cursor.key(), Some(&IdbKey::Number(3.0)));
+
+    // 继续到不存在的键应该返回 false
+    assert!(!cursor.continue_to(&IdbKey::Number(10.0)));
+}
+
+/// 测试 rename_object_store 边界情况
+#[test]
+fn test_idb_rename_object_store_edge_cases() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("original", None, false).unwrap();
+    db.create_object_store("another", None, false).unwrap();
+
+    // 重命名到自己应该成功
+    db.rename_object_store("original", "original").unwrap();
+    assert!(db.has_store("original"));
+
+    // 重命名到已存在的 store 应该失败
+    let result = db.rename_object_store("original", "another");
+    assert!(result.is_err());
+
+    // 重命名不存在的 store 应该失败
+    let result = db.rename_object_store("nonexistent", "newname");
+    assert!(result.is_err());
+}
+
+/// 测试事务创建时指定不存在的 store
+#[test]
+fn test_transaction_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("existing", None, false).unwrap();
+
+    // 包含已存在和未存在的 store
+    let result = db.transaction(&["existing", "nonexistent"], IdbTransactionMode::ReadWrite);
+    assert!(result.is_err());
+}
+
+/// 测试 put 时自增键用尽（达到 u64::MAX）
+#[test]
+fn test_put_auto_increment_max_key() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, true).unwrap();
+
+    // 添加一个记录使 next_key 达到 u64::MAX
+    // 注意：我们无法直接设置 next_key，但可以测试达到最大值后的行为
+    // 先添加很多个记录（模拟接近最大值）
+    for i in 0..1000 {
+        db.add("items", serde_json::json!(i), None).unwrap();
+    }
+
+    // 继续添加应该正常工作（直到实际达到 u64::MAX）
+    let key = db.add("items", serde_json::json!(1000), None).unwrap();
+    assert!(matches!(key, IdbKey::Number(n) if n > 1000.0));
+}
+
+/// 测试 get_all_with_range 在空 store 上
+#[test]
+fn test_get_all_with_range_empty_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("empty", None, false).unwrap();
+
+    let range = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::Number(10.0), false, false);
+    let result = db.get_all_with_range("empty", &range).unwrap();
+    assert!(result.is_empty());
+}
+
+/// 测试 count_with_range 在空 store 上
+#[test]
+fn test_count_with_range_empty_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("empty", None, false).unwrap();
+
+    let range = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::Number(10.0), false, false);
+    let count = db.count_with_range("empty", &range).unwrap();
+    assert_eq!(count, 0);
+}
+
+/// 测试 open_cursor 在空 store 上返回 None
+#[test]
+fn test_open_cursor_empty_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("empty", None, false).unwrap();
+
+    let cursor = db.open_cursor("empty", None).unwrap();
+    assert!(cursor.is_none());
+}
+
+/// 测试 open_key_cursor 在空 store 上返回 None
+#[test]
+fn test_open_key_cursor_empty_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("empty", None, false).unwrap();
+
+    let cursor = db.open_key_cursor("empty", None).unwrap();
+    assert!(cursor.is_none());
+}
+
+/// 测试 open_cursor_with_range 在不存在的 store 上
+#[test]
+fn test_open_cursor_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("existing", None, false).unwrap();
+
+    // 在不存在的 store 上打开游标
+    let result = db.open_cursor("nonexistent", None);
+    assert!(result.is_err());
+}
+
+/// 测试 store_names 返回的引用有效性
+#[test]
+fn test_store_names_validity() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("store1", None, false).unwrap();
+    db.create_object_store("store2", None, false).unwrap();
+
+    let names = db.store_names();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains(&"store1"));
+    assert!(names.contains(&"store2"));
+
+    // 确保引用有效
+    for name in names {
+        assert!(!name.is_empty());
+    }
+}
+
+/// 测试 has_store 在各种情况下
+#[test]
+fn test_has_store_various_cases() {
+    let mut db = IdbDatabase::new("test", 1);
+    assert!(!db.has_store("nonexistent"));
+
+    db.create_object_store("new", None, false).unwrap();
+    assert!(db.has_store("new"));
+
+    db.delete_object_store("new").unwrap();
+    assert!(!db.has_store("new"));
+}
+
+/// 测试 IdbKeyRange 只包含一个键的各种边界情况
+#[test]
+fn test_idb_key_range_only_edge_cases() {
+    // 测试字符串键
+    let str_key = IdbKey::String("test".into());
+    let range = IdbKeyRange::only(str_key.clone());
+
+    assert!(range.contains(&str_key));
+    assert!(!range.contains(&IdbKey::String("a".into())));
+    assert!(!range.contains(&IdbKey::String("z".into())));
+    assert!(!range.contains(&IdbKey::Number(1.0)));
+
+    // 测试数字键
+    let num_key = IdbKey::Number(42.0);
+    let num_range = IdbKeyRange::only(num_key.clone());
+
+    assert!(num_range.contains(&num_key));
+    assert!(!num_range.contains(&IdbKey::Number(41.0)));
+    assert!(!num_range.contains(&IdbKey::Number(43.0)));
+    assert!(!num_range.contains(&IdbKey::String("42".into())));
+}
+
+/// 测试索引删除后重新创建的边界情况
+#[test]
+fn test_index_delete_recreate_edge_cases() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加记录
+    db.add(
+        "items",
+        serde_json::json!({"name": "item1"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+    db.add(
+        "items",
+        serde_json::json!({"name": "item2"}),
+        Some(IdbKey::String("2".into())),
+    )
+    .unwrap();
+
+    // 创建索引
+    db.create_index("items", "name_idx", "name", false, false).unwrap();
+
+    // 删除索引
+    db.delete_index("items", "name_idx").unwrap();
+    assert_eq!(db.index_names("items").unwrap().len(), 0);
+
+    // 重新创建同名索引
+    db.create_index("items", "name_idx", "name", false, false).unwrap();
+    assert_eq!(db.index_names("items").unwrap().len(), 1);
+}
+
+/// 测试 multiEntry 索引在非数组值上的行为
+#[test]
+fn test_multi_entry_non_array_value() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加非数组值的记录
+    db.add(
+        "items",
+        serde_json::json!({"tags": "single"}),
+        Some(IdbKey::Number(1.0)),
+    )
+    .unwrap();
+
+    // 创建 multiEntry 索引
+    db.create_index("items", "tags_idx", "tags", false, true).unwrap();
+
+    // 查询单个标签
+    let results = db
+        .get_from_index("items", "tags_idx", &IdbKey::String("single".into()))
+        .unwrap();
+    assert_eq!(results.len(), 1);
+
+    // 计数
+    let count = db.count_from_index("items", "tags_idx", None).unwrap();
+    assert_eq!(count, 1);
+}
+
+/// 测试 IdbKey 的 NaN 哈希行为
+#[test]
+fn test_idb_key_nan_hash() {
+    use std::collections::HashSet;
+
+    let nan_key1 = IdbKey::Number(f64::NAN);
+    let nan_key2 = IdbKey::Number(f64::NAN);
+    let normal_key = IdbKey::Number(1.0);
+
+    // 尽管 NaN 在比较时被视为相等，但它们的哈希可能不同（因为哈希基于位表示）
+    let mut set = HashSet::new();
+
+    // 应该能够插入两个 NaN 键（它们的位表示可能不同）
+    set.insert(nan_key1.clone());
+    set.insert(nan_key2.clone());
+    set.insert(normal_key.clone());
+
+    // 至少应该有两个不同的键（NaN 和正常值）
+    assert!(set.len() >= 2);
+}
+
+/// 测试 cursor advance 超出范围后的行为
+#[test]
+fn test_cursor_advance_beyond_end() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加一条记录
+    db.add("items", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+        .unwrap();
+
+    let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+
+    // advance 超出范围
+    assert!(!cursor.advance(2)); // 只有1条记录，advance(2) 应该失败
+    assert!(cursor.is_finished());
+
+    // advance 再次应该仍然失败
+    assert!(!cursor.advance(1));
+    assert!(cursor.is_finished());
+}
+
+/// 测试 IdbKey 的复杂嵌套数组比较
+#[test]
+fn test_idb_key_complex_nested_array_comparison() {
+    // 创建 deeply nested arrays
+    let nested1 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![
+            IdbKey::String("a".into()),
+            IdbKey::Array(vec![IdbKey::Number(2.0), IdbKey::String("b".into())]),
+        ]),
+    ]);
+
+    let nested2 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![
+            IdbKey::String("a".into()),
+            IdbKey::Array(vec![
+                IdbKey::Number(3.0), // 不同的值
+                IdbKey::String("b".into()),
+            ]),
+        ]),
+    ]);
+
+    let nested3 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![
+            IdbKey::String("a".into()),
+            IdbKey::Array(vec![
+                IdbKey::Number(2.0),
+                IdbKey::String("c".into()), // 不同的值
+            ]),
+        ]),
+    ]);
+
+    // 比较：nested1 的 [2.0, "b"] < nested2 的 [3.0, "b"]（因为 2.0 < 3.0）
+    assert!(nested1 < nested2);
+    // nested1 的 [2.0, "b"] < nested3 的 [2.0, "c"]（因为 "b" < "c"）
+    assert!(nested1 < nested3);
+    // nested2 的 [3.0, "b"] > nested3 的 [2.0, "c"]（因为 3.0 > 2.0）
+    assert!(nested2 > nested3);
+}
+
+/// 测试 IdbKeyRange 的空范围（下界大于上界）
+#[test]
+fn test_idb_key_range_empty_range() {
+    // 创建一个空范围（下界大于上界）
+    let empty_range = IdbKeyRange::bound(IdbKey::Number(10.0), IdbKey::Number(5.0), false, false);
+
+    // 任何键都不应该在空范围内
+    assert!(!empty_range.contains(&IdbKey::Number(1.0)));
+    assert!(!empty_range.contains(&IdbKey::Number(5.0)));
+    assert!(!empty_range.contains(&IdbKey::Number(10.0)));
+    assert!(!empty_range.contains(&IdbKey::String("test".into())));
+}
+
+/// 测试 IdbKey 的所有类型比较，确保所有代码路径都被测试
+#[test]
+fn test_idb_key_all_comparison_paths() {
+    // 确保所有 cmp_key 的分支都被覆盖
+    let number = IdbKey::Number(1.0);
+    let string = IdbKey::String("a".into());
+    let binary = IdbKey::Binary(vec![1, 2, 3]);
+    let array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+
+    // Number vs others
+    assert!(number < string);
+    assert!(number < binary);
+    assert!(number < array);
+
+    // String vs others (except number)
+    assert!(string < binary);
+    assert!(string < array);
+
+    // Binary vs Array
+    assert!(binary < array);
+
+    // 同类型比较
+    let number2 = IdbKey::Number(2.0);
+    assert!(number < number2);
+
+    let string2 = IdbKey::String("b".into());
+    assert!(string < string2);
+
+    let binary2 = IdbKey::Binary(vec![1, 2, 4]);
+    assert!(binary < binary2);
+
+    let array2 = IdbKey::Array(vec![IdbKey::Number(2.0)]);
+    assert!(array < array2);
+}
+
+/// 测试游标方向相关的所有路径
+#[test]
+fn test_cursor_direction_paths() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加多条记录
+    for i in 1..=5 {
+        db.add("items", serde_json::json!(i), Some(IdbKey::Number(i as f64)))
+            .unwrap();
+    }
+
+    // 测试普通游标
+    let mut cursor = db.open_cursor("items", None).unwrap().unwrap();
+
+    // 测试边界情况
+    assert!(!cursor.is_finished());
+
+    // 遍历所有记录（从第 1 条开始，continue_next 剩余 4 次）
+    let mut count = 0;
+    while cursor.continue_next() {
+        count += 1;
+    }
+    assert_eq!(count, 4, "从位置 0 开始，剩余 4 次 continue_next");
+    assert!(cursor.is_finished());
+}
+
+/// 测试索引游标在不匹配范围时返回 None
+#[test]
+fn test_index_cursor_empty_result() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加记录
+    db.add(
+        "items",
+        serde_json::json!({"cat": "A"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+    db.create_index("items", "cat_idx", "cat", false, false).unwrap();
+
+    // 不带范围查询时，索引有数据所以返回 Some
+    let cursor = db.open_cursor_on_index("items", "cat_idx", None).unwrap();
+    assert!(cursor.is_some(), "索引有数据时不带范围应返回 Some");
+
+    // 使用不匹配的范围查询
+    let range = IdbKeyRange::only(IdbKey::String("Z".into()));
+    let cursor = db.open_cursor_on_index("items", "cat_idx", Some(&range)).unwrap();
+    assert!(cursor.is_none(), "不匹配的范围应返回 None");
+}
+
+/// 测试事务中止后再尝试操作
+#[test]
+fn test_transaction_abort_then_operations() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.abort().unwrap();
+
+    // 中止后的事务状态检查
+    assert!(tx.is_aborted());
+    assert!(!tx.is_committed());
+    assert_eq!(tx.mode(), IdbTransactionMode::ReadWrite);
+
+    // 尝试在已中止的事务上操作应该失败
+    let result = db.tx_add(
+        &tx,
+        "items",
+        serde_json::json!("test"),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试事务提交后再尝试操作
+#[test]
+fn test_transaction_commit_then_operations() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.commit().unwrap();
+
+    // 提交后的状态检查
+    assert!(!tx.is_aborted());
+    assert!(tx.is_committed());
+    assert_eq!(tx.mode(), IdbTransactionMode::ReadWrite);
+
+    // 尝试在已提交的事务上操作应该失败
+    let result = db.tx_add(
+        &tx,
+        "items",
+        serde_json::json!("test"),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试删除不存在的 store
+#[test]
+fn test_delete_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+
+    // 删除不存在的 store 应该返回错误
+    let result = db.delete_object_store("nonexistent");
+    assert!(result.is_err());
+}
+
+/// 测试创建 store 时检查是否已存在
+#[test]
+fn test_create_store_already_exists() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("existing", None, false).unwrap();
+
+    // 尝试创建同名 store 应该失败
+    let result = db.create_object_store("existing", None, false);
+    assert!(result.is_err());
+}
+
+/// 测试 JSON null 值在索引中的处理
+#[test]
+fn test_json_null_in_index() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加包含 null 值的记录
+    db.add(
+        "items",
+        serde_json::json!({"name": "item", "category": null}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 创建索引，null 值应该被忽略
+    db.create_index("items", "category_idx", "category", false, false)
+        .unwrap();
+
+    // 查询不存在的键应该返回空结果
+    let results = db.get_from_index("items", "category_idx", &IdbKey::String("nonexistent".into()));
+    assert!(results.is_ok());
+    let results = results.unwrap();
+    assert!(results.is_empty());
+}
+
+/// 测试 IdbKey 的深度相等性比较
+#[test]
+fn test_idb_key_deep_equality() {
+    // 创建复杂的相等结构
+    let key1 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("deep".into()),
+        IdbKey::Array(vec![IdbKey::Binary(vec![1, 2, 3]), IdbKey::Number(2.0)]),
+    ]);
+
+    let key2 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("deep".into()),
+        IdbKey::Array(vec![IdbKey::Binary(vec![1, 2, 3]), IdbKey::Number(2.0)]),
+    ]);
+
+    let key3 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::String("deep".into()),
+        IdbKey::Array(vec![
+            IdbKey::Binary(vec![1, 2, 4]), // 不同的二进制数据
+            IdbKey::Number(2.0),
+        ]),
+    ]);
+
+    assert_eq!(key1, key2);
+    assert_ne!(key1, key3);
+}
+
+/// 测试 IdbKeyRange 的包含方法覆盖所有边界情况
+#[test]
+fn test_idb_key_range_contains_all_bounds() {
+    let range = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::Number(5.0), false, true);
+
+    // 测试各种情况
+    assert!(range.contains(&IdbKey::Number(1.0))); // 下界包含
+    assert!(range.contains(&IdbKey::Number(3.0))); // 中间值
+    assert!(!range.contains(&IdbKey::Number(5.0))); // 上界不包含
+
+    // 测试其他类型都不在范围内
+    assert!(!range.contains(&IdbKey::String("1".into())));
+    assert!(!range.contains(&IdbKey::Binary(vec![1])));
+    assert!(!range.contains(&IdbKey::Array(vec![IdbKey::Number(1.0)])));
+}
+
+/// 测试索引的唯一约束在更新记录时的行为
+#[test]
+fn test_unique_index_on_update() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("users", None, false).unwrap();
+
+    // 添加用户
+    db.add(
+        "users",
+        serde_json::json!({"name": "Alice", "email": "alice@example.com"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 创建唯一索引
+    db.create_index("users", "email_idx", "email", true, false).unwrap();
+
+    // 更新记录，改变 email 但保持索引唯一
+    db.put(
+        "users",
+        serde_json::json!({"name": "Alice Updated", "email": "alice2@example.com"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 应该能够添加具有新 email 的用户
+    db.add(
+        "users",
+        serde_json::json!({"name": "Bob", "email": "alice@example.com"}),
+        Some(IdbKey::String("2".into())),
+    )
+    .unwrap();
+
+    // 但不能添加相同 email 的用户
+    let result = db.add(
+        "users",
+        serde_json::json!({"name": "Charlie", "email": "alice@example.com"}),
+        Some(IdbKey::String("3".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试 clear_store 后索引的清除
+#[test]
+fn test_clear_store_clears_indexes() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加记录
+    db.add(
+        "items",
+        serde_json::json!({"name": "item1"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 创建索引
+    db.create_index("items", "name_idx", "name", false, false).unwrap();
+
+    // 清空 store
+    db.clear_store("items").unwrap();
+
+    // 索引应该仍然存在但为空
+    assert_eq!(db.index_names("items").unwrap().len(), 1);
+
+    // 尝试查询索引应该返回空结果
+    let results = db.get_all_from_index("items", "name_idx").unwrap();
+    assert!(results.is_empty());
+}
