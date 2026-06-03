@@ -18,7 +18,7 @@ use crate::values::{
     parse_gradient, parse_length, parse_length_shorthand, parse_list_style_position, parse_list_style_type,
     parse_object_fit, parse_opacity, parse_resize, parse_scroll_snap_align, parse_scroll_snap_stop,
     parse_scroll_snap_type, parse_spacing, parse_table_layout, parse_text_decoration_line, parse_text_indent,
-    parse_text_overflow, parse_text_shadow, parse_text_transform, parse_transform, parse_var, parse_writing_mode,
+    parse_text_overflow, parse_text_shadow, parse_text_transform, parse_transform, parse_var, parse_writing_mode, hwb_to_rgba,
 };
 
 /// Helper: 创建标签选择器。
