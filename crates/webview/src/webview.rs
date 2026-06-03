@@ -205,14 +205,8 @@ impl WebView {
                     self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
                     return Ok(render_result);
                 }
-                FetchInterceptResult::Error(msg) => {
-                    self.loading = false;
-                    let full_msg = format!("Service Worker error for {url}: {msg}");
-                    self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), full_msg.clone()));
-                    return Err(WebViewError::Navigation(full_msg));
-                }
-                FetchInterceptResult::PassThrough | FetchInterceptResult::NoWorker => {
-                    // 继续正常网络请求
+                _ => {
+                    // PassThrough / NoWorker / Error — 继续正常网络请求
                 }
             }
         }
@@ -355,22 +349,7 @@ impl WebView {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
                 Ok(result.value)
             }
-            Err(zero_script_sandbox::ScriptError::InvalidInput(msg)) => {
-                Err(WebViewError::Script(format!("Invalid input: {msg}")))
-            }
-            Err(zero_script_sandbox::ScriptError::CompileError(msg)) => {
-                Err(WebViewError::Script(format!("Compile error: {msg}")))
-            }
-            Err(zero_script_sandbox::ScriptError::RuntimeError(msg)) => {
-                Err(WebViewError::Script(format!("Runtime error: {msg}")))
-            }
-            Err(zero_script_sandbox::ScriptError::Timeout(msg)) => Err(WebViewError::Script(format!("Timeout: {msg}"))),
-            Err(zero_script_sandbox::ScriptError::NotInitialized) => {
-                Err(WebViewError::Script("JS sandbox not initialized".into()))
-            }
-            Err(zero_script_sandbox::ScriptError::EngineUnavailable(msg)) => {
-                Err(WebViewError::Script(format!("Engine unavailable: {msg}")))
-            }
+            Err(e) => Err(WebViewError::Script(format!("{e}"))),
         }
     }
 
