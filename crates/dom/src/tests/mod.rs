@@ -19,4 +19,5 @@ mod tests_5;
 mod tests_6_document;
 mod tests_7_parser;
 mod tests_8_coverage;
+mod tests_9_query_coverage;
 mod tests_range;

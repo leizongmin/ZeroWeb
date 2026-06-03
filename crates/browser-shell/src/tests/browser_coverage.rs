@@ -1,6 +1,6 @@
 //! Browser shell tests for uncovered paths.
 
-use zero_browser_shell::{BrowserShell, FindState};
+use crate::*;
 
 #[test]
 fn test_browser_shell_empty_initially() {

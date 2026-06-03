@@ -1,6 +1,6 @@
 //! Bookmarks tests for uncovered paths.
 
-use zero_browser_shell::{Bookmark, BookmarkFolder, BookmarkId, Bookmarks};
+use crate::*;
 
 #[test]
 fn test_bookmark_remove_nonexistent() {

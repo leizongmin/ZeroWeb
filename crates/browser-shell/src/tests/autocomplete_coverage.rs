@@ -1,6 +1,6 @@
 //! Autocomplete tests for uncovered paths.
 
-use zero_browser_shell::{Autocomplete, Bookmarks, History};
+use crate::*;
 
 #[test]
 fn test_autocomplete_empty_query() {

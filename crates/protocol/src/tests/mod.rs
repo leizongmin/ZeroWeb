@@ -64,3 +64,4 @@ mod comprehensive_coverage;
 mod edge_cases;
 mod edge_cases_extra;
 mod serialize_basic;
+mod serialize_coverage;
