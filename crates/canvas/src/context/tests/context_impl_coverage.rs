@@ -537,3 +537,219 @@ fn test_context_line_properties() {
     ctx.set_miter_limit(0.5);
     assert_eq!(ctx.miter_limit(), 0.5);
 }
+
+// ── 覆盖率补全第三轮：阴影路径 / draw_image_data_scaled 边界 / is_point_in_stroke ──
+
+/// 覆盖 fill() 中的 draw_shadow_path 分支（line 257）
+#[test]
+fn test_fill_with_shadow_triggers_shadow_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_fill_style(FillStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_shadow_color(Color::rgba(0, 0, 255, 128));
+    ctx.set_shadow_offset_x(5.0);
+    ctx.set_shadow_offset_y(5.0);
+    ctx.set_shadow_blur(3.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(60.0, 10.0);
+    ctx.line_to(60.0, 60.0);
+    ctx.close_path();
+    ctx.fill();
+    // Shadow pixels should be present around the filled area
+    let has_blue = ctx.pixel_buffer.chunks_exact(4).any(|px| px[2] > 0 && px[3] > 0);
+    assert!(has_blue, "Shadow path should produce blue-tinted pixels");
+}
+
+/// 覆盖 stroke() 中的 draw_shadow_path 分支（line 272）
+#[test]
+fn test_stroke_with_shadow_triggers_shadow_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_stroke_style(FillStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_line_width(3.0);
+    ctx.set_shadow_color(Color::rgba(0, 255, 0, 128));
+    ctx.set_shadow_offset_x(4.0);
+    ctx.set_shadow_offset_y(4.0);
+    ctx.set_shadow_blur(2.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(80.0, 80.0);
+    ctx.stroke();
+    let has_green = ctx.pixel_buffer.chunks_exact(4).any(|px| px[1] > 0 && px[3] > 0);
+    assert!(has_green, "Stroke shadow should produce green-tinted pixels");
+}
+
+/// 覆盖 fill_with_path() 中的 draw_shadow_path 分支（line 292）
+#[test]
+fn test_fill_with_path_and_shadow() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_fill_style(FillStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_shadow_color(Color::rgba(128, 0, 128, 100));
+    ctx.set_shadow_offset_x(3.0);
+    ctx.set_shadow_offset_y(3.0);
+    let mut path = Path2D::new();
+    path.move_to(20.0, 20.0);
+    path.line_to(70.0, 20.0);
+    path.line_to(70.0, 70.0);
+    path.close_path();
+    ctx.fill_with_path(&path);
+    // Verify something was drawn
+    let has_content = ctx.pixel_buffer.chunks_exact(4).any(|px| px[3] > 0);
+    assert!(has_content, "fill_with_path with shadow should produce pixels");
+}
+
+/// 覆盖 stroke_with_path() 中的 draw_shadow_path 分支（lines 303-306）
+#[test]
+fn test_stroke_with_path_and_shadow() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_stroke_style(FillStyle::Color(Color::rgba(0, 0, 255, 255)));
+    ctx.set_line_width(2.0);
+    ctx.set_shadow_color(Color::rgba(255, 128, 0, 100));
+    ctx.set_shadow_offset_x(5.0);
+    ctx.set_shadow_offset_y(5.0);
+    let mut path = Path2D::new();
+    path.move_to(15.0, 15.0);
+    path.line_to(85.0, 85.0);
+    ctx.stroke_with_path(&path);
+    let has_content = ctx.pixel_buffer.chunks_exact(4).any(|px| px[3] > 0);
+    assert!(has_content, "stroke_with_path with shadow should produce pixels");
+}
+
+/// 覆盖 is_point_in_stroke 非空路径分支（line 748 附近）
+#[test]
+fn test_is_point_in_stroke_with_line_segment() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_line_width(10.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 50.0);
+    ctx.line_to(90.0, 50.0);
+    // Point near the line should be in stroke
+    assert!(ctx.is_point_in_stroke(50.0, 50.0));
+    // Point far away should not
+    assert!(!ctx.is_point_in_stroke(50.0, 10.0));
+}
+
+/// 覆盖 is_point_in_stroke 空路径分支（line 748: return false）
+#[test]
+fn test_is_point_in_stroke_empty_path() {
+    let ctx = CanvasContext::new(100, 100);
+    assert!(!ctx.is_point_in_stroke(50.0, 50.0));
+}
+
+/// 覆盖 draw_image_data_scaled 中 canvas_w==0 分支（line 887）
+#[test]
+fn test_draw_image_data_scaled_zero_canvas() {
+    let mut ctx = CanvasContext::new(0, 0);
+    let img = ImageData {
+        width: 10,
+        height: 10,
+        data: vec![255u8; 400],
+    };
+    // Should not panic on zero-sized canvas
+    ctx.draw_image_data_scaled(&img, 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 10.0);
+}
+
+/// 覆盖 draw_image_data_scaled 中 sw==0 分支（line 895）
+#[test]
+fn test_draw_image_data_scaled_zero_source() {
+    let mut ctx = CanvasContext::new(50, 50);
+    let img = ImageData {
+        width: 10,
+        height: 10,
+        data: vec![255u8; 400],
+    };
+    // Source rect with zero width/height - should return early
+    ctx.draw_image_data_scaled(&img, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, 10.0);
+    ctx.draw_image_data_scaled(&img, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0, 10.0);
+}
+
+/// 覆盖 draw_image_data_scaled 中 src_alpha==0 continue 分支（line 932）
+#[test]
+fn test_draw_image_data_scaled_fully_transparent_source() {
+    let mut ctx = CanvasContext::new(20, 20);
+    let img = ImageData {
+        width: 10,
+        height: 10,
+        data: vec![0u8; 400], // all transparent
+    };
+    ctx.draw_image_data_scaled(&img, 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 10.0);
+    // All pixels should still be 0
+    assert!(ctx.pixel_buffer.iter().all(|&v| v == 0));
+}
+
+/// 覆盖 draw_shadow_rect 中 blur_factor=1.0 分支（line 972-974）
+#[test]
+fn test_fill_rect_shadow_zero_blur() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_fill_style(FillStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_shadow_color(Color::rgba(0, 128, 0, 150));
+    ctx.set_shadow_blur(0.0); // zero blur → blur_factor = 1.0
+    ctx.set_shadow_offset_x(5.0);
+    ctx.set_shadow_offset_y(5.0);
+    ctx.fill_rect(10.0, 10.0, 40.0, 40.0);
+    // Verify shadow pixels exist
+    let has_green = ctx.pixel_buffer.chunks_exact(4).any(|px| px[1] > 50 && px[3] > 0);
+    assert!(has_green, "Shadow with zero blur should still be visible");
+}
+
+/// 覆盖 draw_shadow_path 函数（lines 994-1014）
+#[test]
+fn test_stroke_shadow_path_with_blur() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.set_stroke_style(FillStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_line_width(5.0);
+    ctx.set_shadow_color(Color::rgba(0, 0, 255, 100));
+    ctx.set_shadow_blur(10.0);
+    ctx.set_shadow_offset_x(3.0);
+    ctx.set_shadow_offset_y(3.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(90.0, 10.0);
+    ctx.line_to(90.0, 90.0);
+    ctx.stroke();
+    let has_blue = ctx.pixel_buffer.chunks_exact(4).any(|px| px[2] > 0 && px[3] > 0);
+    assert!(has_blue, "Stroke shadow path with blur should produce pixels");
+}
+
+/// 覆盖 draw_image_data_scaled 正常 alpha 混合路径（lines 940-955）
+#[test]
+fn test_draw_image_data_scaled_alpha_blend() {
+    let mut ctx = CanvasContext::new(20, 20);
+    // Pre-fill canvas with a base color
+    for px in ctx.pixel_buffer.chunks_exact_mut(4) {
+        px[0] = 100;
+        px[1] = 100;
+        px[2] = 100;
+        px[3] = 255;
+    }
+    // Draw semi-transparent image
+    let mut img_data = vec![0u8; 400]; // 10x10 * 4
+    for px in img_data.chunks_exact_mut(4) {
+        px[0] = 255;
+        px[1] = 0;
+        px[2] = 0;
+        px[3] = 128; // semi-transparent red
+    }
+    let img = ImageData {
+        width: 10,
+        height: 10,
+        data: img_data,
+    };
+    ctx.draw_image_data_scaled(&img, 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 10.0);
+    // Check some blending occurred
+    let has_blend = ctx.pixel_buffer.chunks_exact(4).any(|px| px[0] > 100);
+    assert!(has_blend, "Alpha blending should have occurred");
+}
+
+/// 覆盖 draw_image_data_scaled 中 src_x 越界 continue（line 908）
+#[test]
+fn test_draw_image_data_scaled_source_out_of_bounds() {
+    let mut ctx = CanvasContext::new(20, 20);
+    let img = ImageData {
+        width: 5,
+        height: 5,
+        data: vec![255u8; 100],
+    };
+    // Source offset that exceeds image dimensions
+    ctx.draw_image_data_scaled(&img, 10.0, 10.0, 5.0, 5.0, 0.0, 0.0, 10.0, 10.0);
+    // Should not panic, most pixels should remain 0
+}

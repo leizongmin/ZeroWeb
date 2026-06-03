@@ -2157,5 +2157,9 @@ mod tests {
             let debug = format!("{event:?}");
             assert!(!debug.is_empty(), "Debug 格式不应为空");
         }
+        for event in &events {
+            let debug = format!("{event:?}");
+            assert!(!debug.is_empty(), "Debug 格式不应为空");
+        }
     }
 }

@@ -16,3 +16,11 @@ criterion = { workspace = true }
 [[bench]]
 name = "storage_bench"
 harness = false
+
+[[test]]
+name = "types_coverage"
+path = "src/tests/types_coverage.rs"
+
+[[test]]
+name = "cursor_coverage"
+path = "src/tests/cursor_coverage.rs"

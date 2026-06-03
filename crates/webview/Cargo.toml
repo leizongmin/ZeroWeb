@@ -24,3 +24,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "webview_bench"
 harness = false
+
+[[test]]
+name = "webview_coverage"
+path = "src/tests/webview_coverage.rs"
