@@ -901,3 +901,101 @@ fn test_idb_key_clone() {
         assert!(matches!(&arr[1], IdbKey::String(s) if s == "test"));
     }
 }
+
+/// 测试 IdbKey::Binary 与其他类型的比较
+#[test]
+fn test_idb_binary_comparison_with_other_types() {
+    // Binary vs Number
+    let binary = IdbKey::Binary(vec![1, 2, 3]);
+    let number = IdbKey::Number(42.0);
+    assert!(binary > number, "Binary > Number");
+    assert!(number < binary, "Number < Binary");
+
+    // Binary vs String
+    let string = IdbKey::String("hello".to_string());
+    assert!(binary > string, "Binary > String");
+    assert!(string < binary, "String < Binary");
+
+    // Binary vs Array
+    let array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert!(binary < array, "Binary < Array");
+    assert!(array > binary, "Array > Binary");
+
+    // Binary vs Binary
+    let binary1 = IdbKey::Binary(vec![1, 2, 3]);
+    let binary2 = IdbKey::Binary(vec![1, 2, 4]);
+    let binary3 = IdbKey::Binary(vec![1, 2]);
+    assert!(binary1 < binary2, "Binary[1,2,3] < Binary[1,2,4]");
+    assert!(binary3 < binary1, "Binary[1,2] < Binary[1,2,3]");
+    assert!(binary1 == binary1, "Binary equals self");
+}
+
+/// 测试 IdbKey 序列化边界情况
+#[test]
+fn test_idb_key_serialization_edge_cases() {
+    // 空数组
+    let empty_array = IdbKey::Array(vec![]);
+    let single_array = IdbKey::Array(vec![IdbKey::Number(1.0)]);
+    assert!(empty_array < single_array);
+
+    // 深层嵌套数组
+    let deeply_nested1 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![
+            IdbKey::String("deep".to_string()),
+            IdbKey::Array(vec![IdbKey::Binary(vec![1, 2, 3])]),
+        ]),
+    ]);
+    let deeply_nested2 = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Array(vec![
+            IdbKey::String("deeper".to_string()),
+            IdbKey::Array(vec![IdbKey::Binary(vec![1, 2, 3])]),
+        ]),
+    ]);
+    assert!(deeply_nested1 < deeply_nested2);
+}
+
+/// 测试 IdbKeyRange 只/bound 边界情况
+#[test]
+fn test_idb_key_range_only_bound_edge_cases() {
+    let key1 = IdbKey::Number(1.0);
+    let key2 = IdbKey::Number(2.0);
+    let key3 = IdbKey::Number(3.0);
+
+    // 只包含一个键的范围
+    let only_range = IdbKeyRange::only(key2.clone());
+    assert!(only_range.contains(&key2));
+    assert!(!only_range.contains(&key1));
+    assert!(!only_range.contains(&key3));
+
+    // 下界开区间
+    let lower_open = IdbKeyRange::lower_bound(key2.clone(), true);
+    assert!(!lower_open.contains(&key2)); // 不包含 2.0
+    assert!(lower_open.contains(&key3)); // 包含 3.0
+    assert!(!lower_open.contains(&key1)); // 不包含 1.0
+
+    // 上界开区间
+    let upper_open = IdbKeyRange::upper_bound(key2.clone(), true);
+    assert!(!upper_open.contains(&key2)); // 不包含 2.0
+    assert!(upper_open.contains(&key1)); // 包含 1.0
+    assert!(!upper_open.contains(&key3)); // 不包含 3.0
+
+    // 双闭区间
+    let both_closed = IdbKeyRange::bound(key1.clone(), key3.clone(), false, false);
+    assert!(both_closed.contains(&key1)); // 包含 1.0
+    assert!(both_closed.contains(&key2)); // 包含 2.0
+    assert!(both_closed.contains(&key3)); // 包含 3.0
+
+    // 双开区间
+    let both_open = IdbKeyRange::bound(key1.clone(), key3.clone(), true, true);
+    assert!(!both_open.contains(&key1)); // 不包含 1.0
+    assert!(both_open.contains(&key2)); // 包含 2.0
+    assert!(!both_open.contains(&key3)); // 不包含 3.0
+
+    // 相同的上下界（无效范围）
+    let invalid_range = IdbKeyRange::bound(key2.clone(), key2.clone(), true, false);
+    assert!(!invalid_range.contains(&key1));
+    assert!(!invalid_range.contains(&key2));
+    assert!(!invalid_range.contains(&key3));
+}
