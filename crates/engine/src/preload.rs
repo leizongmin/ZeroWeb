@@ -343,8 +343,12 @@ mod tests {
         assert_eq!(parse_resource_type("style"), ResourceType::Style);
         assert_eq!(parse_resource_type("image"), ResourceType::Image);
         assert_eq!(parse_resource_type("font"), ResourceType::Font);
+        assert_eq!(parse_resource_type("audio"), ResourceType::Audio);
+        assert_eq!(parse_resource_type("video"), ResourceType::Video);
         assert_eq!(parse_resource_type("fetch"), ResourceType::Fetch);
         assert_eq!(parse_resource_type("document"), ResourceType::Document);
+        assert_eq!(parse_resource_type("embed"), ResourceType::Embed);
+        assert_eq!(parse_resource_type("object"), ResourceType::Embed);
         assert_eq!(parse_resource_type("unknown"), ResourceType::Other);
         assert_eq!(parse_resource_type("  FONT  "), ResourceType::Font);
     }
@@ -435,6 +439,27 @@ mod tests {
     }
 
     #[test]
+    fn test_preloader_register_lower_priority_doesnt_override() {
+        let mut preloader = ResourcePreloader::new();
+
+        // 先注册为 preload style（Critical）
+        preloader.register_link("style.css", "preload", Some("style"), false, None);
+        // 再注册为 prefetch style（Low）— 不应覆盖
+        preloader.register_link("style.css", "prefetch", Some("style"), false, None);
+
+        assert_eq!(preloader.len(), 1);
+        let hint = preloader.get("style.css").unwrap();
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+        assert_eq!(hint.priority, LoadPriority::Critical);
+
+        // 测试相同优先级的情况 - 不应该改变
+        preloader.register_link("script.js", "preload", Some("script"), false, None);
+        preloader.register_link("script.js", "preload", Some("fetch"), false, None);
+        let hint = preloader.get("script.js").unwrap();
+        assert_eq!(hint.priority, LoadPriority::High); // script fetch 仍然是 Medium，所以 script 的 High 应该保留
+    }
+
+    #[test]
     fn test_preloader_mark_loading() {
         let mut preloader = ResourcePreloader::new();
         preloader.register_link("app.js", "preload", Some("script"), false, None);
@@ -492,6 +517,90 @@ mod tests {
     }
 
     #[test]
+    fn test_preloader_empty_edge_cases() {
+        let mut preloader = ResourcePreloader::new();
+
+        // 测试空预加载器的各种操作
+        assert!(preloader.is_empty());
+        assert_eq!(preloader.len(), 0);
+        assert!(preloader.pending_resources().is_empty());
+        assert!(preloader.get("nonexistent").is_none());
+
+        // 尝试标记不存在的 URL
+        assert!(!preloader.mark_loading("nonexistent"));
+        preloader.mark_loaded("nonexistent");
+        preloader.mark_failed("nonexistent");
+    }
+
+    #[test]
+    fn test_resource_hint_from_link_attrs_edge_cases() {
+        // 测试空字符串 URL - 允许空 URL
+        let hint = ResourceHint::from_link_attrs("", "preload", Some("script"), false, None).unwrap();
+        assert_eq!(hint.url, "");
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+        assert_eq!(hint.resource_type, ResourceType::Script);
+
+        // 测试空字符串 rel - 应该返回 None
+        let result = ResourceHint::from_link_attrs("script.js", "", Some("script"), false, None);
+        assert!(result.is_none());
+
+        // 测试空 as_value (但 rel 是 preload) - 应该成功，resource_type 为 Other
+        let hint = ResourceHint::from_link_attrs("resource", "preload", None, false, None).unwrap();
+        assert_eq!(hint.resource_type, ResourceType::Other);
+        assert_eq!(hint.priority, LoadPriority::Medium);
+
+        // 测试只有空格的 rel - 应该被 trim 后解析
+        let hint = ResourceHint::from_link_attrs("script.js", "   preload   ", Some("script"), false, None).unwrap();
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+
+        // 测试只有空格的 as_value - 应该被 trim 后解析
+        let hint = ResourceHint::from_link_attrs("font.woff2", "preload", Some("   font   "), false, None).unwrap();
+        assert_eq!(hint.resource_type, ResourceType::Font);
+    }
+
+    #[test]
+    fn test_parse_resource_hint_case_insensitive() {
+        assert_eq!(parse_resource_hint("PRELOAD"), Some(ResourceHintType::Preload));
+        assert_eq!(parse_resource_hint("Preload"), Some(ResourceHintType::Preload));
+        assert_eq!(parse_resource_hint("PREFETCH"), Some(ResourceHintType::Prefetch));
+        assert_eq!(parse_resource_hint("Preconnect"), Some(ResourceHintType::Preconnect));
+        assert_eq!(parse_resource_hint("DNS-PREFETCH"), Some(ResourceHintType::DnsPrefetch));
+        assert_eq!(parse_resource_hint("dns-prefetch"), Some(ResourceHintType::DnsPrefetch));
+    }
+
+    #[test]
+    fn test_parse_resource_type_case_insensitive() {
+        assert_eq!(parse_resource_type("SCRIPT"), ResourceType::Script);
+        assert_eq!(parse_resource_type("Script"), ResourceType::Script);
+        assert_eq!(parse_resource_type("IMAGE"), ResourceType::Image);
+        assert_eq!(parse_resource_type("Font"), ResourceType::Font);
+        assert_eq!(parse_resource_type("AUDIO"), ResourceType::Audio);
+        assert_eq!(parse_resource_type("VIDEO"), ResourceType::Video);
+        assert_eq!(parse_resource_type("FETCH"), ResourceType::Fetch);
+        assert_eq!(parse_resource_type("DOCUMENT"), ResourceType::Document);
+        assert_eq!(parse_resource_type("EMBED"), ResourceType::Embed);
+        assert_eq!(parse_resource_type("OBJECT"), ResourceType::Embed);
+    }
+
+    #[test]
+    fn test_resource_hint_partial_copy() {
+        let hint = ResourceHint::from_link_attrs("app.js", "preload", Some("script"), false, None).unwrap();
+
+        // 创建一个副本，修改某些字段
+        let mut modified_hint = hint.clone();
+        modified_hint.priority = LoadPriority::Critical;
+        modified_hint.cors = true;
+
+        // 原始 hint 不应该改变
+        assert_eq!(hint.priority, LoadPriority::High);
+        assert!(!hint.cors);
+
+        // 修改后的 hint 有正确的值
+        assert_eq!(modified_hint.priority, LoadPriority::Critical);
+        assert!(modified_hint.cors);
+    }
+
+    #[test]
     fn test_preconnect_and_dns_prefetch() {
         let mut preloader = ResourcePreloader::new();
         preloader.register_link("https://cdn.example.com", "preconnect", None, false, None);
@@ -508,6 +617,77 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_priority_preload_various_types() {
+        // Test Preload with different resource types
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Script),
+            LoadPriority::High
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Style),
+            LoadPriority::Critical
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Font),
+            LoadPriority::High
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Fetch),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Image),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Audio),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Video),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Document),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Embed),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preload, ResourceType::Other),
+            LoadPriority::Medium
+        );
+
+        // Test other hint types
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Prefetch, ResourceType::Script),
+            LoadPriority::Low
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Prefetch, ResourceType::Other),
+            LoadPriority::Low
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preconnect, ResourceType::Script),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::Preconnect, ResourceType::Other),
+            LoadPriority::Medium
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::DnsPrefetch, ResourceType::Script),
+            LoadPriority::Low
+        );
+        assert_eq!(
+            ResourceHint::infer_priority(ResourceHintType::DnsPrefetch, ResourceType::Other),
+            LoadPriority::Low
+        );
+    }
+
+    #[test]
     fn test_load_priority_ordering() {
         assert!(LoadPriority::Critical > LoadPriority::High);
         assert!(LoadPriority::High > LoadPriority::Medium);
@@ -517,9 +697,30 @@ mod tests {
 
     #[test]
     fn test_display_traits() {
+        // ResourceHintType Display trait - all variants
         assert_eq!(ResourceHintType::Preload.to_string(), "preload");
+        assert_eq!(ResourceHintType::Prefetch.to_string(), "prefetch");
+        assert_eq!(ResourceHintType::Preconnect.to_string(), "preconnect");
+        assert_eq!(ResourceHintType::DnsPrefetch.to_string(), "dns-prefetch");
+
+        // ResourceType Display trait - all variants
         assert_eq!(ResourceType::Script.to_string(), "script");
+        assert_eq!(ResourceType::Style.to_string(), "style");
+        assert_eq!(ResourceType::Image.to_string(), "image");
+        assert_eq!(ResourceType::Font.to_string(), "font");
+        assert_eq!(ResourceType::Audio.to_string(), "audio");
+        assert_eq!(ResourceType::Video.to_string(), "video");
+        assert_eq!(ResourceType::Fetch.to_string(), "fetch");
+        assert_eq!(ResourceType::Document.to_string(), "document");
+        assert_eq!(ResourceType::Embed.to_string(), "embed");
+        assert_eq!(ResourceType::Other.to_string(), "other");
+
+        // LoadPriority Display trait - all variants
+        assert_eq!(LoadPriority::Idle.to_string(), "idle");
+        assert_eq!(LoadPriority::Low.to_string(), "low");
+        assert_eq!(LoadPriority::Medium.to_string(), "medium");
         assert_eq!(LoadPriority::High.to_string(), "high");
+        assert_eq!(LoadPriority::Critical.to_string(), "critical");
     }
 
     #[test]
@@ -534,5 +735,29 @@ mod tests {
         .unwrap();
         assert!(hint.cors);
         assert!(hint.integrity.unwrap().starts_with("sha384"));
+    }
+
+    #[test]
+    fn test_resource_hint_from_link_attrs_combinations() {
+        // Test with integrity, crossorigin, and various combinations
+        let hint =
+            ResourceHint::from_link_attrs("style.css", "preload", Some("style"), true, Some("sha256-abc123")).unwrap();
+        assert_eq!(hint.url, "style.css");
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+        assert_eq!(hint.resource_type, ResourceType::Style);
+        assert_eq!(hint.priority, LoadPriority::Critical);
+        assert!(hint.cors);
+        assert_eq!(hint.integrity, Some("sha256-abc123".to_string()));
+
+        // Test without integrity but with crossorigin
+        let hint = ResourceHint::from_link_attrs("script.js", "preload", Some("script"), true, None).unwrap();
+        assert!(hint.cors);
+        assert!(hint.integrity.is_none());
+
+        // Test with integrity but without crossorigin
+        let hint =
+            ResourceHint::from_link_attrs("font.woff2", "preload", Some("font"), false, Some("sha512-def456")).unwrap();
+        assert!(!hint.cors);
+        assert_eq!(hint.integrity, Some("sha512-def456".to_string()));
     }
 }

@@ -414,3 +414,420 @@ fn test_convert_flex_basis_auto_length() {
     let result = convert_flex_basis(&FlexBasisValue::Length(LengthValue::Auto));
     assert_eq!(result, taffy::style::Dimension::Auto);
 }
+
+// ── convert_display 未覆盖的变体测试 ──
+
+/// 测试 convert_display：Flow, FlowRoot, ListItem, Contents 都映射为 Block。
+#[test]
+fn test_convert_display_unmapped_variants() {
+    let variants_to_test = [
+        DisplayValue::Flow,
+        DisplayValue::FlowRoot,
+        DisplayValue::ListItem,
+        DisplayValue::Contents,
+    ];
+
+    for display_value in variants_to_test {
+        let result = convert_display(&display_value);
+        assert_eq!(
+            result,
+            taffy::style::Display::Block,
+            "{:?} should map to Block",
+            display_value
+        );
+    }
+}
+
+// ── convert_overflow 未覆盖的变体测试 ──
+
+/// 测试 convert_overflow：Clip 和 Auto 变体。
+#[test]
+fn test_convert_overflow_clip_and_auto() {
+    // Clip
+    let result = convert_overflow(&OverflowValue::Clip);
+    assert_eq!(result, taffy::style::Overflow::Clip);
+
+    // Auto 映射为 Scroll
+    let result = convert_overflow(&OverflowValue::Auto);
+    assert_eq!(result, taffy::style::Overflow::Scroll);
+}
+
+// ── convert_length_to_dimension 未覆盖的变体测试 ──
+
+/// 测试 convert_length_to_dimension：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+#[test]
+fn test_convert_length_to_dimension_uncovered_variants() {
+    // Viewport units
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Vh(50.0)),
+        taffy::style::Dimension::Length(50.0)
+    );
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Vw(25.0)),
+        taffy::style::Dimension::Length(25.0)
+    );
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Vmin(10.0)),
+        taffy::style::Dimension::Length(10.0)
+    );
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Vmax(20.0)),
+        taffy::style::Dimension::Length(20.0)
+    );
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Ch(8.0)),
+        taffy::style::Dimension::Length(8.0)
+    );
+
+    // FitContent 内部转换
+    let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
+    assert_eq!(
+        convert_length_to_dimension(&fit_content),
+        taffy::style::Dimension::Length(100.0)
+    );
+
+    // MinContent/MaxContent 映射为 Auto
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::MinContent),
+        taffy::style::Dimension::Auto
+    );
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::MaxContent),
+        taffy::style::Dimension::Auto
+    );
+
+    // Calc 映射为 0
+    assert_eq!(
+        convert_length_to_dimension(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
+            42.0
+        )))),
+        taffy::style::Dimension::Length(0.0)
+    );
+}
+
+// ── convert_max_length_to_dimension 未覆盖的变体测试 ──
+
+/// 测试 convert_max_length_to_dimension：infinity 和各种变体。
+#[test]
+fn test_convert_max_length_to_dimension_uncovered_variants() {
+    // Infinity 映射为 Auto
+    assert_eq!(
+        convert_max_length_to_dimension(&LengthValue::Px(f64::INFINITY)),
+        taffy::style::Dimension::Auto
+    );
+
+    // Viewport units
+    assert_eq!(
+        convert_max_length_to_dimension(&LengthValue::Vh(50.0)),
+        taffy::style::Dimension::Length(50.0)
+    );
+    assert_eq!(
+        convert_max_length_to_dimension(&LengthValue::Vw(25.0)),
+        taffy::style::Dimension::Length(25.0)
+    );
+
+    // FitContent 内部转换
+    let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(200.0)));
+    assert_eq!(
+        convert_max_length_to_dimension(&fit_content),
+        taffy::style::Dimension::Length(200.0)
+    );
+
+    // MinContent/MaxContent 映射为 Auto
+    assert_eq!(
+        convert_max_length_to_dimension(&LengthValue::MinContent),
+        taffy::style::Dimension::Auto
+    );
+    assert_eq!(
+        convert_max_length_to_dimension(&LengthValue::MaxContent),
+        taffy::style::Dimension::Auto
+    );
+}
+
+// ── convert_length_to_lp/lpa 未覆盖的变体测试 ──
+
+/// 测试 convert_length_to_lp：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+#[test]
+fn test_convert_length_to_lp_uncovered_variants() {
+    // Viewport units
+    assert_eq!(
+        convert_length_to_lp(&LengthValue::Vh(50.0)),
+        taffy::style::LengthPercentage::Length(50.0)
+    );
+    assert_eq!(
+        convert_length_to_lp(&LengthValue::Vw(25.0)),
+        taffy::style::LengthPercentage::Length(25.0)
+    );
+
+    // FitContent 内部转换
+    let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
+    assert_eq!(
+        convert_length_to_lp(&fit_content),
+        taffy::style::LengthPercentage::Length(100.0)
+    );
+
+    // MinContent/MaxContent 映射为 0
+    assert_eq!(
+        convert_length_to_lp(&LengthValue::MinContent),
+        taffy::style::LengthPercentage::Length(0.0)
+    );
+    assert_eq!(
+        convert_length_to_lp(&LengthValue::MaxContent),
+        taffy::style::LengthPercentage::Length(0.0)
+    );
+
+    // Calc 映射为 0
+    assert_eq!(
+        convert_length_to_lp(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
+            42.0
+        )))),
+        taffy::style::LengthPercentage::Length(0.0)
+    );
+}
+
+/// 测试 convert_length_to_lpa：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+#[test]
+fn test_convert_length_to_lpa_uncovered_variants() {
+    // Viewport units
+    assert_eq!(
+        convert_length_to_lpa(&LengthValue::Vh(50.0)),
+        taffy::style::LengthPercentageAuto::Length(50.0)
+    );
+    assert_eq!(
+        convert_length_to_lpa(&LengthValue::Vw(25.0)),
+        taffy::style::LengthPercentageAuto::Length(25.0)
+    );
+
+    // FitContent 内部转换
+    let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
+    assert_eq!(
+        convert_length_to_lpa(&fit_content),
+        taffy::style::LengthPercentageAuto::Length(100.0)
+    );
+
+    // MinContent/MaxContent 映射为 0
+    assert_eq!(
+        convert_length_to_lpa(&LengthValue::MinContent),
+        taffy::style::LengthPercentageAuto::Length(0.0)
+    );
+    assert_eq!(
+        convert_length_to_lpa(&LengthValue::MaxContent),
+        taffy::style::LengthPercentageAuto::Length(0.0)
+    );
+
+    // Calc 映射为 0
+    assert_eq!(
+        convert_length_to_lpa(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
+            42.0
+        )))),
+        taffy::style::LengthPercentageAuto::Length(0.0)
+    );
+}
+
+// ── convert_alignment_to_* 未覆盖的变体测试 ──
+
+/// 测试 convert_alignment_to_align_items：Baseline, SpaceBetween, SpaceAround, SpaceEvenly。
+#[test]
+fn test_convert_alignment_to_align_items_uncovered_variants() {
+    assert_eq!(
+        convert_alignment_to_align_items(&AlignmentValue::Baseline),
+        Some(taffy::style::AlignItems::Baseline)
+    );
+    assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceBetween), None);
+    assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceAround), None);
+    assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceEvenly), None);
+    assert_eq!(
+        convert_alignment_to_align_items(&AlignmentValue::Start),
+        Some(taffy::style::AlignItems::Start)
+    );
+    assert_eq!(
+        convert_alignment_to_align_items(&AlignmentValue::End),
+        Some(taffy::style::AlignItems::End)
+    );
+}
+
+/// 测试 convert_alignment_to_justify_content：Start, End, Stretch, Baseline。
+#[test]
+fn test_convert_alignment_to_justify_content_uncovered_variants() {
+    assert_eq!(
+        convert_alignment_to_justify_content(&AlignmentValue::Start),
+        Some(taffy::style::JustifyContent::Start)
+    );
+    assert_eq!(
+        convert_alignment_to_justify_content(&AlignmentValue::End),
+        Some(taffy::style::JustifyContent::End)
+    );
+    assert_eq!(
+        convert_alignment_to_justify_content(&AlignmentValue::Stretch),
+        Some(taffy::style::JustifyContent::Stretch)
+    );
+    assert_eq!(convert_alignment_to_justify_content(&AlignmentValue::Baseline), None);
+}
+
+/// 测试 convert_alignment_to_align_content：Start, End。
+#[test]
+fn test_convert_alignment_to_align_content_uncovered_variants() {
+    assert_eq!(
+        convert_alignment_to_align_content(&AlignmentValue::Start),
+        Some(taffy::style::AlignContent::Start)
+    );
+    assert_eq!(
+        convert_alignment_to_align_content(&AlignmentValue::End),
+        Some(taffy::style::AlignContent::End)
+    );
+}
+
+// ── parse_grid_tracks 未覆盖的测试 ──
+
+/// 测试 parse_grid_tracks：None 值返回空列表。
+#[test]
+fn test_parse_grid_tracks_none_value() {
+    let tracks = parse_grid_tracks(&None);
+    assert!(tracks.is_empty());
+}
+
+/// 测试 parse_grid_tracks：repeat with auto-fill。
+#[test]
+fn test_parse_grid_tracks_repeat_auto_fill() {
+    use taffy::style::GridTrackRepetition;
+
+    let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
+    assert_eq!(tracks.len(), 1);
+    match &tracks[0] {
+        taffy::style::TrackSizingFunction::Repeat(rep, inner) => {
+            assert_eq!(*rep, GridTrackRepetition::AutoFill);
+            assert_eq!(inner.len(), 1);
+            assert_eq!(
+                inner[0],
+                taffy::style::NonRepeatedTrackSizingFunction::from_length(200.0)
+            );
+        }
+        _ => panic!("Expected TrackSizingFunction::Repeat"),
+    }
+}
+
+/// 测试 parse_grid_tracks：repeat with auto-fit。
+#[test]
+fn test_parse_grid_tracks_repeat_auto_fit() {
+    use taffy::style::GridTrackRepetition;
+
+    let tracks = parse_grid_tracks(&Some("repeat(auto-fit, minmax(100px, 1fr))".to_string()));
+    assert_eq!(tracks.len(), 1);
+    match &tracks[0] {
+        taffy::style::TrackSizingFunction::Repeat(rep, inner) => {
+            assert_eq!(*rep, GridTrackRepetition::AutoFit);
+            assert_eq!(inner.len(), 1);
+            let nr = &inner[0];
+            // NonRepeatedTrackSizingFunction is MinMax<Min, Max>
+            match nr.min {
+                taffy::style::MinTrackSizingFunction::Fixed(lp) => {
+                    assert_eq!(lp, taffy::style::LengthPercentage::Length(100.0));
+                }
+                _ => panic!("Expected Fixed(100px)"),
+            }
+            match nr.max {
+                taffy::style::MaxTrackSizingFunction::Fraction(f) => {
+                    assert_eq!(f, 1.0);
+                }
+                _ => panic!("Expected Fraction(1fr)"),
+            }
+        }
+        _ => panic!("Expected TrackSizingFunction::Repeat"),
+    }
+}
+
+// ── parse_grid_templateareas 未覆盖的测试 ──
+
+/// 测试 parse_grid_template_areas：复杂模式（包含多个区域和不同大小）。
+#[test]
+fn test_parse_grid_template_areas_complex_pattern() {
+    let areas = parse_grid_template_areas(
+        "\"header header sidebar\" \
+         \"nav    main   main\" \
+         \"footer footer footer\"",
+    );
+
+    assert_eq!(areas.len(), 5);
+
+    // header: row 1-2, col 1-3
+    assert_eq!(areas.get("header"), Some(&(1, 2, 1, 3)));
+
+    // sidebar: row 1-2, col 3-4
+    assert_eq!(areas.get("sidebar"), Some(&(1, 2, 3, 4)));
+
+    // nav: row 2-3, col 1-2
+    assert_eq!(areas.get("nav"), Some(&(2, 3, 1, 2)));
+
+    // main: row 2-3, col 2-4
+    assert_eq!(areas.get("main"), Some(&(2, 3, 2, 4)));
+
+    // footer: row 3-4, col 1-4
+    assert_eq!(areas.get("footer"), Some(&(3, 4, 1, 4)));
+}
+
+/// 测试 parse_grid_template_areas：单区域多行多列。
+#[test]
+fn test_parse_grid_template_areas_single_area_multiple_rows_cols() {
+    let areas = parse_grid_template_areas(
+        "\"a a a\" \
+         \"a a a\" \
+         \"a a a\"",
+    );
+
+    assert_eq!(areas.len(), 1);
+    assert_eq!(areas.get("a"), Some(&(1, 4, 1, 4))); // 3x3 grid
+}
+
+// ── resolve_named_area 未覆盖的测试 ──
+
+/// 测试 resolve_named_area：Name 变体，存在 parent_areas，所有 "which" 值。
+#[test]
+fn test_resolve_named_area_all_which_values() {
+    let mut areas = std::collections::HashMap::new();
+    areas.insert("test-area".to_string(), (2, 4, 3, 5)); // row 2-4, col 3-5
+
+    // 测试所有 which 值
+    assert_eq!(
+        resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "row-start"),
+        GridLineValue::Line(2)
+    );
+    assert_eq!(
+        resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "row-end"),
+        GridLineValue::Line(4)
+    );
+    assert_eq!(
+        resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "col-start"),
+        GridLineValue::Line(3)
+    );
+    assert_eq!(
+        resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "col-end"),
+        GridLineValue::Line(5)
+    );
+
+    // 测试未知 which 值
+    assert_eq!(
+        resolve_named_area(&GridLineValue::Name("test-area".to_string()), Some(&areas), "unknown"),
+        GridLineValue::Auto
+    );
+}
+
+/// 测试 resolve_named_area：Name 变体，不存在 parent_areas，应返回 Auto。
+#[test]
+fn test_resolve_named_area_no_parent_areas() {
+    let result = resolve_named_area(&GridLineValue::Name("nonexistent".to_string()), None, "row-start");
+    assert_eq!(result, GridLineValue::Auto);
+}
+
+/// 测试 resolve_named_area：Name 变体，存在 parent_areas 但名称不存在。
+#[test]
+fn test_resolve_named_area_name_not_found() {
+    let mut areas = std::collections::HashMap::new();
+    areas.insert("existing".to_string(), (1, 2, 1, 2));
+
+    let result = resolve_named_area(
+        &GridLineValue::Name("nonexistent".to_string()),
+        Some(&areas),
+        "row-start",
+    );
+    assert_eq!(result, GridLineValue::Auto);
+}
