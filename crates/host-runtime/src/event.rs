@@ -2162,4 +2162,55 @@ mod tests {
             assert!(!debug.is_empty(), "Debug 格式不应为空");
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 额外转换函数覆盖率测试
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// 测试 element_state_to_pressed
+    #[test]
+    fn test_element_state_to_pressed_values() {
+        assert!(element_state_to_pressed(winit::event::ElementState::Pressed));
+        assert!(!element_state_to_pressed(winit::event::ElementState::Released));
+    }
+
+    /// 测试 convert_mouse_button — Other 变体
+    #[test]
+    fn test_convert_mouse_button_other() {
+        let btn = convert_mouse_button(winit::event::MouseButton::Other(42));
+        assert_eq!(btn, MouseButton::Other(42));
+    }
+
+    /// 测试 convert_scroll_delta — PixelDelta 边界值
+    #[test]
+    fn test_convert_scroll_delta_pixel_boundary() {
+        let delta = convert_scroll_delta(winit::event::MouseScrollDelta::PixelDelta(
+            winit::dpi::PhysicalPosition::new(f64::MAX, f64::MIN),
+        ));
+        if let MouseScrollDelta::PixelDelta(x, y) = delta {
+            assert_eq!(x, f64::MAX);
+            assert_eq!(y, f64::MIN);
+        } else {
+            panic!("Expected PixelDelta");
+        }
+    }
+
+    /// 测试 convert_touch_phase — Cancelled
+    #[test]
+    fn test_convert_touch_phase_cancelled() {
+        let phase = convert_touch_phase(winit::event::TouchPhase::Cancelled);
+        assert_eq!(phase, TouchPhase::Cancelled);
+    }
+
+    /// 测试 convert_ime — Preedit with cursor
+    #[test]
+    fn test_convert_ime_preedit_with_cursor() {
+        let ime = convert_ime(winit::event::Ime::Preedit("测试".to_string(), Some((0, 2))));
+        if let ImeEvent::Preedit { text, cursor } = ime {
+            assert_eq!(text, "测试");
+            assert_eq!(cursor, Some((0, 2)));
+        } else {
+            panic!("Expected Preedit");
+        }
+    }
 }
