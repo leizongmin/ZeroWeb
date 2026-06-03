@@ -1,6 +1,10 @@
 //! dom_bridge 测试模块。
 
 use super::*;
+// Import color functions from paint module
+use crate::color_value_to_render;
+use crate::hsla_to_rgba;
+use crate::named_color_to_render;
 
 // ── DomBridge 测试 ──
 
@@ -897,6 +901,107 @@ fn test_parse_command_empty_string_arg_boundary() {
     assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == ""));
 }
 
+/// 测试 parse_command 对带空格的输入的处理。
+#[test]
+fn test_parse_command_with_whitespace() {
+    let cmd = DomBridge::parse_command("  document.getElementById(  \"test\"  )  ");
+    assert!(matches!(cmd, Some(DomCommand::GetElementById { id }) if id == "test"));
+}
+
+/// 测试 parse_command 对各种带空格的变体。
+#[test]
+fn test_parse_command_all_variants_with_whitespace() {
+    // 测试所有支持的命令格式
+    let test_cases = vec![
+        (
+            "document.getElementById(\"id\")",
+            DomCommand::GetElementById { id: "id".to_string() },
+        ),
+        (
+            "document.querySelector(\".class\")",
+            DomCommand::QuerySelector {
+                selector: ".class".to_string(),
+            },
+        ),
+        (
+            "document.querySelectorAll(\"div\")",
+            DomCommand::QuerySelectorAll {
+                selector: "div".to_string(),
+            },
+        ),
+        (
+            "document.createElement(\"span\")",
+            DomCommand::CreateElement {
+                tag_name: "span".to_string(),
+            },
+        ),
+        (
+            "document.createTextNode(\"text\")",
+            DomCommand::CreateTextNode {
+                text: "text".to_string(),
+            },
+        ),
+        (
+            "document.getElementsByClassName(\"active\")",
+            DomCommand::GetElementsByClassName {
+                class_name: "active".to_string(),
+            },
+        ),
+        (
+            "document.getElementsByTagName(\"p\")",
+            DomCommand::GetElementsByTagName {
+                tag_name: "p".to_string(),
+            },
+        ),
+    ];
+
+    for (input, expected) in test_cases {
+        let result = DomBridge::parse_command(input);
+        assert_eq!(result, Some(expected), "Failed to parse: {}", input);
+    }
+}
+
+/// 测试 parse_command 对无效输入的各种情况。
+#[test]
+fn test_parse_command_invalid_inputs() {
+    // 各种无效输入
+    let invalid_inputs = vec![
+        "",                                           // 空字符串
+        "not_a_command",                              // 无效命令
+        "document.getElementById",                    // 缺少参数
+        "document.getElementById('no_closing",        // 缺少闭合引号
+        "document.getElementById(no_quotes)",         // 缺少引号
+        "document.getElementById(\"no_closing_paren", // 缺少闭合括号
+        "some.other.command()",                       // 完全不支持的命令
+    ];
+
+    for input in invalid_inputs {
+        let result = DomBridge::parse_command(input);
+        assert_eq!(result, None, "Should not parse invalid input: {}", input);
+    }
+}
+
+/// 测试 parse_command 对特殊字符的处理。
+#[test]
+fn test_parse_command_special_characters() {
+    let test_cases = vec![
+        (r#"document.getElementById("special chars")"#, "special chars"),
+        // (r#"document.getElementById("quotes \" inside")"#, "quotes \" inside"), // 当前实现不支持转义引号
+        // (r#"document.getElementById('single \' quote')"#, "single ' quote'), // 当前实现不支持转义引号
+        (r#"document.getElementById("symbols: @#$%^&*()")"#, "symbols: @#$%^&*()"),
+        (r#"document.getElementById("unicode: 你好")"#, "unicode: 你好"),
+    ];
+
+    for (input, expected_id) in test_cases {
+        let result = DomBridge::parse_command(input);
+        assert!(
+            matches!(result, Some(DomCommand::GetElementById { id }) if id == expected_id),
+            "Failed to parse: {}",
+            input
+        );
+    }
+}
+
 /// 测试 register(u64::MAX) 后 unregister 正常工作。
 #[test]
 fn test_register_u64_max_then_unregister() {
@@ -923,6 +1028,227 @@ fn test_dom_bridge_clear_then_register_zero() {
     assert_eq!(bridge.len(), 1);
 }
 
+// ── 颜色转换测试 ──
+
+/// 测试 color_value_to_render 函数对各种 ColorValue 的处理。
+#[test]
+fn test_color_value_to_render_rgba() {
+    use zero_css_parser::values::ColorValue;
+
+    let color = ColorValue::Rgba(255, 0, 0, 128); // 半透明红色
+    let render_color = color_value_to_render(&color);
+    assert_eq!(render_color.r, 255);
+    assert_eq!(render_color.g, 0);
+    assert_eq!(render_color.b, 0);
+    assert_eq!(render_color.a, 128);
+}
+
+#[test]
+fn test_color_value_to_render_transparent() {
+    use zero_css_parser::values::ColorValue;
+
+    let color = ColorValue::Transparent;
+    let render_color = color_value_to_render(&color);
+    assert_eq!(render_color.r, 0);
+    assert_eq!(render_color.g, 0);
+    assert_eq!(render_color.b, 0);
+    assert_eq!(render_color.a, 0);
+}
+
+#[test]
+fn test_color_value_to_render_current_color() {
+    use zero_css_parser::values::ColorValue;
+
+    let color = ColorValue::CurrentColor;
+    let render_color = color_value_to_render(&color);
+    assert_eq!(render_color.r, 0);
+    assert_eq!(render_color.g, 0);
+    assert_eq!(render_color.b, 0);
+    assert_eq!(render_color.a, 255);
+}
+
+#[test]
+fn test_color_value_to_render_named() {
+    use zero_css_parser::values::ColorValue;
+
+    let color = ColorValue::Named("red".to_string());
+    let render_color = color_value_to_render(&color);
+    assert_eq!(render_color.r, 255);
+    assert_eq!(render_color.g, 0);
+    assert_eq!(render_color.b, 0);
+    assert_eq!(render_color.a, 255);
+}
+
+#[test]
+fn test_color_value_to_render_hsla() {
+    use zero_css_parser::values::ColorValue;
+
+    // 纯红色 HSL: 0度, 100%, 50%, 不透明
+    let color = ColorValue::Hsla(0.0, 100.0, 50.0, 1.0);
+    let render_color = color_value_to_render(&color);
+    assert_eq!(render_color.r, 255);
+    assert_eq!(render_color.g, 0);
+    assert_eq!(render_color.b, 0);
+    assert_eq!(render_color.a, 255);
+}
+
+/// 测试 hsla_to_rgba 函数对各种 HSL 值的处理。
+#[test]
+fn test_hsla_to_rgba_red() {
+    // 纯红色
+    let color = hsla_to_rgba(0.0, 100.0, 50.0, 1.0);
+    assert_eq!(color.r, 255);
+    assert_eq!(color.g, 0);
+    assert_eq!(color.b, 0);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_hsla_to_rgba_green() {
+    // 纯绿色
+    let color = hsla_to_rgba(120.0, 100.0, 50.0, 1.0);
+    assert_eq!(color.r, 0);
+    assert_eq!(color.g, 255);
+    assert_eq!(color.b, 0);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_hsla_to_rgba_blue() {
+    // 纯蓝色
+    let color = hsla_to_rgba(240.0, 100.0, 50.0, 1.0);
+    assert_eq!(color.r, 0);
+    assert_eq!(color.g, 0);
+    assert_eq!(color.b, 255);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_hsla_to_rgba_black() {
+    // 黑色 (0% 亮度)
+    let color = hsla_to_rgba(0.0, 0.0, 0.0, 1.0);
+    assert_eq!(color.r, 0);
+    assert_eq!(color.g, 0);
+    assert_eq!(color.b, 0);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_hsla_to_rgba_white() {
+    // 白色 (100% 亮度)
+    let color = hsla_to_rgba(0.0, 0.0, 100.0, 1.0);
+    assert_eq!(color.r, 255);
+    assert_eq!(color.g, 255);
+    assert_eq!(color.b, 255);
+    assert_eq!(color.a, 255);
+}
+
+#[test]
+fn test_hsla_to_rgba_transparent() {
+    // 透明
+    let color = hsla_to_rgba(0.0, 100.0, 50.0, 0.0);
+    assert_eq!(color.r, 255);
+    assert_eq!(color.g, 0);
+    assert_eq!(color.b, 0);
+    assert_eq!(color.a, 0);
+}
+
+#[test]
+fn test_hsla_to_rgba_gray() {
+    // 灰色 (中性色调)
+    let color = hsla_to_rgba(0.0, 0.0, 50.0, 1.0);
+    assert_eq!(color.r, 128);
+    assert_eq!(color.g, 128);
+    assert_eq!(color.b, 128);
+    assert_eq!(color.a, 255);
+}
+
+/// 测试 named_color_to_render 函数对所有命名颜色的处理。
+#[test]
+fn test_named_color_to_render_all_colors() {
+    let test_cases = vec![
+        ("red", (255, 0, 0)),
+        ("green", (0, 128, 0)),
+        ("blue", (0, 0, 255)),
+        ("black", (0, 0, 0)),
+        ("white", (255, 255, 255)),
+        ("yellow", (255, 255, 0)),
+        ("cyan", (0, 255, 255)),
+        ("aqua", (0, 255, 255)), // 与 cyan 同义
+        ("magenta", (255, 0, 255)),
+        ("fuchsia", (255, 0, 255)), // 与 magenta 同义
+        ("gray", (128, 128, 128)),
+        ("grey", (128, 128, 128)), // 与 gray 同义
+        ("silver", (192, 192, 192)),
+        ("maroon", (128, 0, 0)),
+        ("olive", (128, 128, 0)),
+        ("lime", (0, 255, 0)),
+        ("purple", (128, 0, 128)),
+        ("teal", (0, 128, 128)),
+        ("navy", (0, 0, 128)),
+        ("orange", (255, 165, 0)),
+        ("pink", (255, 192, 203)),
+        ("brown", (165, 42, 42)),
+        // 测试不存在的颜色（应该返回黑色）
+        ("nonexistent", (0, 0, 0)),
+        ("", (0, 0, 0)),
+    ];
+
+    for (name, expected) in test_cases {
+        let color = named_color_to_render(name);
+        assert_eq!(
+            color.r, expected.0,
+            "Color for {}: expected r={}, got {}",
+            name, expected.0, color.r
+        );
+        assert_eq!(
+            color.g, expected.1,
+            "Color for {}: expected g={}, got {}",
+            name, expected.1, color.g
+        );
+        assert_eq!(
+            color.b, expected.2,
+            "Color for {}: expected b={}, got {}",
+            name, expected.2, color.b
+        );
+    }
+}
+
+/// 测试 named_color_to_render 函数的大小写不敏感性。
+#[test]
+fn test_named_color_to_render_case_insensitive() {
+    let color1 = named_color_to_render("RED");
+    let color2 = named_color_to_render("Red");
+    let color3 = named_color_to_render("red");
+    let color4 = named_color_to_render("rEd");
+
+    assert_eq!(color1, color2);
+    assert_eq!(color2, color3);
+    assert_eq!(color3, color4);
+    assert_eq!(color1.r, 255);
+    assert_eq!(color1.g, 0);
+    assert_eq!(color1.b, 0);
+}
+
+/// 测试 hsla_to_rgba 函数的边界值。
+#[test]
+fn test_hsla_to_rgba_boundary_values() {
+    // 最小值
+    let color_min = hsla_to_rgba(0.0, 0.0, 0.0, 0.0);
+    assert_eq!(color_min.r, 0);
+    assert_eq!(color_min.g, 0);
+    assert_eq!(color_min.b, 0);
+    assert_eq!(color_min.a, 0);
+
+    // 最大值
+    let color_max = hsla_to_rgba(360.0, 100.0, 100.0, 1.0);
+    // 应该是白色
+    assert_eq!(color_max.r, 255);
+    assert_eq!(color_max.g, 255);
+    assert_eq!(color_max.b, 255);
+    assert_eq!(color_max.a, 255);
+}
+
 /// 测试 DomBridge Default trait 等价于 new()。
 #[test]
 fn test_dom_bridge_default_eq_new() {
@@ -930,6 +1256,81 @@ fn test_dom_bridge_default_eq_new() {
     let default_bridge = DomBridge::default();
     assert_eq!(new_bridge.len(), default_bridge.len());
     assert_eq!(new_bridge.is_empty(), default_bridge.is_empty());
+}
+
+/// 测试 register 方法中查找已有注册的逻辑。
+///
+/// 当多次注册同一个 node_id 时，应返回已有的 handle，
+/// 而不是创建新的 handle。
+#[test]
+fn test_register_finds_existing_handle() {
+    let mut bridge = DomBridge::new();
+    let h1 = bridge.register(100);
+    assert_eq!(bridge.len(), 1);
+
+    // 再次注册相同的 node_id
+    let h2 = bridge.register(100);
+    assert_eq!(h1, h2, "应返回已存在的 handle");
+    assert_eq!(bridge.len(), 1, "不应增加映射数量");
+
+    // 注册不同的 node_id
+    let h3 = bridge.register(200);
+    assert_ne!(h1, h3, "不同 node_id 应返回不同的 handle");
+    assert_eq!(bridge.len(), 2);
+}
+
+/// 测试 unregister 不存在的 handle。
+#[test]
+fn test_unregister_nonexistent_handle() {
+    let mut bridge = DomBridge::new();
+    // 尝试注销不存在的 handle 不应该 panic
+    bridge.unregister(999);
+    assert!(bridge.is_empty());
+}
+
+/// 测试 resolve 不存在的 handle。
+#[test]
+fn test_resolve_nonexistent_handle() {
+    let bridge = DomBridge::new();
+    assert_eq!(bridge.resolve(999), None);
+}
+
+/// 测试 register 和 resolve 的边界条件。
+#[test]
+fn test_register_resolve_edge_cases() {
+    let mut bridge = DomBridge::new();
+
+    // 注册并立即注销
+    let h = bridge.register(1);
+    assert_eq!(bridge.resolve(h), Some(1));
+    bridge.unregister(h);
+    assert_eq!(bridge.resolve(h), None);
+    assert_eq!(bridge.len(), 0);
+
+    // 重新注册同一个 node_id
+    let h2 = bridge.register(1);
+    // handle 可能不同，因为 next_handle 没有重置
+    assert_eq!(bridge.resolve(h2), Some(1));
+    assert_eq!(bridge.len(), 1);
+}
+
+/// 测试 clear 后的状态。
+#[test]
+fn test_clear_after_operations() {
+    let mut bridge = DomBridge::new();
+    bridge.register(1);
+    bridge.register(2);
+    bridge.register(3);
+    assert_eq!(bridge.len(), 3);
+
+    bridge.clear();
+    assert!(bridge.is_empty());
+    assert_eq!(bridge.len(), 0);
+
+    // clear 后的 resolve 应该都返回 None
+    assert_eq!(bridge.resolve(1), None);
+    assert_eq!(bridge.resolve(2), None);
+    assert_eq!(bridge.resolve(3), None);
 }
 
 // ── Polyfill WebAssembly API 测试 ──

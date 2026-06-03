@@ -7,7 +7,7 @@ use zero_css_parser::ast::{
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
 };
-use zero_dom::{Document, NodeId};
+use zero_dom::Document;
 
 // ── is_valid_selector_parse edge cases ──
 
@@ -844,6 +844,449 @@ fn test_empty_element_with_non_matching_element() {
         },
     };
     assert!(!matches_selector(&doc, parent, &sel));
+}
+
+// ── NextSibling 和 SubsequentSibling 组合器测试 ──
+
+/// 测试相邻兄弟组合器 (NextSibling)
+#[test]
+fn test_next_sibling_combinator() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let prev = doc.create_element("span");
+    let target = doc.create_element("span");
+    let next = doc.create_element("p");
+
+    doc.append_child(root, parent).unwrap();
+    doc.append_child(parent, prev).unwrap();
+    doc.append_child(parent, target).unwrap();
+    doc.append_child(parent, next).unwrap();
+
+    // 选择器：span + span
+    // 这应该匹配 target，因为 target 前面有 span
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    Some(Combinator::NextSibling),
+                ),
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    None,
+                ),
+            ],
+        },
+    };
+    assert!(!matches_selector(&doc, prev, &sel)); // prev 没有前一个兄弟
+    assert!(matches_selector(&doc, target, &sel)); // target 前面有 span
+    assert!(!matches_selector(&doc, next, &sel)); // next 前面是 span，不是 span
+}
+
+/// 测试通用兄弟组合器 (SubsequentSibling)
+#[test]
+fn test_subsequent_sibling_combinator() {
+    let (doc, nodes) = super::coverage::make_nested_dom();
+    let child2 = nodes[3]; // p
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("span".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    Some(Combinator::SubsequentSibling),
+                ),
+                (
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Tag("p".to_string())),
+                        subclass_selectors: vec![],
+                    },
+                    None,
+                ),
+            ],
+        },
+    };
+    assert!(
+        matches_selector(&doc, child2, &sel),
+        "p after span should match span ~ p"
+    );
+}
+
+// ── 不支持的伪类测试 ──
+
+/// 测试不支持的伪类返回 false
+#[test]
+fn test_unsupported_pseudo_class() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.append_child(root, el).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag("div".to_string())),
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "unknown-pseudo".to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(!matches_selector(&doc, el, &sel));
+}
+
+// ── 属性选择器变体测试 ──
+
+/// 测试属性选择器 DashMatch
+#[test]
+fn test_attribute_dash_match() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.set_attribute(el, "lang", "en-US");
+    doc.append_child(root, el).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: "lang".to_string(),
+                        matcher: AttributeMatcher::DashMatch("en".to_string()),
+                    })],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, el, &sel));
+}
+
+/// 测试属性选择器 Prefix
+#[test]
+fn test_attribute_prefix() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.set_attribute(el, "data-test", "value123");
+    doc.append_child(root, el).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: "data-test".to_string(),
+                        matcher: AttributeMatcher::Prefix("value".to_string()),
+                    })],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, el, &sel));
+}
+
+/// 测试属性选择器 Suffix
+#[test]
+fn test_attribute_suffix() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.set_attribute(el, "href", "https://example.com/page.html");
+    doc.append_child(root, el).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: "href".to_string(),
+                        matcher: AttributeMatcher::Suffix(".html".to_string()),
+                    })],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, el, &sel));
+}
+
+/// 测试属性选择器 Substring
+#[test]
+fn test_attribute_substring() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.set_attribute(el, "class", "important highlight urgent");
+    doc.append_child(root, el).unwrap();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: "class".to_string(),
+                        matcher: AttributeMatcher::Substring("high".to_string()),
+                    })],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, el, &sel));
+}
+
+// ── evaluate_supports_condition 测试 ──
+
+/// 测试 SupportsCondition::And
+#[test]
+fn test_supports_condition_and() {
+    use zero_css_parser::ast::SupportsCondition;
+
+    // 两个都支持的条件
+    assert!(evaluate_supports_condition(&SupportsCondition::And(vec![
+        SupportsCondition::Property("display".to_string(), "block".to_string()),
+        SupportsCondition::Property("color".to_string(), "red".to_string()),
+    ])));
+
+    // 一个不支持的条件
+    assert!(!evaluate_supports_condition(&SupportsCondition::And(vec![
+        SupportsCondition::Property("display".to_string(), "block".to_string()),
+        SupportsCondition::Property("color".to_string(), "invalid-color".to_string()),
+    ])));
+}
+
+/// 测试 SupportsCondition::Or
+#[test]
+fn test_supports_condition_or() {
+    use zero_css_parser::ast::SupportsCondition;
+
+    // 两个都支持的条件
+    assert!(evaluate_supports_condition(&SupportsCondition::Or(vec![
+        SupportsCondition::Property("display".to_string(), "block".to_string()),
+        SupportsCondition::Property("color".to_string(), "red".to_string()),
+    ])));
+
+    // 一个支持一个不支持的条件
+    assert!(evaluate_supports_condition(&SupportsCondition::Or(vec![
+        SupportsCondition::Property("display".to_string(), "block".to_string()),
+        SupportsCondition::Property("color".to_string(), "invalid-color".to_string()),
+    ])));
+
+    // 都不支持的条件
+    assert!(!evaluate_supports_condition(&SupportsCondition::Or(vec![
+        SupportsCondition::Property("display".to_string(), "invalid-display".to_string()),
+        SupportsCondition::Property("color".to_string(), "invalid-color".to_string()),
+    ])));
+}
+
+/// 测试 SupportsCondition::Not
+#[test]
+fn test_supports_condition_not() {
+    use zero_css_parser::ast::SupportsCondition;
+
+    // 不支持的条件
+    assert!(evaluate_supports_condition(&SupportsCondition::Not(Box::new(
+        SupportsCondition::Property("color".to_string(), "invalid-color".to_string())
+    ))));
+
+    // 支持的条件
+    assert!(!evaluate_supports_condition(&SupportsCondition::Not(Box::new(
+        SupportsCondition::Property("display".to_string(), "block".to_string())
+    ))));
+}
+
+// ── evaluate_container_condition 范围语法测试 ──
+
+/// 测试容器查询范围语法：200px <= width <= 500px
+#[test]
+fn test_container_condition_range_syntax() {
+    let rule = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "width".to_string(),
+            range_min: Some("200px".to_string()),
+            range_max: Some("500px".to_string()),
+            operator: None,
+            value: "".to_string(),
+        }),
+        rules: vec![],
+    };
+
+    // 匹配的情况：width = 300px
+    let ctx_match = ContainerContext::with_size(300.0, 600.0);
+    assert!(evaluate_container_condition(&rule, Some(&ctx_match)));
+
+    // 不匹配的情况：width = 100px
+    let ctx_too_small = ContainerContext::with_size(100.0, 600.0);
+    assert!(!evaluate_container_condition(&rule, Some(&ctx_too_small)));
+
+    // 不匹配的情况：width = 600px
+    let ctx_too_big = ContainerContext::with_size(600.0, 600.0);
+    assert!(!evaluate_container_condition(&rule, Some(&ctx_too_big)));
+}
+
+/// 测试容器查询比较运算符：width > 300px
+#[test]
+fn test_container_condition_comparison_operator() {
+    let rule = ContainerRule {
+        name: None,
+        condition: zero_css_parser::ast::ContainerCondition::Size(ContainerSizeCondition {
+            feature: "width".to_string(),
+            range_min: None,
+            range_max: None,
+            operator: Some(">".to_string()),
+            value: "300px".to_string(),
+        }),
+        rules: vec![],
+    };
+
+    // 匹配的情况：width = 400px
+    let ctx_match = ContainerContext::with_size(400.0, 600.0);
+    assert!(evaluate_container_condition(&rule, Some(&ctx_match)));
+
+    // 不匹配的情况：width = 300px
+    let ctx_equal = ContainerContext::with_size(300.0, 600.0);
+    assert!(!evaluate_container_condition(&rule, Some(&ctx_equal)));
+}
+
+// ── collect_from_rules @keyframes 和 @import 测试 ──
+
+/// 测试 @keyframes 规则被跳过
+#[test]
+fn test_keyframes_rule_skipped() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.append_child(root, el).unwrap();
+
+    use zero_css_parser::ast::{KeyframesRule, Rule};
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![Rule::Keyframes(KeyframesRule {
+            name: "slide".to_string(),
+            keyframes: vec![],
+        })],
+    }];
+
+    let decls = collect_matching_declarations(&doc, el, &stylesheets);
+    assert!(decls.is_empty()); // @keyframes 规则应该被跳过
+}
+
+/// 测试 @import 规则被跳过
+#[test]
+fn test_import_rule_skipped() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let el = doc.create_element("div");
+    doc.append_child(root, el).unwrap();
+
+    use zero_css_parser::ast::{ImportRule, Rule};
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![Rule::Import(ImportRule {
+            url: "styles.css".to_string(),
+            media_queries: vec![],
+        })],
+    }];
+
+    let decls = collect_matching_declarations(&doc, el, &stylesheets);
+    assert!(decls.is_empty()); // @import 规则应该被跳过
+}
+
+// ── matches_nth_pattern 负系数测试 ──
+
+/// 测试 matches_nth_pattern 负系数模式
+#[test]
+fn test_nth_pattern_negative_coefficient() {
+    // 测试模式：-n+3（匹配第1、2、3个元素）
+    // 解释：diff = index - 3
+    // a = -1，所以需要 diff <= 0 && diff % -1 == 0
+    // index=1: diff=-2 <=0 && -2 % -1 == 0 ✓
+    // index=2: diff=-1 <=0 && -1 % -1 == 0 ✓
+    // index=3: diff=0 <=0 && 0 % -1 == 0 ✓
+    // index=4: diff=1 > 0 ✗
+    assert!(matches_nth_pattern(
+        1,
+        &zero_css_parser::ast::NthPattern { a: -1, b: 3 }
+    ));
+    assert!(matches_nth_pattern(
+        2,
+        &zero_css_parser::ast::NthPattern { a: -1, b: 3 }
+    ));
+    assert!(matches_nth_pattern(
+        3,
+        &zero_css_parser::ast::NthPattern { a: -1, b: 3 }
+    ));
+    assert!(!matches_nth_pattern(
+        4,
+        &zero_css_parser::ast::NthPattern { a: -1, b: 3 }
+    ));
+
+    // 测试模式：-2n+5（匹配第1、3、5个元素）
+    // index=1: diff=-4 <=0 && -4 % -2 == 0 ✓
+    // index=2: diff=-3 <=0 && -3 % -2 != 0 ✗
+    // index=3: diff=-2 <=0 && -2 % -2 == 0 ✓
+    // index=4: diff=-1 <=0 && -1 % -2 != 0 ✗
+    // index=5: diff=0 <=0 && 0 % -2 == 0 ✓
+    assert!(matches_nth_pattern(
+        1,
+        &zero_css_parser::ast::NthPattern { a: -2, b: 5 }
+    ));
+    assert!(!matches_nth_pattern(
+        2,
+        &zero_css_parser::ast::NthPattern { a: -2, b: 5 }
+    ));
+    assert!(matches_nth_pattern(
+        3,
+        &zero_css_parser::ast::NthPattern { a: -2, b: 5 }
+    ));
+    assert!(!matches_nth_pattern(
+        4,
+        &zero_css_parser::ast::NthPattern { a: -2, b: 5 }
+    ));
+    assert!(matches_nth_pattern(
+        5,
+        &zero_css_parser::ast::NthPattern { a: -2, b: 5 }
+    ));
+}
+
+/// 测试 matches_nth_pattern 边界值
+#[test]
+fn test_nth_pattern_boundary_values() {
+    // a = 0 的情况：精确匹配
+    assert!(matches_nth_pattern(5, &zero_css_parser::ast::NthPattern { a: 0, b: 5 }));
+    assert!(!matches_nth_pattern(
+        6,
+        &zero_css_parser::ast::NthPattern { a: 0, b: 5 }
+    ));
+
+    // 正系数
+    assert!(matches_nth_pattern(7, &zero_css_parser::ast::NthPattern { a: 3, b: 1 })); // 3*2+1=7
+    assert!(matches_nth_pattern(
+        10,
+        &zero_css_parser::ast::NthPattern { a: 3, b: 1 }
+    )); // 3*3+1=10
+    assert!(!matches_nth_pattern(
+        8,
+        &zero_css_parser::ast::NthPattern { a: 3, b: 1 }
+    )); // 8-1=7 不能被 3 整除
 }
 
 // 辅助函数

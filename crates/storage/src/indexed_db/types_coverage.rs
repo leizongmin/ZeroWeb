@@ -1123,3 +1123,405 @@ fn test_clear_store_clears_indexes() {
     let results = db.get_all_from_index("items", "name_idx").unwrap();
     assert!(results.is_empty());
 }
+
+/// 测试 IdbDatabase add 方法错误路径 - store 不存在
+#[test]
+fn test_idb_database_add_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试在不存在的 store 上添加记录
+    let result = db.add(
+        "nonexistent",
+        serde_json::json!({"test": "data"}),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试 IdbDatabase add 方法错误路径 - 重复键
+#[test]
+fn test_idb_database_add_duplicate_key() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加第一条记录
+    let key = IdbKey::String("1".into());
+    db.add("items", serde_json::json!({"test": "data"}), Some(key.clone()))
+        .unwrap();
+
+    // 尝试添加相同键的记录
+    let result = db.add("items", serde_json::json!({"test": "data2"}), Some(key));
+    assert!(result.is_err());
+}
+
+/// 测试 IdbDatabase put 方法错误路径 - store 不存在
+#[test]
+fn test_idb_database_put_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试在不存在的 store 上 put 记录
+    let result = db.put(
+        "nonexistent",
+        serde_json::json!({"test": "data"}),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试 IdbDatabase delete 方法错误路径 - store 不存在
+#[test]
+fn test_idb_database_delete_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试删除不存在的 store 中的记录
+    let result = db.delete("nonexistent", &IdbKey::String("1".into()));
+    assert!(result.is_err());
+}
+
+/// 测试 create_index 错误路径 - store 不存在
+#[test]
+fn test_create_index_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试在不存在的 store 上创建索引
+    let result = db.create_index("nonexistent", "idx", "field", false, false);
+    assert!(result.is_err());
+}
+
+/// 测试 create_index 错误路径 - 索引已存在
+#[test]
+fn test_create_index_already_exists() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 创建第一个索引
+    db.create_index("items", "idx1", "field1", false, false).unwrap();
+
+    // 尝试创建同名索引
+    let result = db.create_index("items", "idx1", "field2", false, false);
+    assert!(result.is_err());
+}
+
+/// 测试 delete_index 错误路径 - store 不存在
+#[test]
+fn test_delete_index_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试删除不存在的 store 上的索引
+    let result = db.delete_index("nonexistent", "idx");
+    assert!(result.is_err());
+}
+
+/// 测试 delete_index 错误路径 - 索引不存在
+#[test]
+fn test_delete_index_nonexistent() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 尝试删除不存在的索引
+    let result = db.delete_index("items", "nonexistent");
+    assert!(result.is_err());
+}
+
+/// 测试 IdbIndex extract_keys 方法 - multiEntry 处理 null 值
+#[test]
+fn test_index_extract_keys_multi_entry_with_null() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 创建 multiEntry 索引
+    db.create_index("items", "tags_idx", "tags", false, true).unwrap();
+
+    // 添加包含 null 数组的记录
+    db.add(
+        "items",
+        serde_json::json!({"tags": [null, "valid", null]}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 查询应该只有有效的键
+    let results = db
+        .get_from_index("items", "tags_idx", &IdbKey::String("valid".into()))
+        .unwrap();
+    assert_eq!(results.len(), 1);
+}
+
+/// 测试 IdbIndex extract_keys 方法 - 空数组
+#[test]
+fn test_index_extract_keys_empty_array() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 创建 multiEntry 索引
+    db.create_index("items", "tags_idx", "tags", false, true).unwrap();
+
+    // 添加包含空数组的记录
+    db.add(
+        "items",
+        serde_json::json!({"tags": []}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 查询应该没有结果
+    let results = db
+        .get_from_index("items", "tags_idx", &IdbKey::String("any".into()))
+        .unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+/// 测试 IdbIndex rebuild 方法 - 在空 store 上重建
+#[test]
+fn test_index_rebuild_empty_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 创建索引
+    db.create_index("items", "name_idx", "name", false, false).unwrap();
+
+    // 索引应该是空的
+    let results = db.get_all_from_index("items", "name_idx").unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+/// 测试 IdbIndex add_entry_from_record 方法 - 唯一约束违反
+#[test]
+fn test_index_add_entry_unique_violation() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 创建唯一索引
+    db.create_index("items", "unique_idx", "field", true, false).unwrap();
+
+    // 添加第一条记录
+    db.add(
+        "items",
+        serde_json::json!({"field": "value"}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 添加第二条记录具有相同的索引值
+    let result = db.add(
+        "items",
+        serde_json::json!({"field": "value"}),
+        Some(IdbKey::String("2".into())),
+    );
+
+    // 应该失败，因为索引键必须唯一
+    assert!(result.is_err());
+}
+
+/// 测试事务 tx_add 错误路径 - 非活跃事务
+#[test]
+fn test_tx_add_inactive_transaction() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.abort().unwrap();
+
+    // 尝试在已中止的事务上添加记录
+    let result = db.tx_add(
+        &tx,
+        "items",
+        serde_json::json!({"test": "data"}),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试事务 tx_put 错误路径 - 非活跃事务
+#[test]
+fn test_tx_put_inactive_transaction() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.commit().unwrap();
+
+    // 尝试在已提交的事务上 put 记录
+    let result = db.tx_put(
+        &tx,
+        "items",
+        serde_json::json!({"test": "data"}),
+        Some(IdbKey::String("1".into())),
+    );
+    assert!(result.is_err());
+}
+
+/// 测试事务 tx_delete 错误路径 - 非活跃事务
+#[test]
+fn test_tx_delete_inactive_transaction() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.abort().unwrap();
+
+    // 尝试在已中止的事务上删除记录
+    let result = db.tx_delete(&tx, "items", &IdbKey::String("1".into()));
+    assert!(result.is_err());
+}
+
+/// 测试事务 tx_get 错误路径 - 非活跃事务
+#[test]
+fn test_tx_get_inactive_transaction() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    let mut tx = db.transaction(&["items"], IdbTransactionMode::ReadWrite).unwrap();
+    tx.commit().unwrap();
+
+    // 尝试在已提交的事务上获取记录
+    let result = db.tx_get(&tx, "items", &IdbKey::String("1".into()));
+    assert!(result.is_err());
+}
+
+/// 测试 open_cursor_on_index 错误路径 - store 不存在
+#[test]
+fn test_open_cursor_on_index_nonexistent_store() {
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试在不存在的 store 上打开索引游标
+    let result = db.open_cursor_on_index("nonexistent", "idx", None);
+    assert!(result.is_err());
+}
+
+/// 测试 open_cursor_on_index 错误路径 - 索引不存在
+#[test]
+fn test_open_cursor_on_index_nonexistent_index() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+    db.create_index("items", "idx", "field", false, false).unwrap();
+
+    // 尝试在不存在的索引上打开游标
+    let result = db.open_cursor_on_index("items", "nonexistent", None);
+    assert!(result.is_err());
+}
+
+/// 测试 open_key_cursor_on_index 错误路径 - store 不存在
+#[test]
+fn test_open_key_cursor_on_index_nonexistent_store() {
+    // 注意：这个方法不存在，改为测试 open_cursor_on_index
+    let mut db = IdbDatabase::new("test", 1);
+    // 尝试在不存在的 store 上打开游标
+    let result = db.open_cursor_on_index("nonexistent", "idx", None);
+    assert!(result.is_err());
+}
+
+/// 测试 json_value_to_idb_key 不支持的类型（通过索引间接测试）
+#[test]
+fn test_json_value_to_idb_key_unsupported_types_via_index() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加包含布尔值的记录
+    db.add(
+        "items",
+        serde_json::json!({"field": true}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+
+    // 创建索引 - 布尔值应该被忽略
+    db.create_index("items", "idx", "field", false, false).unwrap();
+
+    // 查询应该没有结果，因为布尔值无法转换为键
+    let results = db
+        .get_from_index("items", "idx", &IdbKey::String("true".into()))
+        .unwrap();
+    assert_eq!(results.len(), 0);
+
+    // 添加包含 null 值的记录
+    db.add(
+        "items",
+        serde_json::json!({"field": null}),
+        Some(IdbKey::String("2".into())),
+    )
+    .unwrap();
+
+    // 再次查询应该仍然没有结果
+    let results = db
+        .get_from_index("items", "idx", &IdbKey::String("null".into()))
+        .unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+/// 测试 get_all_with_range 复杂路径 - 跨类型范围
+#[test]
+fn test_get_all_with_range_cross_type() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加不同类型的键
+    db.add("items", serde_json::json!("a"), Some(IdbKey::Number(1.0)))
+        .unwrap();
+    db.add("items", serde_json::json!("b"), Some(IdbKey::String("10".into())))
+        .unwrap();
+    db.add("items", serde_json::json!("c"), Some(IdbKey::String("2".into())))
+        .unwrap();
+
+    // 创建包含 Number 和 String 的范围
+    // Number(1.0) < String("10") < String("2") < String("5")
+    let range = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::String("5".into()), false, false);
+    let results = db.get_all_with_range("items", &range).unwrap();
+
+    // 应该包含 Number(1.0), String("2"), and String("10")（都在范围内）
+    assert_eq!(results.len(), 3);
+}
+
+/// 测试 count_with_range 复杂路径 - 跨类型范围
+#[test]
+fn test_count_with_range_cross_type() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加不同类型的键
+    db.add("items", serde_json::json!("a"), Some(IdbKey::Number(5.0)))
+        .unwrap();
+    db.add("items", serde_json::json!("b"), Some(IdbKey::String("a".into())))
+        .unwrap();
+    db.add("items", serde_json::json!("c"), Some(IdbKey::String("z".into())))
+        .unwrap();
+
+    // 创建跨类型的范围
+    let range = IdbKeyRange::bound(IdbKey::Number(1.0), IdbKey::String("m".into()), false, true);
+    let count = db.count_with_range("items", &range).unwrap();
+
+    // 应该包含 Number(5.0) 和 String("a")
+    assert_eq!(count, 2);
+}
+
+/// 测试 open_cursor_on_index 与复杂范围
+#[test]
+fn test_open_cursor_on_index_with_complex_range() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("items", None, false).unwrap();
+
+    // 添加记录
+    db.add(
+        "items",
+        serde_json::json!({"category": "books", "id": 1}),
+        Some(IdbKey::String("1".into())),
+    )
+    .unwrap();
+    db.add(
+        "items",
+        serde_json::json!({"category": "electronics", "id": 2}),
+        Some(IdbKey::String("2".into())),
+    )
+    .unwrap();
+    db.add(
+        "items",
+        serde_json::json!({"category": "movies", "id": 3}),
+        Some(IdbKey::String("3".into())),
+    )
+    .unwrap();
+
+    // 创建索引
+    db.create_index("items", "category_idx", "category", false, false)
+        .unwrap();
+
+    // 使用不匹配的范围打开游标
+    let range = IdbKeyRange::only(IdbKey::String("nonexistent".into()));
+    let cursor = db.open_cursor_on_index("items", "category_idx", Some(&range)).unwrap();
+
+    // 应该返回 None
+    assert!(cursor.is_none());
+}

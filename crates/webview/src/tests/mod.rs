@@ -4,6 +4,7 @@ mod advanced;
 mod basic;
 mod builder_nav;
 mod coverage;
+mod coverage_improvements;
 mod edge;
 mod even_more_coverage;
 mod final_coverage;
