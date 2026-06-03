@@ -600,3 +600,482 @@ pub struct ImageData {
     /// RGBA 像素数据。
     pub data: Vec<u8>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── 枚举基础测试 ──────────────────────────────────────
+
+    #[test]
+    fn test_font_weight_equality() {
+        assert_eq!(FontWeight::Normal, FontWeight::Normal);
+        assert_ne!(FontWeight::Normal, FontWeight::Bold);
+    }
+
+    #[test]
+    fn test_font_style_equality() {
+        assert_eq!(FontStyle::Normal, FontStyle::Normal);
+        assert_ne!(FontStyle::Normal, FontStyle::Italic);
+    }
+
+    #[test]
+    fn test_text_align_variants() {
+        assert_ne!(TextAlign::Start, TextAlign::End);
+        assert_ne!(TextAlign::Left, TextAlign::Right);
+        assert_ne!(TextAlign::Center, TextAlign::Start);
+    }
+
+    #[test]
+    fn test_text_baseline_variants() {
+        assert_ne!(TextBaseline::Top, TextBaseline::Middle);
+        assert_ne!(TextBaseline::Alphabetic, TextBaseline::Bottom);
+    }
+
+    #[test]
+    fn test_text_direction_default() {
+        assert_eq!(TextDirection::default(), TextDirection::Inherit);
+    }
+
+    #[test]
+    fn test_line_join_default() {
+        assert_eq!(LineJoin::default(), LineJoin::Miter);
+    }
+
+    #[test]
+    fn test_line_cap_default() {
+        assert_eq!(LineCap::default(), LineCap::Butt);
+    }
+
+    #[test]
+    fn test_composite_operation_default() {
+        assert_eq!(CompositeOperation::default(), CompositeOperation::SourceOver);
+    }
+
+    #[test]
+    fn test_pattern_repetition_default() {
+        assert_eq!(PatternRepetition::default(), PatternRepetition::Repeat);
+    }
+
+    // ── FontDescriptor 测试 ───────────────────────────────
+
+    #[test]
+    fn test_font_descriptor_default() {
+        let desc = FontDescriptor::default();
+        assert_eq!(desc.family, "sans-serif");
+        assert!((desc.size - 10.0).abs() < f32::EPSILON);
+        assert_eq!(desc.weight, FontWeight::Normal);
+        assert_eq!(desc.style, FontStyle::Normal);
+    }
+
+    #[test]
+    fn test_font_descriptor_clone() {
+        let desc = FontDescriptor {
+            family: "serif".into(),
+            size: 14.0,
+            weight: FontWeight::Bold,
+            style: FontStyle::Italic,
+        };
+        let cloned = desc.clone();
+        assert_eq!(cloned.family, "serif");
+        assert_eq!(cloned.size, 14.0);
+        assert_eq!(cloned.weight, FontWeight::Bold);
+        assert_eq!(cloned.style, FontStyle::Italic);
+    }
+
+    #[test]
+    fn test_font_descriptor_debug() {
+        let desc = FontDescriptor::default();
+        let debug = format!("{:?}", desc);
+        assert!(debug.contains("sans-serif"));
+    }
+
+    // ── Transform2D 测试 ──────────────────────────────────
+
+    #[test]
+    fn test_transform_identity() {
+        let t = Transform2D::identity();
+        assert_eq!(t.a, 1.0);
+        assert_eq!(t.b, 0.0);
+        assert_eq!(t.c, 0.0);
+        assert_eq!(t.d, 1.0);
+        assert_eq!(t.e, 0.0);
+        assert_eq!(t.f, 0.0);
+    }
+
+    #[test]
+    fn test_transform_default_is_identity() {
+        let t = Transform2D::default();
+        let id = Transform2D::identity();
+        assert_eq!(t.a, id.a);
+        assert_eq!(t.b, id.b);
+        assert_eq!(t.c, id.c);
+        assert_eq!(t.d, id.d);
+        assert_eq!(t.e, id.e);
+        assert_eq!(t.f, id.f);
+    }
+
+    #[test]
+    fn test_transform_translate() {
+        let t = Transform2D::translate(10.0, 20.0);
+        assert_eq!(t.a, 1.0);
+        assert_eq!(t.d, 1.0);
+        assert_eq!(t.e, 10.0);
+        assert_eq!(t.f, 20.0);
+        // translate 应保持点平移
+        let (x, y) = t.transform_point(5.0, 5.0);
+        assert!((x - 15.0).abs() < f32::EPSILON);
+        assert!((y - 25.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_transform_scale() {
+        let t = Transform2D::scale(2.0, 3.0);
+        assert_eq!(t.a, 2.0);
+        assert_eq!(t.d, 3.0);
+        let (x, y) = t.transform_point(10.0, 10.0);
+        assert!((x - 20.0).abs() < f32::EPSILON);
+        assert!((y - 30.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_transform_rotate_90() {
+        let t = Transform2D::rotate(std::f32::consts::FRAC_PI_2);
+        let (x, y) = t.transform_point(1.0, 0.0);
+        // 旋转 90°: (1,0) → (0,1)
+        assert!(x.abs() < 0.001, "x should be ~0, got {x}");
+        assert!((y - 1.0).abs() < 0.001, "y should be ~1, got {y}");
+    }
+
+    #[test]
+    fn test_transform_multiply_identity() {
+        let id = Transform2D::identity();
+        let t = Transform2D::translate(5.0, 10.0);
+        let result = id.multiply(&t);
+        assert!((result.e - 5.0).abs() < f32::EPSILON);
+        assert!((result.f - 10.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_transform_multiply_translate_scale() {
+        let scale = Transform2D::scale(2.0, 3.0);
+        let translate = Transform2D::translate(10.0, 20.0);
+        let result = scale.multiply(&translate);
+        // multiply = self * other 的矩阵乘法:
+        // result.e = scale.a * translate.e + scale.c * translate.f + scale.e
+        //          = 2*10 + 0*20 + 0 = 20
+        // result.f = scale.b * translate.e + scale.d * translate.f + scale.f
+        //          = 0*10 + 3*20 + 0 = 60
+        // 对点 (1,1) 应用：result * (1,1) = (2*1+0*1+20, 0*1+3*1+60) = (22, 63)
+        let (x, y) = result.transform_point(1.0, 1.0);
+        assert!((x - 22.0).abs() < 0.01, "x should be 22, got {x}");
+        assert!((y - 63.0).abs() < 0.01, "y should be 63, got {y}");
+    }
+
+    #[test]
+    fn test_transform_clone_copy() {
+        let t = Transform2D::translate(1.0, 2.0);
+        let copied = t; // Copy
+        assert_eq!(copied.e, 1.0);
+        let cloned = t.clone();
+        assert_eq!(cloned.f, 2.0);
+    }
+
+    #[test]
+    fn test_transform_debug() {
+        let t = Transform2D::identity();
+        let debug = format!("{:?}", t);
+        assert!(debug.contains("Transform2D"));
+    }
+
+    // ── LinearGradient 测试 ───────────────────────────────
+
+    #[test]
+    fn test_linear_gradient_new() {
+        let g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        assert_eq!(g.x0, 0.0);
+        assert_eq!(g.x1, 100.0);
+        assert!(g.stops.is_empty());
+    }
+
+    #[test]
+    fn test_linear_gradient_add_color_stop() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 0, 255));
+        assert_eq!(g.stops.len(), 2);
+        assert_eq!(g.stops[0].offset, 0.0);
+        assert_eq!(g.stops[1].offset, 1.0);
+    }
+
+    #[test]
+    fn test_linear_gradient_sample_empty() {
+        let g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        let c = g.sample_color(0.5);
+        assert_eq!(c, Color::BLACK);
+    }
+
+    #[test]
+    fn test_linear_gradient_sample_single_stop() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.5, Color::rgb(255, 0, 0));
+        assert_eq!(g.sample_color(0.0), Color::rgb(255, 0, 0));
+        assert_eq!(g.sample_color(1.0), Color::rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn test_linear_gradient_sample_two_stops() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(0, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(255, 255, 255));
+        let mid = g.sample_color(0.5);
+        assert_eq!(mid.r, 128);
+        assert_eq!(mid.g, 128);
+        assert_eq!(mid.b, 128);
+    }
+
+    #[test]
+    fn test_linear_gradient_sample_clamp() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 0, 255));
+        // offset < 0 → clamped to first stop
+        assert_eq!(g.sample_color(-1.0), Color::rgb(255, 0, 0));
+        // offset > 1 → clamped to last stop
+        assert_eq!(g.sample_color(2.0), Color::rgb(0, 0, 255));
+    }
+
+    #[test]
+    fn test_linear_gradient_clone() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 100.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        let cloned = g.clone();
+        assert_eq!(cloned.stops.len(), 1);
+    }
+
+    // ── RadialGradient 测试 ───────────────────────────────
+
+    #[test]
+    fn test_radial_gradient_new() {
+        let g = RadialGradient::new(0.0, 0.0, 0.0, 50.0, 50.0, 50.0);
+        assert_eq!(g.x0, 0.0);
+        assert_eq!(g.r1, 50.0);
+        assert!(g.stops.is_empty());
+    }
+
+    #[test]
+    fn test_radial_gradient_sample() {
+        let mut g = RadialGradient::new(0.0, 0.0, 0.0, 50.0, 50.0, 50.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 0, 255));
+        let mid = g.sample_color(0.5);
+        assert_eq!(mid.r, 128);
+        assert_eq!(mid.b, 128);
+    }
+
+    // ── ConicGradient 测试 ────────────────────────────────
+
+    #[test]
+    fn test_conic_gradient_new() {
+        let g = ConicGradient::new(0.0, 50.0, 50.0);
+        assert_eq!(g.cx, 50.0);
+        assert_eq!(g.cy, 50.0);
+        assert!(g.stops.is_empty());
+    }
+
+    #[test]
+    fn test_conic_gradient_sample() {
+        let mut g = ConicGradient::new(0.0, 0.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(0, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(255, 255, 255));
+        let mid = g.sample_color(0.5);
+        assert_eq!(mid.r, 128);
+    }
+
+    // ── CanvasPattern 测试 ────────────────────────────────
+
+    #[test]
+    fn test_canvas_pattern_new() {
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            data: vec![0u8; 400],
+        };
+        let pattern = CanvasPattern::new(img, PatternRepetition::Repeat);
+        assert_eq!(pattern.repetition, PatternRepetition::Repeat);
+        assert_eq!(pattern.image_data.width, 10);
+    }
+
+    #[test]
+    fn test_canvas_pattern_no_repeat() {
+        let img = ImageData {
+            width: 5,
+            height: 5,
+            data: vec![0u8; 100],
+        };
+        let pattern = CanvasPattern::new(img, PatternRepetition::NoRepeat);
+        assert_eq!(pattern.repetition, PatternRepetition::NoRepeat);
+    }
+
+    // ── CanvasStyle 测试 ──────────────────────────────────
+
+    #[test]
+    fn test_canvas_style_default_black() {
+        let style = CanvasStyle::default_black();
+        let color = style.resolve_color();
+        assert_eq!(color, Color::BLACK);
+    }
+
+    #[test]
+    fn test_canvas_style_color_resolve() {
+        let style = CanvasStyle::Color(Color::rgb(128, 64, 32));
+        assert_eq!(style.resolve_color(), Color::rgb(128, 64, 32));
+    }
+
+    #[test]
+    fn test_canvas_style_linear_gradient_resolve() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(0, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(255, 255, 255));
+        let style = CanvasStyle::LinearGradient(g);
+        let c = style.resolve_color();
+        // offset 0.5 → mid-gray
+        assert_eq!(c.r, 128);
+    }
+
+    #[test]
+    fn test_canvas_style_radial_gradient_resolve() {
+        let mut g = RadialGradient::new(0.0, 0.0, 0.0, 50.0, 50.0, 50.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 0, 255));
+        let style = CanvasStyle::RadialGradient(g);
+        let c = style.resolve_color();
+        assert!(c.r > 0);
+    }
+
+    #[test]
+    fn test_canvas_style_conic_gradient_resolve() {
+        let mut g = ConicGradient::new(0.0, 50.0, 50.0);
+        g.add_color_stop(0.0, Color::rgb(100, 100, 100));
+        let style = CanvasStyle::ConicGradient(g);
+        let c = style.resolve_color();
+        assert_eq!(c.r, 100);
+    }
+
+    #[test]
+    fn test_canvas_style_pattern_resolve() {
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![255, 0, 0, 255],
+        };
+        let pattern = CanvasPattern::new(img, PatternRepetition::Repeat);
+        let style = CanvasStyle::Pattern(pattern);
+        assert_eq!(style.resolve_color(), Color::BLACK);
+    }
+
+    #[test]
+    fn test_canvas_style_clone() {
+        let style = CanvasStyle::Color(Color::rgb(1, 2, 3));
+        let cloned = style.clone();
+        assert_eq!(cloned.resolve_color(), Color::rgb(1, 2, 3));
+    }
+
+    // ── TextMetrics 测试 ──────────────────────────────────
+
+    #[test]
+    fn test_text_metrics_fields() {
+        let metrics = TextMetrics {
+            width: 120.5,
+            actual_bounding_box_ascent: 10.0,
+            actual_bounding_box_descent: 3.0,
+        };
+        assert!((metrics.width - 120.5).abs() < f32::EPSILON);
+        assert_eq!(metrics.actual_bounding_box_ascent, 10.0);
+        assert_eq!(metrics.actual_bounding_box_descent, 3.0);
+    }
+
+    #[test]
+    fn test_text_metrics_clone() {
+        let m = TextMetrics {
+            width: 50.0,
+            actual_bounding_box_ascent: 8.0,
+            actual_bounding_box_descent: 2.0,
+        };
+        let cloned = m.clone();
+        assert_eq!(cloned.width, m.width);
+    }
+
+    // ── ImageData 测试 ────────────────────────────────────
+
+    #[test]
+    fn test_image_data_fields() {
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![255; 16], // 2x2 RGBA = 16 bytes
+        };
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.data.len(), 16);
+    }
+
+    #[test]
+    fn test_image_data_clone() {
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![128, 64, 32, 255],
+        };
+        let cloned = img.clone();
+        assert_eq!(cloned.data, img.data);
+    }
+
+    #[test]
+    fn test_image_data_debug() {
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        let debug = format!("{:?}", img);
+        assert!(debug.contains("ImageData"));
+    }
+
+    // ── GradientStop 测试 ─────────────────────────────────
+
+    #[test]
+    fn test_gradient_stop_fields() {
+        let stop = GradientStop {
+            offset: 0.5,
+            color: Color::rgb(128, 128, 128),
+        };
+        assert!((stop.offset - 0.5).abs() < f32::EPSILON);
+    }
+
+    // ── sample_gradient_stops 间接测试（通过渐变类型）──
+
+    #[test]
+    fn test_gradient_three_stops_interpolation() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(0, 0, 0));
+        g.add_color_stop(0.5, Color::rgb(128, 128, 128));
+        g.add_color_stop(1.0, Color::rgb(255, 255, 255));
+        // at 0.25 → between stop0 and stop1
+        let c = g.sample_color(0.25);
+        assert_eq!(c.r, 64);
+        // at 0.75 → between stop1 and stop2
+        let c = g.sample_color(0.75);
+        assert_eq!(c.r, 192);
+    }
+
+    #[test]
+    fn test_gradient_identical_stops() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(128, 128, 128));
+        g.add_color_stop(0.0, Color::rgb(128, 128, 128));
+        // span ≈ 0 → should return first stop's color
+        let c = g.sample_color(0.0);
+        assert_eq!(c.r, 128);
+    }
+}

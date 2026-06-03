@@ -92,3 +92,151 @@ pub enum FontError {
         glyph_id: u32,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── FontDesc 测试 ──────────────────────────────────────
+
+    #[test]
+    fn test_font_desc_normal() {
+        let desc = FontDesc::normal("Arial");
+        assert_eq!(desc.family, "Arial");
+        assert_eq!(desc.weight, 400);
+        assert!(!desc.italic);
+    }
+
+    #[test]
+    fn test_font_desc_bold() {
+        let desc = FontDesc::bold("Helvetica");
+        assert_eq!(desc.family, "Helvetica");
+        assert_eq!(desc.weight, 700);
+        assert!(!desc.italic);
+    }
+
+    #[test]
+    fn test_font_desc_italic() {
+        let desc = FontDesc::italic("Georgia");
+        assert_eq!(desc.family, "Georgia");
+        assert_eq!(desc.weight, 400);
+        assert!(desc.italic);
+    }
+
+    #[test]
+    fn test_font_desc_new_custom() {
+        let desc = FontDesc::new("Roboto", 300, true);
+        assert_eq!(desc.family, "Roboto");
+        assert_eq!(desc.weight, 300);
+        assert!(desc.italic);
+    }
+
+    #[test]
+    fn test_font_desc_equality() {
+        let a = FontDesc::normal("Arial");
+        let b = FontDesc::normal("Arial");
+        assert_eq!(a, b);
+
+        let c = FontDesc::bold("Arial");
+        assert_ne!(a, c);
+
+        let d = FontDesc::normal("Helvetica");
+        assert_ne!(a, d);
+    }
+
+    #[test]
+    fn test_font_desc_clone() {
+        let desc = FontDesc::new("Test", 600, true);
+        let cloned = desc.clone();
+        assert_eq!(desc, cloned);
+    }
+
+    #[test]
+    fn test_font_desc_debug() {
+        let desc = FontDesc::normal("Arial");
+        let debug = format!("{:?}", desc);
+        assert!(debug.contains("Arial"));
+        assert!(debug.contains("400"));
+    }
+
+    // ── GlyphBitmap 测试 ──────────────────────────────────
+
+    #[test]
+    fn test_glyph_bitmap_fields() {
+        let bitmap = GlyphBitmap {
+            data: vec![128u8; 100],
+            width: 10,
+            height: 10,
+            x_offset: 2,
+            y_offset: -1,
+            advance: 12.5,
+        };
+        assert_eq!(bitmap.data.len(), 100);
+        assert_eq!(bitmap.width, 10);
+        assert_eq!(bitmap.height, 10);
+        assert_eq!(bitmap.x_offset, 2);
+        assert_eq!(bitmap.y_offset, -1);
+        assert!((bitmap.advance - 12.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_glyph_bitmap_clone() {
+        let bitmap = GlyphBitmap {
+            data: vec![255; 4],
+            width: 2,
+            height: 2,
+            x_offset: 0,
+            y_offset: 0,
+            advance: 3.0,
+        };
+        let cloned = bitmap.clone();
+        assert_eq!(cloned.data, bitmap.data);
+        assert_eq!(cloned.width, bitmap.width);
+    }
+
+    #[test]
+    fn test_glyph_bitmap_debug() {
+        let bitmap = GlyphBitmap {
+            data: vec![],
+            width: 0,
+            height: 0,
+            x_offset: 0,
+            y_offset: 0,
+            advance: 0.0,
+        };
+        let debug = format!("{:?}", bitmap);
+        assert!(debug.contains("GlyphBitmap"));
+    }
+
+    // ── FontError 测试 ─────────────────────────────────────
+
+    #[test]
+    fn test_font_error_not_found() {
+        let e = FontError::NotFound("missing.ttf".into());
+        assert!(e.to_string().contains("missing.ttf"));
+    }
+
+    #[test]
+    fn test_font_error_parse_failed() {
+        let e = FontError::ParseFailed("corrupt".into());
+        assert!(e.to_string().contains("corrupt"));
+    }
+
+    #[test]
+    fn test_font_error_glyph_not_found() {
+        let e = FontError::GlyphNotFound {
+            font_id: 1,
+            glyph_id: 42,
+        };
+        let msg = e.to_string();
+        assert!(msg.contains("1"));
+        assert!(msg.contains("42"));
+    }
+
+    #[test]
+    fn test_font_error_debug() {
+        let e = FontError::NotFound("test".into());
+        let debug = format!("{:?}", e);
+        assert!(debug.contains("NotFound"));
+    }
+}
