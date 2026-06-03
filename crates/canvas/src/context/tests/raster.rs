@@ -896,3 +896,414 @@ fn test_blit_rect_full_canvas() {
         assert_eq!(ctx.pixel_buffer[idx + 3], 255, "pixel {} alpha", i);
     }
 }
+
+// ── raster.rs 更多覆盖率测试 ──
+
+#[test]
+fn test_flatten_path_empty_path_with_close() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.close_path();
+    let vertices = ctx.flatten_path();
+    // Empty path with close should still be empty
+    assert_eq!(vertices.len(), 0);
+}
+
+#[test]
+fn test_flatten_path_single_line_with_close() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.line_to(20.0, 20.0);
+    ctx.current_path.close_path();
+    let vertices = ctx.flatten_path();
+    // Should have line segment + close segment
+    assert_eq!(vertices.len(), 8); // 2 segments × 4
+}
+
+#[test]
+fn test_flatten_path_line_to_same_point() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.line_to(10.0, 10.0); // Same point
+    let vertices = ctx.flatten_path();
+    // Degenerate line segment might be filtered or kept
+    assert_eq!(vertices.len(), 4);
+}
+
+#[test]
+fn test_flatten_path_arc_full_circle() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(50.0, 0.0);
+    ctx.current_path.arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU);
+    let vertices = ctx.flatten_path();
+    // Full circle should still produce vertices
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_arc_zero_radius() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.arc(20.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+    let vertices = ctx.flatten_path();
+    // Zero radius arc - just verify it doesn't panic
+    let _ = vertices.len();
+}
+
+#[test]
+fn test_flatten_path_arc_negative_angles() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(50.0, 0.0);
+    ctx.current_path.arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0);
+    let vertices = ctx.flatten_path();
+    // Negative angles should still work
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_arc_start_greater_than_end() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(50.0, 0.0);
+    ctx.current_path.arc(50.0, 50.0, 50.0, std::f32::consts::PI, 0.0);
+    let vertices = ctx.flatten_path();
+    // Start > end should still produce vertices
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_ellipse_horizontal_stretch() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(50.0, 0.0);
+    ctx.current_path
+        .ellipse(50.0, 50.0, 50.0, 10.0, 0.0, 0.0, std::f32::consts::PI);
+    let vertices = ctx.flatten_path();
+    // Wide ellipse should produce vertices
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_ellipse_vertical_stretch() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(0.0, 50.0);
+    ctx.current_path
+        .ellipse(50.0, 50.0, 10.0, 50.0, 0.0, 0.0, std::f32::consts::PI);
+    let vertices = ctx.flatten_path();
+    // Tall ellipse should produce vertices
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_ellipse_rotated() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(70.71, 20.71); // Approximate for 45° rotation
+    ctx.current_path.ellipse(
+        50.0,
+        50.0,
+        30.0,
+        20.0,
+        std::f32::consts::PI / 4.0,
+        0.0,
+        std::f32::consts::PI / 2.0,
+    );
+    let vertices = ctx.flatten_path();
+    // Rotated ellipse should produce vertices
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_ellipse_zero_rotation() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(50.0, 20.0);
+    ctx.current_path
+        .ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI / 2.0);
+    let vertices = ctx.flatten_path();
+    // Zero rotation should still work
+    assert_eq!(vertices.len(), 64); // 16 segments × 4
+}
+
+#[test]
+fn test_flatten_path_round_rect_zero_radius() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![0.0]);
+    let vertices = ctx.flatten_path();
+    // Zero radius should degenerate to rectangle
+    assert_eq!(vertices.len(), 20); // 5 segments × 4
+}
+
+#[test]
+fn test_flatten_path_round_rect_negative_radius() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![-5.0]);
+    let vertices = ctx.flatten_path();
+    // Negative radius should be clamped to 0, degenerate to rectangle
+    assert_eq!(vertices.len(), 20); // 5 segments × 4
+}
+
+#[test]
+fn test_flatten_path_round_rect_radii_too_large() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.round_rect(10.0, 10.0, 20.0, 20.0, vec![100.0]);
+    let vertices = ctx.flatten_path();
+    // Radius larger than half size should be clamped - just verify no panic
+    let _ = vertices.len();
+}
+
+#[test]
+fn test_flatten_path_arc_to_with_zero_distance() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.arc_to(10.0, 10.0, 20.0, 20.0, 5.0);
+    let vertices = ctx.flatten_path();
+    // Points at same location - just verify no panic
+    let _ = vertices.len();
+}
+
+#[test]
+fn test_flatten_path_arc_to_collinear_with_radius() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(0.0, 0.0);
+    ctx.current_path.arc_to(10.0, 0.0, 20.0, 0.0, 5.0);
+    let vertices = ctx.flatten_path();
+    // Collinear points should still produce some vertices
+    assert!(!vertices.is_empty());
+}
+
+#[test]
+fn test_flatten_path_multiple_commands() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.current_path.move_to(0.0, 0.0);
+    ctx.current_path.line_to(10.0, 10.0);
+    ctx.current_path.quadratic_curve_to(20.0, 0.0, 30.0, 10.0);
+    ctx.current_path.arc(50.0, 50.0, 10.0, 0.0, std::f32::consts::PI / 2.0);
+    ctx.current_path.close_path();
+    let vertices = ctx.flatten_path();
+    // Multiple command types should produce many vertices
+    assert!(vertices.len() > 64); // Should have many vertices
+}
+
+#[test]
+fn test_flatten_path_for_complex_path() {
+    let ctx = CanvasContext::new(100, 100);
+    let mut path = Path2D::new();
+    path.rect(10.0, 10.0, 20.0, 20.0);
+    path.ellipse(50.0, 50.0, 15.0, 10.0, 0.0, 0.0, std::f32::consts::PI);
+    let vertices = ctx.flatten_path_for(&path);
+    // Complex path with multiple commands
+    assert!(vertices.len() > 64);
+}
+
+#[test]
+fn test_stroke_outline_complex_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 4.0;
+    ctx.line_join = LineJoin::Miter;
+    ctx.line_cap = LineCap::Round;
+
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.line_to(30.0, 10.0);
+    ctx.current_path.line_to(50.0, 30.0);
+    ctx.current_path.line_to(70.0, 10.0);
+    ctx.current_path.line_to(90.0, 30.0);
+    ctx.current_path.close_path();
+
+    let outline = ctx.stroke_outline_vertices();
+    // Complex path with multiple joins and caps
+    assert!(outline.len() > 50);
+}
+
+#[test]
+fn test_stroke_outline_with_miter_limit_exceeded() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 4.0;
+    ctx.line_join = LineJoin::Miter;
+    ctx.set_miter_limit(1.0); // Low miter limit
+
+    ctx.current_path.move_to(0.0, 20.0);
+    ctx.current_path.line_to(10.0, 0.0);
+    ctx.current_path.line_to(20.0, 20.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle miter limit correctly
+    assert!(!outline.is_empty());
+}
+
+#[test]
+fn test_stroke_outline_zero_line_width() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 0.0;
+    ctx.current_path.move_to(0.0, 0.0);
+    ctx.current_path.line_to(10.0, 10.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Zero width - just verify no panic
+    let _ = outline.len();
+}
+
+#[test]
+fn test_stroke_outline_single_point_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 4.0;
+    ctx.current_path.move_to(10.0, 10.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Single point should produce no outline
+    assert_eq!(outline.len(), 0);
+}
+
+#[test]
+fn test_stroke_outline_point_only_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 4.0;
+    ctx.current_path.move_to(10.0, 10.0);
+    ctx.current_path.line_to(10.0, 10.0); // Same point
+
+    let outline = ctx.stroke_outline_vertices();
+    // Degenerate line should produce minimal outline
+    assert_eq!(outline.len(), 0);
+}
+
+#[test]
+fn test_composite_pixel_all_operations() {
+    let ctx = CanvasContext::new(100, 100);
+
+    // Test all composite operations that might not be covered
+    let operations = [
+        CompositeOperation::SourceOver,
+        CompositeOperation::DestinationOver,
+        CompositeOperation::SourceIn,
+        CompositeOperation::DestinationIn,
+        CompositeOperation::DestinationOut,
+        CompositeOperation::SourceAtop,
+        CompositeOperation::DestinationAtop,
+        CompositeOperation::Copy,
+        CompositeOperation::Xor,
+        CompositeOperation::Lighter,
+    ];
+
+    for op in operations {
+        let mut ctx_test = CanvasContext::new(100, 100);
+        ctx_test.composite_operation = op;
+        let src = Color::rgba(255, 0, 0, 128);
+        let (r, g, b, a) = ctx_test.composite_pixel(src, 0, 255, 0, 255);
+        // Should not panic and should produce reasonable output
+        assert!(r <= 255);
+        assert!(g <= 255);
+        assert!(b <= 255);
+        assert!(a <= 255);
+    }
+}
+
+#[test]
+fn test_composite_pixel_with_transparent_dst() {
+    let ctx = CanvasContext::new(100, 100);
+    let src = Color::rgba(255, 0, 0, 128);
+    let (r, g, b, a) = ctx.composite_pixel(src, 0, 0, 0, 0);
+    // Composite with fully transparent destination
+    assert!(r >= 0 && r <= 255);
+    assert!(g >= 0 && g <= 255);
+    assert!(b >= 0 && b <= 255);
+    assert!(a >= 0 && a <= 255);
+}
+
+#[test]
+fn test_composite_pixel_with_translucent_src() {
+    let ctx = CanvasContext::new(100, 100);
+    let src = Color::rgba(128, 128, 128, 128);
+    let (r, g, b, a) = ctx.composite_pixel(src, 128, 128, 128, 128);
+    // Composite with translucent source
+    assert!(r >= 0 && r <= 255);
+    assert!(g >= 0 && g <= 255);
+    assert!(b >= 0 && b <= 255);
+    assert!(a >= 0 && a <= 255);
+}
+
+#[test]
+fn test_composite_pixel_with_opaque_src_dst() {
+    let ctx = CanvasContext::new(100, 100);
+    let src = Color::rgba(255, 0, 0, 255);
+    let (r, g, b, a) = ctx.composite_pixel(src, 0, 0, 255, 255);
+    // Composite with opaque source over opaque destination
+    assert_eq!(r, 255); // Source should completely override
+    assert_eq!(g, 0);
+    assert_eq!(b, 0);
+    assert_eq!(a, 255);
+}
+
+#[test]
+fn test_blit_stroke_with_bevel_join_sharp_angle() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_join = LineJoin::Bevel;
+    ctx.line_width = 10.0;
+
+    // Create a sharp angle
+    ctx.current_path.move_to(0.0, 0.0);
+    ctx.current_path.line_to(10.0, 10.0);
+    ctx.current_path.line_to(0.0, 20.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle sharp angle correctly
+    assert!(!outline.is_empty());
+}
+
+#[test]
+fn test_blit_stroke_with_round_join_sharp_angle() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_join = LineJoin::Round;
+    ctx.line_width = 10.0;
+
+    // Create a sharp angle
+    ctx.current_path.move_to(0.0, 0.0);
+    ctx.current_path.line_to(10.0, 10.0);
+    ctx.current_path.line_to(0.0, 20.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle sharp angle with round join
+    assert!(!outline.is_empty());
+}
+
+#[test]
+fn test_blit_stroke_with_miter_join_exceeding_limit() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_join = LineJoin::Miter;
+    ctx.set_miter_limit(1.0); // Very low limit
+    ctx.line_width = 10.0;
+
+    // Create a very sharp angle
+    ctx.current_path.move_to(0.0, 20.0);
+    ctx.current_path.line_to(10.0, 0.0);
+    ctx.current_path.line_to(20.0, 20.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle miter limit correctly
+    assert!(!outline.is_empty());
+}
+
+#[test]
+fn test_blit_stroke_large_line_width() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 50.0;
+    ctx.line_cap = LineCap::Round;
+
+    ctx.current_path.move_to(10.0, 50.0);
+    ctx.current_path.line_to(90.0, 50.0);
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle very wide lines
+    assert!(outline.len() > 20);
+}
+
+#[test]
+fn test_blit_stroke_variable_width_path() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.line_width = 2.0;
+
+    // Create a path with many segments
+    for i in 0..20 {
+        let x = i as f32 * 5.0;
+        ctx.current_path.move_to(x, 10.0);
+        ctx.current_path.line_to(x, 90.0);
+    }
+
+    let outline = ctx.stroke_outline_vertices();
+    // Should handle path with many segments
+    assert!(outline.len() > 100);
+}

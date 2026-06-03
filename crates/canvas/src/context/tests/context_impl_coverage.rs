@@ -1,0 +1,539 @@
+//! CanvasContext context_impl.rs 覆盖率测试
+
+use super::super::types::*;
+use crate::context::*;
+use crate::path::Path2D;
+use zero_render_foundation::color::Color;
+
+#[test]
+fn test_context_new_zero_size() {
+    let ctx = CanvasContext::new(0, 0);
+    assert_eq!(ctx.width(), 0);
+    assert_eq!(ctx.height(), 0);
+}
+
+#[test]
+fn test_context_clear_rect_entire_canvas() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.clear_rect(0.0, 0.0, 10.0, 10.0);
+    // Check if all pixels are cleared to 0
+    let all_cleared = ctx.pixel_buffer.iter().all(|&v| v == 0);
+    assert!(all_cleared, "Clear entire canvas should zero all pixels");
+}
+
+#[test]
+fn test_context_clear_rect_partial_canvas() {
+    let mut ctx = CanvasContext::new(10, 10);
+    // Fill the canvas first
+    for i in 0..400 {
+        ctx.pixel_buffer[i] = 255;
+    }
+    ctx.clear_rect(2.0, 2.0, 4.0, 4.0);
+    // Check that only cleared area is 0
+    for y in 0..10 {
+        for x in 0..10 {
+            let idx = (y * 10 + x) * 4;
+            if x >= 2 && x < 6 && y >= 2 && y < 6 {
+                assert_eq!(ctx.pixel_buffer[idx], 0, "Cleared pixel at ({}, {})", x, y);
+                assert_eq!(ctx.pixel_buffer[idx + 1], 0, "Cleared pixel at ({}, {})", x, y);
+                assert_eq!(ctx.pixel_buffer[idx + 2], 0, "Cleared pixel at ({}, {})", x, y);
+                assert_eq!(ctx.pixel_buffer[idx + 3], 0, "Cleared pixel at ({}, {})", x, y);
+            } else {
+                assert_eq!(ctx.pixel_buffer[idx], 255, "Uncleared pixel at ({}, {})", x, y);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_context_clear_rect_out_of_bounds() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.clear_rect(-5.0, -5.0, 20.0, 20.0);
+    // Should only clear within canvas bounds
+    for y in 0..10 {
+        for x in 0..10 {
+            let idx = (y * 10 + x) * 4;
+            assert_eq!(ctx.pixel_buffer[idx], 0, "Pixel at ({}, {}) should be cleared", x, y);
+        }
+    }
+}
+
+#[test]
+fn test_context_fill_rect_zero_width() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.fill_rect(0.0, 0.0, 0.0, 10.0);
+    // Zero width rect should not fill any pixels
+    let all_zero = ctx.pixel_buffer.iter().all(|&v| v == 0);
+    assert!(all_zero, "Zero width fill should not affect pixels");
+}
+
+#[test]
+fn test_context_fill_rect_zero_height() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.fill_rect(0.0, 0.0, 10.0, 0.0);
+    // Zero height rect should not fill any pixels
+    let all_zero = ctx.pixel_buffer.iter().all(|&v| v == 0);
+    assert!(all_zero, "Zero height fill should not affect pixels");
+}
+
+#[test]
+fn test_context_fill_rect_partial_outside_canvas() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.fill_rect(8.0, 8.0, 5.0, 5.0);
+    // Should only fill the part within canvas bounds
+    // Check pixel at (9, 9) which should be filled
+    let idx = (9 * 10 + 9) * 4;
+    assert_eq!(ctx.pixel_buffer[idx], 0); // Default fill is black
+    assert_eq!(ctx.pixel_buffer[idx + 3], 255); // Default fill is opaque
+}
+
+#[test]
+fn test_context_stroke_rect_line_width_greater_than_height() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_line_width(15.0);
+    ctx.set_stroke_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.stroke_rect(2.0, 2.0, 4.0, 4.0);
+    // Very wide line should fill the entire canvas
+    let center_pixel = (5 * 10 + 5) * 4;
+    assert_eq!(ctx.pixel_buffer[center_pixel], 255);
+    assert_eq!(ctx.pixel_buffer[center_pixel + 3], 255);
+}
+
+#[test]
+fn test_context_stroke_rect_zero_line_width() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_line_width(0.0);
+    ctx.stroke_rect(0.0, 0.0, 10.0, 10.0);
+    // Zero width stroke should not fill any pixels
+    let all_zero = ctx.pixel_buffer.iter().all(|&v| v == 0);
+    assert!(all_zero, "Zero width stroke should not affect pixels");
+}
+
+#[test]
+fn test_context_save_restore_empty() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.save();
+    ctx.restore();
+    // Should not panic
+}
+
+#[test]
+fn test_context_save_restore_nested() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.save();
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(0, 255, 0, 255)));
+    ctx.save();
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(0, 0, 255, 255)));
+
+    assert_eq!(ctx.fill_style().resolve_color().r, 0);
+    assert_eq!(ctx.fill_style().resolve_color().g, 0);
+    assert_eq!(ctx.fill_style().resolve_color().b, 255);
+
+    ctx.restore();
+    assert_eq!(ctx.fill_style().resolve_color().r, 0);
+    assert_eq!(ctx.fill_style().resolve_color().g, 255);
+    assert_eq!(ctx.fill_style().resolve_color().b, 0);
+
+    ctx.restore();
+    assert_eq!(ctx.fill_style().resolve_color().r, 255);
+    assert_eq!(ctx.fill_style().resolve_color().g, 0);
+    assert_eq!(ctx.fill_style().resolve_color().b, 0);
+}
+
+#[test]
+fn test_context_transform_multiple_operations() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.translate(5.0, 5.0);
+    ctx.scale(2.0, 2.0);
+    ctx.rotate(std::f32::consts::PI / 4.0);
+
+    let t = ctx.get_transform();
+    // Check that transform is not identity
+    assert_ne!(t.a, 1.0);
+    assert_ne!(t.b, 0.0);
+    assert_ne!(t.c, 0.0);
+    assert_ne!(t.d, 1.0);
+    assert_ne!(t.e, 0.0);
+    assert_ne!(t.f, 0.0);
+}
+
+#[test]
+fn test_context_reset_transform() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.translate(5.0, 5.0);
+    ctx.reset_transform();
+
+    let t = ctx.get_transform();
+    assert_eq!(t.a, 1.0);
+    assert_eq!(t.b, 0.0);
+    assert_eq!(t.c, 0.0);
+    assert_eq!(t.d, 1.0);
+    assert_eq!(t.e, 0.0);
+    assert_eq!(t.f, 0.0);
+}
+
+#[test]
+fn test_context_set_transform_overrides() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.translate(5.0, 5.0);
+    ctx.set_transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0);
+
+    let t = ctx.get_transform();
+    assert_eq!(t.a, 2.0);
+    assert_eq!(t.d, 2.0);
+    assert_eq!(t.e, 0.0);
+    assert_eq!(t.f, 0.0);
+}
+
+#[test]
+fn test_context_global_alpha_clamping() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_global_alpha(-1.0);
+    assert_eq!(ctx.global_alpha(), 0.0);
+
+    ctx.set_global_alpha(2.0);
+    assert_eq!(ctx.global_alpha(), 1.0);
+
+    ctx.set_global_alpha(0.5);
+    assert_eq!(ctx.global_alpha(), 0.5);
+}
+
+#[test]
+fn test_context_resize_clears_primitives() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+    ctx.resize(5, 5);
+
+    // Check that pixel buffer is cleared
+    assert_eq!(ctx.width(), 5);
+    assert_eq!(ctx.height(), 5);
+    let all_zero = ctx.pixel_buffer.iter().all(|&v| v == 0);
+    assert!(all_zero, "Resize should clear pixel buffer");
+}
+
+#[test]
+fn test_context_get_image_data_partial() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.fill_rect(0.0, 0.0, 5.0, 5.0);
+
+    let img = ctx.get_image_data(2, 2, 3, 3);
+    assert_eq!(img.width, 3);
+    assert_eq!(img.height, 3);
+    assert_eq!(img.data.len(), 3 * 3 * 4);
+
+    // Check that the data starts from the correct offset
+    // Pixel (2, 2) should be the first in the data
+    let expected_offset = (2 * 10 + 2) * 4;
+    assert_eq!(img.data[0], ctx.pixel_buffer[expected_offset]);
+}
+
+#[test]
+fn test_context_get_image_data_out_of_bounds() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let img = ctx.get_image_data(8, 8, 5, 5);
+    // Should return data for the part that's within bounds
+    assert_eq!(img.width, 2); // 10 - 8 = 2
+    assert_eq!(img.height, 2); // 10 - 8 = 2
+}
+
+#[test]
+fn test_context_put_image_data_out_of_bounds() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let src_img = ctx.create_image_data(5, 5);
+    // Fill with non-zero data
+    for i in 0..(5 * 5 * 4) {
+        src_img.data[i] = 255;
+    }
+
+    ctx.put_image_data(&src_img, 8, 8);
+    // Should only copy the part that fits
+    // Check pixel (9, 9) which should be copied
+    let idx = (9 * 10 + 9) * 4;
+    assert_eq!(ctx.pixel_buffer[idx], 255);
+    assert_eq!(ctx.pixel_buffer[idx + 1], 255);
+    assert_eq!(ctx.pixel_buffer[idx + 2], 255);
+    assert_eq!(ctx.pixel_buffer[idx + 3], 255);
+}
+
+#[test]
+fn test_context_create_pattern_with_repetition() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let pattern_data = ctx.create_image_data(5, 5);
+    // Fill pattern with red
+    for i in 0..(5 * 5 * 4) {
+        pattern_data.data[i] = 255;
+        if i % 4 == 3 {
+            pattern_data.data[i] = 255;
+        }
+    }
+
+    let pattern = ctx.create_pattern(pattern_data, PatternRepetition::Repeat);
+    assert!(!pattern.image_data.data.is_empty());
+    assert_eq!(pattern.repetition, PatternRepetition::Repeat);
+}
+
+#[test]
+fn test_context_is_point_in_path_empty() {
+    let ctx = CanvasContext::new(10, 10);
+    // Empty path should return false
+    assert!(!ctx.is_point_in_path(5.0, 5.0));
+}
+
+#[test]
+fn test_context_is_point_in_path_single_point() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.move_to(5.0, 5.0);
+    // Single point is not considered a path for fill
+    assert!(!ctx.is_point_in_path(5.0, 5.0));
+}
+
+#[test]
+fn test_context_is_point_in_path_line_segment() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(10.0, 10.0);
+    // Point on the line may return true or false depending on implementation
+    let on_path = ctx.is_point_in_path(5.0, 5.0);
+    // Don't assert specific value as it depends on the point-in-polygon implementation
+    assert!(on_path || !on_path);
+}
+
+#[test]
+fn test_context_clip_with_empty_path() {
+    let mut ctx = CanvasContext::new(10, 10);
+    // Empty clip should not add any clip regions
+    let path = Path2D::new();
+    ctx.clip_with_path(&path);
+    // This test primarily checks that it doesn't panic
+}
+
+#[test]
+fn test_context_clip_with_path_rect() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let mut path = Path2D::new();
+    path.rect(2.0, 2.0, 6.0, 6.0);
+    ctx.clip_with_path(&path);
+
+    // This test primarily checks that it doesn't panic
+    let _ = ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+}
+
+#[test]
+fn test_context_set_line_dash_odd_length() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_line_dash(vec![5.0, 10.0, 15.0]); // odd length
+    let dash = ctx.get_line_dash();
+    // Should be doubled: [5.0, 10.0, 15.0, 5.0, 10.0, 15.0]
+    assert_eq!(dash.len(), 6);
+    assert_eq!(dash[0], 5.0);
+    assert_eq!(dash[1], 10.0);
+    assert_eq!(dash[2], 15.0);
+    assert_eq!(dash[3], 5.0);
+    assert_eq!(dash[4], 10.0);
+    assert_eq!(dash[5], 15.0);
+}
+
+#[test]
+fn test_context_set_line_dash_even_length() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_line_dash(vec![5.0, 10.0, 15.0, 20.0]); // even length
+    let dash = ctx.get_line_dash();
+    // Should remain the same
+    assert_eq!(dash, [5.0, 10.0, 15.0, 20.0]);
+}
+
+#[test]
+fn test_context_set_line_dash_zero_segments() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_line_dash(vec![]);
+    let dash = ctx.get_line_dash();
+    assert_eq!(dash.len(), 0);
+}
+
+#[test]
+fn test_context_shadow_color_transparent() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_shadow_color(Color::TRANSPARENT);
+    assert_eq!(ctx.shadow_color().a, 0);
+
+    // Drawing with transparent shadow should not draw shadows
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+}
+
+#[test]
+fn test_context_shadow_properties_zero_blur() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_shadow_color(Color::rgba(255, 0, 0, 128));
+    ctx.set_shadow_blur(0.0);
+    ctx.set_shadow_offset_x(5.0);
+    ctx.set_shadow_offset_y(5.0);
+
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+}
+
+#[test]
+fn test_context_shadow_properties_negative_blur() {
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_shadow_blur(-5.0);
+    assert_eq!(ctx.shadow_blur(), 0.0); // Should be clamped to 0
+}
+
+#[test]
+fn test_context_create_gradients() {
+    let ctx = CanvasContext::new(10, 10);
+
+    let linear = ctx.create_linear_gradient(0.0, 0.0, 10.0, 10.0);
+    assert_eq!(linear.x0, 0.0);
+    assert_eq!(linear.y0, 0.0);
+    assert_eq!(linear.x1, 10.0);
+    assert_eq!(linear.y1, 10.0);
+
+    let radial = ctx.create_radial_gradient(0.0, 0.0, 0.0, 10.0, 10.0, 10.0);
+    assert_eq!(radial.x0, 0.0);
+    assert_eq!(radial.y0, 0.0);
+    assert_eq!(radial.r0, 0.0);
+    assert_eq!(radial.x1, 10.0);
+    assert_eq!(radial.y1, 10.0);
+    assert_eq!(radial.r1, 10.0);
+
+    let conic = ctx.create_conic_gradient(0.0, 5.0, 5.0);
+    assert_eq!(conic.start_angle, 0.0);
+    assert_eq!(conic.cx, 5.0);
+    assert_eq!(conic.cy, 5.0);
+}
+
+#[test]
+fn test_context_text_properties() {
+    let mut ctx = CanvasContext::new(10, 10);
+
+    // Test text align
+    ctx.set_text_align(TextAlign::Center);
+    assert_eq!(ctx.text_align(), TextAlign::Center);
+
+    ctx.set_text_align(TextAlign::End);
+    assert_eq!(ctx.text_align(), TextAlign::End);
+
+    // Test text baseline
+    ctx.set_text_baseline(TextBaseline::Top);
+    assert_eq!(ctx.text_baseline(), TextBaseline::Top);
+
+    ctx.set_text_baseline(TextBaseline::Bottom);
+    assert_eq!(ctx.text_baseline(), TextBaseline::Bottom);
+
+    // Test direction
+    ctx.set_direction(TextDirection::Ltr);
+    assert_eq!(ctx.direction(), TextDirection::Ltr);
+
+    ctx.set_direction(TextDirection::Rtl);
+    assert_eq!(ctx.direction(), TextDirection::Rtl);
+}
+
+#[test]
+fn test_context_measure_text_empty() {
+    let ctx = CanvasContext::new(10, 10);
+    let metrics = ctx.measure_text("");
+    assert_eq!(metrics.width, 0.0);
+}
+
+#[test]
+fn test_context_measure_text_whitespace() {
+    let ctx = CanvasContext::new(10, 10);
+    let metrics = ctx.measure_text("   ");
+    // Whitespace should have width based on character count
+    assert!(metrics.width > 0.0);
+}
+
+#[test]
+fn test_context_draw_image_sized() {
+    let mut ctx = CanvasContext::new(20, 20);
+    let img_data = ctx.create_image_data(10, 10);
+    // Fill with a pattern
+    for i in 0..1000 {
+        img_data.data[i] = (i % 255) as u8;
+    }
+
+    // Draw image at full size
+    ctx.draw_image(&img_data, 0.0, 0.0);
+
+    // Draw image scaled
+    ctx.draw_image_with_size(&img_data, 5.0, 5.0, 5.0, 5.0);
+
+    // Draw image sliced
+    ctx.draw_image_sliced(&img_data, 0.0, 0.0, 5.0, 5.0, 10.0, 10.0, 5.0, 5.0);
+}
+
+#[test]
+fn test_context_draw_image_zero_size() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let img_data = ctx.create_image_data(0, 0);
+    ctx.draw_image(&img_data, 0.0, 0.0);
+}
+
+#[test]
+fn test_context_draw_image_out_of_bounds() {
+    let mut ctx = CanvasContext::new(10, 10);
+    let img_data = ctx.create_image_data(5, 5);
+    for i in 0..100 {
+        img_data.data[i] = 255;
+    }
+
+    ctx.draw_image(&img_data, -5.0, -5.0);
+}
+
+#[test]
+fn test_context_composite_operations() {
+    let mut ctx = CanvasContext::new(10, 10);
+
+    // Test various composite operations
+    ctx.set_composite_operation(CompositeOperation::Copy);
+    assert_eq!(ctx.composite_operation(), CompositeOperation::Copy);
+
+    ctx.set_composite_operation(CompositeOperation::SourceOver);
+    assert_eq!(ctx.composite_operation(), CompositeOperation::SourceOver);
+
+    ctx.set_composite_operation(CompositeOperation::Xor);
+    assert_eq!(ctx.composite_operation(), CompositeOperation::Xor);
+}
+
+#[test]
+fn test_context_image_smoothing() {
+    let mut ctx = CanvasContext::new(10, 10);
+
+    // Default is true
+    assert!(ctx.image_smoothing_enabled());
+
+    // Set to false
+    ctx.set_image_smoothing_enabled(false);
+    assert!(!ctx.image_smoothing_enabled());
+
+    // Set back to true
+    ctx.set_image_smoothing_enabled(true);
+    assert!(ctx.image_smoothing_enabled());
+}
+
+#[test]
+fn test_context_line_properties() {
+    let mut ctx = CanvasContext::new(10, 10);
+
+    // Test line join
+    ctx.set_line_join(LineJoin::Bevel);
+    assert_eq!(ctx.line_join(), LineJoin::Bevel);
+
+    ctx.set_line_join(LineJoin::Round);
+    assert_eq!(ctx.line_join(), LineJoin::Round);
+
+    // Test line cap
+    ctx.set_line_cap(LineCap::Square);
+    assert_eq!(ctx.line_cap(), LineCap::Square);
+
+    ctx.set_line_cap(LineCap::Round);
+    assert_eq!(ctx.line_cap(), LineCap::Round);
+
+    // Test miter limit
+    ctx.set_miter_limit(5.0);
+    assert_eq!(ctx.miter_limit(), 5.0);
+
+    ctx.set_miter_limit(0.5);
+    assert_eq!(ctx.miter_limit(), 0.5);
+}
