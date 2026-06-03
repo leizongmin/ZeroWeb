@@ -53,7 +53,7 @@ fn make_pseudo_selector(pc: PseudoClassSelector) -> Selector {
 }
 
 /// 辅助：创建 3 层 DOM (parent > child1, child2 > grandchild)
-fn make_nested_dom() -> (Document, Vec<zero_dom::NodeId>) {
+pub(super) fn make_nested_dom() -> (Document, Vec<zero_dom::NodeId>) {
     let mut doc = Document::new();
     let root = doc.root();
     let parent = doc.create_element("div");

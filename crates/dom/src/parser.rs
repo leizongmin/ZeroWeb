@@ -9,6 +9,7 @@ use hashbrown::HashMap;
 use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
 use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
+use std::default::Default;
 use tendril::StrTendril;
 
 /// 使用 html5ever 解析 HTML 字符串并返回 Document。
@@ -655,5 +656,716 @@ mod tests {
         let html = format!("<html><body>{}</body></html>", paragraphs.join(""));
         let doc = parse_html(&html);
         assert!(doc.node_count() > 1000, "大文档应被正确解析");
+    }
+
+    // ── TreeSink 实现的覆盖率测试 ──
+
+    use html5ever::interface::TreeSink;
+    use markup5ever::{LocalName, Namespace, QualName};
+    use tendril::StrTendril;
+
+    /// 测试 append 方法：NodeOrText::AppendNode 且需要合并相邻文本节点
+    #[test]
+    fn test_append_merge_adjacent_text_nodes() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 创建文本节点并添加到根
+        let text1_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("Hello"))));
+        if let Some(child_data) = builder.inner.borrow_mut().nodes.get_mut(text1_id) {
+            child_data.parent = Some(root);
+        }
+        if let Some(root_data) = builder.inner.borrow_mut().nodes.get_mut(root) {
+            root_data.children.push(text1_id);
+        }
+
+        // 创建另一个文本节点
+        let text2_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new(" World"))));
+
+        // 添加相邻文本节点，应该自动合并
+        builder.append(&root, html5ever::interface::NodeOrText::AppendNode(text2_id));
+
+        // 验证合并后的内容
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 1, "应该只有一个合并后的文本节点");
+        if let NodeKind::Text(data) = &inner.nodes.get(root_data.children[0]).unwrap().kind {
+            assert_eq!(data.content, "Hello World", "文本节点应该被合并");
+        }
+    }
+
+    /// 测试 append 方法：NodeOrText::AppendText 且需要合并到上一个文本节点
+    #[test]
+    fn test_append_text_merge_with_existing_text() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 创建文本节点
+        let text_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("Hello"))));
+        if let Some(child_data) = builder.inner.borrow_mut().nodes.get_mut(text_id) {
+            child_data.parent = Some(root);
+        }
+        if let Some(root_data) = builder.inner.borrow_mut().nodes.get_mut(root) {
+            root_data.children.push(text_id);
+        }
+
+        // 添加新的文本内容，应该合并到现有文本节点
+        builder.append(
+            &root,
+            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" World")),
+        );
+
+        // 验证合并
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 1, "应该只有一个合并后的文本节点");
+        if let NodeKind::Text(data) = &inner.nodes.get(root_data.children[0]).unwrap().kind {
+            assert_eq!(data.content, "Hello World", "文本应该被合并");
+        }
+    }
+
+    /// 测试 append 方法：NodeOrText::AppendText 不合并（前一个不是文本节点）
+    #[test]
+    fn test_append_text_no_merge_after_element() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 创建元素节点
+        let elem_id = builder.create_element(
+            QualName::new(None, Namespace::from(""), LocalName::from("div")),
+            vec![],
+            Default::default(),
+        );
+        if let Some(child_data) = builder.inner.borrow_mut().nodes.get_mut(elem_id) {
+            child_data.parent = Some(root);
+        }
+        if let Some(root_data) = builder.inner.borrow_mut().nodes.get_mut(root) {
+            root_data.children.push(elem_id);
+        }
+
+        // 添加文本（前面是元素，不应合并）
+        builder.append(
+            &root,
+            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+        );
+
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 2, "应该有两个子节点");
+    }
+
+    /// 测试 append_before_sibling：从旧父节点移除子节点
+    #[test]
+    fn test_append_before_sibling_remove_from_old_parent() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 创建父节点和子节点
+        let parent_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("div")),
+                    vec![],
+                ))));
+
+        let child_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("text"))));
+
+        // 设置父子关系
+        if let Some(child_data) = builder.inner.borrow_mut().nodes.get_mut(child_id) {
+            child_data.parent = Some(parent_id);
+        }
+        if let Some(parent_data) = builder.inner.borrow_mut().nodes.get_mut(parent_id) {
+            parent_data.children.push(child_id);
+        }
+
+        // 创建 sibling 并添加到根
+        let sibling_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("sibling"))));
+        if let Some(sibling_data) = builder.inner.borrow_mut().nodes.get_mut(sibling_id) {
+            sibling_data.parent = Some(root);
+        }
+        if let Some(root_data) = builder.inner.borrow_mut().nodes.get_mut(root) {
+            root_data.children.push(sibling_id);
+        }
+
+        // 插入子节点到 sibling 之前
+        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(child_id));
+
+        // 验证
+        let inner = builder.inner.borrow();
+        let parent_data = inner.nodes.get(parent_id).unwrap();
+        assert!(!parent_data.children.contains(&child_id), "子节点已从原父节点移除");
+
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 2);
+        assert_eq!(root_data.children[0], child_id, "子节点应在 sibling 之前");
+    }
+
+    /// 测试 append_before_sibling：文本合并到 sibling 前面的节点
+    #[test]
+    fn test_append_before_sibling_text_merge() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 前一个文本节点
+        let prev_text_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("Previous"))));
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(prev_text_id) {
+            c.parent = Some(root);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(root)
+            .unwrap()
+            .children
+            .push(prev_text_id);
+
+        // sibling
+        let sibling_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("span")),
+                    vec![],
+                ))));
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(sibling_id) {
+            c.parent = Some(root);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(root)
+            .unwrap()
+            .children
+            .push(sibling_id);
+
+        // 在 sibling 前添加文本，应该合并到 prev_text
+        builder.append_before_sibling(
+            &sibling_id,
+            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" More")),
+        );
+
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 2, "应该只有两个子节点");
+        if let NodeKind::Text(data) = &inner.nodes.get(root_data.children[0]).unwrap().kind {
+            assert_eq!(data.content, "Previous More", "文本应该被合并");
+        }
+    }
+
+    /// 测试 append_before_sibling：sibling 没有父节点（早期返回）
+    #[test]
+    fn test_append_before_sibling_no_parent() {
+        let builder = DomBuilder::new();
+        let sibling_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("orphan"))));
+
+        let node_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("new"))));
+
+        // 不应该 panic
+        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(node_id));
+
+        let inner = builder.inner.borrow();
+        assert_eq!(inner.nodes.get(sibling_id).unwrap().parent, None);
+    }
+
+    /// 测试 append_before_sibling：文本不合并（前面不是文本节点）
+    #[test]
+    fn test_append_before_sibling_text_no_merge() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 前一个是元素节点
+        let elem_id = builder.create_element(
+            QualName::new(None, Namespace::from(""), LocalName::from("div")),
+            vec![],
+            Default::default(),
+        );
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(elem_id) {
+            c.parent = Some(root);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(root)
+            .unwrap()
+            .children
+            .push(elem_id);
+
+        // sibling
+        let sibling_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("sibling"))));
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(sibling_id) {
+            c.parent = Some(root);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(root)
+            .unwrap()
+            .children
+            .push(sibling_id);
+
+        // 在 sibling 前添加文本（前面是元素，不应合并）
+        builder.append_before_sibling(
+            &sibling_id,
+            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+        );
+
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        assert_eq!(root_data.children.len(), 3, "应该有三个子节点");
+    }
+
+    /// 测试 reparent_children：移动所有子节点到新父节点
+    #[test]
+    fn test_reparent_children() {
+        let builder = DomBuilder::new();
+        let _root = builder.get_document();
+
+        let old_parent_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("div")),
+                    vec![],
+                ))));
+
+        let new_parent_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("span")),
+                    vec![],
+                ))));
+
+        let child1 = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("Child 1"))));
+        let child2 = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("Child 2"))));
+
+        for &child_id in &[child1, child2] {
+            if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(child_id) {
+                c.parent = Some(old_parent_id);
+            }
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .get_mut(old_parent_id)
+                .unwrap()
+                .children
+                .push(child_id);
+        }
+
+        builder.reparent_children(&old_parent_id, &new_parent_id);
+
+        let inner = builder.inner.borrow();
+        assert_eq!(inner.nodes.get(old_parent_id).unwrap().children.len(), 0);
+        assert_eq!(inner.nodes.get(new_parent_id).unwrap().children.len(), 2);
+        assert_eq!(inner.nodes.get(child1).unwrap().parent, Some(new_parent_id));
+    }
+
+    /// 测试 remove_from_parent：移除节点
+    #[test]
+    fn test_remove_from_parent() {
+        let builder = DomBuilder::new();
+        let _root = builder.get_document();
+
+        let parent_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("div")),
+                    vec![],
+                ))));
+        let child_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("text"))));
+
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(child_id) {
+            c.parent = Some(parent_id);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(parent_id)
+            .unwrap()
+            .children
+            .push(child_id);
+
+        builder.remove_from_parent(&child_id);
+
+        let inner = builder.inner.borrow();
+        assert!(!inner.nodes.get(parent_id).unwrap().children.contains(&child_id));
+        assert_eq!(inner.nodes.get(child_id).unwrap().parent, None);
+    }
+
+    /// 测试 remove_from_parent：没有父节点的节点
+    #[test]
+    fn test_remove_from_parent_no_parent() {
+        let builder = DomBuilder::new();
+        let child_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("orphan"))));
+
+        builder.remove_from_parent(&child_id);
+
+        let inner = builder.inner.borrow();
+        assert!(inner.nodes.contains_key(child_id));
+        assert_eq!(inner.nodes.get(child_id).unwrap().parent, None);
+    }
+
+    /// 测试 add_attrs_if_missing：添加新属性（包括 id 和 class）
+    #[test]
+    fn test_add_attrs_if_missing_new_attributes() {
+        let builder = DomBuilder::new();
+
+        let elem_id = builder.create_element(
+            QualName::new(None, Namespace::from(""), LocalName::from("div")),
+            vec![html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("existing")),
+                value: StrTendril::from("value"),
+            }],
+            Default::default(),
+        );
+
+        let new_attrs = vec![
+            html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("id")),
+                value: StrTendril::from("test-id"),
+            },
+            html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                value: StrTendril::from("container active"),
+            },
+            html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("data-custom")),
+                value: StrTendril::from("custom-value"),
+            },
+        ];
+        builder.add_attrs_if_missing(&elem_id, new_attrs);
+
+        if let Some(NodeKind::Element(elem)) = builder.inner.borrow().nodes.get(elem_id).map(|n| &n.kind) {
+            assert!(elem.has_attribute("id"));
+            assert!(elem.has_attribute("class"));
+            assert_eq!(elem.id, Some("test-id".to_string()));
+            assert_eq!(elem.class_list, vec!["container", "active"]);
+        }
+    }
+
+    /// 测试 add_attrs_if_missing：重复属性不被添加
+    #[test]
+    fn test_add_attrs_if_missing_duplicate() {
+        let builder = DomBuilder::new();
+
+        let elem_id = builder.create_element(
+            QualName::new(None, Namespace::from(""), LocalName::from("div")),
+            vec![html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                value: StrTendril::from("original"),
+            }],
+            Default::default(),
+        );
+
+        builder.add_attrs_if_missing(
+            &elem_id,
+            vec![html5ever::interface::Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                value: StrTendril::from("duplicate"),
+            }],
+        );
+
+        if let Some(NodeKind::Element(elem)) = builder.inner.borrow().nodes.get(elem_id).map(|n| &n.kind) {
+            assert_eq!(elem.class_list, vec!["original"], "class 应保持原值");
+        }
+    }
+
+    /// 测试 elem_name：非元素节点返回空名称
+    #[test]
+    fn test_elem_name_non_element() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        let name = builder.elem_name(&root);
+        assert_eq!(&*name.local_name(), "");
+    }
+
+    /// 测试 create_pi：创建处理指令节点
+    #[test]
+    fn test_create_processing_instruction() {
+        let builder = DomBuilder::new();
+        let pi_id = builder.create_pi(
+            StrTendril::from("xml-stylesheet"),
+            StrTendril::from("href=\"style.css\""),
+        );
+
+        let inner = builder.inner.borrow();
+        if let NodeKind::ProcessingInstruction(pi) = &inner.nodes.get(pi_id).unwrap().kind {
+            assert_eq!(pi.target, "xml-stylesheet");
+            assert_eq!(pi.data, "href=\"style.css\"");
+        } else {
+            panic!("应该是 ProcessingInstruction 节点");
+        }
+    }
+
+    /// 测试 append_based_on_parent_node：有父节点时调用 append_before_sibling
+    #[test]
+    fn test_append_based_on_parent_node_with_parent() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+
+        // 创建带父节点的元素
+        let elem_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("div")),
+                    vec![],
+                ))));
+        if let Some(c) = builder.inner.borrow_mut().nodes.get_mut(elem_id) {
+            c.parent = Some(root);
+        }
+        builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .get_mut(root)
+            .unwrap()
+            .children
+            .push(elem_id);
+
+        // 调用 append_based_on_parent_node（有父节点 → append_before_sibling）
+        let text_id = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("new"))));
+
+        builder.append_based_on_parent_node(
+            &elem_id,
+            &elem_id, // prev_element（未使用）
+            html5ever::interface::NodeOrText::AppendNode(text_id),
+        );
+
+        let inner = builder.inner.borrow();
+        let root_data = inner.nodes.get(root).unwrap();
+        // text_id 应该插入到 elem_id 之前
+        assert!(root_data.children.contains(&text_id));
+    }
+
+    /// 测试 append_based_on_parent_node：没有父节点时调用 append
+    #[test]
+    fn test_append_based_on_parent_node_without_parent() {
+        let builder = DomBuilder::new();
+        let _root = builder.get_document();
+
+        // 创建没有父节点的元素
+        let elem_id =
+            builder
+                .inner
+                .borrow_mut()
+                .nodes
+                .insert(NodeData::new(NodeKind::Element(crate::node::ElementData::new(
+                    QualName::new(None, Namespace::from(""), LocalName::from("div")),
+                    vec![],
+                ))));
+
+        // 调用 append_based_on_parent_node（无父节点 → append）
+        builder.append_based_on_parent_node(
+            &elem_id,
+            &elem_id,
+            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+        );
+
+        let inner = builder.inner.borrow();
+        let elem_data = inner.nodes.get(elem_id).unwrap();
+        assert_eq!(elem_data.children.len(), 1, "文本应该被添加到元素中");
+    }
+
+    /// 测试 set_quirks_mode
+    #[test]
+    fn test_set_quirks_mode() {
+        let builder = DomBuilder::new();
+        builder.set_quirks_mode(QuirksMode::Quirks);
+        assert_eq!(builder.inner.borrow().quirks_mode, QuirksMode::Quirks);
+    }
+
+    /// 测试 get_template_contents：返回目标节点自身
+    #[test]
+    fn test_get_template_contents() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+        let contents = builder.get_template_contents(&root);
+        assert_eq!(contents, root);
+    }
+
+    /// 测试 same_node
+    #[test]
+    fn test_same_node() {
+        let builder = DomBuilder::new();
+        let root = builder.get_document();
+        assert!(builder.same_node(&root, &root));
+
+        let other = builder
+            .inner
+            .borrow_mut()
+            .nodes
+            .insert(NodeData::new(NodeKind::Text(TextData::new("x"))));
+        assert!(!builder.same_node(&root, &other));
+    }
+
+    /// 测试 parse_error（确保不 panic）
+    #[test]
+    fn test_parse_error() {
+        let builder = DomBuilder::new();
+        builder.parse_error(std::borrow::Cow::Borrowed("test error"));
+    }
+
+    /// 测试 DomBuilder::default
+    #[test]
+    fn test_dom_builder_default() {
+        let builder = DomBuilder::default();
+        let root = builder.get_document();
+        assert!(root.is_valid());
+    }
+
+    /// 测试 into_document：验证各种节点类型的转换
+    #[test]
+    fn test_into_document_converts_all_node_types() {
+        let doc = parse_html(
+            r#"<?xml-stylesheet href="style.css"?><!DOCTYPE html><html><body><!-- comment --><div id="test" class="a b">text</div></body></html>"#,
+        );
+        assert!(doc.node_count() > 5);
+        // 验证文档不为空，各类节点已被转换
+        assert!(doc.query_selector(doc.root(), "div").is_some());
+    }
+
+    /// 测试 into_document：空构建器
+    #[test]
+    fn test_into_document_empty_builder() {
+        let builder = DomBuilder::new();
+        let doc = builder.into_document();
+        assert!(doc.root().is_valid());
+        assert!(doc.node_count() >= 1);
+    }
+
+    /// 测试 DOCTYPE 带 public_id 和 system_id
+    #[test]
+    fn test_parse_doctype_with_ids() {
+        let html = r#"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html><body>ok</body></html>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 2);
+    }
+
+    /// 测试复杂的错误恢复：多层未闭合标签
+    #[test]
+    fn test_parse_complex_error_recovery() {
+        let html = "<div><p><span><a href='#'>link</div>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 3, "多层未闭合标签应被自动恢复");
+    }
+
+    /// 测试表格自动修复
+    #[test]
+    fn test_parse_table_auto_fix() {
+        let html = "<table><tr><td>cell1<td>cell2</table>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 3);
+    }
+
+    /// 测试 adoption agency algorithm（嵌套格式化元素）
+    #[test]
+    fn test_parse_adoption_agent() {
+        // 经典的 adoption agency 场景
+        let html = "<b><i></b></i>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 1);
+    }
+
+    /// 测试 template 元素
+    #[test]
+    fn test_parse_template_element() {
+        let html = "<template><div>shadow content</div></template>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0);
+    }
+
+    /// 测试 svg 命名空间元素
+    #[test]
+    fn test_parse_svg_namespace() {
+        let html = r#"<svg width="100" height="100"><rect x="10" y="10" width="80" height="80"/></svg>"#;
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0);
+    }
+
+    /// 测试大量连续文本节点合并
+    #[test]
+    fn test_parse_consecutive_text_merge() {
+        // html5ever 会把连续文本合并成 AppendText 调用
+        let html = "<div>a&b<c>d</div>";
+        let doc = parse_html(html);
+        assert!(doc.node_count() > 0);
     }
 }

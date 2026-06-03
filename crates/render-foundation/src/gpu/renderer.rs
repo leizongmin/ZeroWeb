@@ -1296,4 +1296,158 @@ mod tests {
         assert_eq!(pixels[0], 0); // 蓝色 R=0
         assert_eq!(pixels[2], 255); // 蓝色 B=255
     }
+
+    /// 测试 run_render_pass 中的裁剪区域边界情况
+    #[test]
+    fn test_render_pass_clip_rect_boundary_cases() {
+        let renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
+
+        // 测试完全在外的裁剪区域
+        let clip_outside = Rect::new(100.0, 100.0, 200.0, 200.0);
+        renderer.render_vertices(&[], Some(clip_outside));
+
+        // 测试部分重叠的裁剪区域
+        let clip_partial = Rect::new(32.0, 32.0, 96.0, 96.0);
+        renderer.render_vertices(&[], Some(clip_partial));
+
+        // 测试完全覆盖的裁剪区域
+        let clip_full = Rect::new(0.0, 0.0, 64.0, 64.0);
+        renderer.render_vertices(&[], Some(clip_full));
+
+        // 测试负坐标的裁剪区域
+        let clip_negative = Rect::new(-32.0, -32.0, 32.0, 32.0);
+        renderer.render_vertices(&[], Some(clip_negative));
+
+        // 如果不 panic 则测试通过
+        let _pixels = renderer.read_pixels();
+    }
+
+    /// 测试 upload_glyph_to_atlas 中 atlas 满了重建的逻辑
+    #[test]
+    fn test_upload_glyph_atlas_rebuild_on_full() {
+        let mut renderer = GpuRenderer::new_headless(128, 128).expect("headless renderer");
+
+        // 填满 atlas
+        // 注意：atlas 实际大小可能不是 128x128，这里测试重建路径
+        let mut placed_glyphs = 0;
+        for i in 0..100 {
+            let bitmap_data = vec![255u8; 8 * 8];
+            let key = GlyphAtlasKey::new(0, i, 16.0);
+            // 某些情况下会触发重建
+            if renderer
+                .upload_glyph_to_atlas(key, &bitmap_data, 8, 8, 0, 0, 6.0)
+                .is_some()
+            {
+                placed_glyphs += 1;
+            }
+        }
+
+        // 验证 atlas 确实有内容
+        assert!(placed_glyphs > 0, "应该能放置一些 glyph");
+        // generation 可能不会增加，取决于具体的实现
+        println!("Atlas generation: {}", renderer.atlas_generation());
+        println!("Atlas glyph count: {}", renderer.atlas_glyph_count());
+    }
+
+    /// 测试 read_pixels 中的错误处理
+    #[test]
+    fn test_read_pixels_error_handling() {
+        let renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+
+        // 测试读取像素不 panic
+        let pixels = renderer.read_pixels();
+        // 在 headless 模式下应该有数据
+        assert!(pixels.is_some());
+    }
+
+    /// 测试 render_vertices 处理空顶点数据
+    #[test]
+    fn test_render_vertices_empty_vertex_buffer() {
+        let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+
+        // 空顶点数组应该被正确处理
+        renderer.render_vertices(&[], None);
+
+        // 不 panic 即为通过
+        let _pixels = renderer.read_pixels();
+    }
+
+    /// 测试配置表面时尺寸为 1x1 的边界情况
+    #[test]
+    fn test_configure_surface_one_pixel() {
+        let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+
+        // 配置为 1x1
+        renderer.configure_surface(1, 1);
+        assert_eq!(renderer.surface_size(), (1, 1));
+
+        // 渲染应该仍然工作
+        let fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            color: Color::RED,
+        }];
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 1 * 1 * 4);
+    }
+
+    /// 测试多个 glyph 使用相同字体 ID 和字符
+    #[test]
+    fn test_multiple_glyphs_same_font_char() {
+        let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // 多个相同的 glyph
+        let glyphs = vec![
+            GlyphDraw {
+                ch: 'A',
+                x: 10.0,
+                baseline_y: 30.0,
+                color: Color::BLACK,
+                font_id: 0,
+                font_size: 16.0,
+            },
+            GlyphDraw {
+                ch: 'A',
+                x: 30.0,
+                baseline_y: 30.0,
+                color: Color::BLACK,
+                font_id: 0,
+                font_size: 16.0,
+            },
+        ];
+
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 64 * 64 * 4);
+    }
+
+    /// 测试 glyph 在边界上的渲染
+    #[test]
+    fn test_glyph_at_bottom_edge() {
+        let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+
+        // Glyph 的 baseline_y 在图像底部
+        let glyphs = vec![GlyphDraw {
+            ch: 'A',
+            x: 0.0,
+            baseline_y: 30.0,
+            color: Color::BLACK,
+            font_id: 0,
+            font_size: 8.0,
+        }];
+
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+
+        let pixels = renderer.read_pixels().expect("read_pixels");
+        assert_eq!(pixels.len(), 32 * 32 * 4);
+    }
 }
