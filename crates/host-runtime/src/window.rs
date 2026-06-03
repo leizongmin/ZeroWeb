@@ -417,3 +417,82 @@ pub use winit::window::Window;
 #[cfg(test)]
 #[path = "window_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    // ── WindowConfig builder ────────────────────────────────────────────
+
+    #[test]
+    fn test_window_config_default_values() {
+        let config = WindowConfig::new("Test");
+        assert_eq!(config.title, "Test");
+        assert_eq!(config.width, 800);
+        assert_eq!(config.height, 600);
+        assert!(config.resizable);
+        assert!(config.decorations);
+    }
+
+    #[test]
+    fn test_window_config_with_size() {
+        let config = WindowConfig::new("Test").with_size(1024, 768);
+        assert_eq!(config.width, 1024);
+        assert_eq!(config.height, 768);
+    }
+
+    #[test]
+    fn test_window_config_with_resizable_false() {
+        let config = WindowConfig::new("Test").with_resizable(false);
+        assert!(!config.resizable);
+    }
+
+    #[test]
+    fn test_window_config_with_decorations_false() {
+        let config = WindowConfig::new("Test").with_decorations(false);
+        assert!(!config.decorations);
+    }
+
+    #[test]
+    fn test_window_config_builder_chain() {
+        let config = WindowConfig::new("My App")
+            .with_size(1920, 1080)
+            .with_resizable(false)
+            .with_decorations(false);
+        assert_eq!(config.title, "My App");
+        assert_eq!(config.width, 1920);
+        assert_eq!(config.height, 1080);
+        assert!(!config.resizable);
+        assert!(!config.decorations);
+    }
+
+    #[test]
+    fn test_window_config_clone() {
+        let config = WindowConfig::new("Test").with_size(640, 480);
+        let cloned = config.clone();
+        assert_eq!(cloned.title, config.title);
+        assert_eq!(cloned.width, config.width);
+        assert_eq!(cloned.height, config.height);
+        assert_eq!(cloned.resizable, config.resizable);
+        assert_eq!(cloned.decorations, config.decorations);
+    }
+
+    #[test]
+    fn test_host_runtime_new() {
+        let config = WindowConfig::new("Test");
+        let _runtime = HostRuntime::new(config);
+    }
+
+    #[test]
+    fn test_window_config_empty_title() {
+        let config = WindowConfig::new("");
+        assert_eq!(config.title, "");
+    }
+
+    #[test]
+    fn test_window_config_zero_size() {
+        let config = WindowConfig::new("Test").with_size(0, 0);
+        assert_eq!(config.width, 0);
+        assert_eq!(config.height, 0);
+    }
+}
