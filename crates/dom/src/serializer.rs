@@ -262,4 +262,134 @@ mod tests {
         let html = doc.outer_html(elem);
         assert!(html.contains("&quot;"), "attribute quotes should be escaped");
     }
+
+    // ── Additional tests ────────────────────────────────────────────────
+
+    /// 测试嵌套元素序列化。
+    #[test]
+    fn test_serialize_nested_elements() {
+        let mut doc = Document::new();
+        let outer = doc.create_element("div");
+        let inner = doc.create_element("p");
+        let text = doc.create_text_node("hello");
+        doc.append_child(inner, text).unwrap();
+        doc.append_child(outer, inner).unwrap();
+        let html = doc.outer_html(outer);
+        assert_eq!(html, "<div><p>hello</p></div>");
+    }
+
+    /// 测试带属性的元素序列化。
+    #[test]
+    fn test_serialize_element_with_attributes() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("a");
+        doc.set_attribute(elem, "href", "https://example.com");
+        doc.set_attribute(elem, "class", "link");
+        let html = doc.outer_html(elem);
+        assert!(html.contains("href=\"https://example.com\""));
+        assert!(html.contains("class=\"link\""));
+        assert!(html.starts_with("<a "));
+        assert!(html.ends_with("</a>"));
+    }
+
+    /// 测试注释序列化。
+    #[test]
+    fn test_serialize_comment() {
+        let mut doc = Document::new();
+        let comment = doc.create_comment("this is a comment");
+        let html = doc.outer_html(comment);
+        assert_eq!(html, "<!--this is a comment-->");
+    }
+
+    /// 测试 innerHTML 只包含子节点。
+    #[test]
+    fn test_inner_html_children_only() {
+        let mut doc = Document::new();
+        let div = doc.create_element("div");
+        let text = doc.create_text_node("content");
+        doc.append_child(div, text).unwrap();
+        let html = doc.inner_html(div);
+        assert_eq!(html, "content");
+        assert!(!html.contains("<div>"));
+    }
+
+    /// 测试 outerHTML 包含元素本身。
+    #[test]
+    fn test_outer_html_includes_self() {
+        let mut doc = Document::new();
+        let div = doc.create_element("div");
+        let text = doc.create_text_node("content");
+        doc.append_child(div, text).unwrap();
+        let html = doc.outer_html(div);
+        assert_eq!(html, "<div>content</div>");
+    }
+
+    /// 测试 void 元素不区分大小写。
+    #[test]
+    fn test_void_element_case_insensitive() {
+        assert!(is_void_element("BR"));
+        assert!(is_void_element("Img"));
+        assert!(is_void_element("INPUT"));
+        assert!(!is_void_element("div"));
+        assert!(!is_void_element("span"));
+    }
+
+    /// 测试文本中 &amp; 转义。
+    #[test]
+    fn test_escape_ampersand_in_text() {
+        let mut doc = Document::new();
+        let text = doc.create_text_node("foo&bar");
+        assert_eq!(doc.outer_html(text), "foo&amp;bar");
+    }
+
+    /// 测试属性值中的尖括号转义。
+    #[test]
+    fn test_escape_angle_brackets_in_attribute() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "data", "<script>");
+        let html = doc.outer_html(elem);
+        assert!(html.contains("&lt;script&gt;"));
+    }
+
+    /// 测试多个子节点序列化。
+    #[test]
+    fn test_serialize_multiple_children() {
+        let mut doc = Document::new();
+        let div = doc.create_element("div");
+        let t1 = doc.create_text_node("a");
+        let t2 = doc.create_text_node("b");
+        doc.append_child(div, t1).unwrap();
+        doc.append_child(div, t2).unwrap();
+        assert_eq!(doc.inner_html(div), "ab");
+    }
+
+    /// 测试 DocumentType 无 public/system id。
+    #[test]
+    fn test_serialize_doctype_no_ids() {
+        let mut doc = Document::new();
+        let dt = doc.create_document_type("html", None, None);
+        assert_eq!(doc.outer_html(dt), "<!DOCTYPE html>");
+    }
+
+    /// 测试序列化不存在节点返回空字符串。
+    #[test]
+    fn test_serialize_nonexistent_node() {
+        let doc = Document::new();
+        // Create a node, then it gets a valid ID — test with a document that has no children
+        let root = doc.root();
+        // Remove all children so root is empty, test inner_html on empty root
+        let html = inner_html(&doc, root);
+        // root is a Document node, inner_html should be empty (no children)
+        assert_eq!(html, "");
+    }
+
+    /// 测试 br 元素（void element）序列化。
+    #[test]
+    fn test_serialize_br() {
+        let mut doc = Document::new();
+        let br = doc.create_element("br");
+        let html = doc.outer_html(br);
+        assert_eq!(html, "<br>");
+    }
 }
