@@ -1,5 +1,9 @@
 mod autocomplete;
+mod autocomplete_coverage;
 mod bookmarks;
+mod bookmarks_coverage;
+mod bookmarks_coverage2;
+mod browser_coverage;
 mod browser_shell;
 mod context_menu;
 mod download;
