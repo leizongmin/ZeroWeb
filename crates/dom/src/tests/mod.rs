@@ -18,4 +18,5 @@ mod tests_4;
 mod tests_5;
 mod tests_6_document;
 mod tests_7_parser;
+mod tests_8_coverage;
 mod tests_range;
