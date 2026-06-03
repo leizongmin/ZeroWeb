@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-03
-**执行状态**: 16/16 crate 已实现，7441 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（93.74% 行覆盖率，目标 95%+）
+**执行状态**: 16/16 crate 已实现，7562 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（93.86% 行覆盖率，93.36% 区域覆盖率，目标 95%+）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 7441 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 7562 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,7 +103,44 @@
 
 ## 最近完成的改进
 
-### -63. 测试覆盖率提升第七轮（本轮，7441 测试）
+### -64. 测试修复 + 覆盖率提升第八轮（本轮，7562 测试）
+
+修复上一轮遗留的编译错误、测试失败和无限循环，新增覆盖率测试：
+
+| 修复项 | 说明 |
+|--------|------|
+| css-parser 无限循环 | `consume_declaration_block` 遇到未匹配 token 时卡死，添加 fallback advance |
+| css-parser 22 个测试失败 | agent 编写的测试断言与实际 tokenizer/parser 行为不符，全部重写 |
+| webview 3 个测试失败 | 错误的 API 行为假设（url()、DOM polyfill、回调移除） |
+| render-foundation 2 个竞态测试 | `from_env_non_utf8` 和 `from_env_preserves_unset` 并行执行时环境变量竞态 |
+| render-foundation SIGSEGV | GPU 测试并行执行时内存冲突，coverage 脚本改用 `--test-threads=1` |
+
+| 新增测试 | 模块 | 新增测试 |
+|----------|------|----------|
+| css-parser/types_coverage | parse_length/calc/单位解析边界 | +21 |
+| webview/webview_coverage_final | fetch_url/events/SW/config/resize | +18 |
+| storage/tests_edge | IDB multiEntry/key 比较/排序 | +4 |
+
+覆盖率提升（llvm-cov）：
+- 总体行覆盖率: 93.74% → 93.86%（+0.12%）
+- 总体区域覆盖率: 93.25% → 93.36%（+0.11%）
+- webview/webview.rs: 82.72% → 84.94%（+2.22%）
+
+主要剩余覆盖率缺口（无法通过单元测试覆盖）：
+- apps/browser/ (16-60%) — GUI 应用入口，需要 GPU 窗口
+- host-runtime/window.rs (27.59%) — winit 窗口创建，需要硬件
+- render-foundation/gpu/renderer.rs (86.12%) — GPU 渲染路径，需要 GPU
+- apps/webview-demo/ (0%) — GUI 演示应用
+
+可测试的剩余缺口：
+- css-parser parser.rs (85.45%)、tokenizer.rs (85.71%)、values/types.rs (83.47%)
+- style-system matcher (89.77%)、shorthand (94.98%)
+- storage/indexed_db/types.rs (88.65%)
+- webview/webview.rs (84.94%)
+
+Total: 7441 → 7562 (+121 tests)
+
+### -63. 测试覆盖率提升第七轮（前轮，7441 测试）
 
 多 agent 并行提升核心 crate 的单元测试覆盖率，修复 clippy 警告，新增 131 个测试：
 
