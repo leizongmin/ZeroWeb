@@ -2,7 +2,7 @@
 
 use super::super::types::*;
 use crate::context::*;
-use crate::path::Path2D;
+use crate::path::{Path2D, PathCommand};
 use zero_render_foundation::color::Color;
 
 #[test]
