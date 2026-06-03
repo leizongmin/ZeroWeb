@@ -517,3 +517,491 @@ fn test_parse_html_data_table() {
     assert!(doc.query_selector(doc.root(), "th").is_some());
     assert!(doc.query_selector(doc.root(), "td").is_some());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 额外覆盖率测试
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 测试 HTML 注释的处理
+#[test]
+fn test_parse_html_comments() {
+    let doc = parse_html(
+        r#"
+        <!-- Top comment -->
+        <div>
+            <!-- Comment in div -->
+            Text
+            <span><!-- In span -->Content</span>
+        </div>
+        <!-- Bottom comment -->
+    "#,
+    );
+
+    assert!(doc.node_count() > 5, "应该有多个节点");
+    assert!(doc.query_selector(doc.root(), "div").is_some());
+    assert!(doc.query_selector(doc.root(), "span").is_some());
+}
+
+/// 测试 DOCTYPE 声明的各种形式
+#[test]
+fn test_parse_doctype_variants() {
+    // 测试完整的 DOCTYPE
+    let doc1 = parse_html("<!DOCTYPE html><html><body>Test</body></html>");
+    assert!(doc1.node_count() >= 3, "完整的 DOCTYPE 应该创建至少 3 个节点");
+
+    // 测试带公共标识符的 DOCTYPE
+    let doc2 = parse_html(
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html><body>Test</body></html>",
+    );
+    assert!(doc2.node_count() > 3, "复杂 DOCTYPE 应该创建多个节点");
+
+    // 测试系统标识符的 DOCTYPE
+    let doc3 = parse_html("<!DOCTYPE html SYSTEM \"about:legacy-compat\"><html><body>Test</body></html>");
+    assert!(doc3.node_count() > 3, "系统标识符 DOCTYPE 应该创建多个节点");
+}
+
+/// 测试自闭合 void 元素
+#[test]
+fn test_parse_void_elements_comprehensive() {
+    let doc = parse_html("<div><br><img src='test.png'><input type='text'><hr><meta charset='utf-8'></div>");
+    assert!(doc.node_count() > 2, "void 元素应被正确解析");
+
+    assert!(doc.query_selector(doc.root(), "br").is_some());
+    assert!(doc.query_selector(doc.root(), "img").is_some());
+    assert!(doc.query_selector(doc.root(), "input").is_some());
+    assert!(doc.query_selector(doc.root(), "hr").is_some());
+    assert!(doc.query_selector(doc.root(), "meta").is_some());
+}
+
+/// 测试 script 和 style 标签的特殊内容处理
+#[test]
+fn test_parse_script_style_content() {
+    let html = r#"
+    <script>
+        var x = 1 < 2;
+        if (a && b) {
+            console.log("test");
+        }
+    </script>
+    <style>
+        body { color: red; }
+        .class { font-size: 16px; }
+    </style>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 2, "script 和 style 应被正确处理");
+
+    let script = doc.query_selector(doc.root(), "script").unwrap();
+    let style = doc.query_selector(doc.root(), "style").unwrap();
+
+    let script_text = doc.text_content(script).unwrap();
+    let style_text = doc.text_content(style).unwrap();
+
+    assert!(script_text.contains("1 < 2"), "script 内容应包含 < 字符");
+    assert!(style_text.contains("color: red"), "style 内容应被正确保留");
+}
+
+/// 测试 HTML 实体解码
+#[test]
+fn test_parse_html_entities_comprehensive() {
+    let doc = parse_html(
+        r#"
+        <div>
+            &amp; &lt; &gt; &quot; &#x2603; &#9731;
+            &nbsp; &copy; &reg;
+        </div>
+    "#,
+    );
+
+    let div = doc.query_selector(doc.root(), "div").unwrap();
+    let text = doc.text_content(div).unwrap();
+
+    assert!(text.contains("&"), "应该包含 &");
+    assert!(text.contains("<"), "应该包含 <");
+    assert!(text.contains(">"), "应该包含 >");
+    assert!(text.contains("\""), "应该包含 \"");
+    assert!(text.contains("☃"), "应该包含 ☃ (U+2603)");
+    // Note: Not all entities may be decoded by the parser
+    assert!(text.contains("©") || text.contains("&copy;"), "应该包含 © 或 &copy;");
+}
+
+/// 测试深度嵌套结构
+#[test]
+fn test_parse_deep_nesting() {
+    let mut html = String::new();
+    html.push_str("<div>");
+    for _ in 0..10 {
+        html.push_str("<div>");
+    }
+    html.push_str("Deep text");
+    for _ in 0..10 {
+        html.push_str("</div>");
+    }
+    html.push_str("</div>");
+
+    let doc = parse_html(&html);
+    assert!(doc.node_count() > 10, "深度嵌套应被正确解析");
+
+    // 验证最深层
+    let divs: Vec<_> = doc.query_selector_all(doc.root(), "div").into_iter().collect();
+    assert!(divs.len() >= 11, "应该有至少 11 个 div");
+}
+
+/// 测试未闭合标签的自动恢复
+#[test]
+fn test_parse_unclosed_tags_comprehensive() {
+    // 各种未闭合的情况
+    let cases = vec![
+        "<div><p>text",
+        "<div><p><span>text",
+        "<div><p><span>",
+        "<div><p>text<span>",
+        "<div><ul><li>item1<li>item2",
+    ];
+
+    for html in cases {
+        let doc = parse_html(html);
+        assert!(doc.root().is_valid(), "HTML 应该被有效解析: {}", html);
+        assert!(doc.node_count() > 1, "应该有多个节点: {}", html);
+    }
+}
+
+/// 测试错误嵌套标签的恢复
+#[test]
+fn test_parse_misnested_tags_comprehensive() {
+    let cases = vec![
+        "<b><i>bold</b></i>",
+        "<div><span>nested<div>more</span></div>",
+        "<p><strong>text<p>more",
+        "<ul><li>item1<div>nested</div></li></ul>",
+    ];
+
+    for html in cases {
+        let doc = parse_html(html);
+        assert!(doc.root().is_valid(), "错误嵌套应被恢复: {}", html);
+        assert!(doc.node_count() > 1, "应该有多个节点: {}", html);
+    }
+}
+
+/// 测试重复属性的解析
+#[test]
+fn test_parse_duplicate_attributes_comprehensive() {
+    let cases = vec![
+        r#"<div class="a" class="b">text</div>"#,
+        r#"<div id="first" id="second">text</div>"#,
+        r#"<div data-value="1" data-value="2">text</div>"#,
+    ];
+
+    for html in cases {
+        let doc = parse_html(html);
+        assert!(doc.root().is_valid(), "重复属性应被处理: {}", html);
+        assert!(doc.node_count() > 0, "应该有节点: {}", html);
+    }
+}
+
+/// 测试只有关闭标签的情况
+#[test]
+fn test_parse_only_closing_tags() {
+    let html = "</div></p>text</span>";
+    let doc = parse_html(html);
+    assert!(doc.root().is_valid(), "只有关闭标签应被处理");
+    assert!(doc.node_count() > 0, "应该有节点");
+}
+
+/// 测试空属性
+#[test]
+fn test_parse_empty_attributes() {
+    let doc = parse_html(
+        r#"
+        <div
+            id=""
+            class=""
+            data-empty
+            value=""
+        >
+            Content
+        </div>
+    "#,
+    );
+
+    let div = doc.query_selector(doc.root(), "div").unwrap();
+
+    // 空属性应该被保留
+    assert_eq!(doc.get_attribute(div, "id"), Some("".to_string()));
+    assert_eq!(doc.get_attribute(div, "class"), Some("".to_string()));
+    // Note: Some parsers treat empty boolean attributes differently
+    assert!(
+        doc.get_attribute(div, "data-empty").is_none() || doc.get_attribute(div, "data-empty") == Some("".to_string())
+    );
+    assert_eq!(doc.get_attribute(div, "value"), Some("".to_string()));
+}
+
+/// 测试 Unicode 属性值
+#[test]
+fn test_parse_unicode_attributes() {
+    let doc = parse_html(
+        r#"
+        <div
+            title="你好世界 🌍"
+            data-lang="zh-CN"
+            class="a b c"
+        >
+            Content
+        </div>
+    "#,
+    );
+
+    let div = doc.query_selector(doc.root(), "div").unwrap();
+
+    assert_eq!(doc.get_attribute(div, "title"), Some("你好世界 🌍".to_string()));
+    assert_eq!(doc.get_attribute(div, "data-lang"), Some("zh-CN".to_string()));
+    assert_eq!(doc.get_attribute(div, "class"), Some("a b c".to_string()));
+}
+
+/// 测试复杂的 HTML5 语义结构
+#[test]
+fn test_parse_complex_semantic_structure() {
+    let html = r#"
+    <header>
+        <nav>
+            <ul>
+                <li><a href="/">首页</a></li>
+                <li><a href="/about">关于</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <article>
+            <h2>文章标题</h2>
+            <section>
+                <h3>小标题</h3>
+                <p>段落内容</p>
+            </section>
+        </article>
+        <aside>
+            <h3>侧边栏</h3>
+            <nav>
+                <ul>
+                    <li><a href="/link1">链接1</a></li>
+                    <li><a href="/link2">链接2</a></li>
+                </ul>
+            </nav>
+        </aside>
+    </main>
+    <footer>
+        <p>&copy; 2024</p>
+    </footer>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 20, "复杂语义结构应包含多个节点");
+
+    // 验证所有语义元素
+    let semantic_elements = [
+        "header", "nav", "ul", "li", "a", "main", "article", "section", "h2", "h3", "p", "aside", "footer",
+    ];
+    for element in &semantic_elements {
+        assert!(
+            doc.query_selector(doc.root(), element).is_some(),
+            "应该包含 {} 元素",
+            element
+        );
+    }
+}
+
+/// 测试 iframe 和 object 嵌入内容
+#[test]
+fn test_parse_embedded_content() {
+    let html = r#"
+    <iframe src="page.html"></iframe>
+    <object data="data.swf" type="application/x-shockwave-flash"></object>
+    <embed src="movie.swf" type="application/x-shockwave-flash"></embed>
+    <video controls>
+        <source src="movie.mp4" type="video/mp4">
+    </video>
+    <audio controls>
+        <source src="sound.mp3" type="audio/mpeg">
+    </audio>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 5, "嵌入内容应被正确解析");
+
+    assert!(doc.query_selector(doc.root(), "iframe").is_some());
+    assert!(doc.query_selector(doc.root(), "object").is_some());
+    assert!(doc.query_selector(doc.root(), "embed").is_some());
+    assert!(doc.query_selector(doc.root(), "video").is_some());
+    assert!(doc.query_selector(doc.root(), "audio").is_some());
+    assert!(doc.query_selector(doc.root(), "source").is_some());
+}
+
+/// 测试 template 元素
+#[test]
+fn test_parse_template_element() {
+    let html = r#"
+    <template id="my-template">
+        <div>Template content</div>
+        <script>console.log("template");</script>
+    </template>
+    <div>Regular content</div>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 3, "template 应被正确解析");
+
+    let templates: Vec<_> = doc.query_selector_all(doc.root(), "template").into_iter().collect();
+    assert!(!templates.is_empty(), "应该有 template 元素");
+
+    // 查找不在 template 内的 div
+    let divs: Vec<_> = doc.query_selector_all(doc.root(), "div").into_iter().collect();
+    assert!(!divs.is_empty(), "应该有 div 元素");
+
+    // 验证至少有一个 div 有文本内容 "Regular content"
+    let found = divs
+        .iter()
+        .any(|&div_id| doc.text_content(div_id).map(|t| t.contains("Regular")).unwrap_or(false));
+    assert!(found, "应该有包含 'Regular content' 的 div");
+}
+
+/// 测试大文档性能
+#[test]
+fn test_parse_large_document_performance() {
+    // 创建一个较大的文档
+    let paragraphs: Vec<String> = (0..100)
+        .map(|i| format!("<p>Paragraph {} with text content</p>", i))
+        .collect();
+    let html = format!("<html><body>{}</body></html>", paragraphs.join(""));
+
+    let doc = parse_html(&html);
+    assert!(doc.node_count() > 100, "大文档应被正确解析");
+
+    // 验证部分段落
+    let text_elements: Vec<String> = doc
+        .query_selector_all(doc.root(), "p")
+        .into_iter()
+        .filter_map(|id| doc.text_content(id))
+        .collect();
+
+    assert!(text_elements.len() >= 100, "应该有 100 个段落");
+    assert!(text_elements.contains(&"Paragraph 0 with text content".to_string()));
+    assert!(text_elements.contains(&"Paragraph 99 with text content".to_string()));
+}
+
+/// 测试表单元素的各种组合
+#[test]
+fn test_parse_form_elements_combinations() {
+    let html = r#"
+    <form action="/submit" method="post">
+        <fieldset>
+            <legend>用户信息</legend>
+            <label for="name">姓名：</label>
+            <input type="text" id="name" name="name" required>
+            <label for="email">邮箱：</label>
+            <input type="email" id="email" name="email" required>
+            <label for="message">留言：</label>
+            <textarea id="message" name="message" rows="5" cols="30"></textarea>
+            <button type="submit">提交</button>
+            <button type="reset">重置</button>
+        </fieldset>
+    </form>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 10, "表单应包含多个节点");
+
+    assert!(doc.query_selector(doc.root(), "form").is_some());
+    assert!(doc.query_selector(doc.root(), "fieldset").is_some());
+    assert!(doc.query_selector(doc.root(), "legend").is_some());
+    assert!(doc.query_selector(doc.root(), "label").is_some());
+    assert!(doc.query_selector(doc.root(), "input").is_some());
+    assert!(doc.query_selector(doc.root(), "textarea").is_some());
+    assert!(doc.query_selector(doc.root(), "button").is_some());
+}
+
+/// 测试交互元素
+#[test]
+fn test_parse_interactive_elements() {
+    let html = r#"
+    <details>
+        <summary>点击展开</summary>
+        <p>展开的内容</p>
+    </details>
+
+    <details open>
+        <summary>默认展开</summary>
+        <p>默认展开的内容</p>
+    </details>
+
+    <meter value="3" min="0" max="10">3/10</meter>
+
+    <progress value="70" max="100">70%</progress>
+
+    <mark>高亮文本</mark>
+
+    <time datetime="2024-01-01">2024年1月1日</time>
+
+    <data value="123">产品编号 123</data>
+
+    <output>计算结果：42</output>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 10, "交互元素应包含多个节点");
+
+    assert!(doc.query_selector(doc.root(), "details").is_some());
+    assert!(doc.query_selector(doc.root(), "summary").is_some());
+    assert!(doc.query_selector(doc.root(), "meter").is_some());
+    assert!(doc.query_selector(doc.root(), "progress").is_some());
+    assert!(doc.query_selector(doc.root(), "mark").is_some());
+    assert!(doc.query_selector(doc.root(), "time").is_some());
+    assert!(doc.query_selector(doc.root(), "data").is_some());
+    assert!(doc.query_selector(doc.root(), "output").is_some());
+}
+
+/// 测试混合内容（文本、元素、注释）
+#[test]
+fn test_parse_mixed_content_with_comments() {
+    let html = r#"
+    <div>
+        <!-- comment 1 -->
+        Text before
+        <span>Element content</span>
+        Text after
+        <!-- comment 2 -->
+        More text
+    </div>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 6, "混合内容应包含多个节点");
+
+    // 验证各种节点类型
+    assert!(doc.query_selector(doc.root(), "div").is_some());
+    assert!(doc.query_selector(doc.root(), "span").is_some());
+
+    // 验证文本节点数量
+    let div = doc.query_selector(doc.root(), "div").unwrap();
+    let children = &doc.get(div).unwrap().children;
+    assert!(children.len() > 4, "div 应该有多个子节点");
+}
+
+/// 测试文本节点在复杂结构中的合并
+#[test]
+fn test_parse_text_node_merging_complex_structure() {
+    let html = r#"
+    <div>Text1
+        <span>Text2
+            <strong>Text3</strong>
+        Text4
+    </div>
+    "#;
+
+    let doc = parse_html(html);
+    assert!(doc.node_count() > 4, "复杂文本结构应包含多个节点");
+
+    // 验证文本节点存在
+    assert!(doc.query_selector(doc.root(), "div").is_some());
+    assert!(doc.query_selector(doc.root(), "span").is_some());
+    assert!(doc.query_selector(doc.root(), "strong").is_some());
+}

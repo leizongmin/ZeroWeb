@@ -190,4 +190,106 @@ mod tests {
             assert_eq!(parsed, expected);
         }
     }
+
+    #[test]
+    fn render_mode_default() {
+        let mode = RenderMode::default();
+        assert_eq!(mode, RenderMode::Auto);
+    }
+
+    #[test]
+    fn render_mode_display_format() {
+        assert_eq!(format!("{}", RenderMode::Auto), "auto");
+        assert_eq!(format!("{}", RenderMode::Gpu), "gpu");
+        assert_eq!(format!("{}", RenderMode::Cpu), "cpu");
+    }
+
+    #[test]
+    fn render_mode_debug_format() {
+        assert_eq!(format!("{:?}", RenderMode::Auto), "Auto");
+        assert_eq!(format!("{:?}", RenderMode::Gpu), "Gpu");
+        assert_eq!(format!("{:?}", RenderMode::Cpu), "Cpu");
+    }
+
+    #[test]
+    fn render_mode_clone() {
+        let mode = RenderMode::Gpu;
+        let cloned = mode.clone();
+        assert_eq!(mode, cloned);
+    }
+
+    #[test]
+    fn render_mode_copy() {
+        fn test_copy(m: RenderMode) -> RenderMode {
+            m
+        }
+
+        let mode = RenderMode::Cpu;
+        let copied = test_copy(mode);
+        assert_eq!(mode, copied);
+    }
+
+    #[test]
+    fn parse_whitespace_only() {
+        // 空字符串
+        let result: Result<RenderMode, _> = "".parse();
+        assert!(result.is_err());
+
+        // 只有空格
+        let result: Result<RenderMode, _> = "   ".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_with_newlines() {
+        let test_cases = [
+            ("auto\n", RenderMode::Auto),
+            ("gpu\r\n", RenderMode::Gpu),
+            ("cpu \t ", RenderMode::Cpu),
+        ];
+
+        for (input, expected) in test_cases {
+            let parsed: RenderMode = input.parse().unwrap();
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn from_env_preserves_unset() {
+        // 确保环境变量未设置
+        let var = std::env::var("ZEROWEB_RENDERER");
+        if let Ok(_) = var {
+            unsafe { std::env::remove_var("ZEROWEB_RENDERER") };
+        }
+
+        // 多次调用应该返回相同结果
+        assert_eq!(RenderMode::from_env(), Ok(None));
+        assert_eq!(RenderMode::from_env(), Ok(None));
+    }
+
+    #[test]
+    fn render_mode_values_string() {
+        let values = RenderMode::values();
+        // 检查包含所有有效值
+        assert!(values.contains("auto"));
+        assert!(values.contains("gpu"));
+        assert!(values.contains("cpu"));
+        // 检查分隔符
+        assert!(values.contains('|'));
+        // 检查没有无效值
+        assert!(!values.contains("metal"));
+        assert!(!values.contains("invalid"));
+    }
+
+    #[test]
+    fn render_mode_string_round_trip() {
+        // 测试从字符串解析再格式化是否保持一致
+        let modes = [RenderMode::Auto, RenderMode::Gpu, RenderMode::Cpu];
+
+        for mode in modes {
+            let s = mode.to_string();
+            let parsed: RenderMode = s.parse().unwrap();
+            assert_eq!(mode, parsed);
+        }
+    }
 }

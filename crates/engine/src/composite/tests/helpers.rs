@@ -1,9 +1,7 @@
 //! 共享测试辅助函数。
 
 use super::super::*;
-use zero_css_parser::values::PositionValue;
 use zero_layout_engine::types::OverflowClip;
-use zero_style_system::ComputedStyle;
 
 pub fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, w: f32, h: f32, is_fixed: bool) -> LayoutBox {
     LayoutBox {

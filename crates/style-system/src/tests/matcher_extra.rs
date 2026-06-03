@@ -4,13 +4,12 @@
 
 use super::super::*;
 use super::helpers::*;
-use crate::ComputedStyle;
 
 #[test]
 /// 连续组合器检测 (如 >>>)
 fn test_invalid_selector_consecutive_combinators() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
-    let mut sys = StyleSystem::new();
+    let (_doc, _html, _body, _div, _p) = make_test_dom();
+    let _sys = StyleSystem::new();
 
     // 测试连续组合器检测功能
     // 通过创建包含连续组合器的 CSS 字符串来测试
@@ -25,8 +24,8 @@ fn test_invalid_selector_consecutive_combinators() {
 #[test]
 /// 选择器以组合器开头（无效）
 fn test_selector_starts_with_combinator() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
-    let mut sys = StyleSystem::new();
+    let (_doc, _html, _body, _div, _p) = make_test_dom();
+    let _sys = StyleSystem::new();
 
     // 测试以组合器开头的选择器
     let css = "> div { color: red; }";
