@@ -72,3 +72,162 @@ pub fn named_color_to_render(name: &str) -> Color {
         _ => Color::rgb(0, 0, 0),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_css_parser::values::ColorValue;
+
+    // ── color_value_to_render ───────────────────────────────────────────
+
+    #[test]
+    fn test_rgba_color() {
+        let c = color_value_to_render(&ColorValue::Rgba(100, 200, 50, 255));
+        assert_eq!(c.r, 100);
+        assert_eq!(c.g, 200);
+        assert_eq!(c.b, 50);
+        assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    fn test_transparent_color() {
+        let c = color_value_to_render(&ColorValue::Transparent);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 0);
+    }
+
+    #[test]
+    fn test_current_color() {
+        let c = color_value_to_render(&ColorValue::CurrentColor);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    fn test_hsla_color() {
+        // hsla(0, 100, 50, 1.0) = red
+        let c = color_value_to_render(&ColorValue::Hsla(0.0, 100.0, 50.0, 1.0));
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    fn test_named_color_red() {
+        let c = color_value_to_render(&ColorValue::Named("red".to_string()));
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+    }
+
+    // ── hsla_to_rgba ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hsla_red() {
+        let c = hsla_to_rgba(0.0, 100.0, 50.0, 1.0);
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+        assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    fn test_hsla_green() {
+        let c = hsla_to_rgba(120.0, 100.0, 50.0, 1.0);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 255);
+        assert_eq!(c.b, 0);
+    }
+
+    #[test]
+    fn test_hsla_blue() {
+        let c = hsla_to_rgba(240.0, 100.0, 50.0, 1.0);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 255);
+    }
+
+    #[test]
+    fn test_hsla_zero_saturation_is_gray() {
+        let c = hsla_to_rgba(0.0, 0.0, 50.0, 1.0);
+        assert_eq!(c.r, 128);
+        assert_eq!(c.g, 128);
+        assert_eq!(c.b, 128);
+    }
+
+    #[test]
+    fn test_hsla_alpha() {
+        let c = hsla_to_rgba(0.0, 100.0, 50.0, 0.5);
+        assert_eq!(c.a, 128); // 0.5 * 255 ≈ 128
+    }
+
+    #[test]
+    fn test_hsla_black() {
+        let c = hsla_to_rgba(0.0, 0.0, 0.0, 1.0);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+    }
+
+    #[test]
+    fn test_hsla_white() {
+        let c = hsla_to_rgba(0.0, 0.0, 100.0, 1.0);
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 255);
+        assert_eq!(c.b, 255);
+    }
+
+    // ── named_color_to_render ───────────────────────────────────────────
+
+    #[test]
+    fn test_named_black() {
+        let c = named_color_to_render("black");
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+    }
+
+    #[test]
+    fn test_named_white() {
+        let c = named_color_to_render("white");
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 255);
+        assert_eq!(c.b, 255);
+    }
+
+    #[test]
+    fn test_named_case_insensitive() {
+        let c = named_color_to_render("RED");
+        assert_eq!(c.r, 255);
+    }
+
+    #[test]
+    fn test_named_cyan_aqua_alias() {
+        let c1 = named_color_to_render("cyan");
+        let c2 = named_color_to_render("aqua");
+        assert_eq!(c1.r, c2.r);
+        assert_eq!(c1.g, c2.g);
+        assert_eq!(c1.b, c2.b);
+    }
+
+    #[test]
+    fn test_named_unknown_returns_black() {
+        let c = named_color_to_render("nonexistentcolor");
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 0);
+    }
+
+    #[test]
+    fn test_named_orange() {
+        let c = named_color_to_render("orange");
+        assert_eq!(c.r, 255);
+        assert_eq!(c.g, 165);
+        assert_eq!(c.b, 0);
+    }
+}
