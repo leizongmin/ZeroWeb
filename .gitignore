@@ -48,3 +48,9 @@ lcov.info
 
 # Local rusty_v8 cache entrypoint populated by .cargo/config.toml.
 .cargo/rusty_v8/
+
+# Coverage report artifacts
+coverage.html/
+
+# Coverage report
+coverage_report/
