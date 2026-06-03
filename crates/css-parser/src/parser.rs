@@ -718,11 +718,8 @@ impl<'a> Parser<'a> {
             if let Some(decl) = self.consume_declaration() {
                 declarations.push(decl);
             }
-
-            // 消耗分号
-            if matches!(self.peek(), Token::Semicolon) {
-                self.advance();
-            }
+            // 消耗当前 token（分号或无法识别的 token），避免无限循环
+            self.advance();
         }
 
         declarations
