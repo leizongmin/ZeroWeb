@@ -673,3 +673,347 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── hwb_to_rgba ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hwb_red() {
+        // hwb(0, 0, 0) = pure red
+        let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 0.0, 1.0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 0);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn test_hwb_green() {
+        // hwb(120, 0, 0) = pure green
+        let (r, g, b, _a) = hwb_to_rgba(120.0, 0.0, 0.0, 1.0);
+        assert_eq!(r, 0);
+        assert_eq!(g, 255);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn test_hwb_blue() {
+        // hwb(240, 0, 0) = pure blue
+        let (r, g, b, _a) = hwb_to_rgba(240.0, 0.0, 0.0, 1.0);
+        assert_eq!(r, 0);
+        assert_eq!(g, 0);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn test_hwb_white() {
+        // hwb(0, 1, 0) = pure white
+        let (r, g, b, _a) = hwb_to_rgba(0.0, 1.0, 0.0, 1.0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn test_hwb_black() {
+        // hwb(0, 0, 1) = pure black
+        let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 1.0, 1.0);
+        assert_eq!(r, 0);
+        assert_eq!(g, 0);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn test_hwb_alpha() {
+        let (_r, _g, _b, a) = hwb_to_rgba(0.0, 0.0, 0.0, 0.5);
+        assert_eq!(a, 128);
+    }
+
+    #[test]
+    fn test_hwb_w_plus_b_exceeds_1() {
+        // w+b > 1 should be scaled down
+        let (r, g, b, _a) = hwb_to_rgba(0.0, 0.8, 0.8, 1.0);
+        // After scaling: w=0.5, b=0.5, factor=0
+        // result = pure_color * 0 + 0.5 = (128, 128, 128) for all sectors
+        assert_eq!(r, g); // gray
+        assert_eq!(g, b);
+    }
+
+    #[test]
+    fn test_hwb_yellow() {
+        // hwb(60, 0, 0) = yellow
+        let (r, g, b, _a) = hwb_to_rgba(60.0, 0.0, 0.0, 1.0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 0);
+    }
+
+    // ── parse_display ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_display_all() {
+        assert_eq!(parse_display("block"), Some(DisplayValue::Block));
+        assert_eq!(parse_display("inline"), Some(DisplayValue::Inline));
+        assert_eq!(parse_display("inline-block"), Some(DisplayValue::InlineBlock));
+        assert_eq!(parse_display("flex"), Some(DisplayValue::Flex));
+        assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
+        assert_eq!(parse_display("grid"), Some(DisplayValue::Grid));
+        assert_eq!(parse_display("inline-grid"), Some(DisplayValue::InlineGrid));
+        assert_eq!(parse_display("none"), Some(DisplayValue::None));
+        assert_eq!(parse_display("contents"), Some(DisplayValue::Contents));
+        assert_eq!(parse_display("flow"), Some(DisplayValue::Flow));
+        assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
+        assert_eq!(parse_display("list-item"), Some(DisplayValue::ListItem));
+        assert_eq!(parse_display("unknown"), None);
+    }
+
+    // ── parse_position ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_position_all() {
+        assert_eq!(parse_position("static"), Some(PositionValue::Static));
+        assert_eq!(parse_position("relative"), Some(PositionValue::Relative));
+        assert_eq!(parse_position("absolute"), Some(PositionValue::Absolute));
+        assert_eq!(parse_position("fixed"), Some(PositionValue::Fixed));
+        assert_eq!(parse_position("sticky"), Some(PositionValue::Sticky));
+        assert_eq!(parse_position("other"), None);
+    }
+
+    // ── parse_overflow ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_overflow_all() {
+        assert_eq!(parse_overflow("visible"), Some(OverflowValue::Visible));
+        assert_eq!(parse_overflow("hidden"), Some(OverflowValue::Hidden));
+        assert_eq!(parse_overflow("scroll"), Some(OverflowValue::Scroll));
+        assert_eq!(parse_overflow("auto"), Some(OverflowValue::Auto));
+        assert_eq!(parse_overflow("clip"), Some(OverflowValue::Clip));
+        assert_eq!(parse_overflow("inherit"), None);
+    }
+
+    // ── parse_float / parse_clear ───────────────────────────────────────
+
+    #[test]
+    fn test_parse_float_all() {
+        assert_eq!(parse_float("none"), Some(FloatValue::None));
+        assert_eq!(parse_float("left"), Some(FloatValue::Left));
+        assert_eq!(parse_float("right"), Some(FloatValue::Right));
+        assert_eq!(parse_float("inline-start"), Some(FloatValue::InlineStart));
+        assert_eq!(parse_float("inline-end"), Some(FloatValue::InlineEnd));
+    }
+
+    #[test]
+    fn test_parse_float_case_insensitive() {
+        assert_eq!(parse_float("LEFT"), Some(FloatValue::Left));
+        assert_eq!(parse_float("Right"), Some(FloatValue::Right));
+    }
+
+    #[test]
+    fn test_parse_clear_all() {
+        assert_eq!(parse_clear("none"), Some(ClearValue::None));
+        assert_eq!(parse_clear("left"), Some(ClearValue::Left));
+        assert_eq!(parse_clear("right"), Some(ClearValue::Right));
+        assert_eq!(parse_clear("both"), Some(ClearValue::Both));
+        assert_eq!(parse_clear("inline-start"), Some(ClearValue::InlineStart));
+        assert_eq!(parse_clear("inline-end"), Some(ClearValue::InlineEnd));
+    }
+
+    // ── parse_flex_direction / parse_flex_wrap ──────────────────────────
+
+    #[test]
+    fn test_parse_flex_direction_all() {
+        assert_eq!(parse_flex_direction("row"), Some(FlexDirectionValue::Row));
+        assert_eq!(
+            parse_flex_direction("row-reverse"),
+            Some(FlexDirectionValue::RowReverse)
+        );
+        assert_eq!(parse_flex_direction("column"), Some(FlexDirectionValue::Column));
+        assert_eq!(
+            parse_flex_direction("column-reverse"),
+            Some(FlexDirectionValue::ColumnReverse)
+        );
+    }
+
+    #[test]
+    fn test_parse_flex_wrap_all() {
+        assert_eq!(parse_flex_wrap("nowrap"), Some(FlexWrapValue::Nowrap));
+        assert_eq!(parse_flex_wrap("wrap"), Some(FlexWrapValue::Wrap));
+        assert_eq!(parse_flex_wrap("wrap-reverse"), Some(FlexWrapValue::WrapReverse));
+    }
+
+    // ── parse_alignment ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_alignment_all() {
+        assert_eq!(parse_alignment("flex-start"), Some(AlignmentValue::FlexStart));
+        assert_eq!(parse_alignment("flex-end"), Some(AlignmentValue::FlexEnd));
+        assert_eq!(parse_alignment("center"), Some(AlignmentValue::Center));
+        assert_eq!(parse_alignment("space-between"), Some(AlignmentValue::SpaceBetween));
+        assert_eq!(parse_alignment("space-around"), Some(AlignmentValue::SpaceAround));
+        assert_eq!(parse_alignment("space-evenly"), Some(AlignmentValue::SpaceEvenly));
+        assert_eq!(parse_alignment("stretch"), Some(AlignmentValue::Stretch));
+        assert_eq!(parse_alignment("start"), Some(AlignmentValue::Start));
+        assert_eq!(parse_alignment("end"), Some(AlignmentValue::End));
+        assert_eq!(parse_alignment("baseline"), Some(AlignmentValue::Baseline));
+        assert_eq!(parse_alignment("invalid"), None);
+    }
+
+    // ── parse_box_sizing / parse_visibility ─────────────────────────────
+
+    #[test]
+    fn test_parse_box_sizing() {
+        assert_eq!(parse_box_sizing("content-box"), Some(BoxSizingValue::ContentBox));
+        assert_eq!(parse_box_sizing("border-box"), Some(BoxSizingValue::BorderBox));
+        assert_eq!(parse_box_sizing("auto"), None);
+    }
+
+    #[test]
+    fn test_parse_visibility() {
+        assert_eq!(parse_visibility("visible"), Some(VisibilityValue::Visible));
+        assert_eq!(parse_visibility("hidden"), Some(VisibilityValue::Hidden));
+        assert_eq!(parse_visibility("collapse"), Some(VisibilityValue::Collapse));
+    }
+
+    // ── parse_word_break / parse_writing_mode ───────────────────────────
+
+    #[test]
+    fn test_parse_word_break() {
+        assert_eq!(parse_word_break("normal"), Some(WordBreakValue::Normal));
+        assert_eq!(parse_word_break("break-all"), Some(WordBreakValue::BreakAll));
+        assert_eq!(parse_word_break("keep-all"), Some(WordBreakValue::KeepAll));
+        assert_eq!(parse_word_break("break-word"), Some(WordBreakValue::BreakWord));
+    }
+
+    #[test]
+    fn test_parse_writing_mode() {
+        assert_eq!(
+            parse_writing_mode("horizontal-tb"),
+            Some(WritingModeValue::HorizontalTb)
+        );
+        assert_eq!(parse_writing_mode("vertical-rl"), Some(WritingModeValue::VerticalRl));
+        assert_eq!(parse_writing_mode("vertical-lr"), Some(WritingModeValue::VerticalLr));
+    }
+
+    // ── parse_text_decoration_line / parse_text_transform ───────────────
+
+    #[test]
+    fn test_parse_text_decoration_line() {
+        assert_eq!(parse_text_decoration_line("none"), Some(TextDecorationLineValue::None));
+        assert_eq!(
+            parse_text_decoration_line("underline"),
+            Some(TextDecorationLineValue::Underline)
+        );
+        assert_eq!(
+            parse_text_decoration_line("overline"),
+            Some(TextDecorationLineValue::Overline)
+        );
+        assert_eq!(
+            parse_text_decoration_line("line-through"),
+            Some(TextDecorationLineValue::LineThrough)
+        );
+    }
+
+    #[test]
+    fn test_parse_text_transform() {
+        assert_eq!(parse_text_transform("none"), Some(TextTransformValue::None));
+        assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
+        assert_eq!(parse_text_transform("lowercase"), Some(TextTransformValue::Lowercase));
+        assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
+    }
+
+    // ── parse_font_weight ───────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_font_weight_keywords() {
+        assert_eq!(parse_font_weight("normal"), Some(FontWeightValue::Normal));
+        assert_eq!(parse_font_weight("bold"), Some(FontWeightValue::Bold));
+        assert_eq!(parse_font_weight("bolder"), Some(FontWeightValue::Bolder));
+        assert_eq!(parse_font_weight("lighter"), Some(FontWeightValue::Lighter));
+    }
+
+    #[test]
+    fn test_parse_font_weight_numeric() {
+        assert_eq!(parse_font_weight("400"), Some(FontWeightValue::Absolute(400)));
+        assert_eq!(parse_font_weight("700"), Some(FontWeightValue::Absolute(700)));
+        assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));
+        assert_eq!(parse_font_weight("900"), Some(FontWeightValue::Absolute(900)));
+        assert_eq!(parse_font_weight("50"), None); // out of range
+        assert_eq!(parse_font_weight("950"), None); // out of range
+    }
+
+    // ── parse_font_style ────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_font_style_normal() {
+        assert_eq!(parse_font_style("normal"), Some(FontStyleValue::Normal));
+    }
+
+    #[test]
+    fn test_parse_font_style_italic() {
+        assert_eq!(parse_font_style("italic"), Some(FontStyleValue::Italic));
+    }
+
+    #[test]
+    fn test_parse_font_style_oblique_no_angle() {
+        assert_eq!(parse_font_style("oblique"), Some(FontStyleValue::Oblique(None)));
+    }
+
+    #[test]
+    fn test_parse_font_style_oblique_with_angle() {
+        assert_eq!(
+            parse_font_style("oblique 14deg"),
+            Some(FontStyleValue::Oblique(Some(14.0)))
+        );
+    }
+
+    #[test]
+    fn test_parse_font_style_unknown() {
+        assert_eq!(parse_font_style("unknown"), None);
+    }
+
+    // ── parse_list_style_type / parse_list_style_position ───────────────
+
+    #[test]
+    fn test_parse_list_style_type() {
+        assert_eq!(parse_list_style_type("disc"), Some(ListStyleTypeValue::Disc));
+        assert_eq!(parse_list_style_type("circle"), Some(ListStyleTypeValue::Circle));
+        assert_eq!(parse_list_style_type("square"), Some(ListStyleTypeValue::Square));
+        assert_eq!(parse_list_style_type("decimal"), Some(ListStyleTypeValue::Decimal));
+        assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
+        assert_eq!(
+            parse_list_style_type("lower-alpha"),
+            Some(ListStyleTypeValue::LowerAlpha)
+        );
+        assert_eq!(
+            parse_list_style_type("upper-latin"),
+            Some(ListStyleTypeValue::UpperAlpha)
+        );
+    }
+
+    #[test]
+    fn test_parse_list_style_position() {
+        assert_eq!(
+            parse_list_style_position("outside"),
+            Some(ListStylePositionValue::Outside)
+        );
+        assert_eq!(
+            parse_list_style_position("inside"),
+            Some(ListStylePositionValue::Inside)
+        );
+        assert_eq!(parse_list_style_position("center"), None);
+    }
+
+    // ── parse_spacing ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_spacing_normal() {
+        assert_eq!(parse_spacing("normal"), Some(LengthValue::Px(0.0)));
+    }
+
+    #[test]
+    fn test_parse_spacing_px() {
+        assert_eq!(parse_spacing("5px"), Some(LengthValue::Px(5.0)));
+    }
+}
