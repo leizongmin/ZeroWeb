@@ -1336,3 +1336,256 @@ fn test_parse_container_no_condition() {
     let _stylesheet = Parser::parse_stylesheet(css);
     // 无条件 → 可能返回 None
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: container condition parse_container_condition
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_container_lte_operator() {
+    let css = "@container (width <= 500px) { div { color: blue; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+    match &stylesheet.rules[0] {
+        Rule::Container(_) => {}
+        _ => panic!("Expected Container"),
+    }
+}
+
+#[test]
+fn test_parse_container_gte_value() {
+    let css = "@container (width >= 100px) { div { color: green; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+#[test]
+fn test_parse_container_named_with_condition() {
+    let css = "@container mysidebar (min-width: 200px) { div { width: 100%; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Container(cont) => {
+            assert_eq!(cont.name.as_deref(), Some("mysidebar"));
+            assert_eq!(cont.rules.len(), 1);
+        }
+        _ => panic!("Expected Container"),
+    }
+}
+
+#[test]
+fn test_parse_container_nested_parens() {
+    let css = "@container (200px <= width <= 800px) { div { color: red; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: @supports condition parsing
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_supports_property_value() {
+    let css = "@supports (display: flex) { div { display: flex; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+    match &stylesheet.rules[0] {
+        Rule::Supports(sup) => {
+            assert_eq!(sup.rules.len(), 1);
+        }
+        _ => panic!("Expected Supports"),
+    }
+}
+
+#[test]
+fn test_parse_supports_multiple_rules() {
+    let css = "@supports (color: red) { div { color: red; } p { background: blue; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Supports(sup) => {
+            assert_eq!(sup.rules.len(), 2);
+        }
+        _ => panic!("Expected Supports"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: keyframe with from/to
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_keyframes_from_to() {
+    let css = "@keyframes fade { from { opacity: 0; } to { opacity: 1; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.keyframes.len(), 2);
+        }
+        _ => panic!("Expected Keyframes"),
+    }
+}
+
+#[test]
+fn test_parse_keyframes_percentage_only() {
+    let css = "@keyframes slide { 50% { left: 100px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Keyframes(kf) => {
+            assert_eq!(kf.keyframes.len(), 1);
+        }
+        _ => panic!("Expected Keyframes"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: declaration with multiple values
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_declaration_multi_value() {
+    let css = "div { margin: 10px 20px 30px 40px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert_eq!(sr.declarations.len(), 1);
+            assert_eq!(sr.declarations[0].property, "margin");
+            assert!(sr.declarations[0].value.contains("10px"));
+        }
+        _ => panic!("Expected Style"),
+    }
+}
+
+#[test]
+fn test_parse_declaration_with_function() {
+    let css = "div { background: rgb(255, 0, 0); }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert!(sr.declarations[0].value.contains("rgb"));
+        }
+        _ => panic!("Expected Style"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: complex selector with attribute + pseudo
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_selector_attribute_with_pseudo() {
+    let css = "a[href]:hover { color: blue; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+#[test]
+fn test_parse_selector_id_with_class() {
+    let css = "#main.active { display: block; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+#[test]
+fn test_parse_selector_universal_with_class() {
+    let css = "*.highlight { background: yellow; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: @layer with rules
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_layer_with_multiple_rules() {
+    let css = "@layer base { div { color: red; } p { font-size: 14px; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Layer(layer) => {
+            assert_eq!(layer.name, "base");
+            assert_eq!(layer.rules.len(), 2);
+        }
+        _ => panic!("Expected Layer"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: @import with media query
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_import_with_single_media() {
+    let css = r#"@import "print.css" print;"#;
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Import(imp) => {
+            assert_eq!(imp.url, "print.css");
+            assert_eq!(imp.media_queries.len(), 1);
+        }
+        _ => panic!("Expected Import"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: attribute selector with ident value
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_attribute_exact_ident_value() {
+    let css = "[type=text] { border: 1px solid; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+#[test]
+fn test_parse_attribute_dash_match_exact() {
+    let css = "[lang=en] { font-style: normal; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    assert!(!stylesheet.rules.is_empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: multiple declarations
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_multiple_declarations() {
+    let css = "div { color: red; background: blue; font-size: 16px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert_eq!(sr.declarations.len(), 3);
+        }
+        _ => panic!("Expected Style"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: @rule with body containing nested rules
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_at_rule_with_nested_style_rules() {
+    let css = "@font-face { div { color: red; } p { color: blue; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::At(at) => {
+            if let AtRuleBody::Block(rules) = &at.body {
+                assert_eq!(rules.len(), 2);
+            }
+        }
+        _ => panic!("Expected At"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser coverage: attribute value with number + unit
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_attribute_value_number_unit() {
+    // 3px as attribute value: number + ident concatenated by parser
+    let css = "[data-size=3px] { width: 100px; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    // Should not panic - result may vary based on parser behavior
+    // The important thing is it doesn't crash
+}
