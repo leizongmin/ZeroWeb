@@ -8,5 +8,6 @@ mod coverage_round3;
 mod edge;
 mod helpers;
 mod matcher_coverage;
+mod matcher_coverage2;
 mod matcher_extra;
 mod shorthand_coverage;
