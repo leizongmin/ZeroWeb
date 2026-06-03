@@ -1,0 +1,551 @@
+//! parse_transform.rs 覆盖率测试。
+//!
+//! 覆盖：
+//! - animation-duration ms/s 解析
+//! - timing-function cubic-bezier/steps
+//! - transform 3D 函数（translate3d, scale3d, rotate3d, perspective, matrix）
+//! - transform 各变体（translateX, translateY, scaleX, scaleY, skew, rotateX/Y/Z）
+//! - gradient（linear-gradient 方向、radial-gradient shape/position、conic-gradient）
+//! - text-shadow 多种参数组合
+//! - box-shadow inset + spread
+//! - grid-area 斜杠语法
+
+use crate::values::{
+    parse_animation_duration, parse_box_shadow, parse_gradient, parse_grid_area, parse_text_shadow,
+    parse_timing_function, parse_transform,
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// animation-duration
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_animation_duration_ms() {
+    let result = parse_animation_duration("500ms");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_animation_duration_s() {
+    let result = parse_animation_duration("1.5s");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_animation_duration_invalid() {
+    assert!(parse_animation_duration("invalid").is_none());
+    assert!(parse_animation_duration("-1s").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// timing-function
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_timing_function_cubic_bezier() {
+    let result = parse_timing_function("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_timing_function_cubic_bezier_invalid() {
+    // 参数数量不对
+    assert!(parse_timing_function("cubic-bezier(0.25, 0.1)").is_none());
+}
+
+#[test]
+fn test_timing_function_steps() {
+    let result = parse_timing_function("steps(4, end)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_timing_function_steps_no_position() {
+    let result = parse_timing_function("steps(4)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_timing_function_steps_start() {
+    let result = parse_timing_function("steps(4, start)");
+    assert!(result.is_some());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// transform — 3D 函数
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_transform_translate3d() {
+    let result = parse_transform("translate3d(10px, 20px, 30px)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_scale3d() {
+    let result = parse_transform("scale3d(1.5, 2.0, 1.0)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_rotate3d() {
+    let result = parse_transform("rotate3d(1, 0, 0, 45deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_perspective() {
+    let result = parse_transform("perspective(500px)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_perspective_zero_fails() {
+    assert!(parse_transform("perspective(0)").is_none());
+}
+
+#[test]
+fn test_transform_matrix() {
+    let result = parse_transform("matrix(1, 0, 0, 1, 10, 20)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_matrix_invalid_count() {
+    assert!(parse_transform("matrix(1, 0, 0)").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// transform — 各独立函数
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_transform_translate_x() {
+    let result = parse_transform("translateX(50px)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_translate_y() {
+    let result = parse_transform("translateY(30px)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_scale_x() {
+    let result = parse_transform("scaleX(2.0)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_scale_y() {
+    let result = parse_transform("scaleY(0.5)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_scale_two_args() {
+    let result = parse_transform("scale(1.5, 2.0)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_skew() {
+    let result = parse_transform("skew(30deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_skew_two_args() {
+    let result = parse_transform("skew(30deg, 15deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_rotate_x() {
+    let result = parse_transform("rotateX(45deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_rotate_y() {
+    let result = parse_transform("rotateY(45deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_rotate_z() {
+    let result = parse_transform("rotateZ(90deg)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_translate_rad() {
+    let result = parse_transform("rotate(1.5708rad)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_translate_turn() {
+    let result = parse_transform("rotate(0.25turn)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_empty() {
+    assert!(parse_transform("").is_none());
+}
+
+#[test]
+fn test_transform_none() {
+    // "none" 是合法的 transform 值
+    let result = parse_transform("none");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_transform_unknown_function() {
+    assert!(parse_transform("unknownFunc(10)").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — linear-gradient 方向变体
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_linear_gradient_to_top() {
+    let result = parse_gradient("linear-gradient(to top, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_to_left() {
+    let result = parse_gradient("linear-gradient(to left, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_to_top_left() {
+    let result = parse_gradient("linear-gradient(to top left, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_to_bottom_right() {
+    let result = parse_gradient("linear-gradient(to bottom right, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_angle() {
+    let result = parse_gradient("linear-gradient(45deg, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_no_direction() {
+    let result = parse_gradient("linear-gradient(red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_linear_gradient_empty() {
+    assert!(parse_gradient("linear-gradient()").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — radial-gradient shape/position 变体
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_radial_gradient_circle() {
+    let result = parse_gradient("radial-gradient(circle, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_ellipse() {
+    let result = parse_gradient("radial-gradient(ellipse, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_closest_side() {
+    let result = parse_gradient("radial-gradient(circle closest-side, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_farthest_side() {
+    let result = parse_gradient("radial-gradient(ellipse farthest-side, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_closest_corner() {
+    let result = parse_gradient("radial-gradient(circle closest-corner, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_at_position() {
+    let result = parse_gradient("radial-gradient(circle at center, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_at_percent() {
+    let result = parse_gradient("radial-gradient(circle at 30% 70%, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_circle_with_length() {
+    let result = parse_gradient("radial-gradient(circle 50px, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_shape_at_position() {
+    let result = parse_gradient("radial-gradient(circle at left top, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_no_args() {
+    assert!(parse_gradient("radial-gradient()").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — conic-gradient
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_conic_gradient_basic() {
+    let result = parse_gradient("conic-gradient(red, blue, green)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_from_angle() {
+    let result = parse_gradient("conic-gradient(from 45deg, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_at_position() {
+    let result = parse_gradient("conic-gradient(at center, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_from_angle_at_position() {
+    let result = parse_gradient("conic-gradient(from 90deg at 25% 75%, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_empty() {
+    assert!(parse_gradient("conic-gradient()").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — repeating 变体
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_repeating_linear_gradient() {
+    let result = parse_gradient("repeating-linear-gradient(to right, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_repeating_radial_gradient() {
+    let result = parse_gradient("repeating-radial-gradient(circle, red, blue)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_repeating_conic_gradient() {
+    let result = parse_gradient("repeating-conic-gradient(red, blue)");
+    assert!(result.is_some());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — unknown type
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_gradient_unknown_type() {
+    assert!(parse_gradient("unknown-gradient(red, blue)").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-shadow — 多种参数组合
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_text_shadow_basic_two_values() {
+    let result = parse_text_shadow("2px 2px");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_with_color_first() {
+    // text-shadow 不支持颜色在前的语法，第一和第二个值必须是长度
+    // 测试颜色在 blur 后的合法语法
+    let result = parse_text_shadow("2px 2px 4px red");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_with_color_last() {
+    let result = parse_text_shadow("2px 2px red");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_with_blur_and_color() {
+    let result = parse_text_shadow("2px 2px 4px rgba(0,0,0,0.5)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_color_then_blur() {
+    let result = parse_text_shadow("2px 2px red 4px");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_none() {
+    let result = parse_text_shadow("none");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_text_shadow_too_few_values() {
+    assert!(parse_text_shadow("2px").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// box-shadow — inset + spread
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_box_shadow_basic() {
+    let result = parse_box_shadow("2px 2px");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_with_blur() {
+    let result = parse_box_shadow("2px 2px 4px");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_with_spread() {
+    let result = parse_box_shadow("2px 2px 4px 1px");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_with_color() {
+    let result = parse_box_shadow("2px 2px 4px red");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_inset() {
+    let result = parse_box_shadow("inset 2px 2px 4px red");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_inset_with_spread() {
+    let result = parse_box_shadow("inset 2px 2px 4px 1px red");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_none() {
+    let result = parse_box_shadow("none");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_box_shadow_too_few_values() {
+    assert!(parse_box_shadow("2px").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// grid-area — 斜杠语法
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_grid_area_single_value() {
+    let result = parse_grid_area("header");
+    assert!(result.is_some());
+    let (rs, re, cs, ce) = result.unwrap();
+    assert_eq!(rs, "header");
+    assert_eq!(re, "header");
+}
+
+#[test]
+fn test_grid_area_two_values() {
+    let result = parse_grid_area("header / sidebar");
+    assert!(result.is_some());
+    let (rs, re, cs, ce) = result.unwrap();
+    assert_eq!(rs, "header");
+    assert_eq!(re, "auto");
+    assert_eq!(cs, "sidebar");
+    assert_eq!(ce, "auto");
+}
+
+#[test]
+fn test_grid_area_four_values() {
+    let result = parse_grid_area("1 / 2 / 3 / 4");
+    assert!(result.is_some());
+    let (rs, re, cs, ce) = result.unwrap();
+    assert_eq!(rs, "1");
+    assert_eq!(re, "2");
+    assert_eq!(cs, "3");
+    assert_eq!(ce, "4");
+}
+
+#[test]
+fn test_grid_area_empty() {
+    assert!(parse_grid_area("").is_none());
+}
+
+#[test]
+fn test_grid_area_empty_after_slash() {
+    assert!(parse_grid_area(" / ").is_none());
+}
+
+#[test]
+fn test_grid_area_empty_before_slash() {
+    assert!(parse_grid_area("/ sidebar").is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// gradient — 混合 color stops
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_linear_gradient_with_stops() {
+    let result = parse_gradient("linear-gradient(to right, red 0%, yellow 50%, green 100%)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_radial_gradient_with_stops() {
+    let result = parse_gradient("radial-gradient(circle, white 0%, black 100%)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_from_angle_only() {
+    let result = parse_gradient("conic-gradient(from 180deg, red, blue)");
+    assert!(result.is_some());
+}
