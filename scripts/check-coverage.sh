@@ -14,7 +14,8 @@ cd "$PROJECT_ROOT"
 # 检查工具是否可用
 if command -v cargo-llvm-cov &>/dev/null; then
     echo "--- 使用 cargo-llvm-cov ---"
-    cargo llvm-cov --workspace --summary-only 2>&1 || {
+    # 使用 --test-threads=1 避免 render-foundation GPU 测试在并行时 SIGSEGV
+    cargo llvm-cov --workspace --summary-only -- --test-threads=1 2>&1 || {
         echo "警告: 覆盖率测量失败，可能需要安装 cargo-llvm-cov"
         echo "安装: cargo install cargo-llvm-cov"
         exit 1
