@@ -219,3 +219,11 @@ fn test_bookmarks_iter_filter_by_url() {
     let count = bm.iter().filter(|b| b.url() == "https://example.com").count();
     assert_eq!(count, 2, "应能按 URL 过滤书签");
 }
+
+#[test]
+fn test_bookmarks_default() {
+    let bm = Bookmarks::default();
+    assert!(bm.is_empty());
+    assert_eq!(bm.len(), 0);
+    assert!(bm.folders().is_empty());
+}
