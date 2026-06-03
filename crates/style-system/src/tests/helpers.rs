@@ -3,7 +3,8 @@
 #[allow(unused_imports)]
 use super::super::*;
 pub use zero_css_parser::ast::{
-    ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
+    Combinator, ComplexSelector, CompoundSelector, Declaration, Rule, Selector, StyleRule, SubclassSelector,
+    TypeSelector,
 };
 #[allow(unused_imports)]
 pub use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue};
@@ -42,5 +43,21 @@ pub fn make_tag_selector(tag: &str) -> Selector {
                 None,
             )],
         },
+    }
+}
+
+pub fn make_compound_selector(
+    type_selector: Option<TypeSelector>,
+    subclass_selectors: Vec<SubclassSelector>,
+) -> CompoundSelector {
+    CompoundSelector {
+        type_selector,
+        subclass_selectors,
+    }
+}
+
+pub fn make_complex_selector(parts: Vec<(CompoundSelector, Option<zero_css_parser::ast::Combinator>)>) -> Selector {
+    Selector {
+        complex: ComplexSelector { parts },
     }
 }

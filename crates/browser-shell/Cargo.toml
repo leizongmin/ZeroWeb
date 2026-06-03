@@ -18,3 +18,15 @@ criterion = { workspace = true }
 [[bench]]
 name = "browser_shell_bench"
 harness = false
+
+[[test]]
+name = "autocomplete_coverage"
+path = "src/tests/autocomplete_coverage.rs"
+
+[[test]]
+name = "bookmarks_coverage"
+path = "src/tests/bookmarks_coverage.rs"
+
+[[test]]
+name = "browser_coverage"
+path = "src/tests/browser_coverage.rs"

@@ -983,4 +983,145 @@ mod tests {
         assert_eq!(MouseButton::Middle, MouseButton::Middle);
         assert_ne!(MouseButton::Left, MouseButton::Right);
     }
+
+    /// 测试 convert_scroll_delta 函数的所有分支
+    #[test]
+    fn test_convert_scroll_delta_all_branches() {
+        use crate::event::{MouseScrollDelta, convert_scroll_delta};
+
+        // Test LineDelta
+        let line_delta = winit::event::MouseScrollDelta::LineDelta(1.5, -2.0);
+        let converted = convert_scroll_delta(line_delta);
+        assert_eq!(converted, MouseScrollDelta::LineDelta(1.5, -2.0));
+
+        // Test PixelDelta with small values
+        let pixel_delta = winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(10.0, 20.0));
+        let converted = convert_scroll_delta(pixel_delta);
+        assert_eq!(converted, MouseScrollDelta::PixelDelta(10.0, 20.0));
+
+        // Test PixelDelta with large values
+        let pixel_delta =
+            winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(100000.0, -99999.0));
+        let converted = convert_scroll_delta(pixel_delta);
+        assert_eq!(converted, MouseScrollDelta::PixelDelta(100000.0, -99999.0));
+    }
+
+    /// 测试 convert_touch_phase 函数的所有分支
+    #[test]
+    fn test_convert_touch_phase_all_branches() {
+        use crate::event::{TouchPhase, convert_touch_phase};
+
+        // Test Started phase
+        assert_eq!(
+            convert_touch_phase(winit::event::TouchPhase::Started),
+            TouchPhase::Started
+        );
+
+        // Test Moved phase
+        assert_eq!(convert_touch_phase(winit::event::TouchPhase::Moved), TouchPhase::Moved);
+
+        // Test Ended phase
+        assert_eq!(convert_touch_phase(winit::event::TouchPhase::Ended), TouchPhase::Ended);
+
+        // Test Cancelled phase
+        assert_eq!(
+            convert_touch_phase(winit::event::TouchPhase::Cancelled),
+            TouchPhase::Cancelled
+        );
+    }
+
+    /// 测试 convert_mouse_button 函数的所有分支
+    #[test]
+    fn test_convert_mouse_button_all_branches() {
+        use crate::event::{MouseButton, convert_mouse_button};
+
+        // Test Left button
+        assert_eq!(convert_mouse_button(winit::event::MouseButton::Left), MouseButton::Left);
+
+        // Test Right button
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Right),
+            MouseButton::Right
+        );
+
+        // Test Middle button
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Middle),
+            MouseButton::Middle
+        );
+
+        // Test Back button
+        assert_eq!(convert_mouse_button(winit::event::MouseButton::Back), MouseButton::Back);
+
+        // Test Forward button
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Forward),
+            MouseButton::Forward
+        );
+
+        // Test Other button
+        assert_eq!(
+            convert_mouse_button(winit::event::MouseButton::Other(8)),
+            MouseButton::Other(8)
+        );
+    }
+
+    /// 测试 convert_element_state 函数的所有分支
+    #[test]
+    fn test_convert_element_state_all_branches() {
+        use crate::event::element_state_to_pressed;
+
+        // Test Pressed
+        let pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
+        assert!(pressed);
+
+        // Test Released
+        let released = element_state_to_pressed(winit::event::ElementState::Released);
+        assert!(!released);
+    }
+
+    /// 测试 convert_ime 函数的所有分支
+    #[test]
+    fn test_convert_ime_all_branches() {
+        use crate::event::{ImeEvent, convert_ime};
+
+        // Test Enabled
+        let ime = winit::event::Ime::Enabled;
+        let converted = convert_ime(ime);
+        assert_eq!(converted, ImeEvent::Enabled);
+
+        // Test Preedit with cursor
+        let ime = winit::event::Ime::Preedit("hello".to_string(), Some((0, 5)));
+        let converted = convert_ime(ime);
+        if let ImeEvent::Preedit { text, cursor } = converted {
+            assert_eq!(text, "hello");
+            assert_eq!(cursor, Some((0, 5)));
+        } else {
+            panic!("Expected ImeEvent::Preedit");
+        }
+
+        // Test Preedit without cursor
+        let ime = winit::event::Ime::Preedit("world".to_string(), None);
+        let converted = convert_ime(ime);
+        if let ImeEvent::Preedit { text, cursor } = converted {
+            assert_eq!(text, "world");
+            assert_eq!(cursor, None);
+        } else {
+            panic!("Expected ImeEvent::Preedit");
+        }
+
+        // Test Commit
+        let ime = winit::event::Ime::Commit("测试".to_string());
+        let converted = convert_ime(ime);
+        if let ImeEvent::Commit(text) = converted {
+            assert_eq!(text, "测试");
+        } else {
+            panic!("Expected ImeEvent::Commit");
+        }
+
+        // Test Disabled
+        let ime = winit::event::Ime::Disabled;
+        let converted = convert_ime(ime);
+        assert_eq!(converted, ImeEvent::Disabled);
+    }
 }

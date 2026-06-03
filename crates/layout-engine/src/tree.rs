@@ -1450,4 +1450,174 @@ mod tests {
         let children = taffy_tree.children(grid_taffy).unwrap();
         assert_eq!(children.len(), 2, "grid 容器应有 2 个子项");
     }
+
+    // ── 覆盖率补全第三轮：Shadow DOM slot 处理路径 ──
+
+    /// 覆盖 find_first_element 中 doc.get(node) 返回 None 的分支（line 68）
+    /// 以及深度优先搜索子节点路径（lines 76-82）
+    #[test]
+    fn test_build_with_text_nodes_mixed() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        // 文本节点在元素之前
+        let text1 = doc.create_text_node("before");
+        doc.append_child(body, text1).unwrap();
+        let div = doc.create_element("div");
+        doc.append_child(body, div).unwrap();
+        let text2 = doc.create_text_node("after");
+        doc.append_child(body, text2).unwrap();
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        assert!(taffy_to_dom.values().any(|id| *id == div));
+        assert!(!taffy_to_dom.values().any(|id| *id == text1));
+        assert!(!taffy_to_dom.values().any(|id| *id == text2));
+    }
+
+    /// 覆盖 shadow DOM slot 替换路径（lines 194-228）
+    /// 测试：host 元素有 shadow root，shadow root 中有 <slot> 元素，
+    /// slot 有已分配的 light DOM 节点
+    #[test]
+    fn test_build_with_shadow_dom_slot_assigned() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 创建 host 元素
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // light DOM 子节点
+        let light_child = doc.create_element("div");
+        doc.append_child(host, light_child).unwrap();
+
+        // attach shadow root
+        let shadow_root = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+        // shadow root 内的 <slot> 元素
+        let slot = doc.create_element("slot");
+        doc.append_child(shadow_root, slot).unwrap();
+
+        // 设置 slot 的 name 属性并分配 light DOM 到 slot
+        doc.set_attribute(slot, "name", "default");
+        doc.assign_slot(slot, "default", light_child);
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // light_child 应该通过 slot 替换出现在布局树中
+        assert!(
+            taffy_to_dom.values().any(|id| *id == light_child),
+            "assigned light DOM should be in layout tree"
+        );
+    }
+
+    /// 覆盖 shadow DOM slot 回退内容路径（lines 211-222）
+    /// 测试：slot 没有分配的 light DOM 节点，使用 slot 自身的子元素作为回退
+    #[test]
+    fn test_build_with_shadow_dom_slot_fallback() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        // 创建 host 元素（无 light DOM 子节点）
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        // attach shadow root
+        let shadow_root = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+
+        // shadow root 内的 <slot> 元素（带回退内容）
+        let slot = doc.create_element("slot");
+        doc.append_child(shadow_root, slot).unwrap();
+        let fallback = doc.create_element("span");
+        doc.append_child(slot, fallback).unwrap();
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // fallback span should be in the layout tree
+        assert!(
+            taffy_to_dom.values().any(|id| *id == fallback),
+            "slot fallback should be in layout tree"
+        );
+    }
+
+    /// 覆盖 shadow 树中非 slot 元素处理（lines 224-228）
+    #[test]
+    fn test_build_with_shadow_dom_non_slot_elements() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        let host = doc.create_element("my-component");
+        doc.append_child(body, host).unwrap();
+
+        let shadow_root = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let shadow_div = doc.create_element("div");
+        doc.append_child(shadow_root, shadow_div).unwrap();
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        assert!(
+            taffy_to_dom.values().any(|id| *id == shadow_div),
+            "shadow div should be in layout tree"
+        );
+    }
+
+    /// 覆盖 process_slot_children_in_shadow 路径（lines 248-286）
+    /// 嵌套 shadow DOM：shadow root 内部有子元素，子元素中的 slot 有分配节点
+    #[test]
+    fn test_build_with_nested_shadow_slots() {
+        use zero_dom::ShadowRootMode;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+
+        let host = doc.create_element("outer-component");
+        doc.append_child(body, host).unwrap();
+
+        // light DOM
+        let light_div = doc.create_element("div");
+        doc.append_child(host, light_div).unwrap();
+
+        // shadow root with a wrapper containing a slot
+        let shadow_root = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.append_child(shadow_root, wrapper).unwrap();
+        let inner_slot = doc.create_element("slot");
+        doc.append_child(wrapper, inner_slot).unwrap();
+
+        // Assign the light DOM div to the slot
+        doc.assign_slot(inner_slot, "", light_div);
+
+        let styles = HashMap::new();
+        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        // wrapper should definitely be in the tree
+        assert!(
+            taffy_to_dom.values().any(|id| *id == wrapper),
+            "shadow wrapper should be in layout tree"
+        );
+    }
 }
