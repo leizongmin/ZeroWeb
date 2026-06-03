@@ -208,3 +208,285 @@ impl IdbTransaction {
         self.db_version
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    // ── IdbCursor ──────────────────────────────────────────────────────
+
+    fn make_cursor(keys: Vec<IdbKey>) -> IdbCursor {
+        IdbCursor {
+            direction: CursorDirection::Next,
+            keys,
+            current: 0,
+            store_name: "test_store".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_cursor_key_returns_current() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0), IdbKey::Number(3.0)]);
+        assert_eq!(cursor.key(), Some(&IdbKey::Number(1.0)));
+        cursor.current = 2;
+        assert_eq!(cursor.key(), Some(&IdbKey::Number(3.0)));
+    }
+
+    #[test]
+    fn test_cursor_key_out_of_bounds() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0)]);
+        cursor.current = 5;
+        assert!(cursor.key().is_none());
+    }
+
+    #[test]
+    fn test_cursor_advance_by_one() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0), IdbKey::Number(3.0)]);
+        assert!(cursor.advance(1));
+        assert_eq!(cursor.key(), Some(&IdbKey::Number(2.0)));
+    }
+
+    #[test]
+    fn test_cursor_advance_past_end() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        assert!(!cursor.advance(5)); // past end
+        assert!(cursor.is_finished());
+    }
+
+    #[test]
+    fn test_cursor_advance_zero_resets() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        cursor.current = 1;
+        assert!(cursor.advance(0));
+        assert_eq!(cursor.current, 0);
+    }
+
+    #[test]
+    fn test_cursor_continue_to_existing_key() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(3.0), IdbKey::Number(5.0)]);
+        assert!(cursor.continue_to(&IdbKey::Number(3.0)));
+        assert_eq!(cursor.key(), Some(&IdbKey::Number(3.0)));
+    }
+
+    #[test]
+    fn test_cursor_continue_to_skips_current() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(3.0), IdbKey::Number(5.0)]);
+        // current is at index 0 (key=1), continue_to(1) should find key >=1 after index 0
+        assert!(cursor.continue_to(&IdbKey::Number(1.0)));
+        // It should move to index 1 since it starts from current+1
+        assert_eq!(cursor.key(), Some(&IdbKey::Number(3.0)));
+    }
+
+    #[test]
+    fn test_cursor_continue_to_nonexistent_returns_false() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        assert!(!cursor.continue_to(&IdbKey::Number(100.0)));
+    }
+
+    #[test]
+    fn test_cursor_is_finished() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0)]);
+        assert!(!cursor.is_finished());
+        cursor.advance(1);
+        assert!(cursor.is_finished());
+    }
+
+    #[test]
+    fn test_cursor_store_name() {
+        let cursor = make_cursor(vec![]);
+        assert_eq!(cursor.store_name(), "test_store");
+    }
+
+    #[test]
+    fn test_cursor_empty_keys() {
+        let cursor = make_cursor(vec![]);
+        assert!(cursor.is_finished());
+        assert!(cursor.key().is_none());
+    }
+
+    // ── IdbCursorWithValue ─────────────────────────────────────────────
+
+    fn make_value_cursor(positions: Vec<usize>) -> IdbCursorWithValue {
+        IdbCursorWithValue {
+            direction: CursorDirection::Next,
+            positions,
+            current: 0,
+            store_name: "test_store".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_value_cursor_key_is_current_index() {
+        let cursor = make_value_cursor(vec![10, 20, 30]);
+        assert_eq!(cursor.key(), 0);
+    }
+
+    #[test]
+    fn test_value_cursor_advance() {
+        let mut cursor = make_value_cursor(vec![10, 20, 30]);
+        assert!(cursor.advance(2));
+        assert_eq!(cursor.position(), 2);
+    }
+
+    #[test]
+    fn test_value_cursor_advance_past_end() {
+        let mut cursor = make_value_cursor(vec![10, 20]);
+        assert!(!cursor.advance(5));
+        assert!(cursor.is_finished());
+    }
+
+    #[test]
+    fn test_value_cursor_advance_zero_resets() {
+        let mut cursor = make_value_cursor(vec![10, 20]);
+        cursor.current = 1;
+        assert!(cursor.advance(0));
+        assert_eq!(cursor.current, 0);
+    }
+
+    #[test]
+    fn test_value_cursor_continue_next() {
+        let mut cursor = make_value_cursor(vec![10, 20, 30]);
+        assert!(cursor.continue_next());
+        assert_eq!(cursor.position(), 1);
+    }
+
+    #[test]
+    fn test_value_cursor_continue_next_past_end() {
+        let mut cursor = make_value_cursor(vec![10]);
+        assert!(!cursor.continue_next());
+        assert!(cursor.is_finished());
+    }
+
+    #[test]
+    fn test_value_cursor_store_name() {
+        let cursor = make_value_cursor(vec![]);
+        assert_eq!(cursor.store_name(), "test_store");
+    }
+
+    #[test]
+    fn test_value_cursor_position() {
+        let mut cursor = make_value_cursor(vec![10, 20, 30]);
+        assert_eq!(cursor.position(), 0);
+        cursor.advance(1);
+        assert_eq!(cursor.position(), 1);
+    }
+
+    // ── IdbTransaction ─────────────────────────────────────────────────
+
+    fn make_transaction() -> IdbTransaction {
+        IdbTransaction {
+            store_names: vec!["store1".to_string(), "store2".to_string()],
+            mode: IdbTransactionMode::ReadWrite,
+            db_name: "test_db".to_string(),
+            db_version: 1,
+            aborted: false,
+            committed: false,
+            mutations: RefCell::new(vec![]),
+        }
+    }
+
+    #[test]
+    fn test_transaction_commit() {
+        let mut tx = make_transaction();
+        assert!(tx.commit().is_ok());
+        assert!(tx.is_committed());
+        assert!(!tx.is_aborted());
+    }
+
+    #[test]
+    fn test_transaction_commit_twice() {
+        let mut tx = make_transaction();
+        tx.commit().unwrap();
+        assert!(tx.commit().is_err());
+    }
+
+    #[test]
+    fn test_transaction_abort() {
+        let mut tx = make_transaction();
+        assert!(tx.abort().is_ok());
+        assert!(tx.is_aborted());
+        assert!(!tx.is_committed());
+    }
+
+    #[test]
+    fn test_transaction_abort_twice() {
+        let mut tx = make_transaction();
+        tx.abort().unwrap();
+        assert!(tx.abort().is_err());
+    }
+
+    #[test]
+    fn test_transaction_commit_then_abort() {
+        let mut tx = make_transaction();
+        tx.commit().unwrap();
+        assert!(tx.abort().is_err());
+    }
+
+    #[test]
+    fn test_transaction_abort_then_commit() {
+        let mut tx = make_transaction();
+        tx.abort().unwrap();
+        assert!(tx.commit().is_err());
+    }
+
+    #[test]
+    fn test_transaction_mode() {
+        let tx = make_transaction();
+        assert_eq!(tx.mode(), IdbTransactionMode::ReadWrite);
+    }
+
+    #[test]
+    fn test_transaction_store_names() {
+        let tx = make_transaction();
+        assert_eq!(tx.store_names(), &["store1", "store2"]);
+    }
+
+    #[test]
+    fn test_transaction_db_name() {
+        let tx = make_transaction();
+        assert_eq!(tx.db_name(), "test_db");
+    }
+
+    #[test]
+    fn test_transaction_db_version() {
+        let tx = make_transaction();
+        assert_eq!(tx.db_version(), 1);
+    }
+
+    #[test]
+    fn test_transaction_check_active_valid() {
+        let tx = make_transaction();
+        assert!(tx.check_active("store1").is_ok());
+        assert!(tx.check_active("store2").is_ok());
+    }
+
+    #[test]
+    fn test_transaction_check_active_wrong_store() {
+        let tx = make_transaction();
+        assert!(tx.check_active("store3").is_err());
+    }
+
+    #[test]
+    fn test_transaction_check_active_after_abort() {
+        let mut tx = make_transaction();
+        tx.abort().unwrap();
+        assert!(tx.check_active("store1").is_err());
+    }
+
+    #[test]
+    fn test_transaction_check_active_after_commit() {
+        let mut tx = make_transaction();
+        tx.commit().unwrap();
+        assert!(tx.check_active("store1").is_err());
+    }
+
+    // ── CursorDirection ────────────────────────────────────────────────
+
+    #[test]
+    fn test_cursor_direction_equality() {
+        assert_eq!(CursorDirection::Next, CursorDirection::Next);
+        assert_eq!(CursorDirection::Prev, CursorDirection::Prev);
+        assert_ne!(CursorDirection::Next, CursorDirection::Prev);
+    }
+}
