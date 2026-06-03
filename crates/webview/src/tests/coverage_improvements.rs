@@ -37,13 +37,13 @@ fn test_inject_css_with_existing_cached_html() {
 fn test_fetch_url_sw_responded_intercept() {
     let mut wv = WebView::new(WebViewConfig::default());
 
-    // Register and activate Service Worker
+    // Register and activate Service Worker（URL 必须带路径才能匹配 scope）
     let sw_id = wv.register_service_worker("/sw.js", "/", "https://example.com");
     wv.install_service_worker(sw_id);
     wv.activate_service_worker(sw_id);
 
     // Manually add a response to the cache (simulating Responded)
-    let request = zero_storage::CacheRequest::new("https://example.com");
+    let request = zero_storage::CacheRequest::new("https://example.com/");
     let response = zero_storage::CacheResponse::ok(b"<!DOCTYPE html><html><body>SW Responded!</body></html>".to_vec());
     let _ = wv
         .service_worker_registry_mut()
@@ -54,7 +54,7 @@ fn test_fetch_url_sw_responded_intercept() {
         .put(request, response);
 
     // Fetch should use the cached response
-    let result = wv.fetch_url("https://example.com");
+    let result = wv.fetch_url("https://example.com/");
     assert!(result.is_ok());
     assert!(!wv.is_loading());
 }
@@ -77,13 +77,13 @@ fn test_fetch_url_sw_no_worker() {
 fn test_fetch_url_sw_cached_invalid_utf8() {
     let mut wv = WebView::new(WebViewConfig::default());
 
-    // Register and activate Service Worker
+    // Register and activate Service Worker（URL 必须带路径才能匹配 scope）
     let sw_id = wv.register_service_worker("/sw.js", "/", "https://example.com");
     wv.install_service_worker(sw_id);
     wv.activate_service_worker(sw_id);
 
     // Add response with invalid UTF-8
-    let request = zero_storage::CacheRequest::new("https://example.com");
+    let request = zero_storage::CacheRequest::new("https://example.com/");
     let invalid_body = vec![0xFF, 0xFF, 0xFF]; // Invalid UTF-8
     let response = zero_storage::CacheResponse::ok(invalid_body);
     let _ = wv
@@ -95,11 +95,10 @@ fn test_fetch_url_sw_cached_invalid_utf8() {
         .put(request, response);
 
     // Should fail with UTF-8 error
-    let result = wv.fetch_url("https://example.com");
-    // The actual error might depend on the implementation, so we'll be flexible
+    let result = wv.fetch_url("https://example.com/");
+    // 缓存响应体不是有效 UTF-8，应返回错误
+    assert!(result.is_err());
     assert!(!wv.is_loading());
-    // Either success or error, but no panic
-    assert!(result.is_ok() || result.is_err());
 }
 
 // ── fetch_url HTTP error path coverage ──

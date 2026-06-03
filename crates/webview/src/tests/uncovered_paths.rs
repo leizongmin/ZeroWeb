@@ -10,13 +10,13 @@ use std::rc::Rc;
 fn test_fetch_url_service_worker_cached_response() {
     let mut wv = WebView::new(WebViewConfig::default());
 
-    // 注册并激活一个 Service Worker
+    // 注册并激活一个 Service Worker（URL 必须包含路径 / 才能匹配 scope "/"）
     let sw_id = wv.register_service_worker("/sw.js", "/", "https://example.com");
     wv.install_service_worker(sw_id);
     wv.activate_service_worker(sw_id);
 
-    // 在缓存中放入响应
-    let request = zero_storage::CacheRequest::new("https://example.com");
+    // 在缓存中放入响应（URL 带 / 路径）
+    let request = zero_storage::CacheRequest::new("https://example.com/");
     let response = zero_storage::CacheResponse::ok(b"<!DOCTYPE html><html><body>From Cache!</body></html>".to_vec());
     let _ = wv
         .service_worker_registry_mut()
@@ -27,7 +27,7 @@ fn test_fetch_url_service_worker_cached_response() {
         .put(request, response);
 
     // 拦截应返回缓存响应
-    let result = wv.fetch_url("https://example.com");
+    let result = wv.fetch_url("https://example.com/");
     assert!(result.is_ok());
     assert!(!wv.is_loading());
 }
@@ -312,36 +312,16 @@ fn test_execute_wasm_function_call_error() {
 fn test_execute_wasm_empty_results() {
     let wv = WebView::new(WebViewConfig::default());
 
-    // 创建一个简单的无参数无返回值函数
-    let void_wasm = vec![
-        0x00, 0x61, 0x73, 0x6D, // magic
-        0x01, 0x00, 0x00, 0x00, // version
-        0x01, // type section
-        0x01, // length
-        0x60, // func type
-        0x00, // no params, no results
-        0x03, // function section
-        0x02, // length
-        0x01, // 1 function
-        0x00, // type index 0
-        0x07, // export section
-        0x05, // length
-        0x01, // 1 export
-        0x04, 0x76, 0x6F, 0x69, // "vo"
-        0x64, // "d"
-        0x00, // func export
-        0x00, // func index 0
-        0x0A, // code section
-        0x02, // length
-        0x01, // 1 function
-        0x00, // body length
-        0x0B, // end
+    // 创建一个正确的无参数无返回值函数（void），验证 results.is_empty() 路径
+    let void_wasm: Vec<u8> = vec![
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+        0x07, 0x0b, 0x01, 0x07, 0x76, 0x6f, 0x69, 0x64, 0x5f, 0x66, 0x6e, 0x00, 0x00, 0x0a, 0x04, 0x01, 0x02, 0x00,
+        0x0b,
     ];
 
-    let void_result = wv.execute_wasm(&void_wasm, "void", &[]);
-    // WASM 执行可能成功也可能失败（取决于实现）
-    // 主要确保不会 panic
-    assert!(void_result.is_ok() || void_result.is_err());
+    let void_result = wv.execute_wasm(&void_wasm, "void_fn", &[]);
+    assert!(void_result.is_ok(), "void WASM should execute: {:?}", void_result);
+    assert_eq!(void_result.unwrap(), "void");
 }
 
 // ── 新增测试：覆盖 fetch_url 的更多边界情况 ──
