@@ -5,10 +5,12 @@
 //! - [`test_cases_html_layout`]: HTML/DOM 结构 + 布局 + 错误恢复测试
 //! - [`test_cases_css_extended`]: CSS 扩展 + HTML/Form + 布局扩展测试
 //! - [`test_cases_wpt`]: WPT 扩展测试
+//! - [`test_cases_standard`][]: 标准合规性扩展测试
 
 mod test_cases_core;
 mod test_cases_css_extended;
 mod test_cases_html_layout;
+mod test_cases_standard;
 mod test_cases_wpt;
 
 use super::TestCase;
@@ -20,5 +22,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_html_layout::html_layout_tests());
     tests.extend(test_cases_css_extended::css_extended_tests());
     tests.extend(test_cases_wpt::wpt_expansion_tests());
+    tests.extend(test_cases_standard::standard_compliance_tests());
     tests
 }
