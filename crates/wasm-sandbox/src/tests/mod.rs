@@ -1,5 +1,7 @@
 //! 集成测试模块
 
+mod types_stub;
+
 #[cfg(feature = "wasmi")]
 mod advanced;
 #[cfg(feature = "wasmi")]
