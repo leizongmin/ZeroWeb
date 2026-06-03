@@ -54,3 +54,4 @@ coverage.html/
 
 # Coverage report
 coverage_report/
+*.profraw
