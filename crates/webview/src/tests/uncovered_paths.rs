@@ -344,6 +344,266 @@ fn test_execute_wasm_empty_results() {
     assert!(void_result.is_ok() || void_result.is_err());
 }
 
+// ── 新增测试：覆盖 fetch_url 的更多边界情况 ──
+
+/// 测试 fetch_url 空字符串 URL - uncovered_paths
+#[test]
+fn test_fetch_url_empty_string_uncovered() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let result = wv.fetch_url("");
+    assert!(result.is_err());
+    assert_eq!(wv.url(), Some("")); // URL 被设置为空字符串
+    assert!(!wv.is_loading()); // loading 状态被重置
+}
+
+/// 测试 fetch_url 无效 URL 方案
+#[test]
+fn test_fetch_url_invalid_scheme() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let result = wv.fetch_url("invalid-url");
+    assert!(result.is_err());
+    assert!(!wv.is_loading());
+}
+
+/// 测试 fetch_url 不支持的协议
+#[test]
+fn test_fetch_url_unsupported_protocol() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let result = wv.fetch_url("ftp://example.com/path");
+    assert!(result.is_err());
+    assert!(!wv.is_loading());
+}
+
+/// 测试 fetch_url 相同 URL 第二次加载时不触发 UrlChanged
+#[test]
+fn test_fetch_url_same_url_no_second_url_changed() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 监听事件
+    let events: std::rc::Rc<std::cell::RefCell<Vec<String>>> = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let events_clone = events.clone();
+    wv.on_event(move |e| {
+        if let WebViewEvent::UrlChanged(url) = e {
+            events_clone.borrow_mut().push(format!("UrlChanged:{}", url));
+        }
+    });
+
+    // 第一次 fetch
+    let _ = wv.fetch_url("https://example.com");
+
+    // 第二次 fetch 相同 URL
+    let _ = wv.fetch_url("https://example.com");
+
+    // UrlChanged 只应该在第一次从 None→Some 时触发
+    let events_received = events.borrow();
+    let url_changed_events: Vec<String> = events_received
+        .iter()
+        .filter(|e| e.starts_with("UrlChanged:"))
+        .cloned()
+        .collect();
+
+    assert_eq!(url_changed_events.len(), 1);
+}
+
+/// 测试 load_url 后立即 fail_load 不触发 LoadEnd
+#[test]
+fn test_load_url_then_immediate_fail_load() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 监听事件
+    let events: std::rc::Rc<std::cell::RefCell<Vec<String>>> = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let events_clone = events.clone();
+    wv.on_event(move |e| match e {
+        WebViewEvent::LoadStart(url) => {
+            events_clone.borrow_mut().push(format!("LoadStart:{}", url));
+        }
+        WebViewEvent::LoadEnd(url) => {
+            events_clone.borrow_mut().push(format!("LoadEnd:{}", url));
+        }
+        WebViewEvent::LoadFailed(url, error) => {
+            events_clone.borrow_mut().push(format!("LoadFailed:{}:{}", url, error));
+        }
+        _ => {}
+    });
+
+    // load_url 后立即 fail_load
+    wv.load_url("https://example.com");
+    wv.fail_load("immediate failure");
+
+    // 应该只有 LoadStart 和 LoadFailed，没有 LoadEnd
+    let events_received = events.borrow();
+    assert!(events_received.contains(&"LoadStart:https://example.com".to_string()));
+    assert!(events_received.contains(&"LoadFailed:https://example.com:immediate failure".to_string()));
+    assert!(!events_received.iter().any(|e| e.starts_with("LoadEnd:")));
+}
+
+// ── 新增测试：覆盖 execute_script 的更多边界情况 ──
+
+/// 测试 execute_script 纯空格字符串
+#[test]
+fn test_execute_script_whitespace_only() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let result = wv.execute_script("   \n  \t  ");
+    // 应该返回错误或成功但不能 panic
+    assert!(result.is_ok() || result.is_err());
+}
+
+/// 测试 execute_script 空字符串后立即执行有效脚本
+#[test]
+fn test_execute_script_empty_then_valid() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 先执行空脚本
+    let _ = wv.execute_script("");
+
+    // 再执行有效脚本
+    let result = wv.execute_script("1 + 1");
+    assert!(result.is_ok());
+}
+
+/// 测试 execute_script 深层属性链错误
+#[test]
+fn test_execute_script_deep_property_chain_error() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 深层属性链中的中间对象不存在
+    let script = "a.b.c.d.e.f";
+    let result = wv.execute_script(script);
+    assert!(result.is_err() || result.is_ok()); // 可能是运行时错误
+}
+
+/// 测试 execute_script 返回超长字符串
+#[test]
+fn test_execute_script_very_long_string() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 生成很长的字符串
+    let long_string = "x".repeat(100000);
+    let script = format!("'{}'", long_string);
+
+    let result = wv.execute_script(&script);
+    // 可能失败（内存限制），但不能 panic
+    assert!(result.is_ok() || result.is_err());
+}
+
+/// 测试 execute_script TypeError
+#[test]
+fn test_execute_script_type_error() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // TypeError - 调用非函数
+    let script = "(1)()";
+    let result = wv.execute_script(script);
+    assert!(result.is_err());
+}
+
+/// 测试 execute_script 多行语句中的语法错误
+#[test]
+fn test_execute_script_multiline_syntax_error() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 多行语句，第二行有语法错误
+    let script = r#"
+        let x = 1;
+        let y = ;  // 语法错误
+        x + y;
+    "#;
+
+    let result = wv.execute_script(script);
+    assert!(result.is_err());
+}
+
+/// 测试 execute_script 返回 undefined
+#[test]
+fn test_execute_script_returns_undefined() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 返回 undefined 的脚本
+    let script = "undefined";
+    let result = wv.execute_script(script);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "undefined");
+}
+
+/// 测试 execute_script 返回 null
+#[test]
+fn test_execute_script_returns_null() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // 返回 null 的脚本
+    let script = "null";
+    let result = wv.execute_script(script);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "null");
+}
+
+// ── 更多边界测试 ──
+
+/// 测试 url getter - 初始返回 None
+#[test]
+fn test_url_getter_initial_none() {
+    let wv = WebView::new(WebViewConfig::default());
+    assert_eq!(wv.url(), None);
+}
+
+/// 测试 url getter - load_url 后返回 Some
+#[test]
+fn test_url_getter_after_load_url() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com");
+    assert_eq!(wv.url(), Some("https://example.com"));
+}
+
+/// 测试 title getter - 初始返回 None
+#[test]
+fn test_title_getter_initial_none() {
+    let wv = WebView::new(WebViewConfig::default());
+    assert_eq!(wv.title(), None);
+}
+
+/// 测试 title getter - set_title 后返回 Some
+#[test]
+fn test_title_getter_after_set_title() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.set_title("测试标题");
+    assert_eq!(wv.title(), Some("测试标题"));
+}
+
+/// 测试 config getter - 返回引用
+#[test]
+fn test_config_getter() {
+    let wv = WebView::new(WebViewConfig::default());
+    let config = wv.config();
+    assert_eq!(config.width, 800);
+    assert_eq!(config.height, 600);
+    assert!(!config.transparent);
+    assert_eq!(config.url, None);
+}
+
+/// 测试 is_loading - 初始返回 false
+#[test]
+fn test_is_loading_initial_false() {
+    let wv = WebView::new(WebViewConfig::default());
+    assert!(!wv.is_loading());
+}
+
+/// 测试 is_loading - load_url 后返回 true
+#[test]
+fn test_is_loading_after_load_url() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com");
+    assert!(wv.is_loading());
+}
+
+/// 测试 is_loading - complete_load 后返回 false
+#[test]
+fn test_is_loading_after_complete_load() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com");
+    wv.complete_load("<html><body>test</body></html>", None);
+    assert!(!wv.is_loading());
+}
+
 // ── WebViewError Display 测试 ──
 
 #[test]

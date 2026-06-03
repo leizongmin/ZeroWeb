@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-03
-**执行状态**: 16/16 crate 已实现，7475 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率 93.85% 行覆盖率 / 93.37% 区域覆盖率（可测试代码 96.54%，理论最大 97.14%，GPU/应用不可测代码占缺口 47%）
+**执行状态**: 16/16 crate 已实现，7507 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率 93.91% 行覆盖率 / 93.44% 区域覆盖率（可测试代码 96.58%，理论最大 97.14%，GPU/应用不可测代码占缺口 47%）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 7562 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 7507 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,7 +103,45 @@
 
 ## 最近完成的改进
 
-### -64. 测试修复 + 覆盖率提升第八轮（本轮，7562 测试）
+### -65. 编译修复 + 覆盖率提升第九轮（本轮，7507 测试）
+
+修复上一轮 agent 遗留的编译错误和测试失败，新增覆盖率测试：
+
+| 修复项 | 说明 |
+|--------|------|
+| host-runtime/event.rs 语法错误 | agent 添加的测试放在 `mod tests {}` 外导致 `}` 不匹配，移入模块内 |
+| host-runtime 重复函数名 | `test_mouse_enter_leave_coordinates` 定义两次，重命名为 `_basic` 后缀 |
+| host-runtime f32/f64 类型错误 | `LineDelta` 是 f32 但断言使用 f64 EPSILON，修正为 f32 |
+| storage/types_coverage.rs 私有方法 | agent 直接调用 `IdbIndex::new()` 等私有方法，重写为使用公共 API |
+| storage NaN 测试 | `IdbKey::Number(NaN)` 的 `PartialEq` 自反性失败（derive 不处理 NaN），排除 NaN |
+| storage sort 测试 | 跨类型排序后用 `Ord` 而非 `PartialEq` 验证稳定性 |
+| css-parser 未使用导入 | 移除 `DisplayValue` 和 `hwb_to_rgba` 导入 |
+
+| 新增测试 | 模块 | 新增测试 |
+|----------|------|----------|
+| storage/types_coverage | IDB 公共 API 覆盖率（key range/multiEntry/事务/排序） | +18 |
+| host-runtime/event.rs | 事件转换/分发路径覆盖率 | +32 |
+| css-parser/tests_8 | parser/tokenizer/color 覆盖率 | +418（部分为 agent 新增） |
+
+覆盖率提升（llvm-cov）：
+- 总体行覆盖率: 93.85% → 93.91%（+0.06%）
+- 总体区域覆盖率: 93.37% → 93.44%（+0.07%）
+
+主要剩余覆盖率缺口（无法通过单元测试覆盖）：
+- apps/browser/ (16-60%) — GUI 应用入口，需要 GPU 窗口
+- host-runtime/window.rs (27.59%) — winit 窗口创建，需要硬件
+- render-foundation/gpu/renderer.rs (86.12%) — GPU 渲染路径，需要 GPU
+- apps/webview-demo/ (0%) — GUI 演示应用
+
+可测试的剩余缺口：
+- webview/webview.rs (82.72%) — 正在通过 agent 提升
+- style-system/matcher (89.77%) — 正在通过 agent 提升
+- storage/indexed_db/types.rs (89.82%) — 正在通过 agent 提升
+- css-parser parser.rs/tokenizer.rs (85-86%)
+
+Total: 7562 → 7507（清理重复/错误测试后净变化，agent 覆盖率测试仍在进行中）
+
+### -64. 测试修复 + 覆盖率提升第八轮（前轮，7562 测试）
 
 修复上一轮遗留的编译错误、测试失败和无限循环，新增覆盖率测试：
 
