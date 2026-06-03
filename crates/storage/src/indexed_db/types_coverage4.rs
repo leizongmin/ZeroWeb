@@ -271,3 +271,36 @@ fn test_transaction_nonexistent_store() {
     let result = db.transaction(&["nonexistent"], IdbTransactionMode::ReadOnly);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_cursor_position_and_finished() {
+    let db = make_db_with_data();
+    let cursor = db.open_cursor("items", None).unwrap().unwrap();
+    assert!(!cursor.is_finished());
+    assert_eq!(cursor.position(), 0);
+    assert_eq!(cursor.store_name(), "items");
+}
+
+#[test]
+fn test_idb_cursor_key() {
+    let db = make_db_with_data();
+    // Open a key cursor and check the key
+    let cursor = db.open_key_cursor("items", None).unwrap().unwrap();
+    assert!(cursor.key().is_some());
+}
+
+#[test]
+fn test_idb_cursor_value() {
+    let db = make_db_with_data();
+    let cursor = db.open_cursor("items", None).unwrap().unwrap();
+    let val = db.cursor_record(&cursor);
+    assert!(val.is_some());
+}
+
+#[test]
+fn test_key_cursor_advance() {
+    let db = make_db_with_data();
+    let mut cursor = db.open_key_cursor("items", None).unwrap().unwrap();
+    assert!(cursor.key().is_some());
+    assert!(cursor.advance(1));
+}
