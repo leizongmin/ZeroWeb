@@ -901,3 +901,385 @@ pub fn resolve_grid_placement(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+    use zero_css_parser::values::{
+        AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
+        LengthValue, OverflowValue, PositionValue,
+    };
+    use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
+
+    // ── computed_style_to_taffy ─────────────────────────────────────────
+
+    #[test]
+    fn test_computed_style_to_taffy_default() {
+        let style = ComputedStyle::default();
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.display, taffy::style::Display::Block);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_flex() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.display, taffy::style::Display::Flex);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_grid() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.display, taffy::style::Display::Grid);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_position_relative() {
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Relative;
+        style.top = LengthValue::Px(10.0);
+        style.left = LengthValue::Px(20.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.position, taffy::style::Position::Relative);
+        assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
+        assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(20.0));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_position_absolute() {
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Absolute;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.position, taffy::style::Position::Absolute);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_position_fixed() {
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Fixed;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.position, taffy::style::Position::Absolute); // taffy maps fixed to absolute
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_padding() {
+        let mut style = ComputedStyle::default();
+        style.padding_top = LengthValue::Px(10.0);
+        style.padding_right = LengthValue::Px(20.0);
+        style.padding_bottom = LengthValue::Px(30.0);
+        style.padding_left = LengthValue::Px(40.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(result.padding.right, taffy::style::LengthPercentage::Length(20.0));
+        assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::Length(30.0));
+        assert_eq!(result.padding.left, taffy::style::LengthPercentage::Length(40.0));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_margin_auto() {
+        let mut style = ComputedStyle::default();
+        style.margin_left = LengthValue::Auto;
+        style.margin_right = LengthValue::Auto;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.margin.left, taffy::style::LengthPercentageAuto::Auto);
+        assert_eq!(result.margin.right, taffy::style::LengthPercentageAuto::Auto);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_size_percentage() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Percentage(50.0);
+        style.height = LengthValue::Percentage(75.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.size.width, taffy::style::Dimension::Percent(0.5));
+        assert_eq!(result.size.height, taffy::style::Dimension::Percent(0.75));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_size_auto() {
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Auto;
+        style.height = LengthValue::Auto;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.size.width, taffy::style::Dimension::Auto);
+        assert_eq!(result.size.height, taffy::style::Dimension::Auto);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_min_max_size() {
+        let mut style = ComputedStyle::default();
+        style.min_width = LengthValue::Px(100.0);
+        style.max_width = LengthValue::Px(500.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.min_size.width, taffy::style::Dimension::Length(100.0));
+        assert_eq!(result.max_size.width, taffy::style::Dimension::Length(500.0));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_overflow() {
+        let mut style = ComputedStyle::default();
+        style.overflow_x = OverflowValue::Hidden;
+        style.overflow_y = OverflowValue::Scroll;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.overflow.x, taffy::style::Overflow::Hidden);
+        assert_eq!(result.overflow.y, taffy::style::Overflow::Scroll);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_flex_direction() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.flex_direction = FlexDirectionValue::RowReverse;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.flex_direction, taffy::style::FlexDirection::RowReverse);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_flex_wrap() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Flex;
+        style.flex_wrap = FlexWrapValue::Wrap;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.flex_wrap, taffy::style::FlexWrap::Wrap);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_flex_basis_auto() {
+        let mut style = ComputedStyle::default();
+        style.flex_basis = FlexBasisValue::Auto;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.flex_basis, taffy::style::Dimension::Auto);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_flex_basis_length() {
+        let mut style = ComputedStyle::default();
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_align_items_center() {
+        let mut style = ComputedStyle::default();
+        style.align_items = AlignmentValue::Center;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.align_items, Some(taffy::style::AlignItems::Center));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_justify_content_space_between() {
+        let mut style = ComputedStyle::default();
+        style.justify_content = AlignmentValue::SpaceBetween;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.justify_content, Some(taffy::style::JustifyContent::SpaceBetween));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_gap() {
+        let mut style = ComputedStyle::default();
+        style.gap = LengthValue::Px(20.0); // gap.width = style.gap
+        style.row_gap = LengthValue::Px(10.0); // gap.height = style.row_gap
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.gap.width, taffy::style::LengthPercentage::Length(20.0));
+        assert_eq!(result.gap.height, taffy::style::LengthPercentage::Length(10.0));
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_box_sizing() {
+        let mut style = ComputedStyle::default();
+        style.box_sizing = BoxSizingValue::BorderBox;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.box_sizing, taffy::style::BoxSizing::BorderBox);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_display_none() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::None;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.display, taffy::style::Display::None);
+    }
+
+    // ── parse_grid_template_areas ───────────────────────────────────────
+
+    #[test]
+    fn test_parse_grid_template_areas_simple() {
+        let input = r#""a a" "b b""#;
+        let areas = parse_grid_template_areas(input);
+        assert_eq!(areas.len(), 2);
+        assert_eq!(areas.get("a"), Some(&(1, 2, 1, 3)));
+        assert_eq!(areas.get("b"), Some(&(2, 3, 1, 3)));
+    }
+
+    #[test]
+    fn test_parse_grid_template_areas_single_cell() {
+        let areas = parse_grid_template_areas(r#""main""#);
+        assert_eq!(areas.get("main"), Some(&(1, 2, 1, 2)));
+    }
+
+    #[test]
+    fn test_parse_grid_template_areas_dot_is_stored() {
+        // "." is treated as a regular area name by parse_grid_template_areas
+        let areas = parse_grid_template_areas(r#""a ." "b b""#);
+        assert!(areas.contains_key("a"));
+        assert!(areas.contains_key("b"));
+        assert!(areas.contains_key(".")); // dot is stored as a key
+    }
+
+    #[test]
+    fn test_parse_grid_template_areas_empty() {
+        let areas = parse_grid_template_areas("");
+        assert!(areas.is_empty());
+    }
+
+    #[test]
+    fn test_parse_grid_template_areas_3x3() {
+        let input = r#""h h h" "s m m" "s m m""#;
+        let areas = parse_grid_template_areas(input);
+        let h = areas.get("h").unwrap();
+        assert_eq!(*h, (1, 2, 1, 4)); // row 1, cols 1-3
+        let s = areas.get("s").unwrap();
+        assert_eq!(*s, (2, 4, 1, 2)); // rows 2-3, col 1
+        let m = areas.get("m").unwrap();
+        assert_eq!(*m, (2, 4, 2, 4)); // rows 2-3, cols 2-3
+    }
+
+    // ── resolve_grid_placement ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_grid_placement_auto() {
+        let style = ComputedStyle::default();
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
+        assert_eq!(rs, GridLineValue::Auto);
+        assert_eq!(re, GridLineValue::Auto);
+        assert_eq!(cs, GridLineValue::Auto);
+        assert_eq!(ce, GridLineValue::Auto);
+    }
+
+    #[test]
+    fn test_resolve_grid_placement_with_line_numbers() {
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Line(2);
+        style.grid_row_end = GridLineValue::Line(4);
+        style.grid_column_start = GridLineValue::Line(1);
+        style.grid_column_end = GridLineValue::Line(3);
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
+        assert_eq!(rs, GridLineValue::Line(2));
+        assert_eq!(re, GridLineValue::Line(4));
+        assert_eq!(cs, GridLineValue::Line(1));
+        assert_eq!(ce, GridLineValue::Line(3));
+    }
+
+    #[test]
+    fn test_resolve_grid_placement_with_span() {
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Line(1);
+        style.grid_row_end = GridLineValue::Span(2);
+        style.grid_column_start = GridLineValue::Span(3);
+        style.grid_column_end = GridLineValue::Line(5);
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
+        assert_eq!(rs, GridLineValue::Line(1));
+        assert_eq!(re, GridLineValue::Span(2));
+        assert_eq!(cs, GridLineValue::Span(3));
+        assert_eq!(ce, GridLineValue::Line(5));
+    }
+
+    #[test]
+    fn test_resolve_grid_placement_named_area() {
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Name("header".to_string());
+        style.grid_row_end = GridLineValue::Name("header".to_string());
+        style.grid_column_start = GridLineValue::Name("header".to_string());
+        style.grid_column_end = GridLineValue::Name("header".to_string());
+
+        let mut areas = GridAreaMap::new();
+        areas.insert("header".to_string(), (1, 2, 1, 4));
+
+        let (rs, re, cs, ce) = resolve_grid_placement(&style, Some(&areas));
+        assert_eq!(rs, GridLineValue::Line(1)); // row-start
+        assert_eq!(re, GridLineValue::Line(2)); // row-end
+        assert_eq!(cs, GridLineValue::Line(1)); // col-start
+        assert_eq!(ce, GridLineValue::Line(4)); // col-end
+    }
+
+    #[test]
+    fn test_resolve_grid_placement_unknown_name_falls_to_auto() {
+        let mut style = ComputedStyle::default();
+        style.grid_row_start = GridLineValue::Name("nonexistent".to_string());
+
+        let areas = GridAreaMap::new();
+        let (rs, _, _, _) = resolve_grid_placement(&style, Some(&areas));
+        assert_eq!(rs, GridLineValue::Auto);
+    }
+
+    // ── convert_float / convert_clear ───────────────────────────────────
+
+    #[test]
+    fn test_convert_float_none() {
+        assert!(!convert_float(&FloatValue::None));
+    }
+
+    #[test]
+    fn test_convert_float_inline_end() {
+        assert!(convert_float(&FloatValue::InlineEnd));
+    }
+
+    #[test]
+    fn test_convert_clear_both() {
+        assert!(convert_clear(&ClearValue::Both));
+    }
+
+    #[test]
+    fn test_convert_clear_inline_start() {
+        assert!(convert_clear(&ClearValue::InlineStart));
+    }
+
+    // ── grid auto flow ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_computed_style_grid_auto_flow() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Grid;
+        style.grid_auto_flow = GridAutoFlowValue::ColumnDense;
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.grid_auto_flow, taffy::style::GridAutoFlow::ColumnDense);
+    }
+
+    // ── computed_style_to_taffy with border ─────────────────────────────
+
+    #[test]
+    fn test_computed_style_border() {
+        let mut style = ComputedStyle::default();
+        style.border_top_width = LengthValue::Px(1.0);
+        style.border_right_width = LengthValue::Px(2.0);
+        style.border_bottom_width = LengthValue::Px(3.0);
+        style.border_left_width = LengthValue::Px(4.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.border.top, taffy::style::LengthPercentage::Length(1.0));
+        assert_eq!(result.border.right, taffy::style::LengthPercentage::Length(2.0));
+        assert_eq!(result.border.bottom, taffy::style::LengthPercentage::Length(3.0));
+        assert_eq!(result.border.left, taffy::style::LengthPercentage::Length(4.0));
+    }
+
+    // ── ComputedStyle with percentage padding/margin ────────────────────
+
+    #[test]
+    fn test_computed_style_padding_percentage() {
+        let mut style = ComputedStyle::default();
+        style.padding_top = LengthValue::Percentage(10.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::Percent(0.1));
+    }
+
+    #[test]
+    fn test_computed_style_margin_percentage() {
+        let mut style = ComputedStyle::default();
+        style.margin_bottom = LengthValue::Percentage(25.0);
+        let result = computed_style_to_taffy(&style, None);
+        assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::Percent(0.25));
+    }
+}
