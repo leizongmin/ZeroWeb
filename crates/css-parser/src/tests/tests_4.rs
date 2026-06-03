@@ -1447,7 +1447,7 @@ fn test_parse_selector_with_multiple_combinators() {
     // 多个连续组合器应该正常处理
     let rule_count = stylesheet.rules.iter().filter(|r| matches!(r, Rule::Style(_))).count();
     // 至少应该解析出一条规则（即使选择器结构复杂）
-    assert!(rule_count >= 0);
+    assert!(rule_count >= 1);
 }
 
 #[test]
@@ -1457,7 +1457,7 @@ fn test_parse_nested_pseudo_class_not_has() {
     let stylesheet = crate::Parser::parse_stylesheet(css);
     // 嵌套伪类应该被正确解析
     let rule_count = stylesheet.rules.len();
-    assert!(rule_count >= 0);
+    assert!(rule_count >= 1);
 }
 
 #[test]

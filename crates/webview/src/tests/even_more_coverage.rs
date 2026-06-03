@@ -53,7 +53,7 @@ fn test_extract_origin_with_user_info() {
 #[test]
 fn test_load_html_empty_css() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.load_html("<html><body>test</body></html>", Some(""));
+    let _result = wv.load_html("<html><body>test</body></html>", Some(""));
     // CSS 为空字符串应该正常工作
     assert!(!wv.is_loading());
 }
@@ -61,7 +61,7 @@ fn test_load_html_empty_css() {
 #[test]
 fn test_load_html_whitespace_only_css() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.load_html("<html><body>test</body></html>", Some("   \n  \t  "));
+    let _result = wv.load_html("<html><body>test</body></html>", Some("   \n  \t  "));
     // 只有空白字符的 CSS 应该正常工作
     assert!(!wv.is_loading());
 }
@@ -79,7 +79,7 @@ fn test_load_html_very_large_html() {
 fn test_load_html_with_unicode_content() {
     let mut wv = WebView::new(WebViewConfig::default());
     let unicode_html = "<html><body>测试内容 🚀</body></html>";
-    let result = wv.load_html(unicode_html, None);
+    let _result = wv.load_html(unicode_html, None);
     // Unicode 内容应该正常处理
     assert!(!wv.is_loading());
 }
@@ -197,7 +197,7 @@ fn test_inject_css_malformed_css() {
     wv.load_html("<html><body>test</body></html>", None);
 
     // 注入格式错误的 CSS
-    let result = wv.inject_css("body { color: red }");
+    let _result = wv.inject_css("body { color: red }");
     // 即使 CSS 格式错误，也应该不会 panic
     assert!(!wv.is_loading());
 }
@@ -221,7 +221,7 @@ fn test_inject_css_unicode() {
 
     // Unicode 字符的 CSS
     let unicode_css = r#"body { font-family: "微软雅黑"; content: "🚀"; }"#;
-    let result = wv.inject_css(unicode_css);
+    let _result = wv.inject_css(unicode_css);
     // Unicode CSS 应该正常处理
     assert!(!wv.is_loading());
 }

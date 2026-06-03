@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制平面
 
 **最后更新**: 2026-06-03
-**执行状态**: 16/16 crate 已实现，7310 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（93.29% 行覆盖率，目标 95%+）
+**执行状态**: 16/16 crate 已实现，7441 个测试全绿，16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，M13 性能优化+安全加固接近完成，测试覆盖率持续提升中（93.74% 行覆盖率，目标 95%+）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 7310 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 7441 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,7 +103,33 @@
 
 ## 最近完成的改进
 
-### -62. 测试覆盖率提升第六轮（本轮，7310 测试）
+### -63. 测试覆盖率提升第七轮（本轮，7441 测试）
+
+多 agent 并行提升核心 crate 的单元测试覆盖率，修复 clippy 警告，新增 131 个测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|------|----------|----------|
+| dom/parser.rs | **TreeSink 实现覆盖率测试**：append 合并/不合并、append_before_sibling（有/无父节点、文本合并/不合并）、reparent_children、remove_from_parent、add_attrs_if_missing（id/class/duplicate）、create_pi、append_based_on_parent_node（有/无父节点）、elem_name 非元素、get_template_contents、same_node、parse_error、DomBuilder::default、into_document 各种节点类型、DOCTYPE 带 IDs、adoption agency、template、SVG 命名空间 | +58 |
+| style-system/matcher | **uncovered paths 覆盖率测试**：选择器验证、:has() 直接子元素/多后代、属性 Includes、:only-child/:only-of-type、媒体查询无上下文/逗号 OR、空规则列表 | +20 |
+| render-foundation | **GPU/CPU/config 覆盖率测试**：clip rect 边界、atlas 满重建、空顶点、1x1 表面、多 glyph、alpha 混合、像素混合极端值、glyph alpha/零 alpha、fill_rect 边界、分数缩放、极端小尺寸、RenderMode 默认/Display/Debug/Clone/Copy、字符串往返、环境变量 | +25 |
+| webview | **webview 覆盖率测试**：even_more_coverage + final_coverage（agent 上下文耗尽前添加） | +28 |
+| clippy 修复 | 修复 engine paint tests 未使用导入、dom parser ElementFlags non_exhaustive、未使用变量 | — |
+
+覆盖率提升（llvm-cov）：
+- 总体行覆盖率: 93.29% → 93.74%（目标 95%+）
+- 总体函数覆盖率: 92.77% → 93.25%
+
+主要剩余覆盖率缺口：
+- dom/parser.rs: 61.64% → ~96%（TreeSink 内联测试已添加）
+- host-runtime/window.rs: 27.59%（需要 GPU/窗口硬件，无法测试）
+- css-parser 4 文件: 81-86%（agent 处理中）
+- webview/webview.rs: 82.72%（agent 处理中）
+- storage/indexed_db/types.rs: 88.65%（agent 处理中）
+- render-foundation/gpu/renderer.rs: 86.12%（GPU 渲染路径，部分不可测试）
+
+Total: 7310 → 7441 (+131 tests, 0 files exceed 2000-line limit)
+
+### -62. 测试覆盖率提升第六轮（前轮，7310 测试）
 
 系统化提升核心 crate 的单元测试覆盖率，修复前一轮遗留的编译/断言错误，新增 276 个测试：
 
