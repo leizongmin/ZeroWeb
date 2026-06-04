@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,093 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 700 个用例（19 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
+**执行状态**: 16/16 crate 已实现，~11,116 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 731 个用例（21 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,093 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,116 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -105,7 +105,23 @@
 
 ## 最近完成的改进
 
-### -79. WPT 测试套件扩展至 700 用例 + 2 个新分类（本轮，~11,050 测试）
+### -81. WASM 自动桥接 + 增量布局 + WPT 731 用例（本轮，~11,116 测试）
+
+新增三大功能：
+
+| 模块 | 新增内容 | 变更 |
+|--------|------|----------|
+| layout-engine | **增量布局计算**：`compute_incremental()` 复用缓存 taffy 树，通过 `mark_dirty` 仅重算脏节点；`CachedLayoutState` 缓存 taffy 树和映射；`IncrementalLayoutStats` 统计脏节点数和耗时；`invalidate_cache()`/`set_viewport()` 缓存管理 | +165 行核心实现 |
+| integration | **11 个增量布局集成测试**：基本流程、样式变更全量重算、full_recalc 退化、无缓存退化、缓存失效、viewport 变化、多轮增量、多脏节点、增量 vs 全量一致性、absolute 定位、tracker 清空 | +11 测试 |
+| webview | **WASM 自动桥接**：JS `WebAssembly.instantiate()` 通过 base64 编码字节自动桥接到 wasm-sandbox；`process_wasm_bridge()` 检测桥接请求、编译执行、注入结果；`call_wasm_export()` 调用缓存实例导出函数；WebView 启用持久化 V8 Context | +8 集成测试 |
+| integration | **8 个 WASM 桥接集成测试**：API 可用性、compile、instantiate 桥接、call export、多次调用、无桥接直通、pending bridge 清空 | +8 测试 |
+| dom_bridge | **WebAssembly polyfill 增强**：base64 编码器、`_pendingBridge` 桥接命令、`__wasm_results__` 结果注入 | polyfill 更新 |
+| WPT runner | **安全 +21 测试**：CSP default-src/frame-src/upgrade-insecure、Cookie 安全、CORS crossorigin、SRI/nonce、HSTS/X-Content-Type、综合安全登录页 | +11 测试 (11→22) |
+| WPT runner | **Web API +10 测试**：History/Location API、localStorage/sessionStorage 往返、classList/dataset/matches/closest、Worker/WASM 检测、综合 API 仪表盘 | +10 测试 (19→29) |
+
+WPT: 700 → 731 用例（+31, 100% 通过率），Tests: ~11,093 → ~11,116, clippy clean.
+
+### -80. WPT 测试套件扩展至 700 用例 + 2 个新分类（前轮，~11,050 测试）
 
 新增 2 个 WPT 测试分类（interactive + typography），扩展 WPT 测试套件至 700 用例（+90, 100% 通过率）：
 
@@ -1446,7 +1462,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context 优化（persistent_context 配置项 + Global<Context> 缓存复用） |
+| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ **增量布局计算（compute_incremental + CachedLayoutState + taffy mark_dirty）** ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context 优化（persistent_context + WASM 自动桥接） |
 
 ---
 
@@ -1476,8 +1492,8 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] WPT 通过率持续追踪和扩展（当前 700 内建测试，19 分类，100% 通过率）
-- [ ] 页面级 WASM JS→wasm-sandbox 自动桥接（当前需要通过 Rust API 调用）
+- [ ] WPT 通过率持续追踪和扩展（当前 731 内建测试，21 分类，100% 通过率）
+- [x] ~~页面级 WASM JS→wasm-sandbox 自动桥接~~ ✅ 已完成：JS WebAssembly.instantiate() 自动通过 base64 桥接到 wasm-sandbox，WebView.call_wasm_export() 调用缓存实例
 
 ---
 
