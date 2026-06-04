@@ -1115,5 +1115,339 @@ pub fn css_layout_compliance_tests() -> Vec<TestCase> {
                 "render_completes".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS Grid 高级测试
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/grid-named-areas".to_string(),
+            description: "Grid with grid-template-areas named layout".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-named">
+    <header class="gh">Header</header>
+    <nav class="gn">Nav</nav>
+    <main class="gm">Main</main>
+    <aside class="ga">Aside</aside>
+    <footer class="gf">Footer</footer>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-named {
+    display: grid;
+    grid-template-areas:
+        "header header"
+        "nav main"
+        "nav aside"
+        "footer footer";
+    grid-template-columns: 200px 1fr;
+    grid-template-rows: auto 1fr 1fr auto;
+    width: 600px;
+    gap: 8px;
+}
+.gh { grid-area: header; background: #2196F3; color: white; padding: 10px; }
+.gn { grid-area: nav; background: #4CAF50; padding: 10px; }
+.gm { grid-area: main; background: #FF9800; padding: 10px; }
+.ga { grid-area: aside; background: #9C27B0; color: white; padding: 10px; }
+.gf { grid-area: footer; background: #607D8B; color: white; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-auto-fill-minmax".to_string(),
+            description: "Grid auto-fill with minmax responsive layout".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-auto">
+    <div class="card">Card 1</div>
+    <div class="card">Card 2</div>
+    <div class="card">Card 3</div>
+    <div class="card">Card 4</div>
+    <div class="card">Card 5</div>
+    <div class="card">Card 6</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-auto {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    width: 500px;
+}
+.card {
+    background: #E3F2FD;
+    padding: 15px;
+    border: 1px solid #90CAF9;
+    text-align: center;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-span".to_string(),
+            description: "Grid column and row spanning".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-span">
+    <div class="wide">Wide (span 2 cols)</div>
+    <div class="tall">Tall (span 2 rows)</div>
+    <div class="normal">Normal</div>
+    <div class="normal">Normal</div>
+    <div class="both">Span 2x2</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-span {
+    display: grid;
+    grid-template-columns: repeat(3, 100px);
+    grid-template-rows: repeat(3, 80px);
+    gap: 5px;
+    width: 320px;
+}
+.wide { grid-column: span 2; background: #FFCDD2; padding: 10px; }
+.tall { grid-row: span 2; background: #C8E6C9; padding: 10px; }
+.normal { background: #E0E0E0; padding: 10px; }
+.both { grid-column: span 2; grid-row: span 2; background: #B39DDB; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-auto-rows-cols".to_string(),
+            description: "Grid auto-rows and auto-columns sizing".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-auto-rc">
+    <div>Item 1</div>
+    <div>Item 2</div>
+    <div>Item 3</div>
+    <div>Item 4</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-auto-rc {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 60px;
+    grid-auto-columns: 80px;
+    gap: 10px;
+    width: 400px;
+}
+.grid-auto-rc > div {
+    background: #FFF3E0;
+    padding: 8px;
+    border: 1px solid #FFE0B2;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-implicit".to_string(),
+            description: "Grid implicit tracks from auto-placement".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-implicit">
+    <div>A</div><div>B</div><div>C</div>
+    <div>D</div><div>E</div><div>F</div>
+    <div>G</div><div>H</div><div>I</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-implicit {
+    display: grid;
+    grid-template-columns: repeat(3, 80px);
+    gap: 5px;
+}
+.grid-implicit > div {
+    background: #E8F5E9;
+    padding: 10px;
+    border: 1px solid #A5D6A7;
+    text-align: center;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-place-items".to_string(),
+            description: "Grid place-items alignment".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="grid-place">
+    <div class="center">Centered</div>
+    <div class="start">Start</div>
+    <div class="end">End</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.grid-place {
+    display: grid;
+    grid-template-columns: repeat(3, 120px);
+    grid-template-rows: 100px;
+    gap: 10px;
+    width: 400px;
+}
+.center { place-self: center; background: #F3E5F5; padding: 8px; }
+.start { place-self: start; background: #E0F7FA; padding: 8px; }
+.end { place-self: end; background: #FFF8E1; padding: 8px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-nested".to_string(),
+            description: "Nested grid containers".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="outer">
+    <div class="inner-a">
+        <div class="cell">A1</div>
+        <div class="cell">A2</div>
+    </div>
+    <div class="inner-b">
+        <div class="cell">B1</div>
+        <div class="cell">B2</div>
+        <div class="cell">B3</div>
+    </div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.outer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    width: 400px;
+}
+.inner-a, .inner-b {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+    background: #ECEFF1;
+    padding: 10px;
+}
+.cell {
+    background: #B0BEC5;
+    padding: 8px;
+    text-align: center;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/grid-responsive-cards".to_string(),
+            description: "Responsive card grid with auto-fill".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="responsive-grid">
+    <div class="rcard"><h3>Title 1</h3><p>Description 1</p></div>
+    <div class="rcard"><h3>Title 2</h3><p>Description 2</p></div>
+    <div class="rcard"><h3>Title 3</h3><p>Description 3</p></div>
+    <div class="rcard"><h3>Title 4</h3><p>Description 4</p></div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.responsive-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    width: 500px;
+}
+.rcard {
+    background: #FAFAFA;
+    border: 1px solid #E0E0E0;
+    border-radius: 8px;
+    padding: 12px;
+}
+.rcard h3 { margin: 0 0 8px 0; font-size: 14px; color: #333; }
+.rcard p { margin: 0; font-size: 12px; color: #666; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Flexbox 高级测试
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/flex-wrap-reverse".to_string(),
+            description: "Flexbox wrap-reverse layout".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="flex-wrap-rev">
+    <div>A</div><div>B</div><div>C</div>
+    <div>D</div><div>E</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.flex-wrap-rev {
+    display: flex;
+    flex-wrap: wrap-reverse;
+    width: 300px;
+    gap: 5px;
+}
+.flex-wrap-rev > div {
+    width: 100px;
+    height: 50px;
+    background: #FFCCBC;
+    padding: 5px;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/flex-align-self".to_string(),
+            description: "Flexbox align-self overrides".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="flex-as">
+    <div class="stretch">Stretch</div>
+    <div class="start">Start</div>
+    <div class="center">Center</div>
+    <div class="end">End</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.flex-as {
+    display: flex;
+    height: 120px;
+    gap: 5px;
+    width: 400px;
+}
+.flex-as > div { width: 80px; background: #D1C4E9; padding: 5px; }
+.flex-as .stretch { align-self: stretch; }
+.flex-as .start { align-self: flex-start; background: #C5CAE9; }
+.flex-as .center { align-self: center; background: #B2DFDB; }
+.flex-as .end { align-self: flex-end; background: #FFE0B2; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
     ]
 }
