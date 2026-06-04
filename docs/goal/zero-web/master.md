@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~10,960 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-4 已完成（事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试）
+**执行状态**: 16/16 crate 已实现，~10,970 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 476 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成（事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试 + 隔离安全加固）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -103,7 +103,18 @@
 
 ## 最近完成的改进
 
-### -75. 无头浏览器协议 Phase 4 + 集成测试修复（本轮，~10,960 测试）
+### -76. WPT CSS 布局测试扩展至 476 用例 + 无头协议 Phase 5（本轮，~10,970 测试）
+
+扩展 WPT CSS 布局测试套件，完成无头协议 Phase 5 安全加固：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| WPT runner/css_layout | **19 个 CSS 布局合规测试**：多列布局（column-count/column-width）、CSS 自定义属性（间距/回退值）、Flexbox 对齐边缘（嵌套对齐/flex-grow 比例/基线对齐）、Grid 嵌套和隐式轨道、响应式布局（卡片网格/圣杯布局/粘性页脚）、定位边缘（绝对定位叠放/fixed 导航栏）、变换组合、渐变背景、文本排版（混合字号/长单词换行/text-align 多模式） | +19 |
+| apps/browser/headless | **Phase 5 安全加固**：HeadlessSecurityConfig（token 认证 + Origin allowlist）、连接接受时 Origin 检查、首个 WebSocket 请求 token 验证、extract_origin_header 辅助 | +7 |
+
+WPT 测试套件: 457 → 476 用例（+19），Tests: ~10,960 → ~10,970, clippy clean.
+
+### -75. 无头浏览器协议 Phase 4 + 集成测试修复（~10,960 测试）
 
 修复上一轮遗留的 headless_protocol.rs 集成测试编译错误，新增无头浏览器协议 Phase 4 自动化测试基础设施：
 
