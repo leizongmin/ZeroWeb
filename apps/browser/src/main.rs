@@ -5,6 +5,7 @@
 
 mod app;
 mod colors;
+mod headless;
 mod layout;
 mod pages;
 
@@ -21,12 +22,20 @@ use app::BrowserApp;
 struct CliArgs {
     render_mode: RenderMode,
     scale_override: Option<f32>,
+    headless: bool,
+    remote_debugging_port: u16,
+    viewport_width: f32,
+    viewport_height: f32,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
     let mut args = std::env::args().skip(1);
     let mut render_mode = None;
     let mut scale_override = None;
+    let mut headless = false;
+    let mut remote_debugging_port = 0u16;
+    let mut viewport_width = 800.0f32;
+    let mut viewport_height = 600.0f32;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
@@ -53,23 +62,60 @@ fn parse_args() -> Result<CliArgs, String> {
             }
             scale_override = Some(s);
         }
+
+        if arg == "--headless" {
+            headless = true;
+        }
+
+        if let Some(value) = arg.strip_prefix("--remote-debugging-port=") {
+            remote_debugging_port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
+        }
+
+        if arg == "--remote-debugging-port" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--remote-debugging-port requires a port number".to_string())?;
+            remote_debugging_port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
+        }
+
+        if let Some(value) = arg.strip_prefix("--viewport-width=") {
+            viewport_width = value.parse::<f32>().map_err(|_| format!("invalid width: {value}"))?;
+        }
+
+        if let Some(value) = arg.strip_prefix("--viewport-height=") {
+            viewport_height = value.parse::<f32>().map_err(|_| format!("invalid height: {value}"))?;
+        }
     }
 
     let render_mode = render_mode.or(RenderMode::from_env()?).unwrap_or_default();
     Ok(CliArgs {
         render_mode,
         scale_override,
+        headless,
+        remote_debugging_port,
+        viewport_width,
+        viewport_height,
     })
 }
 
 fn print_usage() {
     println!(
-        "Usage: zero-browser [--renderer {}] [--scale=<factor>]",
+        "Usage: zero-browser [options]
+
+Options:
+  --renderer=<mode>              Choose rendering backend ({})
+  --scale=<factor>               Override window scale factor (e.g. --scale=2 for HiDPI)
+  --headless                     Run without a window (remote debugging mode)
+  --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
+  --viewport-width=<px>          Headless viewport width (default: 800)
+  --viewport-height=<px>         Headless viewport height (default: 600)
+  --help, -h                     Show this help
+
+Environment: {}={}",
+        RenderMode::values(),
+        RenderMode::ENV_VAR,
         RenderMode::values()
     );
-    println!("Environment: {}={}", RenderMode::ENV_VAR, RenderMode::values());
-    println!("  --scale=<factor>  Override window scale factor (e.g. --scale=2 for HiDPI)");
-    println!("  --renderer=<mode>  Choose rendering backend (cpu, gpu, auto)");
 }
 
 // --- 平台检测 ---
@@ -395,6 +441,35 @@ mod tests {
     }
 }
 
+// --- 无头模式入口 ---
+
+/// 无头模式：启动远程调试服务器，不接受窗口事件。
+fn run_headless(cli: CliArgs) {
+    let port = if cli.remote_debugging_port > 0 {
+        cli.remote_debugging_port
+    } else {
+        9222
+    };
+
+    tracing::info!(
+        "Starting headless mode on port {}, viewport: {:.0}x{:.0}",
+        port,
+        cli.viewport_width,
+        cli.viewport_height
+    );
+
+    let mut server = headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height);
+    let actual_addr = server.addr();
+
+    println!("ZeroWeb headless server: ws://{}", actual_addr);
+    println!("DevTools URL: http://{}", actual_addr);
+
+    if let Err(e) = server.run() {
+        tracing::error!("Headless server error: {e}");
+        std::process::exit(1);
+    }
+}
+
 // --- 入口 ---
 
 fn main() {
@@ -413,6 +488,11 @@ fn main() {
         }
     };
     tracing::info!("Renderer mode: {}", cli.render_mode);
+
+    if cli.headless {
+        run_headless(cli);
+        return;
+    }
 
     if let Some(scale) = cli.scale_override {
         // SAFETY: 在 winit 初始化前（单线程）设置，无竞态风险
