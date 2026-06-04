@@ -24,3 +24,7 @@ path = "src/tests/types_coverage.rs"
 [[test]]
 name = "cursor_coverage"
 path = "src/tests/cursor_coverage.rs"
+
+[[test]]
+name = "types_coverage6"
+path = "src/tests/types_coverage6.rs"
