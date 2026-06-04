@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，10,874 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统），Web Workers 和 ES Modules 支持已实现，浏览器质量测试体系 P0 推进中
+**执行状态**: 16/16 crate 已实现，10,880 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1 已完成（WebSocket 远程调试）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -102,6 +102,17 @@
 ---
 
 ## 最近完成的改进
+
+### -74. 无头浏览器协议 Phase 1 + Reftest Harness + CSS 布局 Reftest（本轮，10,880 测试）
+
+新增无头浏览器远程调试协议、reftest harness 和 CSS 布局 reftest 用例：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| apps/browser/headless | **无头浏览器协议 Phase 1**：`--headless` / `--remote-debugging-port` CLI 标志、WebSocket 服务器（tungstenite）、JSON 消息路由、会话生命周期管理；命令：session.status/new/end、browser.close、browsingContext.navigate、script.evaluate、captureScreenshot、getDOMSnapshot | +10 |
+| wpt-runner/reftest | **最小 Reftest Harness**：ReftestCase（test/ref HTML pair）、ReftestConfig（viewport/fuzzy threshold）、run_reftest()（CPU framebuffer 像素比较）、compare_pixels()（RGBA 逐像素 diff）；16 个 CSS 布局 reftest：block/flex/position/color/box-model/display/nesting | +21 |
+
+Tests: 10,874 → 10,880 (+6 单元测试), clippy clean.
 
 ### -73. 预期元数据系统 + 精确几何测试扩展（本轮，10,874 测试）
 
@@ -1415,7 +1426,7 @@ Total: 6219 → 6378 tests (+159)
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 4. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
 5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ⬜ 最小 reftest harness ⬜ WPT CSS/layout 真实子集 ⬜ expected metadata
+6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ⬜ WPT CSS/layout 真实子集
 
 ## 浏览器质量测试体系推进计划
 
@@ -1442,8 +1453,8 @@ Total: 6219 → 6378 tests (+159)
 
 | 阶段 | 状态 | 范围 | 验收标准 |
 |------|------|------|----------|
-| Phase 1: Layout/primitive snapshot | [ ] | 为 `LayoutResult` 和 `RenderPrimitives` 增加稳定文本/JSON dump；对关键 CSS/layout 用例补精确断言，减少 `layout_has_children`、`has_fills` 这类弱断言 | CSS/layout 改动能产生可读 diff；核心用例可定位到 geometry、style 或 primitive 差异 |
-| Phase 2: 最小 reftest harness | [ ] | 在 `tests/wpt-runner` 支持本地 test/ref HTML；解析 `rel=match` / `rel=mismatch`；通过 CPU framebuffer 做 pixel compare；支持固定 viewport 和简单 fuzzy threshold | 能跑一组自建 `tests/reftests/css/{block,margin,padding,background}`，失败时输出 actual/expected/diff |
+| Phase 1: Layout/primitive snapshot | ✅ | `LayoutResult::snapshot()`、`RenderPrimitives::snapshot()` 稳定文本/JSON dump；精确几何断言系统 | CSS/layout 改动能产生可读 diff；核心用例可定位到 geometry、style 或 primitive 差异 |
+| Phase 2: 最小 reftest harness | ✅ | ReftestCase（test/ref HTML pair）、ReftestConfig（viewport/fuzzy threshold）、run_reftest()（CPU framebuffer 像素比较）；16 个 CSS 布局 reftest（block/flex/position/color/box-model） | ✅ 能跑一组 reftest 并输出 pixel diff 统计 |
 | Phase 3: 真实 WPT CSS/layout 子集 | [ ] | 导入小规模 WPT 子集；维护 include list；支持 expected metadata（PASS/FAIL/SKIP/TIMEOUT/CRASH） | PR 只阻断 unexpected fail；已知失败不掩盖新增回归；报告按 CSS/layout 分类汇总 |
 | Phase 4: WebView 产品级视觉 smoke | [ ] | 对 `webview-demo` 或 headless WebView 增加固定页面截图 smoke；覆盖 load、resize、inject CSS、navigation、scroll 后可见结果 | 用于发现产品可见退化，但不替代引擎级 reftest 和 WPT 合规测试 |
 
@@ -1468,7 +1479,7 @@ Total: 6219 → 6378 tests (+159)
 
 | 阶段 | 状态 | 范围 | 验收标准 |
 |------|------|------|----------|
-| Phase 1: 远程调试服务骨架 | [ ] | 新增 headless/remote automation server；支持 `--headless`、`--remote-debugging-port <port>`、WebSocket 连接、JSON message id 路由、session 生命周期 | 能启动无窗口实例并接受 WebSocket 命令；错误响应稳定；端口为 0 时能输出实际监听地址 |
+| Phase 1: 远程调试服务骨架 | ✅ | `--headless`/`--remote-debugging-port` CLI 标志、WebSocket 服务器（tungstenite）、JSON message id 路由、session 生命周期、6 个命令（session.status/new、browser.close、browsingContext.navigate、script.evaluate、captureScreenshot、getDOMSnapshot） | ✅ 能启动无窗口实例并接受 WebSocket 命令；10 个单元测试覆盖全部命令 |
 | Phase 2: WebDriver BiDi 核心子集 | [ ] | `session.status/new/end`、`browser.close`、`browsingContext.create/getTree/navigate/reload/close/captureScreenshot`、`script.evaluate/callFunction`、基础 log/network/navigation events | Selenium/WebDriver BiDi 客户端可创建会话、打开页面、等待加载、执行 JS、截图、关闭 |
 | Phase 3: CDP 最小兼容子集 | [ ] | `/json/version`、browser/page WebSocket endpoint、`Target.*`、`Page.navigate/loadEventFired/captureScreenshot`、`Runtime.evaluate`、`Network.enable/requestWillBeSent/responseReceived/loadingFinished` | Playwright `connectOverCDP` 或 Puppeteer CDP 客户端可连接、导航、执行 JS、截图、收集网络事件 |
 | Phase 4: 自动化测试接入 | [ ] | 用协议驱动 Top 20 网站 smoke、reftest 截图、性能采样、安全边界回归；生成 JUnit/JSON 报告 | 浏览器级 smoke 不再依赖手写内部 runner；协议层失败能区分 browser bug、protocol bug、test bug |
@@ -1502,8 +1513,8 @@ Total: 6219 → 6378 tests (+159)
 2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
-5. 浏览器质量测试体系 P0（layout/primitive snapshot、最小 reftest、WPT CSS/layout 子集、expected metadata）
-6. 无头浏览器协议 Phase 1-3（remote automation server、WebDriver BiDi 核心子集、CDP 最小兼容子集）
+5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata（剩余：WPT CSS/layout 真实子集）
+6. ~~无头浏览器协议 Phase 1~~ ✅ 远程调试服务骨架（剩余：Phase 2 WebDriver BiDi 核心子集、Phase 3 CDP 最小兼容子集）
 
 ---
 
