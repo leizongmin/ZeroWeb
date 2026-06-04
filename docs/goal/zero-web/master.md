@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,050 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 700 个用例（19 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
+**执行状态**: 16/16 crate 已实现，~11,093 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 700 个用例（19 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,050 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,093 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -99,6 +99,7 @@
 | Box Shadow + Outline Pipeline | 1 | box-shadow + outline 组合渲染 |
 | All Three New Properties | 1 | box-shadow + background-image + text-shadow 全组合 |
 | Box Shadow Spread Only | 1 | box-shadow 仅 spread-radius 渲染验证 |
+| CSS Typography + Form Pipeline | 43 | font family/size/weight、text align/decoration/transform/spacing/line-height、named/rgb/hsl/hex colors、border styles/radius、box-shadow multiple/inset、text-shadow、linear/radial gradients、opacity、visibility、overflow hidden、CSS variables + fallback、absolute positioning、z-index stacking、display inline-block/none/flex/grid、box-sizing、calc()、2D transforms、filter blur/grayscale、composite pages（landing/styled-form/pricing/blog/dashboard） |
 
 ---
 
@@ -113,7 +114,7 @@
 | WPT runner/interactive | **HTML 交互元素和表单合规性测试（38 个用例）**：表单基础结构（多种 input type/textarea/select/button）、表单验证（required/pattern/min-max/maxlength）、fieldset/datalist/output、progress/meter、details/summary（basic/open/nested）、dialog、table（complete/nested/colspan-rowspan）、template/picture、iframe（basic/sandbox）、embed/object、media 占位、导航链接、综合页面（login-form/settings/product-grid/faq-accordion/dashboard/article）、标记/ruby、列表嵌套、map/area、script 变体、head 元素、CSS 样式化表单（styled/grid/flex）、HTML 错误恢复（unclosed-tags/invalid-nesting/mixed-content）、空白处理 | +38 |
 | WPT runner/typography | **CSS 排版和高级视觉效果测试（52 个用例）**：字体属性（family-stack/sizes/weights/shorthand）、文本属性（text-align/line-height/text-decoration/text-transform/letter-word-spacing/white-space）、颜色（named/functional/hex）、边框（styles/radius）、阴影（box-shadow）、渐变（linear/radial）、opacity/visibility、overflow、CSS 变量（basic/fallback/calc）、综合页面（blog-post/pricing-cards/landing）、box-sizing、display 变体、calc()、position 变体、z-index、复杂选择器、cursor、pointer-events、2D transform、filter、多列布局、mix-blend-mode、contain | +52 |
 
-WPT: 610 → 700 用例（+90, 100% 通过率），Tests: ~11,054 → ~11,050, clippy clean.
+WPT: 610 → 700 用例（+90, 100% 通过率），Tests: ~11,054 → ~11,093, clippy clean.
 
 ### -78. WPT 100% 通过率 + 3 个新测试分类（本轮，~11,026 测试）
 
