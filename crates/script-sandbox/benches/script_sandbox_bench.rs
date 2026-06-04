@@ -5,9 +5,11 @@
 //! - JSON 序列化开销
 //! - 沙箱创建开销
 //! - 多次执行吞吐量
+//! - ES Module 执行开销
+//! - Worker 创建和通信开销
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use zero_script_sandbox::{SandboxConfig, V8Sandbox};
+use zero_script_sandbox::{EsModuleSandbox, SandboxConfig, V8Sandbox, WorkerRuntime};
 
 /// 基准 1: 简单表达式执行吞吐量。
 fn bench_simple_expression(c: &mut Criterion) {
@@ -73,6 +75,41 @@ fn bench_sandbox_with_config(c: &mut Criterion) {
     });
 }
 
+/// 基准 7: ES Module 简单导出执行。
+fn bench_es_module_simple(c: &mut Criterion) {
+    let mut sandbox = EsModuleSandbox::new().unwrap();
+    c.bench_function("es_module_simple_export", |b| {
+        b.iter(|| {
+            sandbox
+                .execute_module(black_box("export const x = 42; export default x * 2;"), None)
+                .unwrap()
+        })
+    });
+}
+
+/// 基准 8: ES Module 带依赖导入。
+fn bench_es_module_with_deps(c: &mut Criterion) {
+    let mut sandbox = EsModuleSandbox::new().unwrap();
+    sandbox.register_module("./math.js", "export const PI = 3.14; export const E = 2.72;");
+    c.bench_function("es_module_with_import", |b| {
+        b.iter(|| {
+            sandbox
+                .execute_module(black_box("import { PI } from './math.js'; export default PI;"), None)
+                .unwrap()
+        })
+    });
+}
+
+/// 基准 9: Worker 创建和终止。
+fn bench_worker_lifecycle(c: &mut Criterion) {
+    c.bench_function("worker_create_terminate", |b| {
+        b.iter(|| {
+            let mut worker = WorkerRuntime::new("var x = 1;", SandboxConfig::default()).unwrap();
+            worker.terminate();
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_simple_expression,
@@ -81,5 +118,8 @@ criterion_group!(
     bench_json_serialize,
     bench_sandbox_creation,
     bench_sandbox_with_config,
+    bench_es_module_simple,
+    bench_es_module_with_deps,
+    bench_worker_lifecycle,
 );
 criterion_main!(benches);
