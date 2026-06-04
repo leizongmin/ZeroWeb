@@ -8,12 +8,14 @@
 
 pub mod client;
 pub mod cookie;
+pub mod http_cache;
 pub mod navigation;
 pub mod request;
 pub mod url_parser;
 
 pub use client::*;
 pub use cookie::{Cookie, CookieStore, RequestContext, SameSite, parse_expires_date, same_site_allows};
+pub use http_cache::{CachedResponse, HttpCache};
 pub use navigation::*;
 pub use request::*;
 pub use url_parser::*;
