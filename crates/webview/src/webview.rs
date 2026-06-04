@@ -491,7 +491,11 @@ impl WebView {
     ///
     /// Worker ID（用于后续操作）。
     pub fn create_worker(&mut self, script: &str) -> Result<u64, WebViewError> {
-        let config = SandboxConfig::default();
+        let config = SandboxConfig {
+            heap_limit: 0,
+            timeout_ms: 0,
+            persistent_context: false,
+        };
         let worker = WorkerRuntime::new(script, config)
             .map_err(|e| WebViewError::Script(format!("Failed to create worker: {e}")))?;
         let id = self.next_worker_id;

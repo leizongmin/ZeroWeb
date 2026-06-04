@@ -13,6 +13,12 @@ use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
 use crate::gpu::pipeline::{create_atlas_bind_group_layout, create_render_pipeline, create_uniform_bind_group_layout};
 use crate::primitive::FillPrimitive;
 
+/// GPU 渲染器创建互斥锁 — 防止并发 wgpu 实例初始化导致 SIGSEGV
+///
+/// wgpu 驱动在多个线程同时创建 Instance/Adapter/Device 时可能触发段错误，
+/// 通过全局互斥锁序列化创建过程来解决。
+static GPU_CREATE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// 渲染场景中的 glyph 文本参数
 #[derive(Debug, Clone)]
 pub struct GlyphDraw {
@@ -64,6 +70,7 @@ pub struct GpuRenderer {
 impl GpuRenderer {
     /// 创建无头模式的 GPU 渲染器（用于测试和 CPU 回读）
     pub fn new_headless(width: u32, height: u32) -> Result<Self, String> {
+        let _guard = GPU_CREATE_MUTEX.lock().unwrap();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -98,6 +105,7 @@ impl GpuRenderer {
 
     /// 创建窗口模式的 GPU 渲染器
     pub fn new_for_window(window: Arc<winit::window::Window>) -> Result<Self, String> {
+        let _guard = GPU_CREATE_MUTEX.lock().unwrap();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()

@@ -72,6 +72,14 @@ pub struct SandboxConfig {
     pub heap_limit: usize,
     /// 脚本执行超时（毫秒），0表示无超时。
     pub timeout_ms: u64,
+    /// 复用 V8 Context 以减少启动开销（默认 false）。
+    ///
+    /// 启用后，首次 execute 时创建的 Context 会被缓存复用，
+    /// 避免每次执行都重新引导所有 JS 内置对象（Object/Array/Function 等）。
+    /// 适用于 WebView 等需要频繁执行脚本的场景。
+    ///
+    /// 注意：启用后多次 execute 之间的 JS 状态不再隔离（变量会保留）。
+    pub persistent_context: bool,
 }
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]
