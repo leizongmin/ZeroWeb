@@ -1,4 +1,4 @@
-//! 无头浏览器协议 Phase 1-2 — 远程调试服务。
+//! 无头浏览器协议 Phase 1-3 — 远程调试服务。
 //!
 //! 支持 `--headless` 和 `--remote-debugging-port <port>` 启动无窗口实例，
 //! 通过 WebSocket 接受自动化命令。
@@ -6,6 +6,8 @@
 //! Phase 1: 基础会话管理、JSON 消息路由、导航、脚本执行、截图。
 //! Phase 2: 浏览上下文管理（创建/树/关闭/重新加载）、script.callFunction、
 //!          HTTP 发现端点（/json/version）、事件通知。
+//! Phase 3: CDP 最小兼容子集 — /json/version + /json HTTP 发现、
+//!          Target/Page/Runtime/Network 基础域命令。
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -126,81 +128,183 @@ impl HeadlessServer {
         self.addr
     }
 
-    /// 启动无头协议服务器，阻塞运行直到连接关闭。
+    /// 启动无头协议服务器，阻塞运行直到进程终止。
+    ///
+    /// 支持 HTTP 发现请求（/json/version、/json）和 WebSocket 协议连接。
     pub fn run(&mut self) -> Result<(), String> {
         let listener =
             std::net::TcpListener::bind(self.addr).map_err(|e| format!("Failed to bind {}: {}", self.addr, e))?;
 
-        // 更新实际地址（port=0 时 OS 分配随机端口）
         self.addr = listener
             .local_addr()
             .map_err(|e| format!("Failed to get local addr: {e}"))?;
 
         tracing::info!("Headless protocol server listening on ws://{}", self.addr);
 
-        // 接受单个连接（Phase 1 只支持单客户端）
-        let (stream, peer) = listener.accept().map_err(|e| format!("Accept failed: {e}"))?;
-        tracing::info!("Client connected from {peer}");
-
-        let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
-
-        // 初始会话
-        let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
-
-        // 主消息循环
+        // 连接接受循环：支持 HTTP 发现 + WebSocket 协议
         loop {
-            let msg = match ws.read() {
-                Ok(Message::Text(text)) => text,
-                Ok(Message::Close(_)) => {
-                    tracing::info!("Client disconnected");
-                    break;
-                }
-                Ok(Message::Ping(data)) => {
-                    let _ = ws.write(Message::Pong(data));
-                    continue;
-                }
+            let (stream, peer) = listener.accept().map_err(|e| format!("Accept failed: {e}"))?;
+            tracing::info!("Connection from {peer}");
+
+            // peek 前几个字节判断是 HTTP 还是 WebSocket
+            let mut buf = [0u8; 4096];
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
+            let n = match stream.peek(&mut buf) {
+                Ok(n) if n > 0 => n,
                 Ok(_) => continue,
                 Err(e) => {
-                    tracing::error!("WebSocket read error: {e}");
-                    break;
+                    tracing::warn!("Peek failed for {peer}: {e}");
+                    continue;
                 }
             };
+            let peeked = &buf[..n];
 
-            let response = self.handle_message(&mut session, &msg);
-            let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
-                format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
-            });
-
-            if let Err(e) = ws.write(Message::Text(response_json.into())) {
-                tracing::error!("WebSocket write error: {e}");
-                break;
+            // 检测是否是普通 HTTP GET 请求（非 WebSocket 升级）
+            if Self::is_http_get_request(peeked) {
+                Self::handle_http_discovery(&stream, self.addr);
+                continue;
             }
-        }
 
-        tracing::info!("Headless session ended");
-        Ok(())
+            // WebSocket 连接
+            let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
+            let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
+
+            // WebSocket 消息循环
+            loop {
+                let msg = match ws.read() {
+                    Ok(Message::Text(text)) => text,
+                    Ok(Message::Close(_)) => {
+                        tracing::info!("Client disconnected");
+                        break;
+                    }
+                    Ok(Message::Ping(data)) => {
+                        let _ = ws.write(Message::Pong(data));
+                        continue;
+                    }
+                    Ok(_) => continue,
+                    Err(e) => {
+                        tracing::error!("WebSocket read error: {e}");
+                        break;
+                    }
+                };
+
+                let (response, events) = self.handle_message_with_events(&mut session, &msg);
+
+                // 先推送事件通知
+                for event in events {
+                    if let Ok(event_json) = serde_json::to_string(&event)
+                        && let Err(e) = ws.write(Message::Text(event_json.into()))
+                    {
+                        tracing::error!("Event push error: {e}");
+                        break;
+                    }
+                }
+
+                // 再推送命令响应
+                let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
+                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
+                });
+
+                if let Err(e) = ws.write(Message::Text(response_json.into())) {
+                    tracing::error!("WebSocket write error: {e}");
+                    break;
+                }
+            }
+
+            tracing::info!("Headless session ended");
+        }
     }
 
-    /// 处理单条客户端消息。
+    /// 判断是否为普通 HTTP GET 请求（非 WebSocket 升级）。
+    fn is_http_get_request(data: &[u8]) -> bool {
+        let s = String::from_utf8_lossy(data);
+        s.starts_with("GET ") && !s.contains("Upgrade: websocket")
+    }
+
+    /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
+    fn handle_http_discovery(stream: &std::net::TcpStream, addr: SocketAddr) {
+        use std::io::{Read, Write};
+
+        let mut read_buf = [0u8; 4096];
+        let path = if let Ok(mut readable) = stream.try_clone() {
+            let n = readable.read(&mut read_buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&read_buf[..n]);
+            request
+                .lines()
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("/")
+                .to_string()
+        } else {
+            "/".to_string()
+        };
+
+        let (status, content_type, body) = match path.as_str() {
+            "/json/version" => ("200 OK", "application/json", Self::http_version_json(addr)),
+            "/json" | "/json/list" => (
+                "200 OK",
+                "application/json",
+                serde_json::json!([{
+                    "description": "ZeroWeb headless instance",
+                    "devtoolsFrontendUrl": format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
+                    "id": "zeroweb-main",
+                    "title": "ZeroWeb",
+                    "type": "page",
+                    "url": "about:blank",
+                    "webSocketDebuggerUrl": format!("ws://{addr}"),
+                }])
+                .to_string(),
+            ),
+            _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
+        };
+
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+
+        if let Ok(mut writable) = stream.try_clone() {
+            let _ = writable.write_all(response.as_bytes());
+            let _ = writable.flush();
+        }
+    }
+
+    /// 处理单条客户端消息（向后兼容，不含事件）。
+    #[allow(dead_code)]
     fn handle_message(&self, session: &mut HeadlessSession, raw: &str) -> ServerResponse {
+        let (response, _) = self.handle_message_with_events(session, raw);
+        response
+    }
+
+    /// 处理单条客户端消息，返回响应和事件通知列表。
+    fn handle_message_with_events(
+        &self,
+        session: &mut HeadlessSession,
+        raw: &str,
+    ) -> (ServerResponse, Vec<ServerEvent>) {
         let req: ClientRequest = match serde_json::from_str(raw) {
             Ok(r) => r,
             Err(e) => {
-                return ServerResponse {
-                    id: 0,
-                    result: None,
-                    error: Some(ProtocolError {
-                        code: -32700,
-                        message: format!("Parse error: {e}"),
-                    }),
-                };
+                return (
+                    ServerResponse {
+                        id: 0,
+                        result: None,
+                        error: Some(ProtocolError {
+                            code: -32700,
+                            message: format!("Parse error: {e}"),
+                        }),
+                    },
+                    Vec::new(),
+                );
             }
         };
 
         let id = req.id;
-        let result = self.dispatch(session, &req.method, req.params);
+        let (result, events) = self.dispatch_with_events(session, &req.method, req.params);
 
-        match result {
+        let response = match result {
             Ok(value) => ServerResponse {
                 id,
                 result: Some(value),
@@ -211,7 +315,9 @@ impl HeadlessServer {
                 result: None,
                 error: Some(err),
             },
-        }
+        };
+
+        (response, events)
     }
 
     /// 命令路由。
@@ -252,6 +358,99 @@ impl HeadlessServer {
                 code: -32601,
                 message: format!("Unknown method: {method}"),
             }),
+        }
+    }
+
+    /// 带事件生成的命令路由。
+    fn dispatch_with_events(
+        &self,
+        session: &mut HeadlessSession,
+        method: &str,
+        params: Value,
+    ) -> (Result<Value, ProtocolError>, Vec<ServerEvent>) {
+        let mut events = Vec::new();
+
+        match method {
+            "browsingContext.navigate" => {
+                let result = self.cmd_navigate(session, params);
+                if let Ok(ref val) = result {
+                    let url_val = val.get("url").cloned();
+                    events.push(ServerEvent {
+                        method: "browsingContext.load".into(),
+                        params: serde_json::json!({
+                            "url": url_val,
+                            "success": true,
+                        }),
+                    });
+                    events.push(ServerEvent {
+                        method: "log.entryAdded".into(),
+                        params: serde_json::json!({
+                            "level": "info",
+                            "text": format!("Page loaded: {:?}", url_val),
+                            "timestamp": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis(),
+                        }),
+                    });
+                }
+                (result, events)
+            }
+            "browsingContext.reload" => {
+                let result = self.cmd_browsing_context_reload(session);
+                if result.is_ok() {
+                    events.push(ServerEvent {
+                        method: "browsingContext.load".into(),
+                        params: serde_json::json!({ "success": true }),
+                    });
+                }
+                (result, events)
+            }
+            "browsingContext.create" => {
+                let result = self.cmd_browsing_context_create(session, params.clone());
+                if let Ok(ref val) = result {
+                    events.push(ServerEvent {
+                        method: "browsingContext.contextCreated".into(),
+                        params: serde_json::json!({
+                            "context": val.get("context"),
+                        }),
+                    });
+                }
+                (result, events)
+            }
+            "browsingContext.close" => {
+                let ctx = params.get("context").cloned();
+                let result = self.cmd_browsing_context_close(session, params);
+                if result.is_ok() {
+                    events.push(ServerEvent {
+                        method: "browsingContext.contextDestroyed".into(),
+                        params: serde_json::json!({ "context": ctx }),
+                    });
+                }
+                (result, events)
+            }
+            // CDP 兼容域（Phase 3）
+            "Page.navigate" => {
+                let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                let nav_params = serde_json::json!({ "url": url });
+                let result = self.cmd_navigate(session, nav_params);
+                if result.is_ok() {
+                    events.push(ServerEvent {
+                        method: "Page.loadEventFired".into(),
+                        params: serde_json::json!({ "timestamp": 0.0 }),
+                    });
+                }
+                (result, events)
+            }
+            "Page.captureScreenshot" => (self.cmd_capture_screenshot(session), events),
+            "Runtime.evaluate" => (self.cmd_script_evaluate(session, params), events),
+            "Target.getTargets" => (self.cmd_browsing_context_get_tree(session), events),
+            "Network.enable" => {
+                // 启用网络事件追踪（桩：接受命令但不产生事件）
+                (Ok(serde_json::json!({ "result": "enabled" })), events)
+            }
+            // 默认：无事件
+            _ => (self.dispatch(session, method, params), events),
         }
     }
 
@@ -732,5 +931,129 @@ mod tests {
         let parsed: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["Browser"], "ZeroWeb/0.1");
         assert!(parsed["webSocketDebuggerUrl"].as_str().unwrap().contains("ws://"));
+    }
+
+    // ── Phase 2-3 测试：事件推送和 CDP 兼容 ──
+
+    #[test]
+    fn test_is_http_get_request() {
+        assert!(HeadlessServer::is_http_get_request(b"GET /json HTTP/1.1\r\n"));
+        assert!(!HeadlessServer::is_http_get_request(
+            b"GET /json HTTP/1.1\r\nUpgrade: websocket\r\n"
+        ));
+        assert!(!HeadlessServer::is_http_get_request(b"POST /json HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn test_server_event_serialize() {
+        let event = ServerEvent {
+            method: "browsingContext.load".into(),
+            params: serde_json::json!({ "url": "https://example.com" }),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"method\""));
+        assert!(json.contains("browsingContext.load"));
+    }
+
+    #[test]
+    fn test_dispatch_with_events_navigate() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({ "url": "https://example.com" });
+        let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.navigate", params);
+        assert!(result.is_ok());
+        assert!(!events.is_empty(), "navigate should produce events");
+        let methods: Vec<&str> = events.iter().map(|e| e.method.as_str()).collect();
+        assert!(methods.contains(&"browsingContext.load"), "should emit load event");
+        assert!(methods.contains(&"log.entryAdded"), "should emit log event");
+    }
+
+    #[test]
+    fn test_dispatch_with_events_reload() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.reload", Value::Null);
+        assert!(result.is_ok());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].method, "browsingContext.load");
+    }
+
+    #[test]
+    fn test_dispatch_with_events_create() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({});
+        let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.create", params);
+        assert!(result.is_ok());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].method, "browsingContext.contextCreated");
+    }
+
+    #[test]
+    fn test_dispatch_with_events_close() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let new_tab_id = session.shell.new_tab(None);
+        let params = serde_json::json!({ "context": new_tab_id.0 });
+        let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.close", params);
+        assert!(result.is_ok());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].method, "browsingContext.contextDestroyed");
+    }
+
+    #[test]
+    fn test_dispatch_with_events_no_events_for_status() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let (result, events) = server.dispatch_with_events(&mut session, "session.status", Value::Null);
+        assert!(result.is_ok());
+        assert!(events.is_empty(), "session.status should not produce events");
+    }
+
+    #[test]
+    fn test_dispatch_cdp_page_navigate() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({ "url": "https://example.com" });
+        let (result, events) = server.dispatch_with_events(&mut session, "Page.navigate", params);
+        assert!(result.is_ok());
+        assert!(events.iter().any(|e| e.method == "Page.loadEventFired"));
+    }
+
+    #[test]
+    fn test_dispatch_cdp_runtime_evaluate() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({ "expression": "1 + 1" });
+        let (result, events) = server.dispatch_with_events(&mut session, "Runtime.evaluate", params);
+        assert!(result.is_ok());
+        assert!(events.is_empty(), "Runtime.evaluate should not produce events");
+    }
+
+    #[test]
+    fn test_dispatch_cdp_network_enable() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let (result, events) = server.dispatch_with_events(&mut session, "Network.enable", Value::Null);
+        assert!(result.is_ok());
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_dispatch_cdp_target_get_targets() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let (result, events) = server.dispatch_with_events(&mut session, "Target.getTargets", Value::Null);
+        assert!(result.is_ok());
+        assert!(result.as_ref().unwrap().get("contexts").is_some());
+    }
+
+    #[test]
+    fn test_dispatch_cdp_page_capture_screenshot() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let (result, events) = server.dispatch_with_events(&mut session, "Page.captureScreenshot", Value::Null);
+        assert!(result.is_ok());
+        assert!(events.is_empty());
     }
 }
