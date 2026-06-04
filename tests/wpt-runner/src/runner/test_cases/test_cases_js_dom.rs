@@ -963,5 +963,254 @@ pub fn js_dom_tests() -> Vec<TestCase> {
                 "layout_has_children".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  DOM 高级 API
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "js-dom/dataset-api".to_string(),
+            description: "element.dataset read/write custom data attributes".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="user" data-user-id="42" data-user-name="Alice" data-role="admin">
+    <span id="result">checking</span>
+</div>
+<script>
+var el = document.getElementById('user');
+var id = el.dataset.userId;
+var name = el.dataset.userName;
+el.dataset.active = 'true';
+document.getElementById('result').textContent = id + '-' + name;
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/classlist-advanced".to_string(),
+            description: "classList toggle/replace/contains advanced".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="box" class="active visible">Box</div>
+<script>
+var el = document.getElementById('box');
+el.classList.toggle('active');
+el.classList.toggle('visible', true);
+el.classList.replace('visible', 'hidden');
+el.classList.add('new-class');
+var contains = el.classList.contains('hidden');
+var count = el.classList.length;
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/element-matches-closest".to_string(),
+            description: "element.matches() and element.closest() selectors".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<nav id="nav">
+    <ul class="menu">
+        <li class="item"><a href="/home" class="link" id="target">Link</a></li>
+    </ul>
+</nav>
+<script>
+var link = document.getElementById('target');
+var isLink = link.matches('a.link');
+var li = link.closest('li');
+var menu = link.closest('.menu');
+var nav = link.closest('nav');
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/custom-event".to_string(),
+            description: "CustomEvent constructor and dispatch".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="target">Target</div>
+<script>
+var received = false;
+var detail = null;
+document.getElementById('target').addEventListener('my-event', function(e) {
+    received = true;
+    detail = e.detail;
+});
+var evt = new CustomEvent('my-event', { detail: { key: 'value' } });
+document.getElementById('target').dispatchEvent(evt);
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/document-fragment".to_string(),
+            description: "DocumentFragment for batch DOM operations".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<ul id="list"></ul>
+<script>
+var fragment = document.createDocumentFragment();
+for (var i = 0; i < 5; i++) {
+    var li = document.createElement('li');
+    li.textContent = 'Item ' + i;
+    fragment.appendChild(li);
+}
+document.getElementById('list').appendChild(fragment);
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/node-compare-document-position".to_string(),
+            description: "Node.compareDocumentPosition() ordering".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="parent">
+    <span id="first">First</span>
+    <span id="second">Second</span>
+</div>
+<script>
+var first = document.getElementById('first');
+var second = document.getElementById('second');
+var pos = first.compareDocumentPosition(second);
+// second FOLLOWING first = Node.DOCUMENT_POSITION_FOLLOWING (4)
+var isFollowing = (pos & 4) !== 0;
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/innerhtml-outerhtml".to_string(),
+            description: "innerHTML and outerHTML read/write".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="content"><p>Original</p></div>
+<div id="holder"></div>
+<script>
+var content = document.getElementById('content');
+var html = content.innerHTML;
+content.innerHTML = '<span>Replaced</span>';
+var holder = document.getElementById('holder');
+holder.innerHTML = '<em>New content</em>';
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/mutation-observer".to_string(),
+            description: "MutationObserver observe and callback".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="observed">Watch me</div>
+<script>
+var mutations = [];
+var observer = new MutationObserver(function(muts) {
+    for (var i = 0; i < muts.length; i++) {
+        mutations.push(muts[i].type);
+    }
+});
+var target = document.getElementById('observed');
+observer.observe(target, { childList: true, attributes: true });
+target.textContent = 'Changed';
+target.setAttribute('data-x', '1');
+var records = observer.takeRecords();
+observer.disconnect();
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/shadow-dom-basic".to_string(),
+            description: "Shadow DOM attachShadow basic".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="host">Light content</div>
+<script>
+var host = document.getElementById('host');
+var shadow = host.attachShadow({ mode: 'open' });
+shadow.innerHTML = '<p>Shadow content</p>';
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
+        TestCase {
+            id: "js-dom/element-create-comment".to_string(),
+            description: "document.createComment and DOM manipulation".to_string(),
+            category: "js-dom".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="target">Content</div>
+<script>
+var comment = document.createComment('This is a comment');
+var target = document.getElementById('target');
+target.parentNode.insertBefore(comment, target);
+var text = document.createTextNode(' appended');
+target.appendChild(text);
+</script>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
     ]
 }
