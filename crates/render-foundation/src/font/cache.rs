@@ -1,7 +1,8 @@
-//! Glyph 缓存 — 缓存已渲染的 glyph 位图
+//! Glyph 缓存 — 基于 LRU 策略缓存已渲染的 glyph 位图。
 
 use crate::font::{FontError, GlyphBitmap};
 use hashbrown::HashMap;
+use std::collections::VecDeque;
 
 /// Glyph 缓存键
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -25,75 +26,138 @@ impl GlyphKey {
     }
 }
 
-/// Glyph 缓存 — 缓存已渲染的 glyph 位图以避免重复光栅化
+/// 缓存条目 — 包含 glyph 位图和 LRU 位置信息。
+struct CacheEntry {
+    /// Glyph 位图数据。
+    bitmap: GlyphBitmap,
+    /// 在 LRU 队列中的索引（用于 O(1) 提升和淘汰）。
+    lru_index: usize,
+}
+
+/// Glyph 缓存 — 基于 LRU 策略缓存已渲染的 glyph 位图以避免重复光栅化。
+///
+/// 使用近似 LRU 策略：每次访问将条目移到队列尾部，淘汰时从队列头部移除。
+/// 淘汰粒度为批量（每次淘汰约 25% 的缓存），以减少频繁淘汰的开销。
 pub struct GlyphCache {
-    /// 缓存条目
-    cache: HashMap<GlyphKey, GlyphBitmap>,
-    /// 最大缓存条目数
+    /// 缓存条目。
+    cache: HashMap<GlyphKey, CacheEntry>,
+    /// LRU 队列 — 最近访问的 key 在尾部，最久未访问的在头部。
+    lru_queue: VecDeque<GlyphKey>,
+    /// 最大缓存条目数。
     max_entries: usize,
 }
 
 impl GlyphCache {
-    /// 创建新的 Glyph 缓存
+    /// 创建新的 Glyph 缓存。
     pub fn new(max_entries: usize) -> Self {
         Self {
             cache: HashMap::new(),
-            max_entries,
+            lru_queue: VecDeque::new(),
+            max_entries: if max_entries == 0 { 1 } else { max_entries },
         }
     }
 
-    /// 获取或插入 glyph
+    /// 将条目提升到 LRU 队列尾部（最近访问）。
+    fn promote(&mut self, key: &GlyphKey, lru_index: usize) {
+        // 从旧位置移除
+        self.lru_queue.remove(lru_index);
+        // 追加到尾部
+        self.lru_queue.push_back(key.clone());
+        // 更新所有受影响条目的 lru_index
+        self.rebuild_lru_indices();
+    }
+
+    /// 重建所有缓存条目的 lru_index。
+    ///
+    /// 在 promote/remove 后调用，确保 HashMap 中的索引与 VecDeque 位置一致。
+    fn rebuild_lru_indices(&mut self) {
+        for (i, key) in self.lru_queue.iter().enumerate() {
+            if let Some(entry) = self.cache.get_mut(key) {
+                entry.lru_index = i;
+            }
+        }
+    }
+
+    /// 淘汰旧条目，为新条目腾出空间。
+    ///
+    /// 淘汰约 25% 的最旧条目（最少一个）。
+    fn evict(&mut self) {
+        let evict_count = (self.max_entries / 4).max(1);
+        for _ in 0..evict_count {
+            if let Some(old_key) = self.lru_queue.pop_front() {
+                self.cache.remove(&old_key);
+            }
+        }
+        self.rebuild_lru_indices();
+    }
+
+    /// 获取或插入 glyph（带 LRU 提升）。
     pub fn get_or_insert_with<F>(&mut self, key: GlyphKey, f: F) -> Result<&GlyphBitmap, FontError>
     where
         F: FnOnce() -> Result<GlyphBitmap, FontError>,
     {
-        if self.cache.len() >= self.max_entries && !self.cache.contains_key(&key) {
-            // 简单淘汰策略：当缓存满时清空一半
-            // TODO: 后续实现 LRU 淘汰
-            let keys_to_remove: Vec<_> = self.cache.keys().take(self.max_entries / 2).cloned().collect();
-            for k in keys_to_remove {
-                self.cache.remove(&k);
-            }
+        // 检查缓存命中
+        if let Some(entry) = self.cache.get(&key) {
+            let lru_index = entry.lru_index;
+            // 提升到最近访问
+            self.promote(&key, lru_index);
+            // 返回引用（rebuild 后引用失效，需要重新获取）
+            return Ok(&self.cache.get(&key).unwrap().bitmap);
         }
 
-        if !self.cache.contains_key(&key) {
-            let bitmap = f()?;
-            self.cache.insert(key.clone(), bitmap);
+        // 缓存未命中，需要淘汰空间
+        if self.cache.len() >= self.max_entries {
+            self.evict();
         }
 
-        Ok(self.cache.get(&key).unwrap())
+        // 生成位图并插入
+        let bitmap = f()?;
+        let lru_index = self.lru_queue.len();
+        self.lru_queue.push_back(key.clone());
+        self.cache.insert(key, CacheEntry { bitmap, lru_index });
+
+        Ok(&self.cache.get(self.lru_queue.back().unwrap()).unwrap().bitmap)
     }
 
-    /// 直接获取缓存的 glyph
+    /// 直接获取缓存的 glyph（不更新 LRU 顺序）。
     pub fn get(&self, key: &GlyphKey) -> Option<&GlyphBitmap> {
-        self.cache.get(key)
+        self.cache.get(key).map(|e| &e.bitmap)
     }
 
-    /// 插入 glyph 到缓存
+    /// 插入 glyph 到缓存（插入到 LRU 尾部）。
     pub fn insert(&mut self, key: GlyphKey, bitmap: GlyphBitmap) {
-        self.cache.insert(key, bitmap);
+        // 如果已存在，先移除旧条目
+        if let Some(old) = self.cache.remove(&key) {
+            self.lru_queue.remove(old.lru_index);
+            self.rebuild_lru_indices();
+        }
+
+        let lru_index = self.lru_queue.len();
+        self.lru_queue.push_back(key.clone());
+        self.cache.insert(key, CacheEntry { bitmap, lru_index });
     }
 
-    /// 缓存条目数
+    /// 缓存条目数。
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
-    /// 是否为空
+    /// 是否为空。
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
-    /// 清空缓存
+    /// 清空缓存。
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.lru_queue.clear();
     }
 
-    /// 当前内存使用量估算（字节）
+    /// 当前内存使用量估算（字节）。
     pub fn estimated_memory(&self) -> usize {
         self.cache
             .values()
-            .map(|b| b.data.len() + std::mem::size_of::<GlyphBitmap>())
+            .map(|e| e.bitmap.data.len() + std::mem::size_of::<GlyphBitmap>())
             .sum()
     }
 }
@@ -122,7 +186,7 @@ mod tests {
     #[test]
     fn test_cache_insert_and_get() {
         let mut cache = GlyphCache::new(100);
-        let key = GlyphKey::new(0, 65, 16.0); // font 0, 'A', 16px
+        let key = GlyphKey::new(0, 65, 16.0);
         let bitmap = make_bitmap(&[1, 2, 3, 4], 2, 2);
 
         cache.insert(key.clone(), bitmap);
@@ -147,7 +211,7 @@ mod tests {
         // 添加第 5 个，触发淘汰
         let key = GlyphKey::new(0, 100, 16.0);
         cache.insert(key, make_bitmap(&[0; 4], 2, 2));
-        // 淘汰后应该少于 5
+        // 淘汰后应该 ≤ 5
         assert!(cache.len() <= 5);
     }
 
@@ -193,21 +257,34 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_eviction_halves_when_full() {
+    fn test_cache_eviction_lru_order() {
         let mut cache = GlyphCache::new(4);
-        // Fill cache to capacity
+        // Fill cache: 0, 1, 2, 3
         for i in 0..4u32 {
             let key = GlyphKey::new(0, i, 16.0);
             cache.insert(key, make_bitmap(&[i as u8; 4], 2, 2));
         }
         assert_eq!(cache.len(), 4);
-        // Insert a new key — should trigger eviction of half
+
+        // Access glyph 0 (promote to recent)
+        let _ = cache.get_or_insert_with(GlyphKey::new(0, 0, 16.0), || panic!());
+
+        // Insert new key — should evict glyph 1 (oldest unaccessed)
         let new_key = GlyphKey::new(0, 99, 16.0);
         cache
             .get_or_insert_with(new_key, || Ok(make_bitmap(&[0; 4], 2, 2)))
             .unwrap();
-        // After eviction + insertion, count should be <= (4 - 2) + 1 = 3
-        assert!(cache.len() <= 3);
+
+        // glyph 0 should still exist (was recently accessed)
+        assert!(
+            cache.get(&GlyphKey::new(0, 0, 16.0)).is_some(),
+            "recently accessed glyph 0 should survive"
+        );
+        // glyph 1 should be evicted (oldest)
+        assert!(
+            cache.get(&GlyphKey::new(0, 1, 16.0)).is_none(),
+            "oldest glyph 1 should be evicted"
+        );
     }
 
     #[test]
@@ -233,8 +310,6 @@ mod tests {
     fn test_cache_default_capacity() {
         let cache = GlyphCache::default();
         assert!(cache.is_empty());
-        // Default max_entries is 4096
-        // Just verify it works with a few inserts
         assert_eq!(cache.len(), 0);
     }
 
@@ -244,7 +319,6 @@ mod tests {
         let key = GlyphKey::new(0, 65, 16.0);
         let result = cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
         assert!(result.is_err());
-        // Failed insert should not add to cache
         assert!(cache.get(&key).is_none());
     }
 
@@ -271,7 +345,6 @@ mod tests {
         let mut cache = GlyphCache::new(100);
         let key = GlyphKey::new(0, 65, 16.0);
         cache.insert(key.clone(), make_bitmap(&[1, 2, 3], 3, 1));
-        // Insert again with same key — should overwrite
         cache.insert(key.clone(), make_bitmap(&[4, 5, 6], 3, 1));
         let got = cache.get(&key).unwrap();
         assert_eq!(got.data, vec![4, 5, 6]);
@@ -293,7 +366,7 @@ mod tests {
     #[test]
     fn test_cache_zero_capacity() {
         let mut cache = GlyphCache::new(0);
-        // Inserting should still work (direct insert bypasses eviction logic)
+        // max_entries 被提升为 1
         let key = GlyphKey::new(0, 65, 16.0);
         cache.insert(key.clone(), make_bitmap(&[1], 1, 1));
         assert_eq!(cache.len(), 1);
@@ -316,41 +389,32 @@ mod tests {
         assert!((bm.advance - 12.5).abs() < f32::EPSILON);
     }
 
-    /// 测试 get_or_insert_with 在零容量缓存中触发淘汰后仍能插入
-    ///
-    /// max_entries=0 时 get_or_insert_with 应能淘汰并插入新条目。
+    /// 测试零容量缓存的 get_or_insert。
     #[test]
     fn test_cache_get_or_insert_zero_capacity() {
         let mut cache = GlyphCache::new(0);
         let key = GlyphKey::new(0, 65, 16.0);
         let result = cache.get_or_insert_with(key.clone(), || Ok(make_bitmap(&[42], 1, 1)));
         assert!(result.is_ok(), "零容量缓存应能通过 get_or_insert 插入");
-        // 淘汰逻辑移除一半（0/2 = 0），但随后直接插入
         assert!(cache.get(&key).is_some());
     }
 
-    /// 测试缓存错误不插入后再次调用成功
-    ///
-    /// 第一次 get_or_insert_with 返回 Err 不应阻止后续对相同 key 的调用。
+    /// 测试缓存错误不插入后再次调用成功。
     #[test]
     fn test_cache_failed_insert_retriable() {
         let mut cache = GlyphCache::new(100);
         let key = GlyphKey::new(0, 65, 16.0);
 
-        // 第一次失败
         let result = cache.get_or_insert_with(key.clone(), || Err(FontError::NotFound("test".to_string())));
         assert!(result.is_err());
         assert!(cache.get(&key).is_none(), "失败后缓存不应有条目");
 
-        // 第二次成功
         let result = cache.get_or_insert_with(key.clone(), || Ok(make_bitmap(&[99], 1, 1)));
         assert!(result.is_ok());
         assert_eq!(cache.get(&key).unwrap().data[0], 99);
     }
 
-    /// 测试 estimated_memory 对多个条目的累加
-    ///
-    /// 插入多个不同大小的 bitmap 后验证 estimated_memory 正确累加。
+    /// 测试 estimated_memory 对多个条目的累加。
     #[test]
     fn test_cache_estimated_memory_multiple_entries() {
         let mut cache = GlyphCache::new(100);
@@ -360,7 +424,6 @@ mod tests {
         cache.insert(GlyphKey::new(0, 67, 16.0), make_bitmap(&[0; 50], 5, 10));
 
         let mem = cache.estimated_memory();
-        // 每条还应加上 size_of::<GlyphBitmap>()
         let bitmap_size = std::mem::size_of::<GlyphBitmap>();
         assert!(
             mem >= 100 + 200 + 50 + bitmap_size * 3,
@@ -368,10 +431,7 @@ mod tests {
         );
     }
 
-    /// 测试 GlyphKey::new 对零和负 font_size 的处理
-    ///
-    /// font_size 为 0 时 round() 为 0；font_size 为负数时
-    /// round() 产生负整数，转换为 u16 时 Rust 会饱和为 0。
+    /// 测试 GlyphKey 对零和负 font_size 的处理。
     #[test]
     fn test_glyph_key_zero_and_negative_font_size() {
         let key_zero = GlyphKey::new(0, 65, 0.0);
@@ -379,5 +439,50 @@ mod tests {
 
         let key_neg = GlyphKey::new(0, 65, -10.4);
         assert_eq!(key_neg.size_px, 0, "font_size<0 的 round 值转 u16 应饱和为 0");
+    }
+
+    /// 测试 LRU 优先淘汰最久未访问的条目。
+    #[test]
+    fn test_lru_evicts_oldest_first() {
+        let mut cache = GlyphCache::new(4);
+        // 填充: 0, 1, 2, 3
+        for i in 0..4u32 {
+            cache.insert(GlyphKey::new(0, i, 16.0), make_bitmap(&[i as u8; 4], 2, 2));
+        }
+
+        // 访问 0 和 1（提升到最近）
+        let _ = cache.get_or_insert_with(GlyphKey::new(0, 0, 16.0), || panic!());
+        let _ = cache.get_or_insert_with(GlyphKey::new(0, 1, 16.0), || panic!());
+
+        // 插入新条目触发淘汰 → 应淘汰 2（最旧）
+        cache
+            .get_or_insert_with(GlyphKey::new(0, 50, 16.0), || Ok(make_bitmap(&[0; 4], 2, 2)))
+            .unwrap();
+
+        // 0 和 1 应该存活
+        assert!(cache.get(&GlyphKey::new(0, 0, 16.0)).is_some());
+        assert!(cache.get(&GlyphKey::new(0, 1, 16.0)).is_some());
+        // 2 应该被淘汰
+        assert!(cache.get(&GlyphKey::new(0, 2, 16.0)).is_none());
+    }
+
+    /// 测试 insert 覆盖旧条目时 LRU 队列正确更新。
+    #[test]
+    fn test_insert_overwrite_promotes_in_lru() {
+        let mut cache = GlyphCache::new(4);
+        for i in 0..4u32 {
+            cache.insert(GlyphKey::new(0, i, 16.0), make_bitmap(&[i as u8; 4], 2, 2));
+        }
+
+        // 覆盖 glyph 0（应提升到尾部）
+        cache.insert(GlyphKey::new(0, 0, 16.0), make_bitmap(&[99; 4], 2, 2));
+
+        // 插入新条目 → 应淘汰最旧的（glyph 1）
+        cache
+            .get_or_insert_with(GlyphKey::new(0, 50, 16.0), || Ok(make_bitmap(&[0; 4], 2, 2)))
+            .unwrap();
+
+        assert!(cache.get(&GlyphKey::new(0, 0, 16.0)).is_some(), "覆盖的 glyph 0 应存活");
+        assert!(cache.get(&GlyphKey::new(0, 1, 16.0)).is_none(), "glyph 1 应被淘汰");
     }
 }
