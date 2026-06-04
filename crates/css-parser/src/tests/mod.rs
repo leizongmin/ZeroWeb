@@ -87,6 +87,7 @@ mod tests_3;
 mod tests_4;
 mod tests_9;
 mod tokenizer_coverage;
+mod tokenizer_coverage2;
 mod transform_coverage;
 mod types_coverage;
 mod types_coverage2;
