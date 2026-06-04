@@ -366,9 +366,132 @@ fn test_whitespace_only() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_collect_tokens() {
+fn test_collect_tokens_duplicate() {
     let toks = Tokenizer::new("div { color: red; }").collect_tokens();
     assert!(!toks.is_empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 通过 tokenizer 输入触发私有方法
+// ═══════════════════════════════════════════════════════════════════════
+
+// 触发 consume_whitespace（行 299）
+#[test]
+fn test_whitespace_trigger() {
+    let toks = tokens("  ");
+    assert_eq!(toks.len(), 1);
+    assert!(matches!(toks[0], Token::Whitespace));
+}
+
+// 触发 consume_comment（行 310）
+#[test]
+fn test_comment_trigger() {
+    let toks = tokens("/* comment */");
+    assert_eq!(toks.len(), 1);
+    assert!(matches!(toks[0], Token::Comment(_)));
+}
+
+// 触发 consume_ident（行 335）
+#[test]
+fn test_ident_trigger() {
+    let toks = tokens("ident");
+    assert_eq!(toks.len(), 1);
+    if let Token::Ident(s) = &toks[0] {
+        assert_eq!(s, "ident");
+    }
+}
+
+// 触发 consume_escape（行 385）- 通过标识符中的转义
+#[test]
+fn test_escape_trigger() {
+    let toks = tokens("a\\41"); // \41 = 'A'
+    assert_eq!(toks.len(), 1);
+    // 应该解析为标识符，其中包含转义字符
+    assert!(matches!(toks[0], Token::Ident(_)));
+}
+
+// 触发 consume_number（行 426）
+#[test]
+fn test_number_trigger() {
+    let toks = tokens("123.45");
+    assert_eq!(toks.len(), 1);
+    if let Token::Number(n) = &toks[0] {
+        assert!((n - 123.45).abs() < 0.001);
+    }
+}
+
+// 触发 consume_string（行 480）和 consume_string_content（行 486）
+#[test]
+fn test_string_trigger() {
+    let toks = tokens("\"hello\"");
+    assert_eq!(toks.len(), 1);
+    if let Token::String(s) = &toks[0] {
+        assert_eq!(s, "hello");
+    }
+}
+
+// 触发 consume_url（行 531）
+#[test]
+fn test_url_trigger() {
+    let toks = tokens("url(test.png)");
+    assert_eq!(toks.len(), 1);
+    if let Token::Url(s) = &toks[0] {
+        assert_eq!(s, "test.png");
+    }
+}
+
+// 触发 consume_ident_like（行 586）
+#[test]
+fn test_ident_like_trigger() {
+    let toks = tokens("ident");
+    assert_eq!(toks.len(), 1);
+    if let Token::Ident(s) = &toks[0] {
+        assert_eq!(s, "ident");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 测试新的数字后缀处理逻辑（行 888）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_dimension_trigger() {
+    let toks = tokens("10px");
+    assert_eq!(toks.len(), 1);
+    if let Token::Dimension(n, u) = &toks[0] {
+        assert!(*n == 10.0 && u == "px");
+    }
+}
+
+#[test]
+fn test_percentage_trigger() {
+    let toks = tokens("50%");
+    assert_eq!(toks.len(), 1);
+    if let Token::Percentage(n) = &toks[0] {
+        assert!(*n == 50.0);
+    }
+}
+
+// 测试 consume_number_and_suffix 分支（行 888）
+#[test]
+fn test_scientific_with_dimension() {
+    let toks = tokens("1.5e2px");
+    assert_eq!(toks.len(), 1);
+    if let Token::Dimension(n, u) = &toks[0] {
+        assert!((n - 150.0).abs() < 0.01 && u == "px");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 测试注释中消费 token 的特定路径（行 631）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_comment_with_return() {
+    // 这个测试确保 consume_comment 返回的 token 被 Spanned 包装
+    let spanned: Vec<_> = Tokenizer::new("/* test */").collect();
+    assert_eq!(spanned.len(), 1);
+    assert!(matches!(spanned[0].token, Token::Comment(_)));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
