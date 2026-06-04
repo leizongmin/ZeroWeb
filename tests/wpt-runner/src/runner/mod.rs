@@ -166,6 +166,10 @@ fn check_assertion(name: &str, output: &RenderOutput) -> Result<(), String> {
         "grid_layout" => assert_layout_has_children(output),
         "nonzero_primitives" => assert_nonzero_primitives(output),
         "no_panic" => Ok(()),
+        _ if name.starts_with("dom_has_element:") => {
+            let tag = name.strip_prefix("dom_has_element:").unwrap_or("");
+            assert_dom_has_element(output, tag)
+        }
         _ => Err(format!("Unknown assertion: {name}")),
     }
 }
@@ -488,6 +492,8 @@ mod tests {
             "es-modules",
             "web-workers",
             "css-layout",
+            "canvas",
+            "storage",
         ];
         for t in &tests {
             assert!(

@@ -12,7 +12,10 @@
 //! - `test_cases_js_dom`: JavaScript/DOM 交互标准合规性测试
 //! - `test_cases_navigation`: 导航、安全与存储标准合规性测试
 //! - `test_cases_es_modules`: ES Module 和 Web Worker 标准合规性测试
+//! - `test_cases_canvas`: Canvas 2D API 标准合规性测试
+//! - `test_cases_storage`: Storage 和 Web Worker 标准合规性测试
 
+mod test_cases_canvas;
 mod test_cases_core;
 mod test_cases_css_compliance;
 mod test_cases_css_extended;
@@ -23,6 +26,7 @@ mod test_cases_html_layout;
 mod test_cases_js_dom;
 mod test_cases_navigation;
 mod test_cases_standard;
+mod test_cases_storage;
 mod test_cases_wpt;
 
 use super::TestCase;
@@ -41,5 +45,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_js_dom::js_dom_tests());
     tests.extend(test_cases_navigation::navigation_security_tests());
     tests.extend(test_cases_es_modules::es_module_and_worker_tests());
+    tests.extend(test_cases_canvas::canvas_compliance_tests());
+    tests.extend(test_cases_storage::storage_compliance_tests());
     tests
 }
