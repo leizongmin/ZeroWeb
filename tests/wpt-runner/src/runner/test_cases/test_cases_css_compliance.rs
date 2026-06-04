@@ -831,5 +831,199 @@ pub fn css_compliance_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 滤镜和混合模式
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── CSS 滤镜效果 ──
+        TestCase {
+            id: "css/filter-effects".to_string(),
+            description: "CSS filter effects on elements".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="container">
+                <div class="box blur">Blur</div>
+                <div class="box brightness">Bright</div>
+                <div class="box grayscale">Gray</div>
+                <div class="box sepia">Sepia</div>
+                <div class="box none">Normal</div>
+            </div></body></html>"#.to_string(),
+            css: r#".container { display: flex; gap: 10px; padding: 20px; background: #f8f9fa; }
+                     .box { width: 80px; height: 80px; background: #e74c3c; color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+                     .blur { filter: blur(2px); }
+                     .brightness { filter: brightness(1.5); }
+                     .grayscale { filter: grayscale(100%); }
+                     .sepia { filter: sepia(100%); }
+                     .none { filter: none; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── CSS mix-blend-mode ──
+        TestCase {
+            id: "css/mix-blend-mode".to_string(),
+            description: "CSS mix-blend-mode overlay".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="container">
+                <div class="bg"></div>
+                <div class="overlay">Blended</div>
+            </div></body></html>"#.to_string(),
+            css: r#".container { position: relative; width: 200px; height: 150px; background: #3498db; margin: 10px; }
+                     .bg { position: absolute; top: 20px; left: 20px; width: 120px; height: 80px; background: #e74c3c; }
+                     .overlay { position: absolute; top: 40px; left: 60px; width: 120px; height: 80px; background: #2ecc71; mix-blend-mode: multiply; color: white; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 背景高级特性
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 多重背景 ──
+        TestCase {
+            id: "css/multiple-backgrounds".to_string(),
+            description: "Multiple background layers".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="multi-bg">Multiple backgrounds</div>
+                <div class="gradient-border">Gradient border effect</div>
+            </body></html>"#.to_string(),
+            css: r#".multi-bg { width: 300px; height: 200px; margin: 10px; background: linear-gradient(45deg, transparent 40%, rgba(255,0,0,0.3) 40%, rgba(255,0,0,0.3) 60%, transparent 60%), linear-gradient(-45deg, transparent 40%, rgba(0,0,255,0.3) 40%, rgba(0,0,255,0.3) 60%, transparent 60%), #f0f0f0; border-radius: 8px; padding: 20px; color: #333; }
+                     .gradient-border { width: 280px; height: 100px; margin: 10px; background: linear-gradient(white, white) padding-box, linear-gradient(135deg, #667eea, #764ba2) border-box; border: 4px solid transparent; border-radius: 8px; padding: 20px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── background-clip 和 origin ──
+        TestCase {
+            id: "css/background-clip-origin".to_string(),
+            description: "background-clip and background-origin".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="box clip-border">border-box</div>
+                <div class="box clip-padding">padding-box</div>
+                <div class="box clip-content">content-box</div>
+                <div class="box clip-text">Text Clip</div>
+            </body></html>"#.to_string(),
+            css: r#".box { width: 150px; height: 80px; margin: 10px; padding: 20px; border: 8px dashed #adb5bd; display: inline-block; vertical-align: top; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 14px; }
+                     .clip-border { background-clip: border-box; }
+                     .clip-padding { background-clip: padding-box; }
+                     .clip-content { background-clip: content-box; }
+                     .clip-text { background-clip: text; -webkit-background-clip: text; color: transparent; font-size: 24px; font-weight: bold; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 文本效果
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── text-shadow 多效果 ──
+        TestCase {
+            id: "css/text-shadow-effects".to_string(),
+            description: "Multiple text-shadow effects".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <p class="glow">Glowing Text</p>
+                <p class="neon">Neon Effect</p>
+                <p class="emboss">Embossed</p>
+                <p class="retro">Retro Shadow</p>
+            </body></html>"#.to_string(),
+            css: r#"p { font-size: 32px; margin: 20px; text-align: center; }
+                     .glow { color: #fff; text-shadow: 0 0 10px #fff, 0 0 20px #ff0, 0 0 40px #ff0; background: #000; padding: 10px; }
+                     .neon { color: #0ff; text-shadow: 0 0 5px #0ff, 0 0 10px #0ff, 0 0 20px #0ff, 0 0 40px #0ff; background: #111; padding: 10px; }
+                     .emboss { color: #ccc; text-shadow: -1px -1px 0 #666, 1px 1px 0 #fff; background: #999; padding: 10px; }
+                     .retro { color: #e74c3c; text-shadow: 3px 3px 0 #2c3e50, 6px 6px 0 #34495e, 9px 9px 0 #7f8c8d; background: #ecf0f1; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── box-shadow 高级 ──
+        TestCase {
+            id: "css/box-shadow-advanced".to_string(),
+            description: "Advanced box-shadow effects".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="card">Card with shadow</div>
+                <div class="layered">Layered shadows</div>
+                <div class="neon-box">Neon border</div>
+                <div class="inset">Inset shadow</div>
+            </body></html>"#.to_string(),
+            css: r#"div { width: 200px; height: 100px; margin: 15px; padding: 15px; border-radius: 8px; display: inline-block; vertical-align: top; }
+                     .card { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1); }
+                     .layered { background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.07), 0 4px 8px rgba(0,0,0,0.07), 0 16px 32px rgba(0,0,0,0.07); }
+                     .neon-box { background: #111; box-shadow: 0 0 5px #0ff, 0 0 10px #0ff, 0 0 20px #0ff, inset 0 0 10px #0ff; color: #0ff; }
+                     .inset { background: #f8f9fa; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); color: #495057; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 边框和轮廓
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── border-radius 组合 ──
+        TestCase {
+            id: "css/border-radius-shapes".to_string(),
+            description: "Various border-radius shapes".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="pill">Pill Shape</div>
+                <div class="circle">Circle</div>
+                <div class="leaf">Leaf</div>
+                <div class="asymmetric">Asymmetric</div>
+            </body></html>"#.to_string(),
+            css: r#"div { width: 120px; height: 80px; margin: 10px; background: #3498db; color: white; display: inline-flex; align-items: center; justify-content: center; }
+                     .pill { border-radius: 40px; }
+                     .circle { border-radius: 50%; width: 80px; height: 80px; }
+                     .leaf { border-radius: 5px 40px 5px 40px; }
+                     .asymmetric { border-radius: 20px 0 20px 0; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── border-style 全变体 ──
+        TestCase {
+            id: "css/border-style-variants".to_string(),
+            description: "All border-style variants".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="solid">solid</div>
+                <div class="dashed">dashed</div>
+                <div class="dotted">dotted</div>
+                <div class="double">double</div>
+                <div class="groove">groove</div>
+                <div class="ridge">ridge</div>
+                <div class="inset">inset</div>
+                <div class="outset">outset</div>
+            </body></html>"#.to_string(),
+            css: r#"div { width: 120px; height: 40px; margin: 8px; padding: 8px; display: inline-block; background: #f8f9fa; text-align: center; line-height: 40px; }
+                     .solid { border: 3px solid #333; }
+                     .dashed { border: 3px dashed #333; }
+                     .dotted { border: 3px dotted #333; }
+                     .double { border: 5px double #333; }
+                     .groove { border: 5px groove #888; }
+                     .ridge { border: 5px ridge #888; }
+                     .inset { border: 5px inset #888; }
+                     .outset { border: 5px outset #888; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
