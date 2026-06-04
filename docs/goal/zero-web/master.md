@@ -1398,10 +1398,11 @@ Total: 6219 → 6378 tests (+159)
 ## 下一步优先级
 
 1. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题（需要 GPU/Display 环境）
-2. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
-3. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
-4. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-5. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ⬜ 最小 reftest harness ⬜ WPT CSS/layout 真实子集 ⬜ expected metadata
+2. **无头浏览器协议支持**（高优先级，无头可推进）— WebDriver BiDi 标准主线 + CDP 最小兼容子集，作为 Playwright/Puppeteer/Selenium/CI 的控制面
+3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
+4. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
+5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
+6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ⬜ 最小 reftest harness ⬜ WPT CSS/layout 真实子集 ⬜ expected metadata
 
 ## 浏览器质量测试体系推进计划
 
@@ -1422,6 +1423,7 @@ Total: 6219 → 6378 tests (+159)
 | 7. 性能测试 | [ ] | 从 crate benchmark 上升到页面级性能预算 | 增加 parse/style/layout/paint/composite 分阶段预算；覆盖首屏、重复渲染、增量渲染、scroll frame time、内存增长、长页面压力 | 页面级性能报告可比较；关键预算有阈值和趋势 |
 | 8. 平台和输入测试 | [ ] | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 建 Windows/macOS/Linux/Android 矩阵；覆盖 HiDPI、resize、IME、快捷键、鼠标、触摸、滚轮、CJK、emoji、RTL、字体 fallback | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
 | 9. 产品层测试 | [ ] | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 覆盖标签页、地址栏、书签、历史、下载、设置、查找、缩放、session restore、WebView API contract、demo/app smoke | 产品级 smoke 可在发布前阻断明显退化 |
+| 10. 无头协议和自动化控制面 | [ ] | 支持外部自动化工具驱动 ZeroWeb，用协议统一真实站点、截图、性能和产品 smoke | WebDriver BiDi 优先；CDP 实现最小兼容子集；接入 Playwright/Puppeteer/Selenium 类客户端 | 外部客户端可连接、建上下文、导航、执行脚本、截图并收集网络/日志事件 |
 
 ### WebView 渲染合规测试阶段
 
@@ -1437,9 +1439,33 @@ Total: 6219 → 6378 tests (+159)
 ### 推进优先级
 
 1. **P0: 无头质量信号** — layout/primitive snapshot、最小 reftest harness、WPT CSS/layout 子集、expected metadata。
-2. **P1: 真实站点与安全信号** — Top 20 网站 smoke、安全边界测试、parser fuzz、sanitizer/nightly。
-3. **P2: 页面级性能与运行时信号** — 首屏/增量渲染预算、事件循环时序、导航状态机异常路径。
-4. **P3: 平台与产品信号** — 多平台输入/字体/GPU matrix、ZeroBrowser/WebView 产品级 smoke、session restore。
+2. **P1: 无头浏览器协议控制面** — WebDriver BiDi 基础会话、浏览上下文、导航、脚本执行、截图；CDP Page/Runtime/Network/Target 最小兼容。
+3. **P2: 真实站点与安全信号** — Top 20 网站 smoke、安全边界测试、parser fuzz、sanitizer/nightly。
+4. **P3: 页面级性能与运行时信号** — 首屏/增量渲染预算、事件循环时序、导航状态机异常路径。
+5. **P4: 平台与产品信号** — 多平台输入/字体/GPU matrix、ZeroBrowser/WebView 产品级 smoke、session restore。
+
+## 无头浏览器协议支持计划
+
+协议依据：
+- [W3C WebDriver BiDi](https://www.w3.org/TR/webdriver-bidi/)：标准化的双向浏览器自动化协议，基于 WebSocket。
+- [MDN WebDriver BiDi connection](https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection)：说明浏览器和客户端通过 WebSocket 连接，常见入口是 remote debugging port。
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)：Chrome/Puppeteer/Playwright 生态常用的调试和自动化协议。
+
+协议策略：**WebDriver BiDi 优先，CDP 兼容子集辅助**。BiDi 是跨浏览器标准主线，适合作为长期协议；CDP 生态成熟，适合作为 Playwright `connectOverCDP`、Puppeteer 和调试工具的短期接入面。短期不追求完整 CDP，只实现能支撑导航、脚本、截图、网络事件和目标管理的最小域。
+
+| 阶段 | 状态 | 范围 | 验收标准 |
+|------|------|------|----------|
+| Phase 1: 远程调试服务骨架 | [ ] | 新增 headless/remote automation server；支持 `--headless`、`--remote-debugging-port <port>`、WebSocket 连接、JSON message id 路由、session 生命周期 | 能启动无窗口实例并接受 WebSocket 命令；错误响应稳定；端口为 0 时能输出实际监听地址 |
+| Phase 2: WebDriver BiDi 核心子集 | [ ] | `session.status/new/end`、`browser.close`、`browsingContext.create/getTree/navigate/reload/close/captureScreenshot`、`script.evaluate/callFunction`、基础 log/network/navigation events | Selenium/WebDriver BiDi 客户端可创建会话、打开页面、等待加载、执行 JS、截图、关闭 |
+| Phase 3: CDP 最小兼容子集 | [ ] | `/json/version`、browser/page WebSocket endpoint、`Target.*`、`Page.navigate/loadEventFired/captureScreenshot`、`Runtime.evaluate`、`Network.enable/requestWillBeSent/responseReceived/loadingFinished` | Playwright `connectOverCDP` 或 Puppeteer CDP 客户端可连接、导航、执行 JS、截图、收集网络事件 |
+| Phase 4: 自动化测试接入 | [ ] | 用协议驱动 Top 20 网站 smoke、reftest 截图、性能采样、安全边界回归；生成 JUnit/JSON 报告 | 浏览器级 smoke 不再依赖手写内部 runner；协议层失败能区分 browser bug、protocol bug、test bug |
+| Phase 5: 隔离与安全加固 | [ ] | 限制默认监听地址为 `127.0.0.1`；可配置 token/origin allowlist；禁止默认公网暴露；会话关闭清理脚本句柄和浏览上下文 | 远程调试端口默认本机可访问；安全边界有单元/集成测试 |
+
+协议实现边界：
+- 先支持单 browser process + 多 browsing context，暂不承诺多进程 target attach 的完整语义。
+- 先支持无头截图和脚本执行；输入事件、下载控制、权限控制、请求拦截后续扩展。
+- CDP 只做兼容子集，不复制完整 Chrome DevTools Protocol。
+- 协议层测试必须反向驱动质量计划：真实站点 smoke、性能预算、渲染 reftest 都应逐步迁移到协议控制面。
 
 ### Done Criteria 评估（2026-06-04）
 
@@ -1464,6 +1490,7 @@ Total: 6219 → 6378 tests (+159)
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
 5. 浏览器质量测试体系 P0（layout/primitive snapshot、最小 reftest、WPT CSS/layout 子集、expected metadata）
+6. 无头浏览器协议 Phase 1-3（remote automation server、WebDriver BiDi 核心子集、CDP 最小兼容子集）
 
 ---
 
