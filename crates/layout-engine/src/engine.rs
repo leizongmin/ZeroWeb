@@ -89,10 +89,8 @@ impl LayoutEngine {
             build_layout_tree(doc, styles, self.viewport_width, self.viewport_height);
 
         // 构建 dom→taffy 反向映射
-        let dom_to_taffy: HashMap<NodeId, taffy::NodeId> = taffy_to_dom
-            .iter()
-            .map(|(&t_id, &d_id)| (d_id, t_id))
-            .collect();
+        let dom_to_taffy: HashMap<NodeId, taffy::NodeId> =
+            taffy_to_dom.iter().map(|(&t_id, &d_id)| (d_id, t_id)).collect();
 
         // 2. 计算布局
         let available_space = taffy::geometry::Size {
@@ -202,8 +200,7 @@ impl LayoutEngine {
         );
 
         // 提取布局结果
-        let mut root_box =
-            Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
+        let mut root_box = Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;

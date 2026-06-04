@@ -31,10 +31,8 @@ fn wasm_add_module() -> Vec<u8> {
         // Type section (id=1): 1 type, func (i32, i32) -> (i32)
         0x01, 0x07, 0x01, 0x60, 0x02, 0x7F, 0x7F, 0x01, 0x7F,
         // Function section (id=3): 1 function, type index 0
-        0x03, 0x02, 0x01, 0x00,
-        // Export section (id=7): 1 export, "add", func index 0
-        0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
-        // Code section (id=10): 1 function body
+        0x03, 0x02, 0x01, 0x00, // Export section (id=7): 1 export, "add", func index 0
+        0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00, // Code section (id=10): 1 function body
         0x0A, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B,
     ]
 }
@@ -148,7 +146,14 @@ fn test_wasm_call_export() {
 
     // 通过 Rust API 调用导出函数
     let result = wv
-        .call_wasm_export(instance_id, "add", &[zero_wasm_sandbox::WasmValue::I32(3), zero_wasm_sandbox::WasmValue::I32(7)])
+        .call_wasm_export(
+            instance_id,
+            "add",
+            &[
+                zero_wasm_sandbox::WasmValue::I32(3),
+                zero_wasm_sandbox::WasmValue::I32(7),
+            ],
+        )
         .unwrap();
     assert_eq!(result, "i32(10)", "3 + 7 应等于 10");
 }
@@ -171,9 +176,36 @@ fn test_wasm_multiple_calls() {
     let instance_id: u64 = id_result.parse().unwrap();
 
     // 多次调用
-    let r1 = wv.call_wasm_export(instance_id, "add", &[zero_wasm_sandbox::WasmValue::I32(1), zero_wasm_sandbox::WasmValue::I32(2)]).unwrap();
-    let r2 = wv.call_wasm_export(instance_id, "add", &[zero_wasm_sandbox::WasmValue::I32(100), zero_wasm_sandbox::WasmValue::I32(200)]).unwrap();
-    let r3 = wv.call_wasm_export(instance_id, "add", &[zero_wasm_sandbox::WasmValue::I32(0), zero_wasm_sandbox::WasmValue::I32(0)]).unwrap();
+    let r1 = wv
+        .call_wasm_export(
+            instance_id,
+            "add",
+            &[
+                zero_wasm_sandbox::WasmValue::I32(1),
+                zero_wasm_sandbox::WasmValue::I32(2),
+            ],
+        )
+        .unwrap();
+    let r2 = wv
+        .call_wasm_export(
+            instance_id,
+            "add",
+            &[
+                zero_wasm_sandbox::WasmValue::I32(100),
+                zero_wasm_sandbox::WasmValue::I32(200),
+            ],
+        )
+        .unwrap();
+    let r3 = wv
+        .call_wasm_export(
+            instance_id,
+            "add",
+            &[
+                zero_wasm_sandbox::WasmValue::I32(0),
+                zero_wasm_sandbox::WasmValue::I32(0),
+            ],
+        )
+        .unwrap();
 
     assert_eq!(r1, "i32(3)");
     assert_eq!(r2, "i32(300)");
@@ -184,9 +216,7 @@ fn test_wasm_multiple_calls() {
 #[test]
 fn test_wasm_no_bridge_when_not_used() {
     let mut wv = create_webview();
-    let result = wv
-        .execute_script_with_dom("42 + 8")
-        .unwrap();
+    let result = wv.execute_script_with_dom("42 + 8").unwrap();
     assert_eq!(result, "50", "不使用 WASM 时脚本应正常执行");
 }
 
@@ -205,9 +235,7 @@ fn test_wasm_pending_bridge_cleared() {
     ));
 
     // _pendingBridge 应被消费
-    let check = wv
-        .execute_script("WebAssembly._pendingBridge === null")
-        .unwrap();
+    let check = wv.execute_script("WebAssembly._pendingBridge === null").unwrap();
     assert_eq!(check, "true", "_pendingBridge 应在桥接后被清空");
 }
 

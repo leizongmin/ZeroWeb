@@ -342,7 +342,12 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             </body></html>"##
                 .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "dom_has_link".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_button".into(),
+                "dom_has_link".into(),
+                "no_panic".into(),
+            ],
         },
         TestCase {
             id: "a11y-i18n/keyboard/accesskey".into(),
@@ -354,7 +359,12 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             </body></html>"#
                 .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "dom_has_link".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_button".into(),
+                "dom_has_link".into(),
+                "no_panic".into(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         // 高对比度模式相关

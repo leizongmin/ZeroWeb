@@ -663,7 +663,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         TestCase {
             id: "navigation/links/target-blank".to_string(),
@@ -676,7 +680,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         TestCase {
             id: "navigation/links/ping-attribute".to_string(),
@@ -688,7 +696,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         //  Head 元数据扩展
@@ -706,7 +718,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_meta".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_meta".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         TestCase {
             id: "navigation/meta/charset".to_string(),
@@ -721,7 +737,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_meta".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_meta".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         //  图片资源扩展
@@ -740,7 +760,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_img".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_img".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         TestCase {
             id: "navigation/images/srcset".to_string(),
@@ -755,7 +779,11 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["dom_has_body".to_string(), "dom_has_img".to_string(), "render_completes".to_string()],
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_img".to_string(),
+                "render_completes".to_string(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         //  综合页面导航
