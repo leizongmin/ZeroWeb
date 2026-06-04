@@ -14,8 +14,11 @@ zero-browser-shell = { workspace = true }
 zero-webview = { workspace = true }
 zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
+zero-engine = { workspace = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+tungstenite = { workspace = true }

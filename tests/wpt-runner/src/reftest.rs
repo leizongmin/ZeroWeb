@@ -119,12 +119,17 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
     } else if case.is_match {
         format!(
             "Match failed: {}/{} pixels differ ({:.2}%), max channel diff={}",
-            diff_pixels, total_pixels, diff_ratio * 100.0, max_channel_diff
+            diff_pixels,
+            total_pixels,
+            diff_ratio * 100.0,
+            max_channel_diff
         )
     } else {
         format!(
             "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > 1%",
-            diff_pixels, total_pixels, diff_ratio * 100.0
+            diff_pixels,
+            total_pixels,
+            diff_ratio * 100.0
         )
     };
 
@@ -219,7 +224,8 @@ mod tests {
     fn test_reftest_identical_pages() {
         let case = ReftestCase {
             id: "test/identical".into(),
-            test_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>".into(),
+            test_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>"
+                .into(),
             ref_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>".into(),
             css: String::new(),
             is_match: true,
@@ -233,8 +239,10 @@ mod tests {
     fn test_reftest_different_pages() {
         let case = ReftestCase {
             id: "test/different".into(),
-            test_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>".into(),
-            ref_html: "<html><body><div style=\"width:100px;height:50px;background:blue;\">B</div></body></html>".into(),
+            test_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>"
+                .into(),
+            ref_html: "<html><body><div style=\"width:100px;height:50px;background:blue;\">B</div></body></html>"
+                .into(),
             css: String::new(),
             is_match: true,
         };
@@ -254,7 +262,11 @@ mod tests {
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
-        assert!(result.passed, "Different pages should pass mismatch: {}", result.message);
+        assert!(
+            result.passed,
+            "Different pages should pass mismatch: {}",
+            result.message
+        );
     }
 
     #[test]
@@ -270,8 +282,12 @@ mod tests {
     fn test_reftest_fuzzy_threshold() {
         let case = ReftestCase {
             id: "test/fuzzy".into(),
-            test_html: "<html><body><div style=\"background:rgb(100,100,100);width:50px;height:50px;\">A</div></body></html>".into(),
-            ref_html: "<html><body><div style=\"background:rgb(102,102,102);width:50px;height:50px;\">A</div></body></html>".into(),
+            test_html:
+                "<html><body><div style=\"background:rgb(100,100,100);width:50px;height:50px;\">A</div></body></html>"
+                    .into(),
+            ref_html:
+                "<html><body><div style=\"background:rgb(102,102,102);width:50px;height:50px;\">A</div></body></html>"
+                    .into(),
             css: String::new(),
             is_match: true,
         };
@@ -281,7 +297,11 @@ mod tests {
             ..Default::default()
         };
         let result = run_reftest(&case, &config);
-        assert!(result.passed, "Small color diff should match with fuzzy threshold: {}", result.message);
+        assert!(
+            result.passed,
+            "Small color diff should match with fuzzy threshold: {}",
+            result.message
+        );
     }
 
     // --- CSS 布局 reftest 用例 ---
