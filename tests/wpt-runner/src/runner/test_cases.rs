@@ -29,6 +29,7 @@ mod test_cases_js_dom;
 mod test_cases_navigation;
 mod test_cases_standard;
 mod test_cases_storage;
+mod test_cases_web_platform;
 mod test_cases_wpt;
 
 use super::TestCase;
@@ -49,6 +50,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_es_modules::es_module_and_worker_tests());
     tests.extend(test_cases_canvas::canvas_compliance_tests());
     tests.extend(test_cases_storage::storage_compliance_tests());
+    tests.extend(test_cases_web_platform::web_platform_tests());
     tests.extend(test_cases_geometry::geometry_tests());
     tests
 }
