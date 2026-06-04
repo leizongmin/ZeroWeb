@@ -1,7 +1,11 @@
 //! 浏览器设置 — 用户偏好和配置管理。
 
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
 /// 默认搜索引擎。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchEngine {
     /// Google。
     Google,
@@ -27,7 +31,7 @@ impl SearchEngine {
 }
 
 /// 浏览器设置。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserSettings {
     /// 默认搜索引擎。
     pub search_engine: SearchEngine,
@@ -74,5 +78,45 @@ impl BrowserSettings {
     /// 使用指定搜索引擎生成搜索 URL。
     pub fn search(&self, query: &str) -> String {
         self.search_engine.search_url(query)
+    }
+
+    /// 返回设置文件的默认路径。
+    ///
+    /// 遵循 XDG 规范：`~/.config/zeroweb/settings.json`
+    pub fn default_config_path() -> PathBuf {
+        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("zeroweb");
+        config_dir.join("settings.json")
+    }
+
+    /// 从 JSON 文件加载设置。
+    ///
+    /// 如果文件不存在或解析失败，返回默认设置。
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// 将设置保存到 JSON 文件。
+    ///
+    /// 自动创建父目录。
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize settings: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("Failed to write settings: {e}"))?;
+        Ok(())
+    }
+
+    /// 从默认路径加载设置。
+    pub fn load_default() -> Self {
+        Self::load(&Self::default_config_path())
+    }
+
+    /// 保存到默认路径。
+    pub fn save_default(&self) -> Result<(), String> {
+        self.save(&Self::default_config_path())
     }
 }
