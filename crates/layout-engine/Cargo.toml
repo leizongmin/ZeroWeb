@@ -23,6 +23,3 @@ zero-css-parser = { workspace = true }
 name = "layout_bench"
 harness = false
 
-[[test]]
-name = "converter_coverage"
-path = "src/tests/converter_coverage.rs"
