@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 846 个用例（24 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）
+**执行状态**: 16/16 crate 已实现，~11,204 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 873 个用例（25 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,179 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,204 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -105,7 +105,28 @@
 
 ## 最近完成的改进
 
-### -85. 渲染管线优化 — 填充批处理 + 视口剔除 + Draw Call 统计（本轮，~11,179 测试）
+### -87. primitive.rs 拆分 + WPT 渲染合规测试扩展至 873 用例（本轮，~11,204 测试）
+
+将超限的 `primitive.rs`（2015 行）拆分为模块目录，新增 WPT 渲染管线高级合规性测试分类：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| render-foundation/primitive | **primitive.rs 拆分**：`mod.rs`（390 行，类型定义+简单 API）、`ops.rs`（471 行，bounding_box/snapshot/stats/batch_fills/cull_invisible）、`tests.rs`（1119 行，65 个单元测试） | — |
+| WPT runner/test_cases_render | **渲染管线高级合规性测试（27 用例，新 `render` 分类）**：多属性组合（border-radius+box-shadow、多层渐变、CSS Grid 嵌套、Flexbox 导航布局）、z-index 层叠上下文、响应式布局（圣杯布局、卡片网格）、文本渲染（多行截断、混合字号）、CSS 变量主题、综合页面（登录页、仪表盘、产品定价、博客文章）、transform+opacity、overflow:hidden、表格布局、@media 媒体查询、Grid 模板区域/auto-fill minmax、box-sizing/margin 折叠、sticky/fixed 定位、filter+transform 组合、径向渐变按钮 | +27 |
+
+WPT: 846 → 873 用例（+27, 25 个分类），Tests: ~11,179 → ~11,204，clippy clean.
+
+### -86. 视口剔除集成到渲染管线（前轮，~11,179 测试）
+
+将 cull_invisible 集成到 engine pipeline 的 render_html 流程，paint 输出自动经过视口剔除+填充批处理：
+
+- engine/pipeline: render_html 自动应用 cull_invisible(viewport) + batch_fills()
+- RenderResult.stats 报告剔除数量和 draw call 估算
+- 修复 2 个因剔除而需要更新断言的测试
+
+Tests: ~11,179（不变），clippy clean.
+
+### -85. 渲染管线优化 — 填充批处理 + 视口剔除 + Draw Call 统计（前轮，~11,179 测试）
 
 实现 M13 渲染管线优化，减少 draw call 数量和不可见图元：
 

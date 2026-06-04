@@ -20,6 +20,7 @@
 //! - `test_cases_a11y_i18n`: 可访问性和国际化测试（ARIA/CJK/RTL/Unicode）
 //! - `test_cases_interactive`: HTML 交互元素和表单合规性测试（form/dialog/details/table/iframe）
 //! - `test_cases_typography`: CSS 排版和高级视觉效果测试（font/color/border/gradient/transform/filter）
+//! - `test_cases_render`: 渲染管线高级合规性测试（多属性组合、z-index、响应式布局、综合页面）
 
 mod test_cases_a11y_i18n;
 mod test_cases_canvas;
@@ -40,6 +41,7 @@ mod test_cases_storage;
 mod test_cases_typography;
 mod test_cases_web_api;
 mod test_cases_web_platform;
+mod test_cases_render;
 mod test_cases_wpt;
 
 use super::TestCase;
@@ -67,5 +69,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_a11y_i18n::a11y_i18n_tests());
     tests.extend(test_cases_interactive::interactive_tests());
     tests.extend(test_cases_typography::typography_tests());
+    tests.extend(test_cases_render::render_rendance_tests());
     tests
 }
