@@ -1449,5 +1449,316 @@ pub fn css_layout_compliance_tests() -> Vec<TestCase> {
                 "layout_has_children".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 自定义属性高级用法
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/css-var-fallback".to_string(),
+            description: "CSS custom properties with var() fallback chains".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="theme">
+    <p class="primary">Primary text</p>
+    <p class="secondary">Secondary text</p>
+    <div class="box">Box with fallback</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.theme {
+    --color-primary: #1976D2;
+    --color-secondary: #388E3C;
+    --spacing: 16px;
+}
+.primary { color: var(--color-primary); padding: var(--spacing); background: #E3F2FD; }
+.secondary { color: var(--color-secondary); padding: var(--spacing); background: #E8F5E9; }
+.box {
+    color: var(--undefined-color, #757575);
+    background: var(--undefined-bg, #F5F5F5);
+    padding: var(--undefined-pad, 8px);
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/css-var-calc".to_string(),
+            description: "CSS variables combined with calc()".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="calc-var">
+    <div class="item">Item 1</div>
+    <div class="item">Item 2</div>
+    <div class="item">Item 3</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.calc-var {
+    --base-size: 80px;
+    --gap: 10px;
+    --columns: 3;
+    display: flex;
+    gap: var(--gap);
+    width: 300px;
+}
+.item {
+    width: calc((100% - var(--gap) * 2) / var(--columns));
+    background: #CE93D8;
+    padding: 10px;
+    text-align: center;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/css-var-scope".to_string(),
+            description: "CSS variables scope and inheritance".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="scope-root">
+    <div class="child-a">
+        <span>Child A</span>
+    </div>
+    <div class="child-b">
+        <span>Child B</span>
+    </div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.scope-root { --size: 16px; --bg: #BBDEFB; padding: 10px; background: #E3F2FD; }
+.child-a { --bg: #C8E6C9; background: var(--bg); padding: var(--size); }
+.child-b { --bg: #FFE0B2; background: var(--bg); padding: var(--size); }
+.child-a span, .child-b span { font-size: var(--size); }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 多列布局
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/multi-column-count".to_string(),
+            description: "CSS multi-column layout with column-count".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="cols-3">
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.</p>
+    <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat.</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.cols-3 {
+    column-count: 3;
+    column-gap: 20px;
+    column-rule: 1px solid #BDBDBD;
+    width: 600px;
+    padding: 10px;
+    background: #FAFAFA;
+}
+.cols-3 p { margin: 0 0 10px 0; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/multi-column-width".to_string(),
+            description: "CSS multi-column with column-width".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="cols-width">
+    <h2>Multi-Column Article</h2>
+    <p>Text content that flows across multiple columns based on column-width.</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.cols-width {
+    column-width: 150px;
+    column-gap: 15px;
+    column-rule: 2px dashed #90CAF9;
+    width: 500px;
+    padding: 15px;
+    background: #FFF;
+}
+.cols-width h2 { column-span: all; margin: 0 0 10px 0; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  @supports 高级
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/supports-basic".to_string(),
+            description: "CSS @supports feature query".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="supports-test">
+    <p class="grid-check">Grid support check</p>
+    <p class="flex-check">Flexbox support check</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.supports-test p { padding: 8px; margin: 5px; }
+@supports (display: grid) {
+    .grid-check { background: #C8E6C9; color: #2E7D32; }
+}
+@supports (display: flex) {
+    .flex-check { background: #BBDEFB; color: #1565C0; }
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/supports-not".to_string(),
+            description: "CSS @supports with NOT operator".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="supports-not">
+    <p>NOT fallback test</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.supports-not p { background: #FFCDD2; padding: 10px; margin: 5px; }
+@supports not (display: grid) {
+    .supports-not p { background: #FFF9C4; }
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/supports-and-or".to_string(),
+            description: "CSS @supports with AND/OR operators".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="supports-logic">
+    <p class="and-test">AND test</p>
+    <p class="or-test">OR test</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.supports-logic p { padding: 10px; margin: 5px; }
+@supports (display: flex) and (gap: 10px) {
+    .and-test { background: #E8F5E9; border: 2px solid #4CAF50; }
+}
+@supports (display: grid) or (display: flex) {
+    .or-test { background: #E3F2FD; border: 2px solid #2196F3; }
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS @media range + 逻辑属性 + scroll-snap
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "css-layout/media-range-syntax".to_string(),
+            description: "CSS @media range syntax queries".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="responsive">
+    <p class="wide">Wide content</p>
+    <p class="narrow">Narrow content</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.responsive p { padding: 10px; margin: 5px; background: #F5F5F5; }
+@media (width >= 600px) {
+    .wide { background: #E8F5E9; }
+}
+@media (width < 600px) {
+    .narrow { background: #FFF3E0; }
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/logical-properties".to_string(),
+            description: "CSS logical properties margin-block/padding-inline".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="logical">
+    <p>Logical properties test</p>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.logical {
+    margin-block: 10px 20px;
+    padding-inline: 15px;
+    background: #E8EAF6;
+}
+.logical p {
+    margin-block-start: 5px;
+    margin-block-end: 5px;
+    padding-inline-start: 10px;
+    padding-inline-end: 10px;
+    background: #C5CAE9;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/scroll-snap".to_string(),
+            description: "CSS scroll-snap container and items".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div class="snap-container">
+    <div class="snap-item" style="background:#EF5350">Slide 1</div>
+    <div class="snap-item" style="background:#42A5F5">Slide 2</div>
+    <div class="snap-item" style="background:#66BB6A">Slide 3</div>
+</div>
+</body></html>"#.to_string(),
+            css: r#"
+.snap-container {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    width: 300px;
+    height: 150px;
+}
+.snap-item {
+    scroll-snap-align: start;
+    min-width: 300px;
+    height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 24px;
+}"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
+            ],
+        },
     ]
 }
