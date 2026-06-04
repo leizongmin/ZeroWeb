@@ -470,5 +470,250 @@ pub fn geometry_tests() -> Vec<TestCase> {
         ],
     });
 
+    // ═══════════════════════════════════════════════════════════════
+    // 10. CSS 属性管线几何验证
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "geometry/css/width-100px".into(),
+        description: "width:100px 精确尺寸验证".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="box">Content</div></body></html>"#.into(),
+        css: ".box { width: 100px; height: 50px; background: #ff0000; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "fill_count_ge:1".into(),
+            "layout_nth_width_ge:2:100.0".into(),
+            "layout_nth_height_ge:2:50.0".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/padding-box".into(),
+        description: "padding 扩展盒子尺寸验证".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="pad">Padded</div></body></html>"#.into(),
+        css: ".pad { width: 200px; padding: 20px; background: blue; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "fill_count_ge:1".into(),
+            // width + padding = 200 + 2*20 = 240
+            "layout_nth_width_ge:2:240.0".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/max-width".into(),
+        description: "max-width 约束盒子宽度".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="constrained">Wide</div></body></html>"#.into(),
+        css: ".constrained { width: 1000px; max-width: 400px; background: green; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            // max-width should constrain to 400px
+            "layout_nth_width_ge:2:390.0".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/min-height".into(),
+        description: "min-height 保证最小高度".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="min">Small</div></body></html>"#.into(),
+        css: ".min { min-height: 100px; background: orange; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "layout_nth_height_ge:2:100.0".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/flex-grow".into(),
+        description: "flex-grow 分配剩余空间".into(),
+        category: "geometry".into(),
+        html: r#"<html><body>
+            <div class="flex">
+                <div class="grow1">A</div>
+                <div class="grow2">B</div>
+            </div>
+        </body></html>"#
+            .into(),
+        css: ".flex { display: flex; width: 300px; height: 50px; } .grow1 { flex-grow: 1; } .grow2 { flex-grow: 2; }"
+            .into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_box_count_ge:6".into(),
+            "fill_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/flex-align-items-center".into(),
+        description: "align-items:center 垂直居中".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="flex"><span>Centered</span></div></body></html>"#.into(),
+        css: ".flex { display: flex; align-items: center; width: 200px; height: 100px; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_box_count_ge:5".into(),
+            "fill_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/grid-template-areas".into(),
+        description: "grid-template-areas 命名区域布局".into(),
+        category: "geometry".into(),
+        html: r#"<html><body>
+            <div class="grid">
+                <div class="header">H</div>
+                <div class="main">M</div>
+                <div class="footer">F</div>
+            </div>
+        </body></html>"#.into(),
+        css: r#".grid { display: grid; grid-template-areas: "header header" "main main" "footer footer"; grid-template-columns: 1fr 1fr; width: 400px; }"#.into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_box_count_ge:8".into(),
+            "fill_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/multi-gradient".into(),
+        description: "多层渐变叠加渲染".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div>Layers</div></body></html>"#.into(),
+        css: "div { width: 200px; height: 100px; background: linear-gradient(to right, red, blue), linear-gradient(to bottom, green, yellow); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "gradient_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/inset-shorthand".into(),
+        description: "inset 简写定位".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="rel"><div class="abs">Positioned</div></div></body></html>"#.into(),
+        css: ".rel { position: relative; width: 300px; height: 200px; } .abs { position: absolute; inset: 10px 20px; }"
+            .into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_has_children".into(),
+            "fill_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/border-radius-percentage".into(),
+        description: "百分比 border-radius 渲染".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div>Rounded</div></body></html>"#.into(),
+        css: "div { width: 200px; height: 100px; border-radius: 50%; background: teal; }".into(),
+        assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/text-overflow-ellipsis".into(),
+        description: "text-overflow:ellipsis 文本溢出".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="overflow">This is a very long text that should overflow</div></body></html>"#
+            .into(),
+        css: ".overflow { width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "glyph_count_ge:3".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/vertical-stack-blocks".into(),
+        description: "多个块级元素垂直排列不重叠".into(),
+        category: "geometry".into(),
+        html: r#"<html><body>
+            <div class="b">1</div>
+            <div class="b">2</div>
+            <div class="b">3</div>
+            <div class="b">4</div>
+        </body></html>"#
+            .into(),
+        css: ".b { width: 200px; height: 30px; margin-bottom: 5px; background: navy; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "fill_count_ge:4".into(),
+            "layout_box_count_ge:8".into(),
+            "layout_children_non_overlapping".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/flex-space-between".into(),
+        description: "justify-content:space-between 间距分配".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="flex"><span>A</span><span>B</span><span>C</span></div></body></html>"#.into(),
+        css:
+            ".flex { display: flex; justify-content: space-between; width: 300px; height: 50px; } span { width: 50px; }"
+                .into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_box_count_ge:8".into(),
+            "fill_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/outline-render".into(),
+        description: "outline 渲染不占空间".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="outlined">Outlined</div></body></html>"#.into(),
+        css: ".outlined { width: 100px; height: 50px; outline: 3px solid red; background: white; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "stroke_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/inline-block-row".into(),
+        description: "inline-block 水平排列".into(),
+        category: "geometry".into(),
+        html: r#"<html><body><div class="ib">A</div><div class="ib">B</div><div class="ib">C</div></body></html>"#
+            .into(),
+        css: ".ib { display: inline-block; width: 80px; height: 40px; background: purple; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "fill_count_ge:3".into(),
+            "layout_box_count_ge:7".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "geometry/css/complex-nested-layout".into(),
+        description: "复杂嵌套布局组合".into(),
+        category: "geometry".into(),
+        html: r#"<html><body>
+            <nav class="topbar"><span>Nav</span></nav>
+            <main class="content">
+                <article class="post">
+                    <h2>Title</h2>
+                    <p>Content paragraph with text.</p>
+                </article>
+                <aside class="sidebar"><div>Widget</div></aside>
+            </main>
+        </body></html>"#.into(),
+        css: ".topbar { height: 40px; background: #333; } .content { display: flex; } .post { flex: 1; } .sidebar { width: 200px; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_box_count_ge:12".into(),
+            "fill_count_ge:2".into(),
+            "glyph_count_ge:3".into(),
+        ],
+    });
+
     tests
 }

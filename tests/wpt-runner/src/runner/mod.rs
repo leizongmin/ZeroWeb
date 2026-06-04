@@ -2,12 +2,73 @@
 //!
 //! 使用 ZeroWeb 引擎的 RenderPipeline 在无头模式下执行渲染测试。
 //! 通过检查 DOM 结构、布局结果和渲染图元来判定测试通过/失败。
+//! 支持预期元数据（PASS/FAIL/SKIP）管理已知行为。
+
+use std::collections::HashMap;
 
 use zero_dom::parse_html;
 use zero_engine::RenderPipeline;
 use zero_render_foundation::primitive::RenderPrimitives;
 
 use crate::report::TestResult;
+
+/// 测试预期结果 — 用于管理已知行为。
+#[allow(dead_code)]
+///
+/// - `Pass`：测试预期通过（默认）
+/// - `Fail`：测试预期失败（已知 bug 或未实现功能），不阻断 CI
+/// - `Skip`：测试跳过（需要 GPU/Display 等不可用资源）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestExpectation {
+    /// 预期通过（默认）
+    Pass,
+    /// 预期失败（已知问题）
+    Fail,
+    /// 跳过（条件不满足）
+    Skip,
+}
+
+/// 测试预期元数据表 — 按测试 ID 管理已知行为。
+#[allow(dead_code)]
+///
+/// 未在表中登记的测试默认预期为 `Pass`。
+///
+/// # 示例
+///
+/// ```
+/// use zero_wpt_runner::runner::TestExpectations;
+/// let mut exp = TestExpectations::new();
+/// exp.expect_fail("geometry/grid/auto-fill".to_string());
+/// exp.skip("geometry/position/fixed".to_string());
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct TestExpectations {
+    entries: HashMap<String, TestExpectation>,
+}
+
+impl TestExpectations {
+    /// 创建空的预期表。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 标记测试预期失败。
+    #[allow(dead_code)]
+    pub fn expect_fail(&mut self, id: String) {
+        self.entries.insert(id, TestExpectation::Fail);
+    }
+
+    /// 标记测试跳过。
+    #[allow(dead_code)]
+    pub fn skip(&mut self, id: String) {
+        self.entries.insert(id, TestExpectation::Skip);
+    }
+
+    /// 获取测试的预期结果（未登记则返回 Pass）。
+    pub fn get(&self, id: &str) -> TestExpectation {
+        self.entries.get(id).copied().unwrap_or(TestExpectation::Pass)
+    }
+}
 
 /// 单个 WPT 测试用例的定义。
 #[derive(Debug, Clone)]
@@ -75,7 +136,26 @@ pub fn render_test_html(html: &str, css: &str, ctx: &TestContext) -> RenderOutpu
 }
 
 /// 运行单个测试用例，返回结果。
+///
+/// 根据预期元数据管理已知行为：
+#[allow(dead_code)]
+/// - `Pass`：正常执行，失败则报告为 FAILED
+/// - `Fail`：正常执行，失败报告为 EXPECTED_FAIL（不阻断），意外通过报告为 UNEXPECTED_PASS
+/// - `Skip`：跳过执行，直接报告为 SKIPPED
 pub fn run_single(case: &TestCase, ctx: &TestContext) -> TestResult {
+    run_single_with_expectations(case, ctx, &TestExpectations::new())
+}
+
+/// 运行单个测试用例（带预期元数据），返回结果。
+#[allow(dead_code)]
+pub fn run_single_with_expectations(case: &TestCase, ctx: &TestContext, expectations: &TestExpectations) -> TestResult {
+    let expected = expectations.get(&case.id);
+
+    // 跳过的测试直接返回
+    if expected == TestExpectation::Skip {
+        return TestResult::skip(&case.id, &case.description);
+    }
+
     let mut pipeline = RenderPipeline::new(ctx.viewport_width, ctx.viewport_height);
 
     // 执行渲染 — 不应 panic
@@ -83,7 +163,7 @@ pub fn run_single(case: &TestCase, ctx: &TestContext) -> TestResult {
         pipeline.render_html(&case.html, &case.css)
     }));
 
-    match render_result {
+    let actual_result = match render_result {
         Ok(result) => {
             let doc = parse_html(&case.html);
             let output = RenderOutput {
@@ -107,13 +187,26 @@ pub fn run_single(case: &TestCase, ctx: &TestContext) -> TestResult {
                 .collect();
 
             if failed.is_empty() {
-                TestResult::pass(&case.id, &case.description, result.timings.total_ms)
+                (true, String::new(), result.timings.total_ms)
             } else {
-                let msg = format!("Failed assertions: {}", failed.join(", "));
-                TestResult::fail(&case.id, &case.description, &msg, result.timings.total_ms)
+                (
+                    false,
+                    format!("Failed assertions: {}", failed.join(", ")),
+                    result.timings.total_ms,
+                )
             }
         }
-        Err(_) => TestResult::fail(&case.id, &case.description, "Rendering panicked", 0.0),
+        Err(_) => (false, "Rendering panicked".to_string(), 0.0),
+    };
+
+    let (actual_passed, message, duration_ms) = actual_result;
+
+    match (expected, actual_passed) {
+        (TestExpectation::Pass, true) => TestResult::pass(&case.id, &case.description, duration_ms),
+        (TestExpectation::Pass, false) => TestResult::fail(&case.id, &case.description, &message, duration_ms),
+        (TestExpectation::Fail, true) => TestResult::unexpected_pass(&case.id, &case.description, duration_ms),
+        (TestExpectation::Fail, false) => TestResult::expected_fail(&case.id, &case.description, &message, duration_ms),
+        (TestExpectation::Skip, _) => unreachable!(),
     }
 }
 
@@ -756,7 +849,20 @@ pub fn filter_tests_by_pattern(tests: &[TestCase], pattern: &str) -> Vec<TestCas
 
 /// 运行所有给定的测试用例，返回结果列表。
 pub fn run_all(cases: &[TestCase], ctx: &TestContext) -> Vec<TestResult> {
-    cases.iter().map(|case| run_single(case, ctx)).collect()
+    run_all_with_expectations(cases, ctx, &TestExpectations::new())
+}
+
+/// 运行所有给定的测试用例（带预期元数据），返回结果列表。
+#[allow(dead_code)]
+pub fn run_all_with_expectations(
+    cases: &[TestCase],
+    ctx: &TestContext,
+    expectations: &TestExpectations,
+) -> Vec<TestResult> {
+    cases
+        .iter()
+        .map(|case| run_single_with_expectations(case, ctx, expectations))
+        .collect()
 }
 
 #[cfg(test)]
@@ -830,7 +936,7 @@ mod tests {
             assertions: vec!["dom_has_body".to_string()],
         };
         let result = run_single(&case, &ctx);
-        assert!(result.passed, "Expected pass, got: {}", result.message);
+        assert!(result.passed(), "Expected pass, got: {}", result.message);
     }
 
     #[test]
@@ -845,7 +951,7 @@ mod tests {
             assertions: vec!["nonexistent_assertion".to_string()],
         };
         let result = run_single(&case, &ctx);
-        assert!(!result.passed);
+        assert!(!result.passed());
     }
 
     #[test]
