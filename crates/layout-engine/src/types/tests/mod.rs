@@ -2,4 +2,5 @@
 
 mod advanced;
 mod basic;
+mod coverage;
 mod edge_cases;
