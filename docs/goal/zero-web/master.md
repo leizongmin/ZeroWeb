@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,815 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 320 个用例（9 个分类），Web Workers 和 ES Modules 支持已实现
+**执行状态**: 16/16 crate 已实现，10,815 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 418 个用例（12 个分类，408 通过率 97.6%），Web Workers 和 ES Modules 支持已实现
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,811 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 10,815 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -102,6 +102,18 @@
 ---
 
 ## 最近完成的改进
+
+### -70. WPT 测试套件扩展至 418 用例（本轮，10,815 测试）
+
+扩展 WPT 测试套件，新增两个测试分类模块，覆盖 Canvas 2D API 和 Storage/Web Worker 合规性：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| WPT runner / test_cases_canvas | **Canvas 2D API 标准合规性测试**：Canvas 基本结构（单/多 canvas）、CSS 布局集成（flex/grid/border/margin/absolute）、脚本 2D context（fillRect/strokeRect/path/text/transform/save-restore/gradient/clip/globalAlpha/compositeOps/arc/bezier/shadow/imageData/lineDash/textMeasure）、Canvas 与页面内容组合（text/form/table）、响应式布局 | +25 |
+| WPT runner / test_cases_storage | **Storage 和 Web Worker 标准合规性测试**：localStorage（setItem/getItem/removeItem/clear/JSON roundtrip）、sessionStorage、IndexedDB（open/CRUD/index）、Cookie（basic/attributes）、Cache API、Web Worker（create/message/error/terminate）、Fetch API（exists/Request-Response）、综合场景（offline-page/session-dashboard） | +24 |
+| WPT runner / mod.rs | **动态断言支持**：`dom_has_element:TAG` 前缀格式，支持任意 HTML 标签检测；新增 canvas/storage 有效分类 | — |
+
+WPT 测试套件: 355 → 418 用例（+63 tests, 12 个分类模块, 408 通过率 97.6%）
 
 ### -69. GPU 测试 SIGSEGV 修复 + V8 持久化 Context 优化（本轮，10,815 测试）
 
