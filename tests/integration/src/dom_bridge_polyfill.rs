@@ -812,3 +812,154 @@ fn test_polyfill_service_worker_get_registrations() {
     );
     assert_eq!(result.trim(), "has-method", "getRegistrations 方法应存在");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// element.matches() 测试
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_polyfill_matches_class() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('class', 'active highlight');
+        el.matches('.active') ? 'matches' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "matches", ".active 应匹配");
+}
+
+#[test]
+fn test_polyfill_matches_id() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('id', 'main');
+        el.matches('#main') ? 'matches' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "matches", "#main 应匹配");
+}
+
+#[test]
+fn test_polyfill_matches_tag() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('span');
+        el.matches('span') ? 'matches' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "matches", "span 标签应匹配");
+}
+
+#[test]
+fn test_polyfill_matches_multi_selector() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('class', 'item');
+        el.matches('.active, .item, .selected') ? 'matches' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "matches", "逗号选择器中 .item 应匹配");
+}
+
+#[test]
+fn test_polyfill_matches_attribute() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('input');
+        el.setAttribute('type', 'text');
+        el.setAttribute('name', 'email');
+        el.matches('[type="text"]') ? 'attr-match' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "attr-match", "[type=text] 属性选择器应匹配");
+}
+
+#[test]
+fn test_polyfill_matches_no_match() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('class', 'foo');
+        el.matches('.bar') ? 'matches' : 'no-match';
+        "#,
+    );
+    assert_eq!(result.trim(), "no-match", ".bar 不应匹配 .foo 元素");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// element.closest() 测试
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_polyfill_closest_self() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('class', 'parent');
+        el.closest('.parent') === el ? 'self' : 'no-self';
+        "#,
+    );
+    assert_eq!(result.trim(), "self", "closest('.parent') 应返回自身");
+}
+
+#[test]
+fn test_polyfill_closest_parent() {
+    let result = eval_polyfill(
+        r#"
+        var parent = document.createElement('div');
+        parent.setAttribute('class', 'container');
+        var child = document.createElement('span');
+        parent.appendChild(child);
+        child.closest('.container') === parent ? 'parent' : 'no-parent';
+        "#,
+    );
+    assert_eq!(result.trim(), "parent", "closest('.container') 应返回父元素");
+}
+
+#[test]
+fn test_polyfill_closest_none() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        el.setAttribute('class', 'orphan');
+        el.closest('.nonexistent') === null ? 'null' : 'found';
+        "#,
+    );
+    assert_eq!(result.trim(), "null", "closest('.nonexistent') 应返回 null");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// document.createComment() 测试
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_polyfill_create_comment() {
+    let result = eval_polyfill(
+        r#"
+        var c = document.createComment('this is a comment');
+        JSON.stringify({nodeType: c.nodeType, text: c.textContent});
+        "#,
+    );
+    assert!(result.contains("\"nodeType\":8"), "注释节点 nodeType 应为 8");
+    assert!(result.contains("this is a comment"), "textContent 应保留");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// getBoundingClientRect() 测试
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_polyfill_get_bounding_client_rect() {
+    let result = eval_polyfill(
+        r#"
+        var el = document.createElement('div');
+        var rect = el.getBoundingClientRect();
+        JSON.stringify({w: rect.width, h: rect.height, x: rect.x, y: rect.y});
+        "#,
+    );
+    assert!(result.contains("\"w\":0"), "stub rect width 应为 0");
+    assert!(result.contains("\"h\":0"), "stub rect height 应为 0");
+}
