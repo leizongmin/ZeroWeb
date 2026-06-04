@@ -11,5 +11,6 @@ mod matcher_coverage;
 mod matcher_coverage2;
 mod matcher_coverage3;
 mod matcher_coverage4;
+mod matcher_coverage5;
 mod matcher_extra;
 mod shorthand_coverage;
