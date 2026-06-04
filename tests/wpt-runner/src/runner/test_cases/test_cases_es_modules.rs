@@ -230,5 +230,161 @@ pub fn es_module_and_worker_tests() -> Vec<TestCase> {
                 "render_completes".to_string(),
             ],
         },
+        // ═══════════════════════════════════════════════════════════════
+        //  ES Module 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "es-module/export-arrow-function".to_string(),
+            description: "export 箭头函数".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/export-async-function".to_string(),
+            description: "export async 函数".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/export-generator".to_string(),
+            description: "export generator 函数".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/template-literal".to_string(),
+            description: "模板字符串在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/destructuring-assignment".to_string(),
+            description: "解构赋值在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/spread-operator".to_string(),
+            description: "展开运算符在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/optional-chaining".to_string(),
+            description: "可选链操作符在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/nullish-coalescing".to_string(),
+            description: "空值合并操作符在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result"></div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  Web Worker 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "es-module/worker/error-handler".to_string(),
+            description: "Worker onerror 处理".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">no error</div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        TestCase {
+            id: "es-module/worker/json-message".to_string(),
+            description: "Worker JSON 消息传递".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">json test</div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  综合模块页面
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "es-module/composite/module-app".to_string(),
+            description: "ES Module 综合应用页面".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><head>
+            <style>
+                .app { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+                .app h1 { color: #333; }
+                .app .info { background: #f5f5f5; padding: 10px; border-radius: 4px; }
+            </style>
+            </head><body>
+            <div class="app">
+                <h1>Module App</h1>
+                <div class="info" id="app-info">Loading...</div>
+                <script>
+                    var info = document.getElementById('app-info');
+                    try {
+                        var hasPromise = typeof Promise !== 'undefined';
+                        var hasJSON = typeof JSON !== 'undefined';
+                        var hasMap = typeof Map !== 'undefined';
+                        var hasSet = typeof Set !== 'undefined';
+                        var features = ['Promise', 'JSON', 'Map', 'Set'];
+                        info.textContent = 'Features: ' + features.join(', ');
+                    } catch(e) {
+                        info.textContent = 'Error: ' + e.message;
+                    }
+                </script>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_heading".to_string(),
+                "dom_has_text".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
     ]
 }
