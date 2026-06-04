@@ -170,6 +170,28 @@ fn check_assertion(name: &str, output: &RenderOutput) -> Result<(), String> {
             let tag = name.strip_prefix("dom_has_element:").unwrap_or("");
             assert_dom_has_element(output, tag)
         }
+        // 精确布局断言：layout_child_count_ge:N — 子元素数 >= N
+        _ if name.starts_with("layout_child_count_ge:") => {
+            let n = name
+                .strip_prefix("layout_child_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_layout_child_count_ge(output, n)
+        }
+        // 精确布局断言：layout_depth_ge:N — 树深度 >= N
+        _ if name.starts_with("layout_depth_ge:") => {
+            let n = name
+                .strip_prefix("layout_depth_ge:")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
+            assert_layout_depth_ge(output, n)
+        }
+        // 布局断言：root 维度接近视口
+        "layout_root_fills_viewport" => assert_layout_root_fills_viewport(output),
+        // 布局断言：存在多个非零尺寸子盒
+        "layout_has_sized_children" => assert_layout_has_sized_children(output),
+        // 布局断言：子盒之间没有重叠（排除 display:none）
+        "layout_children_non_overlapping" => assert_layout_children_non_overlapping(output),
         _ => Err(format!("Unknown assertion: {name}")),
     }
 }
@@ -362,6 +384,96 @@ fn assert_layout_has_many_children(output: &RenderOutput) -> Result<(), String> 
     } else {
         Err(format!("Layout root has {} children (expected >= 3)", count))
     }
+}
+
+fn assert_layout_child_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.layout.root.children.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("Layout root has {} children (expected >= {min})", count))
+    }
+}
+
+fn assert_layout_depth_ge(output: &RenderOutput, min_depth: u32) -> Result<(), String> {
+    let depth = max_layout_depth(&output.layout.root, 0);
+    if depth >= min_depth {
+        Ok(())
+    } else {
+        Err(format!("Layout tree depth is {depth} (expected >= {min_depth})"))
+    }
+}
+
+fn max_layout_depth(box_node: &zero_layout_engine::LayoutBox, current: u32) -> u32 {
+    box_node
+        .children
+        .iter()
+        .map(|c| max_layout_depth(c, current + 1))
+        .max()
+        .unwrap_or(current)
+}
+
+fn assert_layout_root_fills_viewport(output: &RenderOutput) -> Result<(), String> {
+    let root = &output.layout.root;
+    let vw = output.layout.viewport_width;
+    let vh = output.layout.viewport_height;
+    let width_ok = (root.width - vw).abs() < 1.0;
+    let height_ok = root.height > 0.0 && root.height <= vh * 1.5;
+    if width_ok && height_ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "Root {}x{} doesn't fill viewport {}x{}",
+            root.width, root.height, vw, vh
+        ))
+    }
+}
+
+fn assert_layout_has_sized_children(output: &RenderOutput) -> Result<(), String> {
+    let sized = output
+        .layout
+        .root
+        .children
+        .iter()
+        .filter(|c| c.width > 0.0 && c.height > 0.0)
+        .count();
+    if sized >= 2 {
+        Ok(())
+    } else {
+        Err(format!(
+            "Only {sized} children have positive dimensions (expected >= 2)"
+        ))
+    }
+}
+
+fn assert_layout_children_non_overlapping(output: &RenderOutput) -> Result<(), String> {
+    let children = &output.layout.root.children;
+    if children.len() < 2 {
+        return Ok(());
+    }
+    let sized: Vec<_> = children.iter().filter(|c| c.width > 0.0 && c.height > 0.0).collect();
+    for i in 0..sized.len() {
+        for j in (i + 1)..sized.len() {
+            let a = sized[i];
+            let b = sized[j];
+            let overlap_x = a.x < b.x + b.width && b.x < a.x + a.width;
+            let overlap_y = a.y < b.y + b.height && b.y < a.y + a.height;
+            if overlap_x && overlap_y {
+                // 允许少量重叠（边距合并等），但不允许完全包含
+                let a_contains_b =
+                    a.x <= b.x && a.y <= b.y && a.x + a.width >= b.x + b.width && a.y + a.height >= b.y + b.height;
+                if a_contains_b {
+                    continue;
+                }
+                // 对于同层级块级元素，水平方向不应重叠
+                return Err(format!(
+                    "Children overlap: [{:.1},{:.1},{:.1},{:.1}] vs [{:.1},{:.1},{:.1},{:.1}]",
+                    a.x, a.y, a.width, a.height, b.x, b.y, b.width, b.height
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 mod test_cases;
