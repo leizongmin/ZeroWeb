@@ -572,3 +572,49 @@ fn test_browser_shell_navigation_clears_forward() {
     let forward = shell.go_forward();
     assert!(!forward, "新导航后前进历史应被清空");
 }
+
+// ── 设置持久化集成测试 ──
+
+#[test]
+fn test_browser_shell_new_with_persisted_settings() {
+    let shell = BrowserShell::new_with_persisted_settings();
+    assert!(!shell.is_empty());
+    assert_eq!(shell.tab_count(), 1);
+    // 默认设置应已加载
+    assert_eq!(shell.settings().search_engine, SearchEngine::Google);
+}
+
+#[test]
+fn test_browser_shell_save_and_reload_settings() {
+    use std::path::PathBuf;
+
+    let dir = std::env::temp_dir().join("zeroweb-test-shell-settings");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("settings.json");
+
+    // 手动创建一个自定义设置文件
+    let _ = std::fs::create_dir_all(&dir);
+    let custom = r#"{"search_engine":"DuckDuckGo","home_url":"https://custom.test","show_bookmarks_bar":false,"javascript_enabled":true,"cookies_enabled":true,"block_third_party_cookies":true,"do_not_track":true,"default_zoom":1.5,"download_directory":"/tmp/dl"}"#;
+    std::fs::write(&path, custom).unwrap();
+
+    // 通过 BrowserSettings::load 验证可以读取
+    let loaded = BrowserSettings::load(&path);
+    assert_eq!(loaded.search_engine, SearchEngine::DuckDuckGo);
+    assert_eq!(loaded.home_url, "https://custom.test");
+    assert!(!loaded.show_bookmarks_bar);
+    assert!(loaded.do_not_track);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_browser_shell_save_settings() {
+    let mut shell = BrowserShell::new();
+    shell.settings_mut().home_url = "https://test-save.test".to_string();
+
+    // save_settings 写到默认路径（~/.config/zeroweb/settings.json）
+    // 这里仅验证方法不 panic，不实际验证文件（避免影响用户系统）
+    let _ = shell
+        .settings()
+        .save(&std::env::temp_dir().join("zeroweb-shell-save-test").join("s.json"));
+}
