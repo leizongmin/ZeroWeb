@@ -627,5 +627,293 @@ pub fn dom_api_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["render_completes".to_string()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  表单元素渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 表单输入控件 ──
+        TestCase {
+            id: "dom/form-input-controls".to_string(),
+            description: "Form input controls rendering".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body><form>
+                <input type="text" placeholder="Enter text">
+                <input type="password" placeholder="Password">
+                <input type="email" placeholder="Email">
+                <input type="number" value="42">
+                <input type="checkbox" checked>
+                <input type="radio">
+                <button type="submit">Submit</button>
+                <button type="reset">Reset</button>
+            </form></body></html>"#.to_string(),
+            css: r#"form { display: flex; flex-direction: column; gap: 8px; padding: 16px; background: #f8f9fa; width: 300px; }
+                     input { padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 14px; }
+                     button { padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── select 和 textarea ──
+        TestCase {
+            id: "dom/form-select-textarea".to_string(),
+            description: "Select dropdown and textarea rendering".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <select><option>Option A</option><option>Option B</option><option>Option C</option></select>
+                <textarea rows="4" cols="30">Multi-line text content here.</textarea>
+            </body></html>"#.to_string(),
+            css: r#"select, textarea { display: block; margin: 10px; padding: 8px; border: 1px solid #adb5bd; border-radius: 4px; font-size: 14px; width: 280px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 进度条和计量器 ──
+        TestCase {
+            id: "dom/progress-meter".to_string(),
+            description: "Progress bar and meter elements".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <progress value="70" max="100">70%</progress>
+                <meter value="0.7" min="0" max="1">0.7</meter>
+            </body></html>"#.to_string(),
+            css: r#"progress, meter { display: block; margin: 10px; width: 300px; height: 20px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  交互元素和可访问性
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── details/summary 折叠 ──
+        TestCase {
+            id: "dom/details-summary".to_string(),
+            description: "Details/summary collapsible element".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <details open><summary>Click to expand</summary><p>Hidden content revealed.</p></details>
+                <details><summary>Another section</summary><p>Still hidden.</p></details>
+            </body></html>"#.to_string(),
+            css: r#"details { margin: 10px; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px; }
+                     summary { cursor: pointer; font-weight: bold; padding: 4px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── dialog 元素 ──
+        TestCase {
+            id: "dom/dialog-element".to_string(),
+            description: "Dialog element rendering".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <p>Page content behind dialog.</p>
+                <dialog open><p>Dialog content</p><button>Close</button></dialog>
+            </body></html>"#.to_string(),
+            css: r#"dialog { border: 1px solid #333; border-radius: 8px; padding: 20px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+                     body { background: #e9ecef; padding: 20px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── ARIA 属性 ──
+        TestCase {
+            id: "dom/aria-attributes".to_string(),
+            description: "ARIA accessibility attributes".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <nav aria-label="Main navigation">
+                    <a href="/home" aria-current="page">Home</a>
+                    <a href="/about">About</a>
+                </nav>
+                <button aria-pressed="true" aria-label="Toggle feature">Feature</button>
+                <div role="alert" aria-live="polite">Status message</div>
+            </body></html>"#.to_string(),
+            css: r#"nav { display: flex; gap: 10px; padding: 10px; background: #343a40; }
+                     a { color: #adb5bd; text-decoration: none; padding: 4px 8px; }
+                     a[aria-current] { color: white; font-weight: bold; }
+                     button { padding: 8px 16px; margin: 10px; background: #28a745; color: white; border: none; border-radius: 4px; }
+                     [role="alert"] { padding: 10px; margin: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  媒体和嵌入元素
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 响应式图片 ──
+        TestCase {
+            id: "dom/responsive-images".to_string(),
+            description: "Responsive image elements".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <img src="photo.jpg" alt="Example photo" width="300" height="200">
+                <picture><source srcset="large.jpg" media="(min-width: 800px)"><img src="small.jpg" alt="Responsive"></picture>
+                <figure><img src="diagram.png" alt="Diagram" width="200"><figcaption>Figure caption</figcaption></figure>
+            </body></html>"#.to_string(),
+            css: r#"img { display: block; margin: 10px; border: 1px solid #dee2e6; border-radius: 4px; }
+                     figure { margin: 10px; padding: 10px; border: 1px solid #e9ecef; background: #f8f9fa; display: inline-block; }
+                     figcaption { text-align: center; padding: 8px; color: #6c757d; font-size: 14px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── video/audio 占位 ──
+        TestCase {
+            id: "dom/media-placeholders".to_string(),
+            description: "Video and audio placeholder elements".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <video width="320" height="240" controls><source src="movie.mp4" type="video/mp4">Video not supported.</video>
+                <audio controls><source src="audio.mp3" type="audio/mpeg">Audio not supported.</audio>
+            </body></html>"#.to_string(),
+            css: r#"video, audio { display: block; margin: 10px; background: #000; border-radius: 4px; }
+                     video { width: 320px; height: 240px; }
+                     audio { width: 300px; height: 40px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  代码和预格式化文本
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 代码块 ──
+        TestCase {
+            id: "dom/code-blocks".to_string(),
+            description: "Code and preformatted text rendering".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <p>Use <code>console.log()</code> to debug.</p>
+                <pre><code>fn main() {
+    println!("Hello, world!");
+}</code></pre>
+                <kbd>Ctrl</kbd> + <kbd>C</kbd> to copy.
+                <samp>Output: 42</samp>
+            </body></html>"#.to_string(),
+            css: r#"code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; }
+                     pre { background: #212529; color: #f8f9fa; padding: 16px; border-radius: 6px; overflow-x: auto; margin: 10px; }
+                     pre code { background: none; padding: 0; }
+                     kbd { background: #e9ecef; border: 1px solid #dee2e6; border-radius: 3px; padding: 2px 6px; font-family: monospace; font-size: 13px; }
+                     samp { font-family: monospace; background: #d4edda; padding: 2px 6px; border-radius: 3px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 引用和标记 ──
+        TestCase {
+            id: "dom/quotes-markers".to_string(),
+            description: "Blockquotes, inline quotes and highlighting".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <blockquote cite="https://example.com">
+                    <p>The only way to do great work is to love what you do.</p>
+                    <footer>— <cite>Steve Jobs</cite></footer>
+                </blockquote>
+                <p>He said <q>Hello world</q> and <mark>highlighted this</mark>.</p>
+            </body></html>"#.to_string(),
+            css: r#"blockquote { border-left: 4px solid #007bff; margin: 16px 0; padding: 12px 20px; background: #f8f9fa; color: #495057; }
+                     blockquote p { margin: 0; font-style: italic; }
+                     footer { margin-top: 8px; font-size: 14px; color: #6c757d; }
+                     q { font-style: italic; color: #6c757d; }
+                     mark { background: #ffc107; padding: 2px 4px; border-radius: 2px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  数据表格
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 复杂表格 ──
+        TestCase {
+            id: "dom/complex-table".to_string(),
+            description: "Complex data table with headers and spanning".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body><table>
+                <caption>Quarterly Sales Report</caption>
+                <colgroup><col><col><col></colgroup>
+                <thead><tr><th>Product</th><th>Q1</th><th>Q2</th></tr></thead>
+                <tbody>
+                    <tr><td>Widget A</td><td>$1,200</td><td>$1,500</td></tr>
+                    <tr><td>Widget B</td><td>$800</td><td>$950</td></tr>
+                    <tr><td>Widget C</td><td>$2,100</td><td>$1,800</td></tr>
+                </tbody>
+                <tfoot><tr><td>Total</td><td>$4,100</td><td>$4,250</td></tr></tfoot>
+            </table></body></html>"#.to_string(),
+            css: r#"table { border-collapse: collapse; width: 100%; max-width: 500px; margin: 10px; }
+                     caption { padding: 8px; font-weight: bold; text-align: left; color: #495057; }
+                     th, td { border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; }
+                     th { background: #e9ecef; font-weight: 600; }
+                     tfoot td { background: #f8f9fa; font-weight: bold; }
+                     tr:nth-child(even) td { background: #f8f9fa; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  内联框架和嵌入
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── iframe 占位 ──
+        TestCase {
+            id: "dom/iframe-embed".to_string(),
+            description: "Iframe and embed elements".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <iframe src="https://example.com" width="400" height="300" title="Embedded page"></iframe>
+                <embed type="application/pdf" width="400" height="300">
+                <object data="file.pdf" width="400" height="300"><p>PDF plugin not available.</p></object>
+            </body></html>"#.to_string(),
+            css: r#"iframe, embed, object { display: block; margin: 10px; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  模板和脚本
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── template 和 slot ──
+        TestCase {
+            id: "dom/template-slot".to_string(),
+            description: "Template and slot elements".to_string(),
+            category: "dom".to_string(),
+            html: r#"<html><body>
+                <template id="my-template"><div class="card"><slot name="content">Default</slot></div></template>
+                <div id="container"><p>Visible content</p></div>
+                <noscript><p>JavaScript is disabled.</p></noscript>
+            </body></html>"#.to_string(),
+            css: r#"#container { padding: 16px; background: #e3f2fd; border-radius: 4px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
