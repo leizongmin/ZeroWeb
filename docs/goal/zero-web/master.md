@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 801 个用例（22 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView
+**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 825 个用例（24 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -105,18 +105,20 @@
 
 ## 最近完成的改进
 
-### -83. HTTP 响应缓存集成到 WebView（本轮，~11,179 测试）
+### -83. HTTP 响应缓存集成到 WebView + WPT 825 用例（本轮，~11,179 测试）
 
-新增 HTTP 响应缓存模块并集成到 WebView 网络请求流程：
+新增 HTTP 响应缓存模块并集成到 WebView 网络请求流程，扩展 WPT 测试套件至 825 用例：
 
 | 模块 | 新增内容 | 新增测试 |
 |--------|------|----------|
 | net/http_cache | **HTTP 响应缓存**：HttpCache 基于内存的 HTTP 缓存、Cache-Control 头解析（max-age/s-maxage/no-cache/no-store/public/private/must-revalidate，大小写不敏感）、ETag/If-None-Match + Last-Modified/If-Modified-Since 条件请求头、LRU 淘汰策略、可配置容量限制（条目数+字节数）、Expires 头回退、可缓存状态码过滤、CachedResponse→HttpResponse 转换 | +17 |
 | webview | **缓存集成到 fetch_url**：缓存命中时跳过 HTTP 请求、响应自动存入缓存、clear_http_cache/http_cache_len/http_cache_bytes API | +3 |
+| WPT runner/web_api | **Web API +14 测试**：Fetch API GET/Request/Response/Headers、Cache API、navigator.onLine、XMLHttpRequest、URL API、URLSearchParams、TextEncoder/TextDecoder、Performance timing/mark/measure、JSON roundtrip、structuredClone | +14 |
+| WPT runner/css_layout | **CSS Grid +8 测试 + Flexbox +2 测试**：Grid named areas、auto-fill minmax、span、auto-rows-cols、implicit tracks、place-items、nested grids、responsive cards；Flexbox wrap-reverse、align-self | +10 |
 
-Tests: ~11,162 → ~11,179 (+20), clippy clean.
+WPT: 801 → 825 用例（+24, 24 个分类, 100% 通过率），Tests: ~11,162 → ~11,179 (+17), clippy clean.
 
-### -82. WPT 测试套件扩展至 801 用例（本轮，~11,130 测试）
+### -82. WPT 测试套件扩展至 801 用例（前轮，~11,130 测试）
 
 扩展 WPT 测试套件，新增 3 个方向的测试覆盖：
 
