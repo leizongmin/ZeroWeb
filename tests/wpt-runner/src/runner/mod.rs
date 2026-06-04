@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn test_categories_are_valid() {
         let tests = builtin_tests();
-        let valid_categories = ["html", "css", "layout", "dom"];
+        let valid_categories = ["html", "css", "layout", "dom", "es-modules", "web-workers"];
         for t in &tests {
             assert!(
                 valid_categories.contains(&t.category.as_str()),
