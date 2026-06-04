@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,130 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 801 个用例（22 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算
+**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 801 个用例（22 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,130 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,179 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -30,7 +30,7 @@
 | engine | 721 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**资源预加载**（ResourcePreloader：preload/prefetch/preconnect/dns-prefetch、优先级排序、URL 去重、生命周期追踪）、**DOM Bridge（polyfill: 事件系统 + Fetch API + console + setTimeout/setInterval + insertBefore/replaceChild/cloneNode + CSSStyleDeclaration + DOMTokenList + innerHTML/outerHTML + textContent/innerText + 导航属性）**、**opacity/text-decoration/text-transform 渲染集成**、**命令解析边界测试**、**DomBridge 句柄映射边界**、**DomResult 构造/相等性**、**paint 辅助函数边界/compositing 默认值/dirty 坐标验证/pipeline 状态/dom_bridge 边界**、**paint helpers 覆盖率测试（radial gradient 4 种 size 变体、所有 linear gradient 方向、opacity 全图元类型、clip start index、text transform 边界）** |
 | render-foundation | 300 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积**、**20 非重叠 rect/Color lerp 透明/缓存 GC 优先级/帧缓冲四角/圆角矩形包围盒** |
 | host-runtime | 228 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码**、**连续 resize/全修饰键/中键/IME 空/键盘释放**、**HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** |
-| net | 286 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界** |
+| net | 307 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界**、**HTTP 响应缓存（Cache-Control/ETag/LRU 淘汰/条件请求头/大小写不敏感解析/可缓存状态码过滤）** |
 | security | 409 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、HSTS、**权限模型**（PermissionManager：11 种权限类型、3 种状态、按 origin 隔离存储）、**站点隔离**（SiteIsolationManager：3 种策略、site-per-process 模型、跨站 DOM 访问阻止）、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵** |
 | protocol | 226 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标** |
 | storage | 661 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）**、**IDB types 覆盖率测试（18 个：跨类型 key 比较/binary key/hash 一致性/array key 边界/KeyRange contains/multiEntry index）** |
@@ -104,6 +104,17 @@
 ---
 
 ## 最近完成的改进
+
+### -83. HTTP 响应缓存集成到 WebView（本轮，~11,179 测试）
+
+新增 HTTP 响应缓存模块并集成到 WebView 网络请求流程：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| net/http_cache | **HTTP 响应缓存**：HttpCache 基于内存的 HTTP 缓存、Cache-Control 头解析（max-age/s-maxage/no-cache/no-store/public/private/must-revalidate，大小写不敏感）、ETag/If-None-Match + Last-Modified/If-Modified-Since 条件请求头、LRU 淘汰策略、可配置容量限制（条目数+字节数）、Expires 头回退、可缓存状态码过滤、CachedResponse→HttpResponse 转换 | +17 |
+| webview | **缓存集成到 fetch_url**：缓存命中时跳过 HTTP 请求、响应自动存入缓存、clear_http_cache/http_cache_len/http_cache_bytes API | +3 |
+
+Tests: ~11,162 → ~11,179 (+20), clippy clean.
 
 ### -82. WPT 测试套件扩展至 801 用例（本轮，~11,130 测试）
 
