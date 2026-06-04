@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~10,983 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 476 个用例（13 个分类），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置持久化已实现（BrowserShell 集成）
+**执行状态**: 16/16 crate 已实现，~10,983 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 497 个用例（13 个分类），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置持久化已实现（BrowserShell 集成）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -1436,7 +1436,7 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] WPT 通过率持续追踪和扩展（当前 85 内建测试）
+- [ ] WPT 通过率持续追踪和扩展（当前 497 内建测试，13 分类）
 - [ ] 页面级 WASM JS→wasm-sandbox 自动桥接（当前需要通过 Rust API 调用）
 
 ---
@@ -1444,11 +1444,11 @@ Total: 6219 → 6378 tests (+159)
 ## 下一步优先级
 
 1. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题（需要 GPU/Display 环境）
-2. **无头浏览器协议支持**（高优先级，无头可推进）— WebDriver BiDi 标准主线 + CDP 最小兼容子集，作为 Playwright/Puppeteer/Selenium/CI 的控制面
+2. ~~**无头浏览器协议支持**~~ ✅ Phase 1-5 全部完成
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
-4. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
+4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
 5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ⬜ WPT CSS/layout 真实子集
+6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ⬜ WPT CSS/layout 真实子集（497 用例已建立）
 
 ## 浏览器质量测试体系推进计划
 
