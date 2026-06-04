@@ -488,8 +488,13 @@ impl BrowserApp {
             None => return false,
         };
 
+        let mut page_primitives = primitives.clone();
+        if let Some(primary) = self.font_id {
+            reflow_webview_glyphs(&mut page_primitives.glyphs, &self.font_loader, primary);
+        }
+
         append_webview_primitives(
-            primitives,
+            &page_primitives,
             fills,
             glyphs,
             0.0,
@@ -958,6 +963,68 @@ fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32,
     fills.push(rect_fill(x, y + size - thickness, size, thickness, color));
     fills.push(rect_fill(x, y, thickness, size, color));
     fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
+}
+
+/// 按真实字体 advance 重新排列 WebView 文本 glyph（与 UI 文本一致）
+fn reflow_webview_glyphs(
+    glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive],
+    font_loader: &FontLoader,
+    primary_id: u32,
+) {
+    use std::collections::HashMap;
+
+    if glyphs.is_empty() {
+        return;
+    }
+
+    let mut lines: HashMap<i32, Vec<usize>> = HashMap::new();
+    for (i, glyph) in glyphs.iter().enumerate() {
+        if glyph.glyph_id == 0 {
+            continue;
+        }
+        let Some(ch) = char::from_u32(glyph.glyph_id) else {
+            continue;
+        };
+        if ch == '\0' {
+            continue;
+        }
+        let key = (glyph.y * 2.0).round() as i32;
+        lines.entry(key).or_default().push(i);
+    }
+
+    for indices in lines.into_values() {
+        let mut indices = indices;
+        indices.sort_by(|&a, &b| {
+            glyphs[a]
+                .x
+                .partial_cmp(&glyphs[b].x)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut cursor_x = glyphs[indices[0]].x;
+        let mut i = 0;
+        while i < indices.len() {
+            let cluster_x = glyphs[indices[i]].x;
+            let font_size = glyphs[indices[i]].font_size;
+            let Some(ch) = char::from_u32(glyphs[indices[i]].glyph_id) else {
+                i += 1;
+                continue;
+            };
+
+            let mut j = i + 1;
+            while j < indices.len() && (glyphs[indices[j]].x - cluster_x).abs() < 1.0 {
+                j += 1;
+            }
+
+            for idx in &indices[i..j] {
+                let offset = glyphs[*idx].x - cluster_x;
+                glyphs[*idx].x = cursor_x + offset;
+            }
+
+            cursor_x += font_loader.measure_advance(primary_id, ch, font_size);
+            i = j;
+        }
+    }
 }
 
 /// 将 WebView 输出的基础图元追加到浏览器场景。

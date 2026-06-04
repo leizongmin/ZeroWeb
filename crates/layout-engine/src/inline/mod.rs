@@ -121,6 +121,9 @@ pub fn estimate_char_width(c: char, font_size: f32) -> f32 {
     } else if is_cjk_character(c) {
         // CJK 全角字符：宽度约等于字体大小
         font_size
+    } else if is_emoji_character(c) {
+        // Emoji 通常占一个全角宽度
+        font_size
     } else if c.is_ascii_punctuation() {
         // ASCII 标点：比字母窄
         font_size * 0.4
@@ -161,6 +164,16 @@ fn is_cjk_character(c: char) -> bool {
         | '\u{30A0}'..='\u{30FF}'
         | '\u{AC00}'..='\u{D7AF}'
     )
+}
+
+/// 判断字符是否为 emoji 或常见符号（非 CJK）。
+fn is_emoji_character(c: char) -> bool {
+    let cp = c as u32;
+    (0x1F300..=0x1FAFF).contains(&cp)
+        || (0x2600..=0x26FF).contains(&cp)
+        || (0x2700..=0x27BF).contains(&cp)
+        || (0xFE00..=0xFE0F).contains(&cp)
+        || (0x1F1E6..=0x1F1FF).contains(&cp)
 }
 
 /// 估算字符串的总宽度，按每个字符逐一计算。

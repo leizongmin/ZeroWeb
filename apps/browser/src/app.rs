@@ -1558,9 +1558,10 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
         "C:\\Windows\\Fonts\\msyh.ttc",
@@ -1569,14 +1570,24 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
 
     let mut fallbacks = Vec::new();
     for path in fallback_paths {
-        if let Ok(data) = std::fs::read(path)
-            && let Ok(id) = font_loader.load_font(&data)
-            && id != primary
-        {
-            fallbacks.push(id);
+        if path.contains("NotoColorEmoji") {
+            // fontdue 无法 rasterize CBDT/CBLC 彩色 emoji 字体，跳过以免浪费内存
+            continue;
+        }
+        match std::fs::read(path) {
+            Ok(data) => match font_loader.load_font(&data) {
+                Ok(id) if id != primary => {
+                    tracing::info!("Loaded fallback font: {path} (id={id})");
+                    fallbacks.push(id);
+                }
+                Ok(_) => {}
+                Err(e) => tracing::debug!("Failed to load fallback font {path}: {e}"),
+            },
+            Err(e) => tracing::debug!("Fallback font not found {path}: {e}"),
         }
     }
     font_loader.set_fallback_chain(fallbacks);
+    tracing::info!("Font fallback chain: {} fonts", font_loader.fallback_chain().len());
 
     Some(primary)
 }
