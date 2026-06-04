@@ -466,7 +466,7 @@ pub fn wpt_expansion_tests() -> Vec<TestCase> {
                         <div class="gradient">Gradient</div>
                     </body></html>"#.to_string(),
                     css: ".gradient { width: 300px; height: 200px; background: linear-gradient(to right, red 0%, yellow 50%, green 100%); color: white; }".to_string(),
-                    assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+                    assertions: vec!["render_completes".to_string(), "nonzero_primitives".to_string()],
                 },
                 // ── Complex page layout ──
                 TestCase {

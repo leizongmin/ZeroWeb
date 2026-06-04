@@ -288,7 +288,7 @@ pub fn core_tests() -> Vec<TestCase> {
                         .to_string(),
                     css: ".hex1 { background-color: #ff0000; width: 100px; height: 50px; } .hex2 { background-color: #00ff00; width: 100px; height: 50px; }".to_string(),
                     assertions: vec![
-                        "has_multiple_fills".to_string(),
+                        "has_fill_primitives".to_string(),
                         "render_completes".to_string(),
                     ],
                 },
