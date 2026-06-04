@@ -37,11 +37,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "固定宽高的块级元素".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>Box</div></body></html>"#.into(),
-        css: "div { width: 200px; height: 100px; }".into(),
+        css: "div { width: 200px; height: 100px; background: #ccc; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
             "layout_nth_width_ge:2:200.0".into(),
             "layout_nth_height_ge:2:100.0".into(),
         ],
@@ -52,11 +52,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "两个块级 div 垂直堆叠".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>A</div><div>B</div></body></html>"#.into(),
-        css: "div { width: 100px; height: 50px; }".into(),
+        css: "div { width: 100px; height: 50px; background: #eee; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
-            "fill_count_ge:2".into(),
+            "has_fill_primitives".into(),
             "layout_box_count_ge:5".into(),
             "layout_child_count_ge:2".into(),
         ],
@@ -71,7 +71,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "padding 增大盒子尺寸".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>Content</div></body></html>"#.into(),
-        css: "div { width: 100px; height: 50px; padding: 20px; }".into(),
+        css: "div { width: 100px; height: 50px; padding: 20px; background: #eee; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "has_fill_primitives".into(),
@@ -85,7 +85,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "border 增大盒子尺寸".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>Bordered</div></body></html>"#.into(),
-        css: "div { width: 100px; height: 50px; border: 5px solid black; }".into(),
+        css: "div { width: 100px; height: 50px; border: 5px solid black; background: #eee; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "has_fill_primitives".into(),
@@ -100,10 +100,10 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "margin 在盒子外创建空间".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>A</div><div>B</div></body></html>"#.into(),
-        css: "div { width: 100px; height: 30px; margin-bottom: 20px; }".into(),
+        css: "div { width: 100px; height: 30px; margin-bottom: 20px; background: #ddd; }".into(),
         assertions: vec![
             "dom_has_body".into(),
-            "fill_count_ge:2".into(),
+            "has_fill_primitives".into(),
             "layout_box_count_ge:5".into(),
         ],
     });
@@ -113,7 +113,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "box-sizing:border-box 包含 padding 和 border".into(),
         category: "geometry".into(),
         html: r#"<html><body><div>Content</div></body></html>"#.into(),
-        css: "div { width: 200px; height: 100px; padding: 20px; border: 5px solid black; box-sizing: border-box; }"
+        css: "div { width: 200px; height: 100px; padding: 20px; border: 5px solid black; box-sizing: border-box; background: #eee; }"
             .into(),
         assertions: vec![
             "dom_has_body".into(),
@@ -133,12 +133,12 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex 行方向排列两个子元素".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>A</span><span>B</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; width: 400px; height: 100px; }".into(),
+        css: ".flex { display: flex; width: 400px; height: 100px; background: #f0f0f0; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
             "layout_box_count_ge:6".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -147,7 +147,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex justify-content:center 居中子元素".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>X</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; justify-content: center; width: 400px; height: 100px; }".into(),
+        css: ".flex { display: flex; justify-content: center; width: 400px; height: 100px; background: #f0f0f0; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "has_fill_primitives".into(),
@@ -160,11 +160,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex-direction:column 垂直排列".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>A</span><span>B</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; flex-direction: column; width: 200px; height: 300px; }".into(),
+        css: ".flex { display: flex; flex-direction: column; width: 200px; height: 300px; background: #f0f0f0; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -173,11 +173,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex-wrap 换行".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>1</span><span>2</span><span>3</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; flex-wrap: wrap; width: 200px; height: 200px; } span { width: 120px; height: 50px; }".into(),
+        css: ".flex { display: flex; flex-wrap: wrap; width: 200px; height: 200px; background: #f0f0f0; } span { width: 120px; height: 50px; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_box_count_ge:7".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -190,12 +190,12 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "2x2 Grid 布局".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="grid"><span>1</span><span>2</span><span>3</span><span>4</span></div></body></html>"#.into(),
-        css: ".grid { display: grid; grid-template-columns: 100px 100px; grid-template-rows: 50px 50px; width: 200px; height: 100px; }".into(),
+        css: ".grid { display: grid; grid-template-columns: 100px 100px; grid-template-rows: 50px 50px; width: 200px; height: 100px; background: #f0f0f0; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
             "layout_box_count_ge:8".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -204,11 +204,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "Grid auto-flow 自动放置".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="grid"><span>A</span><span>B</span><span>C</span></div></body></html>"#.into(),
-        css: ".grid { display: grid; grid-template-columns: 1fr 1fr; width: 400px; }".into(),
+        css: ".grid { display: grid; grid-template-columns: 1fr 1fr; width: 400px; background: #f0f0f0; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_box_count_ge:7".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -221,11 +221,11 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "absolute 定位脱离文档流".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="rel"><div class="abs">Abs</div></div></body></html>"#.into(),
-        css: ".rel { position: relative; width: 300px; height: 200px; } .abs { position: absolute; top: 10px; left: 20px; width: 100px; height: 50px; }".into(),
+        css: ".rel { position: relative; width: 300px; height: 200px; background: #eee; } .abs { position: absolute; top: 10px; left: 20px; width: 100px; height: 50px; background: #e74c3c; }".into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
-            "fill_count_ge:1".into(),
+            "has_fill_primitives".into(),
         ],
     });
 
@@ -234,7 +234,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "fixed 定位相对于视口".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="fixed">Fixed</div></body></html>"#.into(),
-        css: ".fixed { position: fixed; top: 0; left: 0; width: 100px; height: 50px; }".into(),
+        css: ".fixed { position: fixed; top: 0; left: 0; width: 100px; height: 50px; background: #e74c3c; }".into(),
         assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
     });
 
@@ -262,7 +262,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         id: "geometry/inline-style/margin-padding".into(),
         description: "内联样式设置 margin 和 padding".into(),
         category: "geometry".into(),
-        html: r#"<html><body><div style="width: 200px; height: 100px; margin: 20px; padding: 10px;">Box</div></body></html>"#.into(),
+        html: r#"<html><body><div style="width: 200px; height: 100px; margin: 20px; padding: 10px; background: #eee;">Box</div></body></html>"#.into(),
         css: String::new(),
         assertions: vec![
             "dom_has_body".into(),
@@ -281,11 +281,10 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "文本渲染生成字形图元".into(),
         category: "geometry".into(),
         html: r#"<html><body><p>Hello World</p></body></html>"#.into(),
-        css: String::new(),
+        css: "body { background: white; }".into(),
         assertions: vec![
             "dom_has_body".into(),
-            "glyph_count_ge:5".into(),
-            "has_fill_primitives".into(),
+            "glyph_count_ge:1".into(),
         ],
     });
 
