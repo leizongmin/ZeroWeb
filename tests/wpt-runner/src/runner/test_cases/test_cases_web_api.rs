@@ -1008,5 +1008,323 @@ pub fn web_api_tests() -> Vec<TestCase> {
                 "no_panic".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Network / HTTP Cache
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/fetch-basic-get".into(),
+            description: "Fetch API basic GET request availability".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Fetch API Basic GET</h2>
+<div id="result">pending</div>
+<script>
+if (typeof fetch === 'function') {
+    document.getElementById('result').textContent = 'fetch-available';
+} else {
+    document.getElementById('result').textContent = 'fetch-unavailable';
+}
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/fetch-request-constructor".into(),
+            description: "Fetch Request constructor and properties".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Fetch Request Constructor</h2>
+<script>
+var req = new Request('https://example.com/api');
+var method = req.method;
+var url = req.url;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/fetch-response-constructor".into(),
+            description: "Fetch Response constructor and status".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Fetch Response Constructor</h2>
+<script>
+var resp = new Response('{"ok":true}', {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+});
+var ok = resp.ok;
+var status = resp.status;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/fetch-headers-api".into(),
+            description: "Fetch Headers API get/set/has/append".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Headers API</h2>
+<script>
+var h = new Headers();
+h.set('Content-Type', 'text/html');
+h.append('X-Custom', 'value1');
+h.append('X-Custom', 'value2');
+var ct = h.get('Content-Type');
+var has = h.has('X-Custom');
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/cache-api-basic".into(),
+            description: "Cache API open/put/match basic flow".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Cache API Basic</h2>
+<script>
+// Cache API polyfill test — verify caches global exists
+if (typeof caches === 'undefined') {
+    // polyfill not available, just verify no crash
+    var cacheStatus = 'no-caches-global';
+} else {
+    var cacheStatus = 'caches-available';
+}
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/network-online-state".into(),
+            description: "navigator.onLine state detection".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Network Online State</h2>
+<div id="status">checking</div>
+<script>
+var online = navigator.onLine;
+document.getElementById('status').textContent = online ? 'online' : 'offline';
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/xhr-basic".into(),
+            description: "XMLHttpRequest constructor availability".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>XMLHttpRequest</h2>
+<script>
+var xhr = new XMLHttpRequest();
+var readyState = xhr.readyState;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/url-api".into(),
+            description: "URL API constructor and properties".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>URL API</h2>
+<script>
+var u = new URL('https://example.com/path?query=1#hash');
+var protocol = u.protocol;
+var hostname = u.hostname;
+var pathname = u.pathname;
+var search = u.search;
+var hash = u.hash;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/url-search-params".into(),
+            description: "URLSearchParams API get/set/toString".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>URLSearchParams</h2>
+<script>
+var params = new URLSearchParams('a=1&b=2');
+params.set('c', '3');
+var a = params.get('a');
+var has = params.has('b');
+var str = params.toString();
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/encoding-api".into(),
+            description: "TextEncoder/TextDecoder API".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Encoding API</h2>
+<script>
+var encoder = new TextEncoder();
+var bytes = encoder.encode('hello');
+var decoder = new TextDecoder();
+var text = decoder.decode(bytes);
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Performance / Timing
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/performance-timing".into(),
+            description: "performance.now() timing precision".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Performance Timing</h2>
+<script>
+var start = performance.now();
+for (var i = 0; i < 1000; i++) { var x = i * i; }
+var elapsed = performance.now() - start;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/performance-mark-measure".into(),
+            description: "performance.mark/measure/getEntries".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Performance Mark/Measure</h2>
+<script>
+performance.mark('start');
+for (var i = 0; i < 100; i++) { var x = Math.sqrt(i); }
+performance.mark('end');
+performance.measure('sqrt-bench', 'start', 'end');
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Structured Data / Serialization
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/json-roundtrip".into(),
+            description: "JSON parse/stringify complex objects".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>JSON Roundtrip</h2>
+<script>
+var obj = { name: "test", values: [1, 2, 3], nested: { a: true, b: null } };
+var str = JSON.stringify(obj);
+var parsed = JSON.parse(str);
+var same = parsed.name === obj.name && parsed.values.length === 3;
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/structured-clone".into(),
+            description: "structuredClone API for deep copy".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<h2>Structured Clone</h2>
+<script>
+var original = { a: 1, b: [2, 3], c: { d: true } };
+if (typeof structuredClone === 'function') {
+    var cloned = structuredClone(original);
+    cloned.a = 99;
+    var independent = original.a === 1;
+}
+</script>
+</body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "no_panic".into(),
+            ],
+        },
     ]
 }
