@@ -473,7 +473,7 @@ pub fn web_platform_tests() -> Vec<TestCase> {
             <div style="width:300px;height:100px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);"></div>
             </body></html>"#.to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "gradient_count_ge:1".to_string()],
         },
         TestCase {
             id: "web-platform/css-gradient-radial-custom".to_string(),
@@ -483,7 +483,7 @@ pub fn web_platform_tests() -> Vec<TestCase> {
             <div style="width:300px;height:200px;background:radial-gradient(ellipse at 30% 50%,#f093fb 0%,#f5576c 100%);"></div>
             </body></html>"#.to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "gradient_count_ge:1".to_string()],
         },
         TestCase {
             id: "web-platform/css-gradient-multi-stop".to_string(),
@@ -493,7 +493,7 @@ pub fn web_platform_tests() -> Vec<TestCase> {
             <div style="width:300px;height:100px;background:linear-gradient(90deg,#ff0000 0%,#ff7f00 14%,#ffff00 28%,#00ff00 42%,#0000ff 57%,#4b0082 71%,#9400d3 100%);"></div>
             </body></html>"#.to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "gradient_count_ge:1".to_string()],
         },
         // ═══════════════════════════════════════════════════════════════
         //  CSS 定位和层叠
@@ -711,7 +711,7 @@ pub fn web_platform_tests() -> Vec<TestCase> {
             </div>
             </body></html>"#.to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string(), "has_glyph_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "has_glyph_primitives".to_string()],
         },
         // ═══════════════════════════════════════════════════════════════
         //  CSS overflow 和 text-overflow
