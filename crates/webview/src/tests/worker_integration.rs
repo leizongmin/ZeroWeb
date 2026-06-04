@@ -318,6 +318,7 @@ fn test_worker_with_custom_config() {
     let config = SandboxConfig {
         heap_limit: 8 * 1024 * 1024,
         timeout_ms: 10000,
+        persistent_context: false,
     };
     let id = wv.create_worker_with_config("postMessage('ok');", config).unwrap();
 

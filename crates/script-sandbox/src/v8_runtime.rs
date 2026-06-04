@@ -31,6 +31,12 @@ fn ensure_v8_initialized() {
 /// 2. 调用 [`V8Sandbox::execute()`] 执行脚本
 /// 3. 沙箱释放时自动清理V8资源
 ///
+/// # 性能优化
+///
+/// 当 `SandboxConfig::persistent_context` 为 `true` 时，首次 execute 创建的
+/// V8 Context 会被缓存复用，避免每次执行都重新引导 JS 内置对象，显著降低执行开销。
+/// 适用于 WebView 等需要频繁执行脚本的场景。
+///
 /// # 线程安全
 ///
 /// V8 Isolate不是线程安全的。每个线程应创建独立的沙箱实例。
@@ -39,6 +45,8 @@ pub struct V8Sandbox {
     isolate: Option<rusty_v8::OwnedIsolate>,
     /// 沙箱配置。
     config: SandboxConfig,
+    /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
+    cached_context: Option<rusty_v8::Global<rusty_v8::Context>>,
 }
 
 impl V8Sandbox {
@@ -64,6 +72,7 @@ impl V8Sandbox {
         Ok(Self {
             isolate: Some(isolate),
             config,
+            cached_context: None,
         })
     }
 
@@ -81,12 +90,20 @@ impl V8Sandbox {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
 
+        let persistent = self.config.persistent_context;
+        // SAFETY: cached_context 和 isolate 是不同的字段。
+        // HandleScope 持有 isolate 的借用，不会触及 cached_context。
+        // 原始指针允许我们在 isolate 被借用时访问 cached_context。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
 
         let start = std::time::Instant::now();
 
         let scope = &mut rusty_v8::HandleScope::new(isolate);
-        let context = rusty_v8::Context::new(scope);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
+        let context = unsafe { resolve_context(persistent, cached_ptr, scope) };
         let scope = &mut rusty_v8::ContextScope::new(scope, context);
 
         // 编译脚本
@@ -124,12 +141,16 @@ impl V8Sandbox {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
 
+        let persistent = self.config.persistent_context;
+        // SAFETY: 同 execute() 中的说明
+        let cached_ptr: *mut _ = &mut self.cached_context;
+
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
 
         let start = std::time::Instant::now();
 
         let scope = &mut rusty_v8::HandleScope::new(isolate);
-        let context = rusty_v8::Context::new(scope);
+        let context = unsafe { resolve_context(persistent, cached_ptr, scope) };
         let scope = &mut rusty_v8::ContextScope::new(scope, context);
 
         let code_str = rusty_v8::String::new(scope, code)
@@ -154,6 +175,45 @@ impl V8Sandbox {
             value: json_str,
             execution_time_ms,
         })
+    }
+}
+
+/// 获取或创建 V8 Context。
+///
+/// 当 `persistent` 为 true 时，首次创建的 Context 会被缓存到 `cached` 中复用。
+/// 否则每次调用都创建新的 Context（保证执行间状态隔离）。
+///
+/// # Safety
+///
+/// `cached_ptr` 必须指向一个有效的、不与 `scope` 所借用的 isolate 重叠的
+/// `Option<Global<Context>>`。调用方需确保两个引用不冲突。
+unsafe fn resolve_context<'s>(
+    persistent: bool,
+    cached_ptr: *mut Option<rusty_v8::Global<rusty_v8::Context>>,
+    scope: &mut rusty_v8::HandleScope<'s, ()>,
+) -> rusty_v8::Local<'s, rusty_v8::Context> {
+    let cached = unsafe { &mut *cached_ptr };
+    if !persistent {
+        return rusty_v8::Context::new(scope);
+    }
+
+    // 尝试复用缓存的 Context
+    if let Some(ref cached_ctx) = *cached {
+        return rusty_v8::Local::new(scope, cached_ctx);
+    }
+
+    // 首次执行：创建并缓存 Context
+    let context = rusty_v8::Context::new(scope);
+    *cached = Some(rusty_v8::Global::new(scope, context));
+    context
+}
+
+impl V8Sandbox {
+    /// 重置缓存的 V8 Context。
+    ///
+    /// 下次 execute 时会创建新的 Context。仅在 `persistent_context` 模式下有意义。
+    pub fn reset_context(&mut self) {
+        self.cached_context = None;
     }
 
     /// 获取V8引擎版本号。
@@ -288,6 +348,7 @@ mod tests {
         let config = SandboxConfig {
             heap_limit: 32 * 1024 * 1024, // 32MB
             timeout_ms: 5000,
+            persistent_context: false,
         };
         let sandbox = V8Sandbox::with_config(config);
         assert!(sandbox.is_ok());
@@ -298,6 +359,7 @@ mod tests {
         let config = SandboxConfig::default();
         assert_eq!(config.heap_limit, 0);
         assert_eq!(config.timeout_ms, 0);
+        assert!(!config.persistent_context, "默认应使用每次创建新 Context");
     }
 
     #[test]
@@ -681,6 +743,7 @@ mod tests {
         let config = SandboxConfig {
             heap_limit: 1024,
             timeout_ms: 100,
+            persistent_context: false,
         };
         let cloned = config.clone();
         assert_eq!(cloned.heap_limit, 1024);
@@ -692,6 +755,7 @@ mod tests {
         let config = SandboxConfig {
             heap_limit: 2048,
             timeout_ms: 200,
+            persistent_context: false,
         };
         let debug = format!("{config:?}");
         assert!(debug.contains("2048"));
@@ -960,6 +1024,7 @@ mod tests {
         let custom_config = SandboxConfig {
             heap_limit: 64 * 1024 * 1024, // 64MB
             timeout_ms: 10000,
+            persistent_context: false,
         };
         let sandbox = V8Sandbox::with_config(custom_config);
         assert!(sandbox.is_ok(), "Custom config should create sandbox successfully");
@@ -1115,6 +1180,104 @@ mod tests {
             );
         } else {
             panic!("Expected CompileError");
+        }
+    }
+
+    // ── 持久化 Context（V8 快照优化）测试 ──
+
+    #[test]
+    /// 测试 persistent_context 模式下变量在多次 execute 间保持。
+    fn test_persistent_context_state_persists() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        // 第一次执行：定义变量
+        let r1 = sandbox.execute("var persistentVar = 42; persistentVar").unwrap();
+        assert_eq!(r1.value, "42");
+
+        // 第二次执行：变量应该仍然存在
+        let r2 = sandbox.execute("persistentVar + 8").unwrap();
+        assert_eq!(r2.value, "50");
+    }
+
+    #[test]
+    /// 测试 persistent_context 模式下函数在多次 execute 间保持。
+    fn test_persistent_context_function_persists() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        sandbox.execute("function add(a, b) { return a + b; }").unwrap();
+        let r = sandbox.execute("add(3, 4)").unwrap();
+        assert_eq!(r.value, "7");
+    }
+
+    #[test]
+    /// 测试 persistent_context=false（默认）时状态隔离仍然有效。
+    fn test_fresh_context_state_isolated() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+
+        sandbox.execute("var x = 42; x").unwrap();
+        let r = sandbox.execute("typeof x === 'undefined'");
+        match r {
+            Ok(result) => assert_eq!(result.value, "true", "默认模式下变量不应泄漏"),
+            Err(ScriptError::RuntimeError(_)) => {} // ReferenceError 也合法
+            Err(e) => panic!("Unexpected error: {e}"),
+        }
+    }
+
+    #[test]
+    /// 测试 reset_context 清除持久化上下文。
+    fn test_reset_context_clears_state() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        sandbox.execute("var beforeReset = 99; beforeReset").unwrap();
+        sandbox.reset_context();
+        // reset 后应该在新 Context 中，变量不存在
+        let r = sandbox.execute("typeof beforeReset === 'undefined'");
+        match r {
+            Ok(result) => assert_eq!(result.value, "true", "reset 后变量应消失"),
+            Err(ScriptError::RuntimeError(_)) => {}
+            Err(e) => panic!("Unexpected error: {e}"),
+        }
+    }
+
+    #[test]
+    /// 测试 persistent_context 模式下 execute_json 也复用上下文。
+    fn test_persistent_context_execute_json() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        sandbox.execute("var data = {x: 1};").unwrap();
+        let r = sandbox.execute_json("data").unwrap();
+        assert!(r.value.contains("\"x\""), "execute_json 应看到之前定义的变量");
+    }
+
+    #[test]
+    /// 测试 persistent_context 模式下多次执行不会累积内存问题。
+    fn test_persistent_context_many_executions() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        for i in 0..50 {
+            let code = format!("var v{i} = {i}; v{i}");
+            let r = sandbox.execute(&code).unwrap();
+            assert_eq!(r.value, i.to_string());
         }
     }
 }
