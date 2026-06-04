@@ -16,6 +16,7 @@ use zero_host_runtime::window::{HostRuntime, WindowConfig};
 use zero_render_foundation::config::RenderMode;
 
 use app::BrowserApp;
+use app::WindowChromeAction;
 
 // --- CLI 参数 ---
 
@@ -271,8 +272,11 @@ mod tests {
         let config = super::browser_window_config();
         if crate::app::is_wayland() {
             assert!(!config.decorations);
+            assert!(config.maximized);
+            assert!(!config.fullscreen);
         } else {
             assert!(config.decorations);
+            assert!(config.fullscreen);
         }
     }
 
@@ -523,10 +527,64 @@ fn browser_window_config() -> WindowConfig {
         .with_resizable(true);
     if app::is_wayland() {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
-        config.with_decorations(false)
+        config.with_decorations(false).with_maximized(true)
     } else {
-        config
+        config.with_fullscreen(true)
     }
+}
+
+fn apply_window_chrome_action(app: &mut BrowserApp, window: &winit::window::Window) {
+    let Some(action) = app.take_window_chrome_action() else {
+        return;
+    };
+    match action {
+        WindowChromeAction::Minimize => {
+            if window.fullscreen().is_some() {
+                window.set_fullscreen(None);
+                app.mark_surface_stale();
+                sync_window_size_from_window(app, window);
+            }
+            window.set_minimized(true);
+            sync_window_chrome_icon(app, window);
+        }
+        WindowChromeAction::ToggleMaximize => {
+            // Wayland 下不可同时对 fullscreen 表面调用 set_maximized，须分步切换
+            if window.fullscreen().is_some() {
+                window.set_fullscreen(None);
+                app.mark_surface_stale();
+                sync_window_size_from_window(app, window);
+                sync_window_chrome_icon(app, window);
+            } else if window.is_maximized() {
+                window.set_maximized(false);
+                sync_window_chrome_icon(app, window);
+            } else {
+                window.set_maximized(true);
+                sync_window_chrome_icon(app, window);
+            }
+        }
+        WindowChromeAction::Close => std::process::exit(0),
+        WindowChromeAction::StartDrag => {
+            if let Err(err) = window.drag_window() {
+                tracing::warn!("drag_window failed: {err}");
+            }
+        }
+    }
+}
+
+fn sync_window_size_from_window(app: &mut BrowserApp, window: &winit::window::Window) {
+    let physical = window.inner_size();
+    app.physical_size = (physical.width, physical.height);
+    let scale = normalized_window_scale(window.scale_factor());
+    let logical_width = ((physical.width as f32 / scale).round() as u32).max(1);
+    let logical_height = ((physical.height as f32 / scale).round() as u32).max(1);
+    app.set_window_size((logical_width, logical_height));
+    app.scale_factor = scale;
+    let (cw, ch) = app.content_physical_size();
+    app.resize_all_webviews(cw, ch);
+}
+
+fn sync_window_chrome_icon(app: &mut BrowserApp, window: &winit::window::Window) {
+    app.set_window_maximized(window.fullscreen().is_some() || window.is_maximized());
 }
 
 fn main() {
@@ -717,6 +775,9 @@ fn main() {
                 app.window_focused = true;
                 app.gpu_surface_stale = true;
                 app.needs_redraw = true;
+                if let Some(ref win) = window {
+                    sync_window_chrome_icon(&mut app, win);
+                }
             }
             AppEvent::Unfocused => {
                 tracing::debug!("Window unfocused");
@@ -738,6 +799,7 @@ fn main() {
 
         if let Some(ref win) = window {
             app.sync_ime_state(win);
+            apply_window_chrome_action(&mut app, win);
         }
     }) {
         tracing::error!("Event loop error: {e}");

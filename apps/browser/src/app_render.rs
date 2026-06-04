@@ -106,9 +106,14 @@ impl BrowserApp {
             return;
         }
 
-        let new_tab_btn_w = 32.0 * s;
-        let available_width = width as f32 - new_tab_btn_w;
-        let tab_w = (available_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
+        let new_tab_btn_w = layout::NEW_TAB_BTN_WIDTH * s;
+        let window_controls_w = if self.uses_custom_window_controls() {
+            layout::WINDOW_CONTROLS_WIDTH * s
+        } else {
+            0.0
+        };
+        let tabs_max_width = width as f32 - window_controls_w - new_tab_btn_w;
+        let tab_w = (tabs_max_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
 
         self.tab_layout.clear();
         let mut x = 0.0_f32;
@@ -163,14 +168,14 @@ impl BrowserApp {
             x += tab_w;
         }
 
-        // 新建标签按钮 (+)
+        // 新建标签按钮 (+)，紧跟最后一个标签
         if self.font_id.is_some() {
-            let btn_x = width as f32 - new_tab_btn_w;
+            let btn_x = x;
             let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let is_hovered = {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= btn_x && my < tab_bar_h
+                mx >= btn_x && mx < btn_x + new_tab_btn_w && my < tab_bar_h
             };
             if is_hovered {
                 fills.push(rect_fill(btn_x, 0.0, new_tab_btn_w, tab_bar_h, colors::TAB_HOVER_BG));
@@ -178,6 +183,77 @@ impl BrowserApp {
             let plus_advance = self.measure_ui_text_width("+", font_size);
             let text_x = btn_x + (new_tab_btn_w - plus_advance) / 2.0;
             self.draw_ui_text("+", text_x, 8.0 * s, font_size, colors::NEW_TAB_BUTTON, glyphs);
+        }
+
+        if self.uses_custom_window_controls() {
+            self.render_window_controls(fills, glyphs, width, s);
+        }
+    }
+
+    /// 渲染窗口控制按钮（最小化 / 最大化 / 关闭）
+    fn render_window_controls(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        s: f32,
+    ) {
+        let btn_w = layout::WINDOW_CONTROL_BTN_WIDTH * s;
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let x0 = self.window_controls_origin_x(width as f32, s);
+        let icon = colors::WINDOW_CONTROL_ICON;
+        let thickness = (1.0 * s).max(1.0);
+
+        for i in 0..3 {
+            let bx = x0 + i as f32 * btn_w;
+            let hovered = self.window_control_hover == Some(i);
+            let bg = if i == 2 && hovered {
+                colors::WINDOW_CONTROL_CLOSE_HOVER
+            } else if hovered {
+                colors::WINDOW_CONTROL_HOVER
+            } else {
+                colors::TAB_BAR_BG
+            };
+            fills.push(rect_fill(bx, 0.0, btn_w, tab_bar_h, bg));
+
+            let cx = bx + btn_w / 2.0;
+            let cy = tab_bar_h / 2.0;
+
+            match i {
+                0 => {
+                    let line_w = 10.0 * s;
+                    fills.push(rect_fill(cx - line_w / 2.0, cy - thickness / 2.0, line_w, thickness, icon));
+                }
+                1 if self.window_is_maximized => {
+                    let size = 8.0 * s;
+                    let off = 3.0 * s;
+                    let back_left = cx - size / 2.0 - off / 2.0;
+                    let back_top = cy - size / 2.0 - off / 2.0;
+                    let front_left = cx - size / 2.0 + off / 2.0;
+                    let front_top = cy - size / 2.0 + off / 2.0;
+                    draw_hollow_square(fills, back_left, back_top, size, thickness, icon);
+                    draw_hollow_square(fills, front_left, front_top, size, thickness, icon);
+                }
+                1 => {
+                    let size = 10.0 * s;
+                    draw_hollow_square(fills, cx - size / 2.0, cy - size / 2.0, size, thickness, icon);
+                }
+                2 => {
+                    if let Some(fid) = self.font_id {
+                        let close_size = 14.0 * s;
+                        let advance = self.font_loader.measure_advance(fid, '×', close_size);
+                        glyphs.push(GlyphDraw {
+                            ch: '×',
+                            x: cx - advance / 2.0,
+                            baseline_y: cy + close_size * 0.35,
+                            color: icon,
+                            font_id: fid,
+                            font_size: close_size,
+                        });
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -875,6 +951,13 @@ fn rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimitive {
         rect: zero_render_foundation::geometry::Rect::new(x, y, w, h),
         color,
     }
+}
+
+fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32, thickness: f32, color: Color) {
+    fills.push(rect_fill(x, y, size, thickness, color));
+    fills.push(rect_fill(x, y + size - thickness, size, thickness, color));
+    fills.push(rect_fill(x, y, thickness, size, color));
+    fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
 }
 
 /// 将 WebView 输出的基础图元追加到浏览器场景。
