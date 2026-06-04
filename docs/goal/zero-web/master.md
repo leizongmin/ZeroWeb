@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,026 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 564 个用例（14 个分类，93.3% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
+**执行状态**: 16/16 crate 已实现，~11,026 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 610 个用例（17 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,874 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,026 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -103,6 +103,20 @@
 ---
 
 ## 最近完成的改进
+
+### -78. WPT 100% 通过率 + 3 个新测试分类（本轮，~11,026 测试）
+
+修复 24 个 WPT 失败测试达到 100% 通过率，新增 3 个测试分类（web-api/security/a11y-i18n）：
+
+| 模块 | 新增内容 | 变更 |
+|--------|------|----------|
+| WPT runner/geometry | **修复 20 个几何测试断言**：添加缺失的 background 属性、调整 box-count 期望值、移除错误的 stroke 断言（border/outline 用 fill 不是 stroke）、修复渐变断言 | 20 tests fixed |
+| WPT runner/web_platform | **修复 4 个 web-platform 测试**：渐变测试用 gradient_count_ge 替代 has_fill_primitives、layout-magazine 移除无背景的 fill 断言 | 4 tests fixed |
+| WPT runner/web_api | **新分类 web-api（20 个测试）**：Fetch API、WebSocket、Performance（now/mark/measure）、Console API、Timers、Observers（Mutation/Intersection/Resize）、WebAssembly、Storage（localStorage/sessionStorage）、CustomEvent、Navigator、URL、JSON、Promise | +20 |
+| WPT runner/security | **新分类 security（12 个测试）**：CSP meta/script-src/style-src、iframe sandbox（basic/allow-same-origin）、混合内容、Referrer-Policy、表单安全（autocomplete/validation）、同源策略（cross-origin-img/cross-origin-link） | +12 |
+| WPT runner/a11y_i18n | **新分类 a11y-i18n（14 个测试）**：ARIA 角色（roles/live-region/expanded）、语义化 HTML（landmarks/details-summary/dialog）、表单可访问性（labels/fieldset）、CJK 文本（中文/日文/韩文）、RTL 布局（阿拉伯文/希伯来文）、Unicode/emoji、混合语言/bidi | +14 |
+
+WPT: 564 → 610 用例（+46, 100% 通过率），Tests: ~11,026（不变，WPT runner 为独立二进制）, clippy clean.
 
 ### -77. 会话持久化 + LRU Glyph 缓存 + WPT 564 用例（本轮，~11,026 测试）
 
@@ -1450,7 +1464,7 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] WPT 通过率持续追踪和扩展（当前 564 内建测试，14 分类）
+- [ ] WPT 通过率持续追踪和扩展（当前 610 内建测试，17 分类，100% 通过率）
 - [ ] 页面级 WASM JS→wasm-sandbox 自动桥接（当前需要通过 Rust API 调用）
 
 ---
@@ -1462,7 +1476,7 @@ Total: 6219 → 6378 tests (+159)
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
 5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ⬜ WPT CSS/layout 真实子集（497 用例已建立）
+6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 610 用例（17 分类，100% 通过率）
 
 ## 浏览器质量测试体系推进计划
 
@@ -1533,7 +1547,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 418 用例（12 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 610 用例（17 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
 | 4. 性能基准体系 | ✅/❌ | 77 个 criterion 基准覆盖所有 crate。缺少：中等复杂度页面首屏 < 2s 验证、增量渲染 < 20% 验证、GPU 加速验证（均需 GPU/Display） |
 | 5. 单元测试与质量 | ✅ | 10,850 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
@@ -1549,7 +1563,7 @@ Total: 6219 → 6378 tests (+159)
 2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
-5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata（剩余：WPT CSS/layout 真实子集）
+5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata ✅ WPT 610 用例 17 分类 100% 通过率
 6. ~~无头浏览器协议 Phase 1-5~~ ✅ 全部完成：远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试 + 隔离安全加固
 
 ---
