@@ -10,6 +10,7 @@ pub(super) fn body_of(doc: &Document) -> NodeId {
     doc.last_child(html).unwrap()
 }
 
+mod tests_10_document_coverage;
 mod tests_1a;
 mod tests_1b;
 mod tests_2;
