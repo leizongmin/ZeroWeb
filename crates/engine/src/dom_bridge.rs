@@ -372,6 +372,12 @@ pub fn generate_dom_api_polyfill() -> String {
       node.nodeType = 3;
       return node;
     },
+    createComment: function(text) {
+      var node = _createNode(8);
+      node.textContent = text;
+      node.nodeType = 8;
+      return node;
+    },
     getElementById: function(id) {
       for (var nid in _nodeMap) {
         var node = _nodeMap[nid];
@@ -507,6 +513,55 @@ pub fn generate_dom_api_polyfill() -> String {
       return name in this.attributes;
     },
     hasChildNodes: function() { return this.children.length > 0; },
+    // ── matches / closest ──
+    matches: function(selector) {
+      return _matchesSelector(this, selector);
+    },
+    closest: function(selector) {
+      var node = this;
+      while (node) {
+        if (_matchesSelector(node, selector)) return node;
+        node = node.parentNode;
+      }
+      return null;
+    },
+    // ── querySelector / querySelectorAll on element ──
+    querySelector: function(selector) {
+      function _find(node) {
+        if (node.nodeType === 1 && _matchesSelector(node, selector) && node !== this) return node;
+        for (var i = 0; i < node.children.length; i++) {
+          var result = _find.call(this, node.children[i]);
+          if (result) return result;
+        }
+        return null;
+      }
+      for (var i = 0; i < this.children.length; i++) {
+        if (_matchesSelector(this.children[i], selector)) return this.children[i];
+        var result = this.querySelector.call(this.children[i], selector);
+        if (result) return result;
+      }
+      return null;
+    },
+    querySelectorAll: function(selector) {
+      var results = [];
+      function _collect(node) {
+        if (node.nodeType === 1 && _matchesSelector(node, selector) && node !== this) results.push(node);
+        for (var i = 0; i < node.children.length; i++) {
+          _collect(node.children[i]);
+        }
+      }
+      for (var i = 0; i < this.children.length; i++) {
+        if (_matchesSelector(this.children[i], selector)) results.push(this.children[i]);
+        for (var j = 0; j < this.children[i].children.length; j++) {
+          _collect(this.children[i].children[j]);
+        }
+      }
+      return results;
+    },
+    // ── getBoundingClientRect stub ──
+    getBoundingClientRect: function() {
+      return { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, x: 0, y: 0 };
+    },
     // ── textContent getter/setter ──
     getTextContent: function() {
       if (this.nodeType === 3) return this.textContent || '';
@@ -585,17 +640,85 @@ pub fn generate_dom_api_polyfill() -> String {
 
   function _matchesSelector(node, selector) {
     if (!node.attributes) return false;
+    // 支持逗号分隔的多选择器
+    var parts = selector.split(',');
+    for (var p = 0; p < parts.length; p++) {
+      if (_matchesSingleSelector(node, parts[p].trim())) return true;
+    }
+    return false;
+  }
+
+  function _matchesSingleSelector(node, selector) {
+    if (!selector || !node.attributes) return false;
+
+    // 后代选择器（简化：只检查父级匹配）
+    if (selector.indexOf(' ') >= 0) {
+      var tokens = selector.split(/\s+/);
+      var current = node;
+      for (var i = tokens.length - 1; i >= 0; i--) {
+        if (!current || !_matchesSingleSelector(current, tokens[i])) return false;
+        current = current.parentNode;
+      }
+      return true;
+    }
+
+    // 子代选择器
+    if (selector.indexOf('>') >= 0) {
+      var tokens = selector.split(/\s*>\s*/);
+      var current = node;
+      for (var i = tokens.length - 1; i >= 0; i--) {
+        if (!current || !_matchesSingleSelector(current, tokens[i])) return false;
+        current = current.parentNode;
+      }
+      return true;
+    }
+
+    // ID 选择器
     if (selector.startsWith('#')) {
       return node.attributes.id === selector.substring(1);
-    } else if (selector.startsWith('.')) {
+    }
+    // class 选择器
+    if (selector.startsWith('.')) {
       var cls = selector.substring(1);
       if (node.attributes['class']) {
         return node.attributes['class'].split(/\s+/).indexOf(cls) >= 0;
       }
       return false;
-    } else {
-      return node.tagName === selector.toUpperCase();
     }
+    // 属性选择器 [attr], [attr=val], [attr^=val], [attr$=val], [attr*=val]
+    var attrMatch = selector.match(/^([^\[]*)\[([^\]=~^$*]+)(?:([~^$*]?=)([\"']?)([^\]]*)\4)?\]$/);
+    if (attrMatch) {
+      var tag = attrMatch[1];
+      var attr = attrMatch[2];
+      var op = attrMatch[3];
+      var val = attrMatch[5];
+      // 如果有标签前缀，先检查标签
+      if (tag && node.tagName !== tag.toUpperCase()) return false;
+      if (!op) return attr in node.attributes;
+      var attrVal = node.attributes[attr] || '';
+      if (op === '=') return attrVal === val;
+      if (op === '^=') return attrVal.startsWith(val);
+      if (op === '$=') return attrVal.endsWith(val);
+      if (op === '*=') return attrVal.indexOf(val) >= 0;
+      return false;
+    }
+    // 伪类 :first-child, :last-child, :nth-child(n)
+    if (selector.startsWith(':')) {
+      if (selector === ':first-child') {
+        return node.parentNode && node.parentNode.children[0] === node;
+      }
+      if (selector === ':last-child') {
+        return node.parentNode && node.parentNode.children[node.parentNode.children.length - 1] === node;
+      }
+      var nthMatch = selector.match(/^:nth-child\((\d+)\)$/);
+      if (nthMatch && node.parentNode) {
+        var idx = parseInt(nthMatch[1], 10);
+        return node.parentNode.children[idx - 1] === node;
+      }
+      return false;
+    }
+    // 标签选择器
+    return node.tagName === selector.toUpperCase();
   }
 
   // Mix in element methods to all created nodes
