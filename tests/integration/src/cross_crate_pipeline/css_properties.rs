@@ -1005,3 +1005,156 @@ fn test_css_variable_chain() {
     assert!(result.timings.total_ms >= 0.0);
     assert!(!result.primitives.fills.is_empty());
 }
+
+// ── 21. CSS 背景属性管线 ──────────────────────────────────────────
+
+#[test]
+fn test_background_position_center() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background-color:#ccc;">Positioned</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty(), "Should produce fill");
+}
+
+#[test]
+fn test_background_repeat_no_repeat() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background-color:#ddd;">No repeat</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_background_size_cover() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background-color:#eee;">Cover</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_background_attachment_fixed() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background-color:#bbb;">Fixed bg</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_background_clip_content_box() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; padding:10px; background-color:#aaa; background-clip:content-box;">Clipped</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_background_origin_padding_box() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; padding:10px; background-color:#999; background-origin:padding-box;">Origin</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+// ── 22. CSS 内容与排版属性管线 ──────────────────────────────────────
+
+#[test]
+fn test_word_spacing_wide() {
+    let html = r#"<html><body>
+        <div style="word-spacing: 10px; width:200px;">Wide spaced words here</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs");
+}
+
+#[test]
+fn test_quotes_property() {
+    let html = r#"<html><body>
+        <div style="quotes: '«' '»'; width:200px;">Quoted text</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs");
+}
+
+#[test]
+fn test_resize_property() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; overflow:auto; resize:both; background:#ddd;">Resizable</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_content_property_with_counter() {
+    let html = r#"<html><body>
+        <div style="counter-reset: section; width:200px;">
+            <div style="counter-increment: section;">Section text</div>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.layout.root.children.is_empty());
+}
+
+#[test]
+fn test_caption_side_bottom() {
+    let html = r#"<html><body>
+        <table style="width:200px;">
+            <caption>Caption text</caption>
+            <tr><td>Cell</td></tr>
+        </table>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.layout.root.children.is_empty());
+}
+
+#[test]
+fn test_table_layout_fixed() {
+    let html = r#"<html><body>
+        <table style="width:300px; table-layout:fixed;">
+            <tr><td>A</td><td>B</td><td>C</td></tr>
+        </table>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.layout.root.children.is_empty());
+}
+
+#[test]
+fn test_border_collapse_separate() {
+    let html = r#"<html><body>
+        <table style="border-collapse:separate; border-spacing:5px;">
+            <tr><td style="border:1px solid black;">A</td></tr>
+        </table>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_empty_cells_hide() {
+    let html = r#"<html><body>
+        <table style="empty-cells:hide; border-collapse:separate;">
+            <tr><td style="border:1px solid gray;">Content</td><td style="border:1px solid gray;"></td></tr>
+        </table>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}

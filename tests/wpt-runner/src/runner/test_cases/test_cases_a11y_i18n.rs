@@ -276,5 +276,185 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        // ARIA 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/aria/expanded-controls".into(),
+            description: "ARIA expanded 控件状态".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <button aria-expanded="false" aria-controls="panel1">Toggle Panel</button>
+            <div id="panel1" aria-hidden="true">
+                <p>Hidden panel content</p>
+            </div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "a11y-i18n/aria/tab-interface".into(),
+            description: "ARIA tab 界面角色".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div role="tablist">
+                <button role="tab" aria-selected="true" aria-controls="panel-a">Tab A</button>
+                <button role="tab" aria-selected="false" aria-controls="panel-b">Tab B</button>
+            </div>
+            <div role="tabpanel" id="panel-a"><p>Panel A content</p></div>
+            <div role="tabpanel" id="panel-b" hidden><p>Panel B content</p></div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "a11y-i18n/aria/checkbox-radio".into(),
+            description: "ARIA checkbox 和 radio 角色".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div role="group" aria-label="Options">
+                <div role="checkbox" aria-checked="true">Option A</div>
+                <div role="checkbox" aria-checked="false">Option B</div>
+            </div>
+            <div role="radiogroup" aria-label="Size">
+                <div role="radio" aria-checked="true">Small</div>
+                <div role="radio" aria-checked="false">Large</div>
+            </div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 键盘导航
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/keyboard/focus-management".into(),
+            description: "tabindex 焦点管理".into(),
+            category: "a11y-i18n".into(),
+            html: r##"<html><body>
+            <div tabindex="0">Focusable div</div>
+            <span tabindex="-1">Programmatically focusable</span>
+            <button>Native focusable</button>
+            <a href="#section">Focusable link</a>
+            </body></html>"##
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "dom_has_link".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "a11y-i18n/keyboard/accesskey".into(),
+            description: "accesskey 属性".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <button accesskey="s">Save (Alt+S)</button>
+            <a href="/help" accesskey="h">Help (Alt+H)</a>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "dom_has_link".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 高对比度模式相关
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/contrast/high-contrast-page".into(),
+            description: "高对比度页面结构".into(),
+            category: "a11y-i18n".into(),
+            html: r##"<html><body style="background:#000; color:#fff;">
+            <h1 style="color:#ff0;">High Contrast</h1>
+            <p style="color:#fff;">White text on black background</p>
+            <a href="#" style="color:#0ff; text-decoration:underline;">Cyan link</a>
+            <button style="background:#333; color:#fff; border:2px solid #fff;">Action</button>
+            </body></html>"##
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_heading".into(),
+                "dom_has_button".into(),
+                "dom_has_link".into(),
+                "no_panic".into(),
+            ],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // CJK 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/cjk/multilingual-form".into(),
+            description: "多语言表单".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <form>
+                <label for="name-cn">姓名</label>
+                <input type="text" id="name-cn" lang="zh-CN">
+                <label for="name-jp">名前</label>
+                <input type="text" id="name-jp" lang="ja">
+                <label for="name-kr">이름</label>
+                <input type="text" id="name-kr" lang="ko">
+                <button type="submit">提交 / 送信 / 제출</button>
+            </form>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_form".into(),
+                "dom_has_input".into(),
+                "dom_has_button".into(),
+                "no_panic".into(),
+            ],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // RTL 布局扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/rtl/full-page-rtl".into(),
+            description: "完整 RTL 页面布局".into(),
+            category: "a11y-i18n".into(),
+            html: r##"<html dir="rtl" lang="ar"><body>
+            <header>عنوان الموقع</header>
+            <nav><a href="#">الرئيسية</a> | <a href="#">عن الموقع</a></nav>
+            <main>
+                <article>
+                    <h1>عنوان المقال</h1>
+                    <p>محتوى المقال باللغة العربية.</p>
+                </article>
+                <aside>محتوى جانبي</aside>
+            </main>
+            <footer>حقوق النشر</footer>
+            </body></html>"##
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_nav".into(),
+                "dom_has_link".into(),
+                "dom_has_heading".into(),
+                "no_panic".into(),
+            ],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 屏幕阅读器相关
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "a11y-i18n/screenreader/sr-only".into(),
+            description: "sr-only 视觉隐藏但屏幕阅读器可读".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <button>
+                <span aria-hidden="true">✕</span>
+                <span class="sr-only">Close dialog</span>
+            </button>
+            <style>
+                .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+            </style>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "no_panic".into()],
+        },
     ]
 }
