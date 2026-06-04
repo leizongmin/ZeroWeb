@@ -620,23 +620,31 @@ impl RenderPrimitives {
     /// - 如果两个同色矩形在 y 方向相邻（一个的 bottom == 另一个的 top，且 x 范围重叠），
     ///   合并为一个大矩形
     ///
+    /// 保持颜色首次出现的顺序以确保确定性输出。
     /// 返回优化后的新 `RenderPrimitives`，原始数据不变。
     pub fn batch_fills(&self) -> RenderPrimitives {
         if self.fills.len() <= 1 {
             return self.clone();
         }
 
-        // 按颜色分组
+        // 按颜色分组，保持首次出现的顺序
+        let mut color_order: Vec<[u8; 4]> = Vec::new();
+        let mut color_seen: std::collections::HashSet<[u8; 4]> = std::collections::HashSet::new();
         let mut color_groups: std::collections::HashMap<[u8; 4], Vec<&FillPrimitive>> =
             std::collections::HashMap::new();
         for fill in &self.fills {
             let key = [fill.color.r, fill.color.g, fill.color.b, fill.color.a];
+            if !color_seen.contains(&key) {
+                color_seen.insert(key);
+                color_order.push(key);
+            }
             color_groups.entry(key).or_default().push(fill);
         }
 
         let mut batched_fills = Vec::new();
 
-        for (_color_key, fills) in color_groups {
+        for color_key in color_order {
+            let fills = color_groups.get(&color_key).unwrap();
             if fills.is_empty() {
                 continue;
             }
@@ -648,14 +656,21 @@ impl RenderPrimitives {
             let merged: Vec<Rect> = fills.iter().map(|f| f.rect).collect();
 
             // 按列（x, width）分组，在每列内按 y 排序
+            let mut column_order: Vec<(u32, u32)> = Vec::new();
+            let mut column_seen: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
             let mut columns: std::collections::HashMap<(u32, u32), Vec<Rect>> = std::collections::HashMap::new();
             for rect in &merged {
                 // 使用固定精度来分组（避免浮点误差）
                 let x_key = (rect.origin.x.to_bits(), rect.size.width.to_bits());
+                if !column_seen.contains(&x_key) {
+                    column_seen.insert(x_key);
+                    column_order.push(x_key);
+                }
                 columns.entry(x_key).or_default().push(*rect);
             }
 
-            for (_, mut rects) in columns {
+            for x_key in column_order {
+                let mut rects = columns.get(&x_key).unwrap().clone();
                 rects.sort_by(|a, b| a.origin.y.partial_cmp(&b.origin.y).unwrap_or(std::cmp::Ordering::Equal));
 
                 let mut result = Vec::new();

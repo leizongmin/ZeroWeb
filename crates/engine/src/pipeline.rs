@@ -7,7 +7,7 @@ use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::RenderPrimitives;
+use zero_render_foundation::primitive::{RenderPrimitives, RenderStats};
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
 
@@ -48,7 +48,7 @@ pub struct PipelineTimings {
     pub total_ms: f64,
 }
 
-/// 渲染结果 — 包含图元、布局和计时信息。
+/// 渲染结果 — 包含图元、布局、计时和统计信息。
 pub struct RenderResult {
     /// 生成的渲染图元。
     pub primitives: RenderPrimitives,
@@ -56,6 +56,8 @@ pub struct RenderResult {
     pub layout: LayoutResult,
     /// 各阶段计时。
     pub timings: PipelineTimings,
+    /// 渲染统计信息（draw call 估算、图元数量、剔除数量）。
+    pub stats: RenderStats,
 }
 
 impl RenderPipeline {
@@ -116,6 +118,9 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
+        // 对填充图元进行批处理优化
+        let primitives = primitives.batch_fills();
+        let stats = primitives.stats();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
@@ -138,6 +143,7 @@ impl RenderPipeline {
                 paint_ms,
                 total_ms,
             },
+            stats,
         }
     }
 
