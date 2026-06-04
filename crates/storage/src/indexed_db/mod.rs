@@ -22,3 +22,5 @@ mod types_coverage2;
 mod types_coverage3;
 #[cfg(test)]
 mod types_coverage4;
+#[cfg(test)]
+mod types_coverage5;
