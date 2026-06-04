@@ -16,6 +16,7 @@
 mod test_cases_core;
 mod test_cases_css_compliance;
 mod test_cases_css_extended;
+mod test_cases_css_layout;
 mod test_cases_dom_api;
 mod test_cases_es_modules;
 mod test_cases_html_layout;
@@ -36,6 +37,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_standard::standard_compliance_tests());
     tests.extend(test_cases_dom_api::dom_api_tests());
     tests.extend(test_cases_css_compliance::css_compliance_tests());
+    tests.extend(test_cases_css_layout::css_layout_compliance_tests());
     tests.extend(test_cases_js_dom::js_dom_tests());
     tests.extend(test_cases_navigation::navigation_security_tests());
     tests.extend(test_cases_es_modules::es_module_and_worker_tests());
