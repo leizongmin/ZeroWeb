@@ -622,9 +622,6 @@ fn main() {
     let runtime = HostRuntime::new(config);
     let mut app = BrowserApp::new(cli.render_mode);
 
-    // 初始化默认空白标签页（Shell 构造时已创建唯一 tab）
-    app.init_default_tab();
-
     tracing::info!("Entering event loop...");
 
     // CPU surface 由 main 管理生命周期
@@ -655,6 +652,9 @@ fn main() {
                                 app.set_window_size(logical_size);
                                 app.physical_size = (physical_size.width, physical_size.height);
                                 app.scale_factor = scale_factor;
+                                app.ensure_startup_tab();
+                                let (cw, ch) = app.content_physical_size();
+                                app.resize_all_webviews(cw, ch);
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
