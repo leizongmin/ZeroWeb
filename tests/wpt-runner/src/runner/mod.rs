@@ -982,6 +982,8 @@ mod tests {
             "interactive",
             "typography",
             "navigation",
+            "js-dom",
+            "es-modules",
         ];
         for t in &tests {
             assert!(
