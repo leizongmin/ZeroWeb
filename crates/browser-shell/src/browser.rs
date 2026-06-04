@@ -100,6 +100,21 @@ impl BrowserShell {
         }
     }
 
+    /// 创建浏览器 Shell 并从默认路径加载持久化设置。
+    ///
+    /// 如果设置文件不存在，使用默认设置。
+    pub fn new_with_persisted_settings() -> Self {
+        let mut shell = Self::new();
+        shell.settings = BrowserSettings::load_default();
+        shell.zoom = shell.settings.default_zoom;
+        shell
+    }
+
+    /// 将当前设置保存到默认路径。
+    pub fn save_settings(&self) -> Result<(), String> {
+        self.settings.save_default()
+    }
+
     /// 是否没有标签页。
     pub fn is_empty(&self) -> bool {
         self.tabs.is_empty()
