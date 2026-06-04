@@ -15,7 +15,11 @@
 //! - `test_cases_canvas`: Canvas 2D API 标准合规性测试
 //! - `test_cases_storage`: Storage 和 Web Worker 标准合规性测试
 //! - `test_cases_geometry`: 精确布局几何测试
+//! - `test_cases_web_api`: Web API 标准合规性测试（Fetch/WebSocket/Performance/Observers）
+//! - `test_cases_security`: 安全策略标准合规性测试（CSP/CORS/Sandbox/SOP）
+//! - `test_cases_a11y_i18n`: 可访问性和国际化测试（ARIA/CJK/RTL/Unicode）
 
+mod test_cases_a11y_i18n;
 mod test_cases_canvas;
 mod test_cases_core;
 mod test_cases_css_compliance;
@@ -27,8 +31,10 @@ mod test_cases_geometry;
 mod test_cases_html_layout;
 mod test_cases_js_dom;
 mod test_cases_navigation;
+mod test_cases_security;
 mod test_cases_standard;
 mod test_cases_storage;
+mod test_cases_web_api;
 mod test_cases_web_platform;
 mod test_cases_wpt;
 
@@ -52,5 +58,8 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_storage::storage_compliance_tests());
     tests.extend(test_cases_web_platform::web_platform_tests());
     tests.extend(test_cases_geometry::geometry_tests());
+    tests.extend(test_cases_web_api::web_api_tests());
+    tests.extend(test_cases_security::security_tests());
+    tests.extend(test_cases_a11y_i18n::a11y_i18n_tests());
     tests
 }
