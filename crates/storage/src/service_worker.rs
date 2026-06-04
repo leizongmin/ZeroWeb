@@ -783,4 +783,36 @@ mod tests {
         let origins = registry.active_origins();
         assert!(origins.is_empty());
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 覆盖率补充测试
+    // ═══════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_extract_path_no_slash_after_scheme() {
+        // URL without path after host → returns full url
+        let path = super::extract_path("https://example.com");
+        assert_eq!(path, "https://example.com");
+    }
+
+    #[test]
+    fn test_get_mut_existing_registration() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let id = registry.register("/sw.js", "/", "https://example.com");
+        let reg = registry.get_mut(id).unwrap();
+        assert_eq!(reg.scope, "/");
+    }
+
+    #[test]
+    fn test_get_mut_nonexistent() {
+        let mut registry = ServiceWorkerRegistry::new();
+        assert!(registry.get_mut(999).is_none());
+    }
+
+    #[test]
+    fn test_activate_nonexistent_id() {
+        let mut registry = ServiceWorkerRegistry::new();
+        // activate with a nonexistent id should return false
+        assert!(!registry.activate(999));
+    }
 }
