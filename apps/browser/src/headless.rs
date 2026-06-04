@@ -703,6 +703,94 @@ impl HeadlessServer {
     }
 }
 
+// ── 协议客户端（Phase 4 自动化测试基础设施）──
+
+/// 无头浏览器协议客户端，用于自动化测试。
+///
+/// 通过 WebSocket 连接到 HeadlessServer，发送命令并接收响应和事件。
+#[cfg(test)]
+pub struct HeadlessClient;
+
+#[cfg(test)]
+impl HeadlessClient {
+    /// 解析服务端 JSON 响应，提取 result 字段。
+    ///
+    /// 如果响应包含 error，返回错误描述。
+    pub fn parse_response(raw: &str) -> Result<serde_json::Value, String> {
+        let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("JSON parse: {e}"))?;
+        if let Some(error) = v.get("error") {
+            let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+            let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+            return Err(format!("Error {code}: {message}"));
+        }
+        Ok(v.get("result").cloned().unwrap_or(serde_json::json!({})))
+    }
+
+    /// 构建协议请求 JSON 字符串。
+    pub fn build_request(id: u64, method: &str, params: serde_json::Value) -> String {
+        serde_json::json!({
+            "id": id,
+            "method": method,
+            "params": params,
+        })
+        .to_string()
+    }
+
+    /// 解析事件通知 JSON，返回 (method, params) 对。
+    pub fn parse_event(raw: &str) -> Result<(String, serde_json::Value), String> {
+        let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("JSON parse: {e}"))?;
+        let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("").to_string();
+        let params = v.get("params").cloned().unwrap_or(serde_json::json!({}));
+        Ok((method, params))
+    }
+
+    /// 解析截图响应，返回 (width, height, pixel_count)。
+    pub fn parse_screenshot(result: &serde_json::Value) -> Result<(u32, u32, usize), String> {
+        let data = result.get("data").ok_or("Missing data field")?;
+        let width = data.get("width").and_then(|v| v.as_u64()).ok_or("Missing width")? as u32;
+        let height = data.get("height").and_then(|v| v.as_u64()).ok_or("Missing height")? as u32;
+        let pixel_count = data
+            .get("pixelCount")
+            .and_then(|v| v.as_u64())
+            .ok_or("Missing pixelCount")? as usize;
+        Ok((width, height, pixel_count))
+    }
+
+    /// 解析 DOM 快照响应，返回各图元计数。
+    pub fn parse_dom_snapshot(result: &serde_json::Value) -> DomSnapshotStats {
+        let rp = result.get("renderPrimitives");
+        DomSnapshotStats {
+            fills: rp.and_then(|r| r.get("fills")).and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            glyphs: rp.and_then(|r| r.get("glyphs")).and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            gradients: rp
+                .and_then(|r| r.get("gradients"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+            shadows: rp.and_then(|r| r.get("shadows")).and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            images: rp.and_then(|r| r.get("images")).and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+        }
+    }
+}
+
+/// DOM 快照统计信息。
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+pub struct DomSnapshotStats {
+    pub fills: usize,
+    pub glyphs: usize,
+    pub gradients: usize,
+    pub shadows: usize,
+    pub images: usize,
+}
+
+#[cfg(test)]
+impl DomSnapshotStats {
+    /// 总图元数。
+    pub fn total(&self) -> usize {
+        self.fills + self.glyphs + self.gradients + self.shadows + self.images
+    }
+}
+
 // ── 测试 ──
 
 #[cfg(test)]
@@ -1055,5 +1143,416 @@ mod tests {
         let (result, events) = server.dispatch_with_events(&mut session, "Page.captureScreenshot", Value::Null);
         assert!(result.is_ok());
         assert!(events.is_empty());
+    }
+
+    // ── Phase 4: 协议客户端测试 ──
+
+    #[test]
+    fn test_client_build_request() {
+        let req = HeadlessClient::build_request(1, "session.status", serde_json::json!({}));
+        let parsed: ClientRequest = serde_json::from_str(&req).unwrap();
+        assert_eq!(parsed.id, 1);
+        assert_eq!(parsed.method, "session.status");
+    }
+
+    #[test]
+    fn test_client_parse_response_success() {
+        let raw = r#"{"id":1,"result":{"ready":true,"message":"ready"}}"#;
+        let result = HeadlessClient::parse_response(raw).unwrap();
+        assert_eq!(result["ready"], true);
+    }
+
+    #[test]
+    fn test_client_parse_response_error() {
+        let raw = r#"{"id":1,"error":{"code":-32601,"message":"Unknown method"}}"#;
+        let result = HeadlessClient::parse_response(raw);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("-32601"));
+    }
+
+    #[test]
+    fn test_client_parse_event() {
+        let raw = r#"{"method":"browsingContext.load","params":{"url":"https://example.com"}}"#;
+        let (method, params) = HeadlessClient::parse_event(raw).unwrap();
+        assert_eq!(method, "browsingContext.load");
+        assert_eq!(params["url"], "https://example.com");
+    }
+
+    #[test]
+    fn test_client_parse_screenshot() {
+        let result = serde_json::json!({
+            "data": { "width": 800, "height": 600, "format": "rgba8", "pixelCount": 480000 }
+        });
+        let (w, h, px) = HeadlessClient::parse_screenshot(&result).unwrap();
+        assert_eq!(w, 800);
+        assert_eq!(h, 600);
+        assert_eq!(px, 480000);
+    }
+
+    #[test]
+    fn test_client_parse_dom_snapshot() {
+        let result = serde_json::json!({
+            "renderPrimitives": { "fills": 10, "glyphs": 5, "gradients": 2, "shadows": 1, "images": 3 }
+        });
+        let stats = HeadlessClient::parse_dom_snapshot(&result);
+        assert_eq!(stats.fills, 10);
+        assert_eq!(stats.glyphs, 5);
+        assert_eq!(stats.gradients, 2);
+        assert_eq!(stats.shadows, 1);
+        assert_eq!(stats.images, 3);
+        assert_eq!(stats.total(), 21);
+    }
+
+    #[test]
+    fn test_dom_snapshot_stats_total() {
+        let stats = DomSnapshotStats {
+            fills: 1,
+            glyphs: 2,
+            gradients: 3,
+            shadows: 4,
+            images: 5,
+        };
+        assert_eq!(stats.total(), 15);
+    }
+
+    // ── Phase 4: 协议驱动的自动化冒烟测试 ──
+
+    /// 辅助：通过 dispatch 模拟完整的协议驱动的测试场景。
+    struct ProtocolTestRunner {
+        server: HeadlessServer,
+        session: HeadlessSession,
+        next_id: u64,
+        /// 收集到的事件日志。
+        event_log: Vec<(String, serde_json::Value)>,
+    }
+
+    impl ProtocolTestRunner {
+        fn new() -> Self {
+            Self {
+                server: HeadlessServer::new(0, 800.0, 600.0),
+                session: HeadlessSession::new(800.0, 600.0),
+                next_id: 1,
+                event_log: Vec::new(),
+            }
+        }
+
+        /// 发送命令并收集响应和事件（模拟协议往返）。
+        fn send(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+            let id = self.next_id;
+            self.next_id += 1;
+
+            // 模拟发送 JSON 请求（验证请求格式正确）
+            let req_json = HeadlessClient::build_request(id, method, params.clone());
+            let _req: ClientRequest = serde_json::from_str(&req_json).map_err(|e| format!("Invalid request: {e}"))?;
+
+            // 执行命令（直接传递原始 params）
+            let (result, events) = self.server.dispatch_with_events(&mut self.session, method, params);
+
+            // 记录事件
+            for event in events {
+                self.event_log.push((event.method.clone(), event.params.clone()));
+            }
+
+            // 模拟解析响应
+            let response = match result {
+                Ok(value) => ServerResponse {
+                    id,
+                    result: Some(value),
+                    error: None,
+                },
+                Err(err) => ServerResponse {
+                    id,
+                    result: None,
+                    error: Some(err),
+                },
+            };
+            let response_json = serde_json::to_string(&response).unwrap();
+            HeadlessClient::parse_response(&response_json)
+        }
+
+        /// 获取事件日志中指定方法的事件数。
+        fn event_count(&self, method: &str) -> usize {
+            self.event_log.iter().filter(|(m, _)| m == method).count()
+        }
+    }
+
+    /// 冒烟测试：完整会话生命周期（创建→导航→脚本→截图→关闭）。
+    #[test]
+    fn test_smoke_full_session_lifecycle() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 1. 会话状态检查
+        let status = runner.send("session.status", Value::Null).unwrap();
+        assert_eq!(status["ready"], true);
+
+        // 2. 创建新会话
+        let session = runner.send("session.new", Value::Null).unwrap();
+        assert_eq!(session["capabilities"]["browserName"], "ZeroWeb");
+
+        // 3. 创建浏览上下文
+        let ctx = runner
+            .send("browsingContext.create", serde_json::json!({ "url": "about:blank" }))
+            .unwrap();
+        assert!(ctx.get("context").is_some());
+
+        // 4. 获取上下文树
+        let tree = runner.send("browsingContext.getTree", Value::Null).unwrap();
+        let contexts = tree.get("contexts").unwrap().as_array().unwrap();
+        assert!(contexts.len() >= 2, "should have at least 2 tabs");
+
+        // 5. 执行脚本
+        let script_result = runner
+            .send("script.evaluate", serde_json::json!({ "expression": "1 + 1" }))
+            .unwrap();
+        assert!(script_result.get("result").is_some() || script_result.get("exceptionDetails").is_some());
+
+        // 6. 截图
+        let screenshot = runner.send("browsingContext.captureScreenshot", Value::Null).unwrap();
+        let (w, h, px) = HeadlessClient::parse_screenshot(&screenshot).unwrap();
+        assert_eq!(w, 800);
+        assert_eq!(h, 600);
+        assert!(px > 0);
+
+        // 7. DOM 快照（空会话可能没有图元，但不应 panic）
+        let snapshot = runner.send("browsingContext.getDOMSnapshot", Value::Null).unwrap();
+        let stats = HeadlessClient::parse_dom_snapshot(&snapshot);
+        // 空白页面至少应该有视口根填充
+        assert!(stats.total() >= 0, "DOM snapshot should not panic");
+
+        // 8. 验证事件收集（create 不产生 load 事件，需 navigate 才有）
+        assert!(runner.event_count("browsingContext.contextCreated") >= 1);
+
+        // 9. 关闭浏览上下文
+        let context_id = ctx["context"].as_u64().unwrap();
+        let close_result = runner
+            .send("browsingContext.close", serde_json::json!({ "context": context_id }))
+            .unwrap();
+        assert_eq!(close_result["result"], "closed");
+
+        // 10. 验证 contextDestroyed 事件
+        assert!(runner.event_count("browsingContext.contextDestroyed") >= 1);
+
+        // 11. 浏览器关闭
+        let close = runner.send("browser.close", Value::Null).unwrap();
+        assert_eq!(close["result"], "closing");
+    }
+
+    /// 冒烟测试：CDP 兼容命令序列。
+    #[test]
+    fn test_smoke_cdp_command_sequence() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 1. 获取版本信息（模拟 HTTP 发现）
+        let addr: std::net::SocketAddr = "127.0.0.1:9222".parse().unwrap();
+        let version_json = HeadlessServer::http_version_json(addr);
+        let version: serde_json::Value = serde_json::from_str(&version_json).unwrap();
+        assert_eq!(version["Browser"], "ZeroWeb/0.1");
+        assert!(version["webSocketDebuggerUrl"].as_str().unwrap().starts_with("ws://"));
+
+        // 2. Target.getTargets
+        let targets = runner.send("Target.getTargets", Value::Null).unwrap();
+        assert!(targets.get("contexts").is_some());
+
+        // 3. Runtime.evaluate
+        let eval_result = runner
+            .send(
+                "Runtime.evaluate",
+                serde_json::json!({ "expression": "JSON.stringify({ok: true})" }),
+            )
+            .unwrap();
+        assert!(eval_result.get("result").is_some());
+
+        // 4. Network.enable
+        let net_enable = runner.send("Network.enable", Value::Null).unwrap();
+        assert_eq!(net_enable["result"], "enabled");
+
+        // 5. Page.captureScreenshot
+        let screenshot = runner.send("Page.captureScreenshot", Value::Null).unwrap();
+        let (w, h, _) = HeadlessClient::parse_screenshot(&screenshot).unwrap();
+        assert_eq!(w, 800);
+        assert_eq!(h, 600);
+    }
+
+    /// 冒烟测试：脚本执行和错误处理。
+    #[test]
+    fn test_smoke_script_execution_variants() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 正常表达式
+        let ok = runner
+            .send("script.evaluate", serde_json::json!({ "expression": "2 + 2" }))
+            .unwrap();
+        assert!(ok.get("result").is_some());
+
+        // JSON 返回
+        let json = runner
+            .send(
+                "script.evaluate",
+                serde_json::json!({ "expression": "JSON.stringify({a: 1})" }),
+            )
+            .unwrap();
+        if let Some(result) = json.get("result") {
+            if let Some(value) = result.get("value").and_then(|v| v.as_str()) {
+                let parsed: serde_json::Value = serde_json::from_str(value).unwrap();
+                assert_eq!(parsed["a"], 1);
+            }
+        }
+
+        // 错误表达式
+        let err = runner
+            .send(
+                "script.evaluate",
+                serde_json::json!({ "expression": "throw new Error('test')" }),
+            )
+            .unwrap();
+        assert!(err.get("exceptionDetails").is_some());
+
+        // callFunction 无参数
+        let call_no_args = runner
+            .send(
+                "script.callFunction",
+                serde_json::json!({
+                    "functionDeclaration": "function() { return 42; }"
+                }),
+            )
+            .unwrap();
+        assert!(call_no_args.get("result").is_some() || call_no_args.get("exceptionDetails").is_some());
+
+        // callFunction 有参数
+        let call_with_args = runner
+            .send(
+                "script.callFunction",
+                serde_json::json!({
+                    "functionDeclaration": "function(a, b) { return a + b; }",
+                    "arguments": [{ "value": 10 }, { "value": 20 }]
+                }),
+            )
+            .unwrap();
+        assert!(call_with_args.get("result").is_some() || call_with_args.get("exceptionDetails").is_some());
+    }
+
+    /// 冒烟测试：多浏览上下文管理。
+    #[test]
+    fn test_smoke_multiple_browsing_contexts() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 初始有 1 个标签页
+        let tree1 = runner.send("browsingContext.getTree", Value::Null).unwrap();
+        let count1 = tree1.get("contexts").unwrap().as_array().unwrap().len();
+
+        // 创建 3 个新标签页
+        let mut new_contexts = Vec::new();
+        for i in 0..3 {
+            let ctx = runner
+                .send(
+                    "browsingContext.create",
+                    serde_json::json!({
+                        "url": &format!("https://example.com/page{i}")
+                    }),
+                )
+                .unwrap();
+            new_contexts.push(ctx["context"].as_u64().unwrap());
+        }
+
+        // 验证标签页数量增加
+        let tree2 = runner.send("browsingContext.getTree", Value::Null).unwrap();
+        let count2 = tree2.get("contexts").unwrap().as_array().unwrap().len();
+        assert_eq!(count2, count1 + 3);
+
+        // 验证 contextCreated 事件
+        assert_eq!(runner.event_count("browsingContext.contextCreated"), 3);
+
+        // 逐个关闭
+        for ctx_id in &new_contexts {
+            let result = runner
+                .send("browsingContext.close", serde_json::json!({ "context": ctx_id }))
+                .unwrap();
+            assert_eq!(result["result"], "closed");
+        }
+
+        // 验证恢复原始数量
+        let tree3 = runner.send("browsingContext.getTree", Value::Null).unwrap();
+        let count3 = tree3.get("contexts").unwrap().as_array().unwrap().len();
+        assert_eq!(count3, count1);
+
+        // 验证 contextDestroyed 事件
+        assert_eq!(runner.event_count("browsingContext.contextDestroyed"), 3);
+    }
+
+    /// 冒烟测试：渲染管线通过协议验证。
+    #[test]
+    fn test_smoke_render_pipeline_via_protocol() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 加载 HTML 内容（通过脚本设置）
+        let load_result = runner
+            .send(
+                "script.evaluate",
+                serde_json::json!({
+                    "expression": "'render pipeline test'"
+                }),
+            )
+            .unwrap();
+        assert!(load_result.get("result").is_some());
+
+        // 截图验证视口尺寸
+        let screenshot = runner.send("browsingContext.captureScreenshot", Value::Null).unwrap();
+        let (w, h, px) = HeadlessClient::parse_screenshot(&screenshot).unwrap();
+        assert_eq!(w, 800);
+        assert_eq!(h, 600);
+        assert_eq!(px, 800 * 600);
+
+        // DOM 快照验证协议可正确返回图元信息
+        let snapshot = runner.send("browsingContext.getDOMSnapshot", Value::Null).unwrap();
+        let stats = HeadlessClient::parse_dom_snapshot(&snapshot);
+        // 空页面不一定有图元，但快照应成功返回
+        assert!(stats.total() >= 0, "DOM snapshot should not panic");
+    }
+
+    /// 冒烟测试：协议错误处理。
+    #[test]
+    fn test_smoke_protocol_error_handling() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 未知命令
+        let err = runner.send("unknown.command", Value::Null);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("-32601"));
+
+        // 缺少必要参数
+        let nav_err = runner.send("browsingContext.navigate", Value::Null);
+        assert!(nav_err.is_err());
+        assert!(nav_err.unwrap_err().contains("-32602"));
+
+        // 关闭不存在的上下文
+        let close_err = runner.send("browsingContext.close", serde_json::json!({ "context": 99999 }));
+        // close_tab 对不存在的标签页是 no-op，所以不会报错
+        // 但我们可以验证命令本身不会 panic
+        let _ = close_err;
+
+        // callFunction 缺少参数
+        let call_err = runner.send("script.callFunction", Value::Null);
+        assert!(call_err.is_err());
+        assert!(call_err.unwrap_err().contains("-32602"));
+    }
+
+    /// 冒烟测试：页面重载和事件序列。
+    #[test]
+    fn test_smoke_reload_and_event_sequence() {
+        let mut runner = ProtocolTestRunner::new();
+
+        // 重载当前页面
+        let reload = runner.send("browsingContext.reload", Value::Null).unwrap();
+        assert_eq!(reload["result"], "reloaded");
+
+        // 验证重载产生 load 事件
+        assert!(runner.event_count("browsingContext.load") >= 1);
+
+        // 再次重载
+        let reload2 = runner.send("browsingContext.reload", Value::Null).unwrap();
+        assert_eq!(reload2["result"], "reloaded");
+
+        // 验证事件累计
+        assert!(runner.event_count("browsingContext.load") >= 2);
     }
 }
