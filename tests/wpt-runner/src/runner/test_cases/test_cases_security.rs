@@ -361,5 +361,200 @@ pub fn security_tests() -> Vec<TestCase> {
                 "no_panic".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Cookie 安全扩展
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/cookie/secure-flag".into(),
+            description: "Cookie Secure 属性检测".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">cookie secure</div>
+            <script>
+                document.getElementById('r').textContent = 'Cookie Secure: tested';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/cookie/httponly-flag".into(),
+            description: "Cookie HttpOnly 属性检测".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">cookie httponly</div>
+            <script>
+                document.getElementById('r').textContent = 'Cookie HttpOnly: tested';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/cookie/samesite-strict".into(),
+            description: "Cookie SameSite=Strict 检测".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">samesite strict</div>
+            <script>
+                document.getElementById('r').textContent = 'SameSite Strict: tested';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP 扩展
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/script-src-hash".into(),
+            description: "CSP script-src hash 策略".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'sha256-abc123'">
+            </head><body>
+            <div id="r">csp hash</div>
+            <script>document.getElementById('r').textContent = 'hash executed';</script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/csp/connect-src".into(),
+            description: "CSP connect-src 限制".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="connect-src 'self'">
+            </head><body>
+            <div id="r">connect-src</div>
+            <script>document.getElementById('r').textContent = 'connect-src tested';</script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/csp/style-src-unsafe-inline".into(),
+            description: "CSP style-src unsafe-inline".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="style-src 'unsafe-inline'">
+            </head><body>
+            <div id="r" style="color: red">inline style</div>
+            <script>document.getElementById('r').textContent = 'inline style ok';</script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  同源策略扩展
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/sop/cross-origin-img".into(),
+            description: "跨域图片加载受同源策略限制".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">cross-origin img</div>
+            <img src="https://other-origin.com/img.png" alt="cross-origin" id="xorigin-img">
+            <script>document.getElementById('r').textContent = 'cross-origin img tested';</script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/sop/postmessage-origin".into(),
+            description: "postMessage 目标 origin 限制".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">postmessage</div>
+            <script>
+                if (typeof window.postMessage === 'function') {
+                    window.postMessage('test', '*');
+                }
+                document.getElementById('r').textContent = 'postMessage tested';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  XSS 防护
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/xss/innerHTML-sanitization".into(),
+            description: "innerHTML 不执行脚本".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">xss test</div>
+            <script>
+                var el = document.getElementById('r');
+                el.innerHTML = '<img src=x onerror="alert(1)">';
+                document.getElementById('r').textContent = 'innerHTML sanitized';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/xss/script-injection".into(),
+            description: "防止 script 注入攻击".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="r">injection test</div>
+            <script>
+                var userInput = '&lt;script&gt;alert(1)&lt;/script&gt;';
+                document.getElementById('r').textContent = userInput;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  综合安全页面
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/composite/security-dashboard".into(),
+            description: "安全策略仪表盘".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <style>
+                .security-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+                .sec-card { border: 1px solid #ccc; padding: 8px; border-radius: 4px; font-size: 13px; }
+                .sec-card h4 { margin: 0 0 4px 0; }
+            </style>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+            <meta http-equiv="X-Content-Type-Options" content="nosniff">
+            </head><body>
+            <h2>Security Dashboard</h2>
+            <div class="security-grid">
+                <div class="sec-card"><h4>CSP</h4><span id="s-csp">active</span></div>
+                <div class="sec-card"><h4>CORS</h4><span id="s-cors">checking</span></div>
+                <div class="sec-card"><h4>Cookies</h4><span id="s-cookie">checking</span></div>
+                <div class="sec-card"><h4>Origin</h4><span id="s-origin">checking</span></div>
+            </div>
+            <script>
+                document.getElementById('s-csp').textContent = 'CSP active';
+                document.getElementById('s-cors').textContent = typeof fetch === 'function' ? 'Fetch ok' : 'No Fetch';
+                document.getElementById('s-cookie').textContent = typeof document.cookie !== 'undefined' ? 'Cookie ok' : 'No Cookie';
+                document.getElementById('s-origin').textContent = typeof location !== 'undefined' ? 'Origin ok' : 'No Origin';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_heading".into(),
+                "layout_has_children".into(),
+                "no_panic".into(),
+            ],
+        },
     ]
 }

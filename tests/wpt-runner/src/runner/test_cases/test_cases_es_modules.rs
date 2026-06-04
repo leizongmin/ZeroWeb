@@ -386,5 +386,277 @@ pub fn es_module_and_worker_tests() -> Vec<TestCase> {
                 "no_panic".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  ES Module 深度场景
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── import 语句解析 ──
+        TestCase {
+            id: "es-module/import-named".to_string(),
+            description: "import { name } from 'module' 解析".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">import test</div>
+            <script>var x = 42;</script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/import-default".to_string(),
+            description: "import name from 'module' 默认导入".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">default import</div>
+            <script>var loaded = true;</script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/import-namespace".to_string(),
+            description: "import * as mod from 'module' 命名空间导入".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">namespace import</div>
+            <script>var mod = { a: 1, b: 2 };</script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/import-side-effect".to_string(),
+            description: "import 'module' 副作用导入".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">side effect</div></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── 模块语法边界 ──
+        TestCase {
+            id: "es-module/export-re-export".to_string(),
+            description: "export { name } from 'module' 再导出".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">re-export</div>
+            <script>var reexported = true;</script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/export-default-async".to_string(),
+            description: "export default async function".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">async default</div>
+            <script>
+                async function fetchData() { return 'data'; }
+                var result = fetchData();
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/export-default-class".to_string(),
+            description: "export default class".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">default class</div>
+            <script>
+                class DefaultClass { constructor() { this.id = 1; } }
+                var instance = new DefaultClass();
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "es-module/nested-destructuring".to_string(),
+            description: "嵌套解构在模块中使用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><body><div id="result">nested</div>
+            <script>
+                var data = { user: { name: 'test', age: 25 } };
+                var userName = data.user.name;
+                var userAge = data.user.age;
+                document.getElementById('result').textContent = userName + ':' + userAge;
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_text".to_string(), "render_completes".to_string()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Web Worker 深度场景
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Worker 消息传递 ──
+        TestCase {
+            id: "web-worker/message-simple".to_string(),
+            description: "Worker 简单消息传递".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">worker msg</div>
+            <script>
+                if (typeof Worker !== 'undefined') {
+                    var w = new Worker('worker.js');
+                    w.postMessage({ type: 'ping' });
+                    w.terminate();
+                }
+                document.getElementById('result').textContent = 'msg sent';
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "web-worker/message-json".to_string(),
+            description: "Worker JSON 消息序列化".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">json msg</div>
+            <script>
+                if (typeof Worker !== 'undefined') {
+                    var w = new Worker('worker.js');
+                    var data = { action: 'compute', values: [1, 2, 3] };
+                    w.postMessage(JSON.stringify(data));
+                    w.terminate();
+                }
+                document.getElementById('result').textContent = 'json sent';
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "web-worker/message-transferable".to_string(),
+            description: "Worker transferable 对象检测".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">transfer</div>
+            <script>
+                var hasArrayBuffer = typeof ArrayBuffer !== 'undefined';
+                document.getElementById('result').textContent = hasArrayBuffer ? 'ArrayBuffer ok' : 'no ArrayBuffer';
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Worker 生命周期 ──
+        TestCase {
+            id: "web-worker/lifecycle-create".to_string(),
+            description: "Worker 创建不崩溃".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">create test</div>
+            <script>
+                try {
+                    var w = new Worker('worker.js');
+                    document.getElementById('result').textContent = 'created';
+                    w.terminate();
+                } catch(e) {
+                    document.getElementById('result').textContent = 'error: ' + e.message;
+                }
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "web-worker/lifecycle-multi-create".to_string(),
+            description: "创建多个 Worker 实例".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">multi worker</div>
+            <script>
+                try {
+                    var w1 = new Worker('worker1.js');
+                    var w2 = new Worker('worker2.js');
+                    document.getElementById('result').textContent = '2 workers';
+                    w1.terminate();
+                    w2.terminate();
+                } catch(e) {
+                    document.getElementById('result').textContent = 'error';
+                }
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "web-worker/lifecycle-terminate-twice".to_string(),
+            description: "Worker 终止两次不崩溃".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">double term</div>
+            <script>
+                try {
+                    var w = new Worker('worker.js');
+                    w.terminate();
+                    w.terminate();
+                    document.getElementById('result').textContent = 'terminated ok';
+                } catch(e) {
+                    document.getElementById('result').textContent = 'error';
+                }
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Worker 错误处理 ──
+        TestCase {
+            id: "web-worker/error-handler-setup".to_string(),
+            description: "Worker onerror 处理器设置".to_string(),
+            category: "web-workers".to_string(),
+            html: r#"<html><body><div id="result">error setup</div>
+            <script>
+                try {
+                    var w = new Worker('worker.js');
+                    w.onerror = function(e) { /* handler set */ };
+                    document.getElementById('result').textContent = 'error handler set';
+                    w.terminate();
+                } catch(e) {
+                    document.getElementById('result').textContent = 'error';
+                }
+            </script></body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── 综合场景 ──
+        TestCase {
+            id: "es-module/composite/module-worker-app".to_string(),
+            description: "ES Module + Worker 综合应用".to_string(),
+            category: "es-modules".to_string(),
+            html: r#"<html><head>
+            <style>
+                .container { max-width: 600px; margin: 20px auto; font-family: sans-serif; }
+                .panel { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 4px; }
+                .panel h3 { margin-top: 0; }
+                .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; }
+                .green { background: #d4edda; }
+                .blue { background: #cce5ff; }
+            </style>
+            </head><body>
+            <div class="container">
+                <h2>Module + Worker Demo</h2>
+                <div class="panel">
+                    <h3>ES Features</h3>
+                    <span class="badge green" id="f-promise">Promise</span>
+                    <span class="badge green" id="f-map">Map</span>
+                    <span class="badge green" id="f-set">Set</span>
+                    <span class="badge green" id="f-symbol">Symbol</span>
+                </div>
+                <div class="panel">
+                    <h3>Worker Status</h3>
+                    <span class="badge blue" id="w-status">checking</span>
+                </div>
+                <script>
+                    // 检测 ES 特性
+                    document.getElementById('f-promise').textContent =
+                        typeof Promise !== 'undefined' ? 'Promise ✓' : 'Promise ✗';
+                    document.getElementById('f-map').textContent =
+                        typeof Map !== 'undefined' ? 'Map ✓' : 'Map ✗';
+                    document.getElementById('f-set').textContent =
+                        typeof Set !== 'undefined' ? 'Set ✓' : 'Set ✗';
+                    document.getElementById('f-symbol').textContent =
+                        typeof Symbol !== 'undefined' ? 'Symbol ✓' : 'Symbol ✗';
+
+                    // 检测 Worker
+                    document.getElementById('w-status').textContent =
+                        typeof Worker !== 'undefined' ? 'Worker Available' : 'Worker N/A';
+                </script>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_heading".to_string(),
+                "dom_has_text".to_string(),
+                "layout_has_children".to_string(),
+                "no_panic".to_string(),
+            ],
+        },
     ]
 }

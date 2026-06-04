@@ -585,5 +585,428 @@ pub fn web_api_tests() -> Vec<TestCase> {
                 "no_panic".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        // DOM 操作扩展
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/dom/create-element-div".into(),
+            description: "document.createElement('div') 操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="target">target</div>
+            <script>
+                var el = document.createElement('div');
+                el.id = 'created';
+                el.textContent = 'Hello World';
+                document.getElementById('target').appendChild(el);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/create-text-node".into(),
+            description: "document.createTextNode() 操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="target">target</div>
+            <script>
+                var text = document.createTextNode('Dynamic text');
+                document.getElementById('target').appendChild(text);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/set-attribute".into(),
+            description: "element.setAttribute/getAttribute 操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="el">attr test</div>
+            <script>
+                var el = document.getElementById('el');
+                el.setAttribute('data-test', 'value');
+                var val = el.getAttribute('data-test');
+                el.textContent = val === 'value' ? 'attr ok' : 'attr fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/inner-html".into(),
+            description: "innerHTML 读写操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="target">before</div>
+            <script>
+                var el = document.getElementById('target');
+                el.innerHTML = '<span>after</span>';
+                var html = el.innerHTML;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/query-selector-all".into(),
+            description: "querySelector/querySelectorAll 操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div class="item">A</div>
+            <div class="item">B</div>
+            <div class="item">C</div>
+            <script>
+                var items = document.querySelectorAll('.item');
+                var first = document.querySelector('.item');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/remove-child".into(),
+            description: "removeChild 移除节点".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="parent">
+                <div id="child">remove me</div>
+            </div>
+            <script>
+                var parent = document.getElementById('parent');
+                var child = document.getElementById('child');
+                if (parent && child) { parent.removeChild(child); }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        // Fetch API 扩展
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/fetch/request-constructor".into(),
+            description: "new Request() 构造函数".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="r">request test</div>
+            <script>
+                if (typeof Request !== 'undefined') {
+                    try {
+                        var req = new Request('https://example.com/api', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                        document.getElementById('r').textContent = 'Request created';
+                    } catch(e) {
+                        document.getElementById('r').textContent = 'Request error';
+                    }
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/fetch/response-constructor".into(),
+            description: "new Response() 构造函数".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="r">response test</div>
+            <script>
+                if (typeof Response !== 'undefined') {
+                    try {
+                        var res = new Response('{"ok":true}', {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                        document.getElementById('r').textContent = 'Response: ' + res.status;
+                    } catch(e) {
+                        document.getElementById('r').textContent = 'Response error';
+                    }
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/fetch/headers-ops".into(),
+            description: "Headers CRUD 操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="h">headers test</div>
+            <script>
+                if (typeof Headers !== 'undefined') {
+                    var h = new Headers();
+                    h.append('Content-Type', 'text/html');
+                    h.set('X-Custom', 'value');
+                    var ct = h.get('Content-Type');
+                    document.getElementById('h').textContent = ct === 'text/html' ? 'Headers ok' : 'Headers fail';
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        // JavaScript 内置 API
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/js/array-methods".into(),
+            description: "Array 高阶方法（map/filter/reduce）".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="arr">array test</div>
+            <script>
+                var arr = [1, 2, 3, 4, 5];
+                var doubled = arr.map(function(x) { return x * 2; });
+                var evens = arr.filter(function(x) { return x % 2 === 0; });
+                var sum = arr.reduce(function(a, b) { return a + b; }, 0);
+                document.getElementById('arr').textContent =
+                    (doubled.length === 5 && evens.length === 2 && sum === 15) ? 'Array ok' : 'Array fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/js/object-methods".into(),
+            description: "Object.keys/values/entries 方法".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="obj">object test</div>
+            <script>
+                var obj = {a: 1, b: 2, c: 3};
+                var keys = Object.keys(obj);
+                var vals = Object.values(obj);
+                var entries = Object.entries(obj);
+                document.getElementById('obj').textContent =
+                    (keys.length === 3 && vals.length === 3 && entries.length === 3)
+                    ? 'Object ok' : 'Object fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/js/map-set".into(),
+            description: "Map/Set 集合操作".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="ms">map-set test</div>
+            <script>
+                var m = new Map();
+                m.set('key', 'value');
+                var mHas = m.has('key') && m.get('key') === 'value';
+                var s = new Set([1, 2, 3]);
+                var sHas = s.has(1) && s.size === 3;
+                document.getElementById('ms').textContent =
+                    mHas && sHas ? 'Map/Set ok' : 'Map/Set fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/js/error-types".into(),
+            description: "Error/TypeError/RangeError 类型".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="err">error test</div>
+            <script>
+                var hasError = typeof Error !== 'undefined';
+                var hasTypeError = typeof TypeError !== 'undefined';
+                var hasRangeError = typeof RangeError !== 'undefined';
+                try { throw new Error('test'); } catch(e) {
+                    var caught = e.message === 'test';
+                }
+                document.getElementById('err').textContent =
+                    hasError && hasTypeError && hasRangeError && caught ? 'Error ok' : 'Error fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/js/symbol-iterator".into(),
+            description: "Symbol 和迭代器".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="sym">symbol test</div>
+            <script>
+                var hasSymbol = typeof Symbol !== 'undefined';
+                var hasIterator = hasSymbol && typeof Symbol.iterator === 'symbol';
+                var arr = [1, 2];
+                var iter = arr[Symbol.iterator];
+                document.getElementById('sym').textContent =
+                    hasSymbol ? 'Symbol ok' : 'Symbol fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/js/proxy-reflect".into(),
+            description: "Proxy 和 Reflect API".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="pr">proxy test</div>
+            <script>
+                var hasProxy = typeof Proxy !== 'undefined';
+                var hasReflect = typeof Reflect !== 'undefined';
+                document.getElementById('pr').textContent =
+                    hasProxy && hasReflect ? 'Proxy/Reflect ok' : 'Proxy/Reflect fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        // 定时器和异步
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/timers/setTimeout-callback".into(),
+            description: "setTimeout 回调执行".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="t">before</div>
+            <script>
+                setTimeout(function() {
+                    document.getElementById('t').textContent = 'after';
+                }, 0);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/timers/requestAnimationFrame".into(),
+            description: "requestAnimationFrame 存在".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="raf">raf test</div>
+            <script>
+                var hasRAF = typeof requestAnimationFrame === 'function';
+                var hasCAF = typeof cancelAnimationFrame === 'function';
+                document.getElementById('raf').textContent =
+                    hasRAF && hasCAF ? 'rAF ok' : 'rAF fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        // 综合页面 2
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/composite/js-playground".into(),
+            description: "JavaScript Playground 综合页面".into(),
+            category: "web-api".into(),
+            html: r#"<html><head>
+            <style>
+                body { font-family: monospace; padding: 20px; }
+                .output { background: #1a1a1a; color: #0f0; padding: 10px; border-radius: 4px; }
+                .card { border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 4px; }
+            </style>
+            </head><body>
+            <h1>JS Playground</h1>
+            <div class="card">
+                <h2>Array Operations</h2>
+                <div class="output" id="arr-out">...</div>
+            </div>
+            <div class="card">
+                <h2>Object Operations</h2>
+                <div class="output" id="obj-out">...</div>
+            </div>
+            <div class="card">
+                <h2>Async Operations</h2>
+                <div class="output" id="async-out">...</div>
+            </div>
+            <script>
+                // Array operations
+                var arr = [1, 2, 3, 4, 5];
+                var result1 = arr.map(function(x) { return x * 2; }).join(', ');
+                document.getElementById('arr-out').textContent = result1;
+
+                // Object operations
+                var obj = { name: 'test', version: 1 };
+                var result2 = Object.keys(obj).map(function(k) { return k + '=' + obj[k]; }).join('&');
+                document.getElementById('obj-out').textContent = result2;
+
+                // Async
+                Promise.resolve('resolved').then(function(v) {
+                    document.getElementById('async-out').textContent = v;
+                });
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_heading".into(),
+                "layout_has_children".into(),
+                "no_panic".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/composite/api-explorer".into(),
+            description: "Web API Explorer 综合页面".into(),
+            category: "web-api".into(),
+            html: r#"<html><head>
+            <style>
+                .api-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; }
+                .api-card { border: 1px solid #ccc; padding: 8px; border-radius: 4px; }
+                .api-card h3 { margin: 0 0 5px 0; font-size: 14px; }
+                .api-card .status { font-size: 12px; padding: 2px 6px; border-radius: 3px; }
+                .available { background: #d4edda; color: #155724; }
+                .unavailable { background: #f8d7da; color: #721c24; }
+            </style>
+            </head><body>
+            <h2>API Explorer</h2>
+            <div class="api-grid">
+                <div class="api-card"><h3>Fetch</h3><span class="status" id="s-fetch">checking</span></div>
+                <div class="api-card"><h3>WebSocket</h3><span class="status" id="s-ws">checking</span></div>
+                <div class="api-card"><h3>Storage</h3><span class="status" id="s-storage">checking</span></div>
+                <div class="api-card"><h3>Worker</h3><span class="status" id="s-worker">checking</span></div>
+                <div class="api-card"><h3>WASM</h3><span class="status" id="s-wasm">checking</span></div>
+                <div class="api-card"><h3>Canvas</h3><span class="status" id="s-canvas">checking</span></div>
+            </div>
+            <script>
+                var checks = {
+                    's-fetch': typeof fetch === 'function',
+                    's-ws': typeof WebSocket !== 'undefined',
+                    's-storage': typeof localStorage !== 'undefined',
+                    's-worker': typeof Worker !== 'undefined',
+                    's-wasm': typeof WebAssembly !== 'undefined',
+                    's-canvas': typeof HTMLCanvasElement !== 'undefined',
+                };
+                Object.keys(checks).forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) {
+                        el.textContent = checks[id] ? 'Available' : 'Unavailable';
+                        el.className = 'status ' + (checks[id] ? 'available' : 'unavailable');
+                    }
+                });
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_heading".into(),
+                "layout_has_children".into(),
+                "no_panic".into(),
+            ],
+        },
     ]
 }
