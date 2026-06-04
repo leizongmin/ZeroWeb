@@ -618,3 +618,372 @@ fn test_holy_grail_layout() {
     assert!(result.timings.total_ms >= 0.0);
     assert!(!result.primitives.glyphs.is_empty(), "Layout should produce glyphs");
 }
+
+// ── 11. CSS 容器查询管线 ──────────────────────────────────────
+
+#[test]
+fn test_container_query_min_width() {
+    let html = r#"<html><body>
+        <div class="container">
+            <div class="item">Content</div>
+        </div>
+    </body></html>"#;
+    let css = r#"
+        .container { container-type: inline-size; width: 400px; }
+        .item { background: red; }
+        @container (min-width: 300px) {
+            .item { background: green; }
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.layout.root.children.is_empty());
+}
+
+#[test]
+fn test_container_query_max_width() {
+    let html = r#"<html><body>
+        <div class="container">
+            <div class="item">Small</div>
+        </div>
+    </body></html>"#;
+    let css = r#"
+        .container { container-type: inline-size; width: 200px; }
+        .item { background: blue; }
+        @container (max-width: 300px) {
+            .item { background: red; }
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_container_type_inline_size() {
+    let html = r#"<html><body>
+        <div style="container-type: inline-size; width: 500px;">
+            <div>Item</div>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 12. CSS @supports 管线 ──────────────────────────────────────
+
+#[test]
+fn test_supports_property() {
+    let html = r#"<html><body>
+        <div class="box">Test</div>
+    </body></html>"#;
+    let css = r#"
+        .box { background: red; }
+        @supports (display: grid) {
+            .box { background: green; }
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_supports_selector() {
+    let html = r#"<html><body>
+        <div class="box">Test</div>
+    </body></html>"#;
+    let css = r#"
+        .box { color: black; }
+        @supports selector(:is(div)) {
+            .box { color: blue; }
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 13. CSS @layer 管线 ──────────────────────────────────────
+
+#[test]
+fn test_layer_ordering() {
+    let html = r#"<html><body>
+        <div class="box">Layer test</div>
+    </body></html>"#;
+    let css = r#"
+        @layer base, override;
+        @layer base {
+            .box { background: red; }
+        }
+        @layer override {
+            .box { background: green; }
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_unlayered_overrides_layers() {
+    let html = r#"<html><body>
+        <div class="box">Unlayered</div>
+    </body></html>"#;
+    let css = r#"
+        @layer base {
+            .box { color: red; }
+        }
+        .box { color: blue; }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 14. CSS scroll-snap 管线 ──────────────────────────────────────
+
+#[test]
+fn test_scroll_snap_type() {
+    let html = r#"<html><body>
+        <div class="scroll-container">
+            <div class="child">A</div>
+            <div class="child">B</div>
+        </div>
+    </body></html>"#;
+    let css = r#"
+        .scroll-container {
+            scroll-snap-type: x mandatory;
+            overflow: auto;
+            width: 300px;
+            height: 200px;
+        }
+        .child { scroll-snap-align: start; width: 300px; height: 200px; }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_scroll_snap_stop() {
+    let html = r#"<html><body>
+        <div style="scroll-snap-stop: always; width: 100px; height: 100px;">Snap</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 15. CSS contain + will-change 管线 ──────────────────────────────
+
+#[test]
+fn test_contain_layout() {
+    let html = r#"<html><body>
+        <div class="contained" style="width:200px; height:100px; background:#eee;">
+            Content with containment
+        </div>
+    </body></html>"#;
+    let css = r#"
+        .contained { contain: layout; }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_contain_strict() {
+    let html = r#"<html><body>
+        <div style="contain: strict; width:100px; height:100px; background:red;">Strict</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_will_change_transform() {
+    let html = r#"<html><body>
+        <div style="will-change: transform; width:100px; height:50px; background:#eee;">
+            Will animate
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+#[test]
+fn test_isolation_isolate() {
+    let html = r#"<html><body>
+        <div style="isolation: isolate; width:200px; height:100px; background:blue;">
+            Isolated stacking context
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 16. CSS 渐变渲染管线 ──────────────────────────────────────
+
+#[test]
+fn test_linear_gradient_to_direction() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background:linear-gradient(to right, #ff0000, #0000ff);">Gradient</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+}
+
+#[test]
+fn test_radial_gradient_circle() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:200px; background:radial-gradient(circle, red, blue);">Radial</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+}
+
+#[test]
+fn test_linear_gradient_with_angle() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; background:linear-gradient(135deg, #667eea, #764ba2);">Angle</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+}
+
+// ── 17. CSS 变换/透视管线 ──────────────────────────────────────
+
+#[test]
+fn test_transform_with_perspective() {
+    let html = r#"<html><body>
+        <div style="perspective: 800px; width:300px; height:200px; background:#eee;">
+            <div style="transform: rotateY(45deg); width:100px; height:100px; background:red;">Rotated</div>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_transform_origin() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; transform:rotate(45deg); transform-origin: top left; background:#eee;">Origin</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_backface_visibility() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; transform:rotateY(180deg); backface-visibility:hidden; background:#eee;">Hidden</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 18. CSS 文本高级属性管线 ──────────────────────────────────────
+
+#[test]
+fn test_text_shadow_render() {
+    let html = r#"<html><body>
+        <div class="shadow-text">Shadow text</div>
+    </body></html>"#;
+    let css = ".shadow-text { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); background:white; padding:10px; }";
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    // text-shadow 通过 style 元素渲染；至少应该有 glyphs
+    assert!(!result.primitives.glyphs.is_empty() || !result.primitives.shadows.is_empty());
+}
+
+#[test]
+fn test_multiple_text_shadows() {
+    let html = r#"<html><body>
+        <div class="multi-shadow">Multi shadow</div>
+    </body></html>"#;
+    let css = ".multi-shadow { text-shadow: 1px 1px red, -1px -1px blue; background:white; padding:10px; }";
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.glyphs.is_empty() || !result.primitives.shadows.is_empty());
+}
+
+#[test]
+fn test_box_shadow_inset_render() {
+    let html = r#"<html><body>
+        <div style="width:200px; height:100px; box-shadow: inset 5px 5px 10px rgba(0,0,0,0.3); background:#eee;">Inset shadow</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.shadows.is_empty(), "Should produce shadow primitives");
+}
+
+// ── 19. CSS 多列布局管线 ──────────────────────────────────────
+
+#[test]
+fn test_column_count_render() {
+    let html = r#"<html><body>
+        <div style="column-count: 3; column-gap: 20px; padding: 10px; background: #f0f0f0;">
+            <p>Column one text content.</p>
+            <p>Column two text content.</p>
+            <p>Column three text content.</p>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs for text");
+}
+
+#[test]
+fn test_column_width_render() {
+    let html = r#"<html><body>
+        <div style="column-width: 200px; column-gap: 15px; width: 600px;">
+            <p>Text content in auto columns.</p>
+            <p>More text for column layout.</p>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+#[test]
+fn test_column_rule_render() {
+    let html = r#"<html><body>
+        <div style="column-count: 2; column-gap: 30px; column-rule: 1px solid #ccc; width: 400px;">
+            <p>Left column</p>
+            <p>Right column</p>
+        </div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── 20. CSS 自定义属性管线 ──────────────────────────────────────
+
+#[test]
+fn test_css_variable_fallback() {
+    let html = r#"<html><body>
+        <div style="--my-color: green; background: var(--my-color, red); width:100px; height:50px;">Variable</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty(), "Should produce fill from CSS variable");
+}
+
+#[test]
+fn test_css_variable_undefined_fallback() {
+    let html = r#"<html><body>
+        <div style="background: var(--undefined-var, blue); width:100px; height:50px;">Fallback</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty(), "Should produce fill from fallback value");
+}
+
+#[test]
+fn test_css_variable_chain() {
+    let html = r#"<html><body>
+        <div style="--base: 20px; --derived: var(--base); padding: var(--derived); background:#eee; width:200px;">Chain</div>
+    </body></html>"#;
+    let result = render_pipeline(html, "");
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
