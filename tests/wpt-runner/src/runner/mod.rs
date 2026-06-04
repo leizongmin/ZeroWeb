@@ -136,22 +136,34 @@ fn check_assertion(name: &str, output: &RenderOutput) -> Result<(), String> {
         "dom_has_meta" => assert_dom_has_element(output, "meta"),
         "dom_has_list" => assert_dom_has_list(output),
         "dom_has_heading" => assert_dom_has_heading(output),
+        "dom_has_paragraph" => assert_dom_has_element(output, "p"),
+        "dom_has_span" => assert_dom_has_element(output, "span"),
+        "dom_has_section" => assert_dom_has_element(output, "section"),
+        "dom_has_article" => assert_dom_has_element(output, "article"),
+        "dom_has_nav" => assert_dom_has_element(output, "nav"),
+        "dom_has_header" => assert_dom_has_element(output, "header"),
+        "dom_has_footer" => assert_dom_has_element(output, "footer"),
         // Render assertions
         "render_completes" => assert_render_completes(output),
         "has_fill_primitives" => assert_has_fills(output),
         "has_glyph_primitives" => assert_has_glyphs(output),
         "has_multiple_fills" => assert_has_multiple_fills(output),
+        "has_shadow_primitives" => assert_has_shadows(output),
+        "has_stroke_primitives" => assert_has_strokes(output),
+        "has_image_primitives" => assert_has_images(output),
         // Layout assertions
         "layout_has_children" => assert_layout_has_children(output),
         "layout_has_deep_children" => assert_layout_has_deep_children(output),
         "layout_valid_viewport" => assert_layout_valid_viewport(output),
         "layout_width_positive" => assert_layout_width_positive(output),
         "layout_height_positive" => assert_layout_height_positive(output),
+        "layout_has_many_children" => assert_layout_has_many_children(output),
         // Aliases for convenience
         "css_background_applied" => assert_has_fills(output),
         "block_layout" => assert_layout_has_children(output),
         "inline_layout" => assert_has_glyphs(output),
         "flex_layout" => assert_layout_has_children(output),
+        "grid_layout" => assert_layout_has_children(output),
         "nonzero_primitives" => assert_nonzero_primitives(output),
         "no_panic" => Ok(()),
         _ => Err(format!("Unknown assertion: {name}")),
@@ -312,6 +324,39 @@ fn assert_layout_height_positive(output: &RenderOutput) -> Result<(), String> {
             "Root layout height is {} (expected > 0)",
             output.layout.root.height
         ))
+    }
+}
+
+fn assert_has_shadows(output: &RenderOutput) -> Result<(), String> {
+    if output.primitives.shadows.is_empty() {
+        Err("No shadow primitives generated".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn assert_has_strokes(output: &RenderOutput) -> Result<(), String> {
+    if output.primitives.strokes.is_empty() {
+        Err("No stroke primitives generated".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn assert_has_images(output: &RenderOutput) -> Result<(), String> {
+    if output.primitives.images.is_empty() {
+        Err("No image primitives generated".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn assert_layout_has_many_children(output: &RenderOutput) -> Result<(), String> {
+    let count = output.layout.root.children.len();
+    if count >= 3 {
+        Ok(())
+    } else {
+        Err(format!("Layout root has {} children (expected >= 3)", count))
     }
 }
 

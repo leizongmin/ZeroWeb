@@ -1244,3 +1244,5 @@ pub fn generate_dom_api_polyfill() -> String {
 #[cfg(test)]
 #[path = "dom_bridge_tests.rs"]
 mod dom_bridge_tests;
+
+// Extended tests are moved to the tests module

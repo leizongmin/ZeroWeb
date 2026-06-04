@@ -1498,3 +1498,29 @@ fn test_message_ordering_preserved() {
         assert_eq!(bytes, re_bytes);
     }
 }
+
+// ── serialize/deserialize 错误路径覆盖率 ──
+
+#[test]
+fn test_deserialize_garbage_binary() {
+    let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB];
+    let result = deserialize(&garbage);
+    assert!(result.is_err(), "Expected error for garbage data");
+}
+
+#[test]
+fn test_deserialize_truncated_valid_data() {
+    use crate::NavigateParams;
+    let msg = IpcMessage {
+        id: 1,
+        kind: IpcMessageKind::Navigate(NavigateParams {
+            url: "https://example.com".to_string(),
+            referrer: None,
+        }),
+    };
+    let mut bytes = serialize(&msg).expect("serialize");
+    // Truncate the data to simulate incomplete binary
+    bytes.truncate(bytes.len() / 2);
+    let result = deserialize(&bytes);
+    assert!(result.is_err(), "Expected error for truncated data");
+}
