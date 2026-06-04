@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，10,880 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1 已完成（WebSocket 远程调试）
+**执行状态**: 16/16 crate 已实现，~10,920 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-2 已完成（WebSocket 远程调试 + 浏览上下文管理）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -1480,7 +1480,7 @@ Total: 6219 → 6378 tests (+159)
 | 阶段 | 状态 | 范围 | 验收标准 |
 |------|------|------|----------|
 | Phase 1: 远程调试服务骨架 | ✅ | `--headless`/`--remote-debugging-port` CLI 标志、WebSocket 服务器（tungstenite）、JSON message id 路由、session 生命周期、6 个命令（session.status/new、browser.close、browsingContext.navigate、script.evaluate、captureScreenshot、getDOMSnapshot） | ✅ 能启动无窗口实例并接受 WebSocket 命令；10 个单元测试覆盖全部命令 |
-| Phase 2: WebDriver BiDi 核心子集 | [ ] | `session.status/new/end`、`browser.close`、`browsingContext.create/getTree/navigate/reload/close/captureScreenshot`、`script.evaluate/callFunction`、基础 log/network/navigation events | Selenium/WebDriver BiDi 客户端可创建会话、打开页面、等待加载、执行 JS、截图、关闭 |
+| Phase 2: WebDriver BiDi 核心子集 | 🔧 进行中 | ✅ browsingContext.create/getTree/close/reload ✅ script.callFunction ✅ /json/version HTTP 发现 ⬜ log/network/navigation events ⬜ 多客户端支持 | 核心浏览上下文和脚本命令已实现；需要事件推送和多客户端支持 |
 | Phase 3: CDP 最小兼容子集 | [ ] | `/json/version`、browser/page WebSocket endpoint、`Target.*`、`Page.navigate/loadEventFired/captureScreenshot`、`Runtime.evaluate`、`Network.enable/requestWillBeSent/responseReceived/loadingFinished` | Playwright `connectOverCDP` 或 Puppeteer CDP 客户端可连接、导航、执行 JS、截图、收集网络事件 |
 | Phase 4: 自动化测试接入 | [ ] | 用协议驱动 Top 20 网站 smoke、reftest 截图、性能采样、安全边界回归；生成 JUnit/JSON 报告 | 浏览器级 smoke 不再依赖手写内部 runner；协议层失败能区分 browser bug、protocol bug、test bug |
 | Phase 5: 隔离与安全加固 | [ ] | 限制默认监听地址为 `127.0.0.1`；可配置 token/origin allowlist；禁止默认公网暴露；会话关闭清理脚本句柄和浏览上下文 | 远程调试端口默认本机可访问；安全边界有单元/集成测试 |
