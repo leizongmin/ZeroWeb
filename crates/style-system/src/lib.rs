@@ -177,6 +177,24 @@ impl StyleSystem {
             }
         }
 
+        // 1.6. 解析内联样式（style 属性）
+        // 内联样式的优先级高于任何选择器，使用 (1, 0, 0) 特异性
+        if let Some(style_attr) = doc.get_attribute(element, "style") {
+            let inline_decls = parse_inline_style(&style_attr);
+            if !inline_decls.is_empty() {
+                #[allow(clippy::type_complexity)]
+                let input: Vec<(String, String, bool, (u32, u32, u32))> = inline_decls
+                    .iter()
+                    .map(|(p, v, imp)| (p.clone(), v.clone(), *imp, (1, 0, 0)))
+                    .collect();
+                let expanded = shorthand::expand_shorthands(&input);
+                for (prop, val, imp, spec) in expanded {
+                    // 内联样式没有 layer，使用 None
+                    expanded_with_layer.push((prop, val, imp, spec, None));
+                }
+            }
+        }
+
         // 2. 构建 CascadedDeclaration 列表
         let mut declarations = Vec::new();
         for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
@@ -242,6 +260,41 @@ impl Default for StyleSystem {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 解析 HTML 元素的 inline style 属性值。
+///
+/// 将 `"background-color: red; width: 200px"` 格式的字符串解析为
+/// `(property, value, important)` 三元组列表。
+fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
+    let mut declarations = Vec::new();
+    // 按分号分割声明
+    for decl in style_attr.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        // 按第一个冒号分割属性名和值
+        if let Some(colon_pos) = decl.find(':') {
+            let property = decl[..colon_pos].trim().to_lowercase();
+            let mut value = decl[colon_pos + 1..].trim().to_string();
+            if property.is_empty() || value.is_empty() {
+                continue;
+            }
+            // 检查 !important
+            let important = if let Some(bang_pos) = value.rfind("!important") {
+                value = value[..bang_pos].trim().to_string();
+                true
+            } else if let Some(bang_pos) = value.rfind("! important") {
+                value = value[..bang_pos].trim().to_string();
+                true
+            } else {
+                false
+            };
+            declarations.push((property, value, important));
+        }
+    }
+    declarations
 }
 
 /// 从级联值中收集自定义属性，并解析自定义属性值中的 var() 引用。

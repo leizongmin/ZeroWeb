@@ -1432,7 +1432,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 418 用例（12 分类，97.6% 通过率）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 418 用例（12 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
 | 4. 性能基准体系 | ✅/❌ | 77 个 criterion 基准覆盖所有 crate。缺少：中等复杂度页面首屏 < 2s 验证、增量渲染 < 20% 验证、GPU 加速验证（均需 GPU/Display） |
 | 5. 单元测试与质量 | ✅ | 10,850 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |

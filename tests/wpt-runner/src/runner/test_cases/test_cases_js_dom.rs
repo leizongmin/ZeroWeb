@@ -254,7 +254,7 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
                 "layout_has_children".to_string(),
             ],
         },
@@ -519,7 +519,7 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
                 "layout_has_children".to_string(),
             ],
         },
@@ -959,7 +959,7 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
                 "layout_has_children".to_string(),
             ],
         },
