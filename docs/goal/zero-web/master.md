@@ -1352,13 +1352,29 @@ Total: 6219 → 6378 tests (+159)
 2. **V8 快照优化**（中优先级，M13 剩余）— 减少沙箱创建开销
 3. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
 4. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-5. **WebView 渲染合规测试体系**（高优先级，无头可推进）— 从当前 smoke 型 WPT runner 推进到 layout/primitive snapshot、reftest、WPT 子集和 expected metadata
+5. **浏览器质量测试体系**（高优先级，无头优先推进）— 从当前 smoke 型 WPT runner 推进到标准合规、渲染正确性、真实站点、安全、运行时、导航、性能、平台和产品层测试
 
-## WebView 渲染合规测试推进计划
+## 浏览器质量测试体系推进计划
 
 研究依据：[WebView 渲染合规测试：以 WPT Reftest 为主、像素基线为辅](../../research/research-webview-rendering-test-strategy-2026-06-04.md)
 
-当前判断：`tests/wpt-runner` 已能解析 WPT manifest 类型并运行内置 HTML/CSS 用例，但执行层主要验证“不 panic、有 DOM/layout/primitives”。它适合作为 smoke/invariant runner，暂不能证明 CSS 排版、布局几何或最终渲染像素与规范或参考页一致。后续目标是把“WPT 测试持续扩展”升级为可持续的浏览器渲染合规测试体系。
+当前判断：`tests/wpt-runner` 已能解析 WPT manifest 类型并运行内置 HTML/CSS 用例，但执行层主要验证“不 panic、有 DOM/layout/primitives”。它适合作为 smoke/invariant runner，暂不能证明 CSS 排版、布局几何或最终渲染像素与规范或参考页一致。后续目标是把“WPT 测试持续扩展”升级为覆盖浏览器质量关键面的测试体系。
+
+### 质量测试矩阵
+
+| 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
+|--------|------|------|----------|----------|
+| 1. 标准合规测试 | [ ] | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | 扩展 WPT 子集；为 JS/DOM/Web API 绑定增加 testharness 类测试；用 expected metadata 管理已知失败 | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 2. 渲染正确性测试 | [ ] | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | 推进下方 WebView 渲染合规 Phase 1-4 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
+| 3. 真实网站兼容性测试 | [ ] | 验证真实页面组合能力，而不只验证单项标准 | 建 Top 20/50 网站 smoke；记录 load、首屏截图、console/network error、crash | 每个站点有可复现结果和兼容性问题清单 |
+| 4. 安全测试 | [ ] | 验证浏览器安全边界不被绕过 | 扩展 CORS/CSP/mixed content/sandbox/permission/cookie/storage isolation；增加 HTML/CSS/URL/parser fuzz 和 sanitizer 运行 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
+| 5. 运行时和事件循环测试 | [ ] | 验证 JS + DOM + Web API 的组合时序 | 覆盖 timers、microtask、Promise、MutationObserver、Workers、Modules、WASM、导航中断和页面关闭清理 | DOM mutation 后 style/layout/paint 更新顺序可测试；关闭/导航不泄漏状态 |
+| 6. 网络和导航测试 | [ ] | 验证导航状态机、资源加载和历史行为 | 覆盖 redirects、cache、cookie、HSTS、abort、timeout、partial response、fragment navigation、reload/back/forward、Service Worker fetch、下载中断 | 导航和网络异常路径可复现；历史和资源状态稳定 |
+| 7. 性能测试 | [ ] | 从 crate benchmark 上升到页面级性能预算 | 增加 parse/style/layout/paint/composite 分阶段预算；覆盖首屏、重复渲染、增量渲染、scroll frame time、内存增长、长页面压力 | 页面级性能报告可比较；关键预算有阈值和趋势 |
+| 8. 平台和输入测试 | [ ] | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 建 Windows/macOS/Linux/Android 矩阵；覆盖 HiDPI、resize、IME、快捷键、鼠标、触摸、滚轮、CJK、emoji、RTL、字体 fallback | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
+| 9. 产品层测试 | [ ] | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 覆盖标签页、地址栏、书签、历史、下载、设置、查找、缩放、session restore、WebView API contract、demo/app smoke | 产品级 smoke 可在发布前阻断明显退化 |
+
+### WebView 渲染合规测试阶段
 
 | 阶段 | 状态 | 范围 | 验收标准 |
 |------|------|------|----------|
@@ -1368,6 +1384,13 @@ Total: 6219 → 6378 tests (+159)
 | Phase 4: WebView 产品级视觉 smoke | [ ] | 对 `webview-demo` 或 headless WebView 增加固定页面截图 smoke；覆盖 load、resize、inject CSS、navigation、scroll 后可见结果 | 用于发现产品可见退化，但不替代引擎级 reftest 和 WPT 合规测试 |
 
 短期不要直接扩大 golden screenshot 覆盖。像素基线只用于无法构造 reftest 的少量场景，并且必须固定 OS/font/DPI/scale 与 fuzzy 阈值。
+
+### 推进优先级
+
+1. **P0: 无头质量信号** — layout/primitive snapshot、最小 reftest harness、WPT CSS/layout 子集、expected metadata。
+2. **P1: 真实站点与安全信号** — Top 20 网站 smoke、安全边界测试、parser fuzz、sanitizer/nightly。
+3. **P2: 页面级性能与运行时信号** — 首屏/增量渲染预算、事件循环时序、导航状态机异常路径。
+4. **P3: 平台与产品信号** — 多平台输入/字体/GPU matrix、ZeroBrowser/WebView 产品级 smoke、session restore。
 
 ### Done Criteria 评估（2026-06-04）
 
@@ -1391,7 +1414,7 @@ Total: 6219 → 6378 tests (+159)
 2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
 4. V8 快照优化（M13 剩余）
-5. WebView 渲染合规测试体系 Phase 1-3（layout/primitive snapshot、最小 reftest、WPT CSS/layout 子集）
+5. 浏览器质量测试体系 P0（layout/primitive snapshot、最小 reftest、WPT CSS/layout 子集、expected metadata）
 
 ---
 
