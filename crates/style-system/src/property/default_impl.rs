@@ -1,5 +1,6 @@
 //! ComputedStyle 的 Default 实现。
 
+use super::computed_style::ComputedStyle;
 use super::types::*;
 
 impl Default for ComputedStyle {

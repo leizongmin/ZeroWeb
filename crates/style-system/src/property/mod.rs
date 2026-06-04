@@ -4,6 +4,8 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 pub mod apply;
+mod apply_advanced;
+mod computed_style;
 mod default_impl;
 pub mod inherit;
 pub mod parse;
@@ -12,6 +14,7 @@ pub mod types;
 
 // Re-export all public items so `pub use property::*` in lib.rs works unchanged.
 pub use apply::*;
+pub use computed_style::*;
 pub use inherit::*;
 pub use parse::*;
 pub use registry::*;
