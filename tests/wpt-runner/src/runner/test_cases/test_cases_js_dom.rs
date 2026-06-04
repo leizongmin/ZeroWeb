@@ -254,8 +254,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "has_fill_primitives".to_string(),
-                "has_multiple_fills".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
             ],
         },
 
@@ -279,7 +279,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             assertions: vec![
                 "dom_has_body".to_string(),
                 "dom_has_head".to_string(),
-                "has_fill_primitives".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
             ],
         },
 
@@ -518,8 +519,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "has_fill_primitives".to_string(),
-                "has_multiple_fills".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
             ],
         },
 
@@ -760,7 +761,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             "#.to_string(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "has_fill_primitives".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
             ],
         },
 
@@ -779,7 +781,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             "#.to_string(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "has_fill_primitives".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
             ],
         },
 
@@ -956,8 +959,8 @@ pub fn js_dom_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "has_fill_primitives".to_string(),
-                "has_multiple_fills".to_string(),
+                "render_completes".to_string(),
+                "layout_has_children".to_string(),
             ],
         },
     ]
