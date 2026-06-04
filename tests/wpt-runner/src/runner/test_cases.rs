@@ -9,12 +9,16 @@
 //! - `test_cases_standard`: 标准合规性扩展测试
 //! - `test_cases_dom_api`: DOM Level 2+ API 标准合规性测试
 //! - `test_cases_css_compliance`: CSS 选择器和属性标准合规性测试
+//! - `test_cases_js_dom`: JavaScript/DOM 交互标准合规性测试
+//! - `test_cases_navigation`: 导航、安全与存储标准合规性测试
 
 mod test_cases_core;
 mod test_cases_css_compliance;
 mod test_cases_css_extended;
 mod test_cases_dom_api;
 mod test_cases_html_layout;
+mod test_cases_js_dom;
+mod test_cases_navigation;
 mod test_cases_standard;
 mod test_cases_wpt;
 
@@ -30,5 +34,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_standard::standard_compliance_tests());
     tests.extend(test_cases_dom_api::dom_api_tests());
     tests.extend(test_cases_css_compliance::css_compliance_tests());
+    tests.extend(test_cases_js_dom::js_dom_tests());
+    tests.extend(test_cases_navigation::navigation_security_tests());
     tests
 }

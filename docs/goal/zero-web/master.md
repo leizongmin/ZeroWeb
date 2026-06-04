@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,674 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，WPT 测试套件 256 个用例（254 通过，99.2% 通过率）
+**执行状态**: 16/16 crate 已实现，10,674 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，WPT 测试套件 320 个用例（9 个分类：core/html_layout/css_extended/wpt/standard/dom_api/css_compliance/js_dom/navigation）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -103,7 +103,18 @@
 
 ## 最近完成的改进
 
-### -66. WPT 测试扩展 + css-parser 覆盖率提升 + clippy 修复（本轮，10,674 测试）
+### -67. WPT 测试套件扩展至 320 用例（本轮，10,674 测试）
+
+扩展 WPT 测试套件，新增两个测试分类模块：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| WPT runner / test_cases_js_dom | **JavaScript/DOM 交互标准合规性测试**：DOM 树构建（嵌套 div、深层嵌套、data-* 属性、classList）、HTML5 语义元素（article/nav/aside/figure）、HTML 实体/Unicode 解码、CSS+DOM 集成（内联样式、style 元素、ID/属性选择器）、伪类选择器（:first-child/:last-child/:nth-child）、组合选择器（后代/子代/相邻兄弟）、媒体查询、CSS 变量+fallback、box-sizing/margin 折叠、Grid 高级（template-areas/auto-flow）、Flexbox 高级（wrap/align）、定位（absolute/fixed）、overflow hidden、transform（translate/rotate）、渐变（linear/radial）、错误恢复（malformed HTML/空元素/void 元素）、边框样式+radius、文本装饰/变换、颜色格式（hex/rgb/rgba/hsl/hsla） | +42 |
+| WPT runner / test_cases_navigation | **导航、安全与存储标准合规性测试**：锚点链接（多协议/相对路径/hash）、图片 src（URL/data URI）、iframe 嵌入、head 元数据（meta/title/link/base）、表单验证（required/pattern/min/max）、完整表格（caption/colgroup/thead/tfoot）、嵌套列表（ol/ul/dl）、多媒体占位（video/audio/canvas）、script 标签（src/module/defer/async/noscript）、CSS @规则（@import/@layer/@supports）、CSS 逻辑属性、综合页面测试（blog/dashboard）、响应式 Grid、CSS transition/animation、visibility/display/opacity、z-index 层叠 | +22 |
+
+WPT 测试套件: 256 → 320 用例（+64 tests, 9 个分类模块）
+
+### -66. WPT 测试扩展 + css-parser 覆盖率提升 + clippy 修复（前轮，10,674 测试）
 
 扩展 WPT 测试套件，新增 css-parser parser 覆盖率测试，修复 clippy 警告：
 
