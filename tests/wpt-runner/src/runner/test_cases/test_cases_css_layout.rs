@@ -723,5 +723,397 @@ pub fn css_layout_compliance_tests() -> Vec<TestCase> {
                 "render_completes".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 多列布局
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── column-count 基础 ──
+        TestCase {
+            id: "css-layout/column-count-basic".to_string(),
+            description: "column-count 多列布局".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="multi-col">
+                <p>第一段文字内容，用于测试多列布局效果。</p>
+                <p>第二段文字内容，继续填充多列。</p>
+                <p>第三段文字内容，验证列数正确。</p>
+                <p>第四段文字内容，更多填充。</p>
+            </div></body></html>"#.to_string(),
+            css: r#".multi-col { column-count: 3; column-gap: 20px; column-rule: 1px solid #ccc; padding: 10px; background: #f8f8f8; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── column-width 配合 column-count ──
+        TestCase {
+            id: "css-layout/column-width-constraint".to_string(),
+            description: "column-width 约束列宽".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="cols">
+                <p>Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu.</p>
+                <p>Nu xi omicron pi rho sigma tau upsilon phi chi psi omega.</p>
+            </div></body></html>"#.to_string(),
+            css: r#".cols { column-width: 150px; column-count: 4; padding: 10px; background: #e8f5e9; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 变量在布局中的使用
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 自定义属性控制间距 ──
+        TestCase {
+            id: "css-layout/custom-properties-spacing".to_string(),
+            description: "CSS 自定义属性控制间距".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="container">
+                <div class="item">A</div>
+                <div class="item">B</div>
+                <div class="item">C</div>
+                <div class="item">D</div>
+            </div></body></html>"#.to_string(),
+            css: r#":root { --gap: 16px; --item-bg: #6c5ce7; --item-color: white; }
+                     .container { display: flex; flex-wrap: wrap; gap: var(--gap); padding: var(--gap); background: #dfe6e9; }
+                     .item { width: 100px; height: 80px; background: var(--item-bg); color: var(--item-color); display: flex; align-items: center; justify-content: center; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 自定义属性回退值 ──
+        TestCase {
+            id: "css-layout/custom-properties-fallback".to_string(),
+            description: "CSS 自定义属性回退值".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="box" style="background: var(--undefined-color, #e74c3c);">Fallback</div></body></html>"#.to_string(),
+            css: r#".box { width: 200px; height: 100px; color: white; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Flexbox 对齐/间距边缘情况
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── flex 嵌套对齐 ──
+        TestCase {
+            id: "css-layout/flex-nested-alignment".to_string(),
+            description: "Flex 嵌套对齐测试".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="outer">
+                <div class="inner"><div class="item">1</div><div class="item">2</div></div>
+                <div class="inner"><div class="item">3</div></div>
+            </div></body></html>"#.to_string(),
+            css: r#".outer { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: #f0f0f0; }
+                     .inner { display: flex; gap: 5px; background: #ddd; padding: 5px; }
+                     .item { width: 50px; height: 50px; background: #00b894; color: white; display: flex; align-items: center; justify-content: center; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── flex-grow 比例分配 ──
+        TestCase {
+            id: "css-layout/flex-grow-ratio".to_string(),
+            description: "flex-grow 按比例分配剩余空间".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="flex">
+                <div class="small">1x</div>
+                <div class="medium">2x</div>
+                <div class="large">3x</div>
+            </div></body></html>"#.to_string(),
+            css: r#".flex { display: flex; width: 600px; gap: 10px; background: #f8f9fa; padding: 10px; }
+                     .small { flex: 1; height: 50px; background: #74b9ff; }
+                     .medium { flex: 2; height: 50px; background: #a29bfe; }
+                     .large { flex: 3; height: 50px; background: #fd79a8; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── flex 基线对齐 ──
+        TestCase {
+            id: "css-layout/flex-align-baseline".to_string(),
+            description: "flex align-items:baseline 对齐".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="flex">
+                <div class="box" style="font-size:14px;">Small</div>
+                <div class="box" style="font-size:24px;">Big</div>
+                <div class="box" style="font-size:18px;">Medium</div>
+            </div></body></html>"#.to_string(),
+            css: r#".flex { display: flex; align-items: baseline; gap: 10px; padding: 10px; background: #ffeaa7; }
+                     .box { padding: 8px; background: #fdcb6e; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Grid 嵌套布局
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 嵌套网格布局 ──
+        TestCase {
+            id: "css-layout/grid-nested".to_string(),
+            description: "嵌套网格布局".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="outer-grid">
+                <div class="cell"><div class="inner-grid"><div class="item">A1</div><div class="item">A2</div></div></div>
+                <div class="cell"><div class="inner-grid"><div class="item">B1</div><div class="item">B2</div><div class="item">B3</div></div></div>
+            </div></body></html>"#.to_string(),
+            css: r#".outer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; background: #dfe6e9; }
+                     .cell { background: #b2bec3; padding: 10px; }
+                     .inner-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 5px; }
+                     .item { height: 40px; background: #636e72; color: white; display: flex; align-items: center; justify-content: center; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── grid 隐式轨道 ──
+        TestCase {
+            id: "css-layout/grid-implicit-tracks".to_string(),
+            description: "grid 隐式轨道 auto-rows/auto-columns".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="grid">
+                <div class="item">1</div><div class="item">2</div><div class="item">3</div>
+                <div class="item">4</div><div class="item">5</div><div class="item">6</div>
+                <div class="item">7</div><div class="item">8</div><div class="item">9</div>
+            </div></body></html>"#.to_string(),
+            css: r#".grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 80px; gap: 8px; padding: 10px; background: #e8e8e8; }
+                     .item { background: #e17055; color: white; display: flex; align-items: center; justify-content: center; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  响应式布局模式
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 卡片网格响应式 ──
+        TestCase {
+            id: "css-layout/responsive-card-grid".to_string(),
+            description: "响应式卡片网格".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="cards">
+                <div class="card"><h3>Card 1</h3><p>Content for card one.</p></div>
+                <div class="card"><h3>Card 2</h3><p>Content for card two.</p></div>
+                <div class="card"><h3>Card 3</h3><p>Content for card three.</p></div>
+                <div class="card"><h3>Card 4</h3><p>Content for card four.</p></div>
+            </div></body></html>"#.to_string(),
+            css: r#".cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 16px; background: #f5f6fa; }
+                     .card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+                     .card h3 { margin: 0 0 8px 0; color: #2d3436; }
+                     .card p { margin: 0; color: #636e72; font-size: 14px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 圣杯布局 ──
+        TestCase {
+            id: "css-layout/holy-grail".to_string(),
+            description: "CSS Grid 圣杯布局".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="layout">
+                <header>Header</header>
+                <nav>Navigation</nav>
+                <main>Main Content Area</main>
+                <aside>Sidebar</aside>
+                <footer>Footer</footer>
+            </div></body></html>"#.to_string(),
+            css: r#".layout { display: grid; grid-template-areas: "header header header" "nav main aside" "footer footer footer"; grid-template-columns: 150px 1fr 150px; grid-template-rows: 50px 1fr 40px; gap: 5px; height: 400px; }
+                     header { grid-area: header; background: #2d3436; color: white; padding: 10px; }
+                     nav { grid-area: nav; background: #dfe6e9; padding: 10px; }
+                     main { grid-area: main; background: #ffffff; padding: 10px; }
+                     aside { grid-area: aside; background: #ffeaa7; padding: 10px; }
+                     footer { grid-area: footer; background: #636e72; color: white; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── Flexbox 粘性页脚 ──
+        TestCase {
+            id: "css-layout/flex-sticky-footer".to_string(),
+            description: "Flexbox 粘性页脚模式".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="page">
+                <header>Page Header</header>
+                <main>Main content that pushes footer down.</main>
+                <footer>Sticky Footer</footer>
+            </div></body></html>"#.to_string(),
+            css: r#".page { display: flex; flex-direction: column; height: 400px; }
+                     header { background: #0984e3; color: white; padding: 15px; }
+                     main { flex: 1; background: #f5f6fa; padding: 15px; }
+                     footer { background: #2d3436; color: white; padding: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 定位边缘情况
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 绝对定位叠放 ──
+        TestCase {
+            id: "css-layout/absolute-stacking".to_string(),
+            description: "绝对定位元素 z-index 叠放".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="container">
+                <div class="box bottom">Bottom (z:1)</div>
+                <div class="box middle">Middle (z:2)</div>
+                <div class="box top">Top (z:3)</div>
+            </div></body></html>"#.to_string(),
+            css: r#".container { position: relative; width: 300px; height: 200px; background: #f0f0f0; }
+                     .box { position: absolute; width: 150px; height: 100px; color: white; padding: 10px; }
+                     .bottom { top: 0; left: 0; background: rgba(231, 76, 60, 0.8); z-index: 1; }
+                     .middle { top: 30px; left: 50px; background: rgba(46, 204, 113, 0.8); z-index: 2; }
+                     .top { top: 60px; left: 100px; background: rgba(52, 152, 219, 0.8); z-index: 3; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── fixed 定位导航栏 ──
+        TestCase {
+            id: "css-layout/fixed-navbar".to_string(),
+            description: "fixed 定位导航栏".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+                <nav class="navbar">Fixed Navigation Bar</nav>
+                <div class="content">
+                    <p>Content line 1</p><p>Content line 2</p>
+                    <p>Content line 3</p><p>Content line 4</p>
+                </div>
+            </body></html>"#.to_string(),
+            css: r#".navbar { position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: #2c3e50; color: white; padding: 10px; z-index: 100; }
+                     .content { padding-top: 70px; background: #ecf0f1; min-height: 300px; }
+                     p { margin: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 变换与渐变组合
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── transform 旋转 + 平移组合 ──
+        TestCase {
+            id: "css-layout/transform-combine".to_string(),
+            description: "transform 旋转和平移组合".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><div class="container">
+                <div class="box rotate">Rotated 45deg</div>
+                <div class="box translate">Translated</div>
+                <div class="box both">Both</div>
+            </div></body></html>"#.to_string(),
+            css: r#".container { display: flex; gap: 60px; padding: 40px; justify-content: center; align-items: center; height: 300px; background: #f8f9fa; }
+                     .box { width: 100px; height: 100px; background: #e74c3c; color: white; display: flex; align-items: center; justify-content: center; }
+                     .rotate { transform: rotate(45deg); }
+                     .translate { transform: translateX(20px) translateY(10px); background: #3498db; }
+                     .both { transform: rotate(-15deg) translateX(30px); background: #2ecc71; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 渐变背景组合 ──
+        TestCase {
+            id: "css-layout/gradient-combinations".to_string(),
+            description: "多种渐变背景组合".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+                <div class="linear">Linear Gradient</div>
+                <div class="radial">Radial Gradient</div>
+            </body></html>"#.to_string(),
+            css: r#".linear { width: 300px; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px; margin: 10px; }
+                     .radial { width: 300px; height: 100px; background: radial-gradient(circle, #f093fb 0%, #f5576c 100%); color: white; padding: 10px; margin: 10px; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  文本排版边缘情况
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 混合字号行内元素 ──
+        TestCase {
+            id: "css-layout/mixed-font-sizes-inline".to_string(),
+            description: "混合字号行内元素排版".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body><p class="text">Normal text <span class="big">BIG text</span> normal <span class="small">small text</span> normal.</p></body></html>"#.to_string(),
+            css: r#".text { font-size: 16px; line-height: 1.5; padding: 10px; background: #fff3e0; }
+                     .big { font-size: 32px; font-weight: bold; color: #e74c3c; }
+                     .small { font-size: 10px; color: #7f8c8d; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 长单词换行测试 ──
+        TestCase {
+            id: "css-layout/long-word-wrapping".to_string(),
+            description: "长单词换行行为测试".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+                <div class="box break-all">Superlongwordthatdoesnotfitinonelinebreakall</div>
+                <div class="box break-word">Superlongwordthatdoesnotfitinonelinebreakword</div>
+            </body></html>"#.to_string(),
+            css: r#".box { width: 120px; padding: 8px; margin: 10px; background: #e8f5e9; border: 1px solid #81c784; }
+                     .break-all { word-break: break-all; }
+                     .break-word { overflow-wrap: break-word; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── text-align 多种对齐 ──
+        TestCase {
+            id: "css-layout/text-align-modes".to_string(),
+            description: "text-align 多种对齐模式".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+                <p class="left">Left aligned text.</p>
+                <p class="center">Center aligned text.</p>
+                <p class="right">Right aligned text.</p>
+                <p class="justify">Justified text that spans across the full width of the container.</p>
+            </body></html>"#.to_string(),
+            css: r#"p { width: 300px; padding: 8px; margin: 5px; background: #e3f2fd; }
+                     .left { text-align: left; }
+                     .center { text-align: center; }
+                     .right { text-align: right; }
+                     .justify { text-align: justify; }"#.to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
