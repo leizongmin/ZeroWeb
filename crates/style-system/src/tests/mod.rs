@@ -7,6 +7,7 @@ mod basic;
 mod coverage_round3;
 mod edge;
 mod helpers;
+mod inline_style;
 mod matcher_coverage;
 mod matcher_coverage2;
 mod matcher_coverage3;

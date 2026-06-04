@@ -616,9 +616,8 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
-                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
                 "dom_has_text".to_string(),
-                "nonzero_primitives".to_string(),
             ],
         },
         // ═══════════════════════════════════════════════════════════════
@@ -647,7 +646,7 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
-                "layout_has_children".to_string(),
+                "has_fill_primitives".to_string(),
             ],
         },
     ]
