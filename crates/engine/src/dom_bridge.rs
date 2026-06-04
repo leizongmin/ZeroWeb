@@ -329,7 +329,7 @@ fn extract_string_arg(input: &str) -> Option<String> {
 
     // 找到结束引号
     let end = input[1..].find(quote_char)?;
-    let result = input[1..=end].to_string();
+    let result = input[1..1 + end].to_string();
 
     // 验证后面跟着 )
     let rest = input[end + 2..].trim();
@@ -1236,13 +1236,155 @@ pub fn generate_dom_api_polyfill() -> String {
     oncontrollerchange: null,
     onmessage: null
   };
+
+  // ── Web Worker API Stub ──
+  // Provides the Dedicated Worker constructor (new Worker()).
+  // In this polyfill environment, Workers execute synchronously in the same thread.
+  // Real implementations would use separate V8 isolates or processes.
+
+  function Worker(scriptURL, options) {
+    if (!scriptURL || typeof scriptURL !== 'string') {
+      throw new TypeError('Worker: scriptURL is required and must be a string');
+    }
+    this._scriptURL = scriptURL;
+    this._options = options || {};
+    this._terminated = false;
+    this._listeners = {};
+    this.onerror = null;
+    this.onmessage = null;
+
+    // Simulate worker script loading
+    var self = this;
+    setTimeout(function() {
+      if (self._terminated) return;
+      // In a real implementation, the script would be loaded and executed
+      // in a separate context. Here we just simulate the ready state.
+    }, 0);
+  }
+
+  Worker.prototype.postMessage = function(message, transfer) {
+    if (this._terminated) {
+      throw new Error('Cannot postMessage to a terminated Worker');
+    }
+    // In a real implementation, this would serialize the message and
+    // send it to the worker thread. Here we store it for testing.
+    this._lastMessage = message;
+    this._lastTransfer = transfer;
+
+    // Trigger onmessage if set (simulating echo behavior for testing)
+    var self = this;
+    if (self.onmessage) {
+      setTimeout(function() {
+        if (!self._terminated && self.onmessage) {
+          self.onmessage({ data: message });
+        }
+      }, 0);
+    }
+    // Dispatch to listeners
+    if (this._listeners['message']) {
+      var listeners = this._listeners['message'].slice();
+      setTimeout(function() {
+        if (!self._terminated) {
+          for (var i = 0; i < listeners.length; i++) {
+            listeners[i]({ data: message });
+          }
+        }
+      }, 0);
+    }
+  };
+
+  Worker.prototype.terminate = function() {
+    this._terminated = true;
+    this._listeners = {};
+    this.onmessage = null;
+    this.onerror = null;
+  };
+
+  Worker.prototype.addEventListener = function(type, listener) {
+    if (!this._listeners[type]) this._listeners[type] = [];
+    this._listeners[type].push(listener);
+  };
+
+  Worker.prototype.removeEventListener = function(type, listener) {
+    if (!this._listeners[type]) return;
+    var idx = this._listeners[type].indexOf(listener);
+    if (idx >= 0) this._listeners[type].splice(idx, 1);
+  };
+
+  Worker.prototype.dispatchEvent = function(event) {
+    // Dispatch to on-type handler first, then listeners
+    var type = event.type || event;
+    var handler = this['on' + type];
+    if (typeof handler === 'function') handler(event);
+    if (this._listeners[type]) {
+      var listeners = this._listeners[type].slice();
+      for (var i = 0; i < listeners.length; i++) listeners[i](event);
+    }
+    return true;
+  };
+
+  globalThis.Worker = Worker;
+
+  // ── ES Module Support Stub ──
+  // Provides import() dynamic import and module-related globals.
+  // Real ES Module loading requires the network stack and module resolution.
+
+  // Dynamic import() — returns a Promise that resolves to a module namespace.
+  // In polyfill mode, returns an empty module namespace object.
+  globalThis.import = function(specifier) {
+    if (typeof specifier !== 'string') {
+      return Promise.reject(new TypeError('import() requires a module specifier string'));
+    }
+    // Simulate async module loading
+    return new Promise(function(resolve, reject) {
+      setTimeout(function() {
+        // In a real implementation, this would:
+        // 1. Resolve the specifier to a URL
+        // 2. Fetch the module source
+        // 3. Parse and compile the module
+        // 4. Execute the module and return its namespace
+        //
+        // For the polyfill, return a namespace-like object
+        // that records the import for testing purposes.
+        resolve({
+          __esModule: true,
+          __importedFrom: specifier,
+          default: undefined
+        });
+      }, 0);
+    });
+  };
+
+  // import.meta — available in ES Module context.
+  // In polyfill mode, provide a basic stub.
+  // Note: import.meta is only available inside <script type="module">
+  // and cannot be polyfilled in classic scripts, but we provide it
+  // for feature detection purposes.
+  if (typeof globalThis.importMeta === 'undefined') {
+    Object.defineProperty(globalThis, 'importMeta', {
+      get: function() {
+        return {
+          url: (typeof globalThis.location !== 'undefined' && globalThis.location.href)
+            || 'about:blank',
+          resolve: function(specifier) {
+            // Basic URL resolution stub
+            return specifier;
+          }
+        };
+      },
+      configurable: true
+    });
+  }
+
 })();
 "#
-    .to_string()
+        .to_string()
 }
 
 #[cfg(test)]
 #[path = "dom_bridge_tests.rs"]
 mod dom_bridge_tests;
 
-// Extended tests are moved to the tests module
+#[cfg(test)]
+#[path = "dom_bridge_extended_tests.rs"]
+mod dom_bridge_extended_tests;
