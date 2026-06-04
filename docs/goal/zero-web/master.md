@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,815 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 418 个用例（12 个分类，408 通过率 97.6%），Web Workers 和 ES Modules 支持已实现
+**执行状态**: 16/16 crate 已实现，10,850 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 418 个用例（12 个分类，408 通过率 97.6%），Web Workers 和 ES Modules 支持已实现
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,815 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 10,850 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -102,6 +102,17 @@
 ---
 
 ## 最近完成的改进
+
+### -71. CSS 属性管线集成测试 + WPT 精确布局断言（本轮，10,850 测试）
+
+新增 CSS 属性端到端管线集成测试和 WPT runner 精确布局几何断言：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| integration/cross_crate_pipeline/css_properties | **CSS 属性管线集成测试**：Grid 高级（auto-rows/template/span）、Flexbox 高级（order/flex-basis/align-self）、文本属性（text-overflow/word-break/white-space/text-decoration）、间距（gap/border/border-radius）、尺寸约束（min-max/calc/viewport units）、CSS 变量（complex/fallback）、@media/@supports、定位（sticky/absolute/fixed）、颜色（rgba/hsl）、字体（shorthand/line-height）、逻辑属性、交互属性、过滤器、综合布局（responsive card/holy grail） | +35 |
+| WPT runner / mod.rs | **精确布局断言系统**：`layout_child_count_ge:N`（最小子元素数）、`layout_depth_ge:N`（最小树深度）、`layout_root_fills_viewport`（根元素匹配视口）、`layout_has_sized_children`（非零尺寸子盒）、`layout_children_non_overlapping`（同级不重叠） | — |
+
+Tests: 10,815 → 10,850 (+35), clippy clean.
 
 ### -70. WPT 测试套件扩展至 418 用例（本轮，10,815 测试）
 
@@ -1421,9 +1432,9 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 320 用例。**Web Workers（Dedicated Worker）已实现（script-sandbox WorkerRuntime + WebView 集成）**。**ES Modules 已实现（EsModuleSandbox + ModuleRegistry）** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 418 用例（12 分类，97.6% 通过率）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
 | 4. 性能基准体系 | ✅/❌ | 77 个 criterion 基准覆盖所有 crate。缺少：中等复杂度页面首屏 < 2s 验证、增量渲染 < 20% 验证、GPU 加速验证（均需 GPU/Display） |
-| 5. 单元测试与质量 | ✅ | 10,811 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
+| 5. 单元测试与质量 | ✅ | 10,850 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **主要阻塞项**（需 GPU/Display 桌面环境）：
