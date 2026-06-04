@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,709 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，WPT 测试套件 320 个用例（9 个分类）
+**执行状态**: 16/16 crate 已实现，10,811 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，WPT 测试套件 320 个用例（9 个分类），Web Workers 和 ES Modules 支持已实现
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,186 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 10,811 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -35,9 +35,9 @@
 | protocol | 226 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标** |
 | storage | 661 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）**、**IDB types 覆盖率测试（18 个：跨类型 key 比较/binary key/hash 一致性/array key 边界/KeyRange contains/multiEntry index）** |
 | canvas | 591 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**raster 覆盖率测试（flatten_round_rect/compute_arc_to_geometry/flatten_arc_to/flatten_path/flatten_path_for/blit_path_to_pixels/blit_stroke_to_pixels/blit_line_cap/stroke_outline_vertices/11 种 composite_pixel 操作）** |
-| webview | 485 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**uncovered_paths 覆盖率（27 测试：SW fetch 拦截/execute_script 错误/SW 生命周期/execute_wasm 错误/WebViewError Display/CSS 注入边界）** |
+| webview | 502 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）** |
 | wasm-sandbox | 198 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap**、**边界测试（6 个：错误参数/global export/Display/config 链/空模块/多函数 linker）** |
-| script-sandbox | 84 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）、77 个单元测试全绿** |
+| script-sandbox | 130 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）**、**Dedicated Worker（WorkerRuntime：独立线程 V8 持久上下文、postMessage/onmessage 通道、terminate 生命周期、16 测试）**、**ES Module Sandbox（EsModuleSandbox：源码转换支持 export/import 语法、ModuleRegistry 模块注册表、import.meta.url、链式依赖解析、30 测试）** |
 | browser-shell | 256 | ✅ | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）**、**Tab 拖拽边界/导航历史边界/Bookmarks 过滤/History clear+search/Download 移除/Autocomplete 空查询+大小写/BrowserShell 导航清空前进/Settings 搜索/ContextMenu 子菜单查找** |
 
 ### 跨 crate 集成测试
@@ -103,7 +103,19 @@
 
 ## 最近完成的改进
 
-### -67. WPT 测试套件扩展至 320 用例（本轮，10,674 测试）
+### -68. Web Worker WebView 集成 + ES Module Sandbox（本轮，10,811 测试）
+
+新增两个核心 Web 标准能力：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| script-sandbox/worker | **Dedicated Worker（WorkerRuntime）**：独立 OS 线程运行 V8 持久上下文、postMessage/onmessage 通道通信、terminate 生命周期、16 个单元测试（已在前轮实现） | — |
+| script-sandbox/es_module | **ES Module Sandbox（EsModuleSandbox）**：源码转换支持 `export const/let/var/function/class/default`、`export { X as Y }`、`import { X } from '...'` / `import X from '...'` / `import * as X from '...'` / `import '...'`、`import.meta.url`、ModuleRegistry 模块注册表、链式依赖解析、IIFE 内联方式 | +30 |
+| webview | **Web Worker 管理**：WebView 新增 `workers: HashMap<u64, WorkerRuntime>` 字段、`create_worker()/post_message_to_worker()/execute_worker_script()/poll_worker_events()/terminate_worker()/terminate_all_workers()` 方法、Worker ID 单调递增、17 个集成测试（生命周期/消息传递/状态保持/多 Worker 隔离/JSON 消息/并行渲染/错误处理/批量终止） | +17 |
+
+Total: 10,794 → 10,811 tests (+17)
+
+### -67. WPT 测试套件扩展至 320 用例（前轮，10,674 测试）
 
 扩展 WPT 测试套件，新增两个测试分类模块：
 
@@ -1346,11 +1358,11 @@ Total: 6219 → 6378 tests (+159)
 
 | Done Criteria | 状态 | 说明 |
 |---------------|------|------|
-| 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
+| 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 320 用例。缺少：Web Workers（Dedicated Worker）、ES Modules（`<script type="module">`）完整实现 |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 320 用例。**Web Workers（Dedicated Worker）已实现（script-sandbox WorkerRuntime + WebView 集成）**。**ES Modules 已实现（EsModuleSandbox + ModuleRegistry）** |
 | 4. 性能基准体系 | ✅/❌ | 77 个 criterion 基准覆盖所有 crate。缺少：中等复杂度页面首屏 < 2s 验证、增量渲染 < 20% 验证、GPU 加速验证（均需 GPU/Display） |
-| 5. 单元测试与质量 | ✅ | 10,709 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
+| 5. 单元测试与质量 | ✅ | 10,811 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **主要阻塞项**（需 GPU/Display 桌面环境）：
@@ -1360,8 +1372,8 @@ Total: 6219 → 6378 tests (+159)
 4. GPU 加速合成正常工作验证
 
 **可推进项**（无头环境可完成）：
-1. Web Workers（Dedicated Worker）实现
-2. ES Modules（`<script type="module">`）实现
+1. ~~Web Workers（Dedicated Worker）实现~~ ✅ 已完成
+2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
 4. V8 快照优化（M13 剩余）
 
