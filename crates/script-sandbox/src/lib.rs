@@ -13,7 +13,13 @@
 mod v8_runtime;
 
 #[cfg(feature = "v8")]
+mod worker;
+
+#[cfg(feature = "v8")]
 pub use v8_runtime::*;
+
+#[cfg(feature = "v8")]
+pub use worker::*;
 
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 mod quickjs_runtime;
