@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,850 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 418 个用例（12 个分类，418 通过率 100%），Web Workers 和 ES Modules 支持已实现
+**执行状态**: 16/16 crate 已实现，10,869 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 441 个用例（13 个分类，含精确几何测试），Web Workers 和 ES Modules 支持已实现，浏览器质量测试体系 P0 已启动
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,850 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 10,869 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -102,6 +102,21 @@
 ---
 
 ## 最近完成的改进
+
+### -72. 浏览器质量测试体系 P0：布局快照 + 精确几何断言 + 内联样式（本轮，10,869 测试）
+
+启动浏览器质量测试体系 P0（无头质量信号），新增布局/图元快照序列化、精确几何断言系统和内联样式解析：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| layout-engine/types | **LayoutResult::snapshot()**：稳定的文本快照序列化，包含位置/尺寸/border/padding/margin/定位标志；**LayoutBox::nth_box()**：按深度优先序号查找盒子；**LayoutBox::count_boxes()**：统计节点总数 | +5 |
+| render-foundation/primitive | **RenderPrimitives::snapshot()**：稳定的文本快照，逐图元输出几何和颜色 | — |
+| WPT runner | **15 种精确几何断言**：layout_box_count_ge、layout_nth_size、layout_nth_pos、layout_nth_width_ge/height_ge、fill_count/count_ge、glyph_count_ge、stroke_count_ge、gradient_count_ge、shadow_count_ge、total_primitive_count_ge | — |
+| WPT runner/geometry | **23 个精确几何测试用例**（新 `geometry` 分类）：块级布局、盒模型、Flexbox、Grid、定位、内联样式、渲染图元、综合布局、显示和可见性 | +23 |
+| style-system | **内联样式解析**：parse_inline_style() 解析 HTML style 属性，集成到 compute_element_style 级联（(1,0,0) 特异性） | +10 |
+
+WPT 测试套件: 418 → 441 用例（+23, 13 个分类模块）
+Tests: 10,864 → 10,869 (+5 单元测试), clippy clean.
 
 ### -71. CSS 属性管线集成测试 + WPT 精确布局断言（本轮，10,850 测试）
 
@@ -1386,7 +1401,7 @@ Total: 6219 → 6378 tests (+159)
 2. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 3. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
 4. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-5. **浏览器质量测试体系**（高优先级，无头优先推进）— 从当前 smoke 型 WPT runner 推进到标准合规、渲染正确性、真实站点、安全、运行时、导航、性能、平台和产品层测试
+5. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ⬜ 最小 reftest harness ⬜ WPT CSS/layout 真实子集 ⬜ expected metadata
 
 ## 浏览器质量测试体系推进计划
 

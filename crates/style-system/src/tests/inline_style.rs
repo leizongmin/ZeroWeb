@@ -2,8 +2,8 @@
 //!
 //! 验证 HTML 元素 style 属性的解析和样式计算管线。
 
-use super::helpers::*;
 use super::super::*;
+use super::helpers::*;
 use zero_css_parser::Parser as CssParser;
 use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, OverflowValue, PositionValue};
 
@@ -40,7 +40,11 @@ fn test_inline_style_color() {
     let mut sys = StyleSystem::new();
     let style = sys.compute_element_style(&doc, div, &[], None);
     // 蓝色 rgba(0,0,255,255)
-    assert_ne!(style.color, ColorValue::Rgba(0, 0, 0, 0), "color should not be transparent");
+    assert_ne!(
+        style.color,
+        ColorValue::Rgba(0, 0, 0, 0),
+        "color should not be transparent"
+    );
 }
 
 #[test]

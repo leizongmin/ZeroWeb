@@ -400,6 +400,105 @@ impl RenderPrimitives {
             None
         }
     }
+
+    /// 生成稳定的文本快照，用于测试对比。
+    ///
+    /// 输出每行一个图元，坐标精度固定为 2 位小数。
+    /// 格式: `<类型>: <关键几何属性> <颜色>`
+    pub fn snapshot(&self) -> String {
+        let mut buf = String::new();
+        for (i, clip) in self.clips.iter().enumerate() {
+            buf.push_str(&format!(
+                "clip[{}]: ({:.2},{:.2} {:.2}x{:.2})\n",
+                i, clip.rect.origin.x, clip.rect.origin.y, clip.rect.size.width, clip.rect.size.height,
+            ));
+        }
+        for (i, fill) in self.fills.iter().enumerate() {
+            buf.push_str(&format!(
+                "fill[{}]: ({:.2},{:.2} {:.2}x{:.2}) #{:02x}{:02x}{:02x}{:02x}\n",
+                i,
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a,
+            ));
+        }
+        for (i, rr) in self.rounded_rects.iter().enumerate() {
+            buf.push_str(&format!(
+                "rounded[{}]: ({:.2},{:.2} {:.2}x{:.2}) r=({:.2},{:.2},{:.2},{:.2}) #{:02x}{:02x}{:02x}{:02x}\n",
+                i,
+                rr.rect.origin.x,
+                rr.rect.origin.y,
+                rr.rect.size.width,
+                rr.rect.size.height,
+                rr.top_left_radius,
+                rr.top_right_radius,
+                rr.bottom_right_radius,
+                rr.bottom_left_radius,
+                rr.color.r,
+                rr.color.g,
+                rr.color.b,
+                rr.color.a,
+            ));
+        }
+        for (i, stroke) in self.strokes.iter().enumerate() {
+            buf.push_str(&format!(
+                "stroke[{}]: ({:.2},{:.2})->({:.2},{:.2}) w={:.2} #{:02x}{:02x}{:02x}{:02x}\n",
+                i,
+                stroke.x1,
+                stroke.y1,
+                stroke.x2,
+                stroke.y2,
+                stroke.width,
+                stroke.color.r,
+                stroke.color.g,
+                stroke.color.b,
+                stroke.color.a,
+            ));
+        }
+        for (i, grad) in self.gradients.iter().enumerate() {
+            buf.push_str(&format!(
+                "gradient[{}]: ({:.2},{:.2} {:.2}x{:.2}) stops={}\n",
+                i,
+                grad.rect.origin.x,
+                grad.rect.origin.y,
+                grad.rect.size.width,
+                grad.rect.size.height,
+                grad.stops.len(),
+            ));
+        }
+        for (i, shadow) in self.shadows.iter().enumerate() {
+            buf.push_str(&format!(
+                "shadow[{}]: ({:.2},{:.2} {:.2}x{:.2}) offset=({:.2},{:.2}) blur={:.2} spread={:.2}\n",
+                i,
+                shadow.rect.origin.x,
+                shadow.rect.origin.y,
+                shadow.rect.size.width,
+                shadow.rect.size.height,
+                shadow.offset_x,
+                shadow.offset_y,
+                shadow.blur_radius,
+                shadow.spread_radius,
+            ));
+        }
+        for (i, img) in self.images.iter().enumerate() {
+            buf.push_str(&format!(
+                "image[{}]: ({:.2},{:.2} {:.2}x{:.2}) key={}\n",
+                i, img.rect.origin.x, img.rect.origin.y, img.rect.size.width, img.rect.size.height, img.image_key.0,
+            ));
+        }
+        for (i, glyph) in self.glyphs.iter().enumerate() {
+            buf.push_str(&format!(
+                "glyph[{}]: ({:.2},{:.2}) size={:.2}\n",
+                i, glyph.x, glyph.y, glyph.font_size,
+            ));
+        }
+        buf
+    }
 }
 
 #[cfg(test)]

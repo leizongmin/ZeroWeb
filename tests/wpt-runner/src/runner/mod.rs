@@ -192,6 +192,87 @@ fn check_assertion(name: &str, output: &RenderOutput) -> Result<(), String> {
         "layout_has_sized_children" => assert_layout_has_sized_children(output),
         // 布局断言：子盒之间没有重叠（排除 display:none）
         "layout_children_non_overlapping" => assert_layout_children_non_overlapping(output),
+        // 精确布局断言：layout_box_count_ge:N — 总节点数 >= N
+        _ if name.starts_with("layout_box_count_ge:") => {
+            let n = name
+                .strip_prefix("layout_box_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_layout_box_count_ge(output, n)
+        }
+        // 精确布局断言：layout_nth_size:IDX:WxH — 第 N 个盒子尺寸匹配
+        _ if name.starts_with("layout_nth_size:") => {
+            parse_layout_nth_size(name).and_then(|(idx, w, h)| assert_layout_nth_size(output, idx, w, h))
+        }
+        // 精确布局断言：layout_nth_pos:IDX:X,Y — 第 N 个盒子位置匹配
+        _ if name.starts_with("layout_nth_pos:") => {
+            parse_layout_nth_pos(name).and_then(|(idx, x, y)| assert_layout_nth_pos(output, idx, x, y))
+        }
+        // 精确布局断言：layout_nth_width_ge:IDX:N — 第 N 个盒子宽度 >= N
+        _ if name.starts_with("layout_nth_width_ge:") => parse_layout_nth_float_ge(name, "layout_nth_width_ge:")
+            .and_then(|(idx, min_w)| assert_layout_nth_width_ge(output, idx, min_w)),
+        // 精确布局断言：layout_nth_height_ge:IDX:N — 第 N 个盒子高度 >= N
+        _ if name.starts_with("layout_nth_height_ge:") => parse_layout_nth_float_ge(name, "layout_nth_height_ge:")
+            .and_then(|(idx, min_h)| assert_layout_nth_height_ge(output, idx, min_h)),
+        // 精确图元断言：fill_count:N — 填充图元精确数量
+        _ if name.starts_with("fill_count:") => {
+            let n = name
+                .strip_prefix("fill_count:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_fill_count(output, n)
+        }
+        // 精确图元断言：fill_count_ge:N — 填充图元数量 >= N
+        _ if name.starts_with("fill_count_ge:") => {
+            let n = name
+                .strip_prefix("fill_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_fill_count_ge(output, n)
+        }
+        // 精确图元断言：glyph_count_ge:N — 字形图元数量 >= N
+        _ if name.starts_with("glyph_count_ge:") => {
+            let n = name
+                .strip_prefix("glyph_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_glyph_count_ge(output, n)
+        }
+        // 精确图元断言：stroke_count_ge:N — 描边图元数量 >= N
+        _ if name.starts_with("stroke_count_ge:") => {
+            let n = name
+                .strip_prefix("stroke_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_stroke_count_ge(output, n)
+        }
+        // 精确图元断言：gradient_count_ge:N — 渐变图元数量 >= N
+        _ if name.starts_with("gradient_count_ge:") => {
+            let n = name
+                .strip_prefix("gradient_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_gradient_count_ge(output, n)
+        }
+        // 精确图元断言：shadow_count_ge:N — 阴影图元数量 >= N
+        _ if name.starts_with("shadow_count_ge:") => {
+            let n = name
+                .strip_prefix("shadow_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_shadow_count_ge(output, n)
+        }
+        // 精确图元断言：total_primitive_count_ge:N — 总图元数量 >= N
+        _ if name.starts_with("total_primitive_count_ge:") => {
+            let n = name
+                .strip_prefix("total_primitive_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_total_primitive_count_ge(output, n)
+        }
+        // 快照断言：layout_snapshot — 生成布局快照到失败消息（调试用）
+        "layout_snapshot" => Ok(()),
+        "primitive_snapshot" => Ok(()),
         _ => Err(format!("Unknown assertion: {name}")),
     }
 }
@@ -476,6 +557,188 @@ fn assert_layout_children_non_overlapping(output: &RenderOutput) -> Result<(), S
     Ok(())
 }
 
+// ── 精确几何断言 ─────────────────────────────────────────────────
+
+fn assert_layout_box_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.layout.root.count_boxes();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("Layout tree has {count} boxes (expected >= {min})"))
+    }
+}
+
+fn parse_layout_nth_size(name: &str) -> Result<(usize, f32, f32), String> {
+    // Format: layout_nth_size:IDX:WxH
+    let rest = name.strip_prefix("layout_nth_size:").ok_or("bad prefix")?;
+    let parts: Vec<&str> = rest.split(':').collect();
+    if parts.len() != 2 {
+        return Err(format!("Invalid format, expected layout_nth_size:IDX:WxH, got {name}"));
+    }
+    let idx = parts[0].parse::<usize>().map_err(|e| e.to_string())?;
+    let dims: Vec<&str> = parts[1].split('x').collect();
+    if dims.len() != 2 {
+        return Err(format!("Invalid dims format, expected WxH, got {}", parts[1]));
+    }
+    let w = dims[0].parse::<f32>().map_err(|e| e.to_string())?;
+    let h = dims[1].parse::<f32>().map_err(|e| e.to_string())?;
+    Ok((idx, w, h))
+}
+
+fn assert_layout_nth_size(output: &RenderOutput, idx: usize, expected_w: f32, expected_h: f32) -> Result<(), String> {
+    match output.layout.root.nth_box(idx) {
+        Some((_x, _y, w, h)) => {
+            let tol = 1.0;
+            if (w - expected_w).abs() > tol {
+                return Err(format!("Box[{idx}] width={w:.2} expected={expected_w:.2} (tol={tol})"));
+            }
+            if (h - expected_h).abs() > tol {
+                return Err(format!("Box[{idx}] height={h:.2} expected={expected_h:.2} (tol={tol})"));
+            }
+            Ok(())
+        }
+        None => Err(format!(
+            "Box[{idx}] not found (only {} boxes)",
+            output.layout.root.count_boxes()
+        )),
+    }
+}
+
+fn parse_layout_nth_pos(name: &str) -> Result<(usize, f32, f32), String> {
+    let rest = name.strip_prefix("layout_nth_pos:").ok_or("bad prefix")?;
+    let parts: Vec<&str> = rest.split(':').collect();
+    if parts.len() != 2 {
+        return Err(format!("Invalid format, expected layout_nth_pos:IDX:X,Y, got {name}"));
+    }
+    let idx = parts[0].parse::<usize>().map_err(|e| e.to_string())?;
+    let coords: Vec<&str> = parts[1].split(',').collect();
+    if coords.len() != 2 {
+        return Err(format!("Invalid coords format, expected X,Y, got {}", parts[1]));
+    }
+    let x = coords[0].parse::<f32>().map_err(|e| e.to_string())?;
+    let y = coords[1].parse::<f32>().map_err(|e| e.to_string())?;
+    Ok((idx, x, y))
+}
+
+fn assert_layout_nth_pos(output: &RenderOutput, idx: usize, expected_x: f32, expected_y: f32) -> Result<(), String> {
+    match output.layout.root.nth_box(idx) {
+        Some((x, y, _w, _h)) => {
+            let tol = 1.0;
+            if (x - expected_x).abs() > tol {
+                return Err(format!("Box[{idx}] x={x:.2} expected={expected_x:.2} (tol={tol})"));
+            }
+            if (y - expected_y).abs() > tol {
+                return Err(format!("Box[{idx}] y={y:.2} expected={expected_y:.2} (tol={tol})"));
+            }
+            Ok(())
+        }
+        None => Err(format!(
+            "Box[{idx}] not found (only {} boxes)",
+            output.layout.root.count_boxes()
+        )),
+    }
+}
+
+fn parse_layout_nth_float_ge(name: &str, prefix: &str) -> Result<(usize, f32), String> {
+    let rest = name.strip_prefix(prefix).ok_or("bad prefix")?;
+    let parts: Vec<&str> = rest.split(':').collect();
+    if parts.len() != 2 {
+        return Err(format!("Invalid format, expected {prefix}IDX:N, got {name}"));
+    }
+    let idx = parts[0].parse::<usize>().map_err(|e| e.to_string())?;
+    let min_val = parts[1].parse::<f32>().map_err(|e| e.to_string())?;
+    Ok((idx, min_val))
+}
+
+fn assert_layout_nth_width_ge(output: &RenderOutput, idx: usize, min_w: f32) -> Result<(), String> {
+    match output.layout.root.nth_box(idx) {
+        Some((_x, _y, w, _h)) => {
+            if w >= min_w {
+                Ok(())
+            } else {
+                Err(format!("Box[{idx}] width={w:.2} (expected >= {min_w})"))
+            }
+        }
+        None => Err(format!("Box[{idx}] not found")),
+    }
+}
+
+fn assert_layout_nth_height_ge(output: &RenderOutput, idx: usize, min_h: f32) -> Result<(), String> {
+    match output.layout.root.nth_box(idx) {
+        Some((_x, _y, _w, h)) => {
+            if h >= min_h {
+                Ok(())
+            } else {
+                Err(format!("Box[{idx}] height={h:.2} (expected >= {min_h})"))
+            }
+        }
+        None => Err(format!("Box[{idx}] not found")),
+    }
+}
+
+fn assert_fill_count(output: &RenderOutput, expected: usize) -> Result<(), String> {
+    let count = output.primitives.fills.len();
+    if count == expected {
+        Ok(())
+    } else {
+        Err(format!("fill count={count} (expected {expected})"))
+    }
+}
+
+fn assert_fill_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.fills.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("fill count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_glyph_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.glyphs.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("glyph count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_stroke_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.strokes.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("stroke count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_gradient_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.gradients.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("gradient count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_shadow_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.shadows.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("shadow count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_total_primitive_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("total primitive count={count} (expected >= {min})"))
+    }
+}
+
 mod test_cases;
 
 // 重新导出 builtin_tests 以保持公共 API 不变
@@ -606,6 +869,7 @@ mod tests {
             "css-layout",
             "canvas",
             "storage",
+            "geometry",
         ];
         for t in &tests {
             assert!(
