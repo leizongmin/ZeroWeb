@@ -97,6 +97,55 @@ impl HeadlessSession {
     }
 }
 
+// ── 安全配置（Phase 5）──
+
+/// 无头协议安全配置。
+#[derive(Default)]
+pub struct HeadlessSecurityConfig {
+    /// 认证令牌。如果设置，客户端必须在第一个请求中包含 `token` 字段。
+    pub auth_token: Option<String>,
+    /// 允许的 Origin 列表。如果为空，允许所有来源。
+    pub allowed_origins: Vec<String>,
+}
+
+impl HeadlessSecurityConfig {
+    /// 创建空安全配置（无限制）。
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 设置认证令牌。
+    #[allow(dead_code)]
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.auth_token = Some(token.into());
+        self
+    }
+
+    /// 添加允许的 Origin。
+    #[allow(dead_code)]
+    pub fn with_origin(mut self, origin: impl Into<String>) -> Self {
+        self.allowed_origins.push(origin.into());
+        self
+    }
+
+    /// 验证认证令牌。
+    pub fn verify_token(&self, provided: Option<&str>) -> bool {
+        match &self.auth_token {
+            None => true,
+            Some(expected) => provided.is_some_and(|p| p == expected),
+        }
+    }
+
+    /// 验证 WebSocket 请求的 Origin 头。
+    pub fn verify_origin(&self, origin: Option<&str>) -> bool {
+        if self.allowed_origins.is_empty() {
+            return true;
+        }
+        origin.is_some_and(|o| self.allowed_origins.iter().any(|a| a == o))
+    }
+}
+
 // ── 协议服务器 ──
 
 /// 无头协议服务器。
@@ -109,6 +158,8 @@ pub struct HeadlessServer {
     viewport_width: f32,
     /// 视口高度。
     viewport_height: f32,
+    /// 安全配置（Phase 5）。
+    security: HeadlessSecurityConfig,
 }
 
 impl HeadlessServer {
@@ -120,7 +171,15 @@ impl HeadlessServer {
             next_session_id: Arc::new(AtomicU64::new(1)),
             viewport_width,
             viewport_height,
+            security: HeadlessSecurityConfig::default(),
         }
+    }
+
+    /// 设置安全配置。
+    #[allow(dead_code)]
+    pub fn with_security(mut self, config: HeadlessSecurityConfig) -> Self {
+        self.security = config;
+        self
     }
 
     /// 返回实际监听地址（绑定后才知道端口 0 时的实际端口）。
@@ -161,13 +220,29 @@ impl HeadlessServer {
 
             // 检测是否是普通 HTTP GET 请求（非 WebSocket 升级）
             if Self::is_http_get_request(peeked) {
+                // Origin 检查（HTTP 发现请求）
+                let origin = Self::extract_origin_header(peeked);
+                if !self.security.verify_origin(origin.as_deref()) {
+                    tracing::warn!("HTTP request from disallowed origin: {origin:?} from {peer}");
+                    continue;
+                }
                 Self::handle_http_discovery(&stream, self.addr);
+                continue;
+            }
+
+            // Origin 检查（WebSocket 升级请求）
+            let origin = Self::extract_origin_header(peeked);
+            if !self.security.verify_origin(origin.as_deref()) {
+                tracing::warn!("WebSocket from disallowed origin: {origin:?} from {peer}");
                 continue;
             }
 
             // WebSocket 连接
             let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
             let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
+
+            // 认证状态：首个有效请求完成认证
+            let mut authenticated = self.security.auth_token.is_none();
 
             // WebSocket 消息循环
             loop {
@@ -187,6 +262,45 @@ impl HeadlessServer {
                         break;
                     }
                 };
+
+                // 认证检查（Phase 5）
+                if !authenticated {
+                    // 尝试从首个请求中提取 token
+                    if let Ok(req) = serde_json::from_str::<ClientRequest>(&msg) {
+                        let token = req.params.get("token").and_then(|v| v.as_str());
+                        if self.security.verify_token(token) {
+                            authenticated = true;
+                            tracing::info!("Client authenticated");
+                        } else {
+                            tracing::warn!("Authentication failed from {peer}");
+                            let err = ServerResponse {
+                                id: req.id,
+                                result: None,
+                                error: Some(ProtocolError {
+                                    code: -32001,
+                                    message: "Authentication required: invalid or missing token".into(),
+                                }),
+                            };
+                            if let Ok(json) = serde_json::to_string(&err) {
+                                let _ = ws.write(Message::Text(json.into()));
+                            }
+                            continue;
+                        }
+                    } else {
+                        let err = ServerResponse {
+                            id: 0,
+                            result: None,
+                            error: Some(ProtocolError {
+                                code: -32001,
+                                message: "Authentication required".into(),
+                            }),
+                        };
+                        if let Ok(json) = serde_json::to_string(&err) {
+                            let _ = ws.write(Message::Text(json.into()));
+                        }
+                        continue;
+                    }
+                }
 
                 let (response, events) = self.handle_message_with_events(&mut session, &msg);
 
@@ -219,6 +333,20 @@ impl HeadlessServer {
     fn is_http_get_request(data: &[u8]) -> bool {
         let s = String::from_utf8_lossy(data);
         s.starts_with("GET ") && !s.contains("Upgrade: websocket")
+    }
+
+    /// 从 HTTP 请求头中提取 Origin 值。
+    fn extract_origin_header(data: &[u8]) -> Option<String> {
+        let s = String::from_utf8_lossy(data);
+        for line in s.lines() {
+            if let Some(value) = line.strip_prefix("Origin: ") {
+                return Some(value.trim().to_string());
+            }
+            if let Some(value) = line.strip_prefix("origin: ") {
+                return Some(value.trim().to_string());
+            }
+        }
+        None
     }
 
     /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
@@ -1554,5 +1682,76 @@ mod tests {
 
         // 验证事件累计
         assert!(runner.event_count("browsingContext.load") >= 2);
+    }
+
+    // ── Phase 5: 安全配置测试 ──
+
+    #[test]
+    fn test_security_config_default_allows_all() {
+        let config = HeadlessSecurityConfig::new();
+        assert!(config.verify_token(None));
+        assert!(config.verify_token(Some("anything")));
+        assert!(config.verify_origin(None));
+        assert!(config.verify_origin(Some("http://evil.com")));
+    }
+
+    #[test]
+    fn test_security_config_token_required() {
+        let config = HeadlessSecurityConfig::new().with_token("secret123");
+        assert!(!config.verify_token(None));
+        assert!(!config.verify_token(Some("wrong")));
+        assert!(config.verify_token(Some("secret123")));
+    }
+
+    #[test]
+    fn test_security_config_origin_allowlist() {
+        let config = HeadlessSecurityConfig::new()
+            .with_origin("http://localhost:3000")
+            .with_origin("https://trusted.example.com");
+        // 允许的来源
+        assert!(config.verify_origin(Some("http://localhost:3000")));
+        assert!(config.verify_origin(Some("https://trusted.example.com")));
+        // 不允许的来源
+        assert!(!config.verify_origin(Some("http://evil.com")));
+        assert!(!config.verify_origin(None));
+    }
+
+    #[test]
+    fn test_security_config_empty_origin_allows_all() {
+        let config = HeadlessSecurityConfig::new();
+        assert!(config.verify_origin(None));
+        assert!(config.verify_origin(Some("http://anything.com")));
+    }
+
+    #[test]
+    fn test_extract_origin_header() {
+        let request = b"GET /json HTTP/1.1\r\nHost: localhost:9222\r\nOrigin: http://localhost:3000\r\n\r\n";
+        let origin = HeadlessServer::extract_origin_header(request);
+        assert_eq!(origin.as_deref(), Some("http://localhost:3000"));
+
+        // 无 Origin 头
+        let no_origin = b"GET /json HTTP/1.1\r\nHost: localhost:9222\r\n\r\n";
+        assert!(HeadlessServer::extract_origin_header(no_origin).is_none());
+
+        // 小写 origin
+        let lowercase = b"GET /json HTTP/1.1\r\norigin: http://example.com\r\n\r\n";
+        assert_eq!(
+            HeadlessServer::extract_origin_header(lowercase).as_deref(),
+            Some("http://example.com")
+        );
+    }
+
+    #[test]
+    fn test_server_with_security_config() {
+        let server =
+            HeadlessServer::new(0, 800.0, 600.0).with_security(HeadlessSecurityConfig::new().with_token("test-token"));
+        assert!(server.security.verify_token(Some("test-token")));
+        assert!(!server.security.verify_token(None));
+    }
+
+    #[test]
+    fn test_server_binds_to_localhost_only() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        assert_eq!(server.addr.ip(), std::net::IpAddr::from([127, 0, 0, 1]));
     }
 }

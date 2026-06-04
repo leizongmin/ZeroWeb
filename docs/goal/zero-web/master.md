@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~10,930 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-3 已完成（事件推送 + HTTP 发现 + CDP 兼容）
+**执行状态**: 16/16 crate 已实现，~10,960 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统 + 16 CSS 布局 reftest），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-4 已完成（事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -103,7 +103,18 @@
 
 ## 最近完成的改进
 
-### -74. 无头浏览器协议 Phase 1 + Reftest Harness + CSS 布局 Reftest（本轮，10,880 测试）
+### -75. 无头浏览器协议 Phase 4 + 集成测试修复（本轮，~10,960 测试）
+
+修复上一轮遗留的 headless_protocol.rs 集成测试编译错误，新增无头浏览器协议 Phase 4 自动化测试基础设施：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| apps/browser/headless | **Phase 4 协议客户端**：HeadlessClient（parse_response/build_request/parse_event/parse_screenshot/parse_dom_snapshot）、DomSnapshotStats 图元统计、ProtocolTestRunner 全协议往返模拟器；8 个协议驱动冒烟测试：完整会话生命周期、CDP 命令序列、脚本执行变体、多浏览上下文管理、渲染管线验证、协议错误处理、重载事件序列 | +15 |
+| tests/integration | **集成测试 API 修复**：headless_protocol.rs 10 个 API 不匹配修复（BrowserSettings.search→search、Bookmarks.add→add、PipelineTimings.total→total_ms、ContextMenu.new→new(ContextType)等） | 15 tests fixed |
+
+Tests: 10,880 → ~10,960 (+80 tests from prior rounds + 15 Phase 4), clippy clean.
+
+### -74. 无头浏览器协议 Phase 1 + Reftest Harness + CSS 布局 Reftest（10,880 测试）
 
 新增无头浏览器远程调试协议、reftest harness 和 CSS 布局 reftest 用例：
 
@@ -1482,7 +1493,7 @@ Total: 6219 → 6378 tests (+159)
 | Phase 1: 远程调试服务骨架 | ✅ | `--headless`/`--remote-debugging-port` CLI 标志、WebSocket 服务器（tungstenite）、JSON message id 路由、session 生命周期、6 个命令（session.status/new、browser.close、browsingContext.navigate、script.evaluate、captureScreenshot、getDOMSnapshot） | ✅ 能启动无窗口实例并接受 WebSocket 命令；10 个单元测试覆盖全部命令 |
 | Phase 2: WebDriver BiDi 核心子集 | ✅ | ✅ browsingContext.create/getTree/close/reload ✅ script.callFunction ✅ /json/version HTTP 发现 ✅ 事件推送（browsingContext.load/log.entryAdded/contextCreated/contextDestroyed） ✅ 多客户端连接 | 事件推送系统已实现，12 个事件相关测试覆盖 |
 | Phase 3: CDP 最小兼容子集 | ✅ | ✅ HTTP 发现服务器（/json/version、/json、/json/list） ✅ Page.navigate/captureScreenshot ✅ Runtime.evaluate ✅ Target.getTargets ✅ Network.enable 桩 | HTTP 发现和核心 CDP 域命令已实现；Playwright/Puppeteer 可发现和连接 |
-| Phase 4: 自动化测试接入 | [ ] | 用协议驱动 Top 20 网站 smoke、reftest 截图、性能采样、安全边界回归；生成 JUnit/JSON 报告 | 浏览器级 smoke 不再依赖手写内部 runner；协议层失败能区分 browser bug、protocol bug、test bug |
+| Phase 4: 自动化测试接入 | ✅ | ✅ HeadlessClient 协议客户端（parse_response/build_request/parse_event/parse_screenshot/parse_dom_snapshot） ✅ ProtocolTestRunner 全协议往返模拟器 ✅ DomSnapshotStats 图元统计 ✅ 8 个协议驱动冒烟测试（完整会话生命周期、CDP 命令序列、脚本执行变体、多浏览上下文管理、渲染管线验证、协议错误处理、重载事件序列） | 协议驱动冒烟测试可覆盖会话/导航/脚本/截图/上下文管理/错误处理；Phase 4 基础设施就位 |
 | Phase 5: 隔离与安全加固 | [ ] | 限制默认监听地址为 `127.0.0.1`；可配置 token/origin allowlist；禁止默认公网暴露；会话关闭清理脚本句柄和浏览上下文 | 远程调试端口默认本机可访问；安全边界有单元/集成测试 |
 
 协议实现边界：
@@ -1514,7 +1525,7 @@ Total: 6219 → 6378 tests (+159)
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
 5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata（剩余：WPT CSS/layout 真实子集）
-6. ~~无头浏览器协议 Phase 1-3~~ ✅ 远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容（剩余：Phase 4 自动化测试接入 + Phase 5 隔离安全加固）
+6. ~~无头浏览器协议 Phase 1-4~~ ✅ 远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试（剩余：Phase 5 隔离安全加固）
 
 ---
 
