@@ -1,11 +1,13 @@
 //! WebView 主类型 — 可嵌入的网页渲染表面。
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{PipelineTimings, RenderPipeline};
 use zero_net::{HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
+use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
 
 use crate::WebViewError;
@@ -93,6 +95,10 @@ pub struct WebView {
     event_callbacks: Vec<EventCallback>,
     /// Service Worker 注册表。
     sw_registry: ServiceWorkerRegistry,
+    /// Web Worker 实例（Dedicated Worker）。
+    workers: HashMap<u64, WorkerRuntime>,
+    /// Worker ID 生成器。
+    next_worker_id: u64,
 }
 
 impl WebView {
@@ -114,6 +120,8 @@ impl WebView {
             cached_css: String::new(),
             event_callbacks: Vec::new(),
             sw_registry: ServiceWorkerRegistry::new(),
+            workers: HashMap::new(),
+            next_worker_id: 1,
         }
     }
 
@@ -464,6 +472,115 @@ impl WebView {
             Ok("void".to_string())
         } else {
             Ok(results.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "))
+        }
+    }
+
+    // ── Web Worker 管理 ──
+
+    /// 创建 Dedicated Web Worker。
+    ///
+    /// Worker 在独立线程中运行自己的 V8 持久上下文。
+    /// 通过 [`post_message_to_worker`](Self::post_message_to_worker) 发送消息，
+    /// 通过 [`poll_worker_events`](Self::poll_worker_events) 接收消息。
+    ///
+    /// # 参数
+    ///
+    /// - `script` — Worker 初始化时执行的脚本代码
+    ///
+    /// # 返回
+    ///
+    /// Worker ID（用于后续操作）。
+    pub fn create_worker(&mut self, script: &str) -> Result<u64, WebViewError> {
+        let config = SandboxConfig::default();
+        let worker = WorkerRuntime::new(script, config)
+            .map_err(|e| WebViewError::Script(format!("Failed to create worker: {e}")))?;
+        let id = self.next_worker_id;
+        self.next_worker_id += 1;
+        self.workers.insert(id, worker);
+        Ok(id)
+    }
+
+    /// 创建 Dedicated Web Worker（自定义配置）。
+    ///
+    /// 与 [`create_worker`](Self::create_worker) 相同，但允许指定堆限制等配置。
+    pub fn create_worker_with_config(&mut self, script: &str, config: SandboxConfig) -> Result<u64, WebViewError> {
+        let worker = WorkerRuntime::new(script, config)
+            .map_err(|e| WebViewError::Script(format!("Failed to create worker: {e}")))?;
+        let id = self.next_worker_id;
+        self.next_worker_id += 1;
+        self.workers.insert(id, worker);
+        Ok(id)
+    }
+
+    /// 向 Worker 发送消息。
+    ///
+    /// 消息以 JSON 字符串形式传递，Worker 端通过 `onmessage` 回调接收。
+    pub fn post_message_to_worker(&mut self, worker_id: u64, message: &str) -> Result<(), WebViewError> {
+        let worker = self
+            .workers
+            .get_mut(&worker_id)
+            .ok_or_else(|| WebViewError::Script(format!("Worker {worker_id} not found")))?;
+        worker
+            .post_message(message)
+            .map_err(|e| WebViewError::Script(format!("Failed to post message to worker {worker_id}: {e}")))
+    }
+
+    /// 向 Worker 发送额外脚本执行请求。
+    pub fn execute_worker_script(&mut self, worker_id: u64, code: &str) -> Result<(), WebViewError> {
+        let worker = self
+            .workers
+            .get_mut(&worker_id)
+            .ok_or_else(|| WebViewError::Script(format!("Worker {worker_id} not found")))?;
+        worker
+            .execute_script(code)
+            .map_err(|e| WebViewError::Script(format!("Failed to execute script on worker {worker_id}: {e}")))
+    }
+
+    /// 非阻塞地轮询 Worker 发出的事件。
+    ///
+    /// 返回 `(worker_id, event)` 对的列表。调用后内部缓冲被清空。
+    pub fn poll_worker_events(&mut self) -> Vec<(u64, WorkerEvent)> {
+        let mut events = Vec::new();
+        let ids: Vec<u64> = self.workers.keys().copied().collect();
+        for id in ids {
+            if let Some(worker) = self.workers.get_mut(&id) {
+                while let Some(event) = worker.try_recv() {
+                    events.push((id, event));
+                }
+            }
+        }
+        events
+    }
+
+    /// 终止 Worker。
+    ///
+    /// Worker 线程会被强制停止，已终止的 Worker 不能再使用。
+    pub fn terminate_worker(&mut self, worker_id: u64) -> bool {
+        if let Some(mut worker) = self.workers.remove(&worker_id) {
+            worker.terminate();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 获取 Worker 数量。
+    pub fn worker_count(&self) -> usize {
+        self.workers.len()
+    }
+
+    /// 检查 Worker 是否存在且仍在运行。
+    pub fn is_worker_running(&self, worker_id: u64) -> bool {
+        self.workers.get(&worker_id).is_some_and(|w| w.is_running())
+    }
+
+    /// 终止所有 Worker。
+    pub fn terminate_all_workers(&mut self) {
+        let ids: Vec<u64> = self.workers.keys().copied().collect();
+        for id in ids {
+            if let Some(mut worker) = self.workers.remove(&id) {
+                worker.terminate();
+            }
         }
     }
 }
