@@ -191,6 +191,27 @@ pub const NEW_TAB_BUTTON: Color = Color {
     b: 160,
     a: 255,
 };
+/// 窗口控制按钮悬停背景
+pub const WINDOW_CONTROL_HOVER: Color = Color {
+    r: 60,
+    g: 60,
+    b: 60,
+    a: 255,
+};
+/// 窗口关闭按钮悬停背景
+pub const WINDOW_CONTROL_CLOSE_HOVER: Color = Color {
+    r: 196,
+    g: 43,
+    b: 28,
+    a: 255,
+};
+/// 窗口控制按钮图标颜色
+pub const WINDOW_CONTROL_ICON: Color = Color {
+    r: 200,
+    g: 200,
+    b: 200,
+    a: 255,
+};
 /// 右键上下文菜单背景色
 pub const CONTEXT_MENU_BG: Color = Color {
     r: 48,

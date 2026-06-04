@@ -1,6 +1,7 @@
 //! 浏览器应用核心状态和事件处理
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
 use zero_render_foundation::color::Color;
@@ -15,6 +16,17 @@ use zero_webview::WebViewBuilder;
 use crate::colors;
 use crate::layout;
 use crate::pages;
+
+const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
+
+/// 自定义窗口控制按钮动作（Wayland 无系统装饰时使用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowChromeAction {
+    Minimize,
+    ToggleMaximize,
+    Close,
+    StartDrag,
+}
 
 /// 自动补全建议缓存
 struct AutocompleteState {
@@ -121,6 +133,16 @@ pub struct BrowserApp {
     context_menu: ContextMenuState,
     /// 页面滚动偏移（物理像素）
     scroll_offset: HashMap<TabId, f32>,
+    /// 待执行的窗口控制动作
+    pending_window_chrome_action: Option<WindowChromeAction>,
+    /// 窗口控制按钮悬停索引（0=最小化, 1=最大化, 2=关闭）
+    window_control_hover: Option<usize>,
+    /// 窗口是否最大化（用于绘制还原图标）
+    window_is_maximized: bool,
+    /// 标签栏空白处上次点击（用于双击检测）
+    last_tab_bar_blank_click: Option<(f64, f64, Instant)>,
+    /// 标签栏空白处按下位置（移动超过阈值后触发拖动）
+    tab_bar_drag_press: Option<(f64, f64)>,
 }
 
 impl BrowserApp {
@@ -159,6 +181,129 @@ impl BrowserApp {
             tab_layout: Vec::new(),
             context_menu: ContextMenuState::new(),
             scroll_offset: HashMap::new(),
+            pending_window_chrome_action: None,
+            window_control_hover: None,
+            window_is_maximized: false,
+            last_tab_bar_blank_click: None,
+            tab_bar_drag_press: None,
+        }
+    }
+
+    /// Wayland 无系统装饰时需自绘窗口控制按钮
+    pub fn uses_custom_window_controls(&self) -> bool {
+        is_wayland()
+    }
+
+    /// 取出并清除待执行的窗口控制动作
+    pub fn take_window_chrome_action(&mut self) -> Option<WindowChromeAction> {
+        self.pending_window_chrome_action.take()
+    }
+
+    /// 同步窗口最大化/全屏状态（用于控制按钮图标）
+    pub fn set_window_maximized(&mut self, maximized: bool) {
+        if self.window_is_maximized != maximized {
+            self.window_is_maximized = maximized;
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 窗口 surface 尺寸可能变化（全屏/最大化切换后需重新配置）
+    pub fn mark_surface_stale(&mut self) {
+        self.gpu_surface_stale = true;
+        self.surface_configured = false;
+        self.needs_redraw = true;
+    }
+
+    fn new_tab_button_x(&self) -> f32 {
+        self.tab_layout.last().map(|&(_, x, w)| x + w).unwrap_or(0.0)
+    }
+
+    fn window_controls_origin_x(&self, width: f32, s: f32) -> f32 {
+        width - layout::WINDOW_CONTROLS_WIDTH * s
+    }
+
+    fn window_control_hit_test(&self, x: f32, y: f32, width: f32, s: f32) -> Option<WindowChromeAction> {
+        if !self.uses_custom_window_controls() || y >= layout::TAB_BAR_HEIGHT * s {
+            return None;
+        }
+        let x0 = self.window_controls_origin_x(width, s);
+        let btn_w = layout::WINDOW_CONTROL_BTN_WIDTH * s;
+        if x < x0 || x >= width {
+            return None;
+        }
+        let idx = ((x - x0) / btn_w) as i32;
+        match idx {
+            0 => Some(WindowChromeAction::Minimize),
+            1 => Some(WindowChromeAction::ToggleMaximize),
+            2 => Some(WindowChromeAction::Close),
+            _ => None,
+        }
+    }
+
+    /// 是否点击在标签栏空白区域（可拖动 / 双击最大化）
+    fn is_tab_bar_blank_hit(&self, x: f32, y: f32, width: f32, s: f32) -> bool {
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        if y >= tab_bar_h {
+            return false;
+        }
+        if self.window_control_hit_test(x, y, width, s).is_some() {
+            return false;
+        }
+        let new_tab_x = self.new_tab_button_x();
+        if x >= new_tab_x && x < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
+            return false;
+        }
+        !self
+            .tab_layout
+            .iter()
+            .any(|&(_, tab_x, tab_w)| x >= tab_x && x < tab_x + tab_w)
+    }
+
+    fn handle_tab_bar_blank_press(&mut self, x: f64, y: f64) {
+        let now = Instant::now();
+        let slop = 12.0 * self.scale_factor as f64;
+        if let Some((lx, ly, t)) = self.last_tab_bar_blank_click
+            && now.duration_since(t) <= TAB_BAR_DOUBLE_CLICK_INTERVAL
+            && (x - lx).abs() <= slop
+            && (y - ly).abs() <= slop
+        {
+            self.last_tab_bar_blank_click = None;
+            self.tab_bar_drag_press = None;
+            self.pending_window_chrome_action = Some(WindowChromeAction::ToggleMaximize);
+            return;
+        }
+        self.last_tab_bar_blank_click = Some((x, y, now));
+        self.tab_bar_drag_press = Some((x, y));
+    }
+
+    fn update_tab_bar_drag(&mut self, x: f64, y: f64) {
+        let Some((ox, oy)) = self.tab_bar_drag_press else {
+            return;
+        };
+        let threshold = 4.0 * self.scale_factor as f64;
+        if (x - ox).hypot(y - oy) >= threshold {
+            self.tab_bar_drag_press = None;
+            self.pending_window_chrome_action = Some(WindowChromeAction::StartDrag);
+        }
+    }
+
+    fn update_window_control_hover(&mut self, x: f64, y: f64) {
+        if !self.uses_custom_window_controls() {
+            return;
+        }
+        let s = self.scale_factor;
+        let width = self.physical_size.0 as f32;
+        let hover = self
+            .window_control_hit_test(x as f32, y as f32, width, s)
+            .map(|action| match action {
+                WindowChromeAction::Minimize => 0,
+                WindowChromeAction::ToggleMaximize => 1,
+                WindowChromeAction::Close => 2,
+                WindowChromeAction::StartDrag => unreachable!(),
+            });
+        if hover != self.window_control_hover {
+            self.window_control_hover = hover;
+            self.needs_redraw = true;
         }
     }
 
@@ -777,13 +922,19 @@ impl BrowserApp {
             if (y as f32) < toolbar_h {
                 self.needs_redraw = true;
             }
+            if (y as f32) < layout::TAB_BAR_HEIGHT * self.scale_factor {
+                self.update_window_control_hover(x, y);
+            }
+            self.update_tab_bar_drag(x, y);
         }
     }
 
     /// 处理鼠标点击（物理像素坐标）
     pub fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool, button: &str) {
-        // 鼠标释放不做处理（右键除外）
         if !pressed {
+            if button == "Left" {
+                self.tab_bar_drag_press = None;
+            }
             return;
         }
 
@@ -849,8 +1000,14 @@ impl BrowserApp {
 
         // 2. 标签栏区域点击
         if y_f < tab_bar_h {
-            let new_tab_x = width - 32.0 * s;
-            if x_f >= new_tab_x && x_f <= width {
+            if let Some(action) = self.window_control_hit_test(x_f, y_f, width, s) {
+                self.pending_window_chrome_action = Some(action);
+                self.needs_redraw = true;
+                return;
+            }
+
+            let new_tab_x = self.new_tab_button_x();
+            if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
                 self.new_tab(None);
                 return;
             }
@@ -873,6 +1030,10 @@ impl BrowserApp {
                     }
                     return;
                 }
+            }
+
+            if self.uses_custom_window_controls() && self.is_tab_bar_blank_hit(x_f, y_f, width, s) {
+                self.handle_tab_bar_blank_press(x, y);
             }
             return;
         }

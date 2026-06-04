@@ -70,6 +70,10 @@ pub struct WindowConfig {
     pub resizable: bool,
     /// 是否显示系统窗口装饰
     pub decorations: bool,
+    /// 启动时是否全屏（无边框全屏）
+    pub fullscreen: bool,
+    /// 启动时是否最大化
+    pub maximized: bool,
 }
 
 impl WindowConfig {
@@ -81,6 +85,8 @@ impl WindowConfig {
             height: 600,
             resizable: true,
             decorations: true,
+            fullscreen: false,
+            maximized: false,
         }
     }
 
@@ -102,6 +108,33 @@ impl WindowConfig {
         self.decorations = decorations;
         self
     }
+
+    /// 设置启动时是否全屏
+    pub fn with_fullscreen(mut self, fullscreen: bool) -> Self {
+        self.fullscreen = fullscreen;
+        self
+    }
+
+    /// 设置启动时是否最大化
+    pub fn with_maximized(mut self, maximized: bool) -> Self {
+        self.maximized = maximized;
+        self
+    }
+}
+
+fn window_attributes_from_config(config: &WindowConfig) -> winit::window::WindowAttributes {
+    let mut attrs = winit::window::WindowAttributes::default()
+        .with_title(&config.title)
+        .with_inner_size(winit::dpi::LogicalSize::new(config.width, config.height))
+        .with_resizable(config.resizable)
+        .with_decorations(config.decorations);
+    if config.fullscreen {
+        attrs = attrs.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+    }
+    if config.maximized {
+        attrs = attrs.with_maximized(true);
+    }
+    attrs
 }
 
 /// 宿主运行时 — 管理窗口和事件循环
@@ -124,11 +157,7 @@ impl HostRuntime {
     {
         let event_loop = build_event_loop()?;
 
-        let window_attrs = winit::window::WindowAttributes::default()
-            .with_title(&self.config.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
-            .with_resizable(self.config.resizable)
-            .with_decorations(self.config.decorations);
+        let window_attrs = window_attributes_from_config(&self.config);
 
         event_loop
             .run_app(&mut BasicApp::new_basic(window_attrs, &mut on_event))
@@ -147,11 +176,7 @@ impl HostRuntime {
     {
         let event_loop = build_event_loop()?;
 
-        let window_attrs = winit::window::WindowAttributes::default()
-            .with_title(&self.config.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height))
-            .with_resizable(self.config.resizable)
-            .with_decorations(self.config.decorations);
+        let window_attrs = window_attributes_from_config(&self.config);
 
         event_loop
             .run_app(&mut GpuApp::new_with_window(window_attrs, &mut on_event))

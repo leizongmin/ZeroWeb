@@ -8,6 +8,12 @@ pub const ADDRESS_BAR_HEIGHT: f32 = 36.0;
 pub const ADDRESS_BAR_PADDING: f32 = 8.0;
 /// 工具栏总高度
 pub const TOOLBAR_HEIGHT: f32 = TAB_BAR_HEIGHT + ADDRESS_BAR_HEIGHT;
+/// 新建标签按钮宽度
+pub const NEW_TAB_BTN_WIDTH: f32 = 32.0;
+/// 窗口控制按钮宽度（最小化/最大化/关闭）
+pub const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
+/// 窗口控制按钮区域总宽度
+pub const WINDOW_CONTROLS_WIDTH: f32 = WINDOW_CONTROL_BTN_WIDTH * 3.0;
 /// 导航按钮宽度
 pub const NAV_BUTTON_WIDTH: f32 = 32.0;
 /// 单个标签最小宽度
