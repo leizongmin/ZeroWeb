@@ -981,6 +981,7 @@ mod tests {
             "a11y-i18n",
             "interactive",
             "typography",
+            "navigation",
         ];
         for t in &tests {
             assert!(

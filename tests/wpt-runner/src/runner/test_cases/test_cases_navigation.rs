@@ -649,5 +649,157 @@ pub fn navigation_security_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
+        // ═══════════════════════════════════════════════════════════════
+        //  HTML 链接导航扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "navigation/links/download-attribute".to_string(),
+            description: "a[download] 属性不崩溃".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<a href="/files/doc.pdf" download="document.pdf">Download PDF</a>
+<a href="/images/photo.jpg" download>Download Image</a>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "navigation/links/target-blank".to_string(),
+            description: "target=_blank 链接".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<a href="https://example.com" target="_blank" rel="noopener">External</a>
+<a href="https://example.org" target="_blank">Another</a>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "navigation/links/ping-attribute".to_string(),
+            description: "a[ping] 属性不崩溃".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<a href="/page2" ping="/track/click">Trackable link</a>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_link".to_string(), "render_completes".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  Head 元数据扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "navigation/meta/viewport".to_string(),
+            description: "viewport meta 标签".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Responsive Page</title>
+</head><body>
+<div style="width:100%; max-width:600px; margin:0 auto;">Responsive content</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_meta".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "navigation/meta/charset".to_string(),
+            description: "charset meta 标签".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Unicode Page</title>
+</head><body>
+<p>中文 日本語 한국어 Ελληνικά العربية עברית</p>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_meta".to_string(), "render_completes".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  图片资源扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "navigation/images/picture-element".to_string(),
+            description: "picture 元素不崩溃".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<picture>
+    <source srcset="/img/large.jpg" media="(min-width: 800px)">
+    <source srcset="/img/medium.jpg" media="(min-width: 400px)">
+    <img src="/img/small.jpg" alt="Responsive image">
+</picture>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_img".to_string(), "render_completes".to_string()],
+        },
+        TestCase {
+            id: "navigation/images/srcset".to_string(),
+            description: "img srcset 属性".to_string(),
+            category: "navigation".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<img src="/img/photo.jpg"
+     srcset="/img/photo-320w.jpg 320w, /img/photo-640w.jpg 640w, /img/photo-1280w.jpg 1280w"
+     sizes="(max-width: 600px) 100vw, 50vw"
+     alt="Responsive photo">
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "dom_has_img".to_string(), "render_completes".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  综合页面导航
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "navigation/composite/documentation-page".to_string(),
+            description: "文档导航页面".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Documentation</title>
+<style>
+nav { background: #333; padding: 10px; }
+nav a { color: white; margin-right: 15px; text-decoration: none; }
+article { max-width: 800px; margin: 20px auto; }
+aside { float: right; width: 200px; background: #f5f5f5; padding: 10px; }
+</style>
+</head><body>
+<nav>
+    <a href="#intro">Introduction</a>
+    <a href="#setup">Setup</a>
+    <a href="#api">API Reference</a>
+    <a href="/download" download>Download</a>
+</nav>
+<article>
+    <h1 id="intro">Introduction</h1>
+    <p>This is the documentation page with navigation links.</p>
+    <h2 id="setup">Setup</h2>
+    <p>Setup instructions here.</p>
+    <h2 id="api">API Reference</h2>
+    <p>API documentation here.</p>
+</article>
+</body></html>"##
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_nav".to_string(),
+                "dom_has_link".to_string(),
+                "dom_has_heading".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
