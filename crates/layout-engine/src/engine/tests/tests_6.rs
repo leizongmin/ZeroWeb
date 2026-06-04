@@ -76,7 +76,7 @@ fn test_grid_named_area_spans_two_rows() {
     footer_s.grid_column_end = GridLineValue::Name("footer".to_string());
     styles.insert(footer_el, footer_s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let header_box = find_child_by_node_id(&result.root, header_el).expect("header 应找到");
@@ -173,7 +173,7 @@ fn test_flex_align_self_stretch() {
     s_stretch.align_self = AlignmentValue::Stretch;
     styles.insert(item_stretch, s_stretch);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b_normal = find_child_by_node_id(&result.root, item_normal).expect("item_normal 应找到");
@@ -230,7 +230,7 @@ fn test_block_margin_auto_horizontal_centering() {
     child_style.margin_right = LengthValue::Auto;
     styles.insert(child, child_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let container_box = find_child_by_node_id(&result.root, container).expect("container 应找到");
@@ -300,7 +300,7 @@ fn test_inline_block_inside_flex_container() {
         styles.insert(id, s);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, ib1).expect("ib1 应找到");
@@ -407,7 +407,7 @@ fn test_nested_grid_container() {
     oi4.grid_column_end = GridLineValue::Line(3);
     styles.insert(outer_item4, oi4);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 外层 grid 验证
@@ -492,7 +492,7 @@ fn test_display_none_excludes_from_layout() {
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
     // display:none 元素不应出现在布局树中
@@ -520,7 +520,7 @@ fn test_block_element_fills_parent_width() {
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
     let body_box = find_child_by_node_id(&tree.root, body).expect("body 应在布局树中");
@@ -563,7 +563,7 @@ fn test_flex_wrap_when_narrow() {
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
     let container_box = find_child_by_node_id(&tree.root, container).expect("container 应在布局树中");
@@ -594,7 +594,7 @@ fn test_inline_block_inline_with_text() {
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
     let span_box = find_child_by_node_id(&tree.root, span).expect("span 应在布局树中");
@@ -635,7 +635,7 @@ fn test_absolute_position_out_of_flow() {
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
@@ -810,14 +810,14 @@ fn test_overflow_clip_variants() {
 
 #[test]
 fn test_layout_engine_zero_viewport() {
-    let engine = LayoutEngine::new(0.0, 0.0);
+    let mut engine = LayoutEngine::new(0.0, 0.0);
     assert_eq!(engine.viewport_width, 0.0);
     assert_eq!(engine.viewport_height, 0.0);
 }
 
 #[test]
 fn test_layout_engine_very_large_viewport() {
-    let engine = LayoutEngine::new(100000.0, 100000.0);
+    let mut engine = LayoutEngine::new(100000.0, 100000.0);
     assert_eq!(engine.viewport_width, 100000.0);
 }
 
@@ -825,7 +825,7 @@ fn test_layout_engine_very_large_viewport() {
 fn test_layout_engine_empty_doc_produces_root() {
     let doc = Document::new();
     let styles = HashMap::new();
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     // 空文档应产生一个根盒子
     assert_eq!(result.viewport_width, 800.0);
@@ -840,7 +840,7 @@ fn test_layout_single_text_node() {
     doc.append_child(root, text).unwrap();
 
     let styles = HashMap::new();
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     // 文本节点应被跳过或包含在布局中
     assert_eq!(result.viewport_width, 800.0);
@@ -859,7 +859,7 @@ fn test_layout_deeply_nested_structure() {
         parent = div;
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let styles = HashMap::new();
     let result = engine.compute(&doc, &styles);
     // 不应 panic
@@ -888,7 +888,7 @@ fn test_layout_multiple_siblings() {
     let mut sys = zero_style_system::StyleSystem::new();
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // body 应包含 10 个子元素
@@ -913,7 +913,7 @@ fn test_layout_fixed_position_elements() {
     let mut sys = zero_style_system::StyleSystem::new();
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let fixed_box = find_child_by_node_id(&result.root, fixed).expect("fixed div 应在布局树中");
@@ -943,7 +943,7 @@ fn test_layout_display_none_present() {
     let mut sys = zero_style_system::StyleSystem::new();
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let body_box = find_child_by_node_id(&result.root, body).expect("body 应在布局树中");
@@ -981,7 +981,7 @@ fn test_layout_z_index_values() {
     let mut sys = zero_style_system::StyleSystem::new();
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let box1 = find_child_by_node_id(&result.root, z1).expect("z1 应在布局树中");

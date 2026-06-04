@@ -38,7 +38,7 @@ fn block_style(w: f64, h: f64) -> ComputedStyle {
 fn test_compute_empty_document() {
     let doc = Document::new();
     let styles = std::collections::HashMap::new();
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     assert_eq!(result.viewport_width, 800.0);
     assert_eq!(result.viewport_height, 600.0);
@@ -53,7 +53,7 @@ fn test_compute_simple_block() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, block_style(200.0, 100.0));
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     assert_eq!(result.root.width, 800.0);
 }
@@ -70,7 +70,7 @@ fn test_compute_two_blocks_stacked() {
     styles.insert(div1, block_style(100.0, 50.0));
     styles.insert(div2, block_style(100.0, 30.0));
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     // 第二个 div 应该在第一个下方
     let body_box = &result.root.children[0];
@@ -82,7 +82,7 @@ fn test_compute_two_blocks_stacked() {
 fn test_compute_viewport_sizes_preserved() {
     let doc = Document::new();
     let styles = std::collections::HashMap::new();
-    let engine = crate::engine::LayoutEngine::new(1920.0, 1080.0);
+    let mut engine = crate::engine::LayoutEngine::new(1920.0, 1080.0);
     let result = engine.compute(&doc, &styles);
     assert_eq!(result.viewport_width, 1920.0);
     assert_eq!(result.viewport_height, 1080.0);
@@ -97,7 +97,7 @@ fn test_compute_narrow_viewport() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, block_style(375.0, 100.0));
 
-    let engine = crate::engine::LayoutEngine::new(375.0, 812.0);
+    let mut engine = crate::engine::LayoutEngine::new(375.0, 812.0);
     let result = engine.compute(&doc, &styles);
     assert_eq!(result.viewport_width, 375.0);
 }
@@ -124,7 +124,7 @@ fn test_compute_absolute_position() {
     styles.insert(container, container_style);
     styles.insert(abs_div, abs_style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 找到 absolute 定位的盒子
@@ -147,7 +147,7 @@ fn test_compute_fixed_position() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(fixed_div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let fixed_box = find_child_by_node_id(&result.root, fixed_div).expect("fixed_div");
     assert!(fixed_box.is_fixed);
@@ -166,7 +166,7 @@ fn test_compute_sticky_position() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(sticky_div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let sticky_box = find_child_by_node_id(&result.root, sticky_div).expect("sticky_div");
     assert!(sticky_box.is_sticky);
@@ -187,7 +187,7 @@ fn test_compute_overflow_hidden() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.overflow_x, crate::types::OverflowClip::Hidden);
@@ -207,7 +207,7 @@ fn test_compute_overflow_scroll() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.overflow_x, crate::types::OverflowClip::Scroll);
@@ -226,7 +226,7 @@ fn test_compute_overflow_clip() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.overflow_x, crate::types::OverflowClip::Clip);
@@ -241,7 +241,7 @@ fn test_compute_overflow_visible_default() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, block_style(200.0, 100.0));
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.overflow_x, crate::types::OverflowClip::Visible);
@@ -263,7 +263,7 @@ fn test_compute_z_index_integer() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.z_index, 10);
@@ -281,7 +281,7 @@ fn test_compute_z_index_auto() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.z_index, 0);
@@ -300,7 +300,7 @@ fn test_compute_z_index_negative() {
     let mut styles = std::collections::HashMap::new();
     styles.insert(div, style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let div_box = find_child_by_node_id(&result.root, div).expect("div");
     assert_eq!(div_box.z_index, -5);
@@ -323,7 +323,7 @@ fn test_compute_three_levels_nesting() {
     styles.insert(inner, block_style(200.0, 150.0));
     styles.insert(deepest, block_style(100.0, 50.0));
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 验证三层嵌套存在
@@ -357,7 +357,7 @@ fn test_compute_multiple_siblings() {
         styles.insert(id, style);
     }
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let body_box = &result.root.children[0];
     assert_eq!(body_box.children.len(), 5);
@@ -380,7 +380,7 @@ fn test_compute_display_none_element() {
     styles.insert(visible, block_style(100.0, 50.0));
     styles.insert(hidden, hidden_style);
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     // hidden 元素不应出现在布局树中
     let hidden_box = find_child_by_node_id(&result.root, hidden);
@@ -405,7 +405,7 @@ fn test_compute_element_without_style() {
     // 不给 div 设置样式
     let styles = std::collections::HashMap::new();
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     // 不应 panic
     assert_eq!(result.viewport_width, 800.0);
@@ -432,7 +432,7 @@ fn test_compute_flex_container() {
     styles.insert(item1, block_style(200.0, 100.0));
     styles.insert(item2, block_style(200.0, 100.0));
 
-    let engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let flex_box = find_child_by_node_id(&result.root, flex).expect("flex");
     assert_eq!(flex_box.children.len(), 2);
