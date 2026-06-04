@@ -57,7 +57,7 @@ fn test_grid_explicit_row_column_placement() {
     s3.grid_column_end = GridLineValue::Line(3);
     styles.insert(item3, s3);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
@@ -138,7 +138,7 @@ fn test_grid_auto_fill_narrow_container() {
         styles.insert(*id, ComputedStyle::default());
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
@@ -185,7 +185,7 @@ fn test_block_negative_margin_collapsing() {
     // div3: 正常，用于参照
     styles.insert(div3, make_style_with_display(DisplayValue::Block, 200.0, 40.0));
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
@@ -232,7 +232,7 @@ fn test_sticky_position_in_normal_flow() {
 
     styles.insert(div3, make_style_with_display(DisplayValue::Block, 200.0, 50.0));
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
@@ -318,7 +318,7 @@ fn test_nested_flex_row_inside_column() {
     outer_item_style.height = LengthValue::Px(80.0);
     styles.insert(outer_item, outer_item_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let inner_box = find_child_by_node_id(&result.root, inner).expect("inner found");
@@ -371,7 +371,7 @@ fn test_absolute_in_relative_parent_with_padding() {
     abs_style.height = LengthValue::Px(60.0);
     styles.insert(abs_child, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let parent_box = find_child_by_node_id(&result.root, parent).expect("parent found");
@@ -430,7 +430,7 @@ fn test_grid_auto_flow_column() {
         styles.insert(*id, ComputedStyle::default());
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 所有子元素应有有效布局
@@ -483,7 +483,7 @@ fn test_layout_negative_margin() {
     s2.margin_top = LengthValue::Px(-10.0);
     styles.insert(div2, s2);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, div1).expect("div1 found");
@@ -552,7 +552,7 @@ fn test_layout_nested_flex() {
         styles.insert(id, s);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let outer_box = find_child_by_node_id(&result.root, outer).expect("outer found");
@@ -595,7 +595,7 @@ fn test_layout_absolute_in_relative() {
     abs_style.height = LengthValue::Px(80.0);
     styles.insert(abs_child, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child found");
@@ -643,7 +643,7 @@ fn test_layout_overflow_hidden_truncation() {
     child_style.height = LengthValue::Px(200.0);
     styles.insert(child, child_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let container_box = find_child_by_node_id(&result.root, container).expect("container found");
@@ -708,7 +708,7 @@ fn test_layout_grid_auto_placement() {
         styles.insert(*id, ComputedStyle::default());
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
@@ -756,7 +756,7 @@ fn test_layout_zero_height_block() {
     div_style.height = LengthValue::Px(0.0);
     styles.insert(div, div_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let div_box = find_child_by_node_id(&result.root, div).expect("div found");
@@ -819,7 +819,7 @@ fn test_flex_shrink_behavior() {
     s2.flex_shrink = 2.0;
     styles.insert(item2, s2);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
@@ -879,7 +879,7 @@ fn test_absolute_in_fixed_layout() {
     abs_style.height = LengthValue::Px(30.0);
     styles.insert(abs_child, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let fixed_box = find_child_by_node_id(&result.root, fixed_parent).expect("fixed found");
@@ -922,7 +922,7 @@ fn test_flex_wrap_very_narrow_container() {
         styles.insert(*id, s);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 布局不 panic，且所有元素存在
@@ -961,7 +961,7 @@ fn test_grid_with_empty_cells() {
         styles.insert(id, ComputedStyle::default());
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
@@ -1001,7 +1001,7 @@ fn test_flex_column_nested_block() {
     styles.insert(block2, make_style_with_display(DisplayValue::Block, 150.0, 50.0));
     styles.insert(block3, make_style_with_display(DisplayValue::Block, 200.0, 60.0));
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, block1).expect("block1 found");
@@ -1046,7 +1046,7 @@ fn test_block_nested_margin_effects() {
     inner_style.margin_top = LengthValue::Px(5.0);
     styles.insert(inner, inner_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let outer_box = find_child_by_node_id(&result.root, outer).expect("outer found");
@@ -1080,7 +1080,7 @@ fn test_zero_padding_border_content_area() {
     // 不设置 padding 和 border（默认为 0）
     styles.insert(div, div_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let div_box = find_child_by_node_id(&result.root, div).expect("div found");
@@ -1135,7 +1135,7 @@ fn test_absolute_exceeding_parent_bounds() {
     abs_style.height = LengthValue::Px(50.0);
     styles.insert(abs_child, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs found");
@@ -1181,7 +1181,7 @@ fn test_overflow_auto_produces_scroll_clip() {
     div_style.height = LengthValue::Px(100.0);
     styles.insert(div, div_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let div_box = find_child_by_node_id(&result.root, div).expect("div found");
@@ -1215,7 +1215,7 @@ fn test_overflow_clip_produces_clip() {
     div_style.height = LengthValue::Px(100.0);
     styles.insert(div, div_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let div_box = find_child_by_node_id(&result.root, div).expect("div found");
@@ -1262,7 +1262,7 @@ fn test_z_index_in_layout_output() {
     s2.z_index = ZIndexValue::Auto;
     styles.insert(div_auto, s2);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let box_with_z = find_child_by_node_id(&result.root, div_with_z).expect("div_with_z found");
@@ -1297,7 +1297,7 @@ fn test_content_area_clamp_with_oversized_border() {
     div_style.padding_bottom = LengthValue::Px(15.0);
     styles.insert(div, div_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let div_box = find_child_by_node_id(&result.root, div).expect("div found");
@@ -1371,7 +1371,7 @@ fn test_deeply_nested_fixed_position() {
     fixed_style.height = LengthValue::Px(100.0);
     styles.insert(fixed_el, fixed_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let fixed_box = find_child_by_node_id(&result.root, fixed_el).expect("fixed_el found");
@@ -1421,7 +1421,7 @@ fn test_layout_display_inline_block_with_text() {
     s2.height = LengthValue::Px(40.0);
     styles.insert(ib2, s2);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, ib1).expect("ib1 found");
@@ -1476,7 +1476,7 @@ fn test_layout_position_sticky() {
     // 后续内容
     styles.insert(content, make_style_with_display(DisplayValue::Block, 200.0, 400.0));
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let sticky_box = find_child_by_node_id(&result.root, sticky).expect("sticky found");
@@ -1536,7 +1536,7 @@ fn test_layout_flex_wrap_reverse() {
         styles.insert(*id, s);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b0 = find_child_by_node_id(&result.root, item_ids[0]).expect("item0 found");
@@ -1629,7 +1629,7 @@ fn test_layout_grid_gap() {
     s4.grid_column_end = GridLineValue::Line(3);
     styles.insert(item4, s4);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
@@ -1685,7 +1685,7 @@ fn test_layout_absolute_top_left() {
     abs_style.height = LengthValue::Px(40.0);
     styles.insert(abs_child, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&result.root, abs_child).expect("abs child found");

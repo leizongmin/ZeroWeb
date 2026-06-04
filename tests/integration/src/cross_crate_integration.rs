@@ -103,7 +103,7 @@ fn test_shadow_dom_to_layout_integration() {
     p_style.display = DisplayValue::Block;
     styles.insert(slotted_p, p_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 验证 slotted <p> 出现在布局树中
@@ -271,7 +271,7 @@ fn test_grid_area_named_placement() {
     footer_style.grid_column_end = GridLineValue::Name("footer".to_string());
     styles.insert(footer_el, footer_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 查找各子元素的布局盒

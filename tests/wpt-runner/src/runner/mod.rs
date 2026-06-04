@@ -979,6 +979,8 @@ mod tests {
             "web-api",
             "security",
             "a11y-i18n",
+            "interactive",
+            "typography",
         ];
         for t in &tests {
             assert!(

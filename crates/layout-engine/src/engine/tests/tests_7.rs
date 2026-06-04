@@ -22,7 +22,7 @@ fn test_zero_size_container_children() {
 
     styles.insert(child, ComputedStyle::default());
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let container_box = find_child_by_node_id(&result.root, container).expect("container");
@@ -48,7 +48,7 @@ fn test_display_none_nested() {
     styles.insert(child1, ComputedStyle::default());
     styles.insert(child2, ComputedStyle::default());
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let hidden_box = find_child_by_node_id(&result.root, hidden);
@@ -67,7 +67,7 @@ fn test_percent_width_without_parent_width() {
     child_style.width = LengthValue::Percentage(50.0);
     styles.insert(child, child_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let child_box = find_child_by_node_id(&result.root, child).expect("child");
@@ -96,7 +96,7 @@ fn test_negative_margin_overlap() {
     s2.margin_top = LengthValue::Px(-20.0);
     styles.insert(box2, s2);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let b2 = find_child_by_node_id(&result.root, box2).expect("box2");
@@ -126,7 +126,7 @@ fn test_absolute_unaffected_by_siblings() {
     abs_style.height = LengthValue::Px(50.0);
     styles.insert(abs_el, abs_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&result.root, abs_el).expect("abs");
@@ -158,7 +158,7 @@ fn test_fixed_viewport_relative() {
     fixed_style.height = LengthValue::Px(100.0);
     styles.insert(fixed_el, fixed_style);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let fixed_box = find_child_by_node_id(&result.root, fixed_el).expect("fixed");
@@ -197,7 +197,7 @@ fn test_nested_flex_containers() {
     item_s.height = LengthValue::Px(30.0);
     styles.insert(item, item_s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let item_box = find_child_by_node_id(&result.root, item).expect("item");
@@ -231,7 +231,7 @@ fn test_inline_block_line_wrapping() {
         styles.insert(id, s);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 三个 80px 宽的 inline-block 在 150px 容器中应换行
@@ -255,7 +255,7 @@ fn test_large_border_content_clamp() {
     // 使用 CSS 构建带大 border 的样式
     styles.insert(el, s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let el_box = find_child_by_node_id(&result.root, el).expect("el");
@@ -298,7 +298,7 @@ fn test_flex_child_in_grid() {
     item_s.height = LengthValue::Px(50.0);
     styles.insert(item, item_s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let item_box = find_child_by_node_id(&result.root, item).expect("item");
@@ -336,7 +336,7 @@ fn test_deeply_nested_absolute() {
     abs_s.height = LengthValue::Px(20.0);
     styles.insert(abs_el, abs_s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&result.root, abs_el).expect("abs");
@@ -360,7 +360,7 @@ fn test_layout_box_outer_area() {
     s.margin_left = LengthValue::Px(20.0);
     styles.insert(el, s);
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     let el_box = find_child_by_node_id(&result.root, el).expect("el");

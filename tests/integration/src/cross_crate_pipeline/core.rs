@@ -282,7 +282,7 @@ fn test_grid_layout_full_pipeline() {
         styles.insert(el, el_style);
     }
 
-    let engine = LayoutEngine::new(800.0, 600.0);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
     // 查找各子元素的布局盒
