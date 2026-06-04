@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~10,983 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 497 个用例（13 个分类），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置持久化已实现（BrowserShell 集成）
+**执行状态**: 16/16 crate 已实现，~11,026 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 564 个用例（14 个分类，93.3% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -53,6 +53,7 @@
 | Canvas + Render | 5 | Canvas 绘图图元、路径、变换、save/restore、WebView 集成 |
 | WASM Sandbox | 5 | 编译、调用、导出查询、内存读写、错误恢复 |
 | WebView Full Pipeline | 4 | 完整生命周期、复杂页面、重复加载、脚本占位 |
+| Web API Pipeline | 17 | JS DOM 操作、V8 内置 API、DOM polyfill、CSS 渲染管线（flex/grid/positioned/shadow/gradient/custom-props/media-query） |
 | CSS Transform Pipeline | 1 | CSS 解析→样式系统→计算值 |
 | Media Query Integration | 1 | 媒体查询解析 + 上下文评估 |
 | Canvas Gradient | 1 | 渐变色采样 + 颜色插值验证 |
@@ -102,6 +103,19 @@
 ---
 
 ## 最近完成的改进
+
+### -77. 会话持久化 + LRU Glyph 缓存 + WPT 564 用例（本轮，~11,026 测试）
+
+新增浏览器会话持久化、Glyph 缓存 LRU 淘汰策略、WPT 测试套件扩展至 564 用例：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| browser-shell/session | **会话持久化**：SessionState/TabSnapshot/NavigationSnapshot 可序列化快照、save/load JSON 文件（~/.config/zeroweb/session.json）、BrowserShell save_session/restore_session 集成、Tab clear_history/push_navigation/set_url_internal 辅助方法 | +16 |
+| render-foundation/font/cache | **LRU 淘汰策略**：VecDeque 队列追踪访问顺序、promote() 提升到队尾、evict() 淘汰最旧 25%、insert 覆盖时自动提升、替代原来简单的"清空一半"策略 | +2 |
+| WPT runner/web_platform | **60 个 Web 平台扩展合规测试**：CSS 滤镜（blur/brightness/grayscale/sepia/drop-shadow）、3D 变换（rotateX/rotateY/perspective/transform-origin）、mix-blend-mode、表单元素（8 种 input type/textarea/select/fieldset/datalist/progress/meter）、ARIA 可访问性（roles/live-region/expanded）、安全（CSP meta/sandbox iframe/referrer policy）、Container Queries、scroll-snap、自定义属性高级用法、Grid 高级（auto-fill/span）、响应式卡片网格、HTML5 完整语义页面、渐变高级、定位（sticky/fixed）、contain/will-change/isolation、details/summary/dialog/template/picture、@supports/@layer/aspect-ratio、text-overflow/overflow、伪元素、多媒体占位、JS API 检测（Notification/Geolocation/Clipboard/Performance/MutationObserver） | +60 |
+| integration/web_api_pipeline | **17 个 Web API 端到端管线测试**：JS DOM 操作（createElement/style/addEventListener）、V8 内置 API（JSON/Array/Promise/Math）、DOM polyfill（console/setTimeout）、CSS 渲染管线（flex/grid/positioned/text-shadow/gradient/box-shadow/custom-props/media-query） | +17 |
+
+WPT: 504 → 564 用例（+60, 93.3% 通过率），Tests: ~10,983 → ~11,026, clippy clean.
 
 ### -76. WPT CSS 布局测试扩展至 476 用例 + 无头协议 Phase 5（本轮，~10,970 测试）
 
@@ -1436,7 +1450,7 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] WPT 通过率持续追踪和扩展（当前 497 内建测试，13 分类）
+- [ ] WPT 通过率持续追踪和扩展（当前 564 内建测试，14 分类）
 - [ ] 页面级 WASM JS→wasm-sandbox 自动桥接（当前需要通过 Rust API 调用）
 
 ---
