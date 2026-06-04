@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,811 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成，WPT 测试套件 320 个用例（9 个分类），Web Workers 和 ES Modules 支持已实现
+**执行状态**: 16/16 crate 已实现，10,815 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 320 个用例（9 个分类），Web Workers 和 ES Modules 支持已实现
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -37,7 +37,7 @@
 | canvas | 591 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**raster 覆盖率测试（flatten_round_rect/compute_arc_to_geometry/flatten_arc_to/flatten_path/flatten_path_for/blit_path_to_pixels/blit_stroke_to_pixels/blit_line_cap/stroke_outline_vertices/11 种 composite_pixel 操作）** |
 | webview | 502 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）** |
 | wasm-sandbox | 198 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap**、**边界测试（6 个：错误参数/global export/Display/config 链/空模块/多函数 linker）** |
-| script-sandbox | 130 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）**、**Dedicated Worker（WorkerRuntime：独立线程 V8 持久上下文、postMessage/onmessage 通道、terminate 生命周期、16 测试）**、**ES Module Sandbox（EsModuleSandbox：源码转换支持 export/import 语法、ModuleRegistry 模块注册表、import.meta.url、链式依赖解析、30 测试）** |
+| script-sandbox | 136 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）**、**Dedicated Worker（WorkerRuntime：独立线程 V8 持久上下文、postMessage/onmessage 通道、terminate 生命周期、16 测试）**、**ES Module Sandbox（EsModuleSandbox：源码转换支持 export/import 语法、ModuleRegistry 模块注册表、import.meta.url、链式依赖解析、30 测试）**、**持久化 Context 优化（SandboxConfig::persistent_context + Global<Context> 缓存复用 + reset_context()，6 测试）** |
 | browser-shell | 256 | ✅ | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）**、**Tab 拖拽边界/导航历史边界/Bookmarks 过滤/History clear+search/Download 移除/Autocomplete 空查询+大小写/BrowserShell 导航清空前进/Settings 搜索/ContextMenu 子菜单查找** |
 
 ### 跨 crate 集成测试
@@ -103,7 +103,18 @@
 
 ## 最近完成的改进
 
-### -68. Web Worker WebView 集成 + ES Module Sandbox（本轮，10,811 测试）
+### -69. GPU 测试 SIGSEGV 修复 + V8 持久化 Context 优化（本轮，10,815 测试）
+
+修复 GPU 测试并行执行时的段错误，新增 V8 持久化 Context 性能优化：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| render-foundation/gpu | **GPU 创建互斥锁**：全局 `GPU_CREATE_MUTEX` 序列化 wgpu Instance/Adapter/Device 创建，修复并行测试 SIGSEGV | — |
+| script-sandbox/v8_runtime | **持久化 Context 优化**：`SandboxConfig::persistent_context` 标志（默认 false），启用后通过 `Global<Context>` 缓存复用 V8 Context，避免每次 execute 重新引导 JS 内置对象；`reset_context()` 方法清除缓存 | +6 |
+
+Total: 10,809 → 10,815 tests (+6)
+
+### -68. Web Worker WebView 集成 + ES Module Sandbox（前轮，10,811 测试）
 
 新增两个核心 Web 标准能力：
 
@@ -1311,7 +1322,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离  ❌ V8 快照优化 |
+| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context 优化（persistent_context 配置项 + Global<Context> 缓存复用） |
 
 ---
 
@@ -1349,7 +1360,7 @@ Total: 6219 → 6378 tests (+159)
 ## 下一步优先级
 
 1. **真实网站兼容性测试**（高优先级）— 逐个验证 Top 20 网站，记录兼容性问题（需要 GPU/Display 环境）
-2. **V8 快照优化**（中优先级，M13 剩余）— 减少沙箱创建开销
+2. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 3. **浏览器应用增强**（中优先级）— 设置持久化、下载文件触发
 4. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
 5. **浏览器质量测试体系**（高优先级，无头优先推进）— 从当前 smoke 型 WPT runner 推进到标准合规、渲染正确性、真实站点、安全、运行时、导航、性能、平台和产品层测试
@@ -1413,7 +1424,7 @@ Total: 6219 → 6378 tests (+159)
 1. ~~Web Workers（Dedicated Worker）实现~~ ✅ 已完成
 2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
-4. V8 快照优化（M13 剩余）
+4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
 5. 浏览器质量测试体系 P0（layout/primitive snapshot、最小 reftest、WPT CSS/layout 子集、expected metadata）
 
 ---
