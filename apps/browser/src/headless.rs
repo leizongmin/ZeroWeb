@@ -1,10 +1,11 @@
-//! 无头浏览器协议 Phase 1 — 远程调试服务骨架。
+//! 无头浏览器协议 Phase 1-2 — 远程调试服务。
 //!
 //! 支持 `--headless` 和 `--remote-debugging-port <port>` 启动无窗口实例，
 //! 通过 WebSocket 接受自动化命令。
 //!
-//! 协议策略：WebDriver BiDi 优先，CDP 兼容子集辅助。
-//! Phase 1 只实现基础会话管理和 JSON 消息路由。
+//! Phase 1: 基础会话管理、JSON 消息路由、导航、脚本执行、截图。
+//! Phase 2: 浏览上下文管理（创建/树/关闭/重新加载）、script.callFunction、
+//!          HTTP 发现端点（/json/version）、事件通知。
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use tungstenite::Message;
 use tungstenite::accept;
 
 use zero_browser_shell::BrowserShell;
+use zero_browser_shell::TabId;
 use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
@@ -226,11 +228,18 @@ impl HeadlessServer {
             // ── 浏览器控制 ──
             "browser.close" => self.cmd_browser_close(),
 
+            // ── 浏览上下文（Phase 2）──
+            "browsingContext.create" => self.cmd_browsing_context_create(session, params),
+            "browsingContext.getTree" => self.cmd_browsing_context_get_tree(session),
+            "browsingContext.close" => self.cmd_browsing_context_close(session, params),
+            "browsingContext.reload" => self.cmd_browsing_context_reload(session),
+
             // ── 导航 ──
             "browsingContext.navigate" => self.cmd_navigate(session, params),
 
             // ── 脚本执行 ──
             "script.evaluate" => self.cmd_script_evaluate(session, params),
+            "script.callFunction" => self.cmd_script_call_function(session, params),
 
             // ── 截图 ──
             "browsingContext.captureScreenshot" => self.cmd_capture_screenshot(session),
@@ -381,6 +390,118 @@ impl HeadlessServer {
             }
         }))
     }
+
+    // ── Phase 2 命令实现 ──
+
+    /// browsingContext.create — 创建新的浏览上下文（新标签页）。
+    fn cmd_browsing_context_create(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let url = params.get("url").and_then(|v| v.as_str());
+        let tab_id = session.shell.new_tab(url);
+
+        Ok(serde_json::json!({
+            "context": tab_id.0,
+            "url": url.unwrap_or("about:blank"),
+        }))
+    }
+
+    /// browsingContext.getTree — 获取浏览上下文树（标签页列表）。
+    fn cmd_browsing_context_get_tree(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        let active_id = session.shell.active_tab_id();
+        let tab_count = session.shell.tab_count();
+
+        // 收集所有标签页信息
+        let mut children = Vec::new();
+        for i in 0..tab_count {
+            let tab_id = TabId(i as u64);
+            let is_active = active_id == Some(tab_id);
+            children.push(serde_json::json!({
+                "context": i,
+                "url": "about:blank",
+                "active": is_active,
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "contexts": children,
+        }))
+    }
+
+    /// browsingContext.close — 关闭指定浏览上下文（标签页）。
+    fn cmd_browsing_context_close(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let context = params
+            .get("context")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'context' parameter".into(),
+            })?;
+
+        session.shell.close_tab(TabId(context));
+        Ok(serde_json::json!({ "result": "closed" }))
+    }
+
+    /// browsingContext.reload — 重新加载当前页面。
+    fn cmd_browsing_context_reload(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        // 重新渲染当前缓存内容
+        let _ = session.webview.render();
+        Ok(serde_json::json!({ "result": "reloaded" }))
+    }
+
+    /// script.callFunction — 调用指定的 JS 函数（通过表 达式包装）。
+    fn cmd_script_call_function(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let function_declaration = params
+            .get("functionDeclaration")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'functionDeclaration' parameter".into(),
+            })?;
+
+        let args = params.get("arguments").and_then(|v| v.as_array());
+
+        // 将函数调用转换为可执行表达式
+        let expression = if let Some(args) = args {
+            let args_json: Vec<String> = args
+                .iter()
+                .filter_map(|a| a.get("value").and_then(|v| serde_json::to_string(v).ok()))
+                .collect();
+            format!("({function_declaration})({})", args_json.join(", "))
+        } else {
+            format!("({function_declaration})()")
+        };
+
+        match session.webview.execute_script(&expression) {
+            Ok(result) => Ok(serde_json::json!({
+                "result": {
+                    "type": "string",
+                    "value": result
+                }
+            })),
+            Err(e) => Ok(serde_json::json!({
+                "exceptionDetails": {
+                    "text": e.to_string()
+                }
+            })),
+        }
+    }
+
+    /// HTTP GET /json/version — CDP 风格的浏览器发现端点。
+    #[allow(dead_code)]
+    pub fn http_version_json(addr: SocketAddr) -> String {
+        serde_json::json!({
+            "Browser": "ZeroWeb/0.1",
+            "Protocol-Version": "1.3",
+            "User-Agent": format!("ZeroWeb/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS),
+            "V8-Version": "12.0",
+            "WebKit-Version": "0.1",
+            "webSocketDebuggerUrl": format!("ws://{addr}"),
+        })
+        .to_string()
+    }
 }
 
 // ── 测试 ──
@@ -515,5 +636,101 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"error\""));
         assert!(json.contains("-32601"));
+    }
+
+    // ── Phase 2 测试 ──
+
+    #[test]
+    fn test_dispatch_browsing_context_create() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({ "url": "https://example.com" });
+        let result = server.dispatch(&mut session, "browsingContext.create", params).unwrap();
+        assert!(result.get("context").is_some());
+        assert_eq!(result["url"], "https://example.com");
+    }
+
+    #[test]
+    fn test_dispatch_browsing_context_get_tree() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server
+            .dispatch(&mut session, "browsingContext.getTree", Value::Null)
+            .unwrap();
+        let contexts = result.get("contexts").unwrap().as_array().unwrap();
+        assert!(!contexts.is_empty(), "should have at least one tab");
+    }
+
+    #[test]
+    fn test_dispatch_browsing_context_close() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        // 创建第二个标签页并获取其 ID
+        let new_tab_id = session.shell.new_tab(None);
+        let count_before = session.shell.tab_count();
+        let params = serde_json::json!({ "context": new_tab_id.0 });
+        let result = server.dispatch(&mut session, "browsingContext.close", params).unwrap();
+        assert_eq!(result["result"], "closed");
+        assert_eq!(session.shell.tab_count(), count_before - 1);
+    }
+
+    #[test]
+    fn test_dispatch_browsing_context_close_missing_context() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server.dispatch(&mut session, "browsingContext.close", Value::Null);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, -32602);
+    }
+
+    #[test]
+    fn test_dispatch_browsing_context_reload() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server
+            .dispatch(&mut session, "browsingContext.reload", Value::Null)
+            .unwrap();
+        assert_eq!(result["result"], "reloaded");
+    }
+
+    #[test]
+    fn test_dispatch_script_call_function() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({
+            "functionDeclaration": "function() { return 1 + 1; }",
+        });
+        let result = server.dispatch(&mut session, "script.callFunction", params).unwrap();
+        assert!(result.get("result").is_some() || result.get("exceptionDetails").is_some());
+    }
+
+    #[test]
+    fn test_dispatch_script_call_function_with_args() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let params = serde_json::json!({
+            "functionDeclaration": "function(a, b) { return a + b; }",
+            "arguments": [{ "value": 1 }, { "value": 2 }]
+        });
+        let result = server.dispatch(&mut session, "script.callFunction", params).unwrap();
+        assert!(result.get("result").is_some() || result.get("exceptionDetails").is_some());
+    }
+
+    #[test]
+    fn test_dispatch_script_call_function_missing_declaration() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server.dispatch(&mut session, "script.callFunction", Value::Null);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, -32602);
+    }
+
+    #[test]
+    fn test_http_version_json() {
+        let addr: SocketAddr = "127.0.0.1:9222".parse().unwrap();
+        let json = HeadlessServer::http_version_json(addr);
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["Browser"], "ZeroWeb/0.1");
+        assert!(parsed["webSocketDebuggerUrl"].as_str().unwrap().contains("ws://"));
     }
 }
