@@ -181,5 +181,185 @@ pub fn security_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_link".into(), "no_panic".into()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        // CSP 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/csp/default-src".into(),
+            description: "CSP default-src 策略".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src *">
+            </head><body>
+            <img src="https://picsum.photos/100/100" alt="allowed image">
+            <div>CSP default-src</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_img".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/csp/frame-src".into(),
+            description: "CSP frame-src 限制 iframe 来源".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="frame-src 'self'">
+            </head><body>
+            <iframe src="https://example.com" width="200" height="100"></iframe>
+            <div>CSP frame-src</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:iframe".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/csp/upgrade-insecure".into(),
+            description: "CSP upgrade-insecure-requests".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+            </head><body>
+            <img src="http://example.com/img.png" alt="upgraded">
+            <a href="http://example.com">Upgraded link</a>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_img".into(), "dom_has_link".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // Cookie 安全
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/cookie/http-only-meta".into(),
+            description: "Cookie 安全相关 meta 标签".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Set-Cookie" content="session=abc; Secure; HttpOnly; SameSite=Strict">
+            </head><body>
+            <div>Cookie security meta</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_meta".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 跨域资源共享 (CORS)
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/cors/crossorigin-script".into(),
+            description: "crossorigin 属性的 script 元素".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <script crossorigin="anonymous" src="https://cdn.example.com/lib.js"></script>
+            </head><body>
+            <div>CORS script</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/cors/crossorigin-img-use-credentials".into(),
+            description: "crossorigin=use-credentials 的 img".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <img src="https://api.example.com/avatar.png" crossorigin="use-credentials" alt="avatar">
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_img".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 安全相关 HTML 属性
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/attr/integrity".into(),
+            description: "subresource integrity 属性".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <link rel="stylesheet" href="https://cdn.example.com/style.css"
+                  integrity="sha384-abc123" crossorigin="anonymous">
+            <script src="https://cdn.example.com/app.js"
+                    integrity="sha384-xyz789" crossorigin="anonymous"></script>
+            </head><body>
+            <div>SRI test</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/attr/nonce".into(),
+            description: "nonce 属性的 inline script/style".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <style nonce="abc123">.red { color: red; }</style>
+            </head><body>
+            <div class="red">Nonce test</div>
+            <script nonce="abc123">console.log('nonce ok');</script>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 安全 HTTP 头 (模拟 via meta)
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/headers/x-content-type".into(),
+            description: "X-Content-Type-Options via meta".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="X-Content-Type-Options" content="nosniff">
+            </head><body>
+            <div>X-Content-Type-Options</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_meta".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "security/headers/strict-transport".into(),
+            description: "Strict-Transport-Security via meta".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains">
+            </head><body>
+            <div>HSTS</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_meta".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 综合安全页面
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "security/composite/secure-login-page".into(),
+            description: "安全登录页面（CSP + SRI + CORS + sandbox）".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'nonce-abc'; style-src 'unsafe-inline'">
+            <meta name="referrer" content="strict-origin-when-cross-origin">
+            </head><body>
+            <form action="/login" method="POST" autocomplete="off">
+                <label for="user">Username</label>
+                <input type="text" id="user" name="user" required autocomplete="username">
+                <label for="pass">Password</label>
+                <input type="password" id="pass" name="pass" required autocomplete="current-password">
+                <button type="submit">Sign In</button>
+            </form>
+            <script nonce="abc">document.querySelector('form').action;</script>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_form".into(),
+                "dom_has_meta".into(),
+                "dom_has_input".into(),
+                "no_panic".into(),
+            ],
+        },
     ]
 }
