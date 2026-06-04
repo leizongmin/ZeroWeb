@@ -46,3 +46,6 @@ mod e2e_canvas_dom;
 
 #[cfg(test)]
 mod e2e_rendering;
+
+#[cfg(test)]
+mod headless_protocol;
