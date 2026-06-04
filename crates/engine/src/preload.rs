@@ -323,6 +323,47 @@ impl ResourcePreloader {
     }
 }
 
+/// 从 DOM 文档中扫描 `<link>` 元素的资源提示。
+///
+/// 遍历 DOM 树，查找所有 `<link>` 元素，解析 `rel`、`href`、`as`、
+/// `crossorigin`、`integrity` 属性，注册到 ResourcePreloader。
+///
+/// 支持的提示类型：`preload`、`prefetch`、`preconnect`、`dns-prefetch`。
+/// 不匹配的 `rel` 值（如 `stylesheet`、`icon`）会被忽略。
+pub fn scan_dom_resource_hints(doc: &zero_dom::Document) -> ResourcePreloader {
+    let mut preloader = ResourcePreloader::new();
+
+    // 遍历 DOM 树查找 link 元素
+    scan_node_for_links(doc, doc.root(), &mut preloader);
+
+    preloader
+}
+
+/// 递归扫描节点及其子节点，查找 `<link>` 元素。
+fn scan_node_for_links(doc: &zero_dom::Document, node_id: zero_dom::NodeId, preloader: &mut ResourcePreloader) {
+    if let Some(node) = doc.get(node_id) {
+        // 检查是否为 link 元素
+        if let zero_dom::NodeKind::Element(element) = &node.kind
+            && element.local_name() == "link"
+        {
+            let href = doc.get_attribute(node_id, "href");
+            let rel = doc.get_attribute(node_id, "rel");
+            let as_value = doc.get_attribute(node_id, "as");
+            let crossorigin = doc.has_attribute(node_id, "crossorigin");
+            let integrity = doc.get_attribute(node_id, "integrity");
+
+            if let (Some(href), Some(rel)) = (href, rel) {
+                preloader.register_link(&href, &rel, as_value.as_deref(), crossorigin, integrity.as_deref());
+            }
+        }
+
+        // 递归处理子节点
+        for child_id in doc.child_nodes(node_id) {
+            scan_node_for_links(doc, child_id, preloader);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -759,5 +800,117 @@ mod tests {
             ResourceHint::from_link_attrs("font.woff2", "preload", Some("font"), false, Some("sha512-def456")).unwrap();
         assert!(!hint.cors);
         assert_eq!(hint.integrity, Some("sha512-def456".to_string()));
+    }
+
+    // ── scan_dom_resource_hints 测试 ──
+
+    #[test]
+    fn test_scan_dom_with_preload_link() {
+        let html = r#"<html><head>
+            <link rel="preload" href="app.js" as="script">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert_eq!(preloader.len(), 1);
+        let hint = preloader.get("app.js").unwrap();
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+        assert_eq!(hint.resource_type, ResourceType::Script);
+        assert_eq!(hint.priority, LoadPriority::High);
+    }
+
+    #[test]
+    fn test_scan_dom_with_multiple_links() {
+        let html = r#"<html><head>
+            <link rel="preload" href="style.css" as="style">
+            <link rel="preload" href="app.js" as="script">
+            <link rel="prefetch" href="next-page.html">
+            <link rel="preconnect" href="https://cdn.example.com">
+            <link rel="dns-prefetch" href="https://api.example.com">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert_eq!(preloader.len(), 5);
+        // 按优先级排序：style.css (Critical) > app.js (High) > preconnect (Medium) > prefetch (Low) > dns-prefetch (Low)
+        let pending = preloader.pending_resources();
+        assert_eq!(pending[0].url, "style.css");
+        assert_eq!(pending[1].url, "app.js");
+    }
+
+    #[test]
+    fn test_scan_dom_ignores_stylesheet_link() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="main.css">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert!(
+            preloader.is_empty(),
+            "rel=stylesheet should not be treated as resource hint"
+        );
+    }
+
+    #[test]
+    fn test_scan_dom_ignores_icon_link() {
+        let html = r#"<html><head>
+            <link rel="icon" href="/favicon.ico">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert!(preloader.is_empty(), "rel=icon should not be treated as resource hint");
+    }
+
+    #[test]
+    fn test_scan_dom_with_crossorigin_and_integrity() {
+        let html = r#"<html><head>
+            <link rel="preload" href="lib.js" as="script" crossorigin integrity="sha384-abc">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert_eq!(preloader.len(), 1);
+        let hint = preloader.get("lib.js").unwrap();
+        assert!(hint.cors);
+        assert_eq!(hint.integrity.as_deref(), Some("sha384-abc"));
+    }
+
+    #[test]
+    fn test_scan_dom_empty_document() {
+        let html = "<html><body></body></html>";
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        assert!(preloader.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dom_link_without_href() {
+        let html = r#"<html><head>
+            <link rel="preload" as="script">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        // 没有 href 的 link 不应注册
+        assert!(preloader.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dom_dedup_same_url() {
+        let html = r#"<html><head>
+            <link rel="prefetch" href="app.js">
+            <link rel="preload" href="app.js" as="script">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let preloader = scan_dom_resource_hints(&doc);
+
+        // URL 去重，保留更高优先级
+        assert_eq!(preloader.len(), 1);
+        let hint = preloader.get("app.js").unwrap();
+        assert_eq!(hint.hint_type, ResourceHintType::Preload);
+        assert_eq!(hint.priority, LoadPriority::High);
     }
 }
