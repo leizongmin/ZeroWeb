@@ -5193,6 +5193,7 @@ dependencies = [
 name = "zero-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "wat",
  "zero-browser-shell",
  "zero-canvas",

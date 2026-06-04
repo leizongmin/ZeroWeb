@@ -21,6 +21,7 @@ zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true }
 zero-browser-shell = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 wat = "1"
