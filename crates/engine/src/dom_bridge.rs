@@ -1085,16 +1085,33 @@ pub fn generate_dom_api_polyfill() -> String {
     timeOrigin: Date.now()
   };
 
-  // ── WebAssembly API Stub ──
+  // ── WebAssembly API Stub with Host Bridge ──
   // Provides the WebAssembly JavaScript API surface.
-  // Real compilation and execution by host runtime (zero-wasm-sandbox).
-  // This stub allows JS code that checks for WebAssembly support to work,
-  // and records compile/instantiate calls for host-side processing.
+  // When instantiate() is called, emits a special JSON command for the host
+  // to compile and execute via the real WASM runtime (zero-wasm-sandbox).
+  //
+  // Bridge protocol:
+  //   JS outputs: __WASM_BRIDGE__:{"id":N,"bytes":"base64..."}
+  //   Host responds by executing the WASM and setting globalThis.__wasm_results__
+
+  // Minimal base64 encoder for WASM bytes
+  var __wasm_b64__ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  function __wasmToBase64(bytes) {
+    var r = '';
+    for (var i = 0; i < bytes.length; i += 3) {
+      var a = bytes[i], b = i+1 < bytes.length ? bytes[i+1] : 0, c = i+2 < bytes.length ? bytes[i+2] : 0;
+      r += __wasm_b64__[a >> 2] + __wasm_b64__[((a & 3) << 4) | (b >> 4)];
+      r += (i+1 < bytes.length) ? __wasm_b64__[((b & 15) << 2) | (c >> 6)] : '=';
+      r += (i+2 < bytes.length) ? __wasm_b64__[c & 63] : '=';
+    }
+    return r;
+  }
 
   globalThis.WebAssembly = {
     _modules: {},
     _instances: {},
     _nextId: 1,
+    _pendingBridge: null,
 
     compile: function(bufferSource) {
       var id = this._nextId++;
@@ -1109,7 +1126,6 @@ pub fn generate_dom_api_polyfill() -> String {
         return Promise.reject(new TypeError('WebAssembly.compile(): Argument 0 must be a buffer source'));
       }
       this._modules[id] = bytes;
-      var self = this;
       return Promise.resolve({
         _id: id,
         _bytes: bytes,
@@ -1119,35 +1135,46 @@ pub fn generate_dom_api_polyfill() -> String {
 
     instantiate: function(bufferSourceOrModule, importObject) {
       var self = this;
+      var bytes;
       if (bufferSourceOrModule && bufferSourceOrModule._id !== undefined) {
         // Second form: instantiate(Module, imports)
-        var moduleId = bufferSourceOrModule._id;
-        var bytes = bufferSourceOrModule._bytes;
-        var instanceId = self._nextId++;
-        self._instances[instanceId] = { moduleId: moduleId, imports: importObject || {} };
-        return Promise.resolve({
-          module: bufferSourceOrModule,
-          instance: self._createInstance(instanceId, bytes, importObject)
-        });
-      }
-      // First form: instantiate(bufferSource, imports)
-      var bytes;
-      if (bufferSourceOrModule instanceof ArrayBuffer) {
-        bytes = new Uint8Array(bufferSourceOrModule);
-      } else if (bufferSourceOrModule instanceof Uint8Array) {
-        bytes = bufferSourceOrModule;
-      } else if (ArrayBuffer.isView(bufferSourceOrModule)) {
-        bytes = new Uint8Array(bufferSourceOrModule.buffer, bufferSourceOrModule.byteOffset, bufferSourceOrModule.byteLength);
+        bytes = bufferSourceOrModule._bytes;
       } else {
-        return Promise.reject(new TypeError('WebAssembly.instantiate(): Argument 0 must be a buffer source or Module'));
+        // First form: instantiate(bufferSource, imports)
+        if (bufferSourceOrModule instanceof ArrayBuffer) {
+          bytes = new Uint8Array(bufferSourceOrModule);
+        } else if (bufferSourceOrModule instanceof Uint8Array) {
+          bytes = bufferSourceOrModule;
+        } else if (ArrayBuffer.isView(bufferSourceOrModule)) {
+          bytes = new Uint8Array(bufferSourceOrModule.buffer, bufferSourceOrModule.byteOffset, bufferSourceOrModule.byteLength);
+        } else {
+          return Promise.reject(new TypeError('WebAssembly.instantiate(): Argument 0 must be a buffer source or Module'));
+        }
       }
       var moduleId = self._nextId++;
       self._modules[moduleId] = bytes;
       var instanceId = self._nextId++;
-      self._instances[instanceId] = { moduleId: moduleId, imports: importObject || {} };
+
+      // Emit bridge command for host to compile and execute
+      var b64 = __wasmToBase64(bytes);
+      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, bytes: b64});
+
+      // Check if host has already resolved this instance
+      if (globalThis.__wasm_results__ && globalThis.__wasm_results__[instanceId]) {
+        var resolved = globalThis.__wasm_results__[instanceId];
+        delete globalThis.__wasm_results__[instanceId];
+        return Promise.resolve({
+          module: { _id: moduleId, _bytes: bytes },
+          instance: resolved
+        });
+      }
+
+      // Return stub instance — host will resolve in follow-up
+      var stub = self._createInstance(instanceId, bytes, importObject);
+      self._instances[instanceId] = { moduleId: moduleId, imports: importObject || {}, stub: stub };
       return Promise.resolve({
         module: { _id: moduleId, _bytes: bytes },
-        instance: self._createInstance(instanceId, bytes, importObject)
+        instance: stub
       });
     },
 
@@ -1161,14 +1188,12 @@ pub fn generate_dom_api_polyfill() -> String {
             grow: function(delta) { return 1; },
             byteLength: 65536
           },
-          // Dynamic exports are looked up via __wasm_export_names__ if present
           __wasm_export_names__: []
         }
       };
     },
 
     validate: function(bufferSource) {
-      // Stub: always returns true for non-empty input
       if (!bufferSource) return false;
       if (bufferSource instanceof ArrayBuffer) return bufferSource.byteLength > 0;
       if (bufferSource.byteLength !== undefined) return bufferSource.byteLength > 0;
