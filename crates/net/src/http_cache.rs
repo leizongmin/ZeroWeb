@@ -182,9 +182,10 @@ impl HttpCache {
         };
 
         // 先检查容量
+        if self.max_entries == 0 {
+            return false;
+        }
         self.evict_if_needed(response.body.len());
-
-        // 插入或更新
         if self.entries.contains_key(url) {
             self.remove(url);
         }
@@ -259,10 +260,13 @@ impl HttpCache {
                     cc.private = true;
                 } else if directive.eq_ignore_ascii_case("must-revalidate") {
                     cc.must_revalidate = true;
-                } else if let Some(age_str) = directive.strip_prefix("max-age=") {
-                    cc.max_age = age_str.trim().parse().ok();
-                } else if let Some(age_str) = directive.strip_prefix("s-maxage=") {
-                    cc.s_maxage = age_str.trim().parse().ok();
+                } else {
+                    let lower = directive.to_ascii_lowercase();
+                    if let Some(age_str) = lower.strip_prefix("max-age=") {
+                        cc.max_age = age_str.trim().parse().ok();
+                    } else if let Some(age_str) = lower.strip_prefix("s-maxage=") {
+                        cc.s_maxage = age_str.trim().parse().ok();
+                    }
                 }
             }
         }
@@ -307,7 +311,10 @@ impl HttpCache {
 
     /// 判断 HTTP 状态码是否可缓存。
     fn is_cacheable_status(status: u16) -> bool {
-        matches!(status, 200 | 203 | 204 | 206 | 300 | 301 | 302 | 304 | 307 | 308 | 404 | 405 | 410 | 414 | 501)
+        matches!(
+            status,
+            200 | 203 | 204 | 206 | 300 | 301 | 302 | 304 | 307 | 308 | 404 | 405 | 410 | 414 | 501
+        )
     }
 
     /// 提升 LRU 顺序。
@@ -416,7 +423,10 @@ mod tests {
     fn make_response(status: u16, body: &[u8], headers: Vec<(&str, &str)>) -> HttpResponse {
         HttpResponse {
             status_code: status,
-            headers: headers.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            headers: headers
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             body: body.to_vec(),
             url: "https://example.com/test".to_string(),
             redirect_count: 0,
@@ -652,5 +662,141 @@ mod tests {
         let resp = cached.into_response();
         assert_eq!(resp.body, vec![1, 2, 3]);
         assert_eq!(resp.status_code, 200);
+    }
+
+    #[test]
+    fn test_cache_no_cache_control_no_ttl() {
+        let mut cache = HttpCache::new();
+        // 无 Cache-Control 也无 Expires，不应缓存
+        let resp = make_response(200, b"hello", vec![]);
+        assert!(!cache.put("https://example.com/test", &resp));
+    }
+
+    #[test]
+    fn test_cache_s_maxage() {
+        let mut cache = HttpCache::new();
+        let resp = make_response(200, b"hello", vec![("cache-control", "s-maxage=3600")]);
+        assert!(cache.put("https://example.com/test", &resp));
+        let cached = cache.get("https://example.com/test").unwrap();
+        assert_eq!(cached.body, b"hello");
+    }
+
+    #[test]
+    fn test_cache_must_revalidate_still_caches() {
+        // must-revalidate 允许缓存但在过期后必须重新验证
+        let mut cache = HttpCache::new();
+        let resp = make_response(200, b"hello", vec![("cache-control", "max-age=60, must-revalidate")]);
+        assert!(cache.put("https://example.com/test", &resp));
+        assert!(cache.get("https://example.com/test").is_some());
+    }
+
+    #[test]
+    fn test_cache_private_still_caches() {
+        // 私有缓存在浏览器端是允许的
+        let mut cache = HttpCache::new();
+        let resp = make_response(200, b"private data", vec![("cache-control", "private, max-age=60")]);
+        assert!(cache.put("https://example.com/test", &resp));
+    }
+
+    #[test]
+    fn test_cache_different_urls_independent() {
+        let mut cache = HttpCache::new();
+        let resp_a = make_response(200, b"page a", vec![("cache-control", "max-age=60")]);
+        let resp_b = make_response(200, b"page b", vec![("cache-control", "max-age=60")]);
+        cache.put("https://a.com/page", &resp_a);
+        cache.put("https://b.com/page", &resp_b);
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.get("https://a.com/page").unwrap().body, b"page a");
+        assert_eq!(cache.get("https://b.com/page").unwrap().body, b"page b");
+    }
+
+    #[test]
+    fn test_cache_remove_nonexistent() {
+        let mut cache = HttpCache::new();
+        assert!(!cache.remove("https://example.com/notexist"));
+    }
+
+    #[test]
+    fn test_cache_default() {
+        let cache = HttpCache::default();
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_cache_zero_max_entries() {
+        let mut cache = HttpCache::with_config(0, 1024);
+        let resp = make_response(200, b"hello", vec![("cache-control", "max-age=60")]);
+        // max_entries=0 时不应缓存任何条目
+        assert!(!cache.put("https://example.com/test", &resp));
+    }
+
+    #[test]
+    fn test_cache_multiple_etag_last_modified() {
+        let mut cache = HttpCache::new();
+        let resp = make_response(
+            200,
+            b"hello",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"v2\""),
+                ("last-modified", "Thu, 01 Jan 2026 00:00:00 GMT"),
+            ],
+        );
+        cache.put("https://example.com/test", &resp);
+        let headers = cache.conditional_headers("https://example.com/test");
+        assert_eq!(headers.len(), 2);
+        let etag_header = headers.iter().find(|(k, _)| k == "If-None-Match").unwrap();
+        assert_eq!(etag_header.1, "\"v2\"");
+    }
+
+    #[test]
+    fn test_conditional_headers_no_entry() {
+        let cache = HttpCache::new();
+        let headers = cache.conditional_headers("https://example.com/notexist");
+        assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn test_cacheable_status_codes() {
+        // 200, 203, 204, 206, 300, 301, 302, 304, 307, 308, 404, 405, 410, 414, 501
+        let cacheable = [200, 203, 204, 300, 301, 302, 304, 307, 308, 404, 410];
+        let mut cache = HttpCache::new();
+        for status in cacheable {
+            let resp = make_response(status, b"body", vec![("cache-control", "max-age=60")]);
+            assert!(
+                cache.put(&format!("https://example.com/{status}"), &resp),
+                "status {status} should be cacheable"
+            );
+        }
+        assert_eq!(cache.len(), cacheable.len());
+    }
+
+    #[test]
+    fn test_non_cacheable_status_codes() {
+        let non_cacheable = [201, 205, 400, 403, 500, 502, 503];
+        let mut cache = HttpCache::new();
+        for status in non_cacheable {
+            let resp = make_response(status, b"body", vec![("cache-control", "max-age=60")]);
+            assert!(
+                !cache.put(&format!("https://example.com/{status}"), &resp),
+                "status {status} should not be cacheable"
+            );
+        }
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_cache_parse_cache_control_case_insensitive() {
+        let mut cache = HttpCache::new();
+        let resp = make_response(200, b"hello", vec![("Cache-Control", "Max-Age=60")]);
+        assert!(cache.put("https://example.com/test", &resp));
+    }
+
+    #[test]
+    fn test_cache_expires_past() {
+        let mut cache = HttpCache::new();
+        // Expires 在过去
+        let resp = make_response(200, b"hello", vec![("expires", "Sun, 06 Nov 1994 08:49:37 GMT")]);
+        assert!(!cache.put("https://example.com/test", &resp));
     }
 }

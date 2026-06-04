@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{PipelineTimings, RenderPipeline};
-use zero_net::{HttpClient, NetError};
+use zero_net::{HttpCache, HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
@@ -101,6 +101,8 @@ pub struct WebView {
     next_worker_id: u64,
     /// WASM 实例缓存 — JS 端 WebAssembly.instantiate() 自动桥接到 wasm-sandbox。
     wasm_instances: HashMap<u64, zero_wasm_sandbox::WasmInstance>,
+    /// HTTP 响应缓存。
+    http_cache: HttpCache,
 }
 
 impl WebView {
@@ -131,6 +133,7 @@ impl WebView {
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
+            http_cache: HttpCache::new(),
         }
     }
 
@@ -228,9 +231,29 @@ impl WebView {
             }
         }
 
+        // 检查 HTTP 缓存
+        if let Some(cached) = self.http_cache.get(url) {
+            tracing::info!("HTTP cache hit for {url}");
+            let html = String::from_utf8(cached.body).map_err(|e| {
+                self.loading = false;
+                self.emit_event(&WebViewEvent::LoadFailed(
+                    url.to_string(),
+                    format!("Cached response body is not valid UTF-8: {e}"),
+                ));
+                WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
+            })?;
+            let render_result = self.load_html(&html, None);
+            self.loading = false;
+            self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
+            return Ok(render_result);
+        }
+
         // 发起 HTTP 请求
         match self.http_client.get(url) {
             Ok(response) => {
+                // 尝试将响应存入 HTTP 缓存
+                let _ = self.http_cache.put(url, &response);
+
                 let html = response.text().map_err(|e| {
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadFailed(
@@ -733,6 +756,21 @@ impl WebView {
                 worker.terminate();
             }
         }
+    }
+
+    /// 清空 HTTP 响应缓存。
+    pub fn clear_http_cache(&mut self) {
+        self.http_cache.clear();
+    }
+
+    /// 返回 HTTP 缓存条目数。
+    pub fn http_cache_len(&self) -> usize {
+        self.http_cache.len()
+    }
+
+    /// 返回 HTTP 缓存总字节数。
+    pub fn http_cache_bytes(&self) -> usize {
+        self.http_cache.total_bytes()
     }
 }
 

@@ -86,3 +86,34 @@ fn test_webview_script_execution() {
     assert!(result.is_ok(), "V8 sandbox should execute simple script");
     assert_eq!(result.unwrap(), "2");
 }
+
+// ── HTTP 缓存集成测试 ──
+
+/// WebView HTTP 缓存初始状态为空。
+#[test]
+fn test_webview_http_cache_initially_empty() {
+    let wv = WebView::new(WebViewConfig::default());
+    assert_eq!(wv.http_cache_len(), 0);
+    assert_eq!(wv.http_cache_bytes(), 0);
+}
+
+/// WebView HTTP 缓存可以清空。
+#[test]
+fn test_webview_http_cache_clear() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // 初始状态
+    assert_eq!(wv.http_cache_len(), 0);
+    // 清空空缓存不 panic
+    wv.clear_http_cache();
+    assert_eq!(wv.http_cache_len(), 0);
+}
+
+/// WebView 多次 clear_http_cache 不 panic。
+#[test]
+fn test_webview_http_cache_clear_multiple() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    for _ in 0..5 {
+        wv.clear_http_cache();
+    }
+    assert_eq!(wv.http_cache_len(), 0);
+}
