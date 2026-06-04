@@ -1494,7 +1494,7 @@ Total: 6219 → 6378 tests (+159)
 | Phase 2: WebDriver BiDi 核心子集 | ✅ | ✅ browsingContext.create/getTree/close/reload ✅ script.callFunction ✅ /json/version HTTP 发现 ✅ 事件推送（browsingContext.load/log.entryAdded/contextCreated/contextDestroyed） ✅ 多客户端连接 | 事件推送系统已实现，12 个事件相关测试覆盖 |
 | Phase 3: CDP 最小兼容子集 | ✅ | ✅ HTTP 发现服务器（/json/version、/json、/json/list） ✅ Page.navigate/captureScreenshot ✅ Runtime.evaluate ✅ Target.getTargets ✅ Network.enable 桩 | HTTP 发现和核心 CDP 域命令已实现；Playwright/Puppeteer 可发现和连接 |
 | Phase 4: 自动化测试接入 | ✅ | ✅ HeadlessClient 协议客户端（parse_response/build_request/parse_event/parse_screenshot/parse_dom_snapshot） ✅ ProtocolTestRunner 全协议往返模拟器 ✅ DomSnapshotStats 图元统计 ✅ 8 个协议驱动冒烟测试（完整会话生命周期、CDP 命令序列、脚本执行变体、多浏览上下文管理、渲染管线验证、协议错误处理、重载事件序列） | 协议驱动冒烟测试可覆盖会话/导航/脚本/截图/上下文管理/错误处理；Phase 4 基础设施就位 |
-| Phase 5: 隔离与安全加固 | [ ] | 限制默认监听地址为 `127.0.0.1`；可配置 token/origin allowlist；禁止默认公网暴露；会话关闭清理脚本句柄和浏览上下文 | 远程调试端口默认本机可访问；安全边界有单元/集成测试 |
+| Phase 5: 隔离与安全加固 | ✅ | ✅ 默认绑定 `127.0.0.1`（不暴露公网） ✅ `HeadlessSecurityConfig`：可配置 auth_token（首个请求必须携带 token） ✅ Origin allowlist（HTTP + WebSocket 连接均检查） ✅ `extract_origin_header` 从 HTTP 请求头提取 Origin | 7 个安全单元测试覆盖 token/origin/localhost 绑定 |
 
 协议实现边界：
 - 先支持单 browser process + 多 browsing context，暂不承诺多进程 target attach 的完整语义。
@@ -1525,7 +1525,7 @@ Total: 6219 → 6378 tests (+159)
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
 5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata（剩余：WPT CSS/layout 真实子集）
-6. ~~无头浏览器协议 Phase 1-4~~ ✅ 远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试（剩余：Phase 5 隔离安全加固）
+6. ~~无头浏览器协议 Phase 1-5~~ ✅ 全部完成：远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试 + 隔离安全加固
 
 ---
 
