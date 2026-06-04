@@ -35,9 +35,9 @@ pub struct Tab {
 #[derive(Debug, Clone)]
 pub struct NavigationEntry {
     /// URL。
-    url: String,
+    pub(crate) url: String,
     /// 页面标题。
-    title: Option<String>,
+    pub(crate) title: Option<String>,
 }
 
 impl Tab {
@@ -162,6 +162,31 @@ impl Tab {
     pub fn history_index(&self) -> usize {
         self.history_index
     }
+
+    /// 获取导航历史条目的引用。
+    pub fn navigation_history(&self) -> &[NavigationEntry] {
+        &self.history
+    }
+
+    /// 清除导航历史（会话恢复内部使用）。
+    pub(crate) fn clear_history(&mut self) {
+        self.history.clear();
+        self.history_index = 0;
+    }
+
+    /// 向导航历史追加一条记录（会话恢复内部使用）。
+    pub(crate) fn push_navigation(&mut self, url: &str, title: Option<&str>) {
+        self.history.push(NavigationEntry {
+            url: url.to_string(),
+            title: title.map(|s| s.to_string()),
+        });
+    }
+
+    /// 设置 URL 而不触发加载状态（会话恢复内部使用）。
+    pub(crate) fn set_url_internal(&mut self, url: &str) {
+        self.url = Some(url.to_string());
+        self.loading = false;
+    }
 }
 
 /// 标签页管理器 — 管理多个标签页的创建、关闭、切换。
@@ -257,6 +282,11 @@ impl TabManager {
     /// 遍历所有标签页。
     pub fn tabs(&self) -> impl Iterator<Item = &Tab> {
         self.tabs.iter()
+    }
+
+    /// 获取活跃标签页索引。
+    pub fn active_index(&self) -> Option<usize> {
+        self.active_index
     }
 
     /// 移动标签页位置（拖拽排序）。

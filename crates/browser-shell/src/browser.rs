@@ -4,6 +4,7 @@ use crate::autocomplete::Autocomplete;
 use crate::bookmarks::Bookmarks;
 use crate::download::DownloadManager;
 use crate::history::History;
+use crate::session::{NavigationSnapshot, SessionState, TabInfo};
 use crate::settings::BrowserSettings;
 use crate::tab::{TabId, TabManager};
 
@@ -364,6 +365,114 @@ impl BrowserShell {
     /// 从历史记录和书签中搜索匹配的 URL 和标题。
     pub fn suggest(&self, query: &str) -> Vec<crate::autocomplete::Suggestion> {
         self.autocomplete.suggest(query, &self.history, &self.bookmarks)
+    }
+
+    // ── 会话持久化 ──
+
+    /// 将当前标签页状态保存为会话快照。
+    ///
+    /// 保存所有打开标签页的 URL、标题和导航历史。
+    pub fn save_session(&self) -> SessionState {
+        use crate::tab::NavigationEntry;
+        fn nav_to_snapshot(entry: &NavigationEntry) -> NavigationSnapshot {
+            NavigationSnapshot {
+                url: entry.url.clone(),
+                title: entry.title.clone(),
+            }
+        }
+
+        let tabs: Vec<TabInfo> = self
+            .tabs
+            .tabs()
+            .map(|tab| TabInfo {
+                url: tab.url().map(|s| s.to_string()),
+                title: tab.title().map(|s| s.to_string()),
+                history: tab.navigation_history().iter().map(nav_to_snapshot).collect(),
+                history_index: tab.history_index(),
+            })
+            .collect();
+        SessionState::from_tabs(tabs.into_iter(), self.tabs.active_index())
+    }
+
+    /// 将当前会话保存到指定路径。
+    pub fn save_session_to(&self, path: &std::path::Path) -> Result<(), String> {
+        self.save_session().save(path)
+    }
+
+    /// 将当前会话保存到默认路径。
+    pub fn save_session_default(&self) -> Result<(), String> {
+        self.save_session().save_default()
+    }
+
+    /// 从会话快照恢复标签页。
+    ///
+    /// 清除当前所有标签页，根据快照重新创建。
+    /// 返回恢复的标签页数量。
+    pub fn restore_session(&mut self, session: &SessionState) -> usize {
+        // 清除现有标签页
+        // 由于 TabManager 没有 clear，直接创建新的
+        self.tabs = TabManager::new();
+
+        let count = session.tabs.len();
+        for tab_snap in &session.tabs {
+            // 创建标签页：如果有 URL 则以该 URL 创建，否则创建空白
+            let new_id = if let Some(url) = &tab_snap.url {
+                self.tabs.create_tab(Some(url))
+            } else {
+                self.tabs.create_tab(None)
+            };
+
+            // 恢复标题
+            if let Some(title) = &tab_snap.title
+                && let Some(tab) = self.tabs.get_tab_mut(new_id)
+            {
+                tab.set_title(title);
+            }
+
+            // 恢复导航历史（如果快照中有多条记录）
+            // 目前 Tab::new(url) 已经创建了一条历史记录，
+            // 如果快照中有多条历史记录，需要用完整的历史替换
+            if tab_snap.history.len() > 1
+                && let Some(tab) = self.tabs.get_tab_mut(new_id)
+            {
+                // 清除当前历史，重建
+                tab.clear_history();
+                for (i, nav) in tab_snap.history.iter().enumerate() {
+                    tab.push_navigation(&nav.url, nav.title.as_deref());
+                    if i == tab_snap.history_index {
+                        tab.set_url_internal(&nav.url);
+                        if let Some(t) = &nav.title {
+                            tab.set_title(t);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 恢复活跃标签页
+        if let Some(active_idx) = session.active_tab_index {
+            // 先收集 ID，再切换，避免借用冲突
+            let active_id = self.tabs.tabs().nth(active_idx).map(|t| t.id());
+            if let Some(id) = active_id {
+                self.tabs.switch_to(id);
+            }
+        }
+
+        count
+    }
+
+    /// 从指定路径加载会话并恢复。
+    ///
+    /// 如果文件不存在或解析失败，返回 `None`。
+    pub fn restore_session_from(&mut self, path: &std::path::Path) -> Option<usize> {
+        let session = SessionState::load(path)?;
+        Some(self.restore_session(&session))
+    }
+
+    /// 从默认路径加载会话并恢复。
+    pub fn restore_session_default(&mut self) -> Option<usize> {
+        let session = SessionState::load_default()?;
+        Some(self.restore_session(&session))
     }
 }
 

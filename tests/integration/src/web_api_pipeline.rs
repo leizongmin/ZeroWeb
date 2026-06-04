@@ -15,10 +15,7 @@ fn create_and_render(html: &str, css: Option<&str>) -> zero_webview::WebViewRend
 }
 
 /// 辅助：创建 WebView，加载 HTML，执行带 DOM polyfill 的 JS 脚本。
-fn create_load_and_execute(
-    html: &str,
-    script: &str,
-) -> Result<String, zero_webview::WebViewError> {
+fn create_load_and_execute(html: &str, script: &str) -> Result<String, zero_webview::WebViewError> {
     let config = zero_webview::WebViewConfig {
         width: 800,
         height: 600,
@@ -100,7 +97,11 @@ fn test_js_event_listener_execution() {
     let result = webview.execute_script_with_dom(
         "var btn = document.createElement('button'); var clicked = false; btn.addEventListener('click', function() { clicked = true; }); clicked === false ? 'listener added' : 'unexpected'",
     );
-    assert!(result.is_ok(), "addEventListener should work with DOM polyfill: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "addEventListener should work with DOM polyfill: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -180,9 +181,8 @@ fn test_js_set_timeout() {
     let mut webview = zero_webview::WebView::new(config);
 
     // setTimeout 需要 DOM polyfill
-    let result = webview.execute_script_with_dom(
-        "var result = 'before'; setTimeout(function() { result = 'after'; }, 0); result",
-    );
+    let result = webview
+        .execute_script_with_dom("var result = 'before'; setTimeout(function() { result = 'after'; }, 0); result");
     assert!(result.is_ok(), "setTimeout should work with DOM polyfill: {:?}", result);
 }
 
@@ -221,11 +221,15 @@ fn test_render_complex_nested_layout() {
         None,
     );
     // 验证渲染有填充图元输出（flex 布局 + border-radius + nested）
-    let total_primitives = result.primitives.fills.len()
-        + result.primitives.rounded_rects.len()
-        + result.primitives.glyphs.len();
-    assert!(total_primitives >= 3, "should have primitives for flex items, got {} fills, {} rounded_rects, {} glyphs",
-        result.primitives.fills.len(), result.primitives.rounded_rects.len(), result.primitives.glyphs.len());
+    let total_primitives =
+        result.primitives.fills.len() + result.primitives.rounded_rects.len() + result.primitives.glyphs.len();
+    assert!(
+        total_primitives >= 3,
+        "should have primitives for flex items, got {} fills, {} rounded_rects, {} glyphs",
+        result.primitives.fills.len(),
+        result.primitives.rounded_rects.len(),
+        result.primitives.glyphs.len()
+    );
 }
 
 #[test]
@@ -242,10 +246,13 @@ fn test_render_grid_holy_grail() {
         </body></html>"#,
         None,
     );
-    let total_primitives = result.primitives.fills.len()
-        + result.primitives.rounded_rects.len()
-        + result.primitives.glyphs.len();
-    assert!(total_primitives >= 5, "should have primitives for all grid areas, got {}", total_primitives);
+    let total_primitives =
+        result.primitives.fills.len() + result.primitives.rounded_rects.len() + result.primitives.glyphs.len();
+    assert!(
+        total_primitives >= 5,
+        "should have primitives for all grid areas, got {}",
+        total_primitives
+    );
 }
 
 #[test]
@@ -261,7 +268,11 @@ fn test_render_positioned_elements() {
         None,
     );
     let total_primitives = result.primitives.fills.len() + result.primitives.rounded_rects.len();
-    assert!(total_primitives >= 4, "should have fills for container + 3 positioned elements, got {}", total_primitives);
+    assert!(
+        total_primitives >= 4,
+        "should have fills for container + 3 positioned elements, got {}",
+        total_primitives
+    );
 }
 
 #[test]
@@ -276,7 +287,10 @@ fn test_render_text_with_shadows() {
     );
     // 至少应该有背景填充和文本 glyph
     assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1);
-    assert!(result.primitives.glyphs.len() >= 1, "should have glyph primitives for text");
+    assert!(
+        result.primitives.glyphs.len() >= 1,
+        "should have glyph primitives for text"
+    );
 }
 
 #[test]
@@ -290,8 +304,12 @@ fn test_render_gradient_backgrounds() {
     );
     // 渐变元素通过 gradients 或 fills 图元渲染
     let gradient_count = result.primitives.gradients.len() + result.primitives.fills.len();
-    assert!(gradient_count >= 2, "should have gradient or fill primitives for gradient elements, got gradients={}, fills={}",
-        result.primitives.gradients.len(), result.primitives.fills.len());
+    assert!(
+        gradient_count >= 2,
+        "should have gradient or fill primitives for gradient elements, got gradients={}, fills={}",
+        result.primitives.gradients.len(),
+        result.primitives.fills.len()
+    );
 }
 
 #[test]
@@ -303,7 +321,10 @@ fn test_render_box_shadow_elements() {
         None,
     );
     assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1);
-    assert!(result.primitives.shadows.len() >= 1, "should have shadow primitives for box-shadow");
+    assert!(
+        result.primitives.shadows.len() >= 1,
+        "should have shadow primitives for box-shadow"
+    );
 }
 
 #[test]
@@ -314,8 +335,10 @@ fn test_css_custom_properties_pipeline() {
         </body></html>"#,
         None,
     );
-    assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1,
-        "should have fill primitives for custom property element");
+    assert!(
+        result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1,
+        "should have fill primitives for custom property element"
+    );
 }
 
 #[test]
