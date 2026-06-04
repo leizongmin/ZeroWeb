@@ -66,7 +66,7 @@ fn test_autocomplete_default() {
 #[test]
 fn test_autocomplete_with_max_results() {
     let autocomplete = Autocomplete::new().with_max_results(2);
-    let mut history = History::new();
+    let history = History::new();
     let mut bookmarks = Bookmarks::new();
 
     // 添加多个匹配项

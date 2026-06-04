@@ -78,6 +78,7 @@ mod coverage_round8;
 mod coverage_round9;
 mod parser_coverage;
 mod parser_coverage_extra;
+mod parser_coverage_final;
 mod tests_1;
 mod tests_10;
 mod tests_11;
