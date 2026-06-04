@@ -495,7 +495,7 @@ impl BrowserApp {
             0.0,
             y_offset - scroll_y,
             fallback_font_id,
-            1.0,
+            self.scale_factor,
         )
     }
 
