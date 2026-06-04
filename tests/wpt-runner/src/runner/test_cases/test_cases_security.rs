@@ -19,7 +19,8 @@ pub fn security_tests() -> Vec<TestCase> {
             <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'">
             </head><body>
             <div id="csp">CSP test</div>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_meta".into(), "no_panic".into()],
         },
@@ -32,7 +33,8 @@ pub fn security_tests() -> Vec<TestCase> {
             </head><body>
             <div id="csp-script">CSP script</div>
             <script>document.getElementById('csp-script').textContent = 'executed';</script>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -44,7 +46,8 @@ pub fn security_tests() -> Vec<TestCase> {
             <meta http-equiv="Content-Security-Policy" content="style-src 'unsafe-inline'">
             </head><body>
             <div style="width:100px; height:50px; background:red;">CSP style</div>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -57,9 +60,14 @@ pub fn security_tests() -> Vec<TestCase> {
             category: "security".into(),
             html: r#"<html><body>
             <iframe sandbox="allow-scripts" srcdoc="<p>Sandboxed</p>" width="200" height="100"></iframe>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:iframe".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:iframe".into(),
+                "no_panic".into(),
+            ],
         },
         TestCase {
             id: "security/sandbox/iframe-allow-same-origin".into(),
@@ -67,9 +75,14 @@ pub fn security_tests() -> Vec<TestCase> {
             category: "security".into(),
             html: r#"<html><body>
             <iframe sandbox="allow-same-origin allow-scripts" srcdoc="<div>Content</div>"></iframe>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:iframe".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:iframe".into(),
+                "no_panic".into(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         // 混合内容
@@ -81,7 +94,8 @@ pub fn security_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <div id="secure">Secure content</div>
             <img src="https://example.com/image.png" alt="secure image">
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_img".into(), "no_panic".into()],
         },
@@ -96,7 +110,8 @@ pub fn security_tests() -> Vec<TestCase> {
             <meta name="referrer" content="no-referrer">
             </head><body>
             <a href="https://example.com">Link</a>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_link".into(), "no_panic".into()],
         },
@@ -112,9 +127,15 @@ pub fn security_tests() -> Vec<TestCase> {
                 <input type="password" name="pass">
                 <button type="submit">Submit</button>
             </form>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_form".into(), "dom_has_button".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_form".into(),
+                "dom_has_button".into(),
+                "no_panic".into(),
+            ],
         },
         TestCase {
             id: "security/form/input-validation".into(),
@@ -125,9 +146,15 @@ pub fn security_tests() -> Vec<TestCase> {
                 <input type="email" required placeholder="Email">
                 <input type="text" pattern="[A-Za-z]{3}" title="3 letters">
             </form>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_form".into(), "dom_has_input".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_form".into(),
+                "dom_has_input".into(),
+                "no_panic".into(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         // 同源策略相关 HTML 结构
@@ -138,7 +165,8 @@ pub fn security_tests() -> Vec<TestCase> {
             category: "security".into(),
             html: r#"<html><body>
             <img src="https://other-domain.com/img.png" crossorigin="anonymous" alt="cross-origin">
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_img".into(), "no_panic".into()],
         },
@@ -148,7 +176,8 @@ pub fn security_tests() -> Vec<TestCase> {
             category: "security".into(),
             html: r#"<html><body>
             <a href="https://example.com" rel="noopener noreferrer" target="_blank">External</a>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_link".into(), "no_panic".into()],
         },

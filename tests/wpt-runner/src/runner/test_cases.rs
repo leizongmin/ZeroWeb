@@ -18,6 +18,8 @@
 //! - `test_cases_web_api`: Web API 标准合规性测试（Fetch/WebSocket/Performance/Observers）
 //! - `test_cases_security`: 安全策略标准合规性测试（CSP/CORS/Sandbox/SOP）
 //! - `test_cases_a11y_i18n`: 可访问性和国际化测试（ARIA/CJK/RTL/Unicode）
+//! - `test_cases_interactive`: HTML 交互元素和表单合规性测试（form/dialog/details/table/iframe）
+//! - `test_cases_typography`: CSS 排版和高级视觉效果测试（font/color/border/gradient/transform/filter）
 
 mod test_cases_a11y_i18n;
 mod test_cases_canvas;
@@ -29,11 +31,13 @@ mod test_cases_dom_api;
 mod test_cases_es_modules;
 mod test_cases_geometry;
 mod test_cases_html_layout;
+mod test_cases_interactive;
 mod test_cases_js_dom;
 mod test_cases_navigation;
 mod test_cases_security;
 mod test_cases_standard;
 mod test_cases_storage;
+mod test_cases_typography;
 mod test_cases_web_api;
 mod test_cases_web_platform;
 mod test_cases_wpt;
@@ -61,5 +65,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_web_api::web_api_tests());
     tests.extend(test_cases_security::security_tests());
     tests.extend(test_cases_a11y_i18n::a11y_i18n_tests());
+    tests.extend(test_cases_interactive::interactive_tests());
+    tests.extend(test_cases_typography::typography_tests());
     tests
 }
