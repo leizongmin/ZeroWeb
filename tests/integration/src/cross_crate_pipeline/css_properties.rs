@@ -827,7 +827,10 @@ fn test_linear_gradient_to_direction() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+    assert!(
+        !result.primitives.gradients.is_empty(),
+        "Should produce gradient primitives"
+    );
 }
 
 #[test]
@@ -837,7 +840,10 @@ fn test_radial_gradient_circle() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+    assert!(
+        !result.primitives.gradients.is_empty(),
+        "Should produce gradient primitives"
+    );
 }
 
 #[test]
@@ -847,7 +853,10 @@ fn test_linear_gradient_with_angle() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.gradients.is_empty(), "Should produce gradient primitives");
+    assert!(
+        !result.primitives.gradients.is_empty(),
+        "Should produce gradient primitives"
+    );
 }
 
 // ── 17. CSS 变换/透视管线 ──────────────────────────────────────
@@ -913,7 +922,10 @@ fn test_box_shadow_inset_render() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.shadows.is_empty(), "Should produce shadow primitives");
+    assert!(
+        !result.primitives.shadows.is_empty(),
+        "Should produce shadow primitives"
+    );
 }
 
 // ── 19. CSS 多列布局管线 ──────────────────────────────────────
@@ -965,7 +977,10 @@ fn test_css_variable_fallback() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty(), "Should produce fill from CSS variable");
+    assert!(
+        !result.primitives.fills.is_empty(),
+        "Should produce fill from CSS variable"
+    );
 }
 
 #[test]
@@ -975,7 +990,10 @@ fn test_css_variable_undefined_fallback() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty(), "Should produce fill from fallback value");
+    assert!(
+        !result.primitives.fills.is_empty(),
+        "Should produce fill from fallback value"
+    );
 }
 
 #[test]

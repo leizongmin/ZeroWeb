@@ -22,7 +22,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <div role="status">Status update</div>
                 <button role="button" aria-pressed="false">Toggle</button>
             </main>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_nav".into(), "no_panic".into()],
         },
@@ -33,7 +34,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <div aria-live="polite">Updates appear here</div>
             <div aria-live="assertive">Urgent update</div>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -47,9 +49,15 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <li role="menuitem">Item 1</li>
                 <li role="menuitem">Item 2</li>
             </ul>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "dom_has_list".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_button".into(),
+                "dom_has_list".into(),
+                "no_panic".into(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         // 语义化 HTML
@@ -69,7 +77,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <aside>Sidebar</aside>
             </main>
             <footer>Footer</footer>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".into(),
@@ -93,7 +102,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <summary>Already open</summary>
                 <p>Visible content</p>
             </details>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -107,7 +117,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <button>Close</button>
             </dialog>
             <button onclick="document.getElementById('dlg').showModal()">Open</button>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "no_panic".into()],
         },
@@ -131,7 +142,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                     <label><input type="checkbox"> Option B</label>
                 </fieldset>
             </form>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".into(),
@@ -150,7 +162,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>这是一段中文文本，用于测试中文渲染。</p>
             <p>繁體中文測試文本。</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_paragraph".into(), "no_panic".into()],
         },
@@ -161,7 +174,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>これは日本語のテストテキストです。</p>
             <p>漢字、ひらがな、カタカナの混在テスト。</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_paragraph".into(), "no_panic".into()],
         },
@@ -172,7 +186,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>한국어 테스트 텍스트입니다.</p>
             <p>대한민국의 언어 렌더링 테스트.</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_paragraph".into(), "no_panic".into()],
         },
@@ -188,7 +203,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 <p>هذا نص عربي للتجربة.</p>
                 <p>اختبار التخطيط من اليمين إلى اليسار.</p>
             </div>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -200,7 +216,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             <div dir="rtl">
                 <p>זהו טקסט בעברית לבדיקה.</p>
             </div>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -214,7 +231,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>Emoji: 😀 🎉 🚀 ❤️ 👍 🌍 🎨 ⭐ 🔥 💯</p>
             <p>Flags: 🇺🇸 🇬🇧 🇯🇵 🇰🇷 🇨🇳 🇫🇷 🇩🇪</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -226,7 +244,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             <p>Symbols: © ® ™ § ¶ † ‡ € £ ¥ ¢ ₽</p>
             <p>Math: ∑ ∏ √ ∞ ≈ ≠ ≤ ≥ ± × ÷</p>
             <p>Arrows: ← → ↑ ↓ ↔ ↕ ⇒ ⇐ ⇑ ⇓</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -240,7 +259,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>Mixed: Hello 你好 こんにちは 안녕하세요 Hola مرحبا</p>
             <p>The 快速 brown fox 狐狸 jumps over ひと 13.</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
@@ -251,7 +271,8 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <p>English and العربية mixed in one paragraph.</p>
             <p>LTR + RTL: Hello مرحبا World</p>
-            </body></html>"#.into(),
+            </body></html>"#
+                .into(),
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },

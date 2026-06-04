@@ -146,7 +146,8 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex justify-content:center 居中子元素".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>X</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; justify-content: center; width: 400px; height: 100px; background: #f0f0f0; }".into(),
+        css: ".flex { display: flex; justify-content: center; width: 400px; height: 100px; background: #f0f0f0; }"
+            .into(),
         assertions: vec![
             "dom_has_body".into(),
             "has_fill_primitives".into(),
@@ -159,7 +160,8 @@ pub fn geometry_tests() -> Vec<TestCase> {
         description: "flex-direction:column 垂直排列".into(),
         category: "geometry".into(),
         html: r#"<html><body><div class="flex"><span>A</span><span>B</span></div></body></html>"#.into(),
-        css: ".flex { display: flex; flex-direction: column; width: 200px; height: 300px; background: #f0f0f0; }".into(),
+        css: ".flex { display: flex; flex-direction: column; width: 200px; height: 300px; background: #f0f0f0; }"
+            .into(),
         assertions: vec![
             "dom_has_body".into(),
             "layout_has_children".into(),
@@ -281,10 +283,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         category: "geometry".into(),
         html: r#"<html><body><p>Hello World</p></body></html>"#.into(),
         css: "body { background: white; }".into(),
-        assertions: vec![
-            "dom_has_body".into(),
-            "glyph_count_ge:1".into(),
-        ],
+        assertions: vec!["dom_has_body".into(), "glyph_count_ge:1".into()],
     });
 
     tests.push(TestCase {
@@ -586,10 +585,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         category: "geometry".into(),
         html: r#"<html><body><div>Layers</div></body></html>"#.into(),
         css: "div { width: 200px; height: 100px; background: linear-gradient(to right, red, blue); }".into(),
-        assertions: vec![
-            "dom_has_body".into(),
-            "gradient_count_ge:1".into(),
-        ],
+        assertions: vec!["dom_has_body".into(), "gradient_count_ge:1".into()],
     });
 
     tests.push(TestCase {
