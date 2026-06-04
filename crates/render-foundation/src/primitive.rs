@@ -216,6 +216,51 @@ pub struct GlyphPrimitive {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
 
+/// 渲染统计 — 追踪图元数量、估算 draw call 数量和批处理效率。
+#[derive(Debug, Clone, Default)]
+pub struct RenderStats {
+    /// 填充矩形数量
+    pub fill_count: usize,
+    /// 圆角矩形数量
+    pub rounded_rect_count: usize,
+    /// 路径填充数量
+    pub path_fill_count: usize,
+    /// 路径描边数量
+    pub path_stroke_count: usize,
+    /// 描边线段数量
+    pub stroke_count: usize,
+    /// 渐变数量
+    pub gradient_count: usize,
+    /// 阴影数量
+    pub shadow_count: usize,
+    /// 图片数量
+    pub image_count: usize,
+    /// Glyph 数量
+    pub glyph_count: usize,
+    /// 裁剪区域数量
+    pub clip_count: usize,
+    /// 估算 draw call 数量（按材质/状态分组后的最少调用次数）
+    pub estimated_draw_calls: usize,
+    /// 因 viewport culling 被剔除的图元数量
+    pub culled_count: usize,
+}
+
+impl RenderStats {
+    /// 图元总数
+    pub fn total_primitives(&self) -> usize {
+        self.fill_count
+            + self.rounded_rect_count
+            + self.path_fill_count
+            + self.path_stroke_count
+            + self.stroke_count
+            + self.gradient_count
+            + self.shadow_count
+            + self.image_count
+            + self.glyph_count
+            + self.clip_count
+    }
+}
+
 /// 渲染图元列表 — 由渲染管线生成，供 Backend 消费
 #[derive(Debug, Clone, Default)]
 pub struct RenderPrimitives {
@@ -498,6 +543,285 @@ impl RenderPrimitives {
             ));
         }
         buf
+    }
+
+    /// 计算渲染统计信息，包括估算的 draw call 数量。
+    ///
+    /// draw call 估算规则：
+    /// - 每种不同颜色/材质的 fill 算一次 draw call
+    /// - 每个 rounded_rect 算一次 draw call（通常圆角不同）
+    /// - 每种颜色的 path_fill 算一次 draw call
+    /// - 每个 gradient 算一次 draw call
+    /// - 每个 image 算一次 draw call（纹理不同）
+    /// - 每种字体+颜色组合的 glyph 算一次 draw call
+    /// - 每个 shadow 算一次 draw call
+    pub fn stats(&self) -> RenderStats {
+        use std::collections::HashSet;
+
+        // 计算不同颜色 fill 的 draw call 数量
+        let fill_colors: HashSet<[u8; 4]> = self
+            .fills
+            .iter()
+            .map(|f| [f.color.r, f.color.g, f.color.b, f.color.a])
+            .collect();
+
+        // 计算不同颜色 path_fill 的 draw call 数量
+        let path_fill_colors: HashSet<[u8; 4]> = self
+            .path_fills
+            .iter()
+            .map(|pf| [pf.color.r, pf.color.g, pf.color.b, pf.color.a])
+            .collect();
+
+        // 计算不同字体+颜色 glyph 的 draw call 数量
+        let glyph_keys: HashSet<(u32, [u8; 4])> = self
+            .glyphs
+            .iter()
+            .map(|g| (g.font_id.0, [g.color.r, g.color.g, g.color.b, g.color.a]))
+            .collect();
+
+        // 计算不同颜色 path_stroke 的 draw call 数量
+        let stroke_colors: HashSet<[u8; 4]> = self
+            .path_strokes
+            .iter()
+            .map(|ps| [ps.color.r, ps.color.g, ps.color.b, ps.color.a])
+            .collect();
+
+        let estimated_draw_calls = fill_colors.len()
+            + self.rounded_rects.len()
+            + path_fill_colors.len()
+            + stroke_colors.len()
+            + self.strokes.len()
+            + self.gradients.len()
+            + self.shadows.len()
+            + self.images.len()
+            + glyph_keys.len()
+            + self.clips.len().min(1); // clips 合并为一个
+
+        RenderStats {
+            fill_count: self.fills.len(),
+            rounded_rect_count: self.rounded_rects.len(),
+            path_fill_count: self.path_fills.len(),
+            path_stroke_count: self.path_strokes.len(),
+            stroke_count: self.strokes.len(),
+            gradient_count: self.gradients.len(),
+            shadow_count: self.shadows.len(),
+            image_count: self.images.len(),
+            glyph_count: self.glyphs.len(),
+            clip_count: self.clips.len(),
+            estimated_draw_calls,
+            culled_count: 0,
+        }
+    }
+
+    /// 对填充图元进行批处理 — 合并相同颜色的相邻矩形。
+    ///
+    /// 优化策略：
+    /// - 相同颜色的填充按 y 坐标排序
+    /// - 如果两个同色矩形在 y 方向相邻（一个的 bottom == 另一个的 top，且 x 范围重叠），
+    ///   合并为一个大矩形
+    ///
+    /// 返回优化后的新 `RenderPrimitives`，原始数据不变。
+    pub fn batch_fills(&self) -> RenderPrimitives {
+        if self.fills.len() <= 1 {
+            return self.clone();
+        }
+
+        // 按颜色分组
+        let mut color_groups: std::collections::HashMap<[u8; 4], Vec<&FillPrimitive>> =
+            std::collections::HashMap::new();
+        for fill in &self.fills {
+            let key = [fill.color.r, fill.color.g, fill.color.b, fill.color.a];
+            color_groups.entry(key).or_default().push(fill);
+        }
+
+        let mut batched_fills = Vec::new();
+
+        for (_color_key, fills) in color_groups {
+            if fills.is_empty() {
+                continue;
+            }
+
+            let color = fills[0].color;
+
+            // 尝试在垂直方向合并同色矩形
+            // 简单策略：合并完全同列（x 和 width 相同）且垂直相邻的矩形
+            let merged: Vec<Rect> = fills.iter().map(|f| f.rect).collect();
+
+            // 按列（x, width）分组，在每列内按 y 排序
+            let mut columns: std::collections::HashMap<(u32, u32), Vec<Rect>> = std::collections::HashMap::new();
+            for rect in &merged {
+                // 使用固定精度来分组（避免浮点误差）
+                let x_key = (rect.origin.x.to_bits(), rect.size.width.to_bits());
+                columns.entry(x_key).or_default().push(*rect);
+            }
+
+            for (_, mut rects) in columns {
+                rects.sort_by(|a, b| a.origin.y.partial_cmp(&b.origin.y).unwrap_or(std::cmp::Ordering::Equal));
+
+                let mut result = Vec::new();
+                let mut current = rects[0];
+
+                for rect in rects.iter().skip(1) {
+                    let current_bottom = current.origin.y + current.size.height;
+                    // 如果垂直相邻（间距 < 1px），合并
+                    if (rect.origin.y - current_bottom).abs() < 1.0
+                        && (rect.origin.x - current.origin.x).abs() < 1.0
+                        && (rect.size.width - current.size.width).abs() < 1.0
+                    {
+                        // 合并：扩展当前矩形的高度
+                        let new_bottom = rect.origin.y + rect.size.height;
+                        current.size.height = new_bottom - current.origin.y;
+                    } else {
+                        result.push(current);
+                        current = *rect;
+                    }
+                }
+                result.push(current);
+
+                for rect in result {
+                    batched_fills.push(FillPrimitive { rect, color });
+                }
+            }
+        }
+
+        let mut result = self.clone();
+        result.fills = batched_fills;
+        result
+    }
+
+    /// 视口剔除 — 移除完全在视口外的图元。
+    ///
+    /// 只剔除 fills、rounded_rects、strokes、shadows、images。
+    /// clips 和 glyphs 保留（clips 是全局状态，glyphs 可能被后续使用）。
+    ///
+    /// 返回剔除后的新 `RenderPrimitives` 和统计信息。
+    pub fn cull_invisible(&self, viewport: Rect) -> (RenderPrimitives, RenderStats) {
+        let original_len = self.len();
+
+        let fills: Vec<FillPrimitive> = self
+            .fills
+            .iter()
+            .filter(|f| viewport.intersects(&f.rect))
+            .cloned()
+            .collect();
+
+        let rounded_rects: Vec<RoundedRectPrimitive> = self
+            .rounded_rects
+            .iter()
+            .filter(|rr| viewport.intersects(&rr.rect))
+            .cloned()
+            .collect();
+
+        let strokes: Vec<StrokePrimitive> = self
+            .strokes
+            .iter()
+            .filter(|s| {
+                let half_w = s.width / 2.0;
+                let stroke_rect = Rect::new(
+                    s.x1.min(s.x2) - half_w,
+                    s.y1.min(s.y2) - half_w,
+                    (s.x1.max(s.x2) - s.x1.min(s.x2)) + s.width,
+                    (s.y1.max(s.y2) - s.y1.min(s.y2)) + s.width,
+                );
+                viewport.intersects(&stroke_rect)
+            })
+            .cloned()
+            .collect();
+
+        let shadows: Vec<ShadowPrimitive> = self
+            .shadows
+            .iter()
+            .filter(|s| {
+                let shadow_rect = Rect::new(
+                    s.rect.origin.x + s.offset_x - s.spread_radius - s.blur_radius,
+                    s.rect.origin.y + s.offset_y - s.spread_radius - s.blur_radius,
+                    s.rect.size.width + 2.0 * (s.spread_radius + s.blur_radius),
+                    s.rect.size.height + 2.0 * (s.spread_radius + s.blur_radius),
+                );
+                viewport.intersects(&shadow_rect)
+            })
+            .cloned()
+            .collect();
+
+        let images: Vec<ImagePrimitive> = self
+            .images
+            .iter()
+            .filter(|img| viewport.intersects(&img.rect))
+            .cloned()
+            .collect();
+
+        let gradients: Vec<GradientPrimitive> = self
+            .gradients
+            .iter()
+            .filter(|g| viewport.intersects(&g.rect))
+            .cloned()
+            .collect();
+
+        let path_fills: Vec<PathFillPrimitive> = self
+            .path_fills
+            .iter()
+            .filter(|pf| {
+                // 使用路径顶点计算包围盒
+                if pf.vertices.is_empty() {
+                    return true; // 空路径保留
+                }
+                let mut min_x = f32::MAX;
+                let mut min_y = f32::MAX;
+                let mut max_x = f32::MIN;
+                let mut max_y = f32::MIN;
+                for chunk in pf.vertices.chunks_exact(2) {
+                    min_x = min_x.min(chunk[0]);
+                    min_y = min_y.min(chunk[1]);
+                    max_x = max_x.max(chunk[0]);
+                    max_y = max_y.max(chunk[1]);
+                }
+                let bbox = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+                viewport.intersects(&bbox)
+            })
+            .cloned()
+            .collect();
+
+        let path_strokes: Vec<PathStrokePrimitive> = self
+            .path_strokes
+            .iter()
+            .filter(|ps| {
+                if ps.vertices.is_empty() {
+                    return true;
+                }
+                let mut min_x = f32::MAX;
+                let mut min_y = f32::MAX;
+                let mut max_x = f32::MIN;
+                let mut max_y = f32::MIN;
+                for chunk in ps.vertices.chunks_exact(2) {
+                    min_x = min_x.min(chunk[0]);
+                    min_y = min_y.min(chunk[1]);
+                    max_x = max_x.max(chunk[0]);
+                    max_y = max_y.max(chunk[1]);
+                }
+                let bbox = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+                viewport.intersects(&bbox)
+            })
+            .cloned()
+            .collect();
+
+        let result = RenderPrimitives {
+            clips: self.clips.clone(), // clips 保留
+            fills,
+            rounded_rects,
+            path_fills,
+            path_strokes,
+            strokes,
+            gradients,
+            shadows,
+            images,
+            glyphs: self.glyphs.clone(), // glyphs 保留
+        };
+
+        let culled_count = original_len - result.len();
+        let mut stats = result.stats();
+        stats.culled_count = culled_count;
+
+        (result, stats)
     }
 }
 
@@ -1494,5 +1818,183 @@ mod tests {
         assert_eq!(p.glyphs.len(), 10);
         assert_eq!(p.len(), 10);
         assert!(!p.is_empty());
+    }
+
+    // ── RenderStats + batch_fills + cull_invisible 测试 ──
+
+    #[test]
+    fn test_stats_empty_primitives() {
+        let p = RenderPrimitives::new();
+        let stats = p.stats();
+        assert_eq!(stats.total_primitives(), 0);
+        assert_eq!(stats.estimated_draw_calls, 0);
+    }
+
+    #[test]
+    fn test_stats_single_fill() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 100.0), Color::RED);
+        let stats = p.stats();
+        assert_eq!(stats.fill_count, 1);
+        assert_eq!(stats.estimated_draw_calls, 1);
+    }
+
+    #[test]
+    fn test_stats_same_color_fills_batched_draw_calls() {
+        let mut p = RenderPrimitives::new();
+        // 5 个相同颜色的 fill → 只需 1 个 draw call
+        for i in 0..5 {
+            p.add_fill(Rect::new(i as f32 * 100.0, 0.0, 50.0, 50.0), Color::RED);
+        }
+        let stats = p.stats();
+        assert_eq!(stats.fill_count, 5);
+        assert_eq!(stats.estimated_draw_calls, 1); // 同色合并
+    }
+
+    #[test]
+    fn test_stats_different_color_fills_separate_draw_calls() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(100.0, 0.0, 50.0, 50.0), Color::BLUE);
+        p.add_fill(Rect::new(200.0, 0.0, 50.0, 50.0), Color::GREEN);
+        let stats = p.stats();
+        assert_eq!(stats.fill_count, 3);
+        assert_eq!(stats.estimated_draw_calls, 3); // 不同颜色各一次
+    }
+
+    #[test]
+    fn test_stats_mixed_primitives() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 100.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::RED); // 同色
+        p.add_glyph(GlyphPrimitive {
+            x: 0.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        p.add_glyph(GlyphPrimitive {
+            x: 10.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 66,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        // 同色 fills = 1 draw call, 同 font+color glyphs = 1 draw call → total 2
+        let stats = p.stats();
+        assert_eq!(stats.total_primitives(), 4);
+        assert_eq!(stats.estimated_draw_calls, 2);
+    }
+
+    #[test]
+    fn test_batch_fills_no_merge_different_colors() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::BLUE);
+        let batched = p.batch_fills();
+        assert_eq!(batched.fills.len(), 2);
+    }
+
+    #[test]
+    fn test_batch_fills_merge_adjacent_same_color() {
+        let mut p = RenderPrimitives::new();
+        // 两个同色、同宽、垂直相邻的矩形 → 应合并
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 50.0, 100.0, 50.0), Color::RED);
+        let batched = p.batch_fills();
+        // 合并后应该只有 1 个 fill（覆盖 0,0 到 100,100）
+        assert_eq!(batched.fills.len(), 1);
+        let merged = &batched.fills[0];
+        assert_eq!(merged.rect.origin.y, 0.0);
+        assert_eq!(merged.rect.size.height, 100.0);
+    }
+
+    #[test]
+    fn test_batch_fills_no_merge_non_adjacent() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 200.0, 100.0, 50.0), Color::RED); // 不相邻
+        let batched = p.batch_fills();
+        assert_eq!(batched.fills.len(), 2);
+    }
+
+    #[test]
+    fn test_batch_fills_preserves_other_primitives() {
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(0.0, 50.0, 100.0, 50.0), Color::RED);
+        p.add_glyph(GlyphPrimitive {
+            x: 0.0,
+            y: 0.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        });
+        let batched = p.batch_fills();
+        assert_eq!(batched.fills.len(), 1); // 合并后 1 个
+        assert_eq!(batched.glyphs.len(), 1); // glyphs 不变
+    }
+
+    #[test]
+    fn test_cull_invisible_removes_offscreen_fills() {
+        let mut p = RenderPrimitives::new();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        p.add_fill(Rect::new(10.0, 10.0, 50.0, 50.0), Color::RED); // 在视口内
+        p.add_fill(Rect::new(900.0, 10.0, 50.0, 50.0), Color::RED); // 在视口外
+        let (culled, stats) = p.cull_invisible(viewport);
+        assert_eq!(culled.fills.len(), 1);
+        assert_eq!(stats.culled_count, 1);
+    }
+
+    #[test]
+    fn test_cull_invisible_keeps_clips_and_glyphs() {
+        let mut p = RenderPrimitives::new();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        p.add_clip(Rect::new(0.0, 0.0, 1000.0, 1000.0)); // 超出视口但保留
+        p.add_glyph(GlyphPrimitive {
+            x: 900.0,
+            y: 10.0,
+            font_size: 12.0,
+            color: Color::BLACK,
+            glyph_id: 65,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+        }); // 超出视口但保留
+        let (culled, _) = p.cull_invisible(viewport);
+        assert_eq!(culled.clips.len(), 1);
+        assert_eq!(culled.glyphs.len(), 1);
+    }
+
+    #[test]
+    fn test_cull_invisible_nothing_removed_when_all_visible() {
+        let mut p = RenderPrimitives::new();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        p.add_fill(Rect::new(10.0, 10.0, 50.0, 50.0), Color::RED);
+        p.add_fill(Rect::new(100.0, 100.0, 50.0, 50.0), Color::BLUE);
+        let (culled, stats) = p.cull_invisible(viewport);
+        assert_eq!(culled.fills.len(), 2);
+        assert_eq!(stats.culled_count, 0);
+    }
+
+    #[test]
+    fn test_cull_invisible_partial_overlap_kept() {
+        let mut p = RenderPrimitives::new();
+        let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
+        // 矩形部分在视口内
+        p.add_fill(Rect::new(750.0, 10.0, 100.0, 50.0), Color::RED);
+        let (culled, stats) = p.cull_invisible(viewport);
+        assert_eq!(culled.fills.len(), 1); // 部分可见保留
+        assert_eq!(stats.culled_count, 0);
     }
 }

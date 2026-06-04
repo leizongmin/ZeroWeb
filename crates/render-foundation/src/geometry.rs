@@ -114,6 +114,14 @@ impl Rect {
         }
     }
 
+    /// 与另一个矩形是否有交集（相交区域面积 > 0）
+    pub fn intersects(&self, other: &Rect) -> bool {
+        self.left() < other.right()
+            && self.right() > other.left()
+            && self.top() < other.bottom()
+            && self.bottom() > other.top()
+    }
+
     /// 是否为空
     pub fn is_empty(&self) -> bool {
         self.size.is_empty()
@@ -658,5 +666,37 @@ mod tests {
         for (i, &v) in f.iter().enumerate() {
             assert!((v - 1.0).abs() < f32::EPSILON, "通道 {i} 应为 1.0，实际: {v}");
         }
+    }
+
+    #[test]
+    fn test_rect_intersects_overlap() {
+        let a = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let b = Rect::new(50.0, 50.0, 100.0, 100.0);
+        assert!(a.intersects(&b));
+        assert!(b.intersects(&a));
+    }
+
+    #[test]
+    fn test_rect_intersects_no_overlap() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(20.0, 20.0, 10.0, 10.0);
+        assert!(!a.intersects(&b));
+        assert!(!b.intersects(&a));
+    }
+
+    #[test]
+    fn test_rect_intersects_edge_touching() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(10.0, 0.0, 10.0, 10.0);
+        // 边接触不算相交（严格小于/大于）
+        assert!(!a.intersects(&b));
+    }
+
+    #[test]
+    fn test_rect_intersects_containment() {
+        let outer = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let inner = Rect::new(10.0, 10.0, 20.0, 20.0);
+        assert!(outer.intersects(&inner));
+        assert!(inner.intersects(&outer));
     }
 }
