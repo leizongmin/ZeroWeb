@@ -369,5 +369,221 @@ pub fn web_api_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "no_panic".into()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        // Navigation API
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/navigation/history-api".into(),
+            description: "History API 存在检测".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="h">history test</div>
+            <script>
+                var hasHistory = typeof history !== 'undefined';
+                document.getElementById('h').textContent = hasHistory ? 'history ok' : 'no history';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/navigation/location-api".into(),
+            description: "Location API 存在检测".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="loc">location test</div>
+            <script>
+                var hasLocation = typeof location !== 'undefined';
+                document.getElementById('loc').textContent = hasLocation ? 'location ok' : 'no location';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // Web Storage API 检测
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/storage/localStorage-set-get".into(),
+            description: "localStorage setItem/getItem 往返".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="ls">storage test</div>
+            <script>
+                try {
+                    localStorage.setItem('key1', 'value1');
+                    var val = localStorage.getItem('key1');
+                    document.getElementById('ls').textContent = val === 'value1' ? 'ls ok' : 'ls fail';
+                } catch(e) {
+                    document.getElementById('ls').textContent = 'ls error: ' + e.message;
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/storage/sessionStorage-set-get".into(),
+            description: "sessionStorage setItem/getItem 往返".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="ss">session test</div>
+            <script>
+                try {
+                    sessionStorage.setItem('skey', 'sval');
+                    var val = sessionStorage.getItem('skey');
+                    document.getElementById('ss').textContent = val === 'sval' ? 'ss ok' : 'ss fail';
+                } catch(e) {
+                    document.getElementById('ss').textContent = 'ss error: ' + e.message;
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // DOM API 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/dom/classList".into(),
+            description: "classList add/remove/toggle".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="cls" class="a b">classList test</div>
+            <script>
+                var el = document.getElementById('cls');
+                if (el && el.classList) {
+                    el.classList.add('c');
+                    el.classList.remove('a');
+                    el.classList.toggle('b');
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/dataset".into(),
+            description: "data-* 属性 dataset API".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="ds" data-name="test" data-count="42">dataset test</div>
+            <script>
+                var el = document.getElementById('ds');
+                if (el && el.dataset) {
+                    var name = el.dataset.name;
+                    el.dataset.newAttr = 'added';
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "web-api/dom/matches-closest".into(),
+            description: "element.matches() 和 closest()".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="parent"><span id="child" class="active">matches test</span></div>
+            <script>
+                var el = document.getElementById('child');
+                if (el && el.matches) {
+                    el.matches('.active');
+                }
+                if (el && el.closest) {
+                    el.closest('#parent');
+                }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // Web Workers 存在检测
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/workers/dedicated-exists".into(),
+            description: "Dedicated Worker 存在检测".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="w">worker test</div>
+            <script>
+                var hasWorker = typeof Worker !== 'undefined';
+                document.getElementById('w').textContent = hasWorker ? 'Worker ok' : 'no Worker';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // WebAssembly 存在检测
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/wasm/exists".into(),
+            description: "WebAssembly API 存在检测".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="wa">wasm test</div>
+            <script>
+                var hasWasm = typeof WebAssembly !== 'undefined';
+                var hasCompile = hasWasm && typeof WebAssembly.compile === 'function';
+                var hasInstantiate = hasWasm && typeof WebAssembly.instantiate === 'function';
+                var hasValidate = hasWasm && typeof WebAssembly.validate === 'function';
+                document.getElementById('wa').textContent = (hasCompile && hasInstantiate && hasValidate) ? 'WASM ok' : 'WASM partial';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        // 综合页面
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "web-api/composite/api-dashboard".into(),
+            description: "多 API 集成仪表盘页面".into(),
+            category: "web-api".into(),
+            html: r#"<html><head>
+            <style>
+                .card { border: 1px solid #ccc; padding: 10px; margin: 5px; border-radius: 4px; }
+                .flex { display: flex; gap: 10px; }
+            </style>
+            </head><body>
+            <h1>API Dashboard</h1>
+            <div class="flex">
+                <div class="card" id="fetch-card">
+                    <h2>Fetch</h2>
+                    <p>fetch() available</p>
+                </div>
+                <div class="card" id="storage-card">
+                    <h2>Storage</h2>
+                    <p>localStorage available</p>
+                </div>
+                <div class="card" id="wasm-card">
+                    <h2>WebAssembly</h2>
+                    <p>WebAssembly available</p>
+                </div>
+            </div>
+            <script>
+                // 检测多个 API
+                var apis = {
+                    fetch: typeof fetch === 'function',
+                    storage: typeof localStorage !== 'undefined',
+                    wasm: typeof WebAssembly !== 'undefined',
+                    worker: typeof Worker !== 'undefined',
+                    promise: typeof Promise !== 'undefined',
+                    json: typeof JSON !== 'undefined',
+                };
+                var available = Object.keys(apis).filter(function(k) { return apis[k]; }).length;
+                document.title = available + ' APIs available';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_heading".into(),
+                "layout_has_children".into(),
+                "no_panic".into(),
+            ],
+        },
     ]
 }
