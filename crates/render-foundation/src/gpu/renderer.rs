@@ -65,6 +65,8 @@ pub struct GpuRenderer {
     surface_format: wgpu::TextureFormat,
     /// 无头渲染目标纹理
     headless_texture: Option<wgpu::Texture>,
+    /// 是否暂停向窗口 surface present（Wayland 失焦时使用）
+    present_suspended: bool,
 }
 
 impl GpuRenderer {
@@ -183,7 +185,40 @@ impl GpuRenderer {
             surface,
             surface_format: format,
             headless_texture,
+            present_suspended: false,
         })
+    }
+
+    /// 失焦时暂停 present，并排空 GPU 队列中已提交的 swapchain 帧。
+    pub fn suspend_present(&mut self) {
+        self.present_suspended = true;
+        if self.surface.is_some() {
+            self.device.poll(wgpu::Maintain::Wait);
+        }
+    }
+
+    /// 重新获焦并完成 surface 配置后恢复 present。
+    pub fn resume_present(&mut self) {
+        self.present_suspended = false;
+    }
+
+    /// 是否已暂停 present
+    pub fn is_present_suspended(&self) -> bool {
+        self.present_suspended
+    }
+
+    fn wayland_frame_latency() -> u32 {
+        #[cfg(target_os = "linux")]
+        {
+            let on_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
+                || std::env::var("WINIT_UNIX_BACKEND")
+                    .map(|v| v.eq_ignore_ascii_case("wayland"))
+                    .unwrap_or(false);
+            if on_wayland {
+                return 1;
+            }
+        }
+        2
     }
 
     /// 配置窗口表面（在首次渲染或窗口大小变更时调用）
@@ -200,7 +235,7 @@ impl GpuRenderer {
                 present_mode: wgpu::PresentMode::AutoVsync,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: Self::wayland_frame_latency(),
             };
             surface.configure(&self.device, &config);
         }
@@ -363,23 +398,20 @@ impl GpuRenderer {
             .iter()
             .filter_map(|gd| {
                 let physical_font_size = gd.font_size * scale;
-                let cache_key = crate::font::cache::GlyphKey::new(gd.font_id, gd.ch as u32, physical_font_size);
-                glyph_cache
-                    .get_or_insert_with(cache_key, || {
-                        font_loader.rasterize_glyph(gd.font_id, gd.ch, physical_font_size)
-                    })
-                    .ok()
-                    .map(|bitmap| {
-                        (
-                            gd.ch,
-                            gd.x * scale,
-                            gd.baseline_y * scale,
-                            gd.color,
-                            gd.font_id,
-                            physical_font_size,
-                            bitmap.clone(),
-                        )
-                    })
+                let (resolved_id, bitmap) = font_loader
+                    .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
+                    .ok()?;
+                let cache_key = crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+                let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
+                Some((
+                    gd.ch,
+                    gd.x * scale,
+                    gd.baseline_y * scale,
+                    gd.color,
+                    resolved_id,
+                    physical_font_size,
+                    cached.clone(),
+                ))
             })
             .collect();
 
@@ -423,7 +455,11 @@ impl GpuRenderer {
     }
 
     /// 使用顶点数据执行渲染
-    fn render_vertices(&self, vertices: &[f32], clip_rect: Option<Rect>) {
+    fn render_vertices(&mut self, vertices: &[f32], clip_rect: Option<Rect>) {
+        if self.present_suspended {
+            return;
+        }
+
         let (width, height) = self.surface_size;
 
         // Uniform 缓冲区
@@ -462,6 +498,10 @@ impl GpuRenderer {
                 // 窗口模式
                 let output = match surface.get_current_texture() {
                     Ok(tex) => tex,
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        self.configure_surface(width, height);
+                        return;
+                    }
                     Err(_) => return,
                 };
                 let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -481,9 +521,7 @@ impl GpuRenderer {
 
                 self.queue.submit(std::iter::once(encoder.finish()));
                 output.present();
-                // 等待 wl_surface.commit() 在函数返回前完成，避免 Wayland
-                // 下窗口失焦后延迟 commit 导致的 compositor 协议错误。
-                self.device.poll(wgpu::Maintain::Wait);
+                Self::poll_after_present(&self.device);
             }
             (None, Some(tex)) => {
                 // 无头模式
@@ -505,6 +543,22 @@ impl GpuRenderer {
             }
             _ => {}
         }
+    }
+
+    /// present 后驱动 GPU 队列，Wayland 上必须用 Poll 以免阻塞 winit 事件循环。
+    fn poll_after_present(device: &wgpu::Device) {
+        #[cfg(target_os = "linux")]
+        {
+            let on_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
+                || std::env::var("WINIT_UNIX_BACKEND")
+                    .map(|v| v.eq_ignore_ascii_case("wayland"))
+                    .unwrap_or(false);
+            if on_wayland {
+                device.poll(wgpu::Maintain::Poll);
+                return;
+            }
+        }
+        device.poll(wgpu::Maintain::Wait);
     }
 
     /// 从无头纹理回读像素数据（RGBA8）
@@ -1276,10 +1330,19 @@ mod tests {
         }
     }
 
+    /// 测试 suspend_present 阻止 render_vertices 执行
+    #[test]
+    fn test_suspend_present_skips_render_vertices() {
+        let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+        renderer.suspend_present();
+        assert!(renderer.is_present_suspended());
+        renderer.render_vertices(&[], None);
+    }
+
     /// 测试 render_vertices 在没有顶点数据时的处理
     #[test]
     fn test_render_vertices_empty_vertex_data() {
-        let renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+        let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
         // 空顶点数组应该被正确处理
         renderer.render_vertices(&[], None);
         // 如果不 panic 则测试通过
@@ -1308,7 +1371,7 @@ mod tests {
     /// 测试 run_render_pass 中的裁剪区域边界情况
     #[test]
     fn test_render_pass_clip_rect_boundary_cases() {
-        let renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
+        let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
 
         // 测试完全在外的裁剪区域
         let clip_outside = Rect::new(100.0, 100.0, 200.0, 200.0);
@@ -1371,7 +1434,7 @@ mod tests {
     /// 测试 render_vertices 处理空顶点数据
     #[test]
     fn test_render_vertices_empty_vertex_buffer() {
-        let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+        let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
 
         // 空顶点数组应该被正确处理
         renderer.render_vertices(&[], None);

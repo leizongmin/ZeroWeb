@@ -131,30 +131,31 @@ impl BrowserApp {
             };
             fills.push(rect_fill(x, 0.0, tab_w - s, tab_bar_h, bg));
 
-            if let Some(fid) = self.font_id {
+            if self.font_id.is_some() {
                 let label = tab.title().unwrap_or_else(|| tab.url().unwrap_or("New Tab"));
-                let max_chars = ((tab_w - 40.0 * s) / (font_size * 0.6)).max(3.0) as usize;
-                let truncated: String = label.chars().take(max_chars).collect();
-                draw_text(
+                let text_area_w = tab_w - 40.0 * s;
+                let truncated = self.truncate_ui_text(label, text_area_w, font_size);
+                self.draw_ui_text(
                     &truncated,
                     x + 10.0 * s,
                     8.0 * s,
                     font_size,
                     colors::TAB_TEXT,
-                    fid,
                     glyphs,
                 );
             }
 
             if let Some(fid) = self.font_id {
                 let close_x = x + tab_w - 24.0 * s;
+                let close_size = font_size * 0.8;
+                let close_advance = self.font_loader.measure_advance(fid, '×', close_size);
                 glyphs.push(GlyphDraw {
                     ch: '×',
-                    x: close_x,
+                    x: close_x + (24.0 * s - close_advance) / 2.0,
                     baseline_y: 8.0 * s + font_size,
                     color: colors::TAB_CLOSE,
                     font_id: fid,
-                    font_size: font_size * 0.8,
+                    font_size: close_size,
                 });
             }
 
@@ -163,7 +164,7 @@ impl BrowserApp {
         }
 
         // 新建标签按钮 (+)
-        if let Some(fid) = self.font_id {
+        if self.font_id.is_some() {
             let btn_x = width as f32 - new_tab_btn_w;
             let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let is_hovered = {
@@ -174,28 +175,33 @@ impl BrowserApp {
             if is_hovered {
                 fills.push(rect_fill(btn_x, 0.0, new_tab_btn_w, tab_bar_h, colors::TAB_HOVER_BG));
             }
-            let text_x = btn_x + (new_tab_btn_w - font_size * 0.6) / 2.0;
-            draw_text("+", text_x, 8.0 * s, font_size, colors::NEW_TAB_BUTTON, fid, glyphs);
+            let plus_advance = self.measure_ui_text_width("+", font_size);
+            let text_x = btn_x + (new_tab_btn_w - plus_advance) / 2.0;
+            self.draw_ui_text("+", text_x, 8.0 * s, font_size, colors::NEW_TAB_BUTTON, glyphs);
         }
     }
 
     /// 渲染导航按钮
     fn render_nav_buttons(&mut self, glyphs: &mut Vec<GlyphDraw>, y: f32, font_size: f32, s: f32) {
-        if let Some(fid) = self.font_id {
-            let baseline_y = y + (layout::ADDRESS_BAR_HEIGHT * s + font_size) / 2.0;
-            let x = 8.0 * s;
-            let w = layout::NAV_BUTTON_WIDTH * s;
+        let Some(fid) = self.font_id else {
+            return;
+        };
 
-            for (i, ch) in ['←', '→', '↻', '⌂'].iter().enumerate() {
-                glyphs.push(GlyphDraw {
-                    ch: *ch,
-                    x: x + w * i as f32,
-                    baseline_y,
-                    color: colors::NAV_BUTTON,
-                    font_id: fid,
-                    font_size,
-                });
-            }
+        let baseline_y = y + (layout::ADDRESS_BAR_HEIGHT * s + font_size) / 2.0;
+        let x = 8.0 * s;
+        let btn_w = layout::NAV_BUTTON_WIDTH * s;
+
+        for (i, ch) in ['←', '→', '↻', '⌂'].iter().enumerate() {
+            let bx = x + btn_w * i as f32;
+            let advance = self.font_loader.measure_advance(fid, *ch, font_size);
+            glyphs.push(GlyphDraw {
+                ch: *ch,
+                x: bx + (btn_w - advance) / 2.0,
+                baseline_y,
+                color: colors::NAV_BUTTON,
+                font_id: fid,
+                font_size,
+            });
         }
     }
 
@@ -228,7 +234,7 @@ impl BrowserApp {
             self.address_bar_text.clone()
         };
 
-        if let Some(fid) = self.font_id {
+        if self.font_id.is_some() {
             let color = if self.address_bar_focused {
                 colors::ADDRESS_BAR_TEXT
             } else if self.address_bar_text.is_empty() {
@@ -236,18 +242,17 @@ impl BrowserApp {
             } else {
                 colors::ADDRESS_BAR_TEXT
             };
-            draw_text(
+            self.draw_ui_text(
                 &display_text,
                 bar_x + 10.0 * s,
                 bar_y + 3.0 * s,
                 font_size,
                 color,
-                fid,
                 glyphs,
             );
 
             if self.address_bar_focused {
-                let cursor_x = bar_x + 10.0 * s + self.address_bar_text.len() as f32 * font_size * 0.6;
+                let cursor_x = bar_x + 10.0 * s + self.measure_ui_text_width(&self.address_bar_text, font_size);
                 fills.push(rect_fill(
                     cursor_x,
                     bar_y + 4.0 * s,
@@ -268,10 +273,9 @@ impl BrowserApp {
         y: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let bar_h = layout::BOOKMARKS_BAR_HEIGHT * s;
         fills.push(rect_fill(0.0, y, width as f32, bar_h, colors::BOOKMARKS_BAR_BG));
@@ -283,7 +287,9 @@ impl BrowserApp {
         let bookmarks = self.shell.bookmarks();
         for bm in bookmarks.list_root() {
             let label = bm.title();
-            let item_w = label.len() as f32 * font_size * 0.6 + 24.0 * s;
+            let icon_w = self.measure_ui_text_width("★", font_size);
+            let label_w = self.measure_ui_text_width(label, font_size);
+            let item_w = icon_w + 6.0 * s + label_w + 16.0 * s;
 
             // 悬停效果
             let mx = self.mouse_pos.0 as f32;
@@ -293,15 +299,14 @@ impl BrowserApp {
             }
 
             // 书签图标
-            draw_text("★", bx, by, font_size, colors::BOOKMARKS_BAR_ICON, fid, glyphs);
+            self.draw_ui_text("★", bx, by, font_size, colors::BOOKMARKS_BAR_ICON, glyphs);
             // 标签文本
-            draw_text(
+            self.draw_ui_text(
                 label,
-                bx + 14.0 * s,
+                bx + icon_w + 6.0 * s,
                 by,
                 font_size,
                 colors::BOOKMARKS_BAR_TEXT,
-                fid,
                 glyphs,
             );
 
@@ -353,33 +358,31 @@ impl BrowserApp {
         }
 
         if !title.is_empty() {
-            draw_text(
+            self.draw_ui_text(
                 &title,
                 20.0 * s,
                 y + 20.0 * s,
                 24.0 * s,
                 colors::PAGE_TITLE,
-                fid,
                 glyphs,
             );
             y += 52.0 * s;
         }
 
         if !url.is_empty() {
-            draw_text(&url, 20.0 * s, y, 12.0 * s, colors::PAGE_URL, fid, glyphs);
+            self.draw_ui_text(&url, 20.0 * s, y, 12.0 * s, colors::PAGE_URL, glyphs);
             y += 28.0 * s;
         }
 
         if is_loading {
-            draw_text("Loading...", 20.0 * s, y, font_size, colors::PAGE_HINT, fid, glyphs);
+            self.draw_ui_text("Loading...", 20.0 * s, y, font_size, colors::PAGE_HINT, glyphs);
         } else if title.is_empty() && url.is_empty() {
-            draw_text(
+            self.draw_ui_text(
                 "Welcome to ZeroBrowser — Press L to focus address bar, T for new tab",
                 20.0 * s,
                 y,
                 font_size,
                 colors::PAGE_HINT,
-                fid,
                 glyphs,
             );
         }
@@ -457,13 +460,12 @@ impl BrowserApp {
         } else {
             colors::FIND_BAR_TEXT
         };
-        draw_text(
+        self.draw_ui_text(
             &display,
             bar_x + 10.0 * s,
             y + 5.0 * s,
             font_size,
             text_color,
-            fid,
             glyphs,
         );
 
@@ -471,35 +473,43 @@ impl BrowserApp {
         if find_state.total_matches() > 0 {
             let match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
             let match_x = bar_x + bar_w - 130.0 * s;
-            draw_text(
+            self.draw_ui_text(
                 &match_text,
                 match_x,
                 y + 5.0 * s,
                 font_size,
                 colors::FIND_MATCH_TEXT,
-                fid,
                 glyphs,
             );
         } else if !self.find_input.is_empty() {
             let no_match_x = bar_x + bar_w - 130.0 * s;
-            draw_text(
+            self.draw_ui_text(
                 "No matches",
                 no_match_x,
                 y + 5.0 * s,
                 font_size,
                 colors::FIND_MATCH_TEXT,
-                fid,
                 glyphs,
             );
         }
 
         let btn_y = y + 5.0 * s;
+        let btn_size = font_size;
         let prev_x = bar_x + bar_w - 100.0 * s;
         let next_x = bar_x + bar_w - 70.0 * s;
         let close_x = bar_x + bar_w - 40.0 * s;
-        draw_text("↑", prev_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
-        draw_text("↓", next_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
-        draw_text("×", close_x, btn_y, font_size, colors::FIND_BAR_TEXT, fid, glyphs);
+        let btn_w = 24.0 * s;
+        for (ch, bx) in [('↑', prev_x), ('↓', next_x), ('×', close_x)] {
+            let advance = self.font_loader.measure_advance(fid, ch, btn_size);
+            glyphs.push(GlyphDraw {
+                ch,
+                x: bx + (btn_w - advance) / 2.0,
+                baseline_y: btn_y + btn_size,
+                color: colors::FIND_BAR_TEXT,
+                font_id: fid,
+                font_size: btn_size,
+            });
+        }
     }
 
     /// 渲染自动补全下拉
@@ -511,10 +521,9 @@ impl BrowserApp {
         font_size: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
         let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
@@ -543,46 +552,45 @@ impl BrowserApp {
                 SuggestionSource::Bookmark => "★",
                 SuggestionSource::History => "🕐",
             };
+            let source_size = font_size * 0.85;
             let text_x = bar_x + 10.0 * s;
-            draw_text(
+            self.draw_ui_text(
                 source_label,
                 text_x,
                 row_y + 5.0 * s,
-                font_size * 0.85,
+                source_size,
                 if sug.source() == SuggestionSource::Bookmark {
                     colors::AUTOCOMPLETE_BOOKMARK
                 } else {
                     colors::AUTOCOMPLETE_URL
                 },
-                fid,
                 glyphs,
             );
 
             let title = sug.title();
-            let max_title_chars = ((bar_w - 180.0 * s) / (font_size * 0.6)).max(10.0) as usize;
-            let truncated_title: String = title.chars().take(max_title_chars).collect();
-            draw_text(
+            let title_area_w = bar_w - 180.0 * s;
+            let truncated_title = self.truncate_ui_text(title, title_area_w, source_size);
+            self.draw_ui_text(
                 &truncated_title,
                 text_x + 24.0 * s,
                 row_y + 5.0 * s,
-                font_size * 0.85,
+                source_size,
                 colors::AUTOCOMPLETE_TEXT,
-                fid,
                 glyphs,
             );
 
             let url = sug.url();
+            let url_size = font_size * 0.75;
+            let url_area_w = bar_w * 0.4;
+            let truncated_url = self.truncate_ui_text(url, url_area_w, url_size);
+            let url_display_width = self.measure_ui_text_width(&truncated_url, url_size);
             let url_x = bar_x + bar_w - 10.0 * s;
-            let max_url_chars = ((bar_w * 0.4) / (font_size * 0.5)).max(8.0) as usize;
-            let truncated_url: String = url.chars().take(max_url_chars).collect();
-            let url_display_width = truncated_url.len() as f32 * font_size * 0.5;
-            draw_text(
+            self.draw_ui_text(
                 &truncated_url,
                 url_x - url_display_width,
                 row_y + 5.0 * s,
-                font_size * 0.75,
+                url_size,
                 colors::AUTOCOMPLETE_URL,
-                fid,
                 glyphs,
             );
         }
@@ -592,10 +600,9 @@ impl BrowserApp {
 
     /// 渲染右键上下文菜单
     fn render_context_menu(&self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, s: f32) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
@@ -665,13 +672,12 @@ impl BrowserApp {
                 continue;
             }
 
-            draw_text(
+            self.draw_ui_text(
                 label,
                 menu_x + 16.0 * s,
                 row_y + 6.0 * s,
                 font_size,
                 colors::CONTEXT_MENU_TEXT,
-                fid,
                 glyphs,
             );
         }
@@ -687,10 +693,9 @@ impl BrowserApp {
         _font_size: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let status_h = layout::STATUS_BAR_HEIGHT * s;
         let status_y = height as f32 - status_h;
@@ -701,29 +706,89 @@ impl BrowserApp {
         let zoom = self.shell.zoom();
         if (zoom - 1.0).abs() > f32::EPSILON {
             let zoom_text = format!("{}%", (zoom * 100.0) as u32);
-            draw_text(
+            self.draw_ui_text(
                 &zoom_text,
                 10.0 * s,
                 status_y + 3.0 * s,
                 11.0 * s,
                 colors::STATUS_TEXT,
-                fid,
                 glyphs,
             );
         }
 
         let tab_count = self.shell.tab_count();
         let tabs_text = format!("Tabs: {tab_count}");
-        let tabs_width = tabs_text.len() as f32 * 11.0 * s * 0.6;
-        draw_text(
+        let tabs_width = self.measure_ui_text_width(&tabs_text, 11.0 * s);
+        self.draw_ui_text(
             &tabs_text,
             width as f32 - tabs_width - 10.0 * s,
             status_y + 3.0 * s,
             11.0 * s,
             colors::STATUS_TEXT,
-            fid,
             glyphs,
         );
+    }
+
+    /// 绘制 UI 文本（使用字体回退链和真实 advance 宽度）
+    fn draw_ui_text(
+        &self,
+        text: &str,
+        start_x: f32,
+        start_y: f32,
+        font_size: f32,
+        color: Color,
+        glyphs: &mut Vec<GlyphDraw>,
+    ) {
+        let Some(primary) = self.font_id else {
+            return;
+        };
+        let mut x = start_x;
+        for ch in text.chars() {
+            let font_id = self
+                .font_loader
+                .rasterize_glyph_with_fallback(primary, ch, font_size)
+                .map(|(id, _)| id)
+                .unwrap_or(primary);
+            glyphs.push(GlyphDraw {
+                ch,
+                x,
+                baseline_y: start_y + font_size,
+                color,
+                font_id,
+                font_size,
+            });
+            x += self.font_loader.measure_advance(primary, ch, font_size);
+        }
+    }
+
+    /// 测量 UI 文本总宽度
+    fn measure_ui_text_width(&self, text: &str, font_size: f32) -> f32 {
+        let Some(primary) = self.font_id else {
+            return 0.0;
+        };
+        text.chars()
+            .map(|ch| self.font_loader.measure_advance(primary, ch, font_size))
+            .sum()
+    }
+
+    /// 按像素宽度截断 UI 文本
+    fn truncate_ui_text(&self, text: &str, max_width: f32, font_size: f32) -> String {
+        let Some(primary) = self.font_id else {
+            return text.to_string();
+        };
+        let mut result = String::new();
+        let mut width = 0.0;
+        let ellipsis_advance = self.font_loader.measure_advance(primary, '…', font_size);
+        for ch in text.chars() {
+            let advance = self.font_loader.measure_advance(primary, ch, font_size);
+            if width + advance + ellipsis_advance > max_width && !result.is_empty() {
+                result.push('…');
+                break;
+            }
+            result.push(ch);
+            width += advance;
+        }
+        result
     }
 
     /// 渲染下载进度条（状态栏上方）
@@ -736,10 +801,9 @@ impl BrowserApp {
         _font_size: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let bar_h = layout::DOWNLOAD_BAR_HEIGHT * s;
         let status_h = layout::STATUS_BAR_HEIGHT * s;
@@ -756,13 +820,12 @@ impl BrowserApp {
 
             // 文件名
             let name_text = dl.filename();
-            draw_text(
+            self.draw_ui_text(
                 name_text,
                 10.0 * s,
                 bar_y + 6.0 * s,
                 font_size,
                 colors::DOWNLOAD_BAR_TEXT,
-                fid,
                 glyphs,
             );
 
@@ -792,13 +855,12 @@ impl BrowserApp {
 
             // 百分比文字
             let pct_text = format!("{:.0}%", progress * 100.0);
-            draw_text(
+            self.draw_ui_text(
                 &pct_text,
                 bar_start_x + bar_width + 8.0 * s,
                 bar_y + 6.0 * s,
                 font_size,
                 colors::DOWNLOAD_BAR_TEXT,
-                fid,
                 glyphs,
             );
         }
@@ -812,30 +874,6 @@ fn rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimitive {
     FillPrimitive {
         rect: zero_render_foundation::geometry::Rect::new(x, y, w, h),
         color,
-    }
-}
-
-/// 绘制文本（估算字符宽度）
-fn draw_text(
-    text: &str,
-    start_x: f32,
-    start_y: f32,
-    font_size: f32,
-    color: Color,
-    font_id: u32,
-    glyphs: &mut Vec<GlyphDraw>,
-) {
-    let mut x = start_x;
-    for ch in text.chars() {
-        glyphs.push(GlyphDraw {
-            ch,
-            x,
-            baseline_y: start_y + font_size,
-            color,
-            font_id,
-            font_size,
-        });
-        x += if ch.is_ascii() { font_size * 0.6 } else { font_size };
     }
 }
 

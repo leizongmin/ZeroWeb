@@ -10,7 +10,8 @@ browser-debug:
 	RUST_BACKTRACE=1 cargo run -p zero-browser
 
 browser-debug-wayland:
-	RUST_BACKTRACE=1 WINIT_UNIX_BACKEND=wayland WAYLAND_DEBUG=1 cargo run -p zero-browser
+	mkdir -p target
+	RUST_BACKTRACE=1 WINIT_UNIX_BACKEND=wayland WAYLAND_DEBUG=1 cargo run -p zero-browser 2>&1 | tee target/zero-browser-wayland-debug.log
 
 browser-debug-wayland-log:
 	mkdir -p target

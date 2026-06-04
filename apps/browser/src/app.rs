@@ -91,6 +91,8 @@ pub struct BrowserApp {
     font_id: Option<u32>,
     /// 是否已初始化 GPU 表面
     pub surface_configured: bool,
+    /// GPU 表面在失焦后需重新配置（Wayland surface 挂起）
+    pub gpu_surface_stale: bool,
     /// 窗口是否获得焦点（Wayland 下失焦时 surface 可能挂起）
     pub window_focused: bool,
     /// 地址栏当前文本
@@ -125,7 +127,7 @@ impl BrowserApp {
     /// 创建新的浏览器应用
     pub fn new(render_mode: RenderMode) -> Self {
         let mut font_loader = FontLoader::new();
-        let font_id = load_system_font(&mut font_loader);
+        let font_id = load_system_fonts(&mut font_loader);
 
         if font_id.is_some() {
             tracing::info!("System font loaded");
@@ -142,6 +144,7 @@ impl BrowserApp {
             glyph_cache: GlyphCache::new(8192),
             font_id,
             surface_configured: false,
+            gpu_surface_stale: false,
             window_focused: true,
             address_bar_text: String::new(),
             address_bar_focused: false,
@@ -288,6 +291,15 @@ impl BrowserApp {
         self.scroll_offset.insert(tab_id, 0.0);
 
         self.fetch_tab_url(tab_id, &url);
+        self.needs_redraw = true;
+    }
+
+    /// 初始化 Shell 默认标签页（仅创建 WebView，不额外开 tab）
+    pub fn init_default_tab(&mut self) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        self.ensure_webview(tab_id);
         self.needs_redraw = true;
     }
 
@@ -1075,9 +1087,19 @@ impl BrowserApp {
         }
     }
 
-    /// 初始化 GPU 渲染器
+    /// Wayland 上是否强制使用 CPU softbuffer present（规避 wgpu swapchain 与 winit CSD 冲突）
+    pub fn wayland_forces_cpu_present(&self) -> bool {
+        is_wayland() && matches!(self.render_mode, RenderMode::Gpu | RenderMode::Auto)
+    }
+
+    /// 初始化 GPU 渲染器（Wayland 上跳过 wgpu 窗口 surface，改走 CPU present）
     pub fn init_gpu(&mut self, window: &std::sync::Arc<winit::window::Window>) {
-        if matches!(self.render_mode, RenderMode::Cpu) {
+        if matches!(self.render_mode, RenderMode::Cpu) || self.wayland_forces_cpu_present() {
+            if self.wayland_forces_cpu_present() {
+                tracing::warn!(
+                    "Wayland: wgpu window surface disabled (focus-switch crash); using CPU softbuffer present"
+                );
+            }
             return;
         }
 
@@ -1095,6 +1117,19 @@ impl BrowserApp {
                     tracing::warn!("GPU renderer init failed: {e}; using CPU renderer");
                 }
             }
+        }
+    }
+
+    /// 窗口失焦：Wayland 上销毁 GPU 渲染器，避免 swapchain 在失焦后 commit
+    pub fn on_window_unfocused(&mut self) {
+        if is_wayland() {
+            if self.gpu_renderer.is_some() {
+                tracing::debug!("Wayland unfocus: releasing GPU renderer");
+                self.gpu_renderer = None;
+                self.surface_configured = false;
+            }
+        } else {
+            self.suspend_gpu_present();
         }
     }
 
@@ -1125,17 +1160,71 @@ impl BrowserApp {
         }
     }
 
+    /// 同步 IME 状态（Wayland 失焦时必须关闭，否则 subsurface commit 会导致 compositor 断开）
+    pub fn sync_ime_state(&self, window: &winit::window::Window) {
+        use winit::dpi::{LogicalPosition, LogicalSize};
+
+        let needs_ime = self.window_focused && (self.address_bar_focused || self.shell.find_state().is_active());
+        window.set_ime_allowed(needs_ime);
+
+        if !needs_ime {
+            return;
+        }
+
+        if self.address_bar_focused {
+            let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
+            let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
+            let bar_y = layout::TAB_BAR_HEIGHT + 4.0;
+            window.set_ime_cursor_area(
+                LogicalPosition::new(bar_x, bar_y),
+                LogicalSize::new(480.0, layout::ADDRESS_BAR_HEIGHT),
+            );
+        } else if self.shell.find_state().is_active() {
+            window.set_ime_cursor_area(
+                LogicalPosition::new(8.0, layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT + 4.0),
+                LogicalSize::new(240.0, layout::FIND_BAR_HEIGHT),
+            );
+        }
+    }
+
+    /// 失焦时暂停 GPU swapchain present（非 Wayland，Wayland 直接销毁 renderer）
+    pub fn suspend_gpu_present(&mut self) {
+        if is_wayland() {
+            return;
+        }
+        if let Some(gpu) = self.gpu_renderer_as_mut() {
+            gpu.suspend_present();
+        }
+    }
+
+    /// 获焦后恢复 GPU swapchain present（非 Wayland）
+    pub fn resume_gpu_present(&mut self) {
+        if is_wayland() {
+            return;
+        }
+        if let Some(gpu) = self.gpu_renderer_as_mut() {
+            gpu.resume_present();
+        }
+    }
+
     /// GPU 渲染一帧
-    pub fn render_frame(&mut self, width: u32, height: u32) {
+    pub fn render_frame(&mut self, width: u32, height: u32, present: bool) {
+        if !present || !self.window_focused {
+            return;
+        }
         let mut gpu = self.gpu_renderer.take();
         if let Some(ref mut renderer) = gpu {
+            if renderer.is_present_suspended() {
+                self.gpu_renderer = gpu;
+                return;
+            }
             let (fills, glyphs) = self.build_scene(width, height);
             renderer.render_scene(&fills, &self.font_loader, &mut self.glyph_cache, &glyphs);
         }
         self.gpu_renderer = gpu;
     }
 
-    /// CPU 软件渲染一帧
+    /// CPU 软件渲染一帧（`present` 为 false 时跳过）
     pub fn render_cpu(
         &mut self,
         width: u32,
@@ -1143,8 +1232,11 @@ impl BrowserApp {
         cpu_surface: &mut Option<
             softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
         >,
+        present: bool,
     ) {
-        use std::num::NonZeroU32;
+        if !present {
+            return;
+        }
 
         let (fills, glyphs) = self.build_scene(width, height);
         let fb = render_scene_to_framebuffer(
@@ -1156,39 +1248,7 @@ impl BrowserApp {
             &mut self.glyph_cache,
             &glyphs,
         );
-        let Some(surface) = cpu_surface.as_mut() else {
-            return;
-        };
-
-        let sw = match NonZeroU32::new(fb.width) {
-            Some(w) => w,
-            None => return,
-        };
-        let sh = match NonZeroU32::new(fb.height) {
-            Some(h) => h,
-            None => return,
-        };
-
-        if let Err(err) = surface.resize(sw, sh) {
-            tracing::error!("CPU surface resize failed: {err}");
-            return;
-        }
-
-        let mut buffer = match surface.buffer_mut() {
-            Ok(b) => b,
-            Err(err) => {
-                tracing::error!("CPU surface buffer failed: {err}");
-                return;
-            }
-        };
-
-        for (dst, rgba) in buffer.iter_mut().zip(fb.data.chunks_exact(4)) {
-            *dst = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | rgba[2] as u32;
-        }
-
-        if let Err(err) = buffer.present() {
-            tracing::error!("CPU surface present failed: {err}");
-        }
+        present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }
 
     /// 从活跃标签更新地址栏文本
@@ -1196,6 +1256,67 @@ impl BrowserApp {
         if let Some(tab) = self.shell.active_tab() {
             self.address_bar_text = tab.url().unwrap_or("").to_string();
         }
+    }
+}
+
+/// 当前进程是否运行在 Wayland 上
+pub fn is_wayland() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("WAYLAND_DISPLAY").is_ok()
+            || std::env::var("WINIT_UNIX_BACKEND")
+                .map(|v| v.eq_ignore_ascii_case("wayland"))
+                .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// 将 RGBA 像素提交到 softbuffer 表面
+fn present_rgba_to_softbuffer(
+    cpu_surface: &mut Option<
+        softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
+    >,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) {
+    use std::num::NonZeroU32;
+
+    let Some(surface) = cpu_surface.as_mut() else {
+        return;
+    };
+
+    let sw = match NonZeroU32::new(width.max(1)) {
+        Some(w) => w,
+        None => return,
+    };
+    let sh = match NonZeroU32::new(height.max(1)) {
+        Some(h) => h,
+        None => return,
+    };
+
+    if let Err(err) = surface.resize(sw, sh) {
+        tracing::error!("CPU surface resize failed: {err}");
+        return;
+    }
+
+    let mut buffer = match surface.buffer_mut() {
+        Ok(b) => b,
+        Err(err) => {
+            tracing::error!("CPU surface buffer failed: {err}");
+            return;
+        }
+    };
+
+    for (dst, chunk) in buffer.iter_mut().zip(rgba.chunks_exact(4)) {
+        *dst = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | chunk[2] as u32;
+    }
+
+    if let Err(err) = buffer.present() {
+        tracing::error!("CPU surface present failed: {err}");
     }
 }
 
@@ -1217,9 +1338,9 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     shell.settings().search(input)
 }
 
-/// 尝试加载系统字体
-pub fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
-    let font_paths = [
+/// 加载系统字体（主字体 + CJK/Emoji 回退链）
+pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
+    let primary_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -1227,9 +1348,35 @@ pub fn load_system_font(font_loader: &mut FontLoader) -> Option<u32> {
         "C:\\Windows\\Fonts\\arial.ttf",
     ];
 
-    font_paths.iter().find_map(|path| {
+    let primary = primary_paths.iter().find_map(|path| {
         std::fs::read(path)
             .ok()
             .and_then(|data| font_loader.load_font(&data).ok())
-    })
+    })?;
+
+    let fallback_paths = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "C:\\Windows\\Fonts\\msyh.ttc",
+        "C:\\Windows\\Fonts\\seguiemj.ttf",
+    ];
+
+    let mut fallbacks = Vec::new();
+    for path in fallback_paths {
+        if let Ok(data) = std::fs::read(path)
+            && let Ok(id) = font_loader.load_font(&data)
+            && id != primary
+        {
+            fallbacks.push(id);
+        }
+    }
+    font_loader.set_fallback_chain(fallbacks);
+
+    Some(primary)
 }
