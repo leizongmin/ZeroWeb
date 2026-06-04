@@ -369,7 +369,7 @@ impl BrowserApp {
         &self.address_bar_text
     }
 
-    /// 计算网页内容区域物理像素尺寸
+    /// 计算网页内容区域物理像素尺寸（用于滚动、合成区域）
     pub fn content_physical_size(&self) -> (u32, u32) {
         let s = self.scale_factor;
         let chrome_h = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT + layout::STATUS_BAR_HEIGHT) * s;
@@ -378,10 +378,25 @@ impl BrowserApp {
         (content_w, content_h)
     }
 
+    /// WebView 布局视口（CSS 逻辑像素，与 devicePixelRatio 对应）
+    pub fn content_logical_size(&self) -> (u32, u32) {
+        let s = self.scale_factor.max(f32::EPSILON);
+        let chrome_h = layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT + layout::STATUS_BAR_HEIGHT;
+        let logical_w = (self.physical_size.0 as f32 / s).round().max(1.0) as u32;
+        let logical_h = ((self.physical_size.1 as f32 / s) - chrome_h).max(0.0).round() as u32;
+        (logical_w, logical_h)
+    }
+
     /// 创建指定视口尺寸的 WebView
     fn create_webview(&self) -> zero_webview::WebView {
-        let (w, h) = self.content_physical_size();
+        let (w, h) = self.content_logical_size();
         WebViewBuilder::new().width(w).height(h).build()
+    }
+
+    /// 按当前窗口尺寸同步所有 WebView 的逻辑视口
+    pub fn sync_webview_viewport(&mut self) {
+        let (w, h) = self.content_logical_size();
+        self.resize_all_webviews(w, h);
     }
 
     /// 获取或创建活跃标签页的 WebView
@@ -613,6 +628,7 @@ impl BrowserApp {
         };
 
         let content_h = self.content_physical_size().1 as f32;
+        let s = self.scale_factor;
 
         // 获取页面实际高度（如果有的话）
         let page_height = self
@@ -625,6 +641,7 @@ impl BrowserApp {
                     .iter()
                     .map(|f| f.rect.origin.y + f.rect.size.height)
                     .fold(0.0f32, f32::max)
+                    * s
             })
             .unwrap_or(content_h);
 

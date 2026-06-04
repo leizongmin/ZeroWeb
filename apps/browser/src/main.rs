@@ -253,6 +253,43 @@ mod tests {
     }
 
     #[test]
+    fn append_webview_primitives_scales_with_device_pixel_ratio() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(10.0, 20.0, 100.0, 50.0), Color::rgb(255, 0, 0));
+
+        let mut fills = Vec::new();
+        let mut glyphs = Vec::new();
+
+        assert!(append_webview_primitives(
+            &primitives,
+            &mut fills,
+            &mut glyphs,
+            0.0,
+            100.0,
+            1,
+            2.0,
+        ));
+
+        assert_eq!(fills[0].rect.origin.x, 20.0);
+        assert_eq!(fills[0].rect.origin.y, 140.0);
+        assert_eq!(fills[0].rect.size.width, 200.0);
+        assert_eq!(fills[0].rect.size.height, 100.0);
+    }
+
+    #[test]
+    fn content_logical_size_uses_device_pixel_ratio() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (3840, 2160);
+        app.scale_factor = 2.0;
+        let (w, h) = app.content_logical_size();
+        assert_eq!(w, 1920);
+        assert!(h > 0);
+        let (phys_w, phys_h) = app.content_physical_size();
+        assert_eq!(phys_w, 3840);
+        assert!(phys_h > h);
+    }
+
+    #[test]
     fn startup_has_single_default_tab() {
         let app = BrowserApp::new(RenderMode::Cpu);
         assert_eq!(app.shell.tab_count(), 1, "should start with exactly one tab");
@@ -579,8 +616,7 @@ fn sync_window_size_from_window(app: &mut BrowserApp, window: &winit::window::Wi
     let logical_height = ((physical.height as f32 / scale).round() as u32).max(1);
     app.set_window_size((logical_width, logical_height));
     app.scale_factor = scale;
-    let (cw, ch) = app.content_physical_size();
-    app.resize_all_webviews(cw, ch);
+    app.sync_webview_viewport();
 }
 
 fn sync_window_chrome_icon(app: &mut BrowserApp, window: &winit::window::Window) {
@@ -653,8 +689,7 @@ fn main() {
                                 app.physical_size = (physical_size.width, physical_size.height);
                                 app.scale_factor = scale_factor;
                                 app.ensure_startup_tab();
-                                let (cw, ch) = app.content_physical_size();
-                                app.resize_all_webviews(cw, ch);
+                                app.sync_webview_viewport();
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
@@ -723,8 +758,7 @@ fn main() {
                 } else {
                     app.gpu_surface_stale = true;
                 }
-                let (cw, ch) = app.content_physical_size();
-                app.resize_all_webviews(cw, ch);
+                app.sync_webview_viewport();
                 app.needs_redraw = true;
             }
             AppEvent::ScaleFactorChanged { scale_factor } => {
@@ -742,8 +776,7 @@ fn main() {
                     } else {
                         app.gpu_surface_stale = true;
                     }
-                    let (cw, ch) = app.content_physical_size();
-                    app.resize_all_webviews(cw, ch);
+                    app.sync_webview_viewport();
                 } else {
                     app.scale_factor = normalized_window_scale(scale_factor);
                 }
