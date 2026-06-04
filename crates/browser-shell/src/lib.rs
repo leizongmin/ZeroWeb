@@ -13,6 +13,7 @@ mod browser;
 mod context_menu;
 mod download;
 mod history;
+mod session;
 mod settings;
 mod tab;
 
@@ -22,6 +23,7 @@ pub use browser::*;
 pub use context_menu::*;
 pub use download::*;
 pub use history::*;
+pub use session::*;
 pub use settings::*;
 pub use tab::*;
 

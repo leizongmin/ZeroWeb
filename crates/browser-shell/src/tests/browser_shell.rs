@@ -618,3 +618,136 @@ fn test_browser_shell_save_settings() {
         .settings()
         .save(&std::env::temp_dir().join("zeroweb-shell-save-test").join("s.json"));
 }
+
+// ── 会话持久化集成测试 ──
+
+#[test]
+fn test_session_save_basic() {
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    shell.new_tab(Some("https://github.com"));
+    shell.on_page_loaded("GitHub");
+
+    let session = shell.save_session();
+    assert_eq!(session.tab_count(), 2); // 1 default (navigated to example) + 1 new tab (github)
+}
+
+#[test]
+fn test_session_save_and_restore() {
+    let dir = std::env::temp_dir().join("zeroweb-test-session-restore");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("session.json");
+
+    // 创建并保存会话
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    shell.new_tab(Some("https://github.com"));
+    shell.on_page_loaded("GitHub");
+
+    shell.save_session_to(&path).expect("save should succeed");
+
+    // 恢复会话到新的 shell
+    let mut shell2 = BrowserShell::new();
+    let count = shell2.restore_session_from(&path).expect("restore should succeed");
+    assert_eq!(count, 2);
+    assert_eq!(shell2.tab_count(), 2);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_session_restore_preserves_urls() {
+    let dir = std::env::temp_dir().join("zeroweb-test-session-urls");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("session.json");
+
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    shell.new_tab(Some("https://github.com"));
+    shell.on_page_loaded("GitHub");
+    shell.save_session_to(&path).expect("save");
+
+    let mut shell2 = BrowserShell::new();
+    shell2.restore_session_from(&path);
+
+    // 验证所有标签页的 URL
+    let urls: Vec<Option<&str>> = shell2.tabs().map(|t| t.url()).collect();
+    assert_eq!(urls.len(), 2);
+    assert!(urls.iter().any(|u| *u == Some("https://example.com")));
+    assert!(urls.iter().any(|u| *u == Some("https://github.com")));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_session_restore_from_missing_file() {
+    let mut shell = BrowserShell::new();
+    let result = shell.restore_session_from(std::path::Path::new("/nonexistent/session.json"));
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_session_restore_empty_session() {
+    let session = SessionState::new();
+    let mut shell = BrowserShell::new();
+    let count = shell.restore_session(&session);
+    assert_eq!(count, 0);
+    assert!(shell.is_empty());
+}
+
+#[test]
+fn test_session_save_empty_tab() {
+    let shell = BrowserShell::new(); // 默认有一个空标签页
+    let session = shell.save_session();
+    assert_eq!(session.tab_count(), 1);
+    assert!(session.tabs[0].url.is_none());
+}
+
+#[test]
+fn test_session_restore_with_active_tab() {
+    let dir = std::env::temp_dir().join("zeroweb-test-session-active");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("session.json");
+
+    let mut shell = BrowserShell::new();
+    let _id1 = shell.active_tab_id(); // first tab
+    shell.navigate("https://a.com");
+    shell.on_page_loaded("A");
+    let _id2 = shell.new_tab(Some("https://b.com")); // second tab → active
+    shell.on_page_loaded("B");
+    let _id3 = shell.new_tab(Some("https://c.com")); // third tab → active
+
+    shell.save_session_to(&path).expect("save");
+
+    let mut shell2 = BrowserShell::new();
+    shell2.restore_session_from(&path);
+
+    // 活跃标签页应该是最后一个（index 2）
+    assert_eq!(shell2.active_tab().unwrap().url(), Some("https://c.com"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_session_roundtrip_with_titles() {
+    let dir = std::env::temp_dir().join("zeroweb-test-session-titles");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("session.json");
+
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example Site");
+    shell.save_session_to(&path).expect("save");
+
+    let mut shell2 = BrowserShell::new();
+    shell2.restore_session_from(&path);
+
+    // 验证标题被恢复
+    let has_example_title = shell2.tabs().any(|t| t.title() == Some("Example Site"));
+    assert!(has_example_title, "should restore tab title");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
