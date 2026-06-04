@@ -6,6 +6,7 @@
 //! - `summary` — 执行测试并仅输出汇总信息
 
 mod manifest;
+mod reftest;
 mod report;
 mod runner;
 
