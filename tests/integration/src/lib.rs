@@ -40,3 +40,9 @@ mod dom_bridge_polyfill;
 
 #[cfg(test)]
 mod browser_shell_integration;
+
+#[cfg(test)]
+mod e2e_canvas_dom;
+
+#[cfg(test)]
+mod e2e_rendering;
