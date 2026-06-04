@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-06-04
-**执行状态**: 16/16 crate 已实现，10,869 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 441 个用例（13 个分类，含精确几何测试），Web Workers 和 ES Modules 支持已实现，浏览器质量测试体系 P0 已启动
+**最后更新**: 2026-06-05
+**执行状态**: 16/16 crate 已实现，10,874 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context 优化），WPT 测试套件 457 个用例（13 个分类，含精确几何测试 + 预期元数据系统），Web Workers 和 ES Modules 支持已实现，浏览器质量测试体系 P0 推进中
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 10,869 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 10,874 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -102,6 +102,19 @@
 ---
 
 ## 最近完成的改进
+
+### -73. 预期元数据系统 + 精确几何测试扩展（本轮，10,874 测试）
+
+新增 WPT 预期元数据系统和 16 个精确几何测试用例：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| WPT runner | **预期元数据系统**：`TestExpectation` 枚举（Pass/Fail/Skip）、`TestExpectations` 按 ID 管理已知行为、`run_single_with_expectations()` 和 `run_all_with_expectations()` 带预期执行 | — |
+| report.rs | **TestStatus 枚举**：Pass/Fail/ExpectedFail/UnexpectedPass/Skip；`TestResult` 新增 `expected_fail()`/`skip()`/`unexpected_pass()` 方法；`TestSummary` 新增 expected_failures/skipped/unexpected_passes 统计 | +5 |
+| WPT runner/geometry | **16 个精确几何测试**：CSS 属性管线（width/padding/max-width/min-height）、flex-grow/align-items/space-between、grid-template-areas、多层渐变、inset 简写、百分比 border-radius、text-overflow、垂直堆叠、outline、inline-block、复杂嵌套布局 | +16 |
+
+WPT 测试套件: 441 → 457 用例（+16, 13 个分类模块）
+Tests: 10,869 → 10,874 (+5 单元测试), clippy clean.
 
 ### -72. 浏览器质量测试体系 P0：布局快照 + 精确几何断言 + 内联样式（本轮，10,869 测试）
 

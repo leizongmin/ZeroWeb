@@ -4,6 +4,21 @@
 
 use std::io::Write;
 
+/// 测试结果状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestStatus {
+    /// 测试通过
+    Pass,
+    /// 测试失败（意外）
+    Fail,
+    /// 测试预期失败（已知问题，不阻断 CI）
+    ExpectedFail,
+    /// 测试意外通过（预期失败但实际通过）
+    UnexpectedPass,
+    /// 测试跳过
+    Skip,
+}
+
 /// 单个测试的结果。
 #[derive(Debug, Clone)]
 pub struct TestResult {
@@ -11,8 +26,8 @@ pub struct TestResult {
     pub id: String,
     /// 测试描述。
     pub description: String,
-    /// 是否通过。
-    pub passed: bool,
+    /// 测试状态。
+    pub status: TestStatus,
     /// 失败原因（通过时为空字符串）。
     pub message: String,
     /// 执行耗时（毫秒）。
@@ -20,12 +35,26 @@ pub struct TestResult {
 }
 
 impl TestResult {
+    /// 是否通过（含预期失败和跳过，不阻断 CI）。
+    #[allow(dead_code)]
+    pub fn passed(&self) -> bool {
+        matches!(
+            self.status,
+            TestStatus::Pass | TestStatus::ExpectedFail | TestStatus::Skip
+        )
+    }
+
+    /// 是否为意外失败（应阻断 CI）。
+    pub fn is_unexpected_fail(&self) -> bool {
+        self.status == TestStatus::Fail
+    }
+
     /// 创建通过结果。
     pub fn pass(id: &str, description: &str, duration_ms: f64) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
-            passed: true,
+            status: TestStatus::Pass,
             message: String::new(),
             duration_ms,
         }
@@ -36,9 +65,44 @@ impl TestResult {
         Self {
             id: id.to_string(),
             description: description.to_string(),
-            passed: false,
+            status: TestStatus::Fail,
             message: message.to_string(),
             duration_ms,
+        }
+    }
+
+    /// 创建预期失败结果。
+    #[allow(dead_code)]
+    pub fn expected_fail(id: &str, description: &str, message: &str, duration_ms: f64) -> Self {
+        Self {
+            id: id.to_string(),
+            description: description.to_string(),
+            status: TestStatus::ExpectedFail,
+            message: format!("[EXPECTED FAIL] {message}"),
+            duration_ms,
+        }
+    }
+
+    /// 创建意外通过结果。
+    pub fn unexpected_pass(id: &str, description: &str, duration_ms: f64) -> Self {
+        Self {
+            id: id.to_string(),
+            description: description.to_string(),
+            status: TestStatus::UnexpectedPass,
+            message: "[UNEXPECTED PASS] test expected to fail but passed".to_string(),
+            duration_ms,
+        }
+    }
+
+    /// 创建跳过结果。
+    #[allow(dead_code)]
+    pub fn skip(id: &str, description: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            description: description.to_string(),
+            status: TestStatus::Skip,
+            message: "[SKIPPED]".to_string(),
+            duration_ms: 0.0,
         }
     }
 }
@@ -50,11 +114,17 @@ pub struct TestSummary {
     pub total: usize,
     /// 通过数。
     pub passed: usize,
-    /// 失败数。
+    /// 意外失败数。
     pub failed: usize,
+    /// 预期失败数。
+    pub expected_failures: usize,
+    /// 跳过数。
+    pub skipped: usize,
+    /// 意外通过数。
+    pub unexpected_passes: usize,
     /// 总耗时（毫秒）。
     pub total_duration_ms: f64,
-    /// 失败测试列表。
+    /// 意外失败测试列表。
     pub failures: Vec<TestResult>,
 }
 
@@ -62,26 +132,36 @@ impl TestSummary {
     /// 从结果列表生成汇总。
     pub fn from_results(results: &[TestResult]) -> Self {
         let total = results.len();
-        let passed = results.iter().filter(|r| r.passed).count();
-        let failed = total - passed;
+        let passed = results.iter().filter(|r| r.status == TestStatus::Pass).count();
+        let failed = results.iter().filter(|r| r.status == TestStatus::Fail).count();
+        let expected_failures = results.iter().filter(|r| r.status == TestStatus::ExpectedFail).count();
+        let skipped = results.iter().filter(|r| r.status == TestStatus::Skip).count();
+        let unexpected_passes = results
+            .iter()
+            .filter(|r| r.status == TestStatus::UnexpectedPass)
+            .count();
         let total_duration_ms = results.iter().map(|r| r.duration_ms).sum();
-        let failures: Vec<TestResult> = results.iter().filter(|r| !r.passed).cloned().collect();
+        let failures: Vec<TestResult> = results.iter().filter(|r| r.is_unexpected_fail()).cloned().collect();
 
         Self {
             total,
             passed,
             failed,
+            expected_failures,
+            skipped,
+            unexpected_passes,
             total_duration_ms,
             failures,
         }
     }
 
-    /// 通过率（0.0 ~ 1.0）。
+    /// 通过率（0.0 ~ 1.0）— 仅统计已执行的非跳过测试。
     pub fn pass_rate(&self) -> f64 {
-        if self.total == 0 {
+        let executed = self.total - self.skipped;
+        if executed == 0 {
             0.0
         } else {
-            self.passed as f64 / self.total as f64
+            self.passed as f64 / executed as f64
         }
     }
 }
@@ -96,21 +176,33 @@ pub fn format_results_text(results: &[TestResult], summary: &TestSummary) -> Str
         summary.total,
         summary.pass_rate() * 100.0
     ));
+    if summary.expected_failures > 0 {
+        out.push_str(&format!(
+            "Expected failures: {} | Skipped: {} | Unexpected passes: {}\n",
+            summary.expected_failures, summary.skipped, summary.unexpected_passes
+        ));
+    }
     out.push_str(&format!("Duration: {:.2}ms total\n\n", summary.total_duration_ms));
 
     for result in results {
-        let status = if result.passed { "PASS" } else { "FAIL" };
+        let status = match result.status {
+            TestStatus::Pass => "PASS",
+            TestStatus::Fail => "FAIL",
+            TestStatus::ExpectedFail => "EXPECTED_FAIL",
+            TestStatus::UnexpectedPass => "UNEXPECTED_PASS",
+            TestStatus::Skip => "SKIP",
+        };
         out.push_str(&format!(
             "  [{status}] {} — {} ({:.2}ms)\n",
             result.id, result.description, result.duration_ms
         ));
-        if !result.passed && !result.message.is_empty() {
+        if !result.message.is_empty() {
             out.push_str(&format!("         {}\n", result.message));
         }
     }
 
     if !summary.failures.is_empty() {
-        out.push_str("\nFailed tests:\n");
+        out.push_str("\nUnexpected failures:\n");
         for f in &summary.failures {
             out.push_str(&format!("  - {} : {}\n", f.id, f.message));
         }
@@ -128,7 +220,13 @@ pub fn format_results_json(results: &[TestResult], summary: &TestSummary) -> Str
         if i > 0 {
             json_results.push(',');
         }
-        let status = if result.passed { "pass" } else { "fail" };
+        let status = match result.status {
+            TestStatus::Pass => "pass",
+            TestStatus::Fail => "fail",
+            TestStatus::ExpectedFail => "expected_fail",
+            TestStatus::UnexpectedPass => "unexpected_pass",
+            TestStatus::Skip => "skip",
+        };
         let escaped_message = escape_json_string(&result.message);
         let escaped_desc = escape_json_string(&result.description);
         json_results.push_str(&format!(
@@ -138,8 +236,9 @@ pub fn format_results_json(results: &[TestResult], summary: &TestSummary) -> Str
     }
 
     json_results.push_str(&format!(
-        "],\"summary\":{{\"total\":{},\"passed\":{},\"failed\":{},\"duration_ms\":{:.2}}}}}",
-        summary.total, summary.passed, summary.failed, summary.total_duration_ms
+        "],\"summary\":{{\"total\":{},\"passed\":{},\"failed\":{},\"expected_failures\":{},\"skipped\":{},\"unexpected_passes\":{},\"duration_ms\":{:.2}}}}}",
+        summary.total, summary.passed, summary.failed, summary.expected_failures,
+        summary.skipped, summary.unexpected_passes, summary.total_duration_ms
     ));
 
     json_results
@@ -148,10 +247,12 @@ pub fn format_results_json(results: &[TestResult], summary: &TestSummary) -> Str
 /// 将汇总写入标准输出（带颜色）。
 pub fn print_summary(summary: &TestSummary) {
     let total_str = format!(
-        "Total: {} | Passed: {} | Failed: {} | Rate: {:.1}%",
+        "Total: {} | Passed: {} | Failed: {} | Expected failures: {} | Skipped: {} | Rate: {:.1}%",
         summary.total,
         summary.passed,
         summary.failed,
+        summary.expected_failures,
+        summary.skipped,
         summary.pass_rate() * 100.0
     );
     println!("{total_str}");
@@ -165,10 +266,15 @@ pub fn format_tap(results: &[TestResult]) -> String {
 
     for (i, result) in results.iter().enumerate() {
         let n = i + 1;
-        if result.passed {
-            out.push_str(&format!("ok {n} - {}\n", result.id));
-        } else {
-            out.push_str(&format!("not ok {n} - {} # {}\n", result.id, result.message));
+        match result.status {
+            TestStatus::Pass => out.push_str(&format!("ok {n} - {}\n", result.id)),
+            TestStatus::Fail => out.push_str(&format!("not ok {n} - {} # {}\n", result.id, result.message)),
+            TestStatus::ExpectedFail => out.push_str(&format!(
+                "ok {n} - {} # TODO expected fail: {}\n",
+                result.id, result.message
+            )),
+            TestStatus::UnexpectedPass => out.push_str(&format!("ok {n} - {} # UNEXPECTED PASS\n", result.id)),
+            TestStatus::Skip => out.push_str(&format!("ok {n} - {} # SKIP\n", result.id)),
         }
     }
 
@@ -181,9 +287,10 @@ pub fn write_junit_xml<W: Write>(results: &[TestResult], writer: &mut W) -> std:
     writeln!(writer, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
     writeln!(
         writer,
-        r#"<testsuite name="wpt-runner" tests="{}" failures="{}" time="{:.3}">"#,
+        r#"<testsuite name="wpt-runner" tests="{}" failures="{}" skipped="{}" time="{:.3}">"#,
         summary.total,
         summary.failed,
+        summary.skipped,
         summary.total_duration_ms / 1000.0
     )?;
 
@@ -196,13 +303,22 @@ pub fn write_junit_xml<W: Write>(results: &[TestResult], writer: &mut W) -> std:
             escaped_id,
             result.duration_ms / 1000.0
         )?;
-        if !result.passed {
-            let escaped_msg = escape_xml_string(&result.message);
-            writeln!(
-                writer,
-                r#"    <failure message="{}">{}</failure>"#,
-                escaped_desc, escaped_msg
-            )?;
+        match result.status {
+            TestStatus::Pass | TestStatus::UnexpectedPass => {}
+            TestStatus::Fail => {
+                let escaped_msg = escape_xml_string(&result.message);
+                writeln!(
+                    writer,
+                    r#"    <failure message="{}">{}</failure>"#,
+                    escaped_desc, escaped_msg
+                )?;
+            }
+            TestStatus::ExpectedFail => {
+                writeln!(writer, r#"    <skipped message="expected failure"/>"#)?;
+            }
+            TestStatus::Skip => {
+                writeln!(writer, r#"    <skipped/>"#)?;
+            }
         }
         writeln!(writer, "  </testcase>")?;
     }
@@ -233,11 +349,11 @@ fn escape_xml_string(s: &str) -> String {
 mod tests {
     use super::*;
 
-    fn make_result(id: &str, passed: bool, message: &str) -> TestResult {
+    fn make_result(id: &str, status: TestStatus, message: &str) -> TestResult {
         TestResult {
             id: id.to_string(),
             description: format!("Test {id}"),
-            passed,
+            status,
             message: message.to_string(),
             duration_ms: 1.0,
         }
@@ -246,7 +362,8 @@ mod tests {
     #[test]
     fn test_result_pass() {
         let r = TestResult::pass("t1", "desc", 5.0);
-        assert!(r.passed);
+        assert!(r.passed());
+        assert_eq!(r.status, TestStatus::Pass);
         assert_eq!(r.id, "t1");
         assert!(r.message.is_empty());
     }
@@ -254,28 +371,58 @@ mod tests {
     #[test]
     fn test_result_fail() {
         let r = TestResult::fail("t2", "desc", "broken", 3.0);
-        assert!(!r.passed);
+        assert!(!r.passed());
+        assert!(r.is_unexpected_fail());
         assert_eq!(r.message, "broken");
+    }
+
+    #[test]
+    fn test_result_expected_fail() {
+        let r = TestResult::expected_fail("t3", "desc", "known issue", 2.0);
+        assert!(r.passed());
+        assert!(!r.is_unexpected_fail());
+        assert_eq!(r.status, TestStatus::ExpectedFail);
+    }
+
+    #[test]
+    fn test_result_skip() {
+        let r = TestResult::skip("t4", "desc");
+        assert!(r.passed());
+        assert_eq!(r.status, TestStatus::Skip);
+        assert_eq!(r.duration_ms, 0.0);
+    }
+
+    #[test]
+    fn test_result_unexpected_pass() {
+        let r = TestResult::unexpected_pass("t5", "desc", 1.0);
+        assert_eq!(r.status, TestStatus::UnexpectedPass);
     }
 
     #[test]
     fn test_summary_from_results() {
         let results = vec![
-            make_result("a", true, ""),
-            make_result("b", false, "fail reason"),
-            make_result("c", true, ""),
+            make_result("a", TestStatus::Pass, ""),
+            make_result("b", TestStatus::Fail, "fail reason"),
+            make_result("c", TestStatus::Pass, ""),
+            make_result("d", TestStatus::ExpectedFail, "known"),
+            make_result("e", TestStatus::Skip, ""),
         ];
         let summary = TestSummary::from_results(&results);
-        assert_eq!(summary.total, 3);
+        assert_eq!(summary.total, 5);
         assert_eq!(summary.passed, 2);
         assert_eq!(summary.failed, 1);
+        assert_eq!(summary.expected_failures, 1);
+        assert_eq!(summary.skipped, 1);
         assert_eq!(summary.failures.len(), 1);
         assert_eq!(summary.failures[0].id, "b");
     }
 
     #[test]
     fn test_pass_rate() {
-        let results = vec![make_result("a", true, ""), make_result("b", true, "")];
+        let results = vec![
+            make_result("a", TestStatus::Pass, ""),
+            make_result("b", TestStatus::Pass, ""),
+        ];
         let summary = TestSummary::from_results(&results);
         assert!((summary.pass_rate() - 1.0).abs() < f64::EPSILON);
 
@@ -284,10 +431,21 @@ mod tests {
     }
 
     #[test]
+    fn test_pass_rate_excludes_skipped() {
+        let results = vec![
+            make_result("a", TestStatus::Pass, ""),
+            make_result("b", TestStatus::Skip, ""),
+        ];
+        let summary = TestSummary::from_results(&results);
+        // 1 passed, 1 skipped, 2 total → pass_rate = 1/(2-1) = 1.0
+        assert!((summary.pass_rate() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn test_format_results_text() {
         let results = vec![
-            make_result("pass-test", true, ""),
-            make_result("fail-test", false, "something broke"),
+            make_result("pass-test", TestStatus::Pass, ""),
+            make_result("fail-test", TestStatus::Fail, "something broke"),
         ];
         let summary = TestSummary::from_results(&results);
         let text = format_results_text(&results, &summary);
@@ -299,7 +457,10 @@ mod tests {
 
     #[test]
     fn test_format_results_json() {
-        let results = vec![make_result("t1", true, ""), make_result("t2", false, "error msg")];
+        let results = vec![
+            make_result("t1", TestStatus::Pass, ""),
+            make_result("t2", TestStatus::Fail, "error msg"),
+        ];
         let summary = TestSummary::from_results(&results);
         let json = format_results_json(&results, &summary);
         assert!(json.contains("\"status\":\"pass\""));
@@ -311,7 +472,10 @@ mod tests {
 
     #[test]
     fn test_format_tap() {
-        let results = vec![make_result("ok-test", true, ""), make_result("nok-test", false, "bad")];
+        let results = vec![
+            make_result("ok-test", TestStatus::Pass, ""),
+            make_result("nok-test", TestStatus::Fail, "bad"),
+        ];
         let tap = format_tap(&results);
         assert!(tap.contains("1..2"));
         assert!(tap.contains("ok 1"));
@@ -319,8 +483,18 @@ mod tests {
     }
 
     #[test]
+    fn test_format_tap_skip() {
+        let results = vec![make_result("s", TestStatus::Skip, "")];
+        let tap = format_tap(&results);
+        assert!(tap.contains("SKIP"));
+    }
+
+    #[test]
     fn test_write_junit_xml() {
-        let results = vec![make_result("x", true, ""), make_result("y", false, "err")];
+        let results = vec![
+            make_result("x", TestStatus::Pass, ""),
+            make_result("y", TestStatus::Fail, "err"),
+        ];
         let mut buf = Vec::new();
         write_junit_xml(&results, &mut buf).unwrap();
         let xml = String::from_utf8(buf).unwrap();
@@ -351,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_print_summary_no_panic() {
-        let results = vec![make_result("a", true, "")];
+        let results = vec![make_result("a", TestStatus::Pass, "")];
         let summary = TestSummary::from_results(&results);
         // Just ensure it doesn't panic
         print_summary(&summary);
