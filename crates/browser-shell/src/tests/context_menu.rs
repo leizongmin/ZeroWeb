@@ -107,7 +107,7 @@ fn test_context_menu_find_in_sub_menu() {
 #[test]
 fn test_context_menu_len() {
     let menu = ContextMenu::new(ContextType::Page);
-    assert!(menu.len() > 0);
+    assert!(!menu.is_empty());
     // Page menu items: back, forward, reload, sep, save_as, print, sep, view_source, inspect = 9
     assert_eq!(menu.len(), 9);
 }
@@ -283,7 +283,7 @@ fn test_context_menu_clone() {
 fn test_context_menu_not_empty() {
     let menu = ContextMenu::new(ContextType::Selection);
     assert!(!menu.is_empty());
-    assert!(menu.len() > 0);
+    assert!(!menu.is_empty());
 }
 
 /// 测试 find_item 第一级查找。

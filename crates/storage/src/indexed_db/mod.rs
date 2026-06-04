@@ -13,6 +13,8 @@ mod tests_advanced;
 #[cfg(test)]
 mod tests_basic;
 #[cfg(test)]
+mod tests_bool_coverage;
+#[cfg(test)]
 mod tests_edge;
 #[cfg(test)]
 mod types_coverage;
