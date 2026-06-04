@@ -389,5 +389,144 @@ sessionStorage.setItem('lastVisit', new Date().toISOString());
             css: String::new(),
             assertions: vec!["render_completes".to_string(), "has_glyph_primitives".to_string()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        //  localStorage 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "storage/localstorage-clear".to_string(),
+            description: "localStorage.clear() 清除所有数据".to_string(),
+            category: "storage".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<script>
+localStorage.setItem('a', '1');
+localStorage.setItem('b', '2');
+localStorage.setItem('c', '3');
+var before = localStorage.length;
+localStorage.clear();
+var after = localStorage.length;
+</script>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["render_completes".to_string()],
+        },
+        TestCase {
+            id: "storage/localstorage-json-roundtrip".to_string(),
+            description: "localStorage JSON 序列化往返".to_string(),
+            category: "storage".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="result">json test</div>
+<script>
+var data = { name: 'test', count: 42, active: true };
+localStorage.setItem('obj', JSON.stringify(data));
+var restored = JSON.parse(localStorage.getItem('obj'));
+document.getElementById('result').textContent = restored.name + ':' + restored.count;
+</script>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["render_completes".to_string(), "dom_has_body".to_string()],
+        },
+        TestCase {
+            id: "storage/localstorage-key-iteration".to_string(),
+            description: "localStorage key() 迭代".to_string(),
+            category: "storage".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<script>
+localStorage.clear();
+localStorage.setItem('x', '1');
+localStorage.setItem('y', '2');
+localStorage.setItem('z', '3');
+var keys = [];
+for (var i = 0; i < localStorage.length; i++) {
+    keys.push(localStorage.key(i));
+}
+</script>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["render_completes".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  IndexedDB 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "storage/indexeddb-basic-structure".to_string(),
+            description: "IndexedDB API 存在检测".to_string(),
+            category: "storage".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="result">idb test</div>
+<script>
+var hasIDB = typeof indexedDB !== 'undefined';
+document.getElementById('result').textContent = hasIDB ? 'IndexedDB available' : 'No IndexedDB';
+</script>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["render_completes".to_string(), "dom_has_body".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  Cache API 扩展
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "storage/cache-api-detection".to_string(),
+            description: "Cache API 存在检测".to_string(),
+            category: "storage".to_string(),
+            html: r#"<!DOCTYPE html>
+<html><body>
+<div id="result">cache test</div>
+<script>
+var hasCache = typeof caches !== 'undefined' && typeof caches.open === 'function';
+document.getElementById('result').textContent = hasCache ? 'Cache API available' : 'No Cache API';
+</script>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["render_completes".to_string(), "dom_has_body".to_string()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  综合存储页面
+        // ═══════════════════════════════════════════════════════════════
+        TestCase {
+            id: "storage/composite/preferences-page".to_string(),
+            description: "综合用户偏好设置页面".to_string(),
+            category: "storage".to_string(),
+            html: r##"<!DOCTYPE html>
+<html><head>
+<style>
+.pref { border: 1px solid #ddd; padding: 8px; margin: 4px; border-radius: 4px; }
+.pref label { font-weight: bold; }
+</style>
+</head><body>
+<h1>User Preferences</h1>
+<div class="pref">
+    <label>Theme: <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+</div>
+<div class="pref">
+    <label>Language: <select id="lang"><option value="en">English</option><option value="zh">中文</option></select></label>
+</div>
+<div class="pref">
+    <label><input type="checkbox" id="notifications"> Enable notifications</label>
+</div>
+<script>
+localStorage.setItem('theme', document.getElementById('theme').value);
+localStorage.setItem('lang', document.getElementById('lang').value);
+localStorage.setItem('notifications', 'false');
+</script>
+</body></html>"##
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "dom_has_heading".to_string(),
+                "dom_has_input".to_string(),
+                "dom_has_select".to_string(),
+            ],
+        },
     ]
 }
