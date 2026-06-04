@@ -118,9 +118,11 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
+        // 视口剔除 — 移除视口外的图元
+        let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
+        let (primitives, stats) = primitives.cull_invisible(viewport);
         // 对填充图元进行批处理优化
         let primitives = primitives.batch_fills();
-        let stats = primitives.stats();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
