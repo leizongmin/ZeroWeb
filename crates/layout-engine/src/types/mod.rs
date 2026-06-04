@@ -119,5 +119,113 @@ pub struct LayoutResult {
     pub viewport_height: f32,
 }
 
+impl LayoutResult {
+    /// 生成稳定的文本快照，用于测试对比。
+    ///
+    /// 输出格式为每行一个节点的缩进树形结构，包含位置和尺寸信息。
+    /// 坐标精度固定为 2 位小数，确保快照的稳定性。
+    pub fn snapshot(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(&format!(
+            "viewport: {:.2}x{:.2}\n",
+            self.viewport_width, self.viewport_height
+        ));
+        self.root.snapshot_into(0, &mut buf);
+        buf
+    }
+}
+
+impl LayoutBox {
+    /// 递归生成快照文本到 `buf`。
+    fn snapshot_into(&self, depth: usize, buf: &mut String) {
+        let indent = "  ".repeat(depth);
+        let nid = self.node_id.map_or("-".to_string(), |id| format!("{:?}", id));
+        buf.push_str(&format!(
+            "{}[{}] pos=({:.2},{:.2}) size=({:.2},{:.2}) content=({:.2},{:.2} {:.2}x{:.2})",
+            indent,
+            nid,
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            self.content_x,
+            self.content_y,
+            self.content_width,
+            self.content_height,
+        ));
+        // 仅在非零值时输出 border/padding/margin
+        if self.border_top > 0.0 || self.border_right > 0.0 || self.border_bottom > 0.0 || self.border_left > 0.0 {
+            buf.push_str(&format!(
+                " border=({:.2},{:.2},{:.2},{:.2})",
+                self.border_top, self.border_right, self.border_bottom, self.border_left,
+            ));
+        }
+        if self.padding_top > 0.0 || self.padding_right > 0.0 || self.padding_bottom > 0.0 || self.padding_left > 0.0 {
+            buf.push_str(&format!(
+                " padding=({:.2},{:.2},{:.2},{:.2})",
+                self.padding_top, self.padding_right, self.padding_bottom, self.padding_left,
+            ));
+        }
+        if self.margin_top > 0.0 || self.margin_right > 0.0 || self.margin_bottom > 0.0 || self.margin_left > 0.0 {
+            buf.push_str(&format!(
+                " margin=({:.2},{:.2},{:.2},{:.2})",
+                self.margin_top, self.margin_right, self.margin_bottom, self.margin_left,
+            ));
+        }
+        if self.is_absolute {
+            buf.push_str(" abs");
+        }
+        if self.is_fixed {
+            buf.push_str(" fixed");
+        }
+        if self.is_sticky {
+            buf.push_str(" sticky");
+        }
+        if self.z_index != 0 {
+            buf.push_str(&format!(" z={}", self.z_index));
+        }
+        buf.push('\n');
+        for child in &self.children {
+            child.snapshot_into(depth + 1, buf);
+        }
+    }
+
+    /// 在布局树中按深度优先顺序查找第 N 个（0-indexed）节点。
+    ///
+    /// 返回 `(绝对 X, 绝对 Y, width, height)` 或 `None`。
+    pub fn nth_box(&self, index: usize) -> Option<(f32, f32, f32, f32)> {
+        let mut counter = 0usize;
+        self.nth_box_inner(0.0, 0.0, index, &mut counter)
+    }
+
+    fn nth_box_inner(
+        &self,
+        parent_x: f32,
+        parent_y: f32,
+        target: usize,
+        counter: &mut usize,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let abs_x = parent_x + self.x;
+        let abs_y = parent_y + self.y;
+        if *counter == target {
+            return Some((abs_x, abs_y, self.width, self.height));
+        }
+        *counter += 1;
+        for child in &self.children {
+            let cx = abs_x + self.content_x;
+            let cy = abs_y + self.content_y;
+            if let Some(result) = child.nth_box_inner(cx, cy, target, counter) {
+                return Some(result);
+            }
+        }
+        None
+    }
+
+    /// 统计布局树中的节点总数（含自身）。
+    pub fn count_boxes(&self) -> usize {
+        1 + self.children.iter().map(|c| c.count_boxes()).sum::<usize>()
+    }
+}
+
 #[cfg(test)]
 mod tests;

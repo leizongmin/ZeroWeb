@@ -377,3 +377,343 @@ fn test_border_padding_margin_combination() {
     assert_eq!(b.overflow_y, OverflowClip::Scroll);
     assert_eq!(b.z_index, 5);
 }
+
+// ── snapshot 和 nth_box 测试 ──────────────────────────────────────
+
+/// 测试 LayoutResult::snapshot 基本输出。
+#[test]
+fn test_layout_result_snapshot_basic() {
+    let result = LayoutResult {
+        root: LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 800.0,
+            content_height: 600.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        },
+        viewport_width: 800.0,
+        viewport_height: 600.0,
+    };
+    let snap = result.snapshot();
+    assert!(
+        snap.contains("viewport: 800.00x600.00"),
+        "snapshot should contain viewport"
+    );
+    assert!(
+        snap.contains("size=(800.00,600.00)"),
+        "snapshot should contain root size"
+    );
+}
+
+/// 测试 LayoutResult::snapshot 带 border/padding/margin。
+#[test]
+fn test_layout_result_snapshot_with_box_model() {
+    let result = LayoutResult {
+        root: LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+            content_x: 6.0,
+            content_y: 6.0,
+            content_width: 88.0,
+            content_height: 68.0,
+            border_top: 2.0,
+            border_right: 2.0,
+            border_bottom: 2.0,
+            border_left: 2.0,
+            padding_top: 4.0,
+            padding_right: 4.0,
+            padding_bottom: 4.0,
+            padding_left: 4.0,
+            margin_top: 10.0,
+            margin_right: 10.0,
+            margin_bottom: 10.0,
+            margin_left: 10.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        },
+        viewport_width: 800.0,
+        viewport_height: 600.0,
+    };
+    let snap = result.snapshot();
+    assert!(snap.contains("border="), "should show border");
+    assert!(snap.contains("padding="), "should show padding");
+    assert!(snap.contains("margin="), "should show margin");
+}
+
+/// 测试 LayoutResult::snapshot 带 z-index 和定位标志。
+#[test]
+fn test_layout_result_snapshot_flags() {
+    let result = LayoutResult {
+        root: LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 100.0,
+            content_height: 100.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![LayoutBox {
+                node_id: None,
+                x: 10.0,
+                y: 10.0,
+                width: 50.0,
+                height: 50.0,
+                content_x: 10.0,
+                content_y: 10.0,
+                content_width: 50.0,
+                content_height: 50.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: true,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 5,
+            }],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        },
+        viewport_width: 800.0,
+        viewport_height: 600.0,
+    };
+    let snap = result.snapshot();
+    assert!(snap.contains("abs"), "should show absolute flag");
+    assert!(snap.contains("z=5"), "should show z-index");
+    assert!(snap.contains("  [-]"), "child should be indented");
+}
+
+/// 测试 LayoutBox::nth_box 基本查找。
+#[test]
+fn test_nth_box_basic() {
+    let root = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![
+            LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 50.0,
+                content_x: 0.0,
+                content_y: 0.0,
+                content_width: 800.0,
+                content_height: 50.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 0,
+            },
+            LayoutBox {
+                node_id: None,
+                x: 0.0,
+                y: 50.0,
+                width: 800.0,
+                height: 550.0,
+                content_x: 0.0,
+                content_y: 50.0,
+                content_width: 800.0,
+                content_height: 550.0,
+                border_top: 0.0,
+                border_right: 0.0,
+                border_bottom: 0.0,
+                border_left: 0.0,
+                padding_top: 0.0,
+                padding_right: 0.0,
+                padding_bottom: 0.0,
+                padding_left: 0.0,
+                margin_top: 0.0,
+                margin_right: 0.0,
+                margin_bottom: 0.0,
+                margin_left: 0.0,
+                children: vec![],
+                is_absolute: false,
+                is_fixed: false,
+                is_sticky: false,
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                z_index: 0,
+            },
+        ],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+        z_index: 0,
+    };
+    // Index 0 = root
+    let (x0, y0, w0, h0) = root.nth_box(0).unwrap();
+    assert_eq!(w0, 800.0);
+    assert_eq!(h0, 600.0);
+    // Index 1 = first child
+    let (x1, _y1, _w1, h1) = root.nth_box(1).unwrap();
+    assert_eq!(x1, 0.0);
+    assert_eq!(h1, 50.0);
+    // Index 2 = second child
+    let (_x2, y2, _w2, _h2) = root.nth_box(2).unwrap();
+    assert_eq!(y2, 50.0);
+    // Out of range
+    assert!(root.nth_box(3).is_none());
+}
+
+/// 测试 LayoutBox::count_boxes。
+#[test]
+fn test_count_boxes() {
+    let root = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 100.0,
+        content_height: 100.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![LayoutBox {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 50.0,
+            height: 50.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 50.0,
+            content_height: 50.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: vec![],
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        }],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+        z_index: 0,
+    };
+    // root(1) + child(1) = 2
+    assert_eq!(root.count_boxes(), 2);
+}
