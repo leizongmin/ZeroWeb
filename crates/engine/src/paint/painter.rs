@@ -8,6 +8,7 @@ use zero_css_parser::values::VisibilityValue;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::InlineFormattingContext;
 use zero_layout_engine::LayoutBox;
+use zero_layout_engine::estimate_char_width;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -565,7 +566,6 @@ impl Painter {
 
                     let frag_base_x = content_x + fragment.x + tx;
                     let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
-                    let char_advance = fragment.font_size * 0.6;
                     let mut char_x = frag_base_x;
 
                     // 应用 text-transform
@@ -596,11 +596,14 @@ impl Painter {
                             bitmap_width: None,
                             bitmap_height: None,
                         });
-                        char_x += char_advance;
+                        char_x += estimate_char_width(ch, fragment.font_size);
                     }
 
                     // 绘制文本装饰线（underline/overline/line-through）
-                    let text_width = char_advance * transformed.len() as f32;
+                    let text_width = transformed
+                        .chars()
+                        .map(|ch| estimate_char_width(ch, fragment.font_size))
+                        .sum();
                     self.paint_text_decoration(
                         frag_base_x,
                         frag_base_y,
@@ -648,7 +651,7 @@ impl Painter {
             glyph_x,
             glyph_y + font_size,
             font_size,
-            font_size * 0.6,
+            estimate_char_width('A', font_size),
             color,
             &style.text_decoration_line,
         );

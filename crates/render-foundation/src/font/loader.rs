@@ -98,6 +98,14 @@ impl FontLoader {
         }
 
         for font_id in chain {
+            let font = match self.fonts.get(&font_id) {
+                Some(font) => font,
+                None => continue,
+            };
+            // 主字体缺字时会 rasterize .notdef 方块；须先检查字体是否包含该字符
+            if !code_point.is_whitespace() && !font.has_glyph(code_point) {
+                continue;
+            }
             let bitmap = self.rasterize_glyph(font_id, code_point, size)?;
             if Self::glyph_has_coverage(code_point, &bitmap) {
                 return Ok((font_id, bitmap));
@@ -697,6 +705,37 @@ mod tests {
         // 测试极小字体尺寸
         let result = loader.rasterize_glyph(font_id, 'A', 1.0);
         assert!(result.is_ok());
+    }
+
+    /// 测试 fallback 跳过主字体的 .notdef 方块
+    #[test]
+    fn test_fallback_skips_primary_missing_glyph() {
+        let primary_data = match load_system_font_data() {
+            Some(data) => data,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+        let cjk_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc";
+        let cjk_data = match std::fs::read(cjk_path) {
+            Ok(data) => data,
+            Err(_) => {
+                eprintln!("skipping: no NotoSansCJK at {cjk_path}");
+                return;
+            }
+        };
+
+        let mut loader = FontLoader::new();
+        let primary = loader.load_font(&primary_data).unwrap();
+        let cjk = loader.load_font(&cjk_data).unwrap();
+        loader.set_fallback_chain(vec![cjk]);
+
+        let primary_font = loader.get(primary).unwrap();
+        assert!(!primary_font.has_glyph('中'));
+
+        let (resolved, _) = loader.rasterize_glyph_with_fallback(primary, '中', 20.0).unwrap();
+        assert_eq!(resolved, cjk);
     }
 
     /// 测试字体描述符的权重转换
