@@ -49,3 +49,6 @@ mod e2e_rendering;
 
 #[cfg(test)]
 mod headless_protocol;
+
+#[cfg(test)]
+mod web_api_pipeline;
