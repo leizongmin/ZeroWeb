@@ -343,8 +343,8 @@ mod tests {
     fn test_builtin_tests_count() {
         let tests = builtin_tests();
         assert!(
-            tests.len() >= 150,
-            "Should have at least 150 builtin tests, got {}",
+            tests.len() >= 300,
+            "Should have at least 300 builtin tests, got {}",
             tests.len()
         );
     }
