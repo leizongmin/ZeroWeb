@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,130 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 751 个用例（21 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算
+**执行状态**: 16/16 crate 已实现，~11,130 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 801 个用例（22 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -105,7 +105,21 @@
 
 ## 最近完成的改进
 
-### -81. WASM 自动桥接 + 增量布局 + WPT 731 用例（本轮，~11,116 测试）
+### -82. WPT 测试套件扩展至 801 用例（本轮，~11,130 测试）
+
+扩展 WPT 测试套件，新增 3 个方向的测试覆盖：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| WPT runner/web_api | **Web API +19 测试**：DOM 操作（createElement/textNode/setAttribute/innerHTML/querySelectorAll/removeChild）、Fetch Request/Response/Headers 构造函数、JS 内置（Array/Object/Map/Set/Error/Symbol/Proxy）、定时器（setTimeout 回调/requestAnimationFrame）、综合页面（JS Playground/API Explorer） | +19 |
+| WPT runner/es_modules | **ES Modules +16 测试**：import 变体（named/default/namespace/side-effect）、export 变体（re-export/default async/default class）、嵌套解构、Worker 生命周期（create/multi/double-terminate/error-handler）、消息传递（simple/JSON/transferable）、综合 Module+Worker 页面 | +16 |
+| WPT runner/security | **安全策略 +11 测试**：Cookie 标志（Secure/HttpOnly/SameSite）、CSP 扩展（script-src-hash/connect-src/style-src）、同源策略（cross-origin-img/postMessage）、XSS 防护（innerHTML 净化/script 注入）、安全仪表盘 | +11 |
+| WPT runner/navigation | **导航测试 +30 测试**：URL 解析、链接、表单、meta 标签、script 标签、CSS 规则、导航控制、综合页面（来自上一轮未提交的工作） | +30 |
+| WPT runner/storage | **存储测试 +24 测试**：localStorage/sessionStorage、IndexedDB、Cache API、Service Worker、Web Workers（来自上一轮未提交的工作） | +24 |
+
+WPT: 751 → 801 用例（+50, 22 个分类, 100% 通过率），Tests: ~11,130（不变，WPT runner 为独立二进制），clippy clean.
+
+### -81. WASM 自动桥接 + 增量布局 + WPT 731 用例（前轮，~11,116 测试）
 
 新增三大功能：
 
@@ -1492,7 +1506,7 @@ Total: 6219 → 6378 tests (+159)
 
 ### M12 剩余工作
 
-- [ ] WPT 通过率持续追踪和扩展（当前 731 内建测试，21 分类，100% 通过率）
+- [ ] WPT 通过率持续追踪和扩展（当前 801 内建测试，22 分类，100% 通过率）
 - [x] ~~页面级 WASM JS→wasm-sandbox 自动桥接~~ ✅ 已完成：JS WebAssembly.instantiate() 自动通过 base64 桥接到 wasm-sandbox，WebView.call_wasm_export() 调用缓存实例
 
 ---
@@ -1504,7 +1518,7 @@ Total: 6219 → 6378 tests (+159)
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
 5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-6. ~~**浏览器质量测试体系 P0**~~ 🔧 进行中：✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 700 用例（19 分类，100% 通过率）
+6. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 801 用例（22 分类，100% 通过率）
 
 ## 浏览器质量测试体系推进计划
 
@@ -1575,7 +1589,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。缺少：Top 20 真实网站验证、多进程实际运行 |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 700 用例（19 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 801 用例（22 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。新增 CSS 属性管线集成测试 35 个 |
 | 4. 性能基准体系 | ✅/❌ | 77 个 criterion 基准覆盖所有 crate。缺少：中等复杂度页面首屏 < 2s 验证、增量渲染 < 20% 验证、GPU 加速验证（均需 GPU/Display） |
 | 5. 单元测试与质量 | ✅ | 10,850 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
@@ -1591,7 +1605,7 @@ Total: 6219 → 6378 tests (+159)
 2. ~~ES Modules（`<script type="module">`）实现~~ ✅ 已完成
 3. 多进程架构实际运行
 4. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
-5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata ✅ WPT 700 用例 19 分类 100% 通过率
+5. ~~浏览器质量测试体系 P0~~ ✅ 布局/图元快照 ✅ 最小 reftest harness ✅ expected metadata ✅ WPT 801 用例 22 分类 100% 通过率
 6. ~~无头浏览器协议 Phase 1-5~~ ✅ 全部完成：远程调试服务骨架 + 浏览上下文管理 + 事件推送 + HTTP 发现 + CDP 兼容 + 协议驱动自动化测试 + 隔离安全加固
 
 ---
