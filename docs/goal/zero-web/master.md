@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 846 个用例（24 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView
+**执行状态**: 16/16 crate 已实现，~11,179 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 846 个用例（24 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -105,7 +105,23 @@
 
 ## 最近完成的改进
 
-### -84. WPT 测试扩展至 846 用例（本轮，~11,179 测试）
+### -85. 渲染管线优化 — 填充批处理 + 视口剔除 + Draw Call 统计（本轮，~11,179 测试）
+
+实现 M13 渲染管线优化，减少 draw call 数量和不可见图元：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| render-foundation/primitive | **RenderStats**：渲染统计追踪（图元计数、draw call 估算、剔除数量） | — |
+| render-foundation/primitive | **batch_fills()**：同色相邻矩形合并批处理（确定性插入序） | +5 |
+| render-foundation/primitive | **cull_invisible()**：视口剔除（移除视口外的 fills/rounded_rects/strokes/shadows/images/gradients/paths） | +5 |
+| render-foundation/geometry | **Rect::intersects()**：高效矩形相交检测 | +4 |
+| engine/pipeline | **RenderResult.stats**：管线自动应用 batch_fills + 统计输出 | — |
+| engine/preload | **DOM API 修复**：scan_dom_resource_hints 使用正确的 Document API | — |
+| WPT runner | **分类修复**：添加 js-dom 和 es-modules 到有效分类列表 | — |
+
+Tests: ~11,179（不变），clippy clean.
+
+### -84. WPT 测试扩展至 846 用例（前轮，~11,179 测试）
 
 扩展 WPT 测试覆盖，新增 3 批测试用例：
 
@@ -1500,7 +1516,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现（所有主要指令 + report-only） ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ LayoutDirtyTracker 增量布局 ✅ **增量布局计算（compute_incremental + CachedLayoutState + taffy mark_dirty）** ✅ GPU Glyph Atlas ✅ 权限模型基础 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context 优化（persistent_context + WASM 自动桥接） |
+| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现 ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ 增量布局计算 ✅ GPU Glyph Atlas ✅ 权限模型 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context ✅ **渲染管线优化（填充批处理 batch_fills + 视口剔除 cull_invisible + draw call 统计 RenderStats + Rect::intersects）** |
 
 ---
 
