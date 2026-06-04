@@ -16,10 +16,16 @@ mod v8_runtime;
 mod worker;
 
 #[cfg(feature = "v8")]
+mod es_module;
+
+#[cfg(feature = "v8")]
 pub use v8_runtime::*;
 
 #[cfg(feature = "v8")]
 pub use worker::*;
+
+#[cfg(feature = "v8")]
+pub use es_module::*;
 
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 mod quickjs_runtime;

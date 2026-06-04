@@ -12,3 +12,4 @@ mod integration;
 mod more_coverage;
 mod uncovered_paths;
 mod webview_coverage_final;
+mod worker_integration;

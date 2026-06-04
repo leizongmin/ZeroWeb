@@ -1,0 +1,711 @@
+//! ES Module 运行时 — 支持编译和执行 ES Module 格式的 JavaScript。
+//!
+//! 提供基本的 ES Module 支持：
+//! - 源代码转换方式支持 `export`/`import` 语法
+//! - 模块注册表管理已注册的模块
+//! - `import.meta.url` 支持
+//!
+//! # 工作原理
+//!
+//! 将 ES Module 源代码转换为普通脚本：
+//! - 依赖模块的内联转换代码直接嵌入导入模块
+//! - `export` 声明转为 `_exports` 对象属性赋值
+//! - `import` 声明转为对内联依赖模块导出对象的引用
+
+use crate::{SandboxConfig, ScriptError};
+use std::collections::{HashMap, HashSet};
+
+/// 模块注册表 — 存储已注册的 ES Module 源代码。
+#[derive(Debug, Clone, Default)]
+pub struct ModuleRegistry {
+    modules: HashMap<String, String>,
+}
+
+impl ModuleRegistry {
+    /// 创建空的模块注册表。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 注册一个模块。
+    pub fn register(&mut self, specifier: &str, source: &str) {
+        self.modules.insert(specifier.to_string(), source.to_string());
+    }
+
+    /// 查询模块源代码。
+    pub fn get(&self, specifier: &str) -> Option<&str> {
+        self.modules.get(specifier).map(|s| s.as_str())
+    }
+
+    /// 移除一个已注册的模块。
+    pub fn unregister(&mut self, specifier: &str) -> bool {
+        self.modules.remove(specifier).is_some()
+    }
+
+    /// 获取已注册模块数量。
+    pub fn len(&self) -> usize {
+        self.modules.len()
+    }
+
+    /// 注册表是否为空。
+    pub fn is_empty(&self) -> bool {
+        self.modules.is_empty()
+    }
+
+    /// 列出所有已注册模块的标识符。
+    pub fn specifiers(&self) -> Vec<&str> {
+        self.modules.keys().map(|s| s.as_str()).collect()
+    }
+}
+
+/// ES Module 执行结果。
+#[derive(Debug, Clone)]
+pub struct ModuleResult {
+    /// 模块命名空间对象的 JSON 字符串表示。
+    pub namespace_json: String,
+    /// 执行耗时（毫秒）。
+    pub execution_time_ms: f64,
+}
+
+/// ES Module 沙箱 — 支持 `export`/`import` 语法的 JavaScript 执行环境。
+///
+/// 通过源代码转换将 ES Module 语法的代码在 V8 中执行。
+/// 依赖模块以 IIFE 形式内联，导出通过共享的 `_exports` 对象传递。
+pub struct EsModuleSandbox {
+    /// 模块注册表。
+    registry: ModuleRegistry,
+    /// V8 沙箱（用于执行转换后的代码）。
+    sandbox: crate::V8Sandbox,
+}
+
+impl EsModuleSandbox {
+    /// 创建新的 ES Module 沙箱。
+    pub fn new() -> Result<Self, ScriptError> {
+        Ok(Self {
+            registry: ModuleRegistry::new(),
+            sandbox: crate::V8Sandbox::new()?,
+        })
+    }
+
+    /// 使用自定义配置创建 ES Module 沙箱。
+    pub fn with_config(config: SandboxConfig) -> Result<Self, ScriptError> {
+        Ok(Self {
+            registry: ModuleRegistry::new(),
+            sandbox: crate::V8Sandbox::with_config(config)?,
+        })
+    }
+
+    /// 获取模块注册表（可变引用）。
+    pub fn registry_mut(&mut self) -> &mut ModuleRegistry {
+        &mut self.registry
+    }
+
+    /// 获取模块注册表（只读引用）。
+    pub fn registry(&self) -> &ModuleRegistry {
+        &self.registry
+    }
+
+    /// 注册一个模块到注册表。
+    pub fn register_module(&mut self, specifier: &str, source: &str) {
+        self.registry.register(specifier, source);
+    }
+
+    /// 编译并执行 ES Module 代码。
+    pub fn execute_module(&mut self, source: &str, url: Option<&str>) -> Result<ModuleResult, ScriptError> {
+        if source.trim().is_empty() {
+            return Err(ScriptError::InvalidInput("module source is empty".into()));
+        }
+
+        let start = std::time::Instant::now();
+        let url = url.unwrap_or("zero://module");
+
+        // 转换 ES Module 代码为普通脚本（内联所有依赖）
+        let transformed = build_module_script(source, url, &self.registry, &mut HashSet::new())?;
+
+        // 执行转换后的脚本
+        let result = self.sandbox.execute_json(&transformed)?;
+
+        let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        Ok(ModuleResult {
+            namespace_json: result.value,
+            execution_time_ms,
+        })
+    }
+}
+
+impl std::fmt::Debug for EsModuleSandbox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EsModuleSandbox")
+            .field("registry", &self.registry)
+            .finish()
+    }
+}
+
+// ── 核心转换逻辑（纯函数） ──
+
+/// 构建完整的模块执行脚本，内联所有依赖。
+fn build_module_script(
+    source: &str,
+    url: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> Result<String, ScriptError> {
+    let mut output = String::with_capacity(source.len() * 3);
+    output.push_str("(function() {\n");
+    output.push_str("  'use strict';\n");
+    output.push_str("  var _exports = {};\n");
+    output.push_str(&format!("  var _importMeta = {{ url: {} }};\n", json_stringify(url)));
+
+    // 处理当前模块的每个语句
+    let stmts = split_statements(source);
+    for stmt in &stmts {
+        let trimmed = stmt.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("import ") {
+            output.push_str(&transform_import(trimmed, registry, visited)?);
+        } else if trimmed.starts_with("export ") {
+            output.push_str(&transform_export(trimmed)?);
+        } else {
+            // 普通语句：替换 import.meta
+            let s = trimmed.replace("import.meta", "_importMeta");
+            output.push_str("  ");
+            output.push_str(&s);
+            output.push_str(";\n");
+        }
+    }
+
+    output.push_str("  return _exports;\n");
+    output.push_str("})()\n");
+    Ok(output)
+}
+
+/// 为依赖模块构建内联的 IIFE（返回其导出对象）。
+fn build_dep_iife(
+    specifier: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> Result<String, ScriptError> {
+    let source = registry
+        .get(specifier)
+        .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?;
+
+    let mut output = String::new();
+    output.push_str("(function() {\n");
+    output.push_str("  'use strict';\n");
+    output.push_str("  var _exports = {};\n");
+    output.push_str(&format!(
+        "  var _importMeta = {{ url: {} }};\n",
+        json_stringify(specifier)
+    ));
+
+    let stmts = split_statements(source);
+    for stmt in &stmts {
+        let trimmed = stmt.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("import ") {
+            output.push_str(&transform_import(trimmed, registry, visited)?);
+        } else if trimmed.starts_with("export ") {
+            output.push_str(&transform_export(trimmed)?);
+        } else {
+            let s = trimmed.replace("import.meta", "_importMeta");
+            output.push_str("  ");
+            output.push_str(&s);
+            output.push_str(";\n");
+        }
+    }
+
+    output.push_str("  return _exports;\n");
+    output.push_str("})()");
+    Ok(output)
+}
+
+/// 转换 import 声明。
+fn transform_import(
+    line: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> Result<String, ScriptError> {
+    let rest = &line["import ".len()..];
+
+    // import 'module' — 副作用导入
+    if rest.starts_with('\'') || rest.starts_with('"') || rest.starts_with('`') {
+        let specifier = extract_string_literal(rest.split(';').next().unwrap_or(rest).trim())?;
+        // 执行副作用（内联执行模块体但不使用返回值）
+        if !visited.contains(&specifier) {
+            visited.insert(specifier.clone());
+            let dep_code = build_dep_iife(&specifier, registry, visited)?;
+            return Ok(format!("  {dep_code};\n"));
+        }
+        return Ok(String::new());
+    }
+
+    // import * as X from 'module'
+    if let Some(as_pos) = rest.find("* as ")
+        && let Some(from_pos) = rest.find(" from ")
+    {
+        let ns_name = rest[as_pos + 5..from_pos].trim();
+        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        visited.insert(specifier.clone());
+        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        return Ok(format!("  var {ns_name} = {dep_code};\n"));
+    }
+
+    // import { X, Y as Z } from 'module'
+    if rest.starts_with('{')
+        && let Some(from_pos) = rest.find(" from ")
+    {
+        let bindings = rest[..from_pos].trim();
+        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let safe = safe_ident(&specifier);
+        visited.insert(specifier.clone());
+        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        let mut result = format!("  var _mod_{safe} = {dep_code};\n");
+        result.push_str(&destructure_bindings(bindings, &safe));
+        return Ok(result);
+    }
+
+    // import X from 'module' — 默认导入
+    if let Some(from_pos) = rest.find(" from ") {
+        let name = rest[..from_pos].trim();
+        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        visited.insert(specifier.clone());
+        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        return Ok(format!(
+            "  var {name} = ({dep_code}).default !== undefined ? ({dep_code}).default : {dep_code};\n"
+        ));
+    }
+
+    Ok(String::new())
+}
+
+/// 从 `from '...'` 部分提取模块标识符。
+fn extract_import_specifier_from_rest(s: &str) -> Result<String, ScriptError> {
+    let s = s.split(';').next().unwrap_or(s).trim();
+    extract_string_literal(s)
+}
+
+/// 生成解构导入语句。
+fn destructure_bindings(bindings: &str, safe_mod: &str) -> String {
+    let inner = bindings.trim_start_matches('{').trim_end_matches('}');
+    let mut result = String::new();
+    for item in inner.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        if let Some(pos) = item.find(" as ") {
+            let src = item[..pos].trim();
+            let alias = item[pos + 4..].trim();
+            result.push_str(&format!("  var {alias} = _mod_{safe_mod}.{src};\n"));
+        } else {
+            result.push_str(&format!("  var {item} = _mod_{safe_mod}.{item};\n"));
+        }
+    }
+    result
+}
+
+/// 转换 export 声明。
+fn transform_export(line: &str) -> Result<String, ScriptError> {
+    let rest = &line["export ".len()..];
+
+    if let Some(expr) = rest.strip_prefix("default ") {
+        let expr = expr.replace("import.meta", "_importMeta");
+        return Ok(format!("  _exports.default = {expr};\n"));
+    }
+    if let Some(decl) = rest.strip_prefix("const ") {
+        let name = extract_binding_name(decl);
+        return Ok(format!("  const {decl};\n  _exports.{name} = {name};\n"));
+    }
+    if let Some(decl) = rest.strip_prefix("let ") {
+        let name = extract_binding_name(decl);
+        return Ok(format!("  let {decl};\n  _exports.{name} = {name};\n"));
+    }
+    if let Some(decl) = rest.strip_prefix("var ") {
+        let name = extract_binding_name(decl);
+        return Ok(format!("  var {decl};\n  _exports.{name} = {name};\n"));
+    }
+    if let Some(decl) = rest.strip_prefix("function ") {
+        let name = extract_binding_name(decl);
+        return Ok(format!("  function {decl}\n  _exports.{name} = {name};\n"));
+    }
+    if let Some(decl) = rest.strip_prefix("class ") {
+        let name = extract_binding_name(decl);
+        return Ok(format!("  class {decl}\n  _exports.{name} = {name};\n"));
+    }
+
+    // export { X, Y as Z }
+    if rest.starts_with('{') {
+        let end = rest
+            .find('}')
+            .ok_or_else(|| ScriptError::CompileError("invalid export list: missing }".into()))?;
+        let list_str = &rest[1..end];
+        let mut result = String::new();
+        for item in list_str.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                continue;
+            }
+            if let Some(pos) = item.find(" as ") {
+                let local = item[..pos].trim();
+                let exported = item[pos + 4..].trim();
+                result.push_str(&format!("  _exports.{exported} = {local};\n"));
+            } else {
+                result.push_str(&format!("  _exports.{item} = {item};\n"));
+            }
+        }
+        return Ok(result);
+    }
+
+    Ok(format!("  {line};\n"))
+}
+
+// ── 辅助函数 ──
+
+/// 按分号拆分语句。
+fn split_statements(source: &str) -> Vec<String> {
+    let mut stmts = Vec::new();
+    for line in source.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        for part in line.split(';') {
+            let part = part.trim();
+            if !part.is_empty() {
+                stmts.push(part.to_string());
+            }
+        }
+    }
+    stmts
+}
+
+/// 提取字符串字面量（在第一个分号处停止）。
+fn extract_string_literal(s: &str) -> Result<String, ScriptError> {
+    let s = s.split(';').next().unwrap_or(s).trim();
+    if s.len() < 2 {
+        return Err(ScriptError::CompileError(format!("expected string literal, got: {s}")));
+    }
+    let close = match s.chars().next() {
+        Some('\'') => '\'',
+        Some('"') => '"',
+        Some('`') => '`',
+        _ => return Err(ScriptError::CompileError(format!("expected string literal, got: {s}"))),
+    };
+    if s.ends_with(close) {
+        Ok(s[1..s.len() - 1].to_string())
+    } else {
+        Err(ScriptError::CompileError(format!("unclosed string literal: {s}")))
+    }
+}
+
+/// 从声明中提取绑定名称。
+fn extract_binding_name(decl: &str) -> &str {
+    let decl = decl.trim();
+    let end = decl
+        .find(|c: char| c.is_whitespace() || c == '=' || c == '(' || c == '{')
+        .unwrap_or(decl.len());
+    let name = &decl[..end];
+    if name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') && !name.is_empty() {
+        name
+    } else {
+        "unknown"
+    }
+}
+
+/// JSON 字符串转义。
+fn json_stringify(s: &str) -> String {
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!("\"{escaped}\"")
+}
+
+/// 将模块标识符转换为安全的 JS 标识符。
+fn safe_ident(specifier: &str) -> String {
+    let mut safe = String::new();
+    for c in specifier.chars() {
+        if c.is_alphanumeric() || c == '_' {
+            safe.push(c);
+        } else {
+            safe.push('_');
+        }
+    }
+    let safe = safe.trim_matches('_');
+    if safe.is_empty() {
+        return "_mod".to_string();
+    }
+    if safe.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        format!("_{safe}")
+    } else {
+        safe.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_module_registry_new() {
+        let reg = ModuleRegistry::new();
+        assert!(reg.is_empty());
+        assert_eq!(reg.len(), 0);
+    }
+
+    #[test]
+    fn test_module_registry_register_and_get() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("./utils.js", "export const PI = 3.14;");
+        assert_eq!(reg.len(), 1);
+        assert_eq!(reg.get("./utils.js"), Some("export const PI = 3.14;"));
+    }
+
+    #[test]
+    fn test_module_registry_unregister() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("./a.js", "export const a = 1;");
+        assert!(reg.unregister("./a.js"));
+        assert!(!reg.unregister("./a.js"));
+    }
+
+    #[test]
+    fn test_module_registry_specifiers() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("./a.js", "");
+        reg.register("./b.js", "");
+        let mut specs = reg.specifiers();
+        specs.sort();
+        assert_eq!(specs, vec!["./a.js", "./b.js"]);
+    }
+
+    #[test]
+    fn test_es_module_sandbox_new() {
+        assert!(EsModuleSandbox::new().is_ok());
+    }
+
+    #[test]
+    fn test_es_module_sandbox_debug() {
+        let sandbox = EsModuleSandbox::new().unwrap();
+        assert!(format!("{sandbox:?}").contains("EsModuleSandbox"));
+    }
+
+    #[test]
+    fn test_execute_module_empty() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        assert!(matches!(sb.execute_module("", None), Err(ScriptError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_export_const() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("export const x = 42;", None).unwrap();
+        assert!(r.namespace_json.contains("42"));
+    }
+
+    #[test]
+    fn test_export_default() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("export default 99;", None).unwrap();
+        assert!(r.namespace_json.contains("99"));
+    }
+
+    #[test]
+    fn test_export_function() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module("export function add(a, b) { return a + b; }", None)
+            .unwrap();
+        assert!(!r.namespace_json.is_empty());
+    }
+
+    #[test]
+    fn test_export_list() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module("const a = 1\nconst b = 2\nexport { a, b as c }", None)
+            .unwrap();
+        assert!(!r.namespace_json.is_empty());
+    }
+
+    #[test]
+    fn test_export_let() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("export let count = 100;", None).unwrap();
+        assert!(!r.namespace_json.is_empty());
+    }
+
+    #[test]
+    fn test_export_var() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("export var name = 'test';", None).unwrap();
+        assert!(!r.namespace_json.is_empty());
+    }
+
+    #[test]
+    fn test_export_class() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("export class MyClass {}", None).unwrap();
+        assert!(!r.namespace_json.is_empty());
+    }
+
+    #[test]
+    fn test_export_multiple() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module("export const a = 1\nexport const b = 2\nexport default a + b", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("3"));
+    }
+
+    #[test]
+    fn test_import_meta() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module("export default import.meta.url;", Some("https://example.com/module.js"))
+            .unwrap();
+        assert!(r.namespace_json.contains("https://example.com/module.js"));
+    }
+
+    #[test]
+    fn test_import_destructure() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./math.js", "export const PI = 3.14\nexport const E = 2.72");
+        let r = sb
+            .execute_module("import { PI } from './math.js'\nexport default PI", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("3.14"));
+    }
+
+    #[test]
+    fn test_import_default() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./config.js", "export default { name: 'ZeroWeb' }");
+        let r = sb
+            .execute_module("import config from './config.js'\nexport default config.name", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("ZeroWeb"));
+    }
+
+    #[test]
+    fn test_import_alias() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./utils.js", "export const value = 42");
+        let r = sb
+            .execute_module("import { value as v } from './utils.js'\nexport default v", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("42"));
+    }
+
+    #[test]
+    fn test_import_not_found() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb.execute_module("import { x } from './missing.js'\nexport default x", None);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("Module not found"));
+    }
+
+    #[test]
+    fn test_namespace_import() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./math.js", "export const x = 10\nexport const y = 20");
+        let r = sb
+            .execute_module(
+                "import * as math from './math.js'\nexport default math.x + math.y",
+                None,
+            )
+            .unwrap();
+        assert!(r.namespace_json.contains("30"));
+    }
+
+    #[test]
+    fn test_side_effect_import() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./side.js", "var _ran = true");
+        let r = sb
+            .execute_module("import './side.js'\nexport default 'done'", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("done"));
+    }
+
+    #[test]
+    fn test_chain_imports() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./a.js", "export const val = 5");
+        sb.register_module("./b.js", "import { val } from './a.js'\nexport const doubled = val * 2");
+        let r = sb
+            .execute_module("import { doubled } from './b.js'\nexport default doubled", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("10"));
+    }
+
+    #[test]
+    fn test_import_function_and_call() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./greet.js", "export function greet(name) { return 'Hello, ' + name }");
+        let r = sb
+            .execute_module(
+                "import { greet } from './greet.js'\nexport default greet('World')",
+                None,
+            )
+            .unwrap();
+        assert!(r.namespace_json.contains("Hello, World"));
+    }
+
+    #[test]
+    fn test_safe_ident() {
+        assert_eq!(safe_ident("./utils.js"), "utils_js");
+        assert_eq!(safe_ident("https://example.com/mod.js"), "https___example_com_mod_js");
+        assert_eq!(safe_ident("123"), "_123");
+        assert_eq!(safe_ident("abc"), "abc");
+        assert_eq!(safe_ident("../a.js"), "a_js");
+    }
+
+    #[test]
+    fn test_extract_string_literal() {
+        assert_eq!(extract_string_literal("'hello'").unwrap(), "hello");
+        assert_eq!(extract_string_literal("\"world\"").unwrap(), "world");
+        assert!(extract_string_literal("naked").is_err());
+    }
+
+    #[test]
+    fn test_extract_binding_name() {
+        assert_eq!(extract_binding_name("x = 1"), "x");
+        assert_eq!(extract_binding_name("foo() {}"), "foo");
+        assert_eq!(extract_binding_name("Bar {}"), "Bar");
+    }
+
+    #[test]
+    fn test_module_result_debug_clone() {
+        let r = ModuleResult {
+            namespace_json: "{\"x\":1}".into(),
+            execution_time_ms: 0.5,
+        };
+        assert!(format!("{r:?}").contains("namespace_json"));
+        let c = r.clone();
+        assert_eq!(c.namespace_json, r.namespace_json);
+    }
+
+    #[test]
+    fn test_registry_clone() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("./a.js", "source");
+        assert_eq!(reg.clone().get("./a.js"), Some("source"));
+    }
+
+    #[test]
+    fn test_with_config() {
+        let config = SandboxConfig {
+            heap_limit: 16 * 1024 * 1024,
+            timeout_ms: 5000,
+        };
+        assert!(EsModuleSandbox::with_config(config).is_ok());
+    }
+}
