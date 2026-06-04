@@ -11,6 +11,8 @@ pub struct FontLoader {
     next_id: u32,
     /// 字体族到 ID 的映射
     family_map: HashMap<String, Vec<u32>>,
+    /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
+    fallback_chain: Vec<u32>,
 }
 
 impl FontLoader {
@@ -20,7 +22,18 @@ impl FontLoader {
             fonts: HashMap::new(),
             next_id: 0,
             family_map: HashMap::new(),
+            fallback_chain: Vec::new(),
         }
+    }
+
+    /// 设置回退字体链（按优先级排序）
+    pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
+        self.fallback_chain = ids;
+    }
+
+    /// 获取回退字体链
+    pub fn fallback_chain(&self) -> &[u32] {
+        &self.fallback_chain
     }
 
     /// 从字节数据加载字体
@@ -67,6 +80,48 @@ impl FontLoader {
             y_offset: metrics.ymin as i16,
             advance: metrics.advance_width,
         })
+    }
+
+    /// 在主字体及回退链中渲染 glyph，返回实际使用的字体 ID
+    pub fn rasterize_glyph_with_fallback(
+        &self,
+        primary_id: u32,
+        code_point: char,
+        size: f32,
+    ) -> Result<(u32, GlyphBitmap), FontError> {
+        let mut chain = Vec::with_capacity(1 + self.fallback_chain.len());
+        chain.push(primary_id);
+        for &id in &self.fallback_chain {
+            if id != primary_id && !chain.contains(&id) {
+                chain.push(id);
+            }
+        }
+
+        for font_id in chain {
+            let bitmap = self.rasterize_glyph(font_id, code_point, size)?;
+            if Self::glyph_has_coverage(code_point, &bitmap) {
+                return Ok((font_id, bitmap));
+            }
+        }
+
+        Err(FontError::GlyphNotFound {
+            font_id: primary_id,
+            glyph_id: code_point as u32,
+        })
+    }
+
+    /// 测量字符 advance 宽度（含回退）
+    pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
+        self.rasterize_glyph_with_fallback(primary_id, code_point, size)
+            .map(|(_, bitmap)| bitmap.advance)
+            .unwrap_or(size * 0.5)
+    }
+
+    fn glyph_has_coverage(code_point: char, bitmap: &GlyphBitmap) -> bool {
+        if code_point.is_whitespace() {
+            return bitmap.advance > 0.0;
+        }
+        bitmap.width > 0 && bitmap.height > 0
     }
 
     /// 已加载字体数量

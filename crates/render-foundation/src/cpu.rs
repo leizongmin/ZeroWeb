@@ -77,11 +77,7 @@ fn draw_glyph(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
 ) {
-    let physical_font_size = glyph.font_size * scale;
-    let key = GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size);
-    let Ok(bitmap) = glyph_cache.get_or_insert_with(key, || {
-        font_loader.rasterize_glyph(glyph.font_id, glyph.ch, physical_font_size)
-    }) else {
+    let Some(bitmap) = resolve_glyph_bitmap(glyph, scale, font_loader, glyph_cache) else {
         return;
     };
 
@@ -114,6 +110,25 @@ fn draw_glyph(
             blend_pixel(fb, px as u32, py as u32, glyph.color, alpha);
         }
     }
+}
+
+fn resolve_glyph_bitmap(
+    glyph: &GlyphDraw,
+    scale: f32,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+) -> Option<crate::font::GlyphBitmap> {
+    let physical_font_size = glyph.font_size * scale;
+    let primary_key = GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size);
+    if let Some(cached) = glyph_cache.get(&primary_key) {
+        return Some(cached.clone());
+    }
+
+    let (resolved_id, bitmap) = font_loader
+        .rasterize_glyph_with_fallback(glyph.font_id, glyph.ch, physical_font_size)
+        .ok()?;
+    let key = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
+    glyph_cache.get_or_insert_with(key, || Ok(bitmap)).ok().cloned()
 }
 
 fn blend_pixel(fb: &mut FrameBuffer, x: u32, y: u32, color: Color, alpha: u8) {

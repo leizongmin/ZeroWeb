@@ -252,6 +252,50 @@ mod tests {
     }
 
     #[test]
+    fn startup_has_single_default_tab() {
+        let app = BrowserApp::new(RenderMode::Cpu);
+        assert_eq!(app.shell.tab_count(), 1, "should start with exactly one tab");
+    }
+
+    #[test]
+    fn unfocus_marks_gpu_surface_stale() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.gpu_surface_stale = false;
+        app.window_focused = false;
+        app.gpu_surface_stale = true;
+        assert!(app.gpu_surface_stale);
+    }
+
+    #[test]
+    fn browser_window_config_disables_decorations_on_wayland() {
+        let config = super::browser_window_config();
+        if crate::app::is_wayland() {
+            assert!(!config.decorations);
+        } else {
+            assert!(config.decorations);
+        }
+    }
+
+    #[test]
+    fn wayland_forces_cpu_present_for_gpu_and_auto() {
+        let gpu = BrowserApp::new(RenderMode::Gpu);
+        let auto = BrowserApp::new(RenderMode::Auto);
+        let cpu = BrowserApp::new(RenderMode::Cpu);
+        if crate::app::is_wayland() {
+            assert!(gpu.wayland_forces_cpu_present());
+            assert!(auto.wayland_forces_cpu_present());
+        }
+        assert!(!cpu.wayland_forces_cpu_present());
+    }
+
+    #[test]
+    fn gpu_suspend_present_is_noop_without_renderer() {
+        let mut app = BrowserApp::new(RenderMode::Gpu);
+        app.suspend_gpu_present();
+        app.resume_gpu_present();
+    }
+
+    #[test]
     fn unfocused_event_does_not_trigger_redraw() {
         let mut app = BrowserApp::new(RenderMode::Cpu);
         assert!(app.window_focused, "should start focused for initial render");
@@ -472,6 +516,19 @@ fn run_headless(cli: CliArgs) {
 
 // --- 入口 ---
 
+/// 按平台调整窗口配置（Wayland 上禁用 CSD，避免失焦时 subsurface commit 导致 compositor 断开）
+fn browser_window_config() -> WindowConfig {
+    let config = WindowConfig::new("ZeroBrowser")
+        .with_size(1024, 768)
+        .with_resizable(true);
+    if app::is_wayland() {
+        tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
+        config.with_decorations(false)
+    } else {
+        config
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt().init();
 
@@ -502,15 +559,13 @@ fn main() {
         tracing::info!("CLI --scale={scale}, overriding WINIT_X11_SCALE_FACTOR");
     }
 
-    let config = WindowConfig::new("ZeroBrowser")
-        .with_size(1024, 768)
-        .with_resizable(true);
+    let config = browser_window_config();
 
     let runtime = HostRuntime::new(config);
     let mut app = BrowserApp::new(cli.render_mode);
 
-    // 加载欢迎页
-    app.new_tab(None);
+    // 初始化默认空白标签页（Shell 构造时已创建唯一 tab）
+    app.init_default_tab();
 
     tracing::info!("Entering event loop...");
 
@@ -519,52 +574,78 @@ fn main() {
 
     if let Err(e) = runtime.run_with_window(move |event, window| {
         match event {
-            AppEvent::RedrawRequested if app.window_focused => {
-                if !app.surface_configured {
-                    if let Some(ref win) = window
-                        && app.gpu_renderer_is_none()
-                        && cpu_surface.is_none()
-                    {
-                        let (logical_size, scale_factor) = logical_size_from_window(win);
-                        let physical_size = win.inner_size();
-                        app.set_window_size(logical_size);
-                        app.physical_size = (physical_size.width, physical_size.height);
-                        app.scale_factor = scale_factor;
-                        tracing::debug!(
-                            "Initial config — physical: {}x{}, logical: {}x{}, scale: {:.2}",
-                            physical_size.width,
-                            physical_size.height,
-                            logical_size.0,
-                            logical_size.1,
-                            scale_factor
-                        );
+            AppEvent::RedrawRequested => {
+                if !app.window_focused {
+                    app.needs_redraw = false;
+                } else {
+                    if !app.surface_configured {
+                        if let Some(ref win) = window {
+                            let wayland_cpu = app.wayland_forces_cpu_present();
+                            let needs_gpu = !wayland_cpu
+                                && matches!(app.render_mode(), RenderMode::Gpu | RenderMode::Auto)
+                                && app.gpu_renderer_is_none()
+                                && cpu_surface.is_none();
+                            let needs_cpu = matches!(app.render_mode(), RenderMode::Cpu)
+                                || wayland_cpu
+                                || (app.gpu_renderer_is_none()
+                                    && matches!(app.render_mode(), RenderMode::Auto)
+                                    && cpu_surface.is_none());
 
-                        match app.render_mode() {
-                            RenderMode::Cpu => app.init_cpu_surface(win, &mut cpu_surface),
-                            RenderMode::Gpu | RenderMode::Auto => {
-                                app.init_gpu(win);
-                                if app.gpu_renderer_is_none() && matches!(app.render_mode(), RenderMode::Auto) {
-                                    app.init_cpu_surface(win, &mut cpu_surface);
+                            if needs_gpu || needs_cpu {
+                                let (logical_size, scale_factor) = logical_size_from_window(win);
+                                let physical_size = win.inner_size();
+                                app.set_window_size(logical_size);
+                                app.physical_size = (physical_size.width, physical_size.height);
+                                app.scale_factor = scale_factor;
+                                tracing::debug!(
+                                    "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
+                                    physical_size.width,
+                                    physical_size.height,
+                                    logical_size.0,
+                                    logical_size.1,
+                                    scale_factor
+                                );
+
+                                match app.render_mode() {
+                                    RenderMode::Cpu => app.init_cpu_surface(win, &mut cpu_surface),
+                                    RenderMode::Gpu | RenderMode::Auto => {
+                                        if needs_gpu {
+                                            app.init_gpu(win);
+                                        }
+                                        if wayland_cpu
+                                            || (app.gpu_renderer_is_none()
+                                                && matches!(app.render_mode(), RenderMode::Auto))
+                                        {
+                                            app.init_cpu_surface(win, &mut cpu_surface);
+                                        }
+                                    }
                                 }
                             }
                         }
+                        let phys = app.physical_size;
+                        if let Some(ref mut gpu) = app.gpu_renderer_as_mut() {
+                            gpu.configure_surface(phys.0, phys.1);
+                            app.surface_configured = true;
+                        } else if cpu_surface.is_some() {
+                            app.surface_configured = true;
+                        }
+                    } else if app.gpu_surface_stale {
+                        let (w, h) = app.physical_size;
+                        if let Some(ref mut gpu) = app.gpu_renderer_as_mut() {
+                            gpu.configure_surface(w, h);
+                        }
+                        app.gpu_surface_stale = false;
                     }
-                    let phys = app.physical_size;
-                    if let Some(ref mut gpu) = app.gpu_renderer_as_mut() {
-                        gpu.configure_surface(phys.0, phys.1);
-                        app.surface_configured = true;
-                    } else if cpu_surface.is_some() {
-                        app.surface_configured = true;
-                    }
-                }
 
-                // 渲染
-                if app.gpu_renderer_is_some() {
-                    app.render_frame(app.physical_size.0, app.physical_size.1);
-                } else {
-                    app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface);
+                    app.resume_gpu_present();
+
+                    if app.gpu_renderer_is_some() {
+                        app.render_frame(app.physical_size.0, app.physical_size.1, true);
+                    } else {
+                        app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true);
+                    }
+                    app.needs_redraw = false;
                 }
-                app.needs_redraw = false;
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
                 tracing::debug!("Window resized: {width}x{height}");
@@ -581,6 +662,8 @@ fn main() {
                     && let Some(ref mut gpu) = app.gpu_renderer_as_mut()
                 {
                     gpu.configure_surface(width, height);
+                } else {
+                    app.gpu_surface_stale = true;
                 }
                 let (cw, ch) = app.content_physical_size();
                 app.resize_all_webviews(cw, ch);
@@ -598,6 +681,8 @@ fn main() {
                         && let Some(ref mut gpu) = app.gpu_renderer_as_mut()
                     {
                         gpu.configure_surface(physical_size.width, physical_size.height);
+                    } else {
+                        app.gpu_surface_stale = true;
                     }
                     let (cw, ch) = app.content_physical_size();
                     app.resize_all_webviews(cw, ch);
@@ -630,12 +715,16 @@ fn main() {
             AppEvent::Focused => {
                 tracing::debug!("Window focused");
                 app.window_focused = true;
+                app.gpu_surface_stale = true;
                 app.needs_redraw = true;
             }
             AppEvent::Unfocused => {
                 tracing::debug!("Window unfocused");
+                app.on_window_unfocused();
                 app.window_focused = false;
                 app.address_bar_focused = false;
+                app.needs_redraw = false;
+                app.gpu_surface_stale = true;
             }
             _ => {}
         }
@@ -645,6 +734,10 @@ fn main() {
             && let Some(ref win) = window
         {
             win.request_redraw();
+        }
+
+        if let Some(ref win) = window {
+            app.sync_ime_state(win);
         }
     }) {
         tracing::error!("Event loop error: {e}");
