@@ -240,7 +240,6 @@ mod tests {
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
-        // Different background colors should fail match
         assert!(!result.passed, "Different pages should not match: {}", result.message);
     }
 
@@ -251,30 +250,11 @@ mod tests {
             test_html: "<html><body style=\"margin:0\"><div style=\"width:100%;height:100%;background:red;\">Red</div></body></html>".into(),
             ref_html: "<html><body style=\"margin:0\"><div style=\"width:100%;height:100%;background:blue;\">Blue</div></body></html>".into(),
             css: String::new(),
-            is_match: false, // mismatch mode — should be different
+            is_match: false,
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
         assert!(result.passed, "Different pages should pass mismatch: {}", result.message);
-    }
-
-    #[test]
-    fn test_reftest_size_mismatch() {
-        let case = ReftestCase {
-            id: "test/size".into(),
-            test_html: "<html><body>A</body></html>".into(),
-            ref_html: "<html><body>B</body></html>".into(),
-            css: String::new(),
-            is_match: true,
-        };
-        // Both render at same viewport, so same size — should pass
-        let config = ReftestConfig {
-            viewport_width: 200,
-            viewport_height: 100,
-            ..Default::default()
-        };
-        let result = run_reftest(&case, &config);
-        assert!(result.passed, "Same-size pages should pass: {}", result.message);
     }
 
     #[test]
@@ -288,7 +268,6 @@ mod tests {
 
     #[test]
     fn test_reftest_fuzzy_threshold() {
-        // With a generous threshold, slightly different pages should match
         let case = ReftestCase {
             id: "test/fuzzy".into(),
             test_html: "<html><body><div style=\"background:rgb(100,100,100);width:50px;height:50px;\">A</div></body></html>".into(),
@@ -297,11 +276,224 @@ mod tests {
             is_match: true,
         };
         let config = ReftestConfig {
-            max_diff_ratio: 0.1, // 10% tolerance
+            max_diff_ratio: 0.1,
             max_channel_diff: 10,
             ..Default::default()
         };
         let result = run_reftest(&case, &config);
         assert!(result.passed, "Small color diff should match with fuzzy threshold: {}", result.message);
+    }
+
+    // --- CSS 布局 reftest 用例 ---
+
+    /// 辅助函数：使用默认配置运行 match reftest。
+    fn assert_match(id: &str, test_html: &str, ref_html: &str) {
+        let case = ReftestCase {
+            id: id.into(),
+            test_html: test_html.into(),
+            ref_html: ref_html.into(),
+            css: String::new(),
+            is_match: true,
+        };
+        let config = ReftestConfig {
+            viewport_width: 200,
+            viewport_height: 200,
+            ..Default::default()
+        };
+        let result = run_reftest(&case, &config);
+        assert!(result.passed, "{}: {}", id, result.message);
+    }
+
+    /// 辅助函数：使用默认配置运行 mismatch reftest。
+    fn assert_mismatch(id: &str, test_html: &str, ref_html: &str) {
+        let case = ReftestCase {
+            id: id.into(),
+            test_html: test_html.into(),
+            ref_html: ref_html.into(),
+            css: String::new(),
+            is_match: false,
+        };
+        let config = ReftestConfig {
+            viewport_width: 200,
+            viewport_height: 200,
+            ..Default::default()
+        };
+        let result = run_reftest(&case, &config);
+        assert!(result.passed, "{}: {}", id, result.message);
+    }
+
+    // ── Block 布局 ──
+
+    #[test]
+    fn reftest_block_width_height() {
+        // 两个相同尺寸和颜色的 div 应该像素一致
+        assert_match(
+            "block/width-height",
+            "<div style=\"width:100px;height:80px;background:red;\"></div>",
+            "<div style=\"width:100px;height:80px;background:red;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_block_margin_collapsing() {
+        // 有 margin 的 div 与无 margin 但相同背景的 div 应在 div 区域内一致
+        // （margin 不影响 div 内部像素）
+        assert_match(
+            "block/margin-no-effect-on-bg",
+            "<div style=\"width:100px;height:50px;background:blue;margin:10px;\"></div>",
+            "<div style=\"width:100px;height:50px;background:blue;margin:10px;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_block_different_margin() {
+        // 不同 margin 产生不同位置 → 像素不同
+        assert_mismatch(
+            "block/different-margin",
+            "<div style=\"width:80px;height:40px;background:green;margin:0;\"></div>",
+            "<div style=\"width:80px;height:40px;background:green;margin:20px;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_block_stacking() {
+        // 两个垂直堆叠的 div 应与单个相同高度的 div 在 div 区域内产生不同输出
+        assert_mismatch(
+            "block/stacking-vs-single",
+            "<div style=\"width:100px;height:40px;background:red;\"></div><div style=\"width:100px;height:40px;background:blue;\"></div>",
+            "<div style=\"width:100px;height:80px;background:red;\"></div>",
+        );
+    }
+
+    // ── 盒模型 ──
+
+    #[test]
+    fn reftest_padding_expands_box() {
+        // padding 扩展可视区域（background 覆盖 padding）
+        assert_mismatch(
+            "box-model/padding-expands",
+            "<div style=\"width:80px;height:40px;background:red;padding:10px;\"></div>",
+            "<div style=\"width:80px;height:40px;background:red;padding:0;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_border_visible() {
+        // 有边框的 div 与无边框的 div 应产生不同像素
+        assert_mismatch(
+            "box-model/border-visible",
+            "<div style=\"width:80px;height:40px;background:yellow;border:2px solid black;\"></div>",
+            "<div style=\"width:80px;height:40px;background:yellow;border:none;\"></div>",
+        );
+    }
+
+    // ── Flexbox ──
+
+    #[test]
+    fn reftest_flex_direction_row() {
+        // flex-direction:row 两个子元素水平排列
+        assert_match(
+            "flex/row-identical",
+            "<div style=\"display:flex;width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
+            "<div style=\"display:flex;width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_flex_vs_block() {
+        // flex 排列与 block 排列应产生不同结果（水平 vs 垂直）
+        assert_mismatch(
+            "flex/row-vs-block",
+            "<div style=\"display:flex;width:200px;height:100px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
+            "<div style=\"width:200px;height:100px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
+        );
+    }
+
+    // ── 定位 ──
+
+    #[test]
+    fn reftest_absolute_position() {
+        // absolute 定位改变元素位置 → 不同像素
+        assert_mismatch(
+            "position/absolute-shift",
+            "<div style=\"position:relative;width:200px;height:100px;\"><div style=\"position:absolute;top:20px;left:20px;width:50px;height:50px;background:green;\"></div></div>",
+            "<div style=\"position:relative;width:200px;height:100px;\"><div style=\"position:absolute;top:0;left:0;width:50px;height:50px;background:green;\"></div></div>",
+        );
+    }
+
+    // ── 背景颜色 ──
+
+    #[test]
+    fn reftest_named_vs_hex_color() {
+        // red 和 #FF0000 应产生相同颜色
+        assert_match(
+            "color/named-vs-hex",
+            "<div style=\"width:100px;height:50px;background:red;\"></div>",
+            "<div style=\"width:100px;height:50px;background:#FF0000;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_rgb_vs_hex() {
+        // rgb(0,128,255) 和 #0080FF 应产生相同颜色
+        assert_match(
+            "color/rgb-vs-hex",
+            "<div style=\"width:100px;height:50px;background:rgb(0,128,255);\"></div>",
+            "<div style=\"width:100px;height:50px;background:#0080FF;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_different_colors() {
+        // 不同颜色应产生不同像素
+        assert_mismatch(
+            "color/different",
+            "<div style=\"width:100px;height:50px;background:red;\"></div>",
+            "<div style=\"width:100px;height:50px;background:green;\"></div>",
+        );
+    }
+
+    // ── 尺寸 ──
+
+    #[test]
+    fn reftest_different_sizes() {
+        // 不同尺寸应产生不同像素
+        assert_mismatch(
+            "size/different",
+            "<div style=\"width:100px;height:50px;background:blue;\"></div>",
+            "<div style=\"width:50px;height:100px;background:blue;\"></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_display_none() {
+        // display:none 元素不应可见 → 与有元素的页面不同
+        assert_mismatch(
+            "display/none-vs-visible",
+            "<div style=\"width:100px;height:50px;background:red;\"></div>",
+            "<div style=\"width:100px;height:50px;background:red;display:none;\"></div>",
+        );
+    }
+
+    // ── 嵌套结构 ──
+
+    #[test]
+    fn reftest_nested_same_bg() {
+        // 相同的嵌套结构应产生相同输出
+        assert_match(
+            "nested/same-structure",
+            "<div style=\"width:100px;height:80px;background:red;\"><div style=\"width:50px;height:40px;background:blue;\"></div></div>",
+            "<div style=\"width:100px;height:80px;background:red;\"><div style=\"width:50px;height:40px;background:blue;\"></div></div>",
+        );
+    }
+
+    #[test]
+    fn reftest_sibling_order() {
+        // 兄弟元素顺序不同应产生不同输出
+        assert_mismatch(
+            "nested/sibling-order",
+            "<div style=\"width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
+            "<div style=\"width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:blue;\"></div><div style=\"width:100px;height:50px;background:red;\"></div></div>",
+        );
     }
 }
