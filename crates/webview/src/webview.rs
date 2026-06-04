@@ -99,6 +99,8 @@ pub struct WebView {
     workers: HashMap<u64, WorkerRuntime>,
     /// Worker ID 生成器。
     next_worker_id: u64,
+    /// WASM 实例缓存 — JS 端 WebAssembly.instantiate() 自动桥接到 wasm-sandbox。
+    wasm_instances: HashMap<u64, zero_wasm_sandbox::WasmInstance>,
 }
 
 impl WebView {
@@ -106,7 +108,13 @@ impl WebView {
     pub fn new(config: WebViewConfig) -> Self {
         let pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let http_client = HttpClient::new();
-        let js_sandbox = zero_script_sandbox::V8Sandbox::new().expect("V8 sandbox initialization should succeed");
+        // 启用持久化上下文：WebAssembly 桥接和 DOM polyfill 需要跨 execute_script 保持状态
+        let js_config = zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let js_sandbox =
+            zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox initialization should succeed");
         Self {
             config,
             pipeline,
@@ -122,6 +130,7 @@ impl WebView {
             sw_registry: ServiceWorkerRegistry::new(),
             workers: HashMap::new(),
             next_worker_id: 1,
+            wasm_instances: HashMap::new(),
         }
     }
 
@@ -365,6 +374,7 @@ impl WebView {
     ///
     /// 在执行用户脚本前，先注入 DOM API polyfill，
     /// 使得脚本可以使用 `document.getElementById` 等 DOM 操作。
+    /// 同时自动桥接 `WebAssembly.instantiate()` 到 wasm-sandbox。
     ///
     /// # 错误
     ///
@@ -375,7 +385,11 @@ impl WebView {
         let polyfill = zero_engine::generate_dom_api_polyfill();
         let full_script = format!("{polyfill}\n{script}");
 
-        self.execute_script(&full_script)
+        let result = self.execute_script(&full_script)?;
+
+        // 检查是否有 WASM 桥接请求
+        let bridge_result = self.process_wasm_bridge(&result)?;
+        Ok(bridge_result)
     }
 
     /// 注入 CSS（重新渲染）。
@@ -433,6 +447,139 @@ impl WebView {
     /// 获取 Service Worker 注册表（可变）。
     pub fn service_worker_registry_mut(&mut self) -> &mut ServiceWorkerRegistry {
         &mut self.sw_registry
+    }
+
+    /// 处理 JS 端 WebAssembly.instantiate() 的桥接请求。
+    ///
+    /// 当 JS polyfill 检测到 WebAssembly.instantiate() 调用时，
+    /// 输出 `__WASM_BRIDGE__:` 前缀的 JSON 命令。
+    /// 此方法解析命令，通过 wasm-sandbox 编译执行，并将结果注入回 JS 环境。
+    fn process_wasm_bridge(&mut self, script_output: &str) -> Result<String, WebViewError> {
+        // 探测 JS 端是否有挂起的 WASM 桥接请求
+        let probe_script = r#"
+            (function() {
+                if (typeof WebAssembly !== 'undefined' && WebAssembly._pendingBridge) {
+                    var bridge = WebAssembly._pendingBridge;
+                    WebAssembly._pendingBridge = null;
+                    return bridge;
+                }
+                return '';
+            })()
+        "#;
+
+        let probe_result = self.execute_script(probe_script).unwrap_or_default();
+
+        if !probe_result.starts_with("__WASM_BRIDGE__:") {
+            // 无 WASM 桥接请求，返回原始输出
+            return Ok(script_output.to_string());
+        }
+
+        let json_str = &probe_result["__WASM_BRIDGE__:".len()..];
+        let parsed: serde_json::Value = match serde_json::from_str(json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("WASM bridge: invalid JSON from polyfill: {e}");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        let instance_id = parsed["id"].as_u64().unwrap_or(0);
+        let b64_bytes = match parsed["bytes"].as_str() {
+            Some(b) => b,
+            None => {
+                tracing::warn!("WASM bridge: missing bytes field");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        // 解码 base64
+        let wasm_bytes = match base64_decode(b64_bytes) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("WASM bridge: base64 decode error: {e}");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        tracing::debug!(
+            "WASM bridge: compiling {} bytes, instance_id={}",
+            wasm_bytes.len(),
+            instance_id
+        );
+
+        // 通过 wasm-sandbox 编译和实例化
+        let sandbox = zero_wasm_sandbox::WasmSandbox::new();
+        let module = match sandbox.compile(&wasm_bytes) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!("WASM bridge: compile error: {e}");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        let export_names = module.exports();
+        let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
+
+        let instance = match module.instantiate(&sandbox) {
+            Ok(i) => i,
+            Err(e) => {
+                tracing::warn!("WASM bridge: instantiate error: {e}");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        // 缓存 WASM 实例
+        self.wasm_instances.insert(instance_id, instance);
+
+        // 注入结果回 JS 环境：设置 __wasm_results__
+        let inject_script = format!(
+            r#"
+            if (!globalThis.__wasm_results__) globalThis.__wasm_results__ = {{}};
+            globalThis.__wasm_results__[{instance_id}] = {{
+                _id: {instance_id},
+                _hostBacked: true,
+                exports: {{
+                  memory: {{ buffer: new ArrayBuffer(65536), grow: function() {{ return 1; }}, byteLength: 65536 }},
+                  __wasm_export_names__: {exports_json}
+                }}
+            }};
+            "#,
+        );
+        let _ = self.execute_script(&inject_script);
+
+        Ok(script_output.to_string())
+    }
+
+    /// 调用已实例化的 WASM 模块的导出函数。
+    ///
+    /// 配合 `execute_script_with_dom` 的自动桥接使用：
+    /// JS 调用 WebAssembly.instantiate() 后，WASM 模块被缓存，
+    /// 通过此方法调用其导出函数。
+    ///
+    /// # 参数
+    /// - `instance_id`: JS 端 WebAssembly._instances 中的实例 ID
+    /// - `function_name`: 导出函数名
+    /// - `args`: 传递给函数的参数
+    pub fn call_wasm_export(
+        &mut self,
+        instance_id: u64,
+        function_name: &str,
+        args: &[zero_wasm_sandbox::WasmValue],
+    ) -> Result<String, WebViewError> {
+        let instance = self
+            .wasm_instances
+            .get_mut(&instance_id)
+            .ok_or_else(|| WebViewError::Script(format!("WASM instance {instance_id} not found")))?;
+
+        let results = instance
+            .call(function_name, args)
+            .map_err(|e| WebViewError::Script(format!("WASM call error: {e}")))?;
+
+        if results.is_empty() {
+            Ok("void".to_string())
+        } else {
+            Ok(results.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "))
+        }
     }
 
     /// 编译并执行 WASM 模块。
@@ -587,4 +734,53 @@ impl WebView {
             }
         }
     }
+}
+
+/// 将 base64 字符串解码为字节。
+///
+/// WASM 桥接使用 base64 在 JS 和 Rust 之间传递 WASM 字节码。
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 查找表
+    let mut lookup = [0u8; 256];
+    for (i, &b) in B64.iter().enumerate() {
+        lookup[b as usize] = i as u8;
+    }
+
+    let input_bytes = input.as_bytes();
+    let mut result = Vec::with_capacity(input.len() * 3 / 4);
+
+    let mut i = 0;
+    while i + 4 <= input_bytes.len() {
+        let a = lookup[input_bytes[i] as usize] as u32;
+        let b = lookup[input_bytes[i + 1] as usize] as u32;
+        let c = if input_bytes[i + 2] == b'=' {
+            0
+        } else {
+            lookup[input_bytes[i + 2] as usize] as u32
+        };
+        let d = if input_bytes[i + 3] == b'=' {
+            0
+        } else {
+            lookup[input_bytes[i + 3] as usize] as u32
+        };
+
+        result.push(((a << 2) | (b >> 4)) as u8);
+        if input_bytes[i + 2] != b'=' {
+            result.push((((b & 0xF) << 4) | (c >> 2)) as u8);
+        }
+        if input_bytes[i + 3] != b'=' {
+            result.push((((c & 0x3) << 6) | d) as u8);
+        }
+
+        i += 4;
+    }
+
+    Ok(result)
 }
