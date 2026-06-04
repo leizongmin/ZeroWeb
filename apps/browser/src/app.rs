@@ -333,10 +333,13 @@ impl BrowserApp {
         self.render_mode
     }
 
-    /// 调整所有 WebView 视口尺寸
+    /// 调整所有 WebView 视口尺寸，并在已有页面内容时按新尺寸重新布局
     pub fn resize_all_webviews(&mut self, w: u32, h: u32) {
         for wv in self.webviews.values_mut() {
             wv.resize(w, h);
+            if wv.last_render().is_some() {
+                wv.render();
+            }
         }
     }
 
@@ -439,12 +442,33 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    fn load_welcome_page(&mut self, tab_id: TabId) {
+        if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.load_html(pages::WELCOME_HTML, None);
+        }
+    }
+
+    /// 在窗口物理尺寸已知后创建默认标签页的 WebView（避免以 1024 默认视口渲染）
+    pub fn ensure_startup_tab(&mut self) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        if self.webviews.contains_key(&tab_id) {
+            return;
+        }
+        self.init_default_tab();
+    }
+
     /// 初始化 Shell 默认标签页（仅创建 WebView，不额外开 tab）
-    pub fn init_default_tab(&mut self) {
+    fn init_default_tab(&mut self) {
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };
         self.ensure_webview(tab_id);
+        if self.shell.active_tab().and_then(|t| t.url()).is_none() {
+            self.load_welcome_page(tab_id);
+        }
+        self.scroll_offset.insert(tab_id, 0.0);
         self.needs_redraw = true;
     }
 
@@ -458,9 +482,7 @@ impl BrowserApp {
             self.address_bar_text = url.to_string();
         } else {
             self.address_bar_text.clear();
-            if let Some(wv) = self.webviews.get_mut(&tab_id) {
-                wv.load_html(pages::WELCOME_HTML, None);
-            }
+            self.load_welcome_page(tab_id);
         }
 
         self.scroll_offset.insert(tab_id, 0.0);
