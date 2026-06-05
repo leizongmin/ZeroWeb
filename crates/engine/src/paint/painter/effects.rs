@@ -6,7 +6,7 @@
 //! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
-use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::{ColorValue, LengthValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -1211,6 +1211,254 @@ impl super::Painter {
         let x = abs_x + box_node.width - 5.0;
         let y = abs_y + box_node.height - 5.0;
         self.primitives.add_fill(Rect::new(x, y, 3.0, 3.0), c);
+    }
+
+    /// CSS scroll-snap 视觉指示器 — 渲染吸附轴和对齐点标记。
+    pub(super) fn paint_scroll_snap_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::property::types::{ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness};
+
+        let snap_type = &style.scroll_snap_type;
+        if matches!(snap_type.strictness, ScrollSnapStrictness::None) {
+            return;
+        }
+
+        // 严格度颜色：mandatory 红色，proximity 橙色
+        let color = match snap_type.strictness {
+            ScrollSnapStrictness::Mandatory => Color::rgba(230, 51, 51, 179),
+            ScrollSnapStrictness::Proximity => Color::rgba(230, 153, 51, 179),
+            _ => return,
+        };
+
+        // 绘制吸附轴标记线
+        match snap_type.axis {
+            ScrollSnapAxis::X => {
+                let y = abs_y + box_node.height - 2.0;
+                self.primitives.add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
+            }
+            ScrollSnapAxis::Y => {
+                let x = abs_x + box_node.width - 2.0;
+                self.primitives.add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
+            }
+            ScrollSnapAxis::Both => {
+                let y = abs_y + box_node.height - 2.0;
+                self.primitives.add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
+                let x = abs_x + box_node.width - 2.0;
+                self.primitives.add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
+            }
+        }
+
+        // scroll-snap-align 对齐点指示
+        match style.scroll_snap_align {
+            ScrollSnapAlign::Start => {
+                self.primitives
+                    .add_fill(Rect::new(abs_x, abs_y, 4.0, 4.0), Color::rgba(51, 179, 230, 204));
+            }
+            ScrollSnapAlign::Center => {
+                let cx = abs_x + box_node.width / 2.0 - 2.0;
+                let cy = abs_y + box_node.height / 2.0 - 2.0;
+                self.primitives
+                    .add_fill(Rect::new(cx, cy, 4.0, 4.0), Color::rgba(51, 230, 128, 204));
+            }
+            ScrollSnapAlign::End => {
+                self.primitives.add_fill(
+                    Rect::new(abs_x + box_node.width - 4.0, abs_y + box_node.height - 4.0, 4.0, 4.0),
+                    Color::rgba(230, 128, 51, 204),
+                );
+            }
+            ScrollSnapAlign::None => {}
+        }
+    }
+
+    /// CSS perspective 渲染 — 为子元素创建 3D 透视上下文。
+    pub(super) fn paint_perspective_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let perspective = match style.perspective {
+            LengthValue::Px(v) if v > 0.0 => v as f32,
+            _ => return,
+        };
+
+        let origin_x = match style.perspective_origin_x {
+            LengthValue::Px(v) => abs_x + v as f32,
+            _ => abs_x + box_node.width / 2.0,
+        };
+        let origin_y = match style.perspective_origin_y {
+            LengthValue::Px(v) => abs_y + v as f32,
+            _ => abs_y + box_node.height / 2.0,
+        };
+
+        let vanish_color = Color::rgba(77, 128, 230, 204);
+        let cross_size: f32 = 6.0;
+
+        // 水平线
+        self.primitives.add_fill(
+            Rect::new(origin_x - cross_size / 2.0, origin_y - 0.5, cross_size, 1.0),
+            vanish_color,
+        );
+        // 垂直线
+        self.primitives.add_fill(
+            Rect::new(origin_x - 0.5, origin_y - cross_size / 2.0, 1.0, cross_size),
+            vanish_color,
+        );
+
+        // 在消失点周围渲染深度环
+        let depth = perspective.min(50.0);
+        let ring_color = Color::rgba(77, 128, 230, 102);
+        for i in 0..4u32 {
+            let angle = std::f32::consts::FRAC_PI_2 * i as f32;
+            let dx = depth * angle.cos();
+            let dy = depth * angle.sin();
+            self.primitives
+                .add_fill(Rect::new(origin_x + dx - 1.0, origin_y + dy - 1.0, 2.0, 2.0), ring_color);
+        }
+        let marker_color = Color::rgba(77, 128, 230, 77);
+        self.primitives.add_fill(
+            Rect::new(abs_x, abs_y + box_node.height - 3.0, 12.0, 3.0),
+            marker_color,
+        );
+    }
+
+    /// CSS backface-visibility: hidden 指示器 — 标记元素的背面不可见。
+    pub(super) fn paint_backface_visibility_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        _style: &ComputedStyle,
+    ) {
+        let dash_len = 4.0_f32;
+        let gap_len = 3.0_f32;
+        let thickness = 1.0_f32;
+        let color = Color::rgba(179, 77, 179, 153); // 紫色虚线
+
+        // 顶部边框虚线
+        let mut x = abs_x;
+        while x < abs_x + box_node.width {
+            let w = dash_len.min(abs_x + box_node.width - x);
+            self.primitives.add_fill(Rect::new(x, abs_y, w, thickness), color);
+            x += dash_len + gap_len;
+        }
+
+        // 底部边框虚线
+        x = abs_x;
+        let bottom_y = abs_y + box_node.height - thickness;
+        while x < abs_x + box_node.width {
+            let w = dash_len.min(abs_x + box_node.width - x);
+            self.primitives.add_fill(Rect::new(x, bottom_y, w, thickness), color);
+            x += dash_len + gap_len;
+        }
+
+        // 左侧边框虚线
+        let mut y = abs_y;
+        while y < abs_y + box_node.height {
+            let h = dash_len.min(abs_y + box_node.height - y);
+            self.primitives.add_fill(Rect::new(abs_x, y, thickness, h), color);
+            y += dash_len + gap_len;
+        }
+
+        // 右侧边框虚线
+        y = abs_y;
+        let right_x = abs_x + box_node.width - thickness;
+        while y < abs_y + box_node.height {
+            let h = dash_len.min(abs_y + box_node.height - y);
+            self.primitives.add_fill(Rect::new(right_x, y, thickness, h), color);
+            y += dash_len + gap_len;
+        }
+    }
+
+    /// CSS transform-style: preserve-3d 指示器 — 标记 3D 渲染上下文。
+    pub(super) fn paint_transform_style_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        _style: &ComputedStyle,
+    ) {
+        let ox = abs_x + 2.0;
+        let oy = abs_y + 2.0;
+        let s = 5.0_f32;
+        let d = 3.0_f32;
+
+        // 正面（蓝色）
+        self.primitives.add_fill(Rect::new(ox, oy, s, s), Color::rgba(51, 128, 204, 179));
+        // 顶面（深蓝）
+        self.primitives
+            .add_fill(Rect::new(ox + d, oy - d, s, d), Color::rgba(38, 89, 166, 179));
+        // 右面（更深蓝）
+        self.primitives
+            .add_fill(Rect::new(ox + s, oy, d, s), Color::rgba(26, 64, 128, 179));
+    }
+
+    /// CSS border-spacing 渲染 — 显示表格单元格间距。
+    pub(super) fn paint_border_spacing_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let h_spacing = style.border_spacing.horizontal;
+        let v_spacing = style.border_spacing.vertical;
+
+        if h_spacing <= 0.0 && v_spacing <= 0.0 {
+            return;
+        }
+
+        let color = Color::rgba(153, 153, 153, 102);
+        let cx = abs_x + box_node.border_left;
+        let cy = abs_y + box_node.border_top;
+
+        if h_spacing > 0.0 {
+            self.primitives.add_fill(
+                Rect::new(cx, cy, h_spacing.min(box_node.content_width), 1.0),
+                color,
+            );
+        }
+        if v_spacing > 0.0 {
+            self.primitives.add_fill(
+                Rect::new(cx, cy, 1.0, v_spacing.min(box_node.content_height)),
+                color,
+            );
+        }
+    }
+
+    /// CSS caption-side 渲染指示器 — 标记表格标题位置。
+    pub(super) fn paint_caption_side_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::property::types::CaptionSideValue;
+
+        let bar_h = 3.0_f32;
+        let bar_w = box_node.width.min(20.0);
+
+        match style.caption_side {
+            CaptionSideValue::Top => {
+                self.primitives.add_fill(
+                    Rect::new(abs_x, abs_y - bar_h - 1.0, bar_w, bar_h),
+                    Color::rgba(77, 179, 128, 153),
+                );
+            }
+            CaptionSideValue::Bottom => {
+                self.primitives.add_fill(
+                    Rect::new(abs_x, abs_y + box_node.height + 1.0, bar_w, bar_h),
+                    Color::rgba(128, 77, 179, 153),
+                );
+            }
+        }
     }
 }
 
