@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
+use zero_engine::PrefersColorSchemeValue;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::config::RenderMode;
 use zero_render_foundation::cpu::render_scene_to_framebuffer;
@@ -143,6 +144,8 @@ pub struct BrowserApp {
     last_tab_bar_blank_click: Option<(f64, f64, Instant)>,
     /// 标签栏空白处按下位置（移动超过阈值后触发拖动）
     tab_bar_drag_press: Option<(f64, f64)>,
+    /// 系统颜色方案偏好
+    color_scheme: PrefersColorSchemeValue,
 }
 
 impl BrowserApp {
@@ -186,6 +189,7 @@ impl BrowserApp {
             window_is_maximized: false,
             last_tab_bar_blank_click: None,
             tab_bar_drag_press: None,
+            color_scheme: detect_system_color_scheme(),
         }
     }
 
@@ -390,7 +394,9 @@ impl BrowserApp {
     /// 创建指定视口尺寸的 WebView
     fn create_webview(&self) -> zero_webview::WebView {
         let (w, h) = self.content_logical_size();
-        WebViewBuilder::new().width(w).height(h).build()
+        let mut wv = WebViewBuilder::new().width(w).height(h).build();
+        wv.set_prefers_color_scheme(self.color_scheme);
+        wv
     }
 
     /// 按当前窗口尺寸同步所有 WebView 的逻辑视口
@@ -409,6 +415,11 @@ impl BrowserApp {
 
     /// 通过 WebView 加载指定标签页 URL
     fn fetch_tab_url(&mut self, tab_id: TabId, url: &str) {
+        if url == "zero://settings" {
+            self.open_settings_page();
+            return;
+        }
+
         let result = match self.webviews.get_mut(&tab_id) {
             Some(wv) => wv.fetch_url(url),
             None => return,
@@ -459,6 +470,7 @@ impl BrowserApp {
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.set_prefers_color_scheme(self.color_scheme);
             wv.load_html(pages::WELCOME_HTML, None);
         }
     }
@@ -603,6 +615,7 @@ impl BrowserApp {
         };
         self.ensure_webview(tab_id);
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.set_prefers_color_scheme(self.color_scheme);
             wv.load_html(&html, None);
         }
         self.address_bar_text = "zero://settings".to_string();
@@ -1135,11 +1148,32 @@ impl BrowserApp {
             return;
         }
 
-        // 6. 页面内容区域 — 取消地址栏焦点
-        if y_f >= chrome_top && self.address_bar_focused {
-            self.address_bar_focused = false;
-            self.autocomplete.clear();
-            self.needs_redraw = true;
+        // 6. 页面内容区域 — 链接点击 / 取消地址栏焦点
+        let find_bar_h = if self.shell.find_state().is_active() {
+            layout::FIND_BAR_HEIGHT * s
+        } else {
+            0.0
+        };
+        let page_top = chrome_top + find_bar_h;
+
+        if y_f >= page_top {
+            if button == "Left"
+                && let Some(tab_id) = self.shell.active_tab_id()
+            {
+                let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
+                let doc_x = x_f / s;
+                let doc_y = (y_f - page_top + scroll_y) / s;
+                if let Some(href) = self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y)) {
+                    self.navigate_to(&href);
+                    return;
+                }
+            }
+
+            if self.address_bar_focused {
+                self.address_bar_focused = false;
+                self.autocomplete.clear();
+                self.needs_redraw = true;
+            }
         }
     }
 
@@ -1532,6 +1566,9 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("ftp://") || input.starts_with("file://") || input.starts_with("data:") {
         return input.to_string();
     }
+    if input.starts_with("zero://") {
+        return input.to_string();
+    }
     if input.contains('.') && !input.contains(' ') {
         return format!("https://{input}");
     }
@@ -1590,4 +1627,38 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
     tracing::info!("Font fallback chain: {} fonts", font_loader.fallback_chain().len());
 
     Some(primary)
+}
+
+/// 检测系统深色/浅色模式（Linux 优先 gsettings，可用 `ZERO_BROWSER_COLOR_SCHEME` 覆盖）
+pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
+    if let Ok(val) = std::env::var("ZERO_BROWSER_COLOR_SCHEME") {
+        if val.eq_ignore_ascii_case("dark") {
+            return PrefersColorSchemeValue::Dark;
+        }
+        if val.eq_ignore_ascii_case("light") {
+            return PrefersColorSchemeValue::Light;
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("prefer-dark") || stdout.contains("'dark'") {
+            return PrefersColorSchemeValue::Dark;
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+        if stdout.contains("dark") {
+            return PrefersColorSchemeValue::Dark;
+        }
+    }
+
+    PrefersColorSchemeValue::Light
 }

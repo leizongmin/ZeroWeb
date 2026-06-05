@@ -31,6 +31,7 @@ pub use shorthand::*;
 
 use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
+use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId, NodeKind};
 
 /// 样式系统，负责为文档中的元素计算样式。
@@ -43,6 +44,8 @@ pub struct StyleSystem {
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
     viewport_height: Option<f64>,
+    /// 用户颜色方案偏好（对应 `prefers-color-scheme` 媒体查询）。
+    prefers_color_scheme: PrefersColorSchemeValue,
 }
 
 impl StyleSystem {
@@ -52,6 +55,7 @@ impl StyleSystem {
             custom_properties: HashMap::new(),
             viewport_width: None,
             viewport_height: None,
+            prefers_color_scheme: PrefersColorSchemeValue::Light,
         }
     }
 
@@ -59,6 +63,11 @@ impl StyleSystem {
     pub fn set_viewport(&mut self, width: f64, height: f64) {
         self.viewport_width = Some(width);
         self.viewport_height = Some(height);
+    }
+
+    /// 设置用户颜色方案偏好。
+    pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        self.prefers_color_scheme = scheme;
     }
 
     /// 为整个文档计算样式。
@@ -147,7 +156,11 @@ impl StyleSystem {
     ) -> ComputedStyle {
         // 0. 构建媒体查询上下文
         let media_ctx = match (self.viewport_width, self.viewport_height) {
-            (Some(w), Some(h)) => Some(zero_css_parser::media_query::MediaContext::new(w, h)),
+            (Some(w), Some(h)) => {
+                let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                ctx.prefers_color_scheme = self.prefers_color_scheme;
+                Some(ctx)
+            }
             _ => None,
         };
 

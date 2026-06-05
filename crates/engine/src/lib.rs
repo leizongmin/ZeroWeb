@@ -17,6 +17,7 @@
 pub mod composite;
 pub mod dirty;
 pub mod dom_bridge;
+pub mod hit_test;
 pub mod paint;
 pub mod pipeline;
 pub mod preload;
@@ -24,9 +25,11 @@ pub mod preload;
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;
+pub use hit_test::*;
 pub use paint::*;
 pub use pipeline::*;
 pub use preload::*;
+pub use zero_css_parser::media_query::PrefersColorSchemeValue;
 
 #[cfg(test)]
 mod tests;

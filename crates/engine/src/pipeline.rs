@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use zero_css_parser::Stylesheet;
+use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::geometry::Rect;
@@ -12,6 +13,7 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
 
 use crate::dirty::DirtyTracker;
+use crate::hit_test;
 use crate::paint::Painter;
 
 /// 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
@@ -31,6 +33,8 @@ pub struct RenderPipeline {
     dirty_tracker: DirtyTracker,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
+    /// 缓存的 DOM（用于命中测试）。
+    cached_doc: Option<Document>,
 }
 
 /// 管线阶段耗时。
@@ -75,7 +79,20 @@ impl RenderPipeline {
             layout_engine: LayoutEngine::new(viewport_width, viewport_height),
             dirty_tracker: DirtyTracker::new(),
             cached_layout: None,
+            cached_doc: None,
         }
+    }
+
+    /// 设置用户颜色方案偏好。
+    pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        self.style_system.set_prefers_color_scheme(scheme);
+    }
+
+    /// 命中测试链接，返回点击位置处 `<a href>` 的目标 URL。
+    pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
+        let doc = self.cached_doc.as_ref()?;
+        let layout = self.cached_layout.as_ref()?;
+        hit_test::hit_test_link(doc, &layout.root, x, y)
     }
 
     /// 渲染 HTML 文档（全流程）。
@@ -94,12 +111,8 @@ impl RenderPipeline {
         let doc = zero_dom::parse_html(html);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
-        // 2. 解析 CSS → Stylesheets
-        let stylesheets = if css.is_empty() {
-            vec![]
-        } else {
-            vec![zero_css_parser::Parser::parse_stylesheet(css)]
-        };
+        // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
+        let stylesheets = collect_stylesheets(&doc, css);
 
         // 3. 计算样式
         let style_start = Instant::now();
@@ -126,6 +139,8 @@ impl RenderPipeline {
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        self.cached_doc = Some(doc);
 
         // 缓存布局结果
         let layout = LayoutResult {
@@ -271,6 +286,24 @@ impl RenderPipeline {
     pub fn dirty_tracker_mut(&mut self) -> &mut DirtyTracker {
         &mut self.dirty_tracker
     }
+}
+
+/// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。
+fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
+    let mut stylesheets = Vec::new();
+    if !css.is_empty() {
+        stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css));
+    }
+    for style_id in doc.get_elements_by_tag_name("style") {
+        let Some(css_text) = doc.text_content(style_id) else {
+            continue;
+        };
+        let css_text = css_text.trim();
+        if !css_text.is_empty() {
+            stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css_text));
+        }
+    }
+    stylesheets
 }
 
 #[cfg(test)]
@@ -1405,6 +1438,66 @@ mod tests {
         let result = pipeline.render_html(html, "");
         assert!(result.timings.total_ms >= 0.0);
         assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试 `<style>` 内联样式会被应用（无需外部 CSS 参数）。
+    #[test]
+    fn test_pipeline_render_inline_style_tag_applies_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head><style>div { background-color: red; width: 200px; height: 100px; }</style></head><body><div>Box</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(
+            !result.primitives.fills.is_empty(),
+            "inline <style> should produce background fills"
+        );
+    }
+
+    /// 测试 `<style>` 中的 grid 两列布局降低总高度。
+    #[test]
+    fn test_pipeline_inline_style_grid_two_columns() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head><style>
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+          .cell { height: 50px; background: red; }
+        </style></head><body><div class="grid">
+          <div class="cell">1</div><div class="cell">2</div>
+          <div class="cell">3</div><div class="cell">4</div>
+        </div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+
+        fn layout_height(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
+            let mut max_y = offset_y + b.y + b.height;
+            for child in &b.children {
+                max_y = max_y.max(layout_height(child, offset_y + b.y));
+            }
+            max_y
+        }
+
+        let total = layout_height(&result.layout.root, 0.0);
+        assert!(total < 150.0, "2x2 grid with 50px cells should be ~110px tall, got {total}");
+    }
+
+    /// `<style>` 内 CSS 文本默认参与排版会撑高页面，需显式隐藏 head 内元素。
+    #[test]
+    fn test_inline_style_tag_hidden_in_layout() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head><style>
+          head, style, title { display: none; }
+          body { margin: 0; }
+          .box { height: 40px; background: red; }
+        </style><title>T</title></head><body><div class="box">Hi</div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+
+        fn layout_height(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
+            let mut max_y = offset_y + b.y + b.height;
+            for child in &b.children {
+                max_y = max_y.max(layout_height(child, offset_y + b.y));
+            }
+            max_y
+        }
+
+        let total = layout_height(&result.layout.root, 0.0);
+        assert!(total < 120.0, "hidden style tag should not inflate layout, got {total}");
     }
 
     /// 测试渲染纯文本内容（无标签包裹）不崩溃。

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <title>ZeroBrowser</title>
+  <style>
+head, style, title { display: none; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: sans-serif;
+  background: #f4f6f8;
+  color: #1a1a2e;
+}
+
+.page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px 40px 24px;
+}
+
+.hero {
+  padding: 16px 0 20px;
+}
+
+.hero-accent {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #4285f4, #34a853, #fbbc04, #ea4335);
+  margin-bottom: 20px;
+}
+
+.hero-inner {
+  padding-left: 6px;
+}
+
+.hero-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5f6368;
+}
+
+.version {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #5f6368;
+  background: #e8eaed;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.title {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1.08;
+  margin-bottom: 10px;
+}
+
+.title-zero { color: #1a73e8; }
+.title-browser { color: #202124; }
+
+.tagline {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #5f6368;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #80868b;
+  margin-bottom: 12px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #202124;
+  margin-bottom: 4px;
+}
+
+.card-sub {
+  font-size: 12px;
+  color: #1a73e8;
+  margin-bottom: 6px;
+}
+
+.card-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #5f6368;
+}
+
+.bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #3c4043;
+}
+
+.shortcut kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: sans-serif;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 5px;
+  box-shadow: 0 1px 0 #dadce0;
+}
+
+.shortcut-label {
+  margin-left: 6px;
+  color: #5f6368;
+  line-height: 1.25;
+}
+
+.links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.link-tile {
+  display: block;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.link-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a73e8;
+  margin-bottom: 4px;
+}
+
+.link-sub {
+  display: block;
+  font-size: 11px;
+  color: #5f6368;
+}
+
+.footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #80868b;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0f1117;
+    color: #e8eaed;
+  }
+
+  .eyebrow { color: #9aa0a6; }
+  .title-browser { color: #e8eaed; }
+  .tagline { color: #9aa0a6; }
+  .version { color: #9aa0a6; background: #2d2f36; }
+  .section-title { color: #9aa0a6; }
+
+  .card {
+    background: #1a1d24;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  .card h3 { color: #e8eaed; }
+  .card-desc { color: #9aa0a6; }
+
+  .shortcut { color: #bdc1c6; }
+  .shortcut kbd {
+    background: #2d2f36;
+    border-color: #3c4043;
+    box-shadow: 0 1px 0 #3c4043;
+    color: #e8eaed;
+  }
+  .shortcut-label { color: #9aa0a6; }
+
+  .link-tile {
+    background: #1a1d24;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  .link-sub { color: #9aa0a6; }
+  .footer { color: #9aa0a6; }
+}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-accent"></div>
+      <div class="hero-inner">
+        <div class="hero-top">
+          <p class="eyebrow">Welcome · 欢迎</p>
+          <span class="version">v0.1.0</span>
+        </div>
+        <h1 class="title">
+          <span class="title-zero">Zero</span><span class="title-browser">Browser</span>
+        </h1>
+        <p class="tagline">A cross-platform browser built in Rust<br>基于 Rust 的跨平台浏览器</p>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="section">
+        <h2 class="section-title">Built different · 核心特性</h2>
+        <div class="cards">
+          <div class="card">
+            <h3>Self-built core</h3>
+            <p class="card-sub">自研内核</p>
+            <p class="card-desc">DOM / CSS / layout / paint in Rust · Rust 原生渲染管线</p>
+          </div>
+          <div class="card">
+            <h3>Cross-platform</h3>
+            <p class="card-sub">跨平台</p>
+            <p class="card-desc">Linux / macOS / Windows / Android · 多平台目标</p>
+          </div>
+          <div class="card">
+            <h3>Embeddable</h3>
+            <p class="card-sub">可嵌入 WebView</p>
+            <p class="card-desc">Ship pages via ZeroWebView · 以库形式嵌入应用</p>
+          </div>
+          <div class="card">
+            <h3>Open source</h3>
+            <p class="card-sub">开源</p>
+            <p class="card-desc">MIT licensed · 自由使用与修改</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="bottom-row">
+        <section class="section">
+          <h2 class="section-title">Keyboard · 快捷键</h2>
+          <div class="shortcuts">
+            <div class="shortcut"><kbd>Ctrl</kbd><span>+</span><kbd>L</kbd><span class="shortcut-label">Address bar · 地址栏</span></div>
+            <div class="shortcut"><kbd>Ctrl</kbd><span>+</span><kbd>T</kbd><span class="shortcut-label">New tab · 新标签</span></div>
+            <div class="shortcut"><kbd>Ctrl</kbd><span>+</span><kbd>W</kbd><span class="shortcut-label">Close tab · 关闭</span></div>
+            <div class="shortcut"><kbd>Ctrl</kbd><span>+</span><kbd>R</kbd><span class="shortcut-label">Reload · 刷新</span></div>
+            <div class="shortcut"><kbd>Ctrl</kbd><span>+</span><kbd>F</kbd><span class="shortcut-label">Find · 查找</span></div>
+            <div class="shortcut"><kbd>F5</kbd><span class="shortcut-label">Refresh · 刷新</span></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Explore · 快速访问</h2>
+          <div class="links">
+            <a class="link-tile" href="https://example.com">
+              <span class="link-title">Example</span>
+              <span class="link-sub">example.com</span>
+            </a>
+            <a class="link-tile" href="https://www.rust-lang.org">
+              <span class="link-title">Rust</span>
+              <span class="link-sub">rust-lang.org</span>
+            </a>
+            <a class="link-tile" href="https://github.com/leizongmin/ZeroWeb">
+              <span class="link-title">GitHub</span>
+              <span class="link-sub">ZeroWeb repo</span>
+            </a>
+            <a class="link-tile" href="zero://settings">
+              <span class="link-title">Settings</span>
+              <span class="link-sub">zero://settings</span>
+            </a>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Type a URL in the address bar · 在地址栏输入 URL 开始浏览</p>
+    </footer>
+  </div>
+</body>
+</html>
