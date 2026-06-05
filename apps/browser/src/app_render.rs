@@ -14,17 +14,19 @@ impl BrowserApp {
 
     /// 构建浏览器 UI 渲染图元（物理像素坐标）。
     ///
-    /// 返回 `(fills, glyphs, overlay_fills)`：`overlay_fills` 在 glyphs 之后绘制
-    /// （圆角溢出遮罩与视口边框），避免页面内容覆盖底部圆角。
+    /// 返回 `(fills, glyphs, overlay_fills, overlay_glyphs)`：
+    /// `overlay_fills` 和 `overlay_glyphs` 在所有 fills/glyphs 之后绘制，
+    /// 用于确保上下文菜单等浮层不被其他内容覆盖。
     fn build_scene(
         &mut self,
         width: u32,
         height: u32,
-    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>) {
+    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>, Vec<GlyphDraw>) {
         let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
         let mut overlay_fills = Vec::new();
+        let mut overlay_glyphs = Vec::new();
         let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 1. 整体背景
@@ -120,9 +122,9 @@ impl BrowserApp {
         // 15. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
         self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
 
-        // 16. 上下文菜单（必须最顶层，在所有内容之上）
+        // 16. 上下文菜单（overlay 图层，始终在最顶层）
         if self.context_menu.visible {
-            self.render_context_menu(&mut fills, &mut glyphs, s);
+            self.render_context_menu(&mut overlay_fills, &mut overlay_glyphs, s);
         }
 
         // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
@@ -131,7 +133,7 @@ impl BrowserApp {
         // 19. Wayland 非最大化：自绘窗口外框（无系统装饰时与桌面区分）
         self.render_custom_window_frame_border(&mut overlay_fills, width, height, s);
 
-        (fills, glyphs, overlay_fills)
+        (fills, glyphs, overlay_fills, overlay_glyphs)
     }
 
     /// 渲染标签页

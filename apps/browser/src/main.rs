@@ -374,7 +374,7 @@ mod tests {
         app.scale_factor = 1.0;
         app.set_window_maximized(false);
 
-        let (_, _, overlay) = app.build_scene_for_test(800, 600);
+        let (_, _, overlay, _) = app.build_scene_for_test(800, 600);
         let border = app.chrome_palette().window_frame_border;
         assert!(
             overlay.iter().any(|f| {
@@ -384,7 +384,7 @@ mod tests {
         );
 
         app.set_window_maximized(true);
-        let (_, _, overlay_max) = app.build_scene_for_test(800, 600);
+        let (_, _, overlay_max, _) = app.build_scene_for_test(800, 600);
         assert!(
             !overlay_max
                 .iter()
@@ -404,7 +404,7 @@ mod tests {
 
         let sep = app.chrome_palette().tab_separator;
         let line_h = layout::TAB_BAR_HEIGHT - 2.0 * layout::TAB_SEPARATOR_INSET;
-        let (fills, _, _) = app.build_scene_for_test(1280, 900);
+        let (fills, _, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
             fills
                 .iter()
@@ -415,7 +415,7 @@ mod tests {
         let mut two_tabs = BrowserApp::new(RenderMode::Cpu);
         two_tabs.physical_size = (1280, 900);
         two_tabs.scale_factor = 1.0;
-        let (fills_two, _, _) = two_tabs.build_scene_for_test(1280, 900);
+        let (fills_two, _, _, _) = two_tabs.build_scene_for_test(1280, 900);
         assert!(
             !fills_two.iter().any(|f| f.color == sep),
             "single tab should not draw tab separators"
@@ -489,7 +489,7 @@ mod tests {
         app.shell.on_page_loaded("Example Domain");
 
         // 验证不 panic
-        let _ = app.build_scene_for_test(800, 600);
+        let (_, _, _, _) = app.build_scene_for_test(800, 600);
     }
 
     /// 验证 Ctrl 修饰键追踪：按下 Ctrl 后标记为活跃，释放后恢复。
@@ -583,7 +583,7 @@ mod tests {
             .start_download("https://example.com/file.zip", "file.zip");
 
         // 构建场景应不 panic
-        let (fills, glyphs, _) = app.build_scene_for_test(800, 600);
+        let (fills, glyphs, _, _) = app.build_scene_for_test(800, 600);
 
         // 应有下载栏的 fill（至少一个蓝色进度条填充）
         assert!(
@@ -609,7 +609,7 @@ mod tests {
         app.physical_size = (800, 600);
 
         assert!(app.hovered_link_url().is_none());
-        let (fills, _, _) = app.build_scene_for_test(800, 600);
+        let (fills, _, _, _) = app.build_scene_for_test(800, 600);
         assert!(
             !fills.iter().any(|f| {
                 f.rect.size.width >= 799.0
@@ -641,7 +641,7 @@ mod tests {
         app.handle_mouse_move((cx + 50.0) as f64, (cy + 25.0) as f64);
         assert_eq!(app.hovered_link_url(), Some("https://example.com/test"));
 
-        let (_, glyphs, _) = app.build_scene_for_test(800, 600);
+        let (_, glyphs, _, _) = app.build_scene_for_test(800, 600);
         let text: String = glyphs.iter().map(|g| g.ch).collect();
         assert!(
             text.contains("example.com"),
@@ -676,7 +676,7 @@ mod tests {
             "settings page should clear loading state"
         );
         // WebView 应该有渲染结果
-        let _ = app.build_scene_for_test(800, 600);
+        let (_, _, _, _) = app.build_scene_for_test(800, 600);
     }
 
     /// 欢迎页包含双语内容与可点击链接。
@@ -735,7 +735,7 @@ mod tests {
         let (_, content_y, _, _) = app.page_content_rect();
         app.mouse_pos = (640.0, content_y as f64 + 100.0);
 
-        let (fills_at_zero, _, _) = app.build_scene_for_test(1280, 900);
+        let (fills_at_zero, _, _, _) = app.build_scene_for_test(1280, 900);
 
         // Linux/WSL 滚轮向下通常为负 LineDelta
         app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0));
@@ -746,7 +746,7 @@ mod tests {
         );
 
         let content_top = content_y;
-        let (fills_after, _, _) = app.build_scene_for_test(1280, 900);
+        let (fills_after, _, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
             fills_after
                 .iter()
@@ -799,7 +799,7 @@ mod tests {
                 wv_h as f32 * scale
             );
 
-            let (_, _, overlay) = app.build_scene_for_test(1280, 900);
+            let (_, _, overlay, _) = app.build_scene_for_test(1280, 900);
             assert!(!overlay.is_empty(), "scale={scale}: overlay fills missing");
 
             let fb = app.render_scene_for_test(1280, 900);
@@ -852,7 +852,7 @@ mod tests {
         app.sync_webview_viewport();
         app.shell.on_page_loaded("Tall");
 
-        let (_, _, overlay_fills) = app.build_scene_for_test(1280, 900);
+        let (_, _, overlay_fills, _) = app.build_scene_for_test(1280, 900);
         assert!(
             !overlay_fills.is_empty(),
             "page frame overlay should include corner masks and border"
