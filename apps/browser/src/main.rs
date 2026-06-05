@@ -305,15 +305,14 @@ mod tests {
     }
 
     #[test]
-    fn browser_window_config_disables_decorations_on_wayland() {
+    fn browser_window_config_starts_maximized_not_fullscreen() {
         let config = super::browser_window_config();
+        assert!(config.maximized);
+        assert!(!config.fullscreen);
         if crate::app::is_wayland() {
             assert!(!config.decorations);
-            assert!(config.maximized);
-            assert!(!config.fullscreen);
         } else {
             assert!(config.decorations);
-            assert!(config.fullscreen);
         }
     }
 
@@ -566,7 +565,7 @@ fn browser_window_config() -> WindowConfig {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
         config.with_decorations(false).with_maximized(true)
     } else {
-        config.with_fullscreen(true)
+        config.with_maximized(true)
     }
 }
 
