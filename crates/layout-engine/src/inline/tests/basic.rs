@@ -20,6 +20,8 @@ fn test_empty_text_no_lines() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     let fragments: Vec<_> = ctx.all_fragments();
@@ -36,6 +38,8 @@ fn test_single_line() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "短文本应在单行中");
@@ -54,6 +58,8 @@ fn test_line_breaking() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     assert!(ctx.lines.len() > 1, "长文本应产生多行，实际 {} 行", ctx.lines.len());
@@ -69,6 +75,8 @@ fn test_line_y_positions() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     for i in 1..ctx.lines.len() {
@@ -90,6 +98,8 @@ fn test_total_height() {
         font_size: 16.0,
         line_height: 24.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     let expected = ctx.lines.len() as f32 * 24.0;
@@ -111,6 +121,8 @@ fn test_all_fragments() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     let fragments = ctx.all_fragments();
@@ -127,6 +139,8 @@ fn test_fragment_x_positions() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     for line in &ctx.lines {
@@ -150,6 +164,8 @@ fn test_multiple_runs_same_line() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "World".to_string(),
@@ -157,6 +173,8 @@ fn test_multiple_runs_same_line() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -235,6 +253,8 @@ fn test_very_long_single_word_overflow() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -292,6 +312,8 @@ fn test_line_height_calculation() {
         font_size: 16.0,
         line_height: 24.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx24.break_into_lines(runs_24);
 
@@ -303,6 +325,8 @@ fn test_line_height_calculation() {
         font_size: 16.0,
         line_height: 32.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx32.break_into_lines(runs_32);
 
@@ -328,6 +352,8 @@ fn test_line_height_accumulation() {
         font_size: 16.0,
         line_height: 30.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -366,6 +392,8 @@ fn test_multiple_font_sizes_same_line() {
             font_size: 12.0,
             line_height: 16.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "Large".to_string(),
@@ -373,6 +401,8 @@ fn test_multiple_font_sizes_same_line() {
             font_size: 24.0,
             line_height: 30.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "Medium".to_string(),
@@ -380,6 +410,8 @@ fn test_multiple_font_sizes_same_line() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -417,6 +449,8 @@ fn test_font_size_affects_width() {
             font_size: 10.0,
             line_height: 14.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "Word".to_string(),
@@ -424,6 +458,8 @@ fn test_font_size_affects_width() {
             font_size: 20.0,
             line_height: 24.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -447,6 +483,8 @@ fn test_multiple_runs_wrap_across_lines() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "gamma delta".to_string(),
@@ -454,6 +492,8 @@ fn test_multiple_runs_wrap_across_lines() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -487,6 +527,8 @@ fn test_fragment_node_ids_preserved() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "Second".to_string(),
@@ -494,6 +536,8 @@ fn test_fragment_node_ids_preserved() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -516,6 +560,8 @@ fn test_zero_container_width() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -551,6 +597,8 @@ fn test_text_align_center() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -577,6 +625,8 @@ fn test_text_align_right() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -603,6 +653,8 @@ fn test_text_align_left_no_offset() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -626,6 +678,8 @@ fn test_text_align_justify_distributes_space() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -656,6 +710,8 @@ fn test_text_align_justify_last_line_not_stretched() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -682,6 +738,8 @@ fn test_text_align_center_multiline() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -711,6 +769,8 @@ fn test_text_align_right_multiline() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -738,6 +798,8 @@ fn test_text_align_justify_single_fragment_line() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -754,6 +816,8 @@ fn test_text_align_does_not_affect_total_height() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -783,6 +847,8 @@ fn test_text_align_does_not_change_line_count() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -1066,6 +1132,8 @@ fn test_mixed_inline_block_content_boundary() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
         TextRun {
             text: "delta epsilon".to_string(),
@@ -1073,6 +1141,8 @@ fn test_mixed_inline_block_content_boundary() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1107,6 +1177,8 @@ fn test_text_with_explicit_line_breaks() {
         font_size: 16.0,
         line_height: 24.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1134,6 +1206,8 @@ fn test_whitespace_nowrap_behavior() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1167,6 +1241,8 @@ fn test_very_long_word_without_break_opportunity() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1194,6 +1270,8 @@ fn test_vertical_align_top_in_line() {
         font_size: 16.0,
         line_height: 30.0,
         vertical_align: VerticalAlignValue::Top,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1217,6 +1295,8 @@ fn test_vertical_align_bottom_in_line() {
         font_size: 16.0,
         line_height: 30.0,
         vertical_align: VerticalAlignValue::Bottom,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
 

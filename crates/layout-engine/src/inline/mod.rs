@@ -36,6 +36,35 @@ pub struct TextRun {
     pub line_height: f32,
     /// vertical-align 值。
     pub vertical_align: VerticalAlignValue,
+    /// letter-spacing（px），每个字符后追加的额外间距。
+    #[doc(hidden)]
+    pub letter_spacing: f32,
+    /// word-spacing（px），空格字符后追加的额外间距。
+    #[doc(hidden)]
+    pub word_spacing: f32,
+}
+
+impl TextRun {
+    /// 创建简单的 TextRun（letter_spacing=0, word_spacing=0）。
+    ///
+    /// 用于测试和不需要间距的场景。
+    pub fn simple(
+        text: String,
+        node_id: NodeId,
+        font_size: f32,
+        line_height: f32,
+        vertical_align: VerticalAlignValue,
+    ) -> Self {
+        Self {
+            text,
+            node_id,
+            font_size,
+            line_height,
+            vertical_align,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+        }
+    }
 }
 
 /// 行内块盒 — inline-block 元素的原子级行内盒。
@@ -282,12 +311,26 @@ impl InlineFormattingContext {
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
+                            let letter_spacing = style
+                                .map(|s| match &s.letter_spacing {
+                                    LengthValue::Px(v) => *v as f32,
+                                    _ => 0.0,
+                                })
+                                .unwrap_or(0.0);
+                            let word_spacing = style
+                                .map(|s| match &s.word_spacing {
+                                    LengthValue::Px(v) => *v as f32,
+                                    _ => 0.0,
+                                })
+                                .unwrap_or(0.0);
                             items.push(InlineItem::Text(TextRun {
                                 text,
                                 node_id: child_id,
                                 font_size,
                                 line_height,
                                 vertical_align,
+                                letter_spacing,
+                                word_spacing,
                             }));
                         }
                     }
@@ -306,12 +349,26 @@ impl InlineFormattingContext {
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
+                            let letter_spacing = style
+                                .map(|s| match &s.letter_spacing {
+                                    LengthValue::Px(v) => *v as f32,
+                                    _ => 0.0,
+                                })
+                                .unwrap_or(0.0);
+                            let word_spacing = style
+                                .map(|s| match &s.word_spacing {
+                                    LengthValue::Px(v) => *v as f32,
+                                    _ => 0.0,
+                                })
+                                .unwrap_or(0.0);
                             items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
                                 node_id: child_id,
                                 font_size,
                                 line_height,
                                 vertical_align,
+                                letter_spacing,
+                                word_spacing,
                             }));
                         }
                     }
@@ -351,8 +408,17 @@ impl InlineFormattingContext {
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(&run.text);
 
-                    for word in words {
-                        let word_width = estimate_string_width(&word, run.font_size);
+                    for (word_idx, word) in words.iter().enumerate() {
+                        // 基础宽度 + letter-spacing（每个字符追加）
+                        let char_count = word.chars().count();
+                        let mut word_width =
+                            estimate_string_width(word, run.font_size) + run.letter_spacing * char_count as f32;
+                        // 非首个单词：追加 word-spacing（单词间间距）
+                        // 注意：split_into_words 在每个单词后添加空格，最后一个单词也有空格
+                        // word-spacing 仅在单词之间（非最后一个）或单词内含空格时生效
+                        if word_idx > 0 {
+                            word_width += run.word_spacing;
+                        }
 
                         // 检查当前行是否放得下
                         if current_x + word_width > self.container_width && !current_line.runs.is_empty() {
@@ -372,7 +438,7 @@ impl InlineFormattingContext {
                             y: 0.0,
                             width: word_width,
                             height: fragment_height,
-                            text: word,
+                            text: word.clone(),
                             node_id: run.node_id,
                             font_size: run.font_size,
                             vertical_align: run.vertical_align.clone(),

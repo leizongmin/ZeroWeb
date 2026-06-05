@@ -175,6 +175,8 @@ fn test_negative_container_width_no_panic() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -192,6 +194,8 @@ fn test_very_narrow_container_single_char_per_line() {
         font_size: 16.0,
         line_height: 20.0,
         vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
     }];
     ctx.break_into_lines(runs);
     // 极窄容器中每个单词应单独一行
@@ -225,6 +229,8 @@ fn test_zero_width_inline_block() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -245,6 +251,8 @@ fn test_zero_height_inline_block() {
             font_size: 16.0,
             line_height: 20.0,
             vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
