@@ -530,6 +530,16 @@ impl Painter {
 
         let color = color_value_to_render(&style.color);
 
+        // letter-spacing 和 word-spacing
+        let letter_spacing: f32 = match style.letter_spacing {
+            LengthValue::Px(s) => s as f32,
+            _ => 0.0,
+        };
+        let word_spacing: f32 = match style.word_spacing {
+            LengthValue::Px(s) => s as f32,
+            _ => 0.0,
+        };
+
         // 文本阴影参数
         let text_shadow = &style.text_shadow;
         let has_text_shadow =
@@ -597,12 +607,21 @@ impl Painter {
                             bitmap_height: None,
                         });
                         char_x += estimate_char_width(ch, fragment.font_size);
+                        // letter-spacing：每个字符后追加固定间距
+                        char_x += letter_spacing;
+                        // word-spacing：空格字符后追加额外间距
+                        if ch == ' ' {
+                            char_x += word_spacing;
+                        }
                     }
 
                     // 绘制文本装饰线（underline/overline/line-through）
-                    let text_width = transformed
+                    let text_width: f32 = transformed
                         .chars()
-                        .map(|ch| estimate_char_width(ch, fragment.font_size))
+                        .map(|ch| {
+                            let w = estimate_char_width(ch, fragment.font_size) + letter_spacing;
+                            if ch == ' ' { w + word_spacing } else { w }
+                        })
                         .sum();
                     self.paint_text_decoration(
                         frag_base_x,

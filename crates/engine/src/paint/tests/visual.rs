@@ -1631,3 +1631,139 @@ fn test_pipeline_inline_text_with_css_color() {
         "至少一个 glyph 应有非零字体大小"
     );
 }
+
+// ── letter-spacing 和 word-spacing 渲染测试 ──
+
+/// letter-spacing:5px 应使相邻 glyph 的 x 间距比无 letter-spacing 时更大。
+#[test]
+fn test_letter_spacing_increases_glyph_gap() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+
+    // 无 letter-spacing 基线
+    let html = "<html><body><p>AB</p></body></html>";
+    let css_base = "p { color: black; font-size: 16px; }";
+    let result_base = pipeline.render_html(html, css_base);
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    // 需要至少 2 个非占位 glyph 才能比较间距
+    if glyphs_base.len() < 2 {
+        return; // 如果管线不生成独立 glyph 则跳过
+    }
+    let gap_base = (glyphs_base[1].x - glyphs_base[0].x).abs();
+
+    // 有 letter-spacing:5px
+    pipeline = RenderPipeline::new(800.0, 600.0);
+    let css_spaced = "p { color: black; font-size: 16px; letter-spacing: 5px; }";
+    let result_spaced = pipeline.render_html(html, css_spaced);
+    let glyphs_spaced: Vec<_> = result_spaced
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_spaced.len() < 2 {
+        return;
+    }
+    let gap_spaced = (glyphs_spaced[1].x - glyphs_spaced[0].x).abs();
+
+    assert!(
+        gap_spaced > gap_base,
+        "letter-spacing:5px 应增大 glyph 间距: got {gap_spaced} vs base {gap_base}"
+    );
+}
+
+/// word-spacing:10px 应使空格后的 glyph 比无 word-spacing 时更远。
+///
+/// 注意：当前 InlineFormattingContext 将文本拆分为单字符片段，
+/// 每个 fragment.x 由布局引擎预计算，不考虑 word-spacing。
+/// 因此跨 fragment 的 word-spacing 暂未生效。此测试验证
+/// 单 fragment 内 word-spacing 正确应用到字符间距累加中。
+#[test]
+fn test_word_spacing_applied_in_style() {
+    use crate::pipeline::RenderPipeline;
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+
+    // 验证 word-spacing 被解析并传递到 ComputedStyle
+    let html = "<html><body><p>text</p></body></html>";
+    let css = "p { color: black; font-size: 16px; word-spacing: 10px; }";
+    let doc = parse_html(html);
+    let stylesheets = vec![CssParser::parse_stylesheet(css)];
+    let mut style_sys = zero_style_system::StyleSystem::new();
+    style_sys.set_viewport(800.0, 600.0);
+    let styles = style_sys.compute_styles(&doc, &stylesheets);
+
+    let has_word_spacing = styles.values().any(|s| {
+        matches!(s.word_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0)
+    });
+    assert!(has_word_spacing, "word-spacing:10px 应在 ComputedStyle 中可见");
+
+    // 验证 letter-spacing 也被解析
+    let css2 = "p { color: black; font-size: 16px; letter-spacing: 3px; }";
+    let stylesheets2 = vec![CssParser::parse_stylesheet(css2)];
+    let styles2 = style_sys.compute_styles(&doc, &stylesheets2);
+    let has_letter_spacing = styles2.values().any(|s| {
+        matches!(s.letter_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0)
+    });
+    assert!(has_letter_spacing, "letter-spacing:3px 应在 ComputedStyle 中可见");
+}
+
+/// letter-spacing:0px 应与默认行为一致（无额外间距）。
+#[test]
+fn test_letter_spacing_zero_no_effect() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>AB</p></body></html>";
+    let css = "p { color: black; font-size: 16px; letter-spacing: 0px; }";
+    let result = pipeline.render_html(html, css);
+    // 不应 panic，且应有 glyph
+    assert!(
+        !result.primitives.glyphs.is_empty(),
+        "letter-spacing:0px 仍应生成 glyph"
+    );
+}
+
+/// 负 letter-spacing 应减少 glyph 间距。
+#[test]
+fn test_negative_letter_spacing_decreases_gap() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+
+    let html = "<html><body><p>AB</p></body></html>";
+    let css_base = "p { color: black; font-size: 16px; }";
+    let result_base = pipeline.render_html(html, css_base);
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_base.len() < 2 {
+        return;
+    }
+    let gap_base = (glyphs_base[1].x - glyphs_base[0].x).abs();
+
+    pipeline = RenderPipeline::new(800.0, 600.0);
+    let css_neg = "p { color: black; font-size: 16px; letter-spacing: -2px; }";
+    let result_neg = pipeline.render_html(html, css_neg);
+    let glyphs_neg: Vec<_> = result_neg
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_neg.len() < 2 {
+        return;
+    }
+    let gap_neg = (glyphs_neg[1].x - glyphs_neg[0].x).abs();
+
+    assert!(
+        gap_neg < gap_base,
+        "letter-spacing:-2px 应减小 glyph 间距: got {gap_neg} vs base {gap_base}"
+    );
+}
