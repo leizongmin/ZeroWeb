@@ -249,7 +249,7 @@ fn test_paint_text_em_font_size_no_glyph() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
     assert!(
         painter.primitives().glyphs.is_empty(),
         "Em font size should produce no glyph"
@@ -730,7 +730,7 @@ fn test_paint_text_doc_some_node_id_none_fallback() {
     };
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &style, Some(&doc));
+    painter.paint_text(&layout, 0.0, 0.0, &style, Some(&doc), None);
 
     // node_id=None → 无法使用 InlineFormattingContext → 走 fallback 路径
     assert_eq!(painter.primitives().glyphs.len(), 1);
@@ -1131,7 +1131,7 @@ fn test_paint_text_zero_width_no_panic() {
 
     // 也测试通过 paint_text 直接调用不 panic
     let mut painter2 = Painter::new();
-    painter2.paint_text(&layout, 10.0, 20.0, &styles[&elem], None);
+    painter2.paint_text(&layout, 10.0, 20.0, &styles[&elem], None, None);
     // 不 panic 即通过
 }
 

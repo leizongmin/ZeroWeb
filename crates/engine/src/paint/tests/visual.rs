@@ -370,7 +370,7 @@ fn test_paint_text_generates_glyph() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 10.0, 20.0, &styles[&elem], None);
+    painter.paint_text(&layout, 10.0, 20.0, &styles[&elem], None, None);
 
     assert_eq!(painter.primitives().glyphs.len(), 1);
     let glyph = &painter.primitives().glyphs[0];
@@ -394,7 +394,7 @@ fn test_paint_text_zero_font_size() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
     assert!(painter.primitives().glyphs.is_empty());
 }
 
@@ -412,7 +412,7 @@ fn test_paint_text_current_color_no_glyph() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
     assert!(painter.primitives().glyphs.is_empty());
 }
 
@@ -431,7 +431,7 @@ fn test_paint_text_with_transform() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
 
     let glyph = &painter.primitives().glyphs[0];
     assert_eq!(glyph.x, 5.0); // 0 + translate_x(5)
@@ -926,7 +926,7 @@ fn test_paint_text_with_border_padding() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
 
     let glyph = &painter.primitives().glyphs[0];
     // text_x = abs_x(0) + border_left(5) + padding_left(1) = 6
