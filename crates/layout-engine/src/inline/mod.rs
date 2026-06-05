@@ -265,6 +265,8 @@ pub struct InlineFormattingContext {
     pub container_width: f32,
     /// 文本对齐方式。
     pub text_align: TextAlign,
+    /// 末行对齐方式（CSS text-align-last）。None 表示跟随 text-align。
+    pub text_align_last: Option<TextAlign>,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
     pub break_word: bool,
     /// 是否禁止换行（white-space: nowrap / pre 时为 true）。
@@ -283,6 +285,7 @@ impl InlineFormattingContext {
         Self {
             container_width,
             text_align: TextAlign::default(),
+            text_align_last: None,
             break_word: false,
             no_wrap: false,
             preserve_whitespace: false,
@@ -294,6 +297,14 @@ impl InlineFormattingContext {
     /// 设置文本对齐方式。
     pub fn with_text_align(mut self, align: TextAlign) -> Self {
         self.text_align = align;
+        self
+    }
+
+    /// 设置末行对齐方式（CSS text-align-last）。
+    ///
+    /// None 表示末行跟随 text_align 设置（默认行为）。
+    pub fn with_text_align_last(mut self, align: Option<TextAlign>) -> Self {
+        self.text_align_last = align;
         self
     }
 
@@ -615,7 +626,7 @@ impl InlineFormattingContext {
     /// - Right: 整行右对齐。
     /// - Justify: 非最后一行在单词间均匀分配剩余空间。
     fn apply_text_alignment(&mut self) {
-        if self.text_align == TextAlign::Left || self.lines.is_empty() {
+        if (self.text_align == TextAlign::Left && self.text_align_last.is_none()) || self.lines.is_empty() {
             return;
         }
 
@@ -629,7 +640,22 @@ impl InlineFormattingContext {
             let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
             let remaining = self.container_width - content_width;
 
-            match self.text_align {
+            // 确定本行使用的对齐方式
+            // 最后一行：使用 text_align_last（如果设置了），否则 text-align: justify 回退到 Left
+            let align = if i == last_idx {
+                if let Some(tal) = self.text_align_last {
+                    tal
+                } else if self.text_align == TextAlign::Justify {
+                    // justify 的最后一行默认回退到左对齐（标准行为）
+                    TextAlign::Left
+                } else {
+                    self.text_align
+                }
+            } else {
+                self.text_align
+            };
+
+            match align {
                 TextAlign::Left => { /* 默认，无需调整 */ }
                 TextAlign::Center => {
                     let offset = remaining / 2.0;
@@ -644,10 +670,6 @@ impl InlineFormattingContext {
                     }
                 }
                 TextAlign::Justify => {
-                    // 最后一行不 justify，保持左对齐
-                    if i == last_idx {
-                        continue;
-                    }
                     // 只在有 2 个及以上片段时才能分配空间
                     if line.runs.len() < 2 {
                         continue;

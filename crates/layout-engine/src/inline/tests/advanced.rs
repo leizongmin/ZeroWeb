@@ -1306,3 +1306,208 @@ fn test_estimate_string_width_zero_font_size() {
     let width = estimate_string_width("Hello世界", 0.0);
     assert!(width.abs() < 0.001, "零 font_size 宽度应为 0，实际 {}", width);
 }
+
+// ── text-align-last 行为测试 ──
+
+/// 测试 text-align-last 默认（None）时，justify 的最后一行回退到左对齐。
+///
+/// 3 行文本使用 text-align: justify，最后一行不应两端对齐，
+/// 而是默认回退到左对齐（x = 0）。
+#[test]
+fn test_text_align_last_none_justify_falls_back_to_left() {
+    let mut ctx = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Justify);
+    // 构造多行文本
+    let runs = vec![TextRun {
+        text: "alpha beta gamma delta epsilon zeta".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    assert!(ctx.lines.len() >= 2, "应产生至少 2 行，实际 {} 行", ctx.lines.len());
+
+    // 最后一行的第一个片段 x 应为 0（回退到左对齐，不做 justify 偏移）
+    let last_line = ctx.lines.last().unwrap();
+    if !last_line.runs.is_empty() {
+        assert!(
+            last_line.runs[0].x.abs() < 0.01,
+            "最后一行（justify 回退左对齐）x 应为 0，实际 {}",
+            last_line.runs[0].x
+        );
+    }
+}
+
+/// 测试 text-align-last: center 时，最后一行居中。
+///
+/// 多行文本使用 text-align: left，text-align-last: center。
+/// 最后一行的片段应有正偏移（居中效果）。
+#[test]
+fn test_text_align_last_center_on_last_line() {
+    let mut ctx = InlineFormattingContext::new(100.0)
+        .with_text_align(TextAlign::Left)
+        .with_text_align_last(Some(TextAlign::Center));
+    let runs = vec![TextRun {
+        text: "alpha beta gamma delta epsilon zeta eta theta".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    assert!(ctx.lines.len() >= 2, "应产生至少 2 行，实际 {} 行", ctx.lines.len());
+
+    // 最后一行应有正 x 偏移（居中效果）
+    let last_line = ctx.lines.last().unwrap();
+    if !last_line.runs.is_empty() {
+        assert!(
+            last_line.runs[0].x > 0.0,
+            "最后一行（center）x 应 > 0（居中偏移），实际 {}",
+            last_line.runs[0].x
+        );
+    }
+
+    // 非最后一行 x 应为 0（text-align: left）
+    assert!(
+        ctx.lines[0].runs[0].x.abs() < 0.01,
+        "第一行（left）x 应为 0，实际 {}",
+        ctx.lines[0].runs[0].x
+    );
+}
+
+/// 测试 text-align-last: right 时，最后一行右对齐。
+///
+/// 多行文本，最后一行的片段应有较大 x 偏移（右对齐效果）。
+#[test]
+fn test_text_align_last_right_on_last_line() {
+    let mut ctx = InlineFormattingContext::new(100.0)
+        .with_text_align(TextAlign::Left)
+        .with_text_align_last(Some(TextAlign::Right));
+    let runs = vec![TextRun {
+        text: "alpha beta gamma delta epsilon zeta eta".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    assert!(ctx.lines.len() >= 2, "应产生至少 2 行");
+
+    let last_line = ctx.lines.last().unwrap();
+    if !last_line.runs.is_empty() {
+        // 右对齐：x 偏移应 > 0 且比较大
+        assert!(
+            last_line.runs[0].x > 0.0,
+            "最后一行（right）x 应 > 0（右对齐偏移），实际 {}",
+            last_line.runs[0].x
+        );
+    }
+}
+
+/// 测试 text-align-last: justify 时，最后一行也两端对齐。
+///
+/// 正常 justify 的最后一行回退到左对齐，但显式设置
+/// text-align-last: justify 后，最后一行也应均匀分配空间。
+#[test]
+fn test_text_align_last_justify_on_last_line() {
+    let mut ctx = InlineFormattingContext::new(100.0)
+        .with_text_align(TextAlign::Left)
+        .with_text_align_last(Some(TextAlign::Justify));
+    let runs = vec![TextRun {
+        text: "alpha beta gamma delta epsilon zeta eta theta iota".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    assert!(ctx.lines.len() >= 2, "应产生至少 2 行");
+
+    // 最后一行如果有 2+ 个片段，justify 会分配间距
+    // 第一个片段 x 应为 0（justify 从行首开始）
+    let last_line = ctx.lines.last().unwrap();
+    if last_line.runs.len() >= 2 {
+        assert!(
+            last_line.runs[0].x.abs() < 0.01,
+            "最后一行（justify）第一个片段 x 应为 0，实际 {}",
+            last_line.runs[0].x
+        );
+        // justify 时后续片段应有间距
+        assert!(
+            last_line.runs[1].x > last_line.runs[0].width + 1.0,
+            "最后一行（justify）片段间应有间距分配"
+        );
+    }
+}
+
+/// 测试单行文本 + text-align-last 时，该行视为最后一行。
+///
+/// 单行就是最后一行，text-align-last 应直接作用于它。
+#[test]
+fn test_text_align_last_single_line_treated_as_last() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_text_align(TextAlign::Left)
+        .with_text_align_last(Some(TextAlign::Center));
+    let runs = vec![TextRun {
+        text: "Short".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    assert_eq!(ctx.lines.len(), 1, "应只有 1 行");
+
+    // 单行 = 最后一行，text-align-last: center 应生效
+    let line = &ctx.lines[0];
+    assert!(
+        line.runs[0].x > 0.0,
+        "单行（center）x 应 > 0（居中偏移），实际 {}",
+        line.runs[0].x
+    );
+}
+
+/// 测试 text-align: left + text-align-last 为 None 时提前返回，
+/// 不应用任何对齐偏移。
+#[test]
+fn test_text_align_left_no_align_last_no_offset() {
+    let mut ctx = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
+    // 不设置 text_align_last（默认 None）
+    let runs = vec![TextRun {
+        text: "alpha beta gamma delta epsilon".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+
+    // 所有行左对齐，每行第一个片段 x 应为 0
+    for (i, line) in ctx.lines.iter().enumerate() {
+        if !line.runs.is_empty() {
+            assert!(
+                line.runs[0].x.abs() < 0.01,
+                "行 {} 第一个片段 x 应为 0（左对齐无偏移），实际 {}",
+                i,
+                line.runs[0].x
+            );
+        }
+    }
+}
