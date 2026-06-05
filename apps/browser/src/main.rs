@@ -523,6 +523,43 @@ mod tests {
         // WebView 应该有渲染结果
         let _ = app.build_scene_for_test(800, 600);
     }
+
+    /// 欢迎页包含双语内容与可点击链接。
+    #[test]
+    fn welcome_page_has_bilingual_content_and_links() {
+        assert!(pages::WELCOME_HTML.contains("Welcome · 欢迎"));
+        assert!(pages::WELCOME_HTML.contains("Built different"));
+        assert!(pages::WELCOME_HTML.contains("href=\"https://example.com\""));
+        assert!(pages::WELCOME_HTML.contains("prefers-color-scheme: dark"));
+    }
+
+    /// 欢迎页在 800px 高的 WebView 视口内应完整显示（无需滚动）。
+    #[test]
+    fn welcome_page_fits_800px_webview_viewport() {
+        let viewport_h = 800.0;
+        let mut pipeline = zero_engine::RenderPipeline::new(880.0, viewport_h);
+        let result = pipeline.render_html(pages::WELCOME_HTML, "");
+
+        let mut page_h = 0.0f32;
+        for fill in &result.primitives.fills {
+            page_h = page_h.max(fill.rect.origin.y + fill.rect.size.height);
+        }
+        for glyph in &result.primitives.glyphs {
+            page_h = page_h.max(glyph.y + glyph.font_size);
+        }
+
+        assert!(
+            page_h <= viewport_h,
+            "welcome page height {page_h}px exceeds {viewport_h}px webview viewport"
+        );
+    }
+
+    /// zero:// 协议应保留不被搜索引擎改写。
+    #[test]
+    fn normalize_url_preserves_zero_scheme() {
+        let shell = zero_browser_shell::BrowserShell::new();
+        assert_eq!(crate::app::normalize_url("zero://settings", &shell), "zero://settings");
+    }
 }
 
 // --- 无头模式入口 ---

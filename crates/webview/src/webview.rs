@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use zero_engine::{PipelineTimings, RenderPipeline};
+use zero_engine::{PipelineTimings, PrefersColorSchemeValue, RenderPipeline};
 use zero_net::{HttpCache, HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -103,6 +103,8 @@ pub struct WebView {
     wasm_instances: HashMap<u64, zero_wasm_sandbox::WasmInstance>,
     /// HTTP 响应缓存。
     http_cache: HttpCache,
+    /// 用户颜色方案偏好。
+    prefers_color_scheme: PrefersColorSchemeValue,
 }
 
 impl WebView {
@@ -134,6 +136,7 @@ impl WebView {
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
             http_cache: HttpCache::new(),
+            prefers_color_scheme: PrefersColorSchemeValue::Light,
         }
     }
 
@@ -172,6 +175,7 @@ impl WebView {
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         let result = self.pipeline.render_html(html, css_str);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -322,6 +326,7 @@ impl WebView {
 
     /// 重新渲染（用于 resize 等场景）。
     pub fn render(&mut self) -> WebViewRenderResult {
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -367,6 +372,18 @@ impl WebView {
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+    }
+
+    /// 设置用户颜色方案偏好（影响 `prefers-color-scheme` 媒体查询）。
+    pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        self.prefers_color_scheme = scheme;
+        self.pipeline.set_prefers_color_scheme(scheme);
+    }
+
+    /// 命中测试链接，坐标为 WebView 视口内的 CSS 逻辑像素。
+    pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
+        self.pipeline.hit_test_link(x, y)
     }
 
     /// 执行 JavaScript。
