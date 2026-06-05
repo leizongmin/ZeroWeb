@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,438 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1041 个用例（22 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪）
+**执行状态**: 16/16 crate 已实现，~11,446 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1041 个用例（22 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,438 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,446 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -107,7 +107,30 @@
 
 ## 最近完成的改进
 
-### -97. background-repeat 渲染集成（本轮，~11,438 测试）
+### -98. white-space 行内布局集成（本轮，~11,446 测试）
+
+实现 CSS white-space 属性对行内格式化上下文的影响：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| layout-engine/inline | **no_wrap 标志**：禁止自动换行（nowrap/pre） | — |
+| layout-engine/inline | **preserve_whitespace 标志**：保留空白字符序列（pre/pre-wrap） | — |
+| layout-engine/inline | **split_into_words 保留模式**：多空格不折叠，保留为独立片段 | — |
+| layout-engine/inline | **break_items_into_lines no_wrap**：跳过容器宽度换行判断 | — |
+| engine/paint/text | **white-space 集成到 paint_text**：从 ComputedStyle 读取 white-space 属性，设置 InlineFormattingContext 的 no_wrap 和 preserve_whitespace | — |
+| layout-engine/tests | **8 个 white-space 测试**：normal 换行、nowrap 不换行、pre 保留空白+不换行、pre-wrap 保留空白+换行、默认等于 normal、split_into_words 两种模式、长文本 no_wrap | +8 |
+
+white-space 行为映射：
+- `normal` → 折叠空白、自动换行（默认）
+- `nowrap` → 折叠空白、不换行
+- `pre` → 保留空白、不换行
+- `pre-wrap` → 保留空白、自动换行
+- `pre-line` → 折叠空白、自动换行
+- `break-spaces` → 保留空白、自动换行
+
+Tests: ~11,438 → ~11,446 (+8), clippy clean.
+
+### -97. background-repeat 渲染集成（前轮，~11,438 测试）
 
 实现 CSS background-repeat 完整渲染，支持 6 种平铺模式：
 

@@ -10,7 +10,7 @@ use zero_layout_engine::{InlineFormattingContext, LayoutBox, estimate_char_width
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, TextOverflowValue,
+    ComputedStyle, TextOverflowValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -398,7 +398,21 @@ impl super::Painter {
                 style.overflow_wrap,
                 zero_style_system::OverflowWrapValue::BreakWord | zero_style_system::OverflowWrapValue::Anywhere
             );
-            let mut inline_ctx = InlineFormattingContext::new(container_width).with_break_word(break_word);
+
+            // 根据 white-space 属性设置换行和空白保留行为
+            let (no_wrap, preserve_whitespace) = match style.white_space {
+                WhiteSpaceValue::Normal => (false, false),
+                WhiteSpaceValue::Nowrap => (true, false),
+                WhiteSpaceValue::Pre => (true, true),
+                WhiteSpaceValue::PreWrap => (false, true),
+                WhiteSpaceValue::PreLine => (false, false),
+                WhiteSpaceValue::BreakSpaces => (false, true),
+            };
+
+            let mut inline_ctx = InlineFormattingContext::new(container_width)
+                .with_break_word(break_word)
+                .with_no_wrap(no_wrap)
+                .with_preserve_whitespace(preserve_whitespace);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();

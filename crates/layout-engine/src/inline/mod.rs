@@ -255,6 +255,10 @@ pub struct InlineFormattingContext {
     pub text_align: TextAlign,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
     pub break_word: bool,
+    /// 是否禁止换行（white-space: nowrap / pre 时为 true）。
+    pub no_wrap: bool,
+    /// 是否保留空白字符序列（white-space: pre / pre-wrap 时为 true）。
+    pub preserve_whitespace: bool,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -266,6 +270,8 @@ impl InlineFormattingContext {
             container_width,
             text_align: TextAlign::default(),
             break_word: false,
+            no_wrap: false,
+            preserve_whitespace: false,
             lines: Vec::new(),
         }
     }
@@ -279,6 +285,18 @@ impl InlineFormattingContext {
     /// 设置是否允许单词内断行（overflow-wrap: break-word / anywhere）。
     pub fn with_break_word(mut self, break_word: bool) -> Self {
         self.break_word = break_word;
+        self
+    }
+
+    /// 设置是否禁止换行（white-space: nowrap / pre）。
+    pub fn with_no_wrap(mut self, no_wrap: bool) -> Self {
+        self.no_wrap = no_wrap;
+        self
+    }
+
+    /// 设置是否保留空白字符（white-space: pre / pre-wrap）。
+    pub fn with_preserve_whitespace(mut self, preserve: bool) -> Self {
+        self.preserve_whitespace = preserve;
         self
     }
 
@@ -430,7 +448,10 @@ impl InlineFormattingContext {
                         }
 
                         // 检查当前行是否放得下
-                        if current_x + word_width > self.container_width && !current_line.runs.is_empty() {
+                        if !self.no_wrap
+                            && current_x + word_width > self.container_width
+                            && !current_line.runs.is_empty()
+                        {
                             // 当前行放不下，开始新行
                             self.lines.push(current_line);
                             current_line = LineBox {
@@ -443,7 +464,11 @@ impl InlineFormattingContext {
 
                         // overflow-wrap: break-word / anywhere — 如果单词仍超出行宽，
                         // 逐字符拆分并在行边界处断行
-                        if self.break_word && current_x + word_width > self.container_width && !word.is_empty() {
+                        if !self.no_wrap
+                            && self.break_word
+                            && current_x + word_width > self.container_width
+                            && !word.is_empty()
+                        {
                             let fragment_height = run.line_height;
                             let chars: Vec<char> = word.chars().collect();
                             let mut partial_x = current_x;
@@ -501,7 +526,7 @@ impl InlineFormattingContext {
                     let box_height = box_info.height;
 
                     // 检查当前行是否放得下（当行非空时）
-                    if current_x + box_width > self.container_width && !current_line.runs.is_empty() {
+                    if !self.no_wrap && current_x + box_width > self.container_width && !current_line.runs.is_empty() {
                         // 当前行放不下，开始新行
                         self.lines.push(current_line);
                         current_line = LineBox {
@@ -664,7 +689,43 @@ impl InlineFormattingContext {
 
     /// 将文本按空白字符分割成单词。
     fn split_into_words(&self, text: &str) -> Vec<String> {
-        text.split_whitespace().map(|w| format!("{w} ")).collect()
+        if self.preserve_whitespace {
+            // 保留空白字符序列：不折叠空格，保留换行符作为强制换行点
+            // 将文本按换行符分段，每段再按空格序列切分
+            let mut result = Vec::new();
+            for (i, segment) in text.split('\n').enumerate() {
+                if i > 0 {
+                    // 换行符处产生强制换行标记（空字符串表示换行）
+                    result.push(String::new());
+                }
+                if segment.is_empty() {
+                    continue;
+                }
+                // 在保留空白模式下，按连续空格切分，保留空格作为独立"单词"
+                let mut current_word = String::new();
+                for ch in segment.chars() {
+                    if ch == ' ' || ch == '\t' {
+                        if !current_word.is_empty() {
+                            result.push(format!("{current_word} "));
+                            current_word.clear();
+                        }
+                        // 空格也作为独立片段以保留空白
+                        result.push(" ".to_string());
+                    } else {
+                        current_word.push(ch);
+                    }
+                }
+                if !current_word.is_empty() {
+                    result.push(format!("{current_word} "));
+                }
+            }
+            if result.is_empty() {
+                result.push(format!("{text} "));
+            }
+            result
+        } else {
+            text.split_whitespace().map(|w| format!("{w} ")).collect()
+        }
     }
 
     /// 获取所有行盒的总高度。
