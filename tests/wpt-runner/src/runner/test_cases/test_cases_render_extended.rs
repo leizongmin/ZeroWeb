@@ -770,5 +770,208 @@ and newlines within the constrained box.</div>
                 "has_fill_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS scroll-snap 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── scroll-snap-type: mandatory ──
+        TestCase {
+            id: "render/scroll-snap-mandatory".to_string(),
+            description: "CSS scroll-snap-type: mandatory axis indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.snap { scroll-snap-type: x mandatory; width: 200px; height: 100px; background: #f0f0f0; }</style>
+<div class="snap">Snap container</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── scroll-snap-align: center ──
+        TestCase {
+            id: "render/scroll-snap-align-center".to_string(),
+            description: "CSS scroll-snap-align: center snap point indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.item { scroll-snap-type: y mandatory; scroll-snap-align: center; width: 100px; height: 80px; background: #e0e0ff; }</style>
+<div class="item">Center aligned</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── scroll-snap-type: both proximity ──
+        TestCase {
+            id: "render/scroll-snap-both-proximity".to_string(),
+            description: "CSS scroll-snap-type: both proximity cross axis rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.cross { scroll-snap-type: both proximity; width: 200px; height: 200px; background: #ffe0e0; }</style>
+<div class="cross">Both axes snap</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS perspective 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── perspective: 500px ──
+        TestCase {
+            id: "render/perspective-basic".to_string(),
+            description: "CSS perspective vanishing point indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.persp { perspective: 500px; width: 200px; height: 100px; background: #f0fff0; }
+.child { transform: rotateY(30deg); width: 80px; height: 60px; background: #c0c0ff; }</style>
+<div class="persp"><div class="child">3D child</div></div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── perspective + transform-style: preserve-3d ──
+        TestCase {
+            id: "render/perspective-preserve3d".to_string(),
+            description: "CSS perspective + transform-style preserve-3d combined rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.scene { perspective: 800px; transform-style: preserve-3d; width: 300px; height: 200px; background: #fff0f0; }
+.face { transform: rotateX(45deg); width: 100px; height: 80px; background: #ffcccc; }</style>
+<div class="scene"><div class="face">3D face</div></div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS backface-visibility 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── backface-visibility: hidden ──
+        TestCase {
+            id: "render/backface-visibility-hidden".to_string(),
+            description: "CSS backface-visibility: hidden dashed border indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.card { backface-visibility: hidden; width: 150px; height: 100px; background: #f5f5ff; transform: rotateY(180deg); }</style>
+<div class="card">Hidden backface</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS border-spacing 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── border-spacing on table ──
+        TestCase {
+            id: "render/border-spacing-table".to_string(),
+            description: "CSS border-spacing gap marker rendering on table".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>table { border-spacing: 10px 5px; }
+td { width: 60px; height: 30px; background: #e8e8e8; border: 1px solid #ccc; }</style>
+<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS caption-side 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── caption-side: bottom ──
+        TestCase {
+            id: "render/caption-side-bottom".to_string(),
+            description: "CSS caption-side: bottom position indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>table { caption-side: bottom; }
+caption { font-style: italic; }
+td { width: 60px; height: 30px; background: #f0f0e0; border: 1px solid #bbb; }</style>
+<table><caption>Table caption</caption><tr><td>1</td><td>2</td></tr></table>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  组合：3D 变换 + scroll-snap + 表格属性
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 3D + snap + spacing 组合页面 ──
+        TestCase {
+            id: "render/combo-3d-snap-table".to_string(),
+            description: "Combined 3D transforms + scroll-snap + table rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+.container { scroll-snap-type: x mandatory; width: 300px; height: 200px; overflow: hidden; background: #fafafa; }
+.panel { scroll-snap-align: start; width: 280px; height: 180px; margin: 10px; background: #fff; border: 1px solid #ddd; }
+.card { perspective: 600px; transform-style: preserve-3d; backface-visibility: hidden; padding: 15px; background: #f8f8ff; }
+table { border-spacing: 8px; caption-side: bottom; }
+td { padding: 8px; background: #eee; border: 1px solid #ccc; }
+</style>
+<div class="container">
+  <div class="panel">
+    <div class="card">
+      <table><caption>Data</caption><tr><td>A</td><td>B</td></tr></table>
+    </div>
+  </div>
+</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
     ]
 }
