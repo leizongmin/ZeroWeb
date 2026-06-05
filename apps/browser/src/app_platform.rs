@@ -269,28 +269,52 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     shell.settings().search(input)
 }
 
+/// Chrome UI 主字体候选路径（按平台 OS Citizenship 优先级，与 Chromium 一致）。
+fn chrome_ui_primary_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            // San Francisco（macOS 系统 UI 字体，Chrome 同源）
+            "/System/Library/Fonts/SFNS.ttf",
+            "/System/Library/Fonts/SFCompact.ttf",
+            "/System/Library/Fonts/HelveticaNeue.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &[
+            // Segoe UI（Windows 系统 UI 字体）
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            // GTK/Fontconfig 常见 UI sans（Linux 桌面 Chrome 经 fontconfig 解析的同类字体）
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/opentype/cantarell/Cantarell-VF.otf",
+            "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        ]
+    }
+}
+
 /// 加载系统字体（主字体 + CJK/Emoji 回退链）
 pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
-    #[cfg(target_os = "macos")]
-    let primary_paths = [
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/HelveticaNeue.ttc",
-        "/System/Library/Fonts/Helvetica.ttc",
-    ];
-    #[cfg(target_os = "windows")]
-    let primary_paths = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"];
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let primary_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    ];
+    let primary_paths = chrome_ui_primary_font_paths();
 
-    let primary = primary_paths.iter().find_map(|path| {
-        std::fs::read(path)
-            .ok()
-            .and_then(|data| font_loader.load_font(&data).ok())
+    let (primary, loaded_path) = primary_paths.iter().find_map(|path| {
+        let data = std::fs::read(path).ok()?;
+        let id = font_loader.load_font(&data).ok()?;
+        Some((id, *path))
     })?;
+    tracing::info!("Chrome UI primary font: {loaded_path} (id={primary})");
 
     #[cfg(target_os = "macos")]
     let fallback_paths = [
@@ -387,8 +411,23 @@ pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
 }
 
 #[cfg(test)]
-mod color_scheme_tests {
+mod tests {
     use super::*;
+    use zero_render_foundation::font::loader::FontLoader;
+
+    #[test]
+    fn load_system_fonts_loads_primary() {
+        let mut loader = FontLoader::new();
+        assert!(
+            load_system_fonts(&mut loader).is_some(),
+            "expected at least one Chrome UI font on this platform"
+        );
+    }
+
+    #[test]
+    fn chrome_ui_primary_paths_non_empty() {
+        assert!(!chrome_ui_primary_font_paths().is_empty());
+    }
 
     #[test]
     fn parse_gnome_color_scheme_prefers_dark() {
