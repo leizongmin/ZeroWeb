@@ -1010,8 +1010,17 @@ fn setup_bg_test() -> (Painter, zero_dom::NodeId, LayoutBox, HashMap<NodeId, Com
 
 /// 辅助：创建带 border/padding 的 box。
 fn make_box_with_padding(
-    node_id: Option<NodeId>, x: f32, y: f32, w: f32, h: f32,
-    bt: f32, bl: f32, pt: f32, pl: f32, cw: f32, ch: f32,
+    node_id: Option<NodeId>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    bt: f32,
+    bl: f32,
+    pt: f32,
+    pl: f32,
+    cw: f32,
+    ch: f32,
 ) -> LayoutBox {
     let mut b = make_box(node_id, x, y, w, h);
     b.border_top = bt;
@@ -1071,8 +1080,10 @@ fn test_background_position_length() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
-    style.background_position =
-        BackgroundPositionComputedValue::TwoValue(Box::new(BackgroundPositionComputedValue::Length(20.0)), Box::new(BackgroundPositionComputedValue::Length(10.0)));
+    style.background_position = BackgroundPositionComputedValue::TwoValue(
+        Box::new(BackgroundPositionComputedValue::Length(20.0)),
+        Box::new(BackgroundPositionComputedValue::Length(10.0)),
+    );
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1302,8 +1313,14 @@ fn test_gradient_with_position_and_size() {
     style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
         direction: GradientDirection::ToRight,
         stops: vec![
-            GradientColorStop { color: ColorValue::Rgba(255, 0, 0, 255), position: None },
-            GradientColorStop { color: ColorValue::Rgba(0, 0, 255, 255), position: None },
+            GradientColorStop {
+                color: ColorValue::Rgba(255, 0, 0, 255),
+                position: None,
+            },
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 0, 255, 255),
+                position: None,
+            },
         ],
         repeating: false,
     }));
@@ -1348,7 +1365,11 @@ fn test_border_image_url_9region() {
 
     // 4 corners + 4 edges = 8 image primitives (fill=false, no center)
     let images = &painter.primitives().images;
-    assert!(images.len() >= 8, "border-image should generate at least 8 image primitives, got {}", images.len());
+    assert!(
+        images.len() >= 8,
+        "border-image should generate at least 8 image primitives, got {}",
+        images.len()
+    );
 }
 
 /// 测试 border-image-source: none 不生成图片图元。
@@ -1373,7 +1394,11 @@ fn test_border_image_none() {
     painter.paint(&layout, &styles, None);
 
     let images = &painter.primitives().images;
-    assert_eq!(images.len(), 0, "border-image:none should not generate image primitives");
+    assert_eq!(
+        images.len(),
+        0,
+        "border-image:none should not generate image primitives"
+    );
 }
 
 /// 测试 border-image 带不同边框宽度（不对称）。
@@ -1398,7 +1423,11 @@ fn test_border_image_asymmetric_borders() {
     painter.paint(&layout, &styles, None);
 
     let images = &painter.primitives().images;
-    assert!(images.len() >= 8, "asymmetric border-image should generate at least 8 images, got {}", images.len());
+    assert!(
+        images.len() >= 8,
+        "asymmetric border-image should generate at least 8 images, got {}",
+        images.len()
+    );
 
     // 验证左上角位置和尺寸
     let top_left = &images[0];
@@ -1427,4 +1456,111 @@ fn test_border_image_no_border() {
 
     let images = &painter.primitives().images;
     assert_eq!(images.len(), 0, "no border width should skip border-image");
+}
+
+/// 测试 column-rule: solid 在 3 列之间绘制 2 条分隔线。
+#[test]
+fn test_column_rules_solid() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    style.column_gap = LengthValue::Px(20.0);
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Thin;
+    style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    // 3 列 → 2 条 rule → 2 个 fill 图元（background 可能也产生 fill，但 rule 的 fill 至少 2 个）
+    // 检查至少有 rule 的 fill（每条 rule 是一个细矩形）
+    let rule_fills: Vec<_> = fills
+        .iter()
+        .filter(|f| f.color.a > 0 && f.rect.size.width < 5.0 && f.rect.size.height > 100.0)
+        .collect();
+    assert!(
+        rule_fills.len() >= 2,
+        "3 columns should produce at least 2 column-rule fills, got {} rule fills",
+        rule_fills.len()
+    );
+}
+
+/// 测试 column-rule-style: none 不绘制分隔线。
+#[test]
+fn test_column_rules_none() {
+    use zero_style_system::ColumnCountComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    // column_rule_style 默认为 None
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // column-rule:none 不应产生额外的 stroke 图元
+    let strokes = &painter.primitives().strokes;
+    assert_eq!(strokes.len(), 0, "column-rule:none should not generate strokes");
+}
+
+/// 测试 column-rule-style: dashed 生成 stroke 图元。
+#[test]
+fn test_column_rules_dashed() {
+    use zero_render_foundation::primitive::LineStyle;
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 400.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_gap = LengthValue::Px(10.0);
+    style.column_rule_style = ColumnRuleStyleComputedValue::Dashed;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    style.column_rule_color = ColorValue::Rgba(0, 0, 0, 255);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let strokes = &painter.primitives().strokes;
+    let dashed: Vec<_> = strokes.iter().filter(|s| s.style == LineStyle::Dashed).collect();
+    assert!(
+        dashed.len() >= 1,
+        "2 columns with dashed rule should produce at least 1 dashed stroke, got {}",
+        dashed.len()
+    );
+}
+
+/// 测试 column-count:1（只有 1 列）不绘制 rule。
+#[test]
+fn test_column_rules_single_column() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(1);
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let strokes = &painter.primitives().strokes;
+    assert_eq!(strokes.len(), 0, "1 column should not produce column-rule strokes");
 }

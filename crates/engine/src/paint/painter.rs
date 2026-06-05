@@ -20,9 +20,9 @@ use zero_render_foundation::primitive::{
 };
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderImageSourceComputedValue,
-    BorderStyleValue, ComputedStyle, FilterComputedValue, OutlineStyleValue, TextDecorationLineValue,
-    TextOverflowValue,
+    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderImageSourceComputedValue, BorderStyleValue,
+    ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
+    ComputedStyle, FilterComputedValue, OutlineStyleValue, TextDecorationLineValue, TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -215,6 +215,9 @@ impl Painter {
 
                 // 2b. Border-image 绘制（替换或覆盖常规边框）
                 self.paint_border_image(box_node, abs_x, abs_y, style);
+
+                // 2c. Column-rule 绘制（多列之间的分隔线）
+                self.paint_column_rules(box_node, abs_x, abs_y, style);
 
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
@@ -473,7 +476,8 @@ impl Painter {
 
         // 中心区域（当 fill 为 true 时绘制）
         if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h)));
         }
 
         // 四个角
@@ -484,7 +488,8 @@ impl Painter {
             self.primitives.add_image(make_img(Rect::new(bx + w - br, by, br, bt)));
         }
         if br > 0.0 && bb > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + w - br, by + h - bb, br, bb)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + w - br, by + h - bb, br, bb)));
         }
         if bl > 0.0 && bb > 0.0 {
             self.primitives.add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
@@ -492,16 +497,136 @@ impl Painter {
 
         // 四条边（stretch 模式）
         if edge_h_w > 0.0 && bt > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + bl, by, edge_h_w, bt)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + bl, by, edge_h_w, bt)));
         }
         if br > 0.0 && edge_v_h > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + w - br, by + bt, br, edge_v_h)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + w - br, by + bt, br, edge_v_h)));
         }
         if edge_h_w > 0.0 && bb > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + bl, by + h - bb, edge_h_w, bb)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + bl, by + h - bb, edge_h_w, bb)));
         }
         if bl > 0.0 && edge_v_h > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx, by + bt, bl, edge_v_h)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx, by + bt, bl, edge_v_h)));
+        }
+    }
+
+    /// 绘制多列布局的 column-rule（列之间的分隔线）。
+    ///
+    /// 根据 column-count 或 column-width 计算列数和列间距，
+    /// 在列之间绘制 column-rule 样式的垂直线。
+    fn paint_column_rules(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // 计算 column-count
+        let count = match &style.column_count {
+            ColumnCountComputedValue::Auto => {
+                // 如果 column-width 也为 auto，则只有一列，不绘制 rule
+                match &style.column_width {
+                    ColumnWidthComputedValue::Auto => return,
+                    ColumnWidthComputedValue::Length(LengthValue::Px(w)) => {
+                        let content_w = box_node.content_width;
+                        if content_w <= 0.0 || *w <= 0.0 {
+                            return;
+                        }
+                        // column-gap 解析为 column_gap (LengthValue)
+                        let gap: f32 = match style.column_gap {
+                            LengthValue::Px(g) => g as f32,
+                            _ => 0.0,
+                        };
+                        ((content_w + gap) / (*w as f32 + gap)).max(1.0).floor() as u32
+                    }
+                    _ => return,
+                }
+            }
+            ColumnCountComputedValue::Number(n) => *n,
+        };
+
+        // 至少需要 2 列才绘制 rule
+        if count < 2 {
+            return;
+        }
+
+        // 检查 column-rule-style
+        if matches!(
+            style.column_rule_style,
+            ColumnRuleStyleComputedValue::None | ColumnRuleStyleComputedValue::Hidden
+        ) {
+            return;
+        }
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        let content_w = box_node.content_width;
+        let content_h = box_node.content_height;
+
+        if content_w <= 0.0 || content_h <= 0.0 {
+            return;
+        }
+
+        // column-gap
+        let gap: f32 = match style.column_gap {
+            LengthValue::Px(g) => g as f32,
+            _ => 0.0,
+        };
+
+        // column-rule-width
+        let rule_w: f32 = match &style.column_rule_width {
+            ColumnRuleWidthComputedValue::Medium => 2.0,
+            ColumnRuleWidthComputedValue::Thin => 1.0,
+            ColumnRuleWidthComputedValue::Thick => 3.0,
+            ColumnRuleWidthComputedValue::Length(LengthValue::Px(w)) => *w as f32,
+            _ => 1.0,
+        };
+
+        let rule_color = color_value_to_render(&style.column_rule_color);
+
+        // 列宽 = (content_w - (count-1)*gap) / count
+        let col_w = (content_w - (count as f32 - 1.0) * gap) / count as f32;
+        if col_w <= 0.0 {
+            return;
+        }
+
+        // 在每两列之间绘制 rule
+        for i in 1..count {
+            let rule_x = content_x + i as f32 * col_w + (i as f32 - 0.5) * gap - rule_w / 2.0;
+            let rule_x = rule_x.max(content_x);
+            match style.column_rule_style {
+                ColumnRuleStyleComputedValue::Solid => {
+                    self.primitives
+                        .add_fill(Rect::new(rule_x, content_y, rule_w, content_h), rule_color);
+                }
+                ColumnRuleStyleComputedValue::Dotted => {
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: rule_x + rule_w / 2.0,
+                        y1: content_y,
+                        x2: rule_x + rule_w / 2.0,
+                        y2: content_y + content_h,
+                        width: rule_w,
+                        color: rule_color,
+                        style: LineStyle::Dotted,
+                        cap: LineCap::Round,
+                    });
+                }
+                ColumnRuleStyleComputedValue::Dashed => {
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: rule_x + rule_w / 2.0,
+                        y1: content_y,
+                        x2: rule_x + rule_w / 2.0,
+                        y2: content_y + content_h,
+                        width: rule_w,
+                        color: rule_color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                }
+                _ => {
+                    // 其他样式退化为 solid
+                    self.primitives
+                        .add_fill(Rect::new(rule_x, content_y, rule_w, content_h), rule_color);
+                }
+            }
         }
     }
 
@@ -934,17 +1059,11 @@ impl Painter {
         let img_h = origin_h;
 
         // 计算 background-size
-        let (sized_w, sized_h) =
-            resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
+        let (sized_w, sized_h) = resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
 
         // 计算 background-position 偏移
-        let (offset_x, offset_y) = resolve_background_position(
-            &style.background_position,
-            origin_w,
-            origin_h,
-            sized_w,
-            sized_h,
-        );
+        let (offset_x, offset_y) =
+            resolve_background_position(&style.background_position, origin_w, origin_h, sized_w, sized_h);
 
         let positioned_x = origin_x + offset_x;
         let positioned_y = origin_y + offset_y;
@@ -1672,11 +1791,7 @@ fn resolve_background_size(
 /// 将 background-position 单个分量解析为像素偏移。
 ///
 /// `container_size` 是定位区域尺寸，`image_size` 是图片尺寸。
-fn resolve_position_component(
-    pos: &BackgroundPositionComputedValue,
-    container_size: f32,
-    image_size: f32,
-) -> f32 {
+fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_size: f32, image_size: f32) -> f32 {
     match pos {
         BackgroundPositionComputedValue::Left | BackgroundPositionComputedValue::Top => 0.0,
         BackgroundPositionComputedValue::Center => (container_size - image_size) / 2.0,
