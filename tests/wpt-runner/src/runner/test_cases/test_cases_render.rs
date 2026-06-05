@@ -917,5 +917,111 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "nonzero_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Column-rule 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── column-rule: solid ──
+        TestCase {
+            id: "render/column-rule-solid".to_string(),
+            description: "column-rule: solid 多列分隔线渲染".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div style="column-count:3;column-gap:20px;column-rule:2px solid gray;width:600px">
+<p>Column one content with some text.</p>
+<p>Column two content with some text.</p>
+<p>Column three content with some text.</p>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── column-rule: dashed ──
+        TestCase {
+            id: "render/column-rule-dashed".to_string(),
+            description: "column-rule: dashed 多列虚线分隔线渲染".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<div style="column-count:2;column-gap:30px;column-rule:3px dashed blue;width:400px">
+<p>Left column text content.</p>
+<p>Right column text content.</p>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  List-style-image 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── list-style-image: url() ──
+        TestCase {
+            id: "render/list-style-image-url".to_string(),
+            description: "list-style-image: url() 图片列表标记渲染".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<ul style="list-style-image:url('bullet.png')">
+<li>First item</li>
+<li>Second item</li>
+<li>Third item</li>
+</ul>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Empty-cells 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── empty-cells: hide ──
+        TestCase {
+            id: "render/empty-cells-hide".to_string(),
+            description: "empty-cells:hide 空单元格不显示边框和背景".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<table style="border-collapse:separate;empty-cells:hide">
+<tr><td style="background:#ccc;border:1px solid black">Content</td><td style="background:#ccc;border:1px solid black"></td></tr>
+<tr><td style="background:#ccc;border:1px solid black">Data</td><td style="background:#ccc;border:1px solid black">More</td></tr>
+</table>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── empty-cells: show (default) ──
+        TestCase {
+            id: "render/empty-cells-show".to_string(),
+            description: "empty-cells:show 空单元格显示边框和背景".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+<table style="border-collapse:separate;empty-cells:show">
+<tr><td style="background:#ccc;border:1px solid black">Content</td><td style="background:#ccc;border:1px solid black"></td></tr>
+</table>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "fill_count_ge:2".to_string(),
+            ],
+        },
     ]
 }
