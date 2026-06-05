@@ -131,6 +131,7 @@ fn test_clip_glyphs_no_clip() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
         GlyphPrimitive {
             x: 100.0,
@@ -141,6 +142,7 @@ fn test_clip_glyphs_no_clip() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
     ];
     let clip_rect = Rect::new(-50.0, -50.0, 300.0, 300.0);
@@ -164,6 +166,7 @@ fn test_clip_glyphs_partially_visible() {
         color: zero_render_foundation::color::Color::rgb(0, 0, 0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     }];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     clip_glyphs(&mut glyphs, 0, &clip_rect);
@@ -187,6 +190,7 @@ fn test_clip_glyphs_completely_outside() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
         GlyphPrimitive {
             x: -20.0,
@@ -197,6 +201,7 @@ fn test_clip_glyphs_completely_outside() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
     ];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
@@ -591,6 +596,7 @@ fn test_apply_opacity_to_new_primitives() {
         color: zero_render_foundation::color::Color::rgba(0, 0, 255, 255),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
 
     // 应用 opacity 只影响新图元
@@ -920,6 +926,7 @@ fn test_apply_opacity_all_primitive_types() {
         color: zero_render_foundation::color::Color::rgba(0, 0, 255, 200),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     prims.strokes.push(StrokePrimitive {
         x1: 0.0,
@@ -992,6 +999,7 @@ fn test_clip_glyphs_with_start_index() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
         GlyphPrimitive {
             x: 50.0,
@@ -1002,6 +1010,7 @@ fn test_clip_glyphs_with_start_index() {
             color: zero_render_foundation::color::Color::rgb(0, 0, 0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         },
     ];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);

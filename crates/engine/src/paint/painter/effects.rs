@@ -698,6 +698,7 @@ impl super::Painter {
                     font_id: default_font_id,
                     bitmap_width: None,
                     bitmap_height: None,
+                    rotation: 0.0,
                 });
         }
 
@@ -715,6 +716,7 @@ impl super::Painter {
                     font_id: default_font_id,
                     bitmap_width: None,
                     bitmap_height: None,
+                    rotation: 0.0,
                 });
         }
     }
@@ -1239,17 +1241,21 @@ impl super::Painter {
         match snap_type.axis {
             ScrollSnapAxis::X => {
                 let y = abs_y + box_node.height - 2.0;
-                self.primitives.add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
+                self.primitives
+                    .add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
             }
             ScrollSnapAxis::Y => {
                 let x = abs_x + box_node.width - 2.0;
-                self.primitives.add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
+                self.primitives
+                    .add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
             }
             ScrollSnapAxis::Both => {
                 let y = abs_y + box_node.height - 2.0;
-                self.primitives.add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
+                self.primitives
+                    .add_fill(Rect::new(abs_x, y, box_node.width, 2.0), color);
                 let x = abs_x + box_node.width - 2.0;
-                self.primitives.add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
+                self.primitives
+                    .add_fill(Rect::new(x, abs_y, 2.0, box_node.height), color);
             }
         }
 
@@ -1318,14 +1324,14 @@ impl super::Painter {
             let angle = std::f32::consts::FRAC_PI_2 * i as f32;
             let dx = depth * angle.cos();
             let dy = depth * angle.sin();
-            self.primitives
-                .add_fill(Rect::new(origin_x + dx - 1.0, origin_y + dy - 1.0, 2.0, 2.0), ring_color);
+            self.primitives.add_fill(
+                Rect::new(origin_x + dx - 1.0, origin_y + dy - 1.0, 2.0, 2.0),
+                ring_color,
+            );
         }
         let marker_color = Color::rgba(77, 128, 230, 77);
-        self.primitives.add_fill(
-            Rect::new(abs_x, abs_y + box_node.height - 3.0, 12.0, 3.0),
-            marker_color,
-        );
+        self.primitives
+            .add_fill(Rect::new(abs_x, abs_y + box_node.height - 3.0, 12.0, 3.0), marker_color);
     }
 
     /// CSS backface-visibility: hidden 指示器 — 标记元素的背面不可见。
@@ -1390,7 +1396,8 @@ impl super::Painter {
         let d = 3.0_f32;
 
         // 正面（蓝色）
-        self.primitives.add_fill(Rect::new(ox, oy, s, s), Color::rgba(51, 128, 204, 179));
+        self.primitives
+            .add_fill(Rect::new(ox, oy, s, s), Color::rgba(51, 128, 204, 179));
         // 顶面（深蓝）
         self.primitives
             .add_fill(Rect::new(ox + d, oy - d, s, d), Color::rgba(38, 89, 166, 179));
@@ -1419,16 +1426,12 @@ impl super::Painter {
         let cy = abs_y + box_node.border_top;
 
         if h_spacing > 0.0 {
-            self.primitives.add_fill(
-                Rect::new(cx, cy, h_spacing.min(box_node.content_width), 1.0),
-                color,
-            );
+            self.primitives
+                .add_fill(Rect::new(cx, cy, h_spacing.min(box_node.content_width), 1.0), color);
         }
         if v_spacing > 0.0 {
-            self.primitives.add_fill(
-                Rect::new(cx, cy, 1.0, v_spacing.min(box_node.content_height)),
-                color,
-            );
+            self.primitives
+                .add_fill(Rect::new(cx, cy, 1.0, v_spacing.min(box_node.content_height)), color);
         }
     }
 

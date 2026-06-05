@@ -220,6 +220,9 @@ pub struct GlyphPrimitive {
     pub bitmap_width: Option<u32>,
     /// 预缓存位图高度（可选）
     pub bitmap_height: Option<u32>,
+    /// 旋转角度（弧度）— 用于 writing-mode: vertical-rl/vertical-lr 时旋转字符。
+    /// 0.0 = 无旋转，std::f32::consts::FRAC_PI_2 = 顺时针 90°。
+    pub rotation: f32,
 }
 
 /// CSS filter 函数类型。

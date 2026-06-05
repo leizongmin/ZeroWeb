@@ -1274,3 +1274,84 @@ fn test_animation_transition_combo_pipeline() {
     assert!(result.timings.total_ms >= 0.0);
     assert!(!result.primitives.fills.is_empty());
 }
+
+// ── writing-mode + word-break 渲染管线集成测试 ──
+
+/// 测试 writing-mode: vertical-rl 渲染管线 — 字形旋转。
+#[test]
+fn test_writing_mode_vertical_rl_pipeline() {
+    let html = r#"<html><body><div class="vrl">Hello</div></body></html>"#;
+    let css = r#"
+        .vrl {
+            writing-mode: vertical-rl;
+            color: black;
+            font-size: 16px;
+            background: #e0ffe0;
+            height: 200px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // 应有 fill（背景）和 glyph（文本），且 glyph 旋转 90°
+    assert!(!result.primitives.fills.is_empty(), "应有背景 fill");
+    let has_rotated = result
+        .primitives
+        .glyphs
+        .iter()
+        .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);
+    assert!(has_rotated, "vertical-rl glyph 应旋转 90°");
+}
+
+/// 测试 writing-mode: horizontal-tb 渲染管线 — 字形不旋转。
+#[test]
+fn test_writing_mode_horizontal_tb_pipeline() {
+    let html = r#"<html><body><div class="htb">World</div></body></html>"#;
+    let css = r#"
+        .htb {
+            writing-mode: horizontal-tb;
+            color: black;
+            font-size: 16px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // 所有 glyph 的 rotation 应为 0.0
+    for g in &result.primitives.glyphs {
+        if g.glyph_id != 0 {
+            assert_eq!(g.rotation, 0.0, "horizontal-tb glyph 不应旋转");
+        }
+    }
+}
+
+/// 测试 word-break: break-all 渲染管线。
+#[test]
+fn test_word_break_break_all_pipeline() {
+    let html = r#"<html><body><div class="ba">Supercalifragilistic</div></body></html>"#;
+    let css = r#"
+        .ba {
+            word-break: break-all;
+            color: black;
+            font-size: 14px;
+            width: 60px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // break-all 应生成字形
+    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    assert!(glyph_count > 0, "break-all 应生成字形");
+}
+
+/// 测试 word-break: keep-all 渲染管线。
+#[test]
+fn test_word_break_keep_all_pipeline() {
+    let html = r#"<html><body><div class="ka">中文文本测试</div></body></html>"#;
+    let css = r#"
+        .ka {
+            word-break: keep-all;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // keep-all 应生成字形（CJK 作为整体）
+    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    assert!(glyph_count > 0, "keep-all 应生成字形");
+}

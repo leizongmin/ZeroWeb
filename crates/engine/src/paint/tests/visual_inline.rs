@@ -892,3 +892,100 @@ fn test_overflow_wrap_normal_no_break() {
             .is_empty()
     );
 }
+
+// ── writing-mode 渲染测试 ──
+
+/// 测试 writing-mode: horizontal-tb（默认）字形不旋转。
+#[test]
+fn test_writing_mode_horizontal_no_rotation() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello</p></body></html>",
+        "p { color: black; font-size: 16px; writing-mode: horizontal-tb; }",
+    );
+    // 所有 glyph 的 rotation 应为 0.0
+    for g in &result.primitives.glyphs {
+        if g.glyph_id != 0 {
+            assert_eq!(g.rotation, 0.0, "horizontal-tb glyph 不应旋转");
+        }
+    }
+}
+
+/// 测试 writing-mode: vertical-rl 字形旋转 90°。
+#[test]
+fn test_writing_mode_vertical_rl_rotated() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello</p></body></html>",
+        "p { color: black; font-size: 16px; writing-mode: vertical-rl; }",
+    );
+    // 所有非占位 glyph 的 rotation 应为 FRAC_PI_2 (~1.5708)
+    let has_rotated = result
+        .primitives
+        .glyphs
+        .iter()
+        .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);
+    assert!(has_rotated, "vertical-rl glyph 应旋转 90°");
+}
+
+/// 测试 writing-mode: vertical-lr 字形旋转 90°。
+#[test]
+fn test_writing_mode_vertical_lr_rotated() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>World</p></body></html>",
+        "p { color: black; font-size: 16px; writing-mode: vertical-lr; }",
+    );
+    let has_rotated = result
+        .primitives
+        .glyphs
+        .iter()
+        .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);
+    assert!(has_rotated, "vertical-lr glyph 应旋转 90°");
+}
+
+// ── word-break 渲染测试 ──
+
+/// 测试 word-break: break-all 渲染不崩溃。
+#[test]
+fn test_word_break_break_all_renders() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Supercalifragilisticexpialidocious</p></body></html>",
+        "p { color: black; font-size: 14px; word-break: break-all; width: 60px; }",
+    );
+    // break-all 应生成字形（不崩溃），且可能产生多行
+    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    assert!(glyph_count > 0, "break-all 应生成字形");
+}
+
+/// 测试 word-break: keep-all 渲染不崩溃。
+#[test]
+fn test_word_break_keep_all_renders() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>中文文本内容测试</p></body></html>",
+        "p { color: black; font-size: 14px; word-break: keep-all; }",
+    );
+    // keep-all 应生成字形（CJK 文本作为整体）
+    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    assert!(glyph_count > 0, "keep-all 应生成字形");
+}
+
+/// 测试 word-break: normal 渲染正常。
+#[test]
+fn test_word_break_normal_renders() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello World</p></body></html>",
+        "p { color: black; font-size: 14px; word-break: normal; }",
+    );
+    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    assert!(glyph_count > 0, "normal 应生成字形");
+}
