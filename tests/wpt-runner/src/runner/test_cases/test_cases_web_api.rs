@@ -1326,5 +1326,129 @@ if (typeof structuredClone === 'function') {
                 "no_panic".into(),
             ],
         },
+        // ── CSS 渲染管线集成测试 ──
+        TestCase {
+            id: "web-api/css-filter-blur-page".into(),
+            description: "CSS filter blur 在完整页面中的渲染".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+            <html><body style="margin: 0; padding: 20px; font-family: sans-serif;">
+            <header style="filter: blur(0); background: #1976D2; color: white; padding: 16px;">
+                <h1 style="margin: 0; font-size: 24px;">ZeroWeb Browser</h1>
+                <p style="margin: 4px 0 0; font-size: 14px;">A Rust-based browser</p>
+            </header>
+            <main style="padding: 20px;">
+                <div style="background: #f5f5f5; padding: 16px; margin: 8px 0; filter: blur(1px);">
+                    <h2 style="font-size: 18px; color: #333;">Slightly Blurred Section</h2>
+                    <p style="font-size: 14px; color: #666;">Content with a subtle blur effect applied.</p>
+                </div>
+            </main>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "has_fill_primitives".into(),
+                "has_glyph_primitives".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/css-text-overflow-page".into(),
+            description: "text-overflow: ellipsis 在卡片列表中的渲染".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+            <html><body style="margin: 0; padding: 16px; font-family: sans-serif;">
+            <h2 style="font-size: 20px; color: #333;">Article List</h2>
+            <div style="display: flex; flex-direction: column; gap: 8px; width: 350px;">
+                <div style="padding: 12px; border: 1px solid #e0e0e0; background: white;">
+                    <h3 style="margin: 0 0 4px; font-size: 16px; color: #1976D2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Building Modern Web Applications with Rust and WebAssembly</h3>
+                    <p style="margin: 0; font-size: 12px; color: #888;">2026-06-05</p>
+                </div>
+                <div style="padding: 12px; border: 1px solid #e0e0e0; background: white;">
+                    <h3 style="margin: 0 0 4px; font-size: 16px; color: #1976D2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">CSS Grid Layout: A Complete Guide for Responsive Design</h3>
+                    <p style="margin: 0; font-size: 12px; color: #888;">2026-06-04</p>
+                </div>
+                <div style="padding: 12px; border: 1px solid #e0e0e0; background: white;">
+                    <h3 style="margin: 0 0 4px; font-size: 16px; color: #1976D2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Short Title</h3>
+                    <p style="margin: 0; font-size: 12px; color: #888;">2026-06-03</p>
+                </div>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "has_fill_primitives".into(),
+                "has_glyph_primitives".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/css-letter-spacing-headings".into(),
+            description: "letter-spacing 在标题和正文中的差异化应用".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+            <html><body style="margin: 0; padding: 24px;">
+            <article style="max-width: 600px;">
+                <h1 style="font-size: 28px; letter-spacing: 2px; color: #1a1a1a; margin: 0 0 8px;">WELL SPACED HEADING</h1>
+                <h2 style="font-size: 20px; letter-spacing: 1px; color: #444; margin: 0 0 16px;">Subheading With Spacing</h2>
+                <p style="font-size: 15px; letter-spacing: 0.3px; word-spacing: 1px; line-height: 1.7; color: #333;">
+                    Body text with subtle letter and word spacing for improved readability.
+                    The additional spacing helps with legibility in longer paragraphs.
+                </p>
+                <blockquote style="letter-spacing: 0.5px; font-style: italic; color: #666; border-left: 3px solid #1976D2; padding-left: 12px; margin: 16px 0;">
+                    A quote with slightly increased letter spacing for emphasis.
+                </blockquote>
+            </article>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "has_glyph_primitives".into(),
+                "glyph_count_ge:20".into(),
+            ],
+        },
+        TestCase {
+            id: "web-api/navigation-page-with-filters".into(),
+            description: "导航栏 + filter 效果的综合页面".into(),
+            category: "web-api".into(),
+            html: r#"<!DOCTYPE html>
+            <html><body style="margin: 0; font-family: sans-serif;">
+            <nav style="background: #263238; padding: 12px 24px; display: flex; align-items: center; gap: 16px;">
+                <span style="color: white; font-size: 18px; font-weight: bold; letter-spacing: 1px;">ZeroWeb</span>
+                <a style="color: #B0BEC5; font-size: 14px; text-decoration: none;">Docs</a>
+                <a style="color: #B0BEC5; font-size: 14px; text-decoration: none;">Blog</a>
+                <a style="color: #B0BEC5; font-size: 14px; text-decoration: none;">About</a>
+            </nav>
+            <main style="padding: 32px 24px; max-width: 800px;">
+                <div style="margin-bottom: 24px;">
+                    <h1 style="font-size: 32px; color: #1a1a1a; margin: 0 0 8px; letter-spacing: -0.5px;">Welcome to ZeroWeb</h1>
+                    <p style="font-size: 16px; color: #666; word-spacing: 2px;">A fast secure and modern browser built with Rust</p>
+                </div>
+                <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 200px; padding: 20px; background: #E3F2FD; border-radius: 8px;">
+                        <h3 style="font-size: 16px; color: #1565C0; margin: 0 0 8px;">Fast</h3>
+                        <p style="font-size: 13px; color: #333; margin: 0; letter-spacing: 0.2px;">Optimized rendering pipeline</p>
+                    </div>
+                    <div style="flex: 1; min-width: 200px; padding: 20px; background: #E8F5E9; filter: brightness(1.05);">
+                        <h3 style="font-size: 16px; color: #2E7D32; margin: 0 0 8px;">Secure</h3>
+                        <p style="font-size: 13px; color: #333; margin: 0; letter-spacing: 0.2px;">Sandboxed execution</p>
+                    </div>
+                    <div style="flex: 1; min-width: 200px; padding: 20px; background: #FFF3E0; filter: grayscale(0.1);">
+                        <h3 style="font-size: 16px; color: #E65100; margin: 0 0 8px;">Modern</h3>
+                        <p style="font-size: 13px; color: #333; margin: 0; letter-spacing: 0.2px;">Latest web standards</p>
+                    </div>
+                </div>
+            </main>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "has_fill_primitives".into(),
+                "has_glyph_primitives".into(),
+                "glyph_count_ge:20".into(),
+            ],
+        },
     ]
 }

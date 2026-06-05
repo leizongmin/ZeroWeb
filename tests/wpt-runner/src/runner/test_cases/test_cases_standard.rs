@@ -518,5 +518,127 @@ pub fn standard_compliance_tests() -> Vec<TestCase> {
             css: "div { width: 400px; height: 300px; background-color: #f0f0f0; }".to_string(),
             assertions: vec!["render_completes".to_string(), "no_panic".to_string()],
         },
+        // ── 综合标准渲染测试 ──
+        TestCase {
+            id: "standard/css-spacing-render".to_string(),
+            description: "CSS spacing 属性组合渲染标准验证".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width: 300px; color: #222;">
+                <p style="font-size: 16px; letter-spacing: 3px;">Wide letter spacing text</p>
+                <p style="font-size: 16px; word-spacing: 10px;">Wide word spacing text content</p>
+                <p style="font-size: 16px; letter-spacing: -1px; word-spacing: -3px;">Tight spacing text</p>
+                <p style="font-size: 16px; letter-spacing: 0; word-spacing: 0;">Normal spacing text</p>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_glyph_primitives".to_string(),
+                "glyph_count_ge:20".to_string(),
+            ],
+        },
+        TestCase {
+            id: "standard/text-overflow-standard".to_string(),
+            description: "text-overflow 标准合规性验证".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #333; font-size: 14px; border: 1px solid #ddd; padding: 4px;">
+                This text should be truncated with ellipsis because it is too long
+            </div>
+            <div style="width: 150px; white-space: nowrap; overflow: hidden; text-overflow: clip; color: #333; font-size: 14px; border: 1px solid #ddd; padding: 4px;">
+                This text should be clipped without ellipsis
+            </div>
+            <div style="width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #333; font-size: 14px; border: 1px solid #ddd; padding: 4px;">
+                Short
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        TestCase {
+            id: "standard/filter-all-functions".to_string(),
+            description: "CSS filter 所有函数类型渲染验证".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="filter: blur(2px); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Blur</div>
+            <div style="filter: brightness(1.5); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Brightness</div>
+            <div style="filter: contrast(1.2); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Contrast</div>
+            <div style="filter: grayscale(1); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Grayscale</div>
+            <div style="filter: hue-rotate(90deg); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Hue Rotate</div>
+            <div style="filter: invert(1); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Invert</div>
+            <div style="filter: saturate(2); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Saturate</div>
+            <div style="filter: sepia(1); background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">Sepia</div>
+            <div style="filter: none; background: #e0e0e0; padding: 8px; margin: 4px; color: #333; font-size: 14px;">No Filter</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        TestCase {
+            id: "standard/combined-css-features".to_string(),
+            description: "CSS 多属性组合渲染验证".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body style="margin: 0; padding: 16px;">
+            <div style="max-width: 500px; margin: 0 auto;">
+                <h1 style="font-size: 24px; letter-spacing: 1px; color: #1a1a1a; margin: 0 0 12px; text-align: center;">Combined Features</h1>
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <div style="flex: 1; padding: 12px; background: #E3F2FD; border-radius: 4px; filter: brightness(1.1);">
+                        <h3 style="font-size: 14px; color: #1565C0; margin: 0 0 4px; letter-spacing: 0.5px;">Card A</h3>
+                        <p style="font-size: 12px; color: #333; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Long text that should be truncated in this flex card</p>
+                    </div>
+                    <div style="flex: 1; padding: 12px; background: #E8F5E9; border-radius: 4px; filter: grayscale(0.2);">
+                        <h3 style="font-size: 14px; color: #2E7D32; margin: 0 0 4px; letter-spacing: 0.5px;">Card B</h3>
+                        <p style="font-size: 12px; color: #333; margin: 0;">Normal text in second card</p>
+                    </div>
+                </div>
+                <p style="font-size: 13px; color: #666; letter-spacing: 0.3px; word-spacing: 1px; line-height: 1.6;">
+                    Footer text with subtle spacing adjustments for readability. Testing multiple CSS properties working together.
+                </p>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+                "glyph_count_ge:10".to_string(),
+            ],
+        },
+        TestCase {
+            id: "standard/form-styled-spacing".to_string(),
+            description: "表单 + 间距 + overflow 组合".to_string(),
+            category: "html".to_string(),
+            html: r#"<html><body style="padding: 20px;">
+            <form style="max-width: 350px;">
+                <label style="display: block; font-size: 14px; color: #333; letter-spacing: 0.5px; margin-bottom: 4px;">Username</label>
+                <input style="width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; box-sizing: border-box; letter-spacing: 1px;" value="user@example.com">
+                <div style="height: 8px;"></div>
+                <label style="display: block; font-size: 14px; color: #333; letter-spacing: 0.5px; margin-bottom: 4px;">Password</label>
+                <input style="width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; box-sizing: border-box;" type="password" value="secret">
+                <div style="height: 12px;"></div>
+                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #888;">
+                    Error message that is quite long and should be truncated with an ellipsis marker
+                </div>
+            </form>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
     ]
 }
