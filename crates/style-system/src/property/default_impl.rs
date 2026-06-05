@@ -77,6 +77,8 @@ impl Default for ComputedStyle {
             text_align: TextAlignValue::Start,
             text_decoration: TextDecorationValue::None,
             text_decoration_line: TextDecorationLineValue::None,
+            text_decoration_color: ColorValue::CurrentColor,
+            text_decoration_style: TextDecorationStyleValue::Solid,
             text_transform: TextTransformValue::None,
             letter_spacing: LengthValue::Px(0.0),
             word_spacing: LengthValue::Px(0.0),

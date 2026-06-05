@@ -1088,3 +1088,207 @@ fn test_user_select_none_pipeline() {
         "user-select 应为 None"
     );
 }
+
+/// CSS text-decoration-style 管线集成测试。
+///
+/// 解析 text-decoration-style: dotted，验证样式系统计算值。
+#[test]
+fn test_text_decoration_style_dotted_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "dotted");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .dotted { text-decoration: underline dotted; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    assert_eq!(
+        span_style.text_decoration_line,
+        zero_style_system::property::TextDecorationLineValue::Underline,
+        "text-decoration-line 应为 Underline"
+    );
+    assert_eq!(
+        span_style.text_decoration_style,
+        zero_style_system::property::TextDecorationStyleValue::Dotted,
+        "text-decoration-style 应为 Dotted"
+    );
+}
+
+/// CSS text-decoration-style: dashed 管线集成测试。
+#[test]
+fn test_text_decoration_style_dashed_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "dashed");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .dashed { text-decoration: line-through dashed red; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    assert_eq!(
+        span_style.text_decoration_line,
+        zero_style_system::property::TextDecorationLineValue::LineThrough,
+        "text-decoration-line 应为 LineThrough"
+    );
+    assert_eq!(
+        span_style.text_decoration_style,
+        zero_style_system::property::TextDecorationStyleValue::Dashed,
+        "text-decoration-style 应为 Dashed"
+    );
+}
+
+/// CSS text-decoration-style: wavy 管线集成测试。
+#[test]
+fn test_text_decoration_style_wavy_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "wavy");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .wavy { text-decoration-style: wavy; text-decoration-line: underline; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    assert_eq!(
+        span_style.text_decoration_style,
+        zero_style_system::property::TextDecorationStyleValue::Wavy,
+        "text-decoration-style 应为 Wavy"
+    );
+}
+
+/// CSS text-decoration-color 自定义颜色管线集成测试。
+///
+/// 通过长属性设置 text-decoration-color，验证样式系统计算值。
+#[test]
+fn test_text_decoration_color_custom_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "colored");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .colored { text-decoration-line: underline; text-decoration-color: red; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    // red 解析为 Named("red")，apply 会转为 Rgba
+    assert!(
+        !matches!(span_style.text_decoration_color, zero_css_parser::values::ColorValue::CurrentColor),
+        "text-decoration-color 不应为 CurrentColor，应为 red"
+    );
+}
+
+/// CSS text-decoration 简写（命名颜色）管线集成测试。
+#[test]
+fn test_text_decoration_shorthand_named_color_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "sh");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .sh { text-decoration: underline dotted red; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    assert_eq!(
+        span_style.text_decoration_line,
+        zero_style_system::property::TextDecorationLineValue::Underline,
+        "text-decoration-line 应为 Underline"
+    );
+    assert_eq!(
+        span_style.text_decoration_style,
+        zero_style_system::property::TextDecorationStyleValue::Dotted,
+        "text-decoration-style 应为 Dotted"
+    );
+}
+
+/// CSS text-decoration double 样式管线集成测试。
+#[test]
+fn test_text_decoration_style_double_pipeline() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let span = doc.create_element("span");
+    doc.set_attribute(span, "class", "dbl");
+    doc.append_child(body, span).unwrap();
+
+    let css = r#"
+        .dbl { text-decoration: overline double blue; }
+    "#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let span_style = styles.get(&span).expect("span 应有计算样式");
+    assert_eq!(
+        span_style.text_decoration_line,
+        zero_style_system::property::TextDecorationLineValue::Overline,
+        "text-decoration-line 应为 Overline"
+    );
+    assert_eq!(
+        span_style.text_decoration_style,
+        zero_style_system::property::TextDecorationStyleValue::Double,
+        "text-decoration-style 应为 Double"
+    );
+}

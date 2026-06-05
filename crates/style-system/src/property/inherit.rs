@@ -367,6 +367,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.text_decoration_line = default_style.text_decoration_line;
             true
         }
+        "text-decoration-color" => {
+            style.text_decoration_color = default_style.text_decoration_color;
+            true
+        }
+        "text-decoration-style" => {
+            style.text_decoration_style = default_style.text_decoration_style;
+            true
+        }
         "text-transform" => {
             style.text_transform = default_style.text_transform;
             true

@@ -10,10 +10,11 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, LineCap, LineStyle, ShadowPrimitive, StrokePrimitive,
 };
+use zero_css_parser::values::ColorValue;
 use zero_style_system::{
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
     BackgroundRepeatComputedValue, BackgroundSizeComputedValue, ComputedStyle, FilterComputedValue,
-    MixBlendModeComputedValue, ResizeValue, TextDecorationLineValue,
+    MixBlendModeComputedValue, ResizeValue, TextDecorationLineValue, TextDecorationStyleValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -138,40 +139,104 @@ impl super::Painter {
 
     /// 绘制文本装饰线（underline / overline / line-through）。
     ///
-    /// 支持自定义装饰颜色（CSS `text-decoration-color` 通过简写传递）
-    /// 和装饰样式（solid/dotted/dashed/wavy/double）。
-    pub(crate) fn paint_text_decoration(
+    /// 支持自定义装饰颜色（CSS `text-decoration-color`）和装饰样式
+    /// （solid/dotted/dashed/wavy/double）。直接从 ComputedStyle 读取样式信息。
+    pub(crate) fn paint_text_decoration_from_style(
         &mut self,
         base_x: f32,
         baseline_y: f32,
         font_size: f32,
         total_width: f32,
-        color: Color,
-        decoration: &TextDecorationLineValue,
+        text_color: Color,
+        style: &ComputedStyle,
     ) {
         if total_width <= 0.0 {
             return;
         }
+
+        let y_offset = match &style.text_decoration_line {
+            TextDecorationLineValue::None | TextDecorationLineValue::Blink => return,
+            TextDecorationLineValue::Underline => font_size * 0.15,
+            TextDecorationLineValue::Overline => -font_size,
+            TextDecorationLineValue::LineThrough => -font_size * 0.35,
+        };
+        let y = baseline_y + y_offset;
+
+        // 装饰颜色：CurrentColor 使用文本颜色
+        let color = if matches!(style.text_decoration_color, ColorValue::CurrentColor) {
+            text_color
+        } else {
+            color_value_to_render(&style.text_decoration_color)
+        };
+
         let line_width = (font_size * 0.06).max(1.0);
 
-        match decoration {
-            TextDecorationLineValue::None => {}
-            TextDecorationLineValue::Underline => {
-                let y = baseline_y + font_size * 0.15;
-                self.primitives
-                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+        self.paint_decoration_line(base_x, y, font_size, total_width, line_width, color, &style.text_decoration_style);
+    }
+
+    /// 绘制文本装饰线的底层实现。
+    ///
+    /// 参数已预计算以避免过多参数。
+    fn paint_decoration_line(
+        &mut self,
+        base_x: f32,
+        y: f32,
+        font_size: f32,
+        total_width: f32,
+        line_width: f32,
+        color: Color,
+        decoration_style: &TextDecorationStyleValue,
+    ) {
+        match decoration_style {
+            TextDecorationStyleValue::Solid => {
+                self.primitives.add_fill(Rect::new(base_x, y, total_width, line_width), color);
             }
-            TextDecorationLineValue::Overline => {
-                let y = baseline_y - font_size;
-                self.primitives
-                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+            TextDecorationStyleValue::Dotted => {
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: base_x,
+                    y1: y + line_width / 2.0,
+                    x2: base_x + total_width,
+                    y2: y + line_width / 2.0,
+                    width: line_width,
+                    color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
             }
-            TextDecorationLineValue::LineThrough => {
-                let y = baseline_y - font_size * 0.35;
-                self.primitives
-                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+            TextDecorationStyleValue::Dashed => {
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: base_x,
+                    y1: y + line_width / 2.0,
+                    x2: base_x + total_width,
+                    y2: y + line_width / 2.0,
+                    width: line_width,
+                    color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
             }
-            TextDecorationLineValue::Blink => {}
+            TextDecorationStyleValue::Double => {
+                let gap = line_width * 2.0;
+                self.primitives.add_fill(Rect::new(base_x, y, total_width, line_width), color);
+                self.primitives.add_fill(
+                    Rect::new(base_x, y + gap + line_width, total_width, line_width),
+                    color,
+                );
+            }
+            TextDecorationStyleValue::Wavy => {
+                // 波浪线：用交替偏移的小填充矩形近似正弦波
+                let wave_len = (font_size * 1.5).max(8.0);
+                let amplitude = line_width * 2.0;
+                let steps = ((total_width / wave_len * 8.0).ceil() as usize).max(4);
+                let step_w = total_width / steps as f32;
+                for i in 0..steps {
+                    let sx = base_x + i as f32 * step_w;
+                    // sin 近似：交替上下偏移
+                    let dy = if i % 2 == 0 { -amplitude } else { amplitude };
+                    self.primitives
+                        .add_fill(Rect::new(sx, y + dy, step_w, line_width), color);
+                }
+            }
         }
     }
 

@@ -17,7 +17,8 @@ use zero_style_system::{
     BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedValue, BorderImageRepeatComputedValue,
     BorderImageSliceComputedValue, BorderImageSourceComputedValue, BorderImageWidthComputedValue, BorderStyleValue,
     BoxShadowComputedValue, ComputedStyle, ContainComputedValue, FilterComputedValue, MixBlendModeComputedValue,
-    OutlineStyleValue, ResizeValue, TextDecorationLineValue, TextOverflowValue, TextTransformValue,
+    OutlineStyleValue, ResizeValue, TextDecorationLineValue, TextDecorationStyleValue, TextOverflowValue,
+    TextTransformValue,
 };
 
 use crate::paint::color::{color_value_to_render, named_color_to_render};
@@ -734,10 +735,13 @@ fn test_paint_text_decoration_zero_negative_width() {
     let mut painter = Painter::new();
     let color = Color::rgb(0, 0, 0);
 
-    painter.paint_text_decoration(0.0, 16.0, 16.0, 0.0, color, &TextDecorationLineValue::Underline);
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 0.0, color, &style);
     assert!(painter.primitives().fills.is_empty(), "宽度为 0 不应生成装饰填充");
 
-    painter.paint_text_decoration(0.0, 16.0, 16.0, -10.0, color, &TextDecorationLineValue::Underline);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, -10.0, color, &style);
     assert!(painter.primitives().fills.is_empty(), "负宽度不应生成装饰填充");
 }
 
@@ -1044,4 +1048,167 @@ fn test_paint_contain_strict_triggers_clip() {
 
     // contain:strict 应触发裁剪
     assert!(!painter.primitives().fills.is_empty(), "contain:strict 应正常渲染");
+}
+
+// --- text-decoration-style / text-decoration-color 渲染测试 ---
+
+/// 测试 text-decoration-style: solid 生成单个填充矩形。
+#[test]
+fn test_decoration_style_solid() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Solid;
+
+    painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1, "solid 应生成 1 个填充");
+    assert_eq!(fills[0].color, Color::rgb(0, 0, 255));
+}
+
+/// 测试 text-decoration-style: double 生成两个平行填充矩形。
+#[test]
+fn test_decoration_style_double() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Double;
+
+    painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(255, 0, 0), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 2, "double 应生成 2 个平行填充");
+    // 第二条线应在第一条线下方
+    assert!(fills[1].rect.origin.y > fills[0].rect.origin.y, "double 第二条线应在第一条下方");
+}
+
+/// 测试 text-decoration-style: dotted 生成 StrokePrimitive（Dotted）。
+#[test]
+fn test_decoration_style_dotted() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Dotted;
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 128, 0), &style);
+
+    assert!(!painter.primitives().strokes.is_empty(), "dotted 应生成 stroke 图元");
+    let stroke = &painter.primitives().strokes[0];
+    assert!(matches!(stroke.style, zero_render_foundation::primitive::LineStyle::Dotted));
+}
+
+/// 测试 text-decoration-style: dashed 生成 StrokePrimitive（Dashed）。
+#[test]
+fn test_decoration_style_dashed() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Dashed;
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(128, 0, 128), &style);
+
+    assert!(!painter.primitives().strokes.is_empty(), "dashed 应生成 stroke 图元");
+    let stroke = &painter.primitives().strokes[0];
+    assert!(matches!(stroke.style, zero_render_foundation::primitive::LineStyle::Dashed));
+}
+
+/// 测试 text-decoration-style: wavy 生成多个交替偏移的填充矩形（正弦波近似）。
+#[test]
+fn test_decoration_style_wavy() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Wavy;
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 0, 0), &style);
+
+    let fills = &painter.primitives().fills;
+    assert!(fills.len() >= 4, "wavy 应生成多个填充矩形（正弦波近似）");
+    // 验证交替偏移：相邻矩形的 y 值应不同
+    let y0 = fills[0].rect.origin.y;
+    let y1 = fills[1].rect.origin.y;
+    assert!((y0 - y1).abs() > 0.0, "wavy 相邻矩形 y 应不同");
+}
+
+/// 测试 text-decoration-color 使用自定义颜色而非 CurrentColor。
+#[test]
+fn test_decoration_custom_color() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_color = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    // 应使用自定义红色，而非文本蓝色
+    assert_eq!(fills[0].color.r, 255);
+    assert_eq!(fills[0].color.g, 0);
+    assert_eq!(fills[0].color.b, 0);
+}
+
+/// 测试 text-decoration-color: CurrentColor 使用文本颜色。
+#[test]
+fn test_decoration_current_color() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_color = zero_css_parser::values::ColorValue::CurrentColor;
+
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 200, 0), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    // 应使用传入的文本颜色
+    assert_eq!(fills[0].color, Color::rgb(0, 200, 0));
+}
+
+/// 测试 text-decoration-line: overline 的 y 位置。
+#[test]
+fn test_decoration_overline_position() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Overline;
+
+    painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    // overline 应在基线上方一个字号的位置
+    let expected_y = 50.0 - 20.0; // baseline_y - font_size
+    assert!((fills[0].rect.origin.y - expected_y).abs() < 1.0);
+}
+
+/// 测试 text-decoration-line: line-through 的 y 位置。
+#[test]
+fn test_decoration_line_through_position() {
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::LineThrough;
+
+    painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    // line-through 应在基线上方约 35% 字号处
+    let expected_y = 50.0 - 20.0 * 0.35;
+    assert!((fills[0].rect.origin.y - expected_y).abs() < 1.0);
+}
+
+/// 测试 text-decoration-line: blink 和 none 不生成装饰。
+#[test]
+fn test_decoration_blink_none_no_output() {
+    let mut painter = Painter::new();
+
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Blink;
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style);
+    assert!(painter.primitives().fills.is_empty(), "blink 不应生成装饰");
+
+    style.text_decoration_line = TextDecorationLineValue::None;
+    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style);
+    assert!(painter.primitives().fills.is_empty() && painter.primitives().strokes.is_empty(),
+        "none 不应生成装饰");
 }
