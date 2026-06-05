@@ -1830,15 +1830,14 @@ impl super::Painter {
         let x = abs_x + w - 16.0;
         let y = abs_y + 2.0;
         // 背景框
-        self.primitives.add_fill(Rect::new(x, y, 14.0, 10.0), Color::rgba(240, 240, 240, 200));
+        self.primitives
+            .add_fill(Rect::new(x, y, 14.0, 10.0), Color::rgba(240, 240, 240, 200));
         // 颜色标记方块
         self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 12.0, 8.0), color);
         // 带有虚线边框表示"包含"
         let border = Color::rgba(60, 60, 60, 180);
-        self.primitives
-            .add_fill(Rect::new(x, y, 14.0, 1.0), border);
-        self.primitives
-            .add_fill(Rect::new(x, y + 9.0, 14.0, 1.0), border);
+        self.primitives.add_fill(Rect::new(x, y, 14.0, 1.0), border);
+        self.primitives.add_fill(Rect::new(x, y + 9.0, 14.0, 1.0), border);
         let _ = label;
     }
 
@@ -1890,7 +1889,8 @@ impl super::Painter {
         let y = abs_y + h - 8.0;
         let color = Color::rgba(100, 160, 60, 200);
         // 克隆标记：两个重叠的小方块
-        self.primitives.add_fill(Rect::new(x, y, 6.0, 6.0), Color::rgba(240, 240, 240, 200));
+        self.primitives
+            .add_fill(Rect::new(x, y, 6.0, 6.0), Color::rgba(240, 240, 240, 200));
         self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 5.0, 5.0), color);
         self.primitives.add_fill(Rect::new(x + 2.0, y + 2.0, 5.0, 5.0), color);
     }
@@ -1971,9 +1971,7 @@ impl super::Painter {
         let h = box_node.height;
 
         // break-before / page-break-before
-        if !matches!(style.break_before, BreakValue::Auto)
-            || !matches!(style.page_break_before, PageBreakValue::Auto)
-        {
+        if !matches!(style.break_before, BreakValue::Auto) || !matches!(style.page_break_before, PageBreakValue::Auto) {
             let color = Color::rgba(200, 60, 60, 200);
             // 顶部断点标记：双横线
             self.primitives.add_fill(Rect::new(abs_x, abs_y, w, 1.0), color);
@@ -1981,9 +1979,7 @@ impl super::Painter {
         }
 
         // break-after / page-break-after
-        if !matches!(style.break_after, BreakValue::Auto)
-            || !matches!(style.page_break_after, PageBreakValue::Auto)
-        {
+        if !matches!(style.break_after, BreakValue::Auto) || !matches!(style.page_break_after, PageBreakValue::Auto) {
             let color = Color::rgba(60, 60, 200, 200);
             // 底部断点标记：双横线
             self.primitives
@@ -1999,9 +1995,11 @@ impl super::Painter {
             let color = Color::rgba(200, 160, 40, 200);
             // 内部断点标记：四周虚线框
             self.primitives.add_fill(Rect::new(abs_x, abs_y, w, 1.0), color);
-            self.primitives.add_fill(Rect::new(abs_x, abs_y + h - 1.0, w, 1.0), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x, abs_y + h - 1.0, w, 1.0), color);
             self.primitives.add_fill(Rect::new(abs_x, abs_y, 1.0, h), color);
-            self.primitives.add_fill(Rect::new(abs_x + w - 1.0, abs_y, 1.0, h), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x + w - 1.0, abs_y, 1.0, h), color);
         }
     }
 
@@ -2110,7 +2108,8 @@ impl super::Painter {
         let x = abs_x + 2.0;
         let y = abs_y + 2.0;
         // 容器标记：方块 + 标签背景
-        self.primitives.add_fill(Rect::new(x, y, 12.0, 8.0), Color::rgba(240, 240, 240, 200));
+        self.primitives
+            .add_fill(Rect::new(x, y, 12.0, 8.0), Color::rgba(240, 240, 240, 200));
         self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 10.0, 6.0), color);
         // container-name 存在时额外标记
         if style.container_name.is_some() {

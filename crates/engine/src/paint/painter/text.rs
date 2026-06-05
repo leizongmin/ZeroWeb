@@ -6,13 +6,14 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{ColorValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{InlineFormattingContext, LayoutBox, WordBreakMode, estimate_char_width};
+use zero_layout_engine::{InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TextOverflowValue, WhiteSpaceValue,
+    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TextAlignLastValue, TextAlignValue, TextOverflowValue,
+    WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -555,7 +556,26 @@ impl super::Painter {
                 _ => WordBreakMode::Normal,
             };
 
+            // 将 CSS text-align 映射到布局引擎的 TextAlign
+            let text_align = match style.text_align {
+                TextAlignValue::Left | TextAlignValue::Start => TextAlign::Left,
+                TextAlignValue::Right | TextAlignValue::End => TextAlign::Right,
+                TextAlignValue::Center => TextAlign::Center,
+                TextAlignValue::Justify => TextAlign::Justify,
+            };
+
+            // 将 CSS text-align-last 映射到布局引擎（Auto = 跟随 text-align）
+            let text_align_last = match &style.text_align_last {
+                TextAlignLastValue::Auto => None,
+                TextAlignLastValue::Left | TextAlignLastValue::Start => Some(TextAlign::Left),
+                TextAlignLastValue::Right | TextAlignLastValue::End => Some(TextAlign::Right),
+                TextAlignLastValue::Center => Some(TextAlign::Center),
+                TextAlignLastValue::Justify => Some(TextAlign::Justify),
+            };
+
             let mut inline_ctx = InlineFormattingContext::new(container_width)
+                .with_text_align(text_align)
+                .with_text_align_last(text_align_last)
                 .with_break_word(break_word)
                 .with_no_wrap(no_wrap)
                 .with_preserve_whitespace(preserve_whitespace)
