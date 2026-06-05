@@ -3,6 +3,7 @@
 mod advanced;
 mod advanced_part2;
 mod basic;
+mod counters;
 mod effects;
 mod helpers;
 mod visual;

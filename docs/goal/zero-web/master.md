@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,387 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1013 个用例（21 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试）
+**执行状态**: 16/16 crate 已实现，~11,427 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1013 个用例（21 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -100,12 +100,29 @@
 | All Three New Properties | 1 | box-shadow + background-image + text-shadow 全组合 |
 | Box Shadow Spread Only | 1 | box-shadow 仅 spread-radius 渲染验证 |
 | CSS Typography + Form Pipeline | 43 | font family/size/weight、text align/decoration/transform/spacing/line-height、named/rgb/hsl/hex colors、border styles/radius、box-shadow multiple/inset、text-shadow、linear/radial gradients、opacity、visibility、overflow hidden、CSS variables + fallback、absolute positioning、z-index stacking、display inline-block/none/flex/grid、box-sizing、calc()、2D transforms、filter blur/grayscale、composite pages（landing/styled-form/pricing/blog/dashboard） |
+| CSS Counter Pipeline | 2 | counter-reset/increment 管线、counter-set 管线 |
+| TransformPrimitive Pipeline | 3 | transform-origin rotate 渲染管线、scale 渲染管线、translate-only 不生成 TransformPrimitive |
 
 ---
 
 ## 最近完成的改进
 
-### -95. CSS Transition 管线集成（本轮，~11,387 测试）
+### -96. TransformPrimitive 渲染 + CSS 计数器渲染（本轮，~11,427 测试）
+
+实现 CSS 变换完整渲染（rotate/scale/skew + transform-origin）和 CSS 计数器跟踪系统：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| render-foundation/primitive | **TransformPrimitive**：2D 仿射变换矩阵图元（a/b/c/d/tx/ty + origin_x/y），RenderPrimitives.transforms 字段 + add_transform() + len/is_empty/stats/cull 更新 | — |
+| engine/paint/helpers | **compute_transform_matrix()**：从 ComputedStyle 计算 2D 仿射矩阵，支持 translate/rotate/scale/skew + 3D 降级 + transform-origin 偏移；**apply_transform()**：管线集成辅助 | +11 |
+| engine/paint/painter | **apply_transform 管线集成**：paint_node 中为含非平移变换的元素生成 TransformPrimitive | — |
+| engine/paint/painter | **update_counters()**：CSS 计数器状态跟踪（reset → set → increment 顺序）；**counters HashMap**：Painter 新增计数器状态字段；**列表标记计数器集成**：Decimal/Alpha/Roman 标记优先使用 "list-item" 计数器 | +16 |
+| engine/paint/tests/counters | **counter 测试模块**：13 个计数器测试（reset/increment/set/累加/顺序/多计数器/负值）+ 3 个 transform 矩阵测试 | +16 |
+| integration/shadow_outline | **4 个管线集成测试**：counter-reset/increment 管线、counter-set 管线、transform-origin rotate 管线、scale 管线、translate-only 不生成 TransformPrimitive | +5 |
+
+Tests: ~11,406 → ~11,427 (+21), clippy clean.
+
+### -95. CSS Transition 管线集成（前轮，~11,387 测试）
 
 将 TransitionClock 集成到 RenderPipeline，实现自动过渡检测和插值应用：
 
@@ -1648,7 +1665,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | 字体 | ✅ 100% |
 | 定位 | ✅ 100% |
 | Overflow | ✅ 100% |
-| Transforms | ✅ ~85%（2D + 3D 函数、transform-origin、perspective、transform-style、backface-visibility） |
+| Transforms | ✅ ~90%（2D + 3D 函数、**transform-origin 渲染集成**、perspective、transform-style、backface-visibility、**TransformPrimitive 仿射矩阵**） |
 | **Transitions** | ✅ 已实现 |
 | 自定义属性 | ✅ ~90% |
 | 媒体查询 | ✅ ~85%（only 关键字、逗号 OR、prefers-color-scheme、prefers-reduced-motion、pointer、resolution） |
@@ -1705,7 +1722,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现 ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ 增量布局计算 ✅ GPU Glyph Atlas ✅ 权限模型 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context ✅ **渲染管线优化（填充批处理 batch_fills + 视口剔除 cull_invisible + draw call 统计 RenderStats + Rect::intersects）** |
+| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现 ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ 增量布局计算 ✅ GPU Glyph Atlas ✅ 权限模型 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context ✅ **渲染管线优化（填充批处理 batch_fills + 视口剔除 cull_invisible + draw call 统计 RenderStats + Rect::intersects）** ✅ **TransformPrimitive 渲染（仿射变换矩阵 + transform-origin）** ✅ **CSS 计数器渲染（counter-reset/increment/set 跟踪 + 列表标记集成）** |
 
 ---
 

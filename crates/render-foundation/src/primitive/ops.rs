@@ -227,6 +227,7 @@ impl RenderPrimitives {
             + glyph_keys.len()
             + self.filters.len()
             + self.blend_modes.len()
+            + self.transforms.len()
             + self.clips.len().min(1); // clips 合并为一个
 
         RenderStats {
@@ -459,6 +460,13 @@ impl RenderPrimitives {
             .cloned()
             .collect();
 
+        let transforms: Vec<super::TransformPrimitive> = self
+            .transforms
+            .iter()
+            .filter(|t| viewport.intersects(&t.rect))
+            .cloned()
+            .collect();
+
         let result = RenderPrimitives {
             clips: self.clips.clone(), // clips 保留
             fills,
@@ -472,6 +480,7 @@ impl RenderPrimitives {
             glyphs: self.glyphs.clone(), // glyphs 保留
             filters,
             blend_modes: self.blend_modes.clone(), // blend_modes 保留
+            transforms,
         };
 
         let culled_count = original_len - result.len();

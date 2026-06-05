@@ -28,6 +28,8 @@ pub struct Painter {
     pub(crate) primitives: RenderPrimitives,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
+    /// CSS 计数器状态（计数器名 → 当前值）。
+    pub(crate) counters: HashMap<String, i32>,
 }
 
 impl Painter {
@@ -36,6 +38,7 @@ impl Painter {
         Self {
             primitives: RenderPrimitives::new(),
             painted_inline_nodes: HashSet::new(),
+            counters: HashMap::new(),
         }
     }
 
@@ -247,6 +250,13 @@ impl Painter {
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
 
+        // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.update_counters(style);
+        }
+
         // 记录子节点绘制前的图元数量，用于裁剪
         let fills_before = self.primitives.fills.len();
         let glyphs_before = self.primitives.glyphs.len();
@@ -272,6 +282,14 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             self.apply_filter(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS transform — 为含 rotate/scale/skew 的元素生成 TransformPrimitive
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+            super::helpers::apply_transform(style, &rect, &mut self.primitives);
         }
 
         // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）
@@ -300,6 +318,34 @@ impl Painter {
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理
+    }
+
+    /// 更新 CSS 计数器状态（reset → set → increment 顺序）。
+    pub(crate) fn update_counters(&mut self, style: &ComputedStyle) {
+        use zero_css_parser::values::CounterActionValue;
+
+        // 1. counter-reset — 重置计数器为指定值（默认 0）
+        for CounterActionValue { name, value } in &style.counter_reset {
+            let v = value.unwrap_or(0);
+            self.counters.insert(name.clone(), v);
+        }
+
+        // 2. counter-set — 直接设置计数器值（不创建新作用域）
+        for CounterActionValue { name, value } in &style.counter_set {
+            let v = value.unwrap_or(0);
+            self.counters.insert(name.clone(), v);
+        }
+
+        // 3. counter-increment — 递增计数器（默认 +1）
+        for CounterActionValue { name, value } in &style.counter_increment {
+            let v = value.unwrap_or(1);
+            *self.counters.entry(name.clone()).or_insert(0) += v;
+        }
+    }
+
+    /// 获取指定计数器的当前值。
+    pub fn get_counter(&self, name: &str) -> Option<i32> {
+        self.counters.get(name).copied()
     }
 
     /// 绘制背景（考虑 border-radius）。

@@ -1094,3 +1094,112 @@ fn test_empty_cells_pipeline() {
         "empty-cells 应为 Hide"
     );
 }
+
+// ── CSS Counter 管线集成测试 ──
+
+/// 验证 counter-reset/counter-increment 从 CSS 解析到样式计算的完整管线。
+#[test]
+fn test_counter_reset_increment_pipeline() {
+    let css = "ol { counter-reset: section; } li { counter-increment: section; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let ol = doc.create_element("ol");
+    doc.append_child(body, ol).unwrap();
+    let li = doc.create_element("li");
+    doc.append_child(ol, li).unwrap();
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let ol_style = styles.get(&ol).expect("ol 应有计算样式");
+    assert_eq!(ol_style.counter_reset.len(), 1, "ol 应有 counter-reset");
+    assert_eq!(ol_style.counter_reset[0].name, "section");
+
+    let li_style = styles.get(&li).expect("li 应有计算样式");
+    assert_eq!(li_style.counter_increment.len(), 1, "li 应有 counter-increment");
+    assert_eq!(li_style.counter_increment[0].name, "section");
+}
+
+/// 验证 counter-set 从 CSS 解析到样式计算。
+#[test]
+fn test_counter_set_pipeline() {
+    let css = ".item { counter-set: item 5; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let div = doc.create_element("div");
+    doc.set_attribute(div, "class", "item");
+    doc.append_child(body, div).unwrap();
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(div_style.counter_set.len(), 1, "div 应有 counter-set");
+    assert_eq!(div_style.counter_set[0].name, "item");
+    assert_eq!(div_style.counter_set[0].value, Some(5));
+}
+
+// ── Transform-origin + Rotate 渲染管线集成测试 ──
+
+/// 验证 rotate + transform-origin 从 CSS 解析到 TransformPrimitive 生成的完整管线。
+#[test]
+fn test_transform_origin_rotate_pipeline() {
+    let html = r#"<html><body><div class="box">Hello</div></body></html>"#;
+    let css = r#".box { transform: rotate(45deg); transform-origin: 0px 0px; width: 100px; height: 100px; background: red; }"#;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+
+    // 应该有至少一个 TransformPrimitive（rotate 45° 且非 identity）
+    assert!(
+        !result.primitives.transforms.is_empty(),
+        "rotate(45deg) 应该生成 TransformPrimitive"
+    );
+}
+
+/// 验证 scale 渲染管线生成 TransformPrimitive。
+#[test]
+fn test_transform_scale_pipeline() {
+    let html = r#"<html><body><div class="scaled">Scaled</div></body></html>"#;
+    let css = r#".scaled { transform: scale(2, 0.5); width: 100px; height: 50px; background: blue; }"#;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+
+    assert!(
+        !result.primitives.transforms.is_empty(),
+        "scale(2, 0.5) 应该生成 TransformPrimitive"
+    );
+    let tp = &result.primitives.transforms[0];
+    assert!((tp.a - 2.0).abs() < 0.01, "a 应为 2.0");
+    assert!((tp.d - 0.5).abs() < 0.01, "d 应为 0.5");
+}
+
+/// 验证 translate-only 不生成 TransformPrimitive。
+#[test]
+fn test_translate_only_no_transform_primitive() {
+    let html = r#"<html><body><div class="moved">Moved</div></body></html>"#;
+    let css = r#".moved { transform: translate(50px, 100px); width: 100px; height: 50px; background: green; }"#;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+
+    assert!(
+        result.primitives.transforms.is_empty(),
+        "translate-only 不应生成 TransformPrimitive"
+    );
+}
