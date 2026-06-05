@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,204 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 873 个用例（25 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）
+**执行状态**: 16/16 crate 已实现，~11,208 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 873 个用例（25 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 渲染集成
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,204 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,208 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -105,7 +105,20 @@
 
 ## 最近完成的改进
 
-### -87. primitive.rs 拆分 + WPT 渲染合规测试扩展至 873 用例（本轮，~11,204 测试）
+### -88. letter-spacing + word-spacing 渲染集成（本轮，~11,208 测试）
+
+将 CSS letter-spacing 和 word-spacing 集成到 paint_text 渲染流程，扩展 CSS 排版能力：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/painter | **letter-spacing 渲染**：每个字符 glyph 后追加 letter-spacing 像素间距（支持正/负/零值） | — |
+| engine/paint/painter | **word-spacing 渲染**：空格字符后追加 word-spacing 额外间距（片段内生效，跨片段需 inline layout 引擎变更） | — |
+| engine/paint/painter | **text decoration 修正**：text_width 计算纳入 letter-spacing + word-spacing | — |
+| engine/paint/tests/visual | **4 个间距渲染测试**：letter-spacing 正间距增大验证、负间距减小验证、零间距基线验证、word-spacing ComputedStyle 传播验证 | +4 |
+
+Tests: ~11,204 → ~11,208, clippy clean.
+
+### -87. primitive.rs 拆分 + WPT 渲染合规测试扩展至 873 用例（前轮，~11,204 测试）
 
 将超限的 `primitive.rs`（2015 行）拆分为模块目录，新增 WPT 渲染管线高级合规性测试分类：
 
