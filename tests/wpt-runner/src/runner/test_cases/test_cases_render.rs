@@ -737,5 +737,185 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "glyph_count_ge:1".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  background-position / size / clip / origin 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── background-position: center ──
+        TestCase {
+            id: "render/bg-position-center".to_string(),
+            description: "background-position:center renders correctly".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:150px;background-color:#e0e0e0;background-image:url('photo.jpg');background-position:center">Centered</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-position: right bottom ──
+        TestCase {
+            id: "render/bg-position-right-bottom".to_string(),
+            description: "background-position:right bottom offset".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:150px;background-color:#eee;background-image:url('icon.png');background-position:right bottom;background-repeat:no-repeat">RB</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-position 百分比 + 长度组合 ──
+        TestCase {
+            id: "render/bg-position-two-value".to_string(),
+            description: "background-position with two values (percent and length)".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:400px;height:200px;background-color:#f0f0f0;background-image:url('bg.jpg');background-position:50% 20px">Two Values</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-size: cover ──
+        TestCase {
+            id: "render/bg-size-cover".to_string(),
+            description: "background-size:cover scales to cover container".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:200px;background-color:#ccc;background-image:url('hero.jpg');background-size:cover">Cover</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-size: contain ──
+        TestCase {
+            id: "render/bg-size-contain".to_string(),
+            description: "background-size:contain fits within container".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:400px;height:200px;background-color:#ddd;background-image:url('logo.png');background-size:contain;background-repeat:no-repeat">Contain</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-size: 50% 百分比 ──
+        TestCase {
+            id: "render/bg-size-percent".to_string(),
+            description: "background-size:50% scales to half container width".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:400px;height:200px;background-color:#f5f5f5;background-image:url('bg.jpg');background-size:50%">Half Width</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── background-clip: content-box ──
+        TestCase {
+            id: "render/bg-clip-content-box".to_string(),
+            description: "background-clip:content-box clips to content area".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;padding:20px;border:5px solid #333;background-color:#ff6b6b;background-clip:content-box">Clipped</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── background-clip: padding-box ──
+        TestCase {
+            id: "render/bg-clip-padding-box".to_string(),
+            description: "background-clip:padding-box clips to padding area".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;padding:15px;border:8px solid #555;background-color:#4ecdc4;background-clip:padding-box">Padded</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── background-origin: content-box + position ──
+        TestCase {
+            id: "render/bg-origin-content-box".to_string(),
+            description: "background-origin:content-box positions from content area".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:150px;padding:20px;border:10px solid #999;background-color:#f0f0f0;background-image:url('bg.jpg');background-origin:content-box;background-position:center">Origin</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_image_primitives".to_string(),
+            ],
+        },
+
+        // ── 渐变 + background-size + position 组合 ──
+        TestCase {
+            id: "render/gradient-with-size-position".to_string(),
+            description: "Gradient with background-size and position".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:400px;height:200px;background-color:#f8f8f8;background:linear-gradient(135deg,#667eea,#764ba2);background-size:50% 50%;background-position:center">Gradient Positioned</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "gradient_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── background 完整简写测试 ──
+        TestCase {
+            id: "render/bg-shorthand-comprehensive".to_string(),
+            description: "Background shorthand with color image position/size".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:180px;background:#e8f4f8 url('bg.png') no-repeat center/contain">Shorthand</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
     ]
 }

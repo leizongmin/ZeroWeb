@@ -19,8 +19,9 @@ use zero_render_foundation::primitive::{
     ShadowPrimitive, StrokePrimitive,
 };
 use zero_style_system::{
-    BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, FilterComputedValue, OutlineStyleValue,
-    TextDecorationLineValue, TextOverflowValue,
+    BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
+    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderStyleValue, ComputedStyle,
+    FilterComputedValue, OutlineStyleValue, TextDecorationLineValue, TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -277,21 +278,48 @@ impl Painter {
     /// 当 border-radius 为零时退化为普通矩形填充。
     fn paint_background(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let radii = BorderRadiusSpec::from_style(style);
+
+        // 根据 background-clip 决定背景绘制区域
+        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
+            BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundClipComputedValue::PaddingBox => (
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundClipComputedValue::ContentBox => (
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+            BackgroundClipComputedValue::Text => {
+                // background-clip: text — 暂按 content-box 处理
+                (
+                    abs_x + box_node.border_left + box_node.padding_left,
+                    abs_y + box_node.border_top + box_node.padding_top,
+                    box_node.content_width,
+                    box_node.content_height,
+                )
+            }
+        };
+
         if radii.is_zero() {
             // 无圆角：简单矩形填充
             self.primitives.add_fill(
-                Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                Rect::new(clip_x, clip_y, clip_w, clip_h),
                 color_value_to_render(&style.background_color),
             );
         } else {
             // 圆角矩形：生成带圆角信息的填充图元
             self.primitives.add_fill(
-                Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                Rect::new(clip_x, clip_y, clip_w, clip_h),
                 color_value_to_render(&style.background_color),
             );
             // 存储圆角信息（当前架构下 FillPrimitive 没有圆角字段，
             // 通过附加的元数据图元标记圆角）
-            self.add_rounded_rect_metadata(abs_x, abs_y, box_node.width, box_node.height, &radii);
+            self.add_rounded_rect_metadata(clip_x, clip_y, clip_w, clip_h, &radii);
         }
     }
 
@@ -802,19 +830,58 @@ impl Painter {
     ///
     /// 当 background-image 为 Url 时，生成 ImagePrimitive 图元。
     /// 当 background-image 为 Gradient 时，生成 GradientPrimitive 图元。
+    /// 支持 background-position（关键字、百分比、长度、双值组合）和
+    /// background-size（auto、cover、contain、长度、百分比）。
     fn paint_background_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // 计算 background-origin 定位区域
+        let (origin_x, origin_y, origin_w, origin_h) = match style.background_origin {
+            BackgroundOriginComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundOriginComputedValue::PaddingBox => (
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundOriginComputedValue::ContentBox => (
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+        };
+
+        // 假设背景图片原始尺寸（无真实图片元数据时，使用容器尺寸）
+        let img_w = origin_w;
+        let img_h = origin_h;
+
+        // 计算 background-size
+        let (sized_w, sized_h) =
+            resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
+
+        // 计算 background-position 偏移
+        let (offset_x, offset_y) = resolve_background_position(
+            &style.background_position,
+            origin_w,
+            origin_h,
+            sized_w,
+            sized_h,
+        );
+
+        let positioned_x = origin_x + offset_x;
+        let positioned_y = origin_y + offset_y;
+
         match &style.background_image {
             BackgroundImageComputedValue::None => {}
             BackgroundImageComputedValue::Url(url) => {
                 let key = simple_hash(url);
-                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
                 self.primitives.add_image(ImagePrimitive {
                     rect,
                     image_key: ImageKey::new(key),
                 });
             }
             BackgroundImageComputedValue::Gradient(gradient) => {
-                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
                 if let Some(prim) = gradient_to_primitive(gradient, &rect) {
                     self.primitives.add_gradient(prim);
                 }
@@ -1469,4 +1536,103 @@ fn has_direct_paintable_text(doc: &Document, node_id: NodeId) -> bool {
             Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
         )
     })
+}
+
+// ── background-position / background-size 辅助函数 ─────────────────────────
+
+/// 计算 background-size 后的图片尺寸。
+///
+/// 返回 (width, height) 像素值。
+fn resolve_background_size(
+    size: &BackgroundSizeComputedValue,
+    container_w: f32,
+    container_h: f32,
+    img_w: f32,
+    img_h: f32,
+) -> (f32, f32) {
+    match size {
+        BackgroundSizeComputedValue::Auto => {
+            // auto：保持原始图片尺寸（无真实元数据时等于容器尺寸）
+            (img_w, img_h)
+        }
+        BackgroundSizeComputedValue::Cover => {
+            // cover：缩放图片以完全覆盖容器，保持宽高比
+            if img_w <= 0.0 || img_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
+                return (container_w, container_h);
+            }
+            let scale_x = container_w / img_w;
+            let scale_y = container_h / img_h;
+            let scale = scale_x.max(scale_y);
+            (img_w * scale, img_h * scale)
+        }
+        BackgroundSizeComputedValue::Contain => {
+            // contain：缩放图片以完整显示在容器内，保持宽高比
+            if img_w <= 0.0 || img_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
+                return (container_w, container_h);
+            }
+            let scale_x = container_w / img_w;
+            let scale_y = container_h / img_h;
+            let scale = scale_x.min(scale_y);
+            (img_w * scale, img_h * scale)
+        }
+        BackgroundSizeComputedValue::Length(px) => {
+            // 长度值：指定宽度，高度自动保持宽高比
+            let w = *px;
+            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            (w, h)
+        }
+        BackgroundSizeComputedValue::Percent(pct) => {
+            // 百分比：相对于容器尺寸
+            let w = container_w * pct / 100.0;
+            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            (w, h)
+        }
+    }
+}
+
+/// 将 background-position 单个分量解析为像素偏移。
+///
+/// `container_size` 是定位区域尺寸，`image_size` 是图片尺寸。
+fn resolve_position_component(
+    pos: &BackgroundPositionComputedValue,
+    container_size: f32,
+    image_size: f32,
+) -> f32 {
+    match pos {
+        BackgroundPositionComputedValue::Left | BackgroundPositionComputedValue::Top => 0.0,
+        BackgroundPositionComputedValue::Center => (container_size - image_size) / 2.0,
+        BackgroundPositionComputedValue::Right | BackgroundPositionComputedValue::Bottom => {
+            (container_size - image_size).max(0.0)
+        }
+        BackgroundPositionComputedValue::Length(px) => *px,
+        BackgroundPositionComputedValue::Percent(pct) => {
+            // CSS 百分比定位：offset = (container - image) * pct / 100
+            (container_size - image_size) * pct / 100.0
+        }
+        BackgroundPositionComputedValue::TwoValue(_, _) => {
+            // 双值嵌套不应出现在分量解析中，回退到 0
+            0.0
+        }
+    }
+}
+
+/// 计算 background-position 的 (x, y) 像素偏移。
+fn resolve_background_position(
+    pos: &BackgroundPositionComputedValue,
+    container_w: f32,
+    container_h: f32,
+    img_w: f32,
+    img_h: f32,
+) -> (f32, f32) {
+    match pos {
+        BackgroundPositionComputedValue::TwoValue(x_pos, y_pos) => (
+            resolve_position_component(x_pos, container_w, img_w),
+            resolve_position_component(y_pos, container_h, img_h),
+        ),
+        // 单个值：水平方向按指定定位，垂直方向居中
+        single => (
+            resolve_position_component(single, container_w, img_w),
+            resolve_position_component(&BackgroundPositionComputedValue::Center, container_h, img_h),
+        ),
+    }
 }
