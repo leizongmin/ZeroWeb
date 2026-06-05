@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use zero_css_parser::values::ColorValue;
 use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::ListStyleTypeValue;
 use zero_css_parser::values::VisibilityValue;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::InlineFormattingContext;
@@ -14,7 +15,8 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{
-    FilterKind, FilterPrimitive, FontId, GlyphPrimitive, ImagePrimitive, RenderPrimitives, ShadowPrimitive,
+    FilterKind, FilterPrimitive, FontId, GlyphPrimitive, ImagePrimitive, LineCap, LineStyle, RenderPrimitives,
+    ShadowPrimitive, StrokePrimitive,
 };
 use zero_style_system::{
     BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, FilterComputedValue, OutlineStyleValue,
@@ -26,6 +28,18 @@ use super::helpers::{
     BorderRadiusSpec, PrimitiveCounts, apply_opacity_to_new_primitives, apply_text_transform, clip_fills, clip_glyphs,
     gradient_to_primitive, length_to_f32, simple_hash,
 };
+
+/// 边框边缘规格 — 描述一条边框的几何位置和方向。
+struct BorderEdgeSpec {
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    thickness: f32,
+    is_horizontal: bool,
+    /// 垂直边框时，填充区域是否向左延伸（右侧边框为 true）。
+    extend_left: bool,
+}
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -112,6 +126,9 @@ impl Painter {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
                 self.paint_outline(box_node, abs_x, abs_y, style);
+                if let Some(doc) = doc {
+                    self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+                }
                 self.paint_text(box_node, abs_x, abs_y, style, doc);
             }
 
@@ -197,7 +214,12 @@ impl Painter {
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
 
-                // 4. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
+                // 4. 列表标记绘制（bullets/numbers，位于文本之前）
+                if let Some(doc) = doc {
+                    self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+                }
+
+                // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
                 self.paint_text(box_node, abs_x, abs_y, style, doc);
             }
 
@@ -206,7 +228,7 @@ impl Painter {
             false
         };
 
-        // 5. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // 6. 递归绘制子节点（子节点偏移 = 父 padding + border）
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
@@ -283,9 +305,14 @@ impl Painter {
         // 当前阶段记录圆角存在，待后续渲染后端支持。
     }
 
-    /// 绘制边框（4 个矩形）。
+    /// 绘制边框（4 条边，支持多种 border-style）。
     ///
-    /// 分别绘制上、右、下、左四条边框。每条边框是一个填充矩形。
+    /// 分别绘制上、右、下、左四条边框。根据 border-style 生成不同类型的图元：
+    /// - Solid/None/Hidden：填充矩形（原有行为）
+    /// - Dotted：圆头点线描边
+    /// - Dashed：方头虚线描边
+    /// - Double：双线填充矩形（中间留空隙）
+    /// - Groove/Ridge/Inset/Outset：3D 效果双色填充
     fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let w = box_node.width;
         let h = box_node.height;
@@ -295,9 +322,18 @@ impl Painter {
             && style.border_top_style != BorderStyleValue::None
             && style.border_top_style != BorderStyleValue::Hidden
         {
-            self.primitives.add_fill(
-                Rect::new(abs_x, abs_y, w, box_node.border_top),
-                color_value_to_render(&style.border_top_color),
+            self.paint_border_edge(
+                &BorderEdgeSpec {
+                    x1: abs_x,
+                    y1: abs_y,
+                    x2: abs_x + w,
+                    y2: abs_y,
+                    thickness: box_node.border_top,
+                    is_horizontal: true,
+                    extend_left: false,
+                },
+                &style.border_top_style,
+                &style.border_top_color,
             );
         }
 
@@ -306,14 +342,18 @@ impl Painter {
             && style.border_right_style != BorderStyleValue::None
             && style.border_right_style != BorderStyleValue::Hidden
         {
-            self.primitives.add_fill(
-                Rect::new(
-                    abs_x + w - box_node.border_right,
-                    abs_y + box_node.border_top,
-                    box_node.border_right,
-                    h - box_node.border_top - box_node.border_bottom,
-                ),
-                color_value_to_render(&style.border_right_color),
+            self.paint_border_edge(
+                &BorderEdgeSpec {
+                    x1: abs_x + w,
+                    y1: abs_y + box_node.border_top,
+                    x2: abs_x + w,
+                    y2: abs_y + h - box_node.border_bottom,
+                    thickness: box_node.border_right,
+                    is_horizontal: false,
+                    extend_left: true,
+                },
+                &style.border_right_style,
+                &style.border_right_color,
             );
         }
 
@@ -322,9 +362,18 @@ impl Painter {
             && style.border_bottom_style != BorderStyleValue::None
             && style.border_bottom_style != BorderStyleValue::Hidden
         {
-            self.primitives.add_fill(
-                Rect::new(abs_x, abs_y + h - box_node.border_bottom, w, box_node.border_bottom),
-                color_value_to_render(&style.border_bottom_color),
+            self.paint_border_edge(
+                &BorderEdgeSpec {
+                    x1: abs_x,
+                    y1: abs_y + h,
+                    x2: abs_x + w,
+                    y2: abs_y + h,
+                    thickness: box_node.border_bottom,
+                    is_horizontal: true,
+                    extend_left: false,
+                },
+                &style.border_bottom_style,
+                &style.border_bottom_color,
             );
         }
 
@@ -333,21 +382,141 @@ impl Painter {
             && style.border_left_style != BorderStyleValue::None
             && style.border_left_style != BorderStyleValue::Hidden
         {
-            self.primitives.add_fill(
-                Rect::new(
-                    abs_x,
-                    abs_y + box_node.border_top,
-                    box_node.border_left,
-                    h - box_node.border_top - box_node.border_bottom,
-                ),
-                color_value_to_render(&style.border_left_color),
+            self.paint_border_edge(
+                &BorderEdgeSpec {
+                    x1: abs_x,
+                    y1: abs_y + box_node.border_top,
+                    x2: abs_x,
+                    y2: abs_y + h - box_node.border_bottom,
+                    thickness: box_node.border_left,
+                    is_horizontal: false,
+                    extend_left: false,
+                },
+                &style.border_left_style,
+                &style.border_left_color,
             );
         }
     }
 
-    /// 绘制 outline（位于 border 外侧）。
+    /// 绘制单条边框（根据 border-style 生成合适的图元）。
+    fn paint_border_edge(&mut self, spec: &BorderEdgeSpec, border_style: &BorderStyleValue, color: &ColorValue) {
+        let render_color = color_value_to_render(color);
+
+        match border_style {
+            BorderStyleValue::None | BorderStyleValue::Hidden => {}
+            BorderStyleValue::Solid => {
+                self.primitives.add_fill(self.border_fill_rect(spec), render_color);
+            }
+            BorderStyleValue::Dotted => {
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: spec.x1,
+                    y1: spec.y1,
+                    x2: spec.x2,
+                    y2: spec.y2,
+                    width: spec.thickness,
+                    color: render_color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
+            }
+            BorderStyleValue::Dashed => {
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: spec.x1,
+                    y1: spec.y1,
+                    x2: spec.x2,
+                    y2: spec.y2,
+                    width: spec.thickness,
+                    color: render_color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
+            }
+            BorderStyleValue::Double => {
+                let gap = (spec.thickness / 3.0).max(1.0);
+                let line_w = ((spec.thickness - gap) / 2.0).max(1.0);
+                if spec.is_horizontal {
+                    self.primitives
+                        .add_fill(Rect::new(spec.x1, spec.y1, spec.x2 - spec.x1, line_w), render_color);
+                    self.primitives.add_fill(
+                        Rect::new(spec.x1, spec.y1 + line_w + gap, spec.x2 - spec.x1, line_w),
+                        render_color,
+                    );
+                } else {
+                    let outer_x = if spec.extend_left {
+                        spec.x1 - spec.thickness
+                    } else {
+                        spec.x1
+                    };
+                    self.primitives
+                        .add_fill(Rect::new(outer_x, spec.y1, line_w, spec.y2 - spec.y1), render_color);
+                    self.primitives.add_fill(
+                        Rect::new(outer_x + line_w + gap, spec.y1, line_w, spec.y2 - spec.y1),
+                        render_color,
+                    );
+                }
+            }
+            BorderStyleValue::Groove => {
+                let (light, dark) = groove_ridge_colors(&render_color);
+                self.paint_3d_border(spec, &light, &dark);
+            }
+            BorderStyleValue::Ridge => {
+                let (light, dark) = groove_ridge_colors(&render_color);
+                self.paint_3d_border(spec, &dark, &light);
+            }
+            BorderStyleValue::Inset => {
+                let lighter = lighten(&render_color, 0.3);
+                let darker = darken(&render_color, 0.3);
+                self.paint_3d_border(spec, &darker, &lighter);
+            }
+            BorderStyleValue::Outset => {
+                let lighter = lighten(&render_color, 0.3);
+                let darker = darken(&render_color, 0.3);
+                self.paint_3d_border(spec, &lighter, &darker);
+            }
+        }
+    }
+
+    /// 根据 BorderEdgeSpec 计算填充矩形。
+    fn border_fill_rect(&self, spec: &BorderEdgeSpec) -> Rect {
+        if spec.is_horizontal {
+            Rect::new(spec.x1, spec.y1, spec.x2 - spec.x1, spec.thickness)
+        } else if spec.extend_left {
+            Rect::new(spec.x1 - spec.thickness, spec.y1, spec.thickness, spec.y2 - spec.y1)
+        } else {
+            Rect::new(spec.x1, spec.y1, spec.thickness, spec.y2 - spec.y1)
+        }
+    }
+
+    /// 绘制 3D 效果边框（groove/ridge/inset/outset 使用）。
     ///
-    /// outline 绘制为 4 个矩形，offset 默认为 0（紧贴 border 外侧）。
+    /// 将边框分为上下两半（水平边）或左右两半（垂直边），分别使用不同颜色。
+    fn paint_3d_border(&mut self, spec: &BorderEdgeSpec, first_color: &Color, second_color: &Color) {
+        let half = spec.thickness / 2.0;
+        if spec.is_horizontal {
+            self.primitives
+                .add_fill(Rect::new(spec.x1, spec.y1, spec.x2 - spec.x1, half), *first_color);
+            self.primitives.add_fill(
+                Rect::new(spec.x1, spec.y1 + half, spec.x2 - spec.x1, half),
+                *second_color,
+            );
+        } else {
+            let fill_x = if spec.extend_left {
+                spec.x1 - spec.thickness
+            } else {
+                spec.x1
+            };
+            self.primitives
+                .add_fill(Rect::new(fill_x, spec.y1, half, spec.y2 - spec.y1), *first_color);
+            self.primitives.add_fill(
+                Rect::new(fill_x + half, spec.y1, half, spec.y2 - spec.y1),
+                *second_color,
+            );
+        }
+    }
+
+    /// 绘制 outline（位于 border 外侧，支持多种 outline-style）。
+    ///
+    /// outline 绘制为 4 条边框段，根据 outline-style 生成不同图元类型。
     fn paint_outline(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let outline_width = length_to_f32(&style.outline_width);
 
@@ -362,49 +531,244 @@ impl Painter {
         let total_offset = outline_width + offset;
         let color = color_value_to_render(&style.outline_color);
 
-        // 上 outline
-        self.primitives.add_fill(
-            Rect::new(
-                abs_x - total_offset,
-                abs_y - total_offset,
-                w + 2.0 * total_offset,
-                outline_width,
-            ),
-            color,
-        );
+        // 计算外侧矩形坐标
+        let ox = abs_x - total_offset;
+        let oy = abs_y - total_offset;
+        let ow = w + 2.0 * total_offset;
+        let oh = h + 2.0 * total_offset;
 
-        // 下 outline
-        self.primitives.add_fill(
-            Rect::new(
-                abs_x - total_offset,
-                abs_y + h + offset,
-                w + 2.0 * total_offset,
-                outline_width,
-            ),
-            color,
-        );
-
-        // 左 outline
-        self.primitives.add_fill(
-            Rect::new(
-                abs_x - total_offset,
-                abs_y - total_offset + outline_width,
-                outline_width,
-                h + 2.0 * offset,
-            ),
-            color,
-        );
-
-        // 右 outline
-        self.primitives.add_fill(
-            Rect::new(
-                abs_x + w + offset,
-                abs_y - total_offset + outline_width,
-                outline_width,
-                h + 2.0 * offset,
-            ),
-            color,
-        );
+        match style.outline_style {
+            OutlineStyleValue::None => {}
+            OutlineStyleValue::Solid => {
+                // 实线：4 个填充矩形
+                // 上
+                self.primitives.add_fill(Rect::new(ox, oy, ow, outline_width), color);
+                // 下
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - outline_width, ow, outline_width), color);
+                // 左
+                self.primitives.add_fill(
+                    Rect::new(ox, oy + outline_width, outline_width, oh - 2.0 * outline_width),
+                    color,
+                );
+                // 右
+                self.primitives.add_fill(
+                    Rect::new(
+                        ox + ow - outline_width,
+                        oy + outline_width,
+                        outline_width,
+                        oh - 2.0 * outline_width,
+                    ),
+                    color,
+                );
+            }
+            OutlineStyleValue::Dotted => {
+                // 点线：4 条圆头点线描边
+                let mid_y_top = oy + outline_width / 2.0;
+                let mid_y_bottom = oy + oh - outline_width / 2.0;
+                let mid_x_left = ox + outline_width / 2.0;
+                let mid_x_right = ox + ow - outline_width / 2.0;
+                // 上
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: ox,
+                    y1: mid_y_top,
+                    x2: ox + ow,
+                    y2: mid_y_top,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
+                // 下
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: ox,
+                    y1: mid_y_bottom,
+                    x2: ox + ow,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
+                // 左
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: mid_x_left,
+                    y1: mid_y_top,
+                    x2: mid_x_left,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
+                // 右
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: mid_x_right,
+                    y1: mid_y_top,
+                    x2: mid_x_right,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dotted,
+                    cap: LineCap::Round,
+                });
+            }
+            OutlineStyleValue::Dashed => {
+                // 虚线：4 条方头虚线描边
+                let mid_y_top = oy + outline_width / 2.0;
+                let mid_y_bottom = oy + oh - outline_width / 2.0;
+                let mid_x_left = ox + outline_width / 2.0;
+                let mid_x_right = ox + ow - outline_width / 2.0;
+                // 上
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: ox,
+                    y1: mid_y_top,
+                    x2: ox + ow,
+                    y2: mid_y_top,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
+                // 下
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: ox,
+                    y1: mid_y_bottom,
+                    x2: ox + ow,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
+                // 左
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: mid_x_left,
+                    y1: mid_y_top,
+                    x2: mid_x_left,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
+                // 右
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: mid_x_right,
+                    y1: mid_y_top,
+                    x2: mid_x_right,
+                    y2: mid_y_bottom,
+                    width: outline_width,
+                    color,
+                    style: LineStyle::Dashed,
+                    cap: LineCap::Square,
+                });
+            }
+            OutlineStyleValue::Double => {
+                // 双线
+                let gap = (outline_width / 3.0).max(1.0);
+                let line_w = ((outline_width - gap) / 2.0).max(1.0);
+                // 外线
+                self.primitives.add_fill(Rect::new(ox, oy, ow, line_w), color);
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - line_w, ow, line_w), color);
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + line_w, line_w, oh - 2.0 * line_w), color);
+                self.primitives.add_fill(
+                    Rect::new(ox + ow - line_w, oy + line_w, line_w, oh - 2.0 * line_w),
+                    color,
+                );
+                // 内线
+                let ix = ox + line_w + gap;
+                let iy = oy + line_w + gap;
+                let iw = ow - 2.0 * (line_w + gap);
+                let ih = oh - 2.0 * (line_w + gap);
+                self.primitives.add_fill(Rect::new(ix, iy, iw, line_w), color);
+                self.primitives
+                    .add_fill(Rect::new(ix, iy + ih - line_w, iw, line_w), color);
+                self.primitives
+                    .add_fill(Rect::new(ix, iy + line_w, line_w, ih - 2.0 * line_w), color);
+                self.primitives.add_fill(
+                    Rect::new(ix + iw - line_w, iy + line_w, line_w, ih - 2.0 * line_w),
+                    color,
+                );
+            }
+            OutlineStyleValue::Groove | OutlineStyleValue::Ridge => {
+                let (first, second) = if matches!(style.outline_style, OutlineStyleValue::Groove) {
+                    groove_ridge_colors(&color)
+                } else {
+                    let (l, d) = groove_ridge_colors(&color);
+                    (d, l)
+                };
+                let half = outline_width / 2.0;
+                // 上（外半 first，内半 second）
+                self.primitives.add_fill(Rect::new(ox, oy, ow, half), first);
+                self.primitives.add_fill(Rect::new(ox, oy + half, ow, half), second);
+                // 下
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - outline_width, ow, half), first);
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - half, ow, half), second);
+                // 左
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + outline_width, half, oh - 2.0 * outline_width), first);
+                self.primitives.add_fill(
+                    Rect::new(ox + half, oy + outline_width, half, oh - 2.0 * outline_width),
+                    second,
+                );
+                // 右
+                self.primitives.add_fill(
+                    Rect::new(
+                        ox + ow - outline_width,
+                        oy + outline_width,
+                        half,
+                        oh - 2.0 * outline_width,
+                    ),
+                    first,
+                );
+                self.primitives.add_fill(
+                    Rect::new(ox + ow - half, oy + outline_width, half, oh - 2.0 * outline_width),
+                    second,
+                );
+            }
+            OutlineStyleValue::Inset | OutlineStyleValue::Outset => {
+                let (first, second) = if matches!(style.outline_style, OutlineStyleValue::Inset) {
+                    (darken(&color, 0.3), lighten(&color, 0.3))
+                } else {
+                    (lighten(&color, 0.3), darken(&color, 0.3))
+                };
+                let half = outline_width / 2.0;
+                // 上
+                self.primitives.add_fill(Rect::new(ox, oy, ow, half), first);
+                self.primitives.add_fill(Rect::new(ox, oy + half, ow, half), second);
+                // 下
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - outline_width, ow, half), first);
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + oh - half, ow, half), second);
+                // 左
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + outline_width, half, oh - 2.0 * outline_width), first);
+                self.primitives.add_fill(
+                    Rect::new(ox + half, oy + outline_width, half, oh - 2.0 * outline_width),
+                    second,
+                );
+                // 右
+                self.primitives.add_fill(
+                    Rect::new(
+                        ox + ow - outline_width,
+                        oy + outline_width,
+                        half,
+                        oh - 2.0 * outline_width,
+                    ),
+                    first,
+                );
+                self.primitives.add_fill(
+                    Rect::new(ox + ow - half, oy + outline_width, half, oh - 2.0 * outline_width),
+                    second,
+                );
+            }
+        }
     }
 
     /// 绘制 box-shadow（盒阴影效果）。
@@ -507,6 +871,211 @@ impl Painter {
     /// 获取渲染图元引用。
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
+    }
+
+    /// 绘制列表标记（disc/circle/square/decimal 等）。
+    ///
+    /// 检查当前 DOM 节点是否为 `<li>` 元素，且 list-style-type 非 None。
+    /// 根据标记类型在内容区域左侧生成对应的图元。
+    fn paint_list_marker(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        // 仅对 <li> 元素绘制标记
+        let node_id = match box_node.node_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let node = match doc.get(node_id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        // 检查是否为 li 元素
+        match &node.kind {
+            NodeKind::Element(elem) if elem.local_name() == "li" => {}
+            _ => return,
+        }
+
+        // 检查 list-style-type
+        if style.list_style_type == ListStyleTypeValue::None {
+            return;
+        }
+
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => 16.0,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+
+        let color = color_value_to_render(&style.color);
+        let default_font_id = FontId(0);
+
+        // 标记位于内容区域左侧
+        let marker_size = font_size * 0.4; // 标记符号大小
+        let marker_x = abs_x + box_node.border_left; // 标记起始 x（border 内侧）
+        let marker_y = abs_y + box_node.border_top + box_node.padding_top; // 与首行文本对齐
+
+        // 根据 list-style-position 决定标记位置
+        // Outside: 标记在内容区域左侧外
+        // Inside: 标记在内容区域内部
+        let actual_marker_x = match style.list_style_position {
+            zero_css_parser::values::ListStylePositionValue::Outside => marker_x - marker_size * 2.5,
+            zero_css_parser::values::ListStylePositionValue::Inside => marker_x + marker_size * 0.5,
+        };
+
+        match style.list_style_type {
+            ListStyleTypeValue::Disc => {
+                // 实心圆点：小填充矩形（近似圆形）
+                self.primitives.add_fill(
+                    Rect::new(
+                        actual_marker_x,
+                        marker_y + font_size * 0.3 - marker_size / 2.0,
+                        marker_size,
+                        marker_size,
+                    ),
+                    color,
+                );
+            }
+            ListStyleTypeValue::Circle => {
+                // 空心圆：使用描边矩形近似
+                self.primitives.add_stroke(StrokePrimitive {
+                    x1: actual_marker_x,
+                    y1: marker_y + font_size * 0.3 - marker_size / 2.0 + marker_size / 2.0,
+                    x2: actual_marker_x + marker_size,
+                    y2: marker_y + font_size * 0.3 - marker_size / 2.0 + marker_size / 2.0,
+                    width: marker_size,
+                    color,
+                    style: LineStyle::Solid,
+                    cap: LineCap::Round,
+                });
+            }
+            ListStyleTypeValue::Square => {
+                // 方形标记
+                self.primitives.add_fill(
+                    Rect::new(
+                        actual_marker_x,
+                        marker_y + font_size * 0.3 - marker_size / 2.0,
+                        marker_size,
+                        marker_size,
+                    ),
+                    color,
+                );
+            }
+            ListStyleTypeValue::Decimal | ListStyleTypeValue::DecimalLeadingZero => {
+                // 计算列表项在兄弟中的索引
+                let index = self.compute_list_item_index(doc, node_id);
+                let text = if matches!(style.list_style_type, ListStyleTypeValue::DecimalLeadingZero) && index < 10 {
+                    format!("0{index}.")
+                } else {
+                    format!("{index}.")
+                };
+                // 渲染数字标记为 glyph
+                let mut char_x = actual_marker_x;
+                let char_y = marker_y + font_size;
+                for ch in text.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: font_size * 0.85,
+                        color,
+                        glyph_id: ch as u32,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                    });
+                    char_x += estimate_char_width(ch, font_size * 0.85);
+                }
+            }
+            ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
+                let index = self.compute_list_item_index(doc, node_id);
+                let ch = if index > 0 && index <= 26 {
+                    let base = if matches!(style.list_style_type, ListStyleTypeValue::LowerAlpha) {
+                        b'a'
+                    } else {
+                        b'A'
+                    };
+                    (base + (index - 1) as u8) as char
+                } else {
+                    '?'
+                };
+                let text = format!("{ch}.");
+                let mut char_x = actual_marker_x;
+                let char_y = marker_y + font_size;
+                for ch in text.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: font_size * 0.85,
+                        color,
+                        glyph_id: ch as u32,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                    });
+                    char_x += estimate_char_width(ch, font_size * 0.85);
+                }
+            }
+            ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
+                let index = self.compute_list_item_index(doc, node_id);
+                let roman = to_roman(index);
+                let text = if matches!(style.list_style_type, ListStyleTypeValue::LowerRoman) {
+                    format!("{}.", roman.to_lowercase())
+                } else {
+                    format!("{roman}.")
+                };
+                let mut char_x = actual_marker_x;
+                let char_y = marker_y + font_size;
+                for ch in text.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: font_size * 0.85,
+                        color,
+                        glyph_id: ch as u32,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                    });
+                    char_x += estimate_char_width(ch, font_size * 0.85);
+                }
+            }
+            ListStyleTypeValue::None => {}
+        }
+    }
+
+    /// 计算当前列表项在其兄弟中的 1-based 索引。
+    ///
+    /// 遍历父节点的子元素，统计当前节点之前有多少个 <li> 兄弟。
+    fn compute_list_item_index(&self, doc: &Document, node_id: NodeId) -> usize {
+        let parent_id = match doc.parent_node(node_id) {
+            Some(id) => id,
+            None => return 1,
+        };
+
+        let mut index = 0;
+        let mut found = false;
+        for child_id in doc.child_nodes(parent_id) {
+            if child_id == node_id {
+                found = true;
+                break;
+            }
+            if let Some(child) = doc.get(child_id)
+                && let NodeKind::Element(elem) = &child.kind
+                && elem.local_name() == "li"
+            {
+                index += 1;
+            }
+        }
+
+        if found { index + 1 } else { 1 }
     }
 
     /// 绘制文本内容（生成多字符 GlyphPrimitive）。
@@ -832,6 +1401,65 @@ impl Default for Painter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Groove/Ridge 颜色对生成。
+///
+/// 返回 (亮色, 暗色)，亮色用于高光部分，暗色用于阴影部分。
+fn groove_ridge_colors(color: &Color) -> (Color, Color) {
+    let light = lighten(color, 0.3);
+    let dark = darken(color, 0.3);
+    (light, dark)
+}
+
+/// 使颜色变亮。
+fn lighten(color: &Color, amount: f32) -> Color {
+    Color::rgba(
+        (color.r as f32 + (255.0 - color.r as f32) * amount).min(255.0) as u8,
+        (color.g as f32 + (255.0 - color.g as f32) * amount).min(255.0) as u8,
+        (color.b as f32 + (255.0 - color.b as f32) * amount).min(255.0) as u8,
+        color.a,
+    )
+}
+
+/// 使颜色变暗。
+fn darken(color: &Color, amount: f32) -> Color {
+    Color::rgba(
+        (color.r as f32 * (1.0 - amount)).min(255.0) as u8,
+        (color.g as f32 * (1.0 - amount)).min(255.0) as u8,
+        (color.b as f32 * (1.0 - amount)).min(255.0) as u8,
+        color.a,
+    )
+}
+
+/// 将数字转换为罗马数字字符串（1-based）。
+fn to_roman(mut num: usize) -> String {
+    if num == 0 {
+        return "0".to_string();
+    }
+    let pairs = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut result = String::new();
+    for (value, symbol) in &pairs {
+        while num >= *value {
+            result.push_str(symbol);
+            num -= value;
+        }
+    }
+    result
 }
 
 fn has_direct_paintable_text(doc: &Document, node_id: NodeId) -> bool {
