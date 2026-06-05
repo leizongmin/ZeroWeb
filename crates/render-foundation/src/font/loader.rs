@@ -141,6 +141,13 @@ impl FontLoader {
         })
     }
 
+    /// 获取水平排版行 metrics：`(ascent, descent)`，其中 `descent` 通常为负值。
+    pub fn line_metrics(&self, font_id: u32, size: f32) -> Option<(f32, f32)> {
+        let font = self.fonts.get(&font_id)?;
+        let metrics = font.horizontal_line_metrics(size)?;
+        Some((metrics.ascent, metrics.descent))
+    }
+
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
         if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {

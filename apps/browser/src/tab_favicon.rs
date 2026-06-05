@@ -12,10 +12,19 @@ use zero_render_foundation::gpu::renderer::GlyphDraw;
 /// favicon 专用虚拟 font id。
 pub const FAVICON_FONT_ID: u32 = 0xFFFF_FFFD;
 
+const FAVICON_BASE_CODEPOINT: u32 = 0xF100;
 const DEFAULT_FAVICON_SVG: &[u8] = include_bytes!("../assets/icons/globe.svg");
 
+fn favicon_glyph_id(tab_id: TabId) -> u32 {
+    FAVICON_BASE_CODEPOINT + (tab_id.0 as u32 & 0x7FF)
+}
+
+fn favicon_char(tab_id: TabId) -> char {
+    char::from_u32(favicon_glyph_id(tab_id)).unwrap_or('\0')
+}
+
 pub fn clear_tab_favicon(font_loader: &mut FontLoader, tab_id: TabId, size_px: f32) {
-    font_loader.clear_bitmap_glyph(FAVICON_FONT_ID, tab_id.0 as u32, size_px);
+    font_loader.clear_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px);
 }
 
 /// 为标签注册 favicon 并返回绘制用的 glyph 字符。
@@ -27,15 +36,15 @@ pub fn ensure_tab_favicon(
     html: Option<&str>,
     size_px: f32,
 ) -> char {
-    let glyph_id = tab_id.0 as u32;
+    let glyph_id = favicon_glyph_id(tab_id);
     if font_loader.has_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px) {
-        return favicon_char(glyph_id);
+        return favicon_char(tab_id);
     }
 
     let bitmap = resolve_favicon_bitmap(page_url, html, size_px)
         .unwrap_or_else(|| rasterize_svg(DEFAULT_FAVICON_SVG, size_px).unwrap_or_else(default_bitmap));
     font_loader.register_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px, bitmap);
-    favicon_char(glyph_id)
+    favicon_char(tab_id)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -59,10 +68,6 @@ pub fn render_tab_favicon(
         font_id: FAVICON_FONT_ID,
         font_size: size_px,
     });
-}
-
-fn favicon_char(glyph_id: u32) -> char {
-    char::from_u32(0xF100 + (glyph_id & 0x7FF)).unwrap_or('\0')
 }
 
 fn resolve_favicon_bitmap(page_url: Option<&str>, html: Option<&str>, size_px: f32) -> Option<GlyphBitmap> {
@@ -144,10 +149,35 @@ fn decode_icon_bytes(bytes: &[u8], size_px: f32) -> Option<GlyphBitmap> {
     if bytes.starts_with(b"<") || bytes.starts_with(b"<?") || bytes.starts_with(b"<svg") {
         return rasterize_svg(bytes, size_px);
     }
-    decode_png(bytes, size_px).or_else(|| {
-        debug!("unsupported favicon format, using default");
-        None
-    })
+    if bytes.len() >= 4 && bytes[0..4] == [0, 0, 1, 0] {
+        return decode_ico(bytes, size_px);
+    }
+    decode_png(bytes, size_px)
+        .or_else(|| decode_ico(bytes, size_px))
+        .or_else(|| {
+            debug!("unsupported favicon format, using default");
+            None
+        })
+}
+
+fn decode_ico(bytes: &[u8], size_px: f32) -> Option<GlyphBitmap> {
+    let icon_dir = ico::IconDir::read(std::io::Cursor::new(bytes)).ok()?;
+    let entry = icon_dir
+        .entries()
+        .iter()
+        .max_by_key(|entry| entry.width().saturating_mul(entry.height()))?;
+    let image = entry.decode().ok()?;
+    let width = image.width();
+    let height = image.height();
+    let rgba = image.rgba_data();
+    sample_alpha_grid(
+        width,
+        height,
+        rgba,
+        4,
+        |idx| rgba.get(idx + 3).copied().unwrap_or(0),
+        size_px,
+    )
 }
 
 fn decode_png(bytes: &[u8], size_px: f32) -> Option<GlyphBitmap> {
@@ -160,6 +190,37 @@ fn decode_png(bytes: &[u8], size_px: f32) -> Option<GlyphBitmap> {
     if width == 0 || height == 0 {
         return None;
     }
+    let channels = match info.color_type {
+        png::ColorType::Rgba => 4,
+        png::ColorType::Rgb => 3,
+        png::ColorType::GrayscaleAlpha => 2,
+        png::ColorType::Grayscale => 1,
+        _ => return None,
+    };
+    sample_alpha_grid(
+        width,
+        height,
+        &buf,
+        channels,
+        |idx| match info.color_type {
+            png::ColorType::Rgba => buf.get(idx + 3).copied().unwrap_or(0),
+            png::ColorType::Rgb => 255,
+            png::ColorType::GrayscaleAlpha => buf.get(idx + 1).copied().unwrap_or(0),
+            png::ColorType::Grayscale => 255,
+            _ => 0,
+        },
+        size_px,
+    )
+}
+
+fn sample_alpha_grid(
+    width: u32,
+    height: u32,
+    _data: &[u8],
+    _channels: usize,
+    alpha_at: impl Fn(usize) -> u8,
+    size_px: f32,
+) -> Option<GlyphBitmap> {
     let side = size_px.ceil().max(1.0) as u32;
     let mut alpha = vec![0u8; (side * side) as usize];
     let scale_x = width as f32 / side as f32;
@@ -172,15 +233,8 @@ fn decode_png(bytes: &[u8], size_px: f32) -> Option<GlyphBitmap> {
             let src_y = ((row as f32 + 0.5) * scale_y - 0.5)
                 .round()
                 .clamp(0.0, height as f32 - 1.0) as u32;
-            let idx = (src_y * width + src_x) as usize;
-            let a = match info.color_type {
-                png::ColorType::Rgba => buf.get(idx * 4 + 3).copied().unwrap_or(0),
-                png::ColorType::Rgb => 255,
-                png::ColorType::GrayscaleAlpha => buf.get(idx * 2 + 1).copied().unwrap_or(0),
-                png::ColorType::Grayscale => 255,
-                _ => 0,
-            };
-            alpha[(row * side + col) as usize] = a;
+            let idx = (src_y * width + src_x) as usize * _channels;
+            alpha[(row * side + col) as usize] = alpha_at(idx);
         }
     }
     Some(GlyphBitmap {
@@ -218,5 +272,52 @@ fn default_bitmap() -> GlyphBitmap {
         x_offset: 0,
         y_offset: 0,
         advance: 16.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_browser_shell::TabId;
+    use zero_render_foundation::color::Color;
+
+    #[test]
+    fn favicon_register_and_lookup_use_same_codepoint() {
+        let mut loader = FontLoader::new();
+        let tab_id = TabId(3);
+        let size = 14.0;
+        let ch = ensure_tab_favicon(&mut loader, tab_id, None, None, size);
+        assert_eq!(ch, favicon_char(tab_id));
+        assert!(loader.has_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size));
+        let (resolved, bitmap) = loader
+            .rasterize_glyph_with_fallback(FAVICON_FONT_ID, ch, size)
+            .expect("favicon bitmap should resolve");
+        assert_eq!(resolved, FAVICON_FONT_ID);
+        assert!(bitmap.width > 0 && bitmap.height > 0);
+        assert!(bitmap.data.iter().any(|&a| a > 0));
+    }
+
+    #[test]
+    fn render_tab_favicon_produces_drawable_glyph() {
+        let mut loader = FontLoader::new();
+        let mut glyphs = Vec::new();
+        render_tab_favicon(
+            &mut loader,
+            &mut glyphs,
+            TabId(1),
+            None,
+            None,
+            20.0,
+            20.0,
+            14.0,
+            Color::BLACK,
+        );
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].font_id, FAVICON_FONT_ID);
+        assert!(
+            loader
+                .rasterize_glyph_with_fallback(FAVICON_FONT_ID, glyphs[0].ch, 14.0)
+                .is_ok()
+        );
     }
 }

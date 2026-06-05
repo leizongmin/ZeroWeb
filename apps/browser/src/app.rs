@@ -1,6 +1,7 @@
 //! 浏览器应用核心状态和事件处理
 
 use std::collections::HashMap;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
@@ -22,6 +23,17 @@ use crate::pages;
 use crate::text_input::TextInput;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
+
+/// 标签页 URL 加载状态（先绘制 loading，再发起请求）。
+enum TabFetchState {
+    None,
+    WaitingPaint(TabId, String),
+    HttpInFlight {
+        tab_id: TabId,
+        url: String,
+        rx: mpsc::Receiver<Result<String, String>>,
+    },
+}
 
 /// 自定义窗口控制按钮动作（Wayland 无系统装饰时使用）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +179,8 @@ pub struct BrowserApp {
     chrome_palette: colors::ChromePalette,
     /// 是否已用 winit 窗口主题同步过颜色方案
     color_scheme_window_synced: bool,
+    /// 标签页 URL 加载（延迟绘制 loading / 后台 HTTP）
+    tab_fetch: TabFetchState,
 }
 
 impl BrowserApp {
@@ -222,7 +236,58 @@ impl BrowserApp {
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             color_scheme_window_synced: false,
+            tab_fetch: TabFetchState::None,
         }
+    }
+
+    /// 是否有进行中的标签页 fetch（含等待首帧绘制）。
+    pub fn tab_fetch_active(&self) -> bool {
+        !matches!(self.tab_fetch, TabFetchState::None)
+    }
+
+    /// 轮询后台 HTTP fetch 结果。
+    pub fn poll_tab_fetch(&mut self) {
+        let TabFetchState::HttpInFlight { tab_id, url, rx } = &self.tab_fetch else {
+            return;
+        };
+        let Ok(result) = rx.try_recv() else {
+            return;
+        };
+        let tab_id = *tab_id;
+        let url = url.clone();
+        self.tab_fetch = TabFetchState::None;
+        match result {
+            Ok(html) => self.apply_fetched_html(tab_id, &url, &html),
+            Err(error) => self.apply_fetch_error(tab_id, &url, &error),
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 在绘制 loading 帧之后启动 fetch。
+    pub fn begin_tab_fetch_after_paint(&mut self) {
+        let state = std::mem::replace(&mut self.tab_fetch, TabFetchState::None);
+        let TabFetchState::WaitingPaint(tab_id, url) = state else {
+            self.tab_fetch = state;
+            return;
+        };
+        if url.starts_with("http://") || url.starts_with("https://") {
+            let (tx, rx) = mpsc::channel();
+            let fetch_url = url.clone();
+            std::thread::spawn(move || {
+                let result = reqwest::blocking::Client::builder()
+                    .timeout(Duration::from_secs(30))
+                    .user_agent("ZeroBrowser/1.0")
+                    .build()
+                    .and_then(|client| client.get(&fetch_url).send())
+                    .and_then(|response| response.text())
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+            self.tab_fetch = TabFetchState::HttpInFlight { tab_id, url, rx };
+        } else {
+            self.fetch_tab_url_sync(tab_id, &url);
+        }
+        self.needs_redraw = true;
     }
 
     fn apply_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
@@ -467,20 +532,42 @@ impl BrowserApp {
 
     /// 计算网页内容区域物理像素尺寸（用于滚动、合成区域）
     pub fn content_physical_size(&self) -> (u32, u32) {
-        let s = self.scale_factor;
-        let chrome_h = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT + layout::STATUS_BAR_HEIGHT) * s;
-        let content_w = self.physical_size.0;
-        let content_h = (self.physical_size.1 as f32 - chrome_h).max(0.0) as u32;
-        (content_w, content_h)
+        let (_, _, w, h) = self.page_content_rect();
+        (w.max(0.0) as u32, h.max(0.0) as u32)
     }
 
     /// WebView 布局视口（CSS 逻辑像素，与 devicePixelRatio 对应）
     pub fn content_logical_size(&self) -> (u32, u32) {
         let s = self.scale_factor.max(f32::EPSILON);
-        let chrome_h = layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT + layout::STATUS_BAR_HEIGHT;
-        let logical_w = (self.physical_size.0 as f32 / s).round().max(1.0) as u32;
-        let logical_h = ((self.physical_size.1 as f32 / s) - chrome_h).max(0.0).round() as u32;
-        (logical_w, logical_h)
+        let (_, _, w, h) = self.page_content_rect();
+        ((w / s).round().max(1.0) as u32, (h / s).round().max(0.0) as u32)
+    }
+
+    /// 页面视口外框（物理像素）：含圆角与边框的 `(x, y, w, h)`。
+    pub fn page_frame_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let status_h = layout::STATUS_BAR_HEIGHT * s;
+        let inset_h = layout::PAGE_FRAME_INSET_H * s;
+        let inset_top = layout::PAGE_FRAME_INSET_TOP * s;
+        let inset_bottom = layout::PAGE_FRAME_INSET_BOTTOM * s;
+        let x = inset_h;
+        let y = chrome_top + inset_top;
+        let w = self.physical_size.0 as f32 - 2.0 * inset_h;
+        let h = (self.physical_size.1 as f32 - status_h - y - inset_bottom).max(0.0);
+        (x, y, w, h)
+    }
+
+    /// 页面内容区（物理像素，边框内侧）：WebView 绘制与命中区域。
+    pub fn page_content_rect(&self) -> (f32, f32, f32, f32) {
+        let (x, y, w, h) = self.page_frame_rect();
+        let border = layout::PAGE_FRAME_BORDER * self.scale_factor;
+        (
+            x + border,
+            y + border,
+            (w - 2.0 * border).max(0.0),
+            (h - 2.0 * border).max(0.0),
+        )
     }
 
     /// 创建指定视口尺寸的 WebView
@@ -505,8 +592,8 @@ impl BrowserApp {
         }
     }
 
-    /// 通过 WebView 加载指定标签页 URL
-    fn fetch_tab_url(&mut self, tab_id: TabId, url: &str) {
+    /// 通过 WebView 加载指定标签页 URL（同步，用于 zero:// 等）
+    fn fetch_tab_url_sync(&mut self, tab_id: TabId, url: &str) {
         if url == "zero://settings" {
             self.open_settings_page();
             return;
@@ -518,15 +605,7 @@ impl BrowserApp {
         };
 
         match result {
-            Ok(_) => {
-                let title = self
-                    .webviews
-                    .get(&tab_id)
-                    .and_then(|wv| wv.title().map(str::to_string))
-                    .unwrap_or_else(|| url.to_string());
-                self.shell.on_page_loaded(&title);
-                self.refresh_tab_favicon(tab_id, url);
-            }
+            Ok(_) => self.finish_tab_load(tab_id, url),
             Err(e) => {
                 tracing::warn!("Failed to fetch URL: {e}, loading error page");
                 let error = e.to_string();
@@ -537,6 +616,53 @@ impl BrowserApp {
                 self.shell.on_page_error(&error);
             }
         }
+    }
+
+    fn finish_tab_load(&mut self, tab_id: TabId, url: &str) {
+        let title = self
+            .webviews
+            .get(&tab_id)
+            .and_then(|wv| pages::extract_html_title(wv.html_content()))
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| url.to_string());
+        if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.set_title(&title);
+        }
+        self.shell.on_page_loaded(&title);
+        self.refresh_tab_favicon(tab_id, url);
+    }
+
+    fn apply_fetched_html(&mut self, tab_id: TabId, url: &str, html: &str) {
+        let title = pages::extract_html_title(html)
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| url.to_string());
+        if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.set_prefers_color_scheme(self.color_scheme);
+            wv.complete_load(html, None);
+            wv.set_title(&title);
+        }
+        self.shell.on_page_loaded(&title);
+        self.refresh_tab_favicon(tab_id, url);
+    }
+
+    fn apply_fetch_error(&mut self, tab_id: TabId, url: &str, error: &str) {
+        tracing::warn!("Failed to fetch URL: {error}, loading error page");
+        let error_page = pages::generate_error_page(url, error);
+        if let Some(wv) = self.webviews.get_mut(&tab_id) {
+            wv.set_prefers_color_scheme(self.color_scheme);
+            wv.load_html(&error_page, None);
+        }
+        self.shell.on_page_error(error);
+    }
+
+    fn schedule_tab_fetch(&mut self, tab_id: TabId, url: String) {
+        if self.shell.active_tab_id() == Some(tab_id)
+            && let Some(tab) = self.shell.active_tab_mut()
+        {
+            tab.set_loading(true);
+        }
+        self.tab_fetch = TabFetchState::WaitingPaint(tab_id, url);
+        self.needs_redraw = true;
     }
 
     /// 导航到指定 URL
@@ -559,8 +685,7 @@ impl BrowserApp {
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
 
-        self.fetch_tab_url(tab_id, &url);
-        self.needs_redraw = true;
+        self.schedule_tab_fetch(tab_id, url);
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
@@ -684,8 +809,7 @@ impl BrowserApp {
             None => return,
         };
 
-        self.fetch_tab_url(tab_id, &url);
-        self.needs_redraw = true;
+        self.schedule_tab_fetch(tab_id, url);
     }
 
     /// 执行后退导航
@@ -703,8 +827,7 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
-        self.fetch_tab_url(tab_id, &url);
-        self.needs_redraw = true;
+        self.schedule_tab_fetch(tab_id, url);
     }
 
     /// 执行前进导航
@@ -722,8 +845,7 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
-        self.fetch_tab_url(tab_id, &url);
-        self.needs_redraw = true;
+        self.schedule_tab_fetch(tab_id, url);
     }
 
     /// 打开设置页面（about:preferences）
@@ -756,12 +878,18 @@ impl BrowserApp {
         };
 
         let s = self.scale_factor;
-        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
-        let content_bottom = self.physical_size.1 as f32 - layout::STATUS_BAR_HEIGHT * s;
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
+        let content_bottom = content_y + content_h;
+        let mouse_x = self.mouse_pos.0 as f32;
         let mouse_y = self.mouse_pos.1 as f32;
 
         // 仅在 WebView 内容区响应滚轮；mouse_pos 初始为 (0,0)，未移动过时不拦截
-        if mouse_y > 0.0 && (mouse_y < chrome_top || mouse_y >= content_bottom) {
+        if mouse_y > 0.0
+            && (mouse_y < content_y
+                || mouse_y >= content_bottom
+                || mouse_x < content_x
+                || mouse_x >= content_x + content_w)
+        {
             return;
         }
 
@@ -1369,27 +1497,32 @@ impl BrowserApp {
         }
 
         // 5. 查找栏区域点击
-        if self.shell.find_state().is_active() && y_f >= chrome_top && y_f < chrome_top + layout::FIND_BAR_HEIGHT * s {
-            let close_x = width - 40.0 * s;
-            if x_f >= close_x {
-                self.shell.find_close();
-                self.find_input.clear();
-                self.needs_redraw = true;
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
+        if self.shell.find_state().is_active() && y_f >= content_y && y_f < content_y + layout::FIND_BAR_HEIGHT * s {
+            let bar_w = 320.0 * s;
+            let bar_x = width - bar_w - 10.0 * s;
+            if x_f >= bar_x && x_f <= bar_x + bar_w {
+                let close_x = bar_x + bar_w - 40.0 * s;
+                if x_f >= close_x {
+                    self.shell.find_close();
+                    self.find_input.clear();
+                    self.needs_redraw = true;
+                    return;
+                }
+                let prev_x = bar_x + bar_w - 100.0 * s;
+                let next_x = bar_x + bar_w - 70.0 * s;
+                if x_f >= prev_x && x_f < prev_x + 28.0 * s {
+                    self.shell.find_previous();
+                    self.needs_redraw = true;
+                    return;
+                }
+                if x_f >= next_x && x_f < next_x + 28.0 * s {
+                    self.shell.find_next();
+                    self.needs_redraw = true;
+                    return;
+                }
                 return;
             }
-            let prev_x = width - 100.0 * s;
-            let next_x = width - 70.0 * s;
-            if x_f >= prev_x && x_f < prev_x + 28.0 * s {
-                self.shell.find_previous();
-                self.needs_redraw = true;
-                return;
-            }
-            if x_f >= next_x && x_f < next_x + 28.0 * s {
-                self.shell.find_next();
-                self.needs_redraw = true;
-                return;
-            }
-            return;
         }
 
         // 6. 页面内容区域 — 链接点击 / 取消地址栏焦点
@@ -1398,9 +1531,14 @@ impl BrowserApp {
         } else {
             0.0
         };
-        let page_top = chrome_top + find_bar_h;
+        let page_top = content_y + find_bar_h;
 
-        if y_f >= page_top {
+        if y_f >= content_y
+            && y_f < content_y + content_h
+            && x_f >= content_x
+            && x_f < content_x + content_w
+            && y_f >= page_top
+        {
             if button == "Left"
                 && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
                 && let Some(glyphs) = self.page_glyphs(tab_id)
@@ -1494,19 +1632,19 @@ impl BrowserApp {
     fn page_doc_point(&self, x_f: f32, y_f: f32) -> Option<(TabId, f32, f32)> {
         let s = self.scale_factor;
         let tab_id = self.shell.active_tab_id()?;
-        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
         let find_bar_h = if self.shell.find_state().is_active() {
             layout::FIND_BAR_HEIGHT * s
         } else {
             0.0
         };
-        let page_top = chrome_top + find_bar_h;
-        let content_bottom = self.physical_size.1 as f32 - layout::STATUS_BAR_HEIGHT * s;
-        if y_f < page_top || y_f >= content_bottom {
+        let page_top = content_y + find_bar_h;
+        let content_bottom = content_y + content_h;
+        if x_f < content_x || x_f >= content_x + content_w || y_f < page_top || y_f >= content_bottom {
             return None;
         }
         let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
-        Some((tab_id, x_f / s, (y_f - page_top + scroll_y) / s))
+        Some((tab_id, (x_f - content_x) / s, (y_f - page_top + scroll_y) / s))
     }
 
     /// 与渲染一致的页面 glyph 列表（含字体 reflow）。
@@ -1524,8 +1662,9 @@ impl BrowserApp {
         let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
         let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
         let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
-        let bar_y = layout::TAB_BAR_HEIGHT * s + 4.0 * s;
-        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 8.0 * s;
+        let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
+        let bar_y = layout::TAB_BAR_HEIGHT * s + inset;
+        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
         (bar_x, bar_y, bar_w, bar_h)
     }
 
@@ -1809,7 +1948,7 @@ impl BrowserApp {
         if self.address_bar_focused {
             let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
             let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-            let bar_y = layout::TAB_BAR_HEIGHT + 4.0;
+            let bar_y = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_INPUT_V_INSET;
             window.set_ime_cursor_area(
                 LogicalPosition::new(bar_x, bar_y),
                 LogicalSize::new(480.0, layout::ADDRESS_BAR_HEIGHT),

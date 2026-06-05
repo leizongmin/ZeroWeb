@@ -27,3 +27,4 @@ resvg = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 png = "0.17"
 url = { workspace = true }
+ico = "0.5.0"

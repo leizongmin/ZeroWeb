@@ -20,6 +20,38 @@ pub fn generate_error_page(url: &str, error: &str) -> String {
     )
 }
 
+/// 从 HTML 文档提取 `<title>` 文本。
+pub fn extract_html_title(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let tag_start = lower.find("<title")?;
+    let content_start = html[tag_start..].find('>')? + tag_start + 1;
+    let rest = &html[content_start..];
+    let lower_rest = rest.to_ascii_lowercase();
+    let end = lower_rest.find("</title>")?;
+    let title = rest[..end].trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_html_title_reads_head_title() {
+        let html = r#"<!doctype html><html><head><title>Example Domain</title></head><body></body></html>"#;
+        assert_eq!(extract_html_title(html).as_deref(), Some("Example Domain"));
+    }
+
+    #[test]
+    fn extract_html_title_returns_none_when_missing() {
+        assert!(extract_html_title("<html><body>Hi</body></html>").is_none());
+    }
+}
+
 /// 生成设置页面 HTML
 pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) -> String {
     use zero_browser_shell::SearchEngine;
