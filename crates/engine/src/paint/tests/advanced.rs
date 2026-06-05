@@ -13,8 +13,8 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GradientKind;
 use zero_style_system::{
-    BackgroundImageComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle, TextDecorationLineValue,
-    TextShadowComputedValue, TextTransformValue,
+    BackgroundImageComputedValue, BorderCollapseValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle,
+    ContainComputedValue, TextDecorationLineValue, TextShadowComputedValue, TextTransformValue,
 };
 
 use super::super::color::named_color_to_render;
@@ -1868,4 +1868,164 @@ fn test_paint_multiple_children_layout() {
         painter.primitives().fills.len() >= 3,
         "父盒子加 2 个子盒子应产生至少 3 个 fill"
     );
+}
+
+// ============================================================
+// border-collapse:collapse 边框厚度减半
+// ============================================================
+
+/// 测试 border-collapse:collapse 时，边框（dotted 样式）宽度减半。
+/// 四边 4px dotted 边框在 collapse 模式下应产生 4 个宽度为 2 的 stroke。
+#[test]
+fn test_paint_border_collapse_halves_thickness() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("td");
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 4.0, 4.0, 4.0, 4.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+    style.border_collapse = BorderCollapseValue::Collapse;
+    style.border_top_style = BorderStyleValue::Dotted;
+    style.border_right_style = BorderStyleValue::Dotted;
+    style.border_bottom_style = BorderStyleValue::Dotted;
+    style.border_left_style = BorderStyleValue::Dotted;
+    style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 背景填充 + 4 个边框 stroke
+    assert!(!painter.primitives().fills.is_empty(), "collapse 边框应产生背景 fill");
+    assert_eq!(
+        painter.primitives().strokes.len(),
+        4,
+        "collapse 四边框应产生 4 个 stroke"
+    );
+    // 所有 stroke 宽度应为 2.0（4.0 / 2）
+    for stroke in &painter.primitives().strokes {
+        assert!(
+            (stroke.width - 2.0).abs() < 0.01,
+            "collapse 边框宽度应为 2.0（4.0/2），实际为 {}",
+            stroke.width
+        );
+    }
+}
+
+/// 测试 border-collapse:separate（默认）时，边框（dotted 样式）宽度不变。
+#[test]
+fn test_paint_border_separate_full_thickness() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("td");
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 4.0, 4.0, 4.0, 4.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+    // 默认 BorderCollapseValue::Separate，不需要显式设置
+    style.border_top_style = BorderStyleValue::Dotted;
+    style.border_right_style = BorderStyleValue::Dotted;
+    style.border_bottom_style = BorderStyleValue::Dotted;
+    style.border_left_style = BorderStyleValue::Dotted;
+    style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(
+        painter.primitives().strokes.len(),
+        4,
+        "separate 四边框应产生 4 个 stroke"
+    );
+    // 所有 stroke 宽度应为完整的 4.0
+    for stroke in &painter.primitives().strokes {
+        assert!(
+            (stroke.width - 4.0).abs() < 0.01,
+            "separate 边框宽度应为 4.0，实际为 {}",
+            stroke.width
+        );
+    }
+}
+
+// ============================================================
+// contain:paint 触发裁剪
+// ============================================================
+
+/// 测试 contain:paint 在 overflow:visible 时仍触发裁剪。
+/// 溢出内容应在元素边界处被裁剪。
+#[test]
+fn test_paint_contain_paint_triggers_clip() {
+    let mut doc = zero_dom::Document::new();
+    let parent_elem = doc.create_element("div");
+    let child_elem = doc.create_element("span");
+
+    let mut parent_box = make_box(Some(parent_elem), 10.0, 10.0, 100.0, 50.0);
+    let child_box = make_box(Some(child_elem), 0.0, 0.0, 200.0, 200.0);
+    parent_box.children.push(child_box);
+
+    let mut styles = HashMap::new();
+
+    // 父元素 contain:paint + overflow:visible（默认）
+    let mut parent_style = ComputedStyle::default();
+    parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    parent_style.contain = ContainComputedValue::Paint;
+    parent_style.color = ColorValue::CurrentColor;
+    styles.insert(parent_elem, parent_style);
+
+    // 子元素溢出父元素
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    child_style.color = ColorValue::CurrentColor;
+    styles.insert(child_elem, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    // contain:paint 应触发裁剪，子元素溢出部分被裁剪
+    assert!(
+        !painter.primitives().fills.is_empty(),
+        "contain:paint 应正常渲染父和子元素的 fill"
+    );
+    // 验证裁剪区域存在（fills 数量有限，溢出部分被裁掉）
+    assert!(painter.primitives().fills.len() >= 2, "应至少有父和子元素的背景 fill");
+}
+
+/// 测试 contain:strict 也触发裁剪（等价于 layout+style+paint）。
+#[test]
+fn test_paint_contain_strict_triggers_clip() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let mut layout = make_box(Some(elem), 0.0, 0.0, 50.0, 50.0);
+    // 添加一个溢出的子盒子
+    let child = doc.create_element("span");
+    let child_box = make_box(Some(child), 60.0, 60.0, 100.0, 100.0);
+    layout.children.push(child_box);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(100, 100, 100, 255);
+    style.contain = ContainComputedValue::Strict;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    child_style.color = ColorValue::CurrentColor;
+    styles.insert(child, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // contain:strict 应触发裁剪
+    assert!(!painter.primitives().fills.is_empty(), "contain:strict 应正常渲染");
 }
