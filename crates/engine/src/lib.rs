@@ -11,9 +11,11 @@
 //! - [`composite`] — 合成层逻辑，决定元素图层分配
 //! - [`pipeline`] — 端到端渲染管线，编排 HTML→CSS→Layout→Paint
 //! - [`preload`] — 资源预加载，解析 `<link rel="preload/prefetch">` 提示
+//! - [`animation`] — CSS 动画运行时，关键帧插值与动画时钟
 
 #![warn(missing_docs)]
 
+pub mod animation;
 pub mod composite;
 pub mod dirty;
 pub mod dom_bridge;
@@ -22,6 +24,7 @@ pub mod paint;
 pub mod pipeline;
 pub mod preload;
 
+pub use animation::*;
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;
