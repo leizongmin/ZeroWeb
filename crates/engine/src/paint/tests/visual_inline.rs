@@ -1,0 +1,894 @@
+#![allow(clippy::field_reassign_with_default, clippy::too_many_arguments)]
+
+use std::collections::HashMap;
+
+use zero_css_parser::values::{ColorValue, LengthValue};
+use zero_layout_engine::LayoutBox;
+use zero_layout_engine::types::OverflowClip;
+use zero_style_system::ComputedStyle;
+
+use super::super::painter::Painter;
+
+// ── 辅助函数（从 visual.rs 复制引用）──
+
+fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, width: f32, height: f32) -> LayoutBox {
+    LayoutBox {
+        node_id,
+        x,
+        y,
+        width,
+        height,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: width,
+        content_height: height,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    }
+}
+
+// ── 新增测试：overflow clipping with nested elements ──────
+
+/// 测试嵌套元素中 overflow:hidden 逐层裁剪。
+#[test]
+fn test_overflow_hidden_clips_deeply_nested_children() {
+    let mut doc = zero_dom::Document::new();
+    let grandparent = doc.create_element("div");
+    let parent = doc.create_element("div");
+    let child = doc.create_element("span");
+
+    let child_box = make_box(Some(child), 80.0, 80.0, 50.0, 50.0);
+    let parent_box = LayoutBox {
+        node_id: Some(parent),
+        x: 0.0,
+        y: 0.0,
+        width: 200.0,
+        height: 200.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 200.0,
+        content_height: 200.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![child_box],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+    let grandparent_box = LayoutBox {
+        node_id: Some(grandparent),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 100.0,
+        content_height: 100.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![parent_box],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Hidden,
+        overflow_y: OverflowClip::Hidden,
+    };
+
+    let mut styles = HashMap::new();
+    let mut parent_style = ComputedStyle::default();
+    parent_style.background_color = ColorValue::Rgba(0, 128, 0, 255);
+    styles.insert(parent, parent_style);
+
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    styles.insert(child, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&grandparent_box, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "should produce fills from parent and child");
+
+    let parent_fill = &fills[0];
+    assert!(parent_fill.rect.size.width <= 100.0, "parent width clipped to 100");
+    assert!(parent_fill.rect.size.height <= 100.0, "parent height clipped to 100");
+
+    let child_fill = &fills[1];
+    assert_eq!(child_fill.rect.origin.x, 80.0);
+    assert_eq!(child_fill.rect.origin.y, 80.0);
+    assert_eq!(
+        child_fill.rect.size.width, 20.0,
+        "child width clipped at grandparent boundary"
+    );
+    assert_eq!(
+        child_fill.rect.size.height, 20.0,
+        "child height clipped at grandparent boundary"
+    );
+}
+
+/// 测试双层 overflow:hidden 嵌套，内层和外层各自裁剪。
+#[test]
+fn test_overflow_hidden_double_nesting_clips() {
+    let mut doc = zero_dom::Document::new();
+    let outer = doc.create_element("div");
+    let inner = doc.create_element("div");
+    let child = doc.create_element("span");
+
+    let child_box = make_box(Some(child), 0.0, 0.0, 100.0, 100.0);
+    let inner_box = LayoutBox {
+        node_id: Some(inner),
+        x: 0.0,
+        y: 0.0,
+        width: 40.0,
+        height: 40.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 40.0,
+        content_height: 40.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![child_box],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Hidden,
+        overflow_y: OverflowClip::Hidden,
+    };
+    let outer_box = LayoutBox {
+        node_id: Some(outer),
+        x: 0.0,
+        y: 0.0,
+        width: 80.0,
+        height: 80.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 80.0,
+        content_height: 80.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![inner_box],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Hidden,
+        overflow_y: OverflowClip::Hidden,
+    };
+
+    let mut styles = HashMap::new();
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    styles.insert(child, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&outer_box, &styles, None);
+
+    let fill = &painter.primitives().fills[0];
+    assert_eq!(fill.rect.size.width, 40.0, "child clipped by inner overflow:hidden");
+    assert_eq!(fill.rect.size.height, 40.0, "child clipped by inner overflow:hidden");
+}
+
+// ── Inline formatting context 测试 ──
+
+#[test]
+fn test_paint_inline_text_in_block() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 30.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.fills.len(), 1, "应生成 1 个背景填充");
+    assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph 图元");
+
+    let glyph = &prims.glyphs[0];
+    assert_eq!(glyph.font_size, 16.0);
+    assert_eq!(glyph.x, 0.0);
+    assert_eq!(glyph.y, 16.0);
+}
+
+#[test]
+fn test_paint_mixed_inline_block() {
+    let mut doc = zero_dom::Document::new();
+    let parent = doc.create_element("div");
+    let block1 = doc.create_element("p");
+    let inline_text = doc.create_element("span");
+    let block2 = doc.create_element("p");
+
+    let child1 = make_box(Some(block1), 0.0, 0.0, 200.0, 30.0);
+    let child2 = make_box(Some(inline_text), 0.0, 30.0, 200.0, 20.0);
+    let child3 = make_box(Some(block2), 0.0, 50.0, 200.0, 30.0);
+    let parent_box = LayoutBox {
+        node_id: Some(parent),
+        x: 0.0,
+        y: 0.0,
+        width: 200.0,
+        height: 80.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 200.0,
+        content_height: 80.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![child1, child2, child3],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    let mut parent_style = ComputedStyle::default();
+    parent_style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    parent_style.color = ColorValue::CurrentColor;
+    styles.insert(parent, parent_style);
+
+    let mut block1_style = ComputedStyle::default();
+    block1_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    block1_style.color = ColorValue::CurrentColor;
+    styles.insert(block1, block1_style);
+
+    let mut inline_style = ComputedStyle::default();
+    inline_style.background_color = ColorValue::Transparent;
+    inline_style.color = ColorValue::Rgba(0, 0, 255, 255);
+    inline_style.font_size = LengthValue::Px(14.0);
+    styles.insert(inline_text, inline_style);
+
+    let mut block2_style = ComputedStyle::default();
+    block2_style.background_color = ColorValue::Rgba(0, 255, 0, 255);
+    block2_style.color = ColorValue::CurrentColor;
+    styles.insert(block2, block2_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.fills.len(), 3, "应生成 3 个填充");
+    assert_eq!(prims.glyphs.len(), 1, "应生成 1 个 glyph");
+    assert_eq!(prims.glyphs[0].y, 44.0);
+}
+
+#[test]
+fn test_paint_text_with_color() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("span");
+    let layout = make_box(Some(elem), 10.0, 20.0, 150.0, 25.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(255, 0, 0, 255);
+    style.font_size = LengthValue::Px(20.0);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let glyph = &painter.primitives().glyphs[0];
+    assert_eq!(glyph.color, zero_render_foundation::color::Color::rgb(255, 0, 0));
+    assert_eq!(glyph.font_size, 20.0);
+    assert_eq!(glyph.x, 10.0);
+    assert_eq!(glyph.y, 40.0);
+}
+
+#[test]
+fn test_paint_text_with_inline_formatting_context() {
+    let doc = zero_dom::parse_html("<p>Hello World</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let layout = make_box(Some(p), 0.0, 0.0, 100.0, 50.0);
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(p, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    assert!(painter.primitives().glyphs.len() >= 2, "应有至少 2 个 glyph");
+}
+
+#[test]
+fn test_paint_text_without_doc_fallback() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("p");
+    let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 30.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+    assert_eq!(painter.primitives().glyphs.len(), 1);
+}
+
+#[test]
+fn test_paint_inline_glyph_position_with_offset() {
+    let doc = zero_dom::parse_html("<p>Text</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let layout = LayoutBox {
+        node_id: Some(p),
+        x: 10.0,
+        y: 20.0,
+        width: 200.0,
+        height: 50.0,
+        content_x: 15.0,
+        content_y: 25.0,
+        content_width: 190.0,
+        content_height: 40.0,
+        border_top: 2.0,
+        border_right: 2.0,
+        border_bottom: 2.0,
+        border_left: 2.0,
+        padding_top: 3.0,
+        padding_right: 3.0,
+        padding_bottom: 3.0,
+        padding_left: 3.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    };
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(p, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let glyph = &painter.primitives().glyphs[0];
+    assert!(glyph.x >= 15.0, "glyph x 应包含偏移");
+    assert!(glyph.y >= 25.0, "glyph y 应包含偏移");
+}
+
+#[test]
+fn test_paint_inline_text_wrapping_multiple_lines() {
+    let doc = zero_dom::parse_html("<p>a b c d e f g h</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let layout = make_box(Some(p), 0.0, 0.0, 60.0, 200.0);
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(p, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+    assert!(painter.primitives().glyphs.len() >= 1);
+}
+
+#[test]
+fn test_paint_inline_mixed_text_and_elements() {
+    let doc = zero_dom::parse_html("<p>Hello <b>World</b></p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let layout = make_box(Some(p), 0.0, 0.0, 400.0, 50.0);
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(p, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+    assert!(painter.primitives().glyphs.len() >= 2);
+}
+
+#[test]
+fn test_paint_inline_whitespace_only_no_glyphs() {
+    let doc = zero_dom::parse_html("<p>   </p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let layout = make_box(Some(p), 0.0, 0.0, 200.0, 50.0);
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.font_size = LengthValue::Px(16.0);
+    styles.insert(p, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+    assert!(painter.primitives().glyphs.len() <= 1);
+}
+
+#[test]
+fn test_pipeline_uses_inline_formatting_for_text() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hello World</p></body></html>";
+    let css = "p { color: black; font-size: 16px; }";
+    let result = pipeline.render_html(html, css);
+    assert!(!result.primitives.glyphs.is_empty());
+}
+
+#[test]
+fn test_pipeline_inline_text_with_css_color() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Styled</p></body></html>";
+    let css = "p { color: red; font-size: 18px; }";
+    let result = pipeline.render_html(html, css);
+    assert!(!result.primitives.glyphs.is_empty());
+}
+
+// ── letter-spacing 和 word-spacing 渲染测试 ──
+
+#[test]
+fn test_letter_spacing_increases_glyph_gap() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>AB</p></body></html>";
+    let css_base = "p { color: black; font-size: 16px; }";
+    let result_base = pipeline.render_html(html, css_base);
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_base.len() < 2 {
+        return;
+    }
+    let gap_base = (glyphs_base[1].x - glyphs_base[0].x).abs();
+
+    pipeline = RenderPipeline::new(800.0, 600.0);
+    let css_spaced = "p { color: black; font-size: 16px; letter-spacing: 5px; }";
+    let result_spaced = pipeline.render_html(html, css_spaced);
+    let glyphs_spaced: Vec<_> = result_spaced
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_spaced.len() < 2 {
+        return;
+    }
+    let gap_spaced = (glyphs_spaced[1].x - glyphs_spaced[0].x).abs();
+
+    assert!(
+        gap_spaced > gap_base,
+        "letter-spacing:5px 应增大间距: {gap_spaced} vs {gap_base}"
+    );
+}
+
+#[test]
+fn test_word_spacing_applied_in_style() {
+    use crate::pipeline::RenderPipeline;
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+
+    let html = "<html><body><p>text</p></body></html>";
+    let css = "p { color: black; font-size: 16px; word-spacing: 10px; }";
+    let doc = parse_html(html);
+    let stylesheets = vec![CssParser::parse_stylesheet(css)];
+    let mut style_sys = zero_style_system::StyleSystem::new();
+    style_sys.set_viewport(800.0, 600.0);
+    let styles = style_sys.compute_styles(&doc, &stylesheets);
+    assert!(
+        styles
+            .values()
+            .any(|s| matches!(s.word_spacing, LengthValue::Px(v) if v > 0.0))
+    );
+
+    let css2 = "p { color: black; font-size: 16px; letter-spacing: 3px; }";
+    let stylesheets2 = vec![CssParser::parse_stylesheet(css2)];
+    let styles2 = style_sys.compute_styles(&doc, &stylesheets2);
+    assert!(
+        styles2
+            .values()
+            .any(|s| matches!(s.letter_spacing, LengthValue::Px(v) if v > 0.0))
+    );
+}
+
+#[test]
+fn test_letter_spacing_zero_no_effect() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>AB</p></body></html>";
+    let css = "p { color: black; font-size: 16px; letter-spacing: 0px; }";
+    let result = pipeline.render_html(html, css);
+    assert!(!result.primitives.glyphs.is_empty());
+}
+
+#[test]
+fn test_negative_letter_spacing_decreases_gap() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>AB</p></body></html>";
+    let result_base = pipeline.render_html(html, "p { color: black; font-size: 16px; }");
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_base.len() < 2 {
+        return;
+    }
+    let gap_base = (glyphs_base[1].x - glyphs_base[0].x).abs();
+
+    pipeline = RenderPipeline::new(800.0, 600.0);
+    let result_neg = pipeline.render_html(html, "p { color: black; font-size: 16px; letter-spacing: -2px; }");
+    let glyphs_neg: Vec<_> = result_neg
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_neg.len() < 2 {
+        return;
+    }
+    let gap_neg = (glyphs_neg[1].x - glyphs_neg[0].x).abs();
+
+    assert!(
+        gap_neg < gap_base,
+        "letter-spacing:-2px 应减小间距: {gap_neg} vs {gap_base}"
+    );
+}
+
+// ── text-overflow: ellipsis 测试 ──
+
+#[test]
+fn test_text_overflow_ellipsis_adds_dots() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '.' as u32);
+    assert!(has_ellipsis, "text-overflow: ellipsis 应生成 '.' glyph");
+}
+
+#[test]
+fn test_text_overflow_clip_no_dots() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css =
+        "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: clip; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let has_ellipsis = result
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .any(|g| g.glyph_id == '.' as u32);
+    assert!(!has_ellipsis);
+}
+
+#[test]
+fn test_text_overflow_ellipsis_no_overflow() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hi</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }";
+    let result = pipeline.render_html(html, css);
+    let dot_count = result
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id == '.' as u32)
+        .count();
+    assert_eq!(dot_count, 0);
+}
+
+#[test]
+fn test_text_overflow_ellipsis_needs_hidden_overflow() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: visible; text-overflow: ellipsis; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let dot_count = result
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id == '.' as u32)
+        .count();
+    assert_eq!(dot_count, 0);
+}
+
+// ── CSS filter 渲染测试 ──
+
+#[test]
+fn test_filter_blur_generates_filter_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello</p></body></html>",
+        "p { color: black; font-size: 16px; filter: blur(5px); }",
+    );
+    assert!(!result.primitives.filters.is_empty());
+}
+
+#[test]
+fn test_filter_grayscale_generates_filter_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><div>Test</div></body></html>",
+        "div { color: black; font-size: 16px; filter: grayscale(1); }",
+    );
+    assert!(!result.primitives.filters.is_empty());
+}
+
+#[test]
+fn test_filter_none_no_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello</p></body></html>",
+        "p { color: black; font-size: 16px; filter: none; }",
+    );
+    assert!(result.primitives.filters.is_empty());
+}
+
+#[test]
+fn test_no_filter_property() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Hello</p></body></html>",
+        "p { color: black; font-size: 16px; }",
+    );
+    assert!(result.primitives.filters.is_empty());
+}
+
+#[test]
+fn test_filter_brightness_value() {
+    use crate::pipeline::RenderPipeline;
+    use zero_render_foundation::primitive::FilterKind;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><div>Test</div></body></html>",
+        "div { color: black; font-size: 16px; filter: brightness(1.5); }",
+    );
+    let filters = &result.primitives.filters;
+    assert_eq!(filters.len(), 1);
+    assert!(
+        filters[0]
+            .filters
+            .iter()
+            .any(|f| matches!(f, FilterKind::Brightness(v) if (*v - 1.5).abs() < 0.01))
+    );
+}
+
+#[test]
+fn test_filter_drop_shadow() {
+    use crate::pipeline::RenderPipeline;
+    use zero_render_foundation::primitive::FilterKind;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><div>Test</div></body></html>",
+        "div { color: black; font-size: 16px; filter: drop-shadow(2 3 4 black); }",
+    );
+    let filters = &result.primitives.filters;
+    assert_eq!(filters.len(), 1);
+    assert!(filters[0].filters.iter().any(|f| matches!(f, FilterKind::DropShadow(x, y, blur, _) if (*x - 2.0).abs() < 0.1 && (*y - 3.0).abs() < 0.1 && (*blur - 4.0).abs() < 0.1)));
+}
+
+// ── CSS text-indent 渲染测试 ──
+
+#[test]
+fn test_text_indent_px_offsets_first_line() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline_no_indent = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>First line text</p></body></html>";
+    let result_base = pipeline_no_indent.render_html(html, "p { color: black; font-size: 16px; }");
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_base.is_empty() {
+        return;
+    }
+    let first_x_base = glyphs_base[0].x;
+
+    let mut pipeline_indent = RenderPipeline::new(800.0, 600.0);
+    let result_indent = pipeline_indent.render_html(html, "p { color: black; font-size: 16px; text-indent: 32px; }");
+    let glyphs_indent: Vec<_> = result_indent
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_indent.is_empty() {
+        return;
+    }
+    let first_x_indent = glyphs_indent[0].x;
+
+    assert!(
+        first_x_indent > first_x_base,
+        "text-indent: 32px 应右移: {first_x_indent} vs {first_x_base}"
+    );
+    assert!((first_x_indent - first_x_base - 32.0).abs() < 2.0);
+}
+
+#[test]
+fn test_text_indent_zero_no_offset() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Text</p></body></html>",
+        "p { color: black; font-size: 16px; text-indent: 0; }",
+    );
+    assert!(
+        !result
+            .primitives
+            .glyphs
+            .iter()
+            .filter(|g| g.glyph_id != 0)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+}
+
+#[test]
+fn test_text_indent_em_units() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Indented paragraph</p></body></html>",
+        "p { color: black; font-size: 20px; text-indent: 2em; }",
+    );
+    assert!(
+        !result
+            .primitives
+            .glyphs
+            .iter()
+            .filter(|g| g.glyph_id != 0)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+}
+
+// ── CSS overflow-wrap: break-word 渲染测试 ──
+
+#[test]
+fn test_overflow_wrap_break_word_no_panic() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(60.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Supercalifragilisticexpialidocious</p></body></html>",
+        "p { color: black; font-size: 14px; overflow-wrap: break-word; }",
+    );
+    assert!(
+        !result
+            .primitives
+            .glyphs
+            .iter()
+            .filter(|g| g.glyph_id != 0)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+}
+
+#[test]
+fn test_overflow_wrap_normal_no_break() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 200.0);
+    let result = pipeline.render_html(
+        "<html><body><p>Short words only</p></body></html>",
+        "p { color: black; font-size: 14px; overflow-wrap: normal; }",
+    );
+    assert!(
+        !result
+            .primitives
+            .glyphs
+            .iter()
+            .filter(|g| g.glyph_id != 0)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+}
