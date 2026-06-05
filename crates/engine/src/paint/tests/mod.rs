@@ -6,6 +6,7 @@ mod background_repeat;
 mod basic;
 mod content_objectfit;
 mod counters;
+mod css_table_3d;
 mod css_unpainted;
 mod effects;
 mod helpers;

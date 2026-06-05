@@ -460,6 +460,66 @@ impl Painter {
             self.paint_touch_action_indicator(box_node, abs_x, abs_y, style);
         }
 
+        // CSS scroll-snap — 吸附轴和对齐点指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::property::types::ScrollSnapStrictness;
+            if !matches!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None) {
+                self.paint_scroll_snap_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS perspective — 3D 透视上下文指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::property::types::LengthValue;
+            if let LengthValue::Px(v) = style.perspective
+                && v > 0.0
+            {
+                self.paint_perspective_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS backface-visibility: hidden — 背面不可见指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::property::types::BackfaceVisibilityValue;
+            if matches!(style.backface_visibility, BackfaceVisibilityValue::Hidden) {
+                self.paint_backface_visibility_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS transform-style: preserve-3d — 3D 渲染上下文指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::property::types::TransformStyleValue;
+            if matches!(style.transform_style, TransformStyleValue::Preserve3d) {
+                self.paint_transform_style_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS border-spacing — 表格单元格间距指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && (style.border_spacing.horizontal > 0.0 || style.border_spacing.vertical > 0.0)
+        {
+            self.paint_border_spacing_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS caption-side — 表格标题位置指示器（非默认值 bottom 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::property::types::CaptionSideValue;
+            if matches!(style.caption_side, CaptionSideValue::Bottom) {
+                self.paint_caption_side_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
         let _ = is_hidden; // visibility 在 if let 块内处理
     }
 
