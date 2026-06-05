@@ -4,6 +4,10 @@
 pub const CHROME_FONT_SIZE: f32 = 13.0;
 /// 标签栏高度
 pub const TAB_BAR_HEIGHT: f32 = 32.0;
+/// 标签栏顶部距窗口顶端的间距（标签圆角与窗口顶边留白）
+pub const TAB_BAR_TOP_INSET: f32 = 4.0;
+/// 标签栏区域总高度（含顶部间距）
+pub const TAB_STRIP_HEIGHT: f32 = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT;
 /// 地址栏高度
 pub const ADDRESS_BAR_HEIGHT: f32 = 40.0;
 /// 地址栏内边距
@@ -12,8 +16,8 @@ pub const ADDRESS_BAR_PADDING: f32 = 8.0;
 pub const ADDRESS_BAR_INPUT_V_INSET: f32 = 4.0;
 /// 地址栏胶囊内文字上下留白
 pub const ADDRESS_BAR_TEXT_V_PAD: f32 = 2.0;
-/// 工具栏总高度
-pub const TOOLBAR_HEIGHT: f32 = TAB_BAR_HEIGHT + ADDRESS_BAR_HEIGHT;
+/// 工具栏总高度（标签栏含顶部间距 + 地址栏）
+pub const TOOLBAR_HEIGHT: f32 = TAB_STRIP_HEIGHT + ADDRESS_BAR_HEIGHT;
 /// 新建标签按钮宽度
 pub const NEW_TAB_BTN_WIDTH: f32 = 32.0;
 /// 窗口控制按钮宽度（最小化/最大化/关闭）

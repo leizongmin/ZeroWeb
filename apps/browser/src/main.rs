@@ -361,6 +361,35 @@ mod tests {
         );
     }
 
+    /// 两个相邻的非当前标签之间应绘制竖线分隔。
+    #[test]
+    fn adjacent_inactive_tabs_render_vertical_separator() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.new_tab(None);
+        app.new_tab(None);
+
+        let sep = app.chrome_palette().tab_separator;
+        let line_h = layout::TAB_BAR_HEIGHT - 2.0 * layout::TAB_SEPARATOR_INSET;
+        let (fills, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            fills
+                .iter()
+                .any(|f| { f.color == sep && (f.rect.size.height - line_h).abs() < 0.5 && f.rect.size.width <= 2.0 }),
+            "adjacent inactive tabs should have a vertical separator"
+        );
+
+        let mut two_tabs = BrowserApp::new(RenderMode::Cpu);
+        two_tabs.physical_size = (1280, 900);
+        two_tabs.scale_factor = 1.0;
+        let (fills_two, _, _) = two_tabs.build_scene_for_test(1280, 900);
+        assert!(
+            !fills_two.iter().any(|f| f.color == sep),
+            "single tab should not draw tab separators"
+        );
+    }
+
     #[test]
     fn wayland_forces_cpu_present_for_gpu_and_auto() {
         let gpu = BrowserApp::new(RenderMode::Gpu);
@@ -873,7 +902,7 @@ mod tests {
 
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
-        let chrome_top = 98.0;
+        let chrome_top = layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT;
         let scroll = 40.0;
         assert!(append_webview_primitives(
             &primitives,

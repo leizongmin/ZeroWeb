@@ -31,25 +31,25 @@ impl BrowserApp {
         fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, self.chrome_palette.background));
 
         // 2. 标签栏背景（macOS 左侧为系统 traffic lights 留白）
-        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
         let leading = self.tab_bar_leading_inset() * s;
         if leading > 0.0 {
             fills.push(rect_fill(
                 leading,
                 0.0,
                 width as f32 - leading,
-                tab_bar_h,
+                tab_strip_h,
                 self.chrome_palette.tab_bar_bg,
             ));
         } else {
-            fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, self.chrome_palette.tab_bar_bg));
+            fills.push(rect_fill(0.0, 0.0, width as f32, tab_strip_h, self.chrome_palette.tab_bar_bg));
         }
 
         // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);
 
         // 4. 地址栏背景（与激活标签同色，形成一体工具栏）
-        let addr_y = tab_bar_h;
+        let addr_y = tab_strip_h;
         fills.push(rect_fill(
             0.0,
             addr_y,
@@ -81,7 +81,7 @@ impl BrowserApp {
             chrome_top,
             width as f32,
             page_gutter_h,
-            self.chrome_palette.background,
+            self.chrome_palette.tab_active_bg,
         ));
         let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect_for(width, height);
         self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
@@ -160,12 +160,15 @@ impl BrowserApp {
 
         self.tab_layout.clear();
         let mut x = leading;
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
         let icon_size = layout::TAB_ICON_SIZE * s;
         let spinner_angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
         let text_left_inset = 10.0 * s + icon_size + 6.0 * s;
         let (text_top, text_baseline) = self.ui_text_centered_in_height(tab_bar_h, font_size);
-        let icon_cy = text_baseline - font_size * 0.48;
+        let text_y = tab_y + text_top;
+        let icon_cy = tab_y + text_baseline - font_size * 0.48;
 
         struct TabPaint {
             id: TabId,
@@ -186,7 +189,7 @@ impl BrowserApp {
             let is_hovered = !is_active && {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= x && mx < x + tab_w && my < tab_bar_h
+                mx >= x && mx < x + tab_w && my >= tab_y && my < tab_strip_h
             };
             let bg = if is_active {
                 self.chrome_palette.tab_active_bg
@@ -219,6 +222,7 @@ impl BrowserApp {
             crate::tab_chrome::push_inactive_tab_fill(
                 fills,
                 tab.x,
+                tab_y,
                 tab.tab_body_w,
                 tab_bar_h,
                 s,
@@ -226,29 +230,32 @@ impl BrowserApp {
             );
         }
 
-        for i in 0..tabs.len().saturating_sub(1) {
-            if !tabs[i].is_active && !tabs[i + 1].is_active {
-                let sep_x = tabs[i].x + tabs[i].tab_w - s * 0.5;
-                let inset = layout::TAB_SEPARATOR_INSET * s;
-                fills.push(rect_fill(
-                    sep_x,
-                    inset,
-                    s.max(1.0),
-                    tab_bar_h - 2.0 * inset,
-                    self.chrome_palette.separator,
-                ));
-            }
-        }
-
         if let Some(active) = tabs.iter().find(|t| t.is_active) {
             crate::tab_chrome::push_active_tab_fill(
                 fills,
                 active.x,
+                tab_y,
                 active.tab_body_w,
                 tab_bar_h,
                 s,
                 active.bg,
             );
+        }
+
+        // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
+        for i in 0..tabs.len().saturating_sub(1) {
+            if !tabs[i].is_active && !tabs[i + 1].is_active {
+                let gap_center = tabs[i].x + tabs[i].tab_w - s * 0.5;
+                let inset = layout::TAB_SEPARATOR_INSET * s;
+                let sep_w = s.max(1.0);
+                fills.push(rect_fill(
+                    gap_center - sep_w * 0.5,
+                    tab_y + inset,
+                    sep_w,
+                    tab_bar_h - 2.0 * inset,
+                    self.chrome_palette.tab_separator,
+                ));
+            }
         }
 
         for tab in &tabs {
@@ -286,7 +293,7 @@ impl BrowserApp {
                 self.draw_ui_text(
                     &truncated,
                     tab.x + text_left_inset,
-                    text_top,
+                    text_y,
                     font_size,
                     self.chrome_palette.tab_text,
                     glyphs,
@@ -296,8 +303,8 @@ impl BrowserApp {
             let close_x = tab.x + tab.tab_w - 24.0 * s;
             let close_hit = 24.0 * s;
             let close_cx = close_x + close_hit / 2.0;
-            let close_cy = tab_bar_h / 2.0;
-            let close_hovered = self.pointer_in_rect(close_x, 0.0, close_hit, tab_bar_h);
+            let close_cy = tab_y + tab_bar_h / 2.0;
+            let close_hovered = self.pointer_in_rect(close_x, tab_y, close_hit, tab_bar_h);
             if close_hovered && tab.is_active {
                 push_circle_fill(fills, close_cx, close_cy, close_hit, self.chrome_palette.tab_hover_bg);
             }
@@ -322,17 +329,16 @@ impl BrowserApp {
         // 新建标签按钮 (+)，紧跟最后一个标签
         {
             let btn_x = x;
-            let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let is_hovered = {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= btn_x && mx < btn_x + new_tab_btn_w && my < tab_bar_h
+                mx >= btn_x && mx < btn_x + new_tab_btn_w && my >= tab_y && my < tab_strip_h
             };
             if is_hovered {
                 push_circle_fill(
                     fills,
                     btn_x + new_tab_btn_w / 2.0,
-                    tab_bar_h / 2.0,
+                    tab_y + tab_bar_h / 2.0,
                     24.0 * s,
                     self.chrome_palette.tab_hover_bg,
                 );
@@ -347,14 +353,14 @@ impl BrowserApp {
                 glyphs,
                 crate::ui_icons::Icon::Plus,
                 btn_x + new_tab_btn_w / 2.0,
-                tab_bar_h / 2.0,
+                tab_y + tab_bar_h / 2.0,
                 16.0 * s,
                 plus_color,
             );
         }
 
         if self.uses_custom_window_controls() {
-            self.render_window_controls(fills, glyphs, width, s);
+            self.render_window_controls(fills, glyphs, width, tab_y, s);
         }
     }
 
@@ -364,6 +370,7 @@ impl BrowserApp {
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
+        tab_y: f32,
         s: f32,
     ) {
         let btn_w = layout::WINDOW_CONTROL_BTN_WIDTH * s;
@@ -382,10 +389,10 @@ impl BrowserApp {
             } else {
                 self.chrome_palette.tab_bar_bg
             };
-            fills.push(rect_fill(bx, 0.0, btn_w, tab_bar_h, bg));
+            fills.push(rect_fill(bx, tab_y, btn_w, tab_bar_h, bg));
 
             let cx = bx + btn_w / 2.0;
-            let cy = tab_bar_h / 2.0;
+            let cy = tab_y + tab_bar_h / 2.0;
 
             match i {
                 0 => {
@@ -649,7 +656,7 @@ impl BrowserApp {
         }
     }
 
-    /// 渲染页面视口背景（外圈灰色圆角 + 内圈白色圆角，四角一致）
+    /// 渲染页面视口背景（外圈边框色圆角 + 内圈页面底色）
     fn render_page_frame(
         &self,
         fills: &mut Vec<FillPrimitive>,
@@ -687,7 +694,7 @@ impl BrowserApp {
     ) {
         let (fx, fy, fw, fh) = self.page_frame_rect_for(width, height);
         let outer_r = layout::PAGE_FRAME_RADIUS * s;
-        push_rounded_rect_outside_corner_masks(fills, fx, fy, fw, fh, outer_r, self.chrome_palette.background);
+        push_rounded_rect_outside_corner_masks(fills, fx, fy, fw, fh, outer_r, self.chrome_palette.tab_active_bg);
 
         let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
         let border = layout::PAGE_FRAME_BORDER * s;
@@ -1047,7 +1054,7 @@ impl BrowserApp {
         let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
         let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
         let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
-        let dropdown_y = (layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT) * s;
+        let dropdown_y = layout::TOOLBAR_HEIGHT * s;
 
         let visible_count = self
             .autocomplete

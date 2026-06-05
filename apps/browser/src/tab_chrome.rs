@@ -6,12 +6,28 @@ use zero_render_foundation::primitive::FillPrimitive;
 use crate::layout;
 
 /// 绘制非激活标签（仅顶部圆角）。
-pub fn push_inactive_tab_fill(fills: &mut Vec<FillPrimitive>, x: f32, w: f32, h: f32, scale: f32, color: Color) {
-    push_top_rounded_rect_fill(fills, x, 0.0, w, h, layout::TAB_TOP_RADIUS * scale, color);
+pub fn push_inactive_tab_fill(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    tab_y: f32,
+    w: f32,
+    h: f32,
+    scale: f32,
+    color: Color,
+) {
+    push_top_rounded_rect_fill(fills, x, tab_y, w, h, layout::TAB_TOP_RADIUS * scale, color);
 }
 
 /// 绘制 Chrome 风格激活标签（与标签栏同高；底角二次曲线过渡到水平底边）。
-pub fn push_active_tab_fill(fills: &mut Vec<FillPrimitive>, x: f32, w: f32, h: f32, scale: f32, color: Color) {
+pub fn push_active_tab_fill(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    tab_y: f32,
+    w: f32,
+    h: f32,
+    scale: f32,
+    color: Color,
+) {
     if w <= 0.0 || h <= 0.0 {
         return;
     }
@@ -50,7 +66,7 @@ pub fn push_active_tab_fill(fills: &mut Vec<FillPrimitive>, x: f32, w: f32, h: f
         }
 
         if x_end > x_start {
-            fills.push(rect_fill(x_start, row as f32, x_end - x_start, 1.0, color));
+            fills.push(rect_fill(x_start, tab_y + row as f32, x_end - x_start, 1.0, color));
         }
     }
 }
@@ -231,7 +247,7 @@ mod tests {
     fn active_tab_stays_within_tab_bar_height() {
         let mut fills = Vec::new();
         let h = 36.0;
-        push_active_tab_fill(&mut fills, 0.0, 200.0, h, 1.0, test_color());
+        push_active_tab_fill(&mut fills, 0.0, 0.0, 200.0, h, 1.0, test_color());
         assert!(
             max_fill_bottom(&fills) <= h + 0.1,
             "active tab must not extend below tab bar, got {}",
@@ -273,7 +289,7 @@ mod tests {
         let x = 100.0;
         let w = 200.0;
         let h = 36.0;
-        push_active_tab_fill(&mut fills, x, w, h, 1.0, test_color());
+        push_active_tab_fill(&mut fills, x, 0.0, w, h, 1.0, test_color());
         assert!(fills.iter().any(|f| f.rect.origin.x < x - 0.1));
         assert!(fills.iter().any(|f| f.rect.origin.x + f.rect.size.width > x + w + 0.1));
     }

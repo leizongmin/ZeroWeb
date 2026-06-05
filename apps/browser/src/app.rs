@@ -406,7 +406,7 @@ impl BrowserApp {
     }
 
     fn window_control_hit_test(&self, x: f32, y: f32, width: f32, s: f32) -> Option<WindowChromeAction> {
-        if !self.uses_custom_window_controls() || y >= layout::TAB_BAR_HEIGHT * s {
+        if !self.uses_custom_window_controls() || y >= layout::TAB_STRIP_HEIGHT * s {
             return None;
         }
         let x0 = self.window_controls_origin_x(width, s);
@@ -425,8 +425,8 @@ impl BrowserApp {
 
     /// 是否点击在标签栏空白区域（可拖动 / 双击最大化）
     fn is_tab_bar_blank_hit(&self, x: f32, y: f32, width: f32, s: f32) -> bool {
-        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
-        if y >= tab_bar_h {
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
+        if y >= tab_strip_h {
             return false;
         }
         let leading = self.tab_bar_leading_inset() * s;
@@ -1413,7 +1413,7 @@ impl BrowserApp {
             if (y as f32) < toolbar_h {
                 self.needs_redraw = true;
             }
-            if (y as f32) < layout::TAB_BAR_HEIGHT * self.scale_factor {
+            if (y as f32) < layout::TAB_STRIP_HEIGHT * self.scale_factor {
                 self.update_window_control_hover(x, y);
             }
             self.update_tab_bar_drag(x, y);
@@ -1484,8 +1484,9 @@ impl BrowserApp {
         let x_f = x as f32;
         let width = self.physical_size.0 as f32;
 
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
-        let addr_bar_h = layout::ADDRESS_BAR_HEIGHT * s;
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
         let bookmarks_bar_h = layout::BOOKMARKS_BAR_HEIGHT * s;
         let chrome_top = toolbar_h + bookmarks_bar_h;
@@ -1506,7 +1507,7 @@ impl BrowserApp {
                     return;
                 }
             }
-            let autocomplete_top = tab_bar_h + addr_bar_h;
+            let autocomplete_top = toolbar_h;
             let autocomplete_height = self
                 .autocomplete
                 .suggestions
@@ -1520,37 +1521,41 @@ impl BrowserApp {
         }
 
         // 2. 标签栏区域点击
-        if y_f < tab_bar_h {
-            if let Some(action) = self.window_control_hit_test(x_f, y_f, width, s) {
+        if y_f < tab_strip_h {
+            if y_f >= tab_y
+                && let Some(action) = self.window_control_hit_test(x_f, y_f, width, s)
+            {
                 self.pending_window_chrome_action = Some(action);
                 self.needs_redraw = true;
                 return;
             }
 
-            let new_tab_x = self.new_tab_button_x();
-            if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
-                self.new_tab(None);
-                return;
-            }
+            if y_f >= tab_y {
+                let new_tab_x = self.new_tab_button_x();
+                if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
+                    self.new_tab(None);
+                    return;
+                }
 
-            for &(id, tab_x, tab_w) in &self.tab_layout {
-                if x_f >= tab_x && x_f < tab_x + tab_w {
-                    let close_x = tab_x + tab_w - 24.0 * s;
-                    let close_y_center = tab_bar_h / 2.0;
-                    if x_f >= close_x
-                        && x_f <= close_x + tab_close_size
-                        && (y_f - close_y_center).abs() <= tab_close_size / 2.0
-                    {
-                        self.close_tab_by_id(id);
+                for &(id, tab_x, tab_w) in &self.tab_layout {
+                    if x_f >= tab_x && x_f < tab_x + tab_w {
+                        let close_x = tab_x + tab_w - 24.0 * s;
+                        let close_y_center = tab_y + tab_bar_h / 2.0;
+                        if x_f >= close_x
+                            && x_f <= close_x + tab_close_size
+                            && (y_f - close_y_center).abs() <= tab_close_size / 2.0
+                        {
+                            self.close_tab_by_id(id);
+                            return;
+                        }
+                        if Some(id) != self.shell.active_tab_id() {
+                            self.shell.switch_tab(id);
+                            self.set_hovered_link_url(None);
+                            self.update_address_bar_from_active_tab();
+                            self.needs_redraw = true;
+                        }
                         return;
                     }
-                    if Some(id) != self.shell.active_tab_id() {
-                        self.shell.switch_tab(id);
-                        self.set_hovered_link_url(None);
-                        self.update_address_bar_from_active_tab();
-                        self.needs_redraw = true;
-                    }
-                    return;
                 }
             }
 
@@ -1561,7 +1566,7 @@ impl BrowserApp {
         }
 
         // 3. 地址栏区域点击
-        if y_f < tab_bar_h + addr_bar_h {
+        if y_f < toolbar_h {
             let addr_bar_x = nav_w + addr_padding;
 
             if x_f < nav_w {
@@ -1758,16 +1763,14 @@ impl BrowserApp {
         let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
         let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
-        let bar_y = layout::TAB_BAR_HEIGHT * s + inset;
+        let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
         let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
         (bar_x, bar_y, bar_w, bar_h)
     }
 
     fn address_bar_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         let s = self.scale_factor;
-        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
-        let addr_bar_h = layout::ADDRESS_BAR_HEIGHT * s;
-        if y_f >= tab_bar_h + addr_bar_h {
+        if y_f >= layout::TOOLBAR_HEIGHT * s {
             return false;
         }
         let (bar_x, _, bar_w, _) = self.address_bar_layout();
@@ -1928,7 +1931,7 @@ impl BrowserApp {
         let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
         let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
 
-        let autocomplete_top = (layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT) * s;
+        let autocomplete_top = layout::TOOLBAR_HEIGHT * s;
         let y_f = y as f32;
         let x_f = x as f32;
 
