@@ -556,5 +556,99 @@ pub fn security_tests() -> Vec<TestCase> {
                 "no_panic".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  内容安全策略（CSP）
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── CSP meta 标签（多个指令） ──
+        TestCase {
+            id: "security/csp-multi-directive".into(),
+            description: "CSP meta 标签多个指令".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:;">
+            </head><body>
+            <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" alt="data URI img">
+            <style>body { color: #333; }</style>
+            <p>Content with CSP meta directives</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── CSP nonce 属性 ──
+        TestCase {
+            id: "security/csp-nonce-script".into(),
+            description: "CSP nonce 属性脚本".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <script nonce="abc123">
+                document.body.innerHTML += '<p>Script executed with nonce</p>';
+            </script>
+            <noscript>JavaScript is disabled</noscript>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  混合内容
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 混合内容图片 ──
+        TestCase {
+            id: "security/mixed-content-images".into(),
+            description: "混合内容图片资源".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <img src="https://example.com/secure.png" alt="Secure image">
+            <img src="http://example.com/insecure.png" alt="Insecure image">
+            <picture>
+                <source srcset="https://example.com/large.png" media="(min-width: 800px)">
+                <img src="https://example.com/small.png" alt="Responsive">
+            </picture>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  iframe 沙箱
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 多个 sandbox 标志组合 ──
+        TestCase {
+            id: "security/iframe-sandbox-combo".into(),
+            description: "iframe sandbox 多标志组合".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <iframe sandbox="allow-scripts allow-same-origin" srcdoc="<p>Script+Origin</p>"></iframe>
+            <iframe sandbox="allow-forms allow-popups" srcdoc="<form><input></form>"></iframe>
+            <iframe sandbox="" srcdoc="<p>Maximum sandbox</p>"></iframe>
+            <iframe srcdoc="<p>No sandbox attribute</p>"></iframe>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Referrer Policy
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 多种 referrer policy ──
+        TestCase {
+            id: "security/referrer-policies".into(),
+            description: "多种 referrer policy 渲染".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <meta name="referrer" content="no-referrer">
+            <a href="https://example.com" referrerpolicy="origin">Origin only</a>
+            <a href="https://example.com" referrerpolicy="no-referrer">No referrer</a>
+            <img src="logo.png" referrerpolicy="no-referrer" alt="No referrer image">
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }
