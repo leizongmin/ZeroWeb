@@ -1909,12 +1909,19 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
 
 /// 加载系统字体（主字体 + CJK/Emoji 回退链）
 pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    let primary_paths = [
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/HelveticaNeue.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ];
+    #[cfg(target_os = "windows")]
+    let primary_paths = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"];
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     let primary_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "C:\\Windows\\Fonts\\arial.ttf",
     ];
 
     let primary = primary_paths.iter().find_map(|path| {
@@ -1923,6 +1930,15 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
             .and_then(|data| font_loader.load_font(&data).ok())
     })?;
 
+    #[cfg(target_os = "macos")]
+    let fallback_paths = [
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Apple Symbols.ttf",
+    ];
+    #[cfg(target_os = "windows")]
+    let fallback_paths = ["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\seguiemj.ttf"];
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     let fallback_paths = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
@@ -1930,11 +1946,6 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        "C:\\Windows\\Fonts\\msyh.ttc",
-        "C:\\Windows\\Fonts\\seguiemj.ttf",
     ];
 
     let mut fallbacks = Vec::new();

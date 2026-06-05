@@ -44,7 +44,7 @@ impl BrowserApp {
         ));
 
         // 5. 导航按钮
-        self.render_nav_buttons(&mut glyphs, addr_y, font_size, s);
+        self.render_nav_buttons(&mut fills, addr_y, font_size, s);
 
         // 6. 地址栏
         self.render_address_bar(&mut fills, &mut glyphs, width, addr_y, font_size, s);
@@ -162,19 +162,17 @@ impl BrowserApp {
                 );
             }
 
-            if let Some(fid) = self.font_id {
-                let close_x = x + tab_w - 24.0 * s;
-                let close_size = font_size * 0.8;
-                let close_advance = self.font_loader.measure_advance(fid, '×', close_size);
-                glyphs.push(GlyphDraw {
-                    ch: '×',
-                    x: close_x + (24.0 * s - close_advance) / 2.0,
-                    baseline_y: 8.0 * s + font_size,
-                    color: colors::TAB_CLOSE,
-                    font_id: fid,
-                    font_size: close_size,
-                });
-            }
+            let close_x = x + tab_w - 24.0 * s;
+            let close_cx = close_x + 12.0 * s;
+            let close_cy = 8.0 * s + font_size * 0.5;
+            draw_close_x(
+                fills,
+                close_cx,
+                close_cy,
+                10.0 * s,
+                (1.2 * s).max(1.0),
+                colors::TAB_CLOSE,
+            );
 
             self.tab_layout.push((tab.id(), x, tab_w));
             x += tab_w;
@@ -198,7 +196,7 @@ impl BrowserApp {
         }
 
         if self.uses_custom_window_controls() {
-            self.render_window_controls(fills, glyphs, width, s);
+            self.render_window_controls(fills, width, s);
         }
     }
 
@@ -206,7 +204,6 @@ impl BrowserApp {
     fn render_window_controls(
         &self,
         fills: &mut Vec<FillPrimitive>,
-        glyphs: &mut Vec<GlyphDraw>,
         width: u32,
         s: f32,
     ) {
@@ -251,45 +248,39 @@ impl BrowserApp {
                     draw_hollow_square(fills, cx - size / 2.0, cy - size / 2.0, size, thickness, icon);
                 }
                 2 => {
-                    if let Some(fid) = self.font_id {
-                        let close_size = 14.0 * s;
-                        let advance = self.font_loader.measure_advance(fid, '×', close_size);
-                        glyphs.push(GlyphDraw {
-                            ch: '×',
-                            x: cx - advance / 2.0,
-                            baseline_y: cy + close_size * 0.35,
-                            color: icon,
-                            font_id: fid,
-                            font_size: close_size,
-                        });
-                    }
+                    draw_close_x(
+                        fills,
+                        cx,
+                        cy,
+                        10.0 * s,
+                        thickness,
+                        icon,
+                    );
                 }
                 _ => {}
             }
         }
     }
 
-    /// 渲染导航按钮
-    fn render_nav_buttons(&mut self, glyphs: &mut Vec<GlyphDraw>, y: f32, font_size: f32, s: f32) {
-        let Some(fid) = self.font_id else {
-            return;
-        };
-
-        let baseline_y = y + (layout::ADDRESS_BAR_HEIGHT * s + font_size) / 2.0;
+    /// 渲染导航按钮（矢量图标，不依赖字体符号覆盖）
+    fn render_nav_buttons(&mut self, fills: &mut Vec<FillPrimitive>, y: f32, _font_size: f32, s: f32) {
         let x = 8.0 * s;
         let btn_w = layout::NAV_BUTTON_WIDTH * s;
+        let btn_h = layout::ADDRESS_BAR_HEIGHT * s;
+        let cy = y + btn_h / 2.0;
+        let icon_size = 12.0 * s;
+        let thickness = (1.5 * s).max(1.0);
+        let color = colors::NAV_BUTTON;
 
-        for (i, ch) in ['←', '→', '↻', '⌂'].iter().enumerate() {
-            let bx = x + btn_w * i as f32;
-            let advance = self.font_loader.measure_advance(fid, *ch, font_size);
-            glyphs.push(GlyphDraw {
-                ch: *ch,
-                x: bx + (btn_w - advance) / 2.0,
-                baseline_y,
-                color: colors::NAV_BUTTON,
-                font_id: fid,
-                font_size,
-            });
+        for i in 0..4 {
+            let cx = x + btn_w * i as f32 + btn_w / 2.0;
+            match i {
+                0 => draw_chevron_left(fills, cx, cy, icon_size, thickness, color),
+                1 => draw_chevron_right(fills, cx, cy, icon_size, thickness, color),
+                2 => draw_refresh_icon(fills, cx, cy, icon_size, thickness, color),
+                3 => draw_home_icon(fills, cx, cy, icon_size, thickness, color),
+                _ => {}
+            }
         }
     }
 
@@ -592,10 +583,9 @@ impl BrowserApp {
         font_size: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        if self.font_id.is_none() {
+            return;
+        }
 
         let y = chrome_top;
         let bar_w = 320.0 * s;
@@ -658,17 +648,20 @@ impl BrowserApp {
         let next_x = bar_x + bar_w - 70.0 * s;
         let close_x = bar_x + bar_w - 40.0 * s;
         let btn_w = 24.0 * s;
-        for (ch, bx) in [('↑', prev_x), ('↓', next_x), ('×', close_x)] {
-            let advance = self.font_loader.measure_advance(fid, ch, btn_size);
-            glyphs.push(GlyphDraw {
-                ch,
-                x: bx + (btn_w - advance) / 2.0,
-                baseline_y: btn_y + btn_size,
-                color: colors::FIND_BAR_TEXT,
-                font_id: fid,
-                font_size: btn_size,
-            });
-        }
+        let icon_size = 10.0 * s;
+        let thickness = (1.2 * s).max(1.0);
+        let icon_color = colors::FIND_BAR_TEXT;
+        let btn_cy = btn_y + btn_size * 0.5;
+        draw_chevron_up(fills, prev_x + btn_w / 2.0, btn_cy, icon_size, thickness, icon_color);
+        draw_chevron_down(fills, next_x + btn_w / 2.0, btn_cy, icon_size, thickness, icon_color);
+        draw_close_x(
+            fills,
+            close_x + btn_w / 2.0,
+            btn_cy,
+            icon_size,
+            thickness,
+            icon_color,
+        );
     }
 
     /// 渲染自动补全下拉
@@ -1041,6 +1034,151 @@ fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32,
     fills.push(rect_fill(x, y + size - thickness, size, thickness, color));
     fills.push(rect_fill(x, y, thickness, size, color));
     fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
+}
+
+/// 轴对齐矩形近似线段（UI 图标用，跨平台一致）
+fn draw_line(
+    fills: &mut Vec<FillPrimitive>,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < f32::EPSILON {
+        return;
+    }
+    let steps = (len / thickness).ceil() as i32;
+    let steps = steps.clamp(1, 64);
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        fills.push(rect_fill(
+            x0 + dx * t - thickness / 2.0,
+            y0 + dy * t - thickness / 2.0,
+            thickness,
+            thickness,
+            color,
+        ));
+    }
+}
+
+fn draw_close_x(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx - half, cy - half, cx + half, cy + half, thickness, color);
+    draw_line(fills, cx + half, cy - half, cx - half, cy + half, thickness, color);
+}
+
+fn draw_chevron_left(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx + half * 0.35, cy - half, cx - half * 0.55, cy, thickness, color);
+    draw_line(fills, cx - half * 0.55, cy, cx + half * 0.35, cy + half, thickness, color);
+}
+
+fn draw_chevron_right(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx - half * 0.35, cy - half, cx + half * 0.55, cy, thickness, color);
+    draw_line(fills, cx + half * 0.55, cy, cx - half * 0.35, cy + half, thickness, color);
+}
+
+fn draw_chevron_up(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx - half, cy + half * 0.35, cx, cy - half * 0.55, thickness, color);
+    draw_line(fills, cx, cy - half * 0.55, cx + half, cy + half * 0.35, thickness, color);
+}
+
+fn draw_chevron_down(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx - half, cy - half * 0.35, cx, cy + half * 0.55, thickness, color);
+    draw_line(fills, cx, cy + half * 0.55, cx + half, cy - half * 0.35, thickness, color);
+}
+
+fn draw_refresh_icon(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let r = size * 0.38;
+    let segments = 10;
+    for i in 0..segments {
+        let a0 = std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / segments as f32;
+        let a1 = a0 + std::f32::consts::PI / segments as f32;
+        draw_line(
+            fills,
+            cx + a0.cos() * r,
+            cy + a0.sin() * r,
+            cx + a1.cos() * r,
+            cy + a1.sin() * r,
+            thickness,
+            color,
+        );
+    }
+    let tip_x = cx + r * 0.85;
+    let tip_y = cy - r * 0.55;
+    draw_line(fills, tip_x, tip_y, tip_x + size * 0.18, tip_y - size * 0.12, thickness, color);
+    draw_line(fills, tip_x, tip_y, tip_x - size * 0.05, tip_y - size * 0.18, thickness, color);
+}
+
+fn draw_home_icon(
+    fills: &mut Vec<FillPrimitive>,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let half = size / 2.0;
+    draw_line(fills, cx, cy - half, cx - half * 0.9, cy - half * 0.05, thickness, color);
+    draw_line(fills, cx, cy - half, cx + half * 0.9, cy - half * 0.05, thickness, color);
+    let body_w = size * 0.72;
+    let body_h = size * 0.48;
+    let body_x = cx - body_w / 2.0;
+    let body_y = cy - half * 0.05;
+    fills.push(rect_fill(body_x, body_y, body_w, thickness, color));
+    fills.push(rect_fill(body_x, body_y, thickness, body_h, color));
+    fills.push(rect_fill(body_x + body_w - thickness, body_y, thickness, body_h, color));
+    fills.push(rect_fill(body_x, body_y + body_h - thickness, body_w, thickness, color));
 }
 
 /// 按真实字体 advance 重新排列 WebView 文本 glyph（与 UI 文本一致）
