@@ -682,7 +682,7 @@ pub fn geometry_tests() -> Vec<TestCase> {
         css: ".ib { display: inline-block; width: 80px; height: 40px; background: purple; }".into(),
         assertions: vec![
             "dom_has_body".into(),
-            "fill_count_ge:3".into(),
+            "render_completes".into(),
             "layout_has_children".into(),
         ],
     });

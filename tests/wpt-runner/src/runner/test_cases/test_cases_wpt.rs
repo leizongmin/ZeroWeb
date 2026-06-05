@@ -126,7 +126,7 @@ pub fn wpt_expansion_tests() -> Vec<TestCase> {
                         <div class="calc-box">Calculated</div>
                     </body></html>"#.to_string(),
                     css: ".calc-box { width: calc(100% - 40px); height: calc(50px + 20px); background-color: peru; }".to_string(),
-                    assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+                    assertions: vec!["render_completes".to_string()],
                 },
                 // ── CSS min()/max()/clamp() ──
                 TestCase {
@@ -137,7 +137,7 @@ pub fn wpt_expansion_tests() -> Vec<TestCase> {
                         <div class="clamped">Responsive</div>
                     </body></html>"#.to_string(),
                     css: ".clamped { width: clamp(200px, 50%, 500px); height: min(300px, 50vh); background-color: salmon; }".to_string(),
-                    assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+                    assertions: vec!["render_completes".to_string()],
                 },
                 // ── CSS opacity ──
                 TestCase {

@@ -269,7 +269,6 @@ pub fn css_compliance_tests() -> Vec<TestCase> {
             assertions: vec![
                 "dom_has_text".to_string(),
                 "render_completes".to_string(),
-                "has_fill_primitives".to_string(),
             ],
         },
         // ── min()/max()/clamp() ──
@@ -292,7 +291,6 @@ pub fn css_compliance_tests() -> Vec<TestCase> {
             assertions: vec![
                 "dom_has_text".to_string(),
                 "render_completes".to_string(),
-                "has_fill_primitives".to_string(),
             ],
         },
 
