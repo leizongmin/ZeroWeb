@@ -209,7 +209,7 @@ mod tests {
     use app::append_webview_primitives;
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
-    use zero_render_foundation::primitive::{FontId, GlyphPrimitive, RenderPrimitives};
+    use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
 
     #[test]
     fn append_webview_primitives_translates_fills_and_glyphs() {
@@ -237,6 +237,7 @@ mod tests {
             layout::TOOLBAR_HEIGHT,
             7,
             1.0,
+            None,
         ));
 
         assert_eq!(fills.len(), 1);
@@ -268,6 +269,7 @@ mod tests {
             100.0,
             1,
             2.0,
+            None,
         ));
 
         assert_eq!(fills[0].rect.origin.x, 20.0);
@@ -520,6 +522,10 @@ mod tests {
         app.open_settings_page();
 
         assert_eq!(app.address_bar_text(), "zero://settings");
+        assert!(
+            !app.shell.active_tab().unwrap().is_loading(),
+            "settings page should clear loading state"
+        );
         // WebView 应该有渲染结果
         let _ = app.build_scene_for_test(800, 600);
     }
@@ -559,6 +565,119 @@ mod tests {
     fn normalize_url_preserves_zero_scheme() {
         let shell = zero_browser_shell::BrowserShell::new();
         assert_eq!(crate::app::normalize_url("zero://settings", &shell), "zero://settings");
+    }
+
+    /// 长文档在内容区滚轮应更新 scroll_offset。
+    #[test]
+    fn handle_scroll_updates_offset_for_tall_page() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 2400px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+        app.load_webview_html(tab_id, tall_html, None);
+        app.sync_webview_viewport();
+
+        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) as f64;
+        app.mouse_pos = (640.0, chrome_top + 100.0);
+
+        let (fills_at_zero, _) = app.build_scene_for_test(1280, 900);
+
+        // Linux/WSL 滚轮向下通常为负 LineDelta
+        app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0));
+
+        assert!(
+            app.scroll_offset_for_tab(tab_id) > 0.0,
+            "tall page should scroll with negative line delta (scroll down on Linux)"
+        );
+
+        let chrome_top_f = chrome_top as f32;
+        let (fills_after, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            fills_after
+                .iter()
+                .filter(|f| f.rect.size.height > 2000.0)
+                .all(|f| f.rect.origin.y >= chrome_top_f),
+            "scrolled page fills must not paint above content area (chrome_top={chrome_top_f})"
+        );
+        let _ = fills_at_zero;
+    }
+
+    #[test]
+    fn append_webview_primitives_clip_excludes_outside_range() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(0.0, 0.0, 10.0, 10.0), Color::rgb(255, 0, 0));
+        primitives.add_fill(Rect::new(0.0, 100.0, 10.0, 10.0), Color::rgb(0, 255, 0));
+
+        let mut fills = Vec::new();
+        let mut glyphs = Vec::new();
+        assert!(append_webview_primitives(
+            &primitives,
+            &mut fills,
+            &mut glyphs,
+            0.0,
+            50.0,
+            1,
+            1.0,
+            Some((50.0, 80.0)),
+        ));
+        assert_eq!(fills.len(), 1, "only fill intersecting clip band should remain");
+        assert_eq!(fills[0].rect.origin.y, 50.0);
+    }
+
+    /// 与 clip 带部分相交的 fill 应被裁剪，而非整颗绘制到 chrome 上方。
+    #[test]
+    fn append_webview_primitives_clip_intersects_partial_fill() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(0.0, 40.0, 10.0, 30.0), Color::rgb(255, 0, 0));
+
+        let mut fills = Vec::new();
+        let mut glyphs = Vec::new();
+        assert!(append_webview_primitives(
+            &primitives,
+            &mut fills,
+            &mut glyphs,
+            0.0,
+            0.0,
+            1,
+            1.0,
+            Some((50.0, 80.0)),
+        ));
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].rect.origin.y, 50.0);
+        assert_eq!(fills[0].rect.size.height, 20.0);
+    }
+
+    /// 模拟滚动后文档上移：fill 顶部不得超出 clip_top（避免盖住标签栏）。
+    #[test]
+    fn append_webview_primitives_clip_pins_scroll_overflow_to_content_top() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(0.0, 0.0, 200.0, 500.0), Color::rgb(200, 220, 240));
+
+        let mut fills = Vec::new();
+        let mut glyphs = Vec::new();
+        let chrome_top = 98.0;
+        let scroll = 40.0;
+        assert!(append_webview_primitives(
+            &primitives,
+            &mut fills,
+            &mut glyphs,
+            0.0,
+            chrome_top - scroll,
+            1,
+            1.0,
+            Some((chrome_top, 878.0)),
+        ));
+        assert!(!fills.is_empty());
+        assert!(
+            fills.iter().all(|f| f.rect.origin.y >= chrome_top),
+            "fill must not extend above content area top"
+        );
     }
 }
 
