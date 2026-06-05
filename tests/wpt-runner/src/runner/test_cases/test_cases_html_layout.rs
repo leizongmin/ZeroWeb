@@ -473,5 +473,96 @@ pub fn html_layout_tests() -> Vec<TestCase> {
                         "layout_has_children".to_string(),
                     ],
                 },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  表格布局
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 完整表格结构 ──
+        TestCase {
+            id: "html-layout/table-complete".into(),
+            description: "完整表格结构渲染（thead/tbody/tfoot/caption/colgroup）".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <table>
+                <caption>Sales Report</caption>
+                <colgroup><col style="background:#f0f0f0"><col><col></colgroup>
+                <thead><tr><th>Product</th><th>Q1</th><th>Q2</th></tr></thead>
+                <tbody>
+                    <tr><td>Widget A</td><td>100</td><td>150</td></tr>
+                    <tr><td>Widget B</td><td>200</td><td>180</td></tr>
+                </tbody>
+                <tfoot><tr><td>Total</td><td>300</td><td>330</td></tr></tfoot>
+            </table>
+            </body></html>"#
+                .into(),
+            css: "table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 嵌套表格 ──
+        TestCase {
+            id: "html-layout/table-nested".into(),
+            description: "嵌套表格渲染不崩溃".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <table><tr><td>
+                <table><tr><td>Inner</td></tr></table>
+            </td></tr></table>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  多列布局
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── column-count + column-rule ──
+        TestCase {
+            id: "html-layout/multi-column-rule".into(),
+            description: "多列布局带分隔线渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <div style="column-count:3;column-gap:20px;column-rule:1px solid #999">
+                <p>First paragraph of text content for multi-column layout testing.</p>
+                <p>Second paragraph with additional content spanning columns.</p>
+                <p>Third paragraph to ensure enough content fills all columns.</p>
+            </div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  表单高级
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 表单控件组合 ──
+        TestCase {
+            id: "html-layout/form-controls-advanced".into(),
+            description: "高级表单控件组合渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <form>
+                <input type="range" min="0" max="100" value="50">
+                <input type="color" value="ff0000">
+                <input type="date">
+                <input type="number" min="1" max="10" step="2">
+                <input type="search" placeholder="Search...">
+                <input type="url" placeholder="https://">
+                <textarea rows="3" cols="30">Multi-line text</textarea>
+                <select><optgroup label="Group"><option>A</option></optgroup></select>
+                <output>Result: 42</output>
+                <progress value="70" max="100"></progress>
+                <meter value="0.7" min="0" max="1" low="0.3" high="0.8" optimum="0.5"></meter>
+            </form>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }
