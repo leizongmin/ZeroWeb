@@ -139,6 +139,22 @@ Tests: ~11,380 → ~11,387 (+7), clippy clean.
 
 WPT: 1003 → 1013 用例（+10, 21 个分类, 100% 通过率），clippy clean.
 
+### -95c. 动画/过渡集成测试扩展（本轮，480 集成测试）
+
+新增 7 个 CSS 动画/过渡跨 crate 管线集成测试：
+
+| 测试 | 覆盖场景 |
+|------|----------|
+| test_keyframes_animation_pipeline | @keyframes 完整管线渲染 |
+| test_animation_timing_ease_pipeline | 动画 ease timing function |
+| test_animation_fill_forwards_pipeline | 动画 fill-mode forwards |
+| test_animation_direction_alternate_pipeline | 动画 direction alternate |
+| test_transition_property_pipeline | CSS transition 属性定义管线 |
+| test_transition_multi_property_pipeline | transition 多属性管线 |
+| test_animation_transition_combo_pipeline | 动画 + 过渡组合管线 |
+
+集成测试: 473 → 480 (+7), clippy clean.
+
 ### -94. CSS 动画运行时 + Transition 引擎 + 管线集成（前轮，~11,380 测试）
 
 实现 CSS 动画执行引擎、Transition 执行引擎并集成到渲染管线：
