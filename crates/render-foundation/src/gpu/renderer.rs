@@ -374,15 +374,7 @@ impl GpuRenderer {
         overlay_fills: &[FillPrimitive],
         clip_rect: Option<Rect>,
     ) {
-        self.render_scene_with_clip_scaled(
-            fills,
-            font_loader,
-            glyph_cache,
-            glyphs,
-            overlay_fills,
-            clip_rect,
-            1.0,
-        );
+        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, clip_rect, 1.0);
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域和缩放）。

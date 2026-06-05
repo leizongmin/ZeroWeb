@@ -74,8 +74,8 @@ impl BrowserApp {
 
         // 9. 页面内容区域（圆角边框视口）
         let chrome_top = toolbar_h + layout::BOOKMARKS_BAR_HEIGHT * s;
-        let status_y = self.status_bar_y_for(width, height);
-        let page_gutter_h = status_y - chrome_top;
+        let frame_bottom_y = self.page_frame_bottom_y_for(width, height);
+        let page_gutter_h = frame_bottom_y - chrome_top;
         fills.push(rect_fill(
             0.0,
             chrome_top,
@@ -121,8 +121,8 @@ impl BrowserApp {
             self.render_download_bar(&mut fills, &mut glyphs, width, height, font_size, s);
         }
 
-        // 16. 状态栏
-        self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size, s);
+        // 16. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
+        self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
 
         // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
         self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
@@ -1177,47 +1177,56 @@ impl BrowserApp {
         }
     }
 
-    /// 渲染状态栏
-    fn render_status_bar(
+    /// 渲染链接悬停浮动状态栏（Chrome 风格：左下角胶囊，宽度随 URL 内容）
+    fn render_floating_link_status(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
         height: u32,
-        _font_size: f32,
         s: f32,
     ) {
+        let Some(url) = self.hovered_link_url.as_deref() else {
+            return;
+        };
         if self.font_id.is_none() {
             return;
         }
 
-        let status_h = layout::STATUS_BAR_HEIGHT * s;
-        let status_y = self.status_bar_y_for(width, height);
-
-        fills.push(rect_fill(0.0, status_y, width as f32, status_h, self.chrome_palette.background));
-        fills.push(rect_fill(0.0, status_y, width as f32, s, self.chrome_palette.separator));
-
-        let zoom = self.shell.zoom();
-        if (zoom - 1.0).abs() > f32::EPSILON {
-            let zoom_text = format!("{}%", (zoom * 100.0) as u32);
-            self.draw_ui_text(
-                &zoom_text,
-                10.0 * s,
-                status_y + 3.0 * s,
-                11.0 * s,
-                self.chrome_palette.status_text,
-                glyphs,
-            );
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        if cw <= f32::EPSILON || ch <= f32::EPSILON {
+            return;
         }
 
-        let tab_count = self.shell.tab_count();
-        let tabs_text = format!("Tabs: {tab_count}");
-        let tabs_width = self.measure_ui_text_width(&tabs_text, 11.0 * s);
+        let margin = layout::STATUS_BAR_FLOAT_MARGIN * s;
+        let pad_h = layout::STATUS_BAR_FLOAT_PAD_H * s;
+        let status_h = layout::STATUS_BAR_HEIGHT * s;
+        let font_size = 11.0 * s;
+        let max_text_w = (cw - 2.0 * margin - 2.0 * pad_h).max(0.0);
+        let text = self.truncate_ui_text(url, max_text_w, font_size);
+        let text_w = self.measure_ui_text_width(&text, font_size);
+        let pill_w = text_w + 2.0 * pad_h;
+        let pill_x = cx + margin;
+        let pill_y = cy + ch - status_h - margin;
+        let radius = layout::STATUS_BAR_FLOAT_RADIUS * s;
+        let border = s;
+
+        push_rounded_rect_fill(fills, pill_x, pill_y, pill_w, status_h, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            pill_x + border,
+            pill_y + border,
+            (pill_w - 2.0 * border).max(0.0),
+            (status_h - 2.0 * border).max(0.0),
+            (radius - border).max(0.0),
+            self.chrome_palette.tab_active_bg,
+        );
+
         self.draw_ui_text(
-            &tabs_text,
-            width as f32 - tabs_width - 10.0 * s,
-            status_y + 3.0 * s,
-            11.0 * s,
+            &text,
+            pill_x + pad_h,
+            pill_y + 3.0 * s,
+            font_size,
             self.chrome_palette.status_text,
             glyphs,
         );
@@ -1326,8 +1335,8 @@ impl BrowserApp {
         }
 
         let bar_h = layout::DOWNLOAD_BAR_HEIGHT * s;
-        let status_y = self.status_bar_y_for(width, height);
-        let bar_y = status_y - bar_h;
+        let frame_bottom_y = self.page_frame_bottom_y_for(width, height);
+        let bar_y = frame_bottom_y - bar_h;
 
         // 背景
         fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, self.chrome_palette.download_bar_bg));

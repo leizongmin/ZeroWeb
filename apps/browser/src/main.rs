@@ -509,6 +509,54 @@ mod tests {
         let _ = glyphs; // 避免 unused 警告
     }
 
+    /// 默认不显示底部状态栏；WebView 高度不受状态栏占用。
+    #[test]
+    fn floating_link_status_hidden_by_default() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (800, 600);
+
+        assert!(app.hovered_link_url().is_none());
+        let (fills, _, _) = app.build_scene_for_test(800, 600);
+        assert!(
+            !fills.iter().any(|f| {
+                f.rect.size.width >= 799.0
+                    && f.rect.size.height <= layout::STATUS_BAR_HEIGHT + 1.0
+                    && f.rect.origin.y > 500.0
+                    && f.color == app.chrome_palette().background
+            }),
+            "should not render full-width bottom status bar"
+        );
+    }
+
+    /// 悬停链接时在左下角显示浮动 URL 状态栏（宽度随内容，不占布局）。
+    #[test]
+    fn floating_link_status_shows_on_link_hover() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (800, 600);
+        app.scale_factor = 1.0;
+
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+        app.sync_webview_viewport();
+        app.load_webview_html(
+            tab_id,
+            r#"<html><body style="margin:0"><a href="https://example.com/test" style="display:block;padding:10px">Example</a></body></html>"#,
+            None,
+        );
+
+        let (cx, cy, _, _) = app.page_content_rect();
+        app.handle_mouse_move((cx + 50.0) as f64, (cy + 25.0) as f64);
+        assert_eq!(app.hovered_link_url(), Some("https://example.com/test"));
+
+        let (_, glyphs, _) = app.build_scene_for_test(800, 600);
+        let text: String = glyphs.iter().map(|g| g.ch).collect();
+        assert!(
+            text.contains("example.com"),
+            "floating status should show link URL, got: {}",
+            text.chars().take(120).collect::<String>()
+        );
+    }
+
     /// 验证设置页面生成正确 HTML。
     #[test]
     fn settings_page_generates_html() {
@@ -635,17 +683,12 @@ mod tests {
 
             let (fx, fy, fw, fh) = app.page_frame_rect_for(1280, 900);
             let (cx, cy, cw, ch) = app.page_content_rect_for(1280, 900);
-            let status_y = app.status_bar_y_for(1280, 900);
             let frame_bottom = fy + fh;
+            let bottom_reserve = layout::PAGE_FRAME_INSET_BOTTOM * scale;
 
             assert!(
-                frame_bottom + layout::PAGE_FRAME_INSET_BOTTOM * scale <= status_y + 0.5,
-                "scale={scale}: status bar should sit below frame + inset"
-            );
-            assert!(
-                status_y + layout::STATUS_BAR_HEIGHT * scale
-                    <= 900.0 - layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * scale + 0.5,
-                "scale={scale}: status bar should stay above bottom clip guard"
+                frame_bottom + bottom_reserve <= 900.0 + 0.5,
+                "scale={scale}: non-maximized frame should only reserve bottom inset"
             );
             assert!(
                 (cx + cw) <= fx + fw + 0.5 && (cy + ch) <= fy + fh - layout::PAGE_FRAME_BORDER * scale + 0.5,
@@ -681,6 +724,24 @@ mod tests {
         }
     }
 
+    /// 最大化时启用底部 clip/UI guard，避免 WSLg 裁切圆角。
+    #[test]
+    fn page_layout_reserves_bottom_guards_when_maximized() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.set_window_maximized(true);
+
+        let (_, fy, _, fh) = app.page_frame_rect_for(1280, 900);
+        let frame_bottom = fy + fh;
+        let window_bottom = 900.0 - layout::PAGE_FRAME_BOTTOM_CLIP_GUARD - layout::PAGE_FRAME_BOTTOM_UI_GUARD;
+
+        assert!(
+            frame_bottom + layout::PAGE_FRAME_INSET_BOTTOM <= window_bottom + 0.5,
+            "maximized frame should stay above bottom guards"
+        );
+    }
+
     /// 底部圆角由 overlay 遮罩绘制；角落像素应为边框色而非页面背景色。
     #[test]
     fn page_frame_bottom_corners_use_separator_overlay() {
@@ -708,10 +769,7 @@ mod tests {
         let (cx, cy, cw, ch) = app.page_content_rect();
         let sep = app.chrome_palette().separator;
 
-        let sample_points = [
-            (cx + 2.0, cy + ch - 2.0),
-            (cx + cw - 3.0, cy + ch - 2.0),
-        ];
+        let sample_points = [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)];
         for (px, py) in sample_points {
             let x = px.round() as u32;
             let y = py.round() as u32;
@@ -972,6 +1030,7 @@ fn main() {
                                 app.scale_factor = scale_factor;
                                 app.sync_color_scheme_from_window(win);
                                 app.ensure_startup_tab();
+                                sync_window_chrome_icon(&mut app, win);
                                 app.sync_webview_viewport();
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
@@ -1037,6 +1096,7 @@ fn main() {
                     let (logical_size, scale_factor) = logical_size_from_window(win);
                     app.set_window_size(logical_size);
                     app.scale_factor = scale_factor;
+                    sync_window_chrome_icon(&mut app, win);
                 } else {
                     app.set_window_size((width, height));
                     app.scale_factor = 1.0;
