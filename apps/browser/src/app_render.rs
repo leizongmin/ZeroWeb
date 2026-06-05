@@ -15,9 +15,20 @@ impl BrowserApp {
         // 1. 整体背景
         fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, colors::BACKGROUND));
 
-        // 2. 标签栏背景
+        // 2. 标签栏背景（macOS 左侧为系统 traffic lights 留白）
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, colors::TAB_BAR_BG));
+        let leading = self.tab_bar_leading_inset() * s;
+        if leading > 0.0 {
+            fills.push(rect_fill(
+                leading,
+                0.0,
+                width as f32 - leading,
+                tab_bar_h,
+                colors::TAB_BAR_BG,
+            ));
+        } else {
+            fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, colors::TAB_BAR_BG));
+        }
 
         // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);

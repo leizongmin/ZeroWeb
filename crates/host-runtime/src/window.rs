@@ -74,7 +74,7 @@ pub struct WindowConfig {
     pub fullscreen: bool,
     /// 启动时是否最大化
     pub maximized: bool,
-    /// macOS：隐藏标题栏、全尺寸内容视图（Chrome 式标签栏与 traffic lights 同排）
+    /// macOS：透明标题栏 + 全尺寸内容视图（自绘标签栏与系统 traffic lights 同排）
     pub unified_titlebar: bool,
 }
 
@@ -146,10 +146,12 @@ fn window_attributes_from_config(config: &WindowConfig) -> winit::window::Window
     #[cfg(target_os = "macos")]
     if config.unified_titlebar {
         use winit::platform::macos::WindowAttributesExtMacOS;
+        // 勿用 with_titlebar_hidden：会切到 Borderless，系统红黄绿按钮会消失。
         attrs = attrs
-            .with_titlebar_hidden(true)
             .with_titlebar_transparent(true)
-            .with_fullsize_content_view(true);
+            .with_title_hidden(true)
+            .with_fullsize_content_view(true)
+            .with_movable_by_window_background(true);
     }
     attrs
 }
