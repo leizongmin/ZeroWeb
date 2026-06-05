@@ -127,6 +127,8 @@ impl BrowserApp {
         // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
         self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
         self.render_page_frame_border(&mut overlay_fills, frame_x, frame_y, frame_w, frame_h, s);
+        // 19. Wayland 非最大化：自绘窗口外框（无系统装饰时与桌面区分）
+        self.render_custom_window_frame_border(&mut overlay_fills, width, height, s);
 
         (fills, glyphs, overlay_fills)
     }
@@ -718,6 +720,29 @@ impl BrowserApp {
             border,
             self.chrome_palette.separator,
         );
+    }
+
+    /// Wayland 无系统装饰时，为非最大化窗口绘制 1px 外框描边。
+    fn render_custom_window_frame_border(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        if !self.uses_custom_window_controls() || self.window_is_maximized {
+            return;
+        }
+
+        let border = layout::WINDOW_FRAME_BORDER * s;
+        let w = width as f32;
+        let h = height as f32;
+        let color = self.chrome_palette.window_frame_border;
+
+        fills.push(rect_fill(0.0, 0.0, w, border, color));
+        fills.push(rect_fill(0.0, h - border, w, border, color));
+        fills.push(rect_fill(0.0, border, border, h - 2.0 * border, color));
+        fills.push(rect_fill(w - border, border, border, h - 2.0 * border, color));
     }
 
     /// 渲染页面内容
