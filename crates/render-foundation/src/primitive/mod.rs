@@ -222,6 +222,40 @@ pub struct GlyphPrimitive {
     pub bitmap_height: Option<u32>,
 }
 
+/// CSS filter 函数类型。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterKind {
+    /// blur(px) — 高斯模糊。
+    Blur(f32),
+    /// brightness(number) — 亮度调节。
+    Brightness(f32),
+    /// contrast(number) — 对比度调节。
+    Contrast(f32),
+    /// grayscale(number) — 灰度。
+    Grayscale(f32),
+    /// hue-rotate(deg) — 色相旋转。
+    HueRotate(f32),
+    /// invert(number) — 反色。
+    Invert(f32),
+    /// opacity(number) — 透明度。
+    Opacity(f32),
+    /// saturate(number) — 饱和度调节。
+    Saturate(f32),
+    /// sepia(number) — 棕褐色调。
+    Sepia(f32),
+    /// drop-shadow(x, y, blur, color) — 投影阴影。
+    DropShadow(f32, f32, f32, Color),
+}
+
+/// CSS filter 图元 — 对指定区域内的所有图元应用滤镜效果。
+#[derive(Debug, Clone)]
+pub struct FilterPrimitive {
+    /// 滤镜应用区域（元素的内容+padding 盒）
+    pub rect: Rect,
+    /// 滤镜函数列表（按顺序依次应用）
+    pub filters: Vec<FilterKind>,
+}
+
 /// 字体 ID 标识符
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontId(pub u32);
@@ -247,6 +281,8 @@ pub struct RenderStats {
     pub image_count: usize,
     /// Glyph 数量
     pub glyph_count: usize,
+    /// Filter 数量
+    pub filter_count: usize,
     /// 裁剪区域数量
     pub clip_count: usize,
     /// 估算的 draw call 数量（基于颜色/材质去重）
@@ -294,6 +330,8 @@ pub struct RenderPrimitives {
     pub images: Vec<ImagePrimitive>,
     /// Glyph 列表
     pub glyphs: Vec<GlyphPrimitive>,
+    /// Filter 列表
+    pub filters: Vec<FilterPrimitive>,
 }
 
 impl RenderPrimitives {
@@ -357,6 +395,11 @@ impl RenderPrimitives {
         self.glyphs.push(glyph);
     }
 
+    /// 添加一个 Filter
+    pub fn add_filter(&mut self, filter: FilterPrimitive) {
+        self.filters.push(filter);
+    }
+
     /// 图元总数
     pub fn len(&self) -> usize {
         self.clips.len()
@@ -369,6 +412,7 @@ impl RenderPrimitives {
             + self.shadows.len()
             + self.images.len()
             + self.glyphs.len()
+            + self.filters.len()
     }
 
     /// 是否为空
@@ -383,6 +427,7 @@ impl RenderPrimitives {
             && self.shadows.is_empty()
             && self.images.is_empty()
             && self.glyphs.is_empty()
+            && self.filters.is_empty()
     }
 }
 

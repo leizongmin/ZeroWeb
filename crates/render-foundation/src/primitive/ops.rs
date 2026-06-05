@@ -225,6 +225,7 @@ impl RenderPrimitives {
             + self.shadows.len()
             + self.images.len()
             + glyph_keys.len()
+            + self.filters.len()
             + self.clips.len().min(1); // clips 合并为一个
 
         RenderStats {
@@ -237,6 +238,7 @@ impl RenderPrimitives {
             shadow_count: self.shadows.len(),
             image_count: self.images.len(),
             glyph_count: self.glyphs.len(),
+            filter_count: self.filters.len(),
             clip_count: self.clips.len(),
             estimated_draw_calls,
             culled_count: 0,
@@ -449,6 +451,13 @@ impl RenderPrimitives {
             .cloned()
             .collect();
 
+        let filters: Vec<super::FilterPrimitive> = self
+            .filters
+            .iter()
+            .filter(|f| viewport.intersects(&f.rect))
+            .cloned()
+            .collect();
+
         let result = RenderPrimitives {
             clips: self.clips.clone(), // clips 保留
             fills,
@@ -460,6 +469,7 @@ impl RenderPrimitives {
             shadows,
             images,
             glyphs: self.glyphs.clone(), // glyphs 保留
+            filters,
         };
 
         let culled_count = original_len - result.len();

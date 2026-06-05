@@ -1767,3 +1767,163 @@ fn test_negative_letter_spacing_decreases_gap() {
         "letter-spacing:-2px 应减小 glyph 间距: got {gap_neg} vs base {gap_base}"
     );
 }
+
+// ==================== text-overflow: ellipsis 测试 ====================
+
+/// text-overflow: ellipsis 应在文本溢出时添加 "..." glyph。
+#[test]
+fn test_text_overflow_ellipsis_adds_dots() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    // 应该有 '.' glyph（省略号）
+    let has_ellipsis = glyphs.iter().any(|g| g.glyph_id == '.' as u32);
+    assert!(
+        has_ellipsis,
+        "text-overflow: ellipsis 应生成 '.' glyph，实际 glyphs: {:?}",
+        glyphs.iter().map(|g| g.glyph_id as u8 as char).collect::<Vec<_>>()
+    );
+}
+
+/// text-overflow: clip（默认）不应添加省略号 glyph。
+#[test]
+fn test_text_overflow_clip_no_dots() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css =
+        "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: clip; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    let has_ellipsis = glyphs.iter().any(|g| g.glyph_id == '.' as u32);
+    // clip 模式下，文本中的 '.' 只能来自文本内容本身；这里文本是纯大写字母，不应有 '.'
+    assert!(!has_ellipsis, "text-overflow: clip 不应生成 '.' glyph");
+}
+
+/// text-overflow: ellipsis 在文本不溢出时不应生效。
+#[test]
+fn test_text_overflow_ellipsis_no_overflow() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hi</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    // "Hi" 很短不应溢出，所以不应有省略号
+    let dot_count = glyphs.iter().filter(|g| g.glyph_id == '.' as u32).count();
+    assert_eq!(dot_count, 0, "短文本不溢出时不应有省略号");
+    // 应有 H 和 i 两个字符 glyph
+    assert!(glyphs.len() >= 2, "短文本应至少有 2 个 glyph");
+}
+
+/// text-overflow: ellipsis 在 overflow: visible 时不应生效。
+#[test]
+fn test_text_overflow_ellipsis_needs_hidden_overflow() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 50.0);
+    let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
+    let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: visible; text-overflow: ellipsis; width: 80px; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    // overflow: visible 时 ellipsis 不应生效，所有字符都应可见
+    let dot_count = glyphs.iter().filter(|g| g.glyph_id == '.' as u32).count();
+    assert_eq!(dot_count, 0, "overflow: visible 时 ellipsis 不应生效");
+}
+
+// ==================== CSS filter 渲染测试 ====================
+
+/// filter: blur() 应生成 FilterPrimitive。
+#[test]
+fn test_filter_blur_generates_filter_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hello</p></body></html>";
+    let css = "p { color: black; font-size: 16px; filter: blur(5px); }";
+    let result = pipeline.render_html(html, css);
+    assert!(
+        !result.primitives.filters.is_empty(),
+        "filter: blur(5px) 应生成至少一个 FilterPrimitive"
+    );
+}
+
+/// filter: grayscale() 应生成 FilterPrimitive。
+#[test]
+fn test_filter_grayscale_generates_filter_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>Test</div></body></html>";
+    let css = "div { color: black; font-size: 16px; filter: grayscale(1); }";
+    let result = pipeline.render_html(html, css);
+    assert!(
+        !result.primitives.filters.is_empty(),
+        "filter: grayscale(1) 应生成至少一个 FilterPrimitive"
+    );
+}
+
+/// filter: none 不应生成 FilterPrimitive。
+#[test]
+fn test_filter_none_no_primitive() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hello</p></body></html>";
+    let css = "p { color: black; font-size: 16px; filter: none; }";
+    let result = pipeline.render_html(html, css);
+    assert!(
+        result.primitives.filters.is_empty(),
+        "filter: none 不应生成 FilterPrimitive"
+    );
+}
+
+/// 无 filter 属性时不生成 FilterPrimitive。
+#[test]
+fn test_no_filter_property() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Hello</p></body></html>";
+    let css = "p { color: black; font-size: 16px; }";
+    let result = pipeline.render_html(html, css);
+    assert!(
+        result.primitives.filters.is_empty(),
+        "无 filter 属性不应生成 FilterPrimitive"
+    );
+}
+
+/// filter: brightness() 应生成正确参数的 FilterPrimitive。
+#[test]
+fn test_filter_brightness_value() {
+    use crate::pipeline::RenderPipeline;
+    use zero_render_foundation::primitive::FilterKind;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>Test</div></body></html>";
+    let css = "div { color: black; font-size: 16px; filter: brightness(1.5); }";
+    let result = pipeline.render_html(html, css);
+    let filters = &result.primitives.filters;
+    assert_eq!(filters.len(), 1, "应有 1 个 FilterPrimitive");
+    assert!(
+        filters[0]
+            .filters
+            .iter()
+            .any(|f| matches!(f, FilterKind::Brightness(v) if (*v - 1.5).abs() < 0.01)),
+        "filter 应为 Brightness(1.5)"
+    );
+}
+
+/// filter: drop-shadow() 应生成 DropShadow FilterPrimitive。
+#[test]
+fn test_filter_drop_shadow() {
+    use crate::pipeline::RenderPipeline;
+    use zero_render_foundation::primitive::FilterKind;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>Test</div></body></html>";
+    let css = "div { color: black; font-size: 16px; filter: drop-shadow(2 3 4 black); }";
+    let result = pipeline.render_html(html, css);
+    let filters = &result.primitives.filters;
+    assert_eq!(filters.len(), 1, "应有 1 个 FilterPrimitive");
+    assert!(
+        filters[0].filters.iter().any(|f| matches!(f, FilterKind::DropShadow(x, y, blur, _) if (*x - 2.0).abs() < 0.1 && (*y - 3.0).abs() < 0.1 && (*blur - 4.0).abs() < 0.1)),
+        "filter 应为 DropShadow(2, 3, 4, black)"
+    );
+}

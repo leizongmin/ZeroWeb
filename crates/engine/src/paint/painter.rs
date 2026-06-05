@@ -13,9 +13,12 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, RenderPrimitives, ShadowPrimitive};
+use zero_render_foundation::primitive::{
+    FilterKind, FilterPrimitive, FontId, GlyphPrimitive, ImagePrimitive, RenderPrimitives, ShadowPrimitive,
+};
 use zero_style_system::{
-    BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue, TextDecorationLineValue,
+    BackgroundImageComputedValue, BorderStyleValue, ComputedStyle, FilterComputedValue, OutlineStyleValue,
+    TextDecorationLineValue, TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -226,6 +229,13 @@ impl Painter {
             );
             clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
             clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        // CSS filter — 对元素及其子元素产生的图元应用滤镜效果
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.apply_filter(box_node, abs_x, abs_y, style);
         }
 
         // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）
@@ -569,9 +579,18 @@ impl Painter {
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
+
+            // 判断是否需要 text-overflow: ellipsis 处理
+            // 条件：text-overflow 为 Ellipsis，且 overflow-x 不是 Visible
+            let needs_ellipsis = matches!(style.text_overflow, TextOverflowValue::Ellipsis)
+                && !matches!(style.overflow_x, zero_css_parser::values::OverflowValue::Visible);
+
             if !fragments.is_empty() {
+                // 记录片段绘制前的 glyph 数量，用于 ellipsis 后处理
+                let glyphs_before_fragments = self.primitives.glyphs.len();
+
                 // 有文本片段 — 为每个片段中的每个字符生成独立 glyph
-                for fragment in fragments {
+                for fragment in &fragments {
                     self.painted_inline_nodes.insert(fragment.node_id);
 
                     let frag_base_x = content_x + fragment.x + tx;
@@ -632,6 +651,80 @@ impl Painter {
                         &style.text_decoration_line,
                     );
                 }
+
+                // text-overflow: ellipsis 后处理
+                // 检查文本是否超出容器宽度，如果超出则截断并添加 "..."
+                if needs_ellipsis && container_width > 0.0 {
+                    let content_right = content_x + container_width + tx;
+
+                    // 检查是否有 glyph 超出容器右边界
+                    let glyphs = &mut self.primitives.glyphs;
+                    let fragment_glyphs = &mut glyphs[glyphs_before_fragments..];
+
+                    // 找到第一个超出容器的 glyph
+                    let mut last_visible_idx: Option<usize> = None;
+                    let mut has_overflow = false;
+
+                    for (i, g) in fragment_glyphs.iter().enumerate() {
+                        if g.font_size == 0.0 {
+                            continue; // 已被裁剪的 glyph
+                        }
+                        if g.x >= content_right {
+                            has_overflow = true;
+                            last_visible_idx = if i > 0 { Some(i - 1) } else { None };
+                            break;
+                        }
+                        last_visible_idx = Some(i);
+                    }
+
+                    if has_overflow {
+                        let ellipsis_char_width = estimate_char_width('.', font_size);
+                        let total_ellipsis_width = ellipsis_char_width * 3.0 + letter_spacing * 2.0;
+                        let ellipsis_end_x = content_right;
+                        let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
+
+                        // 从后往前找：保留能放下 "..." 的最后几个 glyph
+                        // 移除超出 ellipsis_start_x 的所有 glyph（从 last_visible_idx 开始）
+                        let cutoff_start = if let Some(idx) = last_visible_idx {
+                            // 从该位置往前找，留出 "..." 的空间
+                            let mut cut = idx + 1;
+                            for j in (0..=idx).rev() {
+                                if fragment_glyphs[j].x < ellipsis_start_x && fragment_glyphs[j].font_size > 0.0 {
+                                    cut = j + 1;
+                                    break;
+                                }
+                                cut = j;
+                            }
+                            cut
+                        } else {
+                            0
+                        };
+
+                        // 清除 cutoff_start 之后的 glyph（设为 glyph_id=0）
+                        for g in fragment_glyphs.iter_mut().skip(cutoff_start) {
+                            g.glyph_id = 0;
+                            g.font_size = 0.0;
+                        }
+
+                        // 在容器末尾添加 "..." glyph
+                        let first_glyph = fragment_glyphs.iter().find(|g| g.font_size > 0.0);
+                        let base_y = first_glyph.map(|g| g.y).unwrap_or(content_y + font_size + ty);
+
+                        for (i, ch) in ['.', '.', '.'].iter().enumerate() {
+                            self.primitives.add_glyph(GlyphPrimitive {
+                                x: ellipsis_start_x + ellipsis_char_width * i as f32 + letter_spacing * i as f32,
+                                y: base_y,
+                                font_size,
+                                color,
+                                glyph_id: *ch as u32,
+                                font_id: default_font_id,
+                                bitmap_width: None,
+                                bitmap_height: None,
+                            });
+                        }
+                    }
+                }
+
                 return;
             }
         }
@@ -674,6 +767,43 @@ impl Painter {
             color,
             &style.text_decoration_line,
         );
+    }
+
+    /// 应用 CSS filter — 当 filter 非 none 时，生成 FilterPrimitive。
+    ///
+    /// FilterPrimitive 记录滤镜函数和应用区域，由渲染后端在光栅化阶段
+    /// 对该区域内的所有图元进行像素级滤镜处理。
+    fn apply_filter(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let filters = match &style.filter {
+            FilterComputedValue::None => return,
+            f => vec![filter_computed_to_kind(f)],
+        };
+
+        if filters.is_empty() {
+            return;
+        }
+
+        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        self.primitives.add_filter(FilterPrimitive { rect, filters });
+    }
+}
+
+/// 将 ComputedStyle 中的 filter 值转换为渲染层 FilterKind。
+fn filter_computed_to_kind(value: &FilterComputedValue) -> FilterKind {
+    match value {
+        FilterComputedValue::None => FilterKind::Blur(0.0), // 不应到达
+        FilterComputedValue::Blur(px) => FilterKind::Blur(*px),
+        FilterComputedValue::Brightness(n) => FilterKind::Brightness(*n),
+        FilterComputedValue::Contrast(n) => FilterKind::Contrast(*n),
+        FilterComputedValue::Grayscale(n) => FilterKind::Grayscale(*n),
+        FilterComputedValue::HueRotate(deg) => FilterKind::HueRotate(*deg),
+        FilterComputedValue::Invert(n) => FilterKind::Invert(*n),
+        FilterComputedValue::Opacity(n) => FilterKind::Opacity(*n),
+        FilterComputedValue::Saturate(n) => FilterKind::Saturate(*n),
+        FilterComputedValue::Sepia(n) => FilterKind::Sepia(*n),
+        FilterComputedValue::DropShadow(x, y, blur, color) => {
+            FilterKind::DropShadow(*x, *y, *blur, super::color::color_value_to_render(color))
+        }
     }
 }
 
