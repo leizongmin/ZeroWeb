@@ -88,7 +88,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-在 Linux 和 macOS 上，默认构建会把 `rusty_v8` 预构建产物缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`，中断后下次构建会自动续传。Windows 暂不启用这套缓存逻辑；如果需要在 Windows 上构建，请在本地环境里覆盖 `CARGO_BUILD_RUSTC_WRAPPER` 和 `RUSTY_V8_ARCHIVE`。
+在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
 ### 3. 运行本地入口
 
