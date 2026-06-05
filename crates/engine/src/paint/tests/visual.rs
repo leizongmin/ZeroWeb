@@ -1322,3 +1322,109 @@ fn test_gradient_with_position_and_size() {
     assert_eq!(gradients[0].rect.origin.x, 0.0);
     assert_eq!(gradients[0].rect.origin.y, 0.0);
 }
+
+// ── border-image 渲染测试 ──────────────────────────────────────────
+
+/// 测试 border-image: url() 生成 9 宫格图片图元。
+#[test]
+fn test_border_image_url_9region() {
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 200.0, 100.0);
+    layout.border_top = 10.0;
+    layout.border_right = 10.0;
+    layout.border_bottom = 10.0;
+    layout.border_left = 10.0;
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+    style.border_image_source = BorderImageSourceComputedValue::Url("border.png".to_string());
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 4 corners + 4 edges = 8 image primitives (fill=false, no center)
+    let images = &painter.primitives().images;
+    assert!(images.len() >= 8, "border-image should generate at least 8 image primitives, got {}", images.len());
+}
+
+/// 测试 border-image-source: none 不生成图片图元。
+#[test]
+fn test_border_image_none() {
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 200.0, 100.0);
+    layout.border_top = 10.0;
+    layout.border_right = 10.0;
+    layout.border_bottom = 10.0;
+    layout.border_left = 10.0;
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 255, 255, 255);
+    // default is None
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let images = &painter.primitives().images;
+    assert_eq!(images.len(), 0, "border-image:none should not generate image primitives");
+}
+
+/// 测试 border-image 带不同边框宽度（不对称）。
+#[test]
+fn test_border_image_asymmetric_borders() {
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 300.0, 150.0);
+    layout.border_top = 5.0;
+    layout.border_right = 15.0;
+    layout.border_bottom = 10.0;
+    layout.border_left = 20.0;
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.border_image_source = BorderImageSourceComputedValue::Url("frame.png".to_string());
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let images = &painter.primitives().images;
+    assert!(images.len() >= 8, "asymmetric border-image should generate at least 8 images, got {}", images.len());
+
+    // 验证左上角位置和尺寸
+    let top_left = &images[0];
+    assert_eq!(top_left.rect.origin.x, 0.0);
+    assert_eq!(top_left.rect.origin.y, 0.0);
+    assert_eq!(top_left.rect.size.width, 20.0); // border-left
+    assert_eq!(top_left.rect.size.height, 5.0); // border-top
+}
+
+/// 测试 border-image 带无 border 时跳过绘制。
+#[test]
+fn test_border_image_no_border() {
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 200.0, 100.0);
+    // no borders set
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("border.png".to_string());
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let images = &painter.primitives().images;
+    assert_eq!(images.len(), 0, "no border width should skip border-image");
+}

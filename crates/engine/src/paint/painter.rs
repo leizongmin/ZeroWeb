@@ -20,8 +20,9 @@ use zero_render_foundation::primitive::{
 };
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderStyleValue, ComputedStyle,
-    FilterComputedValue, OutlineStyleValue, TextDecorationLineValue, TextOverflowValue,
+    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderImageSourceComputedValue,
+    BorderStyleValue, ComputedStyle, FilterComputedValue, OutlineStyleValue, TextDecorationLineValue,
+    TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -211,6 +212,9 @@ impl Painter {
                 {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
+
+                // 2b. Border-image 绘制（替换或覆盖常规边框）
+                self.paint_border_image(box_node, abs_x, abs_y, style);
 
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
@@ -423,6 +427,81 @@ impl Painter {
                 &style.border_left_style,
                 &style.border_left_color,
             );
+        }
+    }
+
+    /// 绘制 border-image。
+    ///
+    /// 当 border-image-source 不为 none 时，将图片按 slice 分割为
+    /// 9 个区域（4 角 + 4 边 + 中心），分别绘制到边框的对应区域。
+    /// 当前实现支持 stretch 模式（默认），生成 ImagePrimitive 图元。
+    fn paint_border_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let url = match &style.border_image_source {
+            BorderImageSourceComputedValue::None => return,
+            BorderImageSourceComputedValue::Url(u) => u.clone(),
+        };
+
+        let bt = box_node.border_top;
+        let br = box_node.border_right;
+        let bb = box_node.border_bottom;
+        let bl = box_node.border_left;
+
+        // 至少有一条边框才绘制
+        if bt <= 0.0 && br <= 0.0 && bb <= 0.0 && bl <= 0.0 {
+            return;
+        }
+
+        let w = box_node.width;
+        let h = box_node.height;
+        let key = simple_hash(&url);
+
+        // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）
+        let make_img = |rect: Rect| ImagePrimitive {
+            rect,
+            image_key: ImageKey::new(key),
+        };
+
+        // 边框区域的坐标
+        let bx = abs_x;
+        let by = abs_y;
+
+        // 四条边的尺寸
+        let edge_h_w = (w - bl - br).max(0.0);
+        let edge_v_h = (h - bt - bb).max(0.0);
+
+        let fill = style.border_image_slice.fill;
+
+        // 中心区域（当 fill 为 true 时绘制）
+        if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h)));
+        }
+
+        // 四个角
+        if bl > 0.0 && bt > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx, by, bl, bt)));
+        }
+        if br > 0.0 && bt > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + w - br, by, br, bt)));
+        }
+        if br > 0.0 && bb > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + w - br, by + h - bb, br, bb)));
+        }
+        if bl > 0.0 && bb > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
+        }
+
+        // 四条边（stretch 模式）
+        if edge_h_w > 0.0 && bt > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + bl, by, edge_h_w, bt)));
+        }
+        if br > 0.0 && edge_v_h > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + w - br, by + bt, br, edge_v_h)));
+        }
+        if edge_h_w > 0.0 && bb > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx + bl, by + h - bb, edge_h_w, bb)));
+        }
+        if bl > 0.0 && edge_v_h > 0.0 {
+            self.primitives.add_image(make_img(Rect::new(bx, by + bt, bl, edge_v_h)));
         }
     }
 
