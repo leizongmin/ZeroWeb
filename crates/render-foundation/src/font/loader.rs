@@ -40,6 +40,11 @@ impl FontLoader {
         self.bitmap_glyphs.contains_key(&(font_id, glyph_id, size_px.to_bits()))
     }
 
+    /// 清除已注册的位图 glyph（导航换页时丢弃旧 favicon）。
+    pub fn clear_bitmap_glyph(&mut self, font_id: u32, glyph_id: u32, size_px: f32) {
+        self.bitmap_glyphs.remove(&(font_id, glyph_id, size_px.to_bits()));
+    }
+
     /// 设置回退字体链（按优先级排序）
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;

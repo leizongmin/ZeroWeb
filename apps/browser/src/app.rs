@@ -159,8 +159,14 @@ pub struct BrowserApp {
     last_tab_bar_blank_click: Option<(f64, f64, Instant)>,
     /// 标签栏空白处按下位置（移动超过阈值后触发拖动）
     tab_bar_drag_press: Option<(f64, f64)>,
+    /// 标签栏 chrome 动画起始时间（loading 旋转环）
+    chrome_anim_start: Instant,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
+    /// 浏览器外壳配色
+    chrome_palette: colors::ChromePalette,
+    /// 是否已用 winit 窗口主题同步过颜色方案
+    color_scheme_window_synced: bool,
 }
 
 impl BrowserApp {
@@ -174,6 +180,8 @@ impl BrowserApp {
         } else {
             tracing::warn!("No system font found, text rendering will be limited");
         }
+
+        let color_scheme = detect_system_color_scheme();
 
         Self {
             shell: BrowserShell::new(),
@@ -210,8 +218,41 @@ impl BrowserApp {
             window_is_maximized: false,
             last_tab_bar_blank_click: None,
             tab_bar_drag_press: None,
-            color_scheme: detect_system_color_scheme(),
+            chrome_anim_start: Instant::now(),
+            color_scheme,
+            chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
+            color_scheme_window_synced: false,
         }
+    }
+
+    fn apply_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        if self.color_scheme == scheme {
+            return;
+        }
+        self.color_scheme = scheme;
+        self.chrome_palette = colors::ChromePalette::for_scheme(scheme);
+        for wv in self.webviews.values_mut() {
+            wv.set_prefers_color_scheme(scheme);
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 使用 winit 窗口主题更新颜色方案（`ZERO_BROWSER_COLOR_SCHEME` 已设置时跳过）。
+    pub fn sync_color_scheme_from_window(&mut self, window: &winit::window::Window) {
+        if self.color_scheme_window_synced || color_scheme_from_env().is_some() {
+            return;
+        }
+        self.color_scheme_window_synced = true;
+
+        let Some(theme) = window.theme() else {
+            tracing::debug!("Window theme unavailable, keeping startup color scheme");
+            return;
+        };
+
+        self.apply_color_scheme(match theme {
+            winit::window::Theme::Dark => PrefersColorSchemeValue::Dark,
+            winit::window::Theme::Light => PrefersColorSchemeValue::Light,
+        });
     }
 
     /// Wayland 无系统装饰时需自绘窗口控制按钮
@@ -392,6 +433,12 @@ impl BrowserApp {
         self.build_scene(width, height)
     }
 
+    /// 测试用：当前 Chrome 配色
+    #[cfg(test)]
+    pub fn chrome_palette(&self) -> colors::ChromePalette {
+        self.chrome_palette
+    }
+
     /// 测试用：向指定标签的 WebView 加载 HTML
     #[cfg(test)]
     pub fn load_webview_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
@@ -478,6 +525,7 @@ impl BrowserApp {
                     .and_then(|wv| wv.title().map(str::to_string))
                     .unwrap_or_else(|| url.to_string());
                 self.shell.on_page_loaded(&title);
+                self.refresh_tab_favicon(tab_id, url);
             }
             Err(e) => {
                 tracing::warn!("Failed to fetch URL: {e}, loading error page");
@@ -509,6 +557,7 @@ impl BrowserApp {
         // 重置滚动偏移与页面选区
         self.scroll_offset.insert(tab_id, 0.0);
         self.page_selection.remove(&tab_id);
+        self.clear_tab_favicon(tab_id);
 
         self.fetch_tab_url(tab_id, &url);
         self.needs_redraw = true;
@@ -518,6 +567,31 @@ impl BrowserApp {
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
             wv.load_html(pages::WELCOME_HTML, None);
+        }
+        self.refresh_tab_favicon(tab_id, "zero://newtab");
+        self.shell.on_page_loaded("ZeroBrowser");
+    }
+
+    fn clear_tab_favicon(&mut self, tab_id: TabId) {
+        let size = layout::TAB_ICON_SIZE * self.scale_factor;
+        crate::tab_favicon::clear_tab_favicon(&mut self.font_loader, tab_id, size);
+    }
+
+    fn refresh_tab_favicon(&mut self, tab_id: TabId, page_url: &str) {
+        let size = layout::TAB_ICON_SIZE * self.scale_factor;
+        let html = Self::tab_html_hint(Some(page_url));
+        crate::tab_favicon::ensure_tab_favicon(&mut self.font_loader, tab_id, Some(page_url), html, size);
+    }
+
+    pub fn any_tab_loading(&self) -> bool {
+        self.shell.tabs().any(|tab| tab.is_loading())
+    }
+
+    fn tab_html_hint(page_url: Option<&str>) -> Option<&'static str> {
+        match page_url {
+            None => Some(pages::WELCOME_HTML),
+            Some(url) if url.starts_with("zero://") && url != "zero://settings" => Some(pages::WELCOME_HTML),
+            _ => None,
         }
     }
 
@@ -1105,7 +1179,7 @@ impl BrowserApp {
         if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
             if self.address_bar_drag && self.address_bar_focused && self.left_button_down {
                 let s = self.scale_factor;
-                let font_size = 14.0 * s;
+                let font_size = layout::CHROME_FONT_SIZE * s;
                 let (bar_x, _, _, _) = self.address_bar_layout();
                 let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
                 let idx = self
@@ -1468,7 +1542,7 @@ impl BrowserApp {
 
     fn handle_address_bar_press(&mut self, x: f64, y: f64) {
         let s = self.scale_factor;
-        let font_size = 14.0 * s;
+        let font_size = layout::CHROME_FONT_SIZE * s;
         let (bar_x, _, _, _) = self.address_bar_layout();
         let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
         let measure = |t: &str| self.measure_ui_text_width(t, font_size);
@@ -1979,36 +2053,85 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
     Some(primary)
 }
 
-/// 检测系统深色/浅色模式（Linux 优先 gsettings，可用 `ZERO_BROWSER_COLOR_SCHEME` 覆盖）
-pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
-    if let Ok(val) = std::env::var("ZERO_BROWSER_COLOR_SCHEME") {
-        if val.eq_ignore_ascii_case("dark") {
-            return PrefersColorSchemeValue::Dark;
-        }
-        if val.eq_ignore_ascii_case("light") {
-            return PrefersColorSchemeValue::Light;
-        }
+/// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
+pub fn color_scheme_from_env() -> Option<PrefersColorSchemeValue> {
+    let val = std::env::var("ZERO_BROWSER_COLOR_SCHEME").ok()?;
+    if val.eq_ignore_ascii_case("dark") {
+        Some(PrefersColorSchemeValue::Dark)
+    } else if val.eq_ignore_ascii_case("light") {
+        Some(PrefersColorSchemeValue::Light)
+    } else {
+        tracing::debug!("Ignoring unrecognized ZERO_BROWSER_COLOR_SCHEME={val:?}, expected dark or light");
+        None
     }
+}
 
-    if let Ok(output) = std::process::Command::new("gsettings")
+/// 解析 `gsettings get org.gnome.desktop.interface color-scheme` 输出。
+fn parse_gnome_color_scheme_stdout(stdout: &str) -> Option<PrefersColorSchemeValue> {
+    let value = stdout.trim();
+    if value.contains("prefer-dark") {
+        return Some(PrefersColorSchemeValue::Dark);
+    }
+    if value.contains("prefer-light") || value.contains("'default'") || value.contains("'light'") {
+        return Some(PrefersColorSchemeValue::Light);
+    }
+    None
+}
+
+fn detect_linux_gnome_color_scheme() -> Option<PrefersColorSchemeValue> {
+    let output = std::process::Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "color-scheme"])
         .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.contains("prefer-dark") || stdout.contains("'dark'") {
-            return PrefersColorSchemeValue::Dark;
-        }
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_gnome_color_scheme_stdout(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// 检测系统深色/浅色模式（Linux 优先 gsettings，可用 `ZERO_BROWSER_COLOR_SCHEME` 覆盖）。
+///
+/// 仅在明确识别为深色时返回 [`PrefersColorSchemeValue::Dark`]，无法识别时默认亮色。
+pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
+    if let Some(scheme) = color_scheme_from_env() {
+        return scheme;
     }
 
-    if let Ok(output) = std::process::Command::new("gsettings")
-        .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
-        if stdout.contains("dark") {
-            return PrefersColorSchemeValue::Dark;
-        }
+    if let Some(scheme) = detect_linux_gnome_color_scheme() {
+        return scheme;
     }
 
+    tracing::debug!("System color scheme unrecognized, defaulting to light");
     PrefersColorSchemeValue::Light
+}
+
+#[cfg(test)]
+mod color_scheme_tests {
+    use super::*;
+
+    #[test]
+    fn parse_gnome_color_scheme_prefers_dark() {
+        assert_eq!(
+            parse_gnome_color_scheme_stdout("'prefer-dark'\n"),
+            Some(PrefersColorSchemeValue::Dark)
+        );
+    }
+
+    #[test]
+    fn parse_gnome_color_scheme_prefers_light_and_default() {
+        assert_eq!(
+            parse_gnome_color_scheme_stdout("'prefer-light'\n"),
+            Some(PrefersColorSchemeValue::Light)
+        );
+        assert_eq!(
+            parse_gnome_color_scheme_stdout("'default'\n"),
+            Some(PrefersColorSchemeValue::Light)
+        );
+    }
+
+    #[test]
+    fn parse_gnome_color_scheme_unrecognized_returns_none() {
+        assert_eq!(parse_gnome_color_scheme_stdout(""), None);
+        assert_eq!(parse_gnome_color_scheme_stdout("invalid\n"), None);
+    }
 }

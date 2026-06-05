@@ -17,10 +17,10 @@ impl BrowserApp {
         let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
-        let font_size = 14.0 * s;
+        let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 1. 整体背景
-        fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, colors::BACKGROUND));
+        fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, self.chrome_palette.background));
 
         // 2. 标签栏背景（macOS 左侧为系统 traffic lights 留白）
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
@@ -31,23 +31,23 @@ impl BrowserApp {
                 0.0,
                 width as f32 - leading,
                 tab_bar_h,
-                colors::TAB_BAR_BG,
+                self.chrome_palette.tab_bar_bg,
             ));
         } else {
-            fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, colors::TAB_BAR_BG));
+            fills.push(rect_fill(0.0, 0.0, width as f32, tab_bar_h, self.chrome_palette.tab_bar_bg));
         }
 
         // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);
 
-        // 4. 地址栏背景
+        // 4. 地址栏背景（与激活标签同色，形成一体工具栏）
         let addr_y = tab_bar_h;
         fills.push(rect_fill(
             0.0,
             addr_y,
             width as f32,
             layout::ADDRESS_BAR_HEIGHT * s,
-            colors::TAB_BAR_BG,
+            self.chrome_palette.tab_active_bg,
         ));
 
         // 5. 导航按钮
@@ -58,7 +58,7 @@ impl BrowserApp {
 
         // 7. 分隔线
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, toolbar_h - s, width as f32, s, colors::SEPARATOR));
+        fills.push(rect_fill(0.0, toolbar_h - s, width as f32, s, self.chrome_palette.separator));
 
         // 8. 书签栏
         let bookmarks_bar_y = toolbar_h;
@@ -67,7 +67,7 @@ impl BrowserApp {
         // 9. 页面内容区域
         let chrome_top = toolbar_h + layout::BOOKMARKS_BAR_HEIGHT * s;
         let page_h = height as f32 - chrome_top - layout::STATUS_BAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, chrome_top, width as f32, page_h, colors::PAGE_BG));
+        fills.push(rect_fill(0.0, chrome_top, width as f32, page_h, self.chrome_palette.page_bg));
 
         // 10. 加载指示器
         if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
@@ -76,7 +76,7 @@ impl BrowserApp {
                 chrome_top,
                 width as f32,
                 2.0 * s,
-                colors::LOADING_INDICATOR,
+                self.chrome_palette.loading_indicator,
             ));
         }
 
@@ -136,51 +136,151 @@ impl BrowserApp {
 
         self.tab_layout.clear();
         let mut x = leading;
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let icon_size = layout::TAB_ICON_SIZE * s;
+        let spinner_angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
+        let text_left_inset = 10.0 * s + icon_size + 6.0 * s;
 
+        struct TabPaint {
+            id: TabId,
+            x: f32,
+            tab_w: f32,
+            tab_body_w: f32,
+            bg: Color,
+            is_active: bool,
+            is_loading: bool,
+            label: String,
+            page_url: Option<String>,
+            html_hint: Option<&'static str>,
+        }
+
+        let mut tabs: Vec<TabPaint> = Vec::new();
         for tab in self.shell.tabs() {
             let is_active = Some(tab.id()) == active_id;
             let is_hovered = !is_active && {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
-                mx >= x && mx < x + tab_w && my < layout::TAB_BAR_HEIGHT * s
+                mx >= x && mx < x + tab_w && my < tab_bar_h
             };
-
-            let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let bg = if is_active {
-                colors::TAB_ACTIVE_BG
+                self.chrome_palette.tab_active_bg
             } else if is_hovered {
-                colors::TAB_HOVER_BG
+                self.chrome_palette.tab_hover_bg
             } else {
-                colors::TAB_BAR_BG
+                self.chrome_palette.tab_bar_bg
             };
-            fills.push(rect_fill(x, 0.0, tab_w - s, tab_bar_h, bg));
+            let label = tab
+                .title()
+                .or(tab.url())
+                .unwrap_or("New Tab")
+                .to_string();
+            tabs.push(TabPaint {
+                id: tab.id(),
+                x,
+                tab_w,
+                tab_body_w: tab_w - s,
+                bg,
+                is_active,
+                is_loading: tab.is_loading(),
+                label,
+                page_url: tab.url().map(str::to_string),
+                html_hint: Self::tab_html_hint(tab.url()),
+            });
+            x += tab_w;
+        }
+
+        for tab in tabs.iter().filter(|t| !t.is_active) {
+            crate::tab_chrome::push_inactive_tab_fill(
+                fills,
+                tab.x,
+                tab.tab_body_w,
+                tab_bar_h,
+                s,
+                tab.bg,
+            );
+        }
+
+        for i in 0..tabs.len().saturating_sub(1) {
+            if !tabs[i].is_active && !tabs[i + 1].is_active {
+                let sep_x = tabs[i].x + tabs[i].tab_w - s * 0.5;
+                let inset = layout::TAB_SEPARATOR_INSET * s;
+                fills.push(rect_fill(
+                    sep_x,
+                    inset,
+                    s.max(1.0),
+                    tab_bar_h - 2.0 * inset,
+                    self.chrome_palette.separator,
+                ));
+            }
+        }
+
+        if let Some(active) = tabs.iter().find(|t| t.is_active) {
+            crate::tab_chrome::push_active_tab_fill(
+                fills,
+                active.x,
+                active.tab_body_w,
+                tab_bar_h,
+                s,
+                active.bg,
+            );
+        }
+
+        for tab in &tabs {
+            let icon_cx = tab.x + 10.0 * s + icon_size * 0.5;
+            let icon_cy = tab_bar_h / 2.0;
+            if tab.is_loading {
+                crate::tab_chrome::push_loading_spinner(
+                    fills,
+                    icon_cx,
+                    icon_cy,
+                    icon_size,
+                    spinner_angle,
+                    self.chrome_palette.loading_indicator,
+                );
+            } else if self.font_id.is_some() {
+                let favicon_url = tab
+                    .page_url
+                    .as_deref()
+                    .or(Some("zero://newtab"));
+                crate::tab_favicon::render_tab_favicon(
+                    &mut self.font_loader,
+                    glyphs,
+                    tab.id,
+                    favicon_url,
+                    tab.html_hint,
+                    icon_cx,
+                    icon_cy,
+                    icon_size,
+                    self.chrome_palette.tab_text,
+                );
+            }
 
             if self.font_id.is_some() {
-                let label = tab.title().unwrap_or_else(|| tab.url().unwrap_or("New Tab"));
-                let text_area_w = tab_w - 40.0 * s;
-                let truncated = self.truncate_ui_text(label, text_area_w, font_size);
+                let text_area_w = tab.tab_w - text_left_inset - 28.0 * s;
+                let truncated = self.truncate_ui_text(&tab.label, text_area_w.max(0.0), font_size);
+                let text_top = tab_bar_h / 2.0 - font_size / 2.0;
                 self.draw_ui_text(
                     &truncated,
-                    x + 10.0 * s,
-                    8.0 * s,
+                    tab.x + text_left_inset,
+                    text_top,
                     font_size,
-                    colors::TAB_TEXT,
+                    self.chrome_palette.tab_text,
                     glyphs,
                 );
             }
 
-            let close_x = x + tab_w - 24.0 * s;
+            let close_x = tab.x + tab.tab_w - 24.0 * s;
             let close_hit = 24.0 * s;
             let close_cx = close_x + close_hit / 2.0;
             let close_cy = tab_bar_h / 2.0;
             let close_hovered = self.pointer_in_rect(close_x, 0.0, close_hit, tab_bar_h);
-            if close_hovered && is_active {
-                push_circle_fill(fills, close_cx, close_cy, close_hit, colors::TAB_HOVER_BG);
+            if close_hovered && tab.is_active {
+                push_circle_fill(fills, close_cx, close_cy, close_hit, self.chrome_palette.tab_hover_bg);
             }
             let close_color = if close_hovered {
-                colors::ADDRESS_BAR_TEXT
+                self.chrome_palette.address_bar_text
             } else {
-                colors::TAB_CLOSE
+                self.chrome_palette.tab_close
             };
             crate::ui_icons::render_icon(
                 &mut self.font_loader,
@@ -192,8 +292,7 @@ impl BrowserApp {
                 close_color,
             );
 
-            self.tab_layout.push((tab.id(), x, tab_w));
-            x += tab_w;
+            self.tab_layout.push((tab.id, tab.x, tab.tab_w));
         }
 
         // 新建标签按钮 (+)，紧跟最后一个标签
@@ -211,13 +310,13 @@ impl BrowserApp {
                     btn_x + new_tab_btn_w / 2.0,
                     tab_bar_h / 2.0,
                     24.0 * s,
-                    colors::TAB_HOVER_BG,
+                    self.chrome_palette.tab_hover_bg,
                 );
             }
             let plus_color = if is_hovered {
-                colors::ADDRESS_BAR_TEXT
+                self.chrome_palette.address_bar_text
             } else {
-                colors::NEW_TAB_BUTTON
+                self.chrome_palette.new_tab_button
             };
             crate::ui_icons::render_icon(
                 &mut self.font_loader,
@@ -246,18 +345,18 @@ impl BrowserApp {
         let btn_w = layout::WINDOW_CONTROL_BTN_WIDTH * s;
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
         let x0 = self.window_controls_origin_x(width as f32, s);
-        let icon = colors::WINDOW_CONTROL_ICON;
+        let icon = self.chrome_palette.window_control_icon;
         let thickness = (1.0 * s).max(1.0);
 
         for i in 0..3 {
             let bx = x0 + i as f32 * btn_w;
             let hovered = self.window_control_hover == Some(i);
             let bg = if i == 2 && hovered {
-                colors::WINDOW_CONTROL_CLOSE_HOVER
+                self.chrome_palette.window_control_close_hover
             } else if hovered {
-                colors::WINDOW_CONTROL_HOVER
+                self.chrome_palette.window_control_hover
             } else {
-                colors::TAB_BAR_BG
+                self.chrome_palette.tab_bar_bg
             };
             fills.push(rect_fill(bx, 0.0, btn_w, tab_bar_h, bg));
 
@@ -336,14 +435,14 @@ impl BrowserApp {
             let enabled = nav_enabled[i];
             let hovered = enabled && self.pointer_in_rect(bx, y, btn_w, btn_h);
             if hovered {
-                push_circle_fill(fills, cx, cy, hover_diameter, colors::TAB_HOVER_BG);
+                push_circle_fill(fills, cx, cy, hover_diameter, self.chrome_palette.tab_hover_bg);
             }
             let color = if !enabled {
-                colors::NAV_BUTTON_DISABLED
+                self.chrome_palette.nav_button_disabled
             } else if hovered {
-                colors::ADDRESS_BAR_TEXT
+                self.chrome_palette.address_bar_text
             } else {
-                colors::NAV_BUTTON
+                self.chrome_palette.nav_button
             };
             crate::ui_icons::render_icon(&mut self.font_loader, glyphs, icon, cx, cy, 16.0 * s, color);
         }
@@ -354,31 +453,49 @@ impl BrowserApp {
         &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
-        width: u32,
-        y: f32,
+        _width: u32,
+        _y: f32,
         font_size: f32,
         s: f32,
     ) {
-        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
-        let bar_w = width as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
-        let bar_y = y + 4.0 * s;
-        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 8.0 * s;
+        let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
+        let border = s.max(1.0);
+        let radius = bar_h * 0.5;
 
         let bg = if self.address_bar_focused {
-            colors::ADDRESS_BAR_BG_FOCUSED
+            self.chrome_palette.address_bar_bg_focused
         } else {
-            colors::ADDRESS_BAR_BG
+            self.chrome_palette.address_bar_bg
         };
-        fills.push(rect_fill(bar_x, bar_y, bar_w, bar_h, bg));
+        push_rounded_rect_fill(
+            fills,
+            bar_x,
+            bar_y,
+            bar_w,
+            bar_h,
+            radius,
+            self.chrome_palette.separator,
+        );
+        push_rounded_rect_fill(
+            fills,
+            bar_x + border,
+            bar_y + border,
+            bar_w - 2.0 * border,
+            bar_h - 2.0 * border,
+            (radius - border).max(0.0),
+            bg,
+        );
 
         let text = self.address_bar.text();
         let show_placeholder =
             text.is_empty() && !self.address_bar_focused && self.address_bar_ime_preedit.is_empty();
 
         if self.font_id.is_some() {
-            let text_x = bar_x + 10.0 * s;
-            let text_y = bar_y + 3.0 * s;
+            let inner_x = bar_x + border;
+            let inner_y = bar_y + border;
+            let inner_h = bar_h - 2.0 * border;
+            let text_x = inner_x + 10.0 * s;
+            let text_top = inner_y + inner_h / 2.0 - font_size / 2.0;
 
             if self.address_bar_focused && self.address_bar.has_selection() {
                 let (sel_start, sel_end) = self.address_bar.selection_char_range();
@@ -386,20 +503,26 @@ impl BrowserApp {
                 let selected = Self::chars_slice(text, sel_start, sel_end);
                 let sel_x = text_x + self.measure_ui_text_width(before, font_size);
                 let sel_w = self.measure_ui_text_width(selected, font_size).max(1.0);
-                fills.push(rect_fill(sel_x, bar_y + 2.0 * s, sel_w, bar_h - 4.0 * s, colors::ADDRESS_BAR_SELECTION_BG));
+                fills.push(rect_fill(
+                    sel_x,
+                    text_top,
+                    sel_w,
+                    font_size,
+                    self.chrome_palette.address_bar_selection_bg,
+                ));
             }
 
             let color = if show_placeholder {
-                colors::ADDRESS_BAR_PLACEHOLDER
+                self.chrome_palette.address_bar_placeholder
             } else {
-                colors::ADDRESS_BAR_TEXT
+                self.chrome_palette.address_bar_text
             };
             let visible = if show_placeholder {
                 "Search or enter URL..."
             } else {
                 text
             };
-            self.draw_ui_text(visible, text_x, text_y, font_size, color, glyphs);
+            self.draw_ui_text(visible, text_x, text_top, font_size, color, glyphs);
 
             if !self.address_bar_ime_preedit.is_empty() {
                 let before = Self::chars_slice(text, 0, self.address_bar.cursor());
@@ -407,9 +530,9 @@ impl BrowserApp {
                 self.draw_ui_text(
                     &self.address_bar_ime_preedit,
                     preedit_x,
-                    text_y,
+                    text_top,
                     font_size,
-                    colors::ADDRESS_BAR_TEXT,
+                    self.chrome_palette.address_bar_text,
                     glyphs,
                 );
             }
@@ -420,10 +543,10 @@ impl BrowserApp {
                 let cursor_x = text_x + self.measure_ui_text_width(before, font_size);
                 fills.push(rect_fill(
                     cursor_x,
-                    bar_y + 4.0 * s,
+                    text_top + font_size * 0.12,
                     1.5 * s,
-                    bar_h - 8.0 * s,
-                    colors::ADDRESS_BAR_TEXT,
+                    font_size * 0.76,
+                    self.chrome_palette.address_bar_text,
                 ));
             }
         }
@@ -459,7 +582,7 @@ impl BrowserApp {
         }
 
         let bar_h = layout::BOOKMARKS_BAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, y, width as f32, bar_h, colors::BOOKMARKS_BAR_BG));
+        fills.push(rect_fill(0.0, y, width as f32, bar_h, self.chrome_palette.bookmarks_bar_bg));
 
         let font_size = 12.0 * s;
         let mut bx = 8.0 * s;
@@ -476,18 +599,18 @@ impl BrowserApp {
             let mx = self.mouse_pos.0 as f32;
             let my = self.mouse_pos.1 as f32;
             if mx >= bx && mx < bx + item_w && my >= y && my < y + bar_h {
-                fills.push(rect_fill(bx, y, item_w, bar_h, colors::BOOKMARKS_BAR_HOVER_BG));
+                fills.push(rect_fill(bx, y, item_w, bar_h, self.chrome_palette.bookmarks_bar_hover_bg));
             }
 
             // 书签图标
-            self.draw_ui_text("★", bx, by, font_size, colors::BOOKMARKS_BAR_ICON, glyphs);
+            self.draw_ui_text("★", bx, by, font_size, self.chrome_palette.bookmarks_bar_icon, glyphs);
             // 标签文本
             self.draw_ui_text(
                 label,
                 bx + icon_w + 6.0 * s,
                 by,
                 font_size,
-                colors::BOOKMARKS_BAR_TEXT,
+                self.chrome_palette.bookmarks_bar_text,
                 glyphs,
             );
 
@@ -544,26 +667,26 @@ impl BrowserApp {
                 20.0 * s,
                 y + 20.0 * s,
                 24.0 * s,
-                colors::PAGE_TITLE,
+                self.chrome_palette.page_title,
                 glyphs,
             );
             y += 52.0 * s;
         }
 
         if !url.is_empty() {
-            self.draw_ui_text(&url, 20.0 * s, y, 12.0 * s, colors::PAGE_URL, glyphs);
+            self.draw_ui_text(&url, 20.0 * s, y, 12.0 * s, self.chrome_palette.page_url, glyphs);
             y += 28.0 * s;
         }
 
         if is_loading {
-            self.draw_ui_text("Loading...", 20.0 * s, y, font_size, colors::PAGE_HINT, glyphs);
+            self.draw_ui_text("Loading...", 20.0 * s, y, font_size, self.chrome_palette.page_hint, glyphs);
         } else if title.is_empty() && url.is_empty() {
             self.draw_ui_text(
                 "Welcome to ZeroBrowser — Press L to focus address bar, T for new tab",
                 20.0 * s,
                 y,
                 font_size,
-                colors::PAGE_HINT,
+                self.chrome_palette.page_hint,
                 glyphs,
             );
         }
@@ -621,7 +744,7 @@ impl BrowserApp {
                     if top + h <= y_offset || top >= clip_bottom {
                         continue;
                     }
-                    fills.push(rect_fill(x, top, w.max(1.0), h, colors::TEXT_SELECTION_BG));
+                    fills.push(rect_fill(x, top, w.max(1.0), h, self.chrome_palette.text_selection_bg));
                 }
             }
         }
@@ -661,7 +784,7 @@ impl BrowserApp {
             y,
             bar_w,
             layout::FIND_BAR_HEIGHT * s,
-            colors::FIND_BAR_BG,
+            self.chrome_palette.find_bar_bg,
         ));
 
         let display = if self.find_input.is_empty() {
@@ -670,9 +793,9 @@ impl BrowserApp {
             self.find_input.clone()
         };
         let text_color = if self.find_input.is_empty() {
-            colors::FIND_MATCH_TEXT
+            self.chrome_palette.find_match_text
         } else {
-            colors::FIND_BAR_TEXT
+            self.chrome_palette.find_bar_text
         };
         self.draw_ui_text(
             &display,
@@ -692,7 +815,7 @@ impl BrowserApp {
                 match_x,
                 y + 5.0 * s,
                 font_size,
-                colors::FIND_MATCH_TEXT,
+                self.chrome_palette.find_match_text,
                 glyphs,
             );
         } else if !self.find_input.is_empty() {
@@ -702,7 +825,7 @@ impl BrowserApp {
                 no_match_x,
                 y + 5.0 * s,
                 font_size,
-                colors::FIND_MATCH_TEXT,
+                self.chrome_palette.find_match_text,
                 glyphs,
             );
         }
@@ -725,12 +848,12 @@ impl BrowserApp {
             let icon_cx = bx + btn_w / 2.0;
             let hovered = self.pointer_in_rect(bx, y, btn_w, bar_h);
             if hovered {
-                push_circle_fill(fills, icon_cx, btn_cy, icon_size + 8.0 * s, colors::TAB_HOVER_BG);
+                push_circle_fill(fills, icon_cx, btn_cy, icon_size + 8.0 * s, self.chrome_palette.tab_hover_bg);
             }
             let icon_color = if hovered {
-                colors::ADDRESS_BAR_TEXT
+                self.chrome_palette.address_bar_text
             } else {
-                colors::FIND_BAR_TEXT
+                self.chrome_palette.find_bar_text
             };
             crate::ui_icons::render_icon(
                 &mut self.font_loader,
@@ -770,14 +893,14 @@ impl BrowserApp {
         let row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
         let dropdown_h = visible_count as f32 * row_h;
 
-        fills.push(rect_fill(bar_x, dropdown_y, bar_w, dropdown_h, colors::AUTOCOMPLETE_BG));
+        fills.push(rect_fill(bar_x, dropdown_y, bar_w, dropdown_h, self.chrome_palette.autocomplete_bg));
 
         for (i, sug) in self.autocomplete.suggestions.iter().take(visible_count).enumerate() {
             let row_y = dropdown_y + i as f32 * row_h;
             let is_hovered = self.autocomplete.hovered_index == Some(i);
 
             if is_hovered {
-                fills.push(rect_fill(bar_x, row_y, bar_w, row_h, colors::AUTOCOMPLETE_HOVER_BG));
+                fills.push(rect_fill(bar_x, row_y, bar_w, row_h, self.chrome_palette.autocomplete_hover_bg));
             }
 
             let source_label = match sug.source() {
@@ -792,9 +915,9 @@ impl BrowserApp {
                 row_y + 5.0 * s,
                 source_size,
                 if sug.source() == SuggestionSource::Bookmark {
-                    colors::AUTOCOMPLETE_BOOKMARK
+                    self.chrome_palette.autocomplete_bookmark
                 } else {
-                    colors::AUTOCOMPLETE_URL
+                    self.chrome_palette.autocomplete_url
                 },
                 glyphs,
             );
@@ -807,7 +930,7 @@ impl BrowserApp {
                 text_x + 24.0 * s,
                 row_y + 5.0 * s,
                 source_size,
-                colors::AUTOCOMPLETE_TEXT,
+                self.chrome_palette.autocomplete_text,
                 glyphs,
             );
 
@@ -822,12 +945,12 @@ impl BrowserApp {
                 url_x - url_display_width,
                 row_y + 5.0 * s,
                 url_size,
-                colors::AUTOCOMPLETE_URL,
+                self.chrome_palette.autocomplete_url,
                 glyphs,
             );
         }
 
-        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, s, colors::SEPARATOR));
+        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, s, self.chrome_palette.separator));
     }
 
     /// 渲染右键上下文菜单
@@ -844,7 +967,7 @@ impl BrowserApp {
         let font_size = 13.0 * s;
 
         // 菜单背景
-        fills.push(rect_fill(menu_x, menu_y, menu_w, menu_h, colors::CONTEXT_MENU_BG));
+        fills.push(rect_fill(menu_x, menu_y, menu_w, menu_h, self.chrome_palette.context_menu_bg));
 
         // 菜单边框
         let border_w = 1.0 * s;
@@ -853,28 +976,28 @@ impl BrowserApp {
             menu_y,
             menu_w,
             border_w,
-            colors::CONTEXT_MENU_SEPARATOR,
+            self.chrome_palette.context_menu_separator,
         ));
         fills.push(rect_fill(
             menu_x,
             menu_y + menu_h - border_w,
             menu_w,
             border_w,
-            colors::CONTEXT_MENU_SEPARATOR,
+            self.chrome_palette.context_menu_separator,
         ));
         fills.push(rect_fill(
             menu_x,
             menu_y,
             border_w,
             menu_h,
-            colors::CONTEXT_MENU_SEPARATOR,
+            self.chrome_palette.context_menu_separator,
         ));
         fills.push(rect_fill(
             menu_x + menu_w - border_w,
             menu_y,
             border_w,
             menu_h,
-            colors::CONTEXT_MENU_SEPARATOR,
+            self.chrome_palette.context_menu_separator,
         ));
 
         for (i, label) in self.context_menu.items.iter().enumerate() {
@@ -887,7 +1010,7 @@ impl BrowserApp {
                     row_y,
                     menu_w - 2.0 * border_w,
                     row_h,
-                    colors::CONTEXT_MENU_HOVER_BG,
+                    self.chrome_palette.context_menu_hover_bg,
                 ));
             }
 
@@ -899,7 +1022,7 @@ impl BrowserApp {
                     sep_y,
                     menu_w - 24.0 * s,
                     border_w,
-                    colors::CONTEXT_MENU_SEPARATOR,
+                    self.chrome_palette.context_menu_separator,
                 ));
                 continue;
             }
@@ -909,7 +1032,7 @@ impl BrowserApp {
                 menu_x + 16.0 * s,
                 row_y + 6.0 * s,
                 font_size,
-                colors::CONTEXT_MENU_TEXT,
+                self.chrome_palette.context_menu_text,
                 glyphs,
             );
         }
@@ -932,8 +1055,8 @@ impl BrowserApp {
         let status_h = layout::STATUS_BAR_HEIGHT * s;
         let status_y = height as f32 - status_h;
 
-        fills.push(rect_fill(0.0, status_y, width as f32, status_h, colors::BACKGROUND));
-        fills.push(rect_fill(0.0, status_y, width as f32, s, colors::SEPARATOR));
+        fills.push(rect_fill(0.0, status_y, width as f32, status_h, self.chrome_palette.background));
+        fills.push(rect_fill(0.0, status_y, width as f32, s, self.chrome_palette.separator));
 
         let zoom = self.shell.zoom();
         if (zoom - 1.0).abs() > f32::EPSILON {
@@ -943,7 +1066,7 @@ impl BrowserApp {
                 10.0 * s,
                 status_y + 3.0 * s,
                 11.0 * s,
-                colors::STATUS_TEXT,
+                self.chrome_palette.status_text,
                 glyphs,
             );
         }
@@ -956,7 +1079,7 @@ impl BrowserApp {
             width as f32 - tabs_width - 10.0 * s,
             status_y + 3.0 * s,
             11.0 * s,
-            colors::STATUS_TEXT,
+            self.chrome_palette.status_text,
             glyphs,
         );
     }
@@ -1042,7 +1165,7 @@ impl BrowserApp {
         let bar_y = height as f32 - status_h - bar_h;
 
         // 背景
-        fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, colors::DOWNLOAD_BAR_BG));
+        fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, self.chrome_palette.download_bar_bg));
 
         // 显示第一个活跃下载的信息
         let downloads = self.shell.downloads();
@@ -1057,7 +1180,7 @@ impl BrowserApp {
                 10.0 * s,
                 bar_y + 6.0 * s,
                 font_size,
-                colors::DOWNLOAD_BAR_TEXT,
+                self.chrome_palette.download_bar_text,
                 glyphs,
             );
 
@@ -1074,7 +1197,7 @@ impl BrowserApp {
                 bar_top,
                 bar_width,
                 bar_inner_h,
-                colors::SEPARATOR,
+                self.chrome_palette.separator,
             ));
             // 进度条填充
             fills.push(rect_fill(
@@ -1082,7 +1205,7 @@ impl BrowserApp {
                 bar_top,
                 bar_width * progress,
                 bar_inner_h,
-                colors::DOWNLOAD_BAR_FILL,
+                self.chrome_palette.download_bar_fill,
             ));
 
             // 百分比文字
@@ -1092,7 +1215,7 @@ impl BrowserApp {
                 bar_start_x + bar_width + 8.0 * s,
                 bar_y + 6.0 * s,
                 font_size,
-                colors::DOWNLOAD_BAR_TEXT,
+                self.chrome_palette.download_bar_text,
                 glyphs,
             );
         }
@@ -1106,6 +1229,58 @@ fn rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimitive {
     FillPrimitive {
         rect: zero_render_foundation::geometry::Rect::new(x, y, w, h),
         color,
+    }
+}
+
+/// 四角圆角矩形（`radius = h/2` 时为胶囊形地址栏）。
+fn push_rounded_rect_fill(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    color: Color,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r = radius.min(w * 0.5).min(h * 0.5);
+    if r <= f32::EPSILON {
+        fills.push(rect_fill(x, y, w, h, color));
+        return;
+    }
+
+    let r_sq = r * r;
+    let min_y = y.floor() as i32;
+    let max_y = (y + h).ceil() as i32;
+
+    for row in min_y..max_y {
+        let yf = row as f32 + 0.5;
+        if yf < y || yf >= y + h {
+            continue;
+        }
+
+        let mut x_start = x;
+        let mut x_end = x + w;
+
+        let dy_top = (y + r) - yf;
+        if dy_top > 0.0 {
+            let dx = (r_sq - dy_top * dy_top).max(0.0).sqrt();
+            x_start = x + r - dx;
+            x_end = x + w - r + dx;
+        } else {
+            let dy_bottom = yf - (y + h - r);
+            if dy_bottom > 0.0 {
+                let dx = (r_sq - dy_bottom * dy_bottom).max(0.0).sqrt();
+                x_start = x + r - dx;
+                x_end = x + w - r + dx;
+            }
+        }
+
+        if x_end > x_start {
+            fills.push(rect_fill(x_start, row as f32, x_end - x_start, 1.0, color));
+        }
     }
 }
 

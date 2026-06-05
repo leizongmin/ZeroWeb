@@ -5587,6 +5587,8 @@ name = "zero-browser"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "png 0.17.16",
+ "reqwest",
  "resvg",
  "serde",
  "serde_json",
@@ -5594,6 +5596,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tungstenite",
+ "url",
  "winit",
  "zero-browser-shell",
  "zero-engine",

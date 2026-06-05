@@ -1,312 +1,197 @@
-//! 浏览器 UI 颜色常量
+//! 浏览器 Chrome UI 颜色（随 `prefers-color-scheme` / 系统主题切换）
 
+use zero_engine::PrefersColorSchemeValue;
 use zero_render_foundation::color::Color;
 
-/// 窗口背景色（深灰）
-pub const BACKGROUND: Color = Color {
-    r: 30,
-    g: 30,
-    b: 30,
-    a: 255,
-};
-/// 标签栏背景色
-pub const TAB_BAR_BG: Color = Color {
-    r: 40,
-    g: 40,
-    b: 40,
-    a: 255,
-};
-/// 活跃标签背景色
-pub const TAB_ACTIVE_BG: Color = Color {
-    r: 60,
-    g: 60,
-    b: 60,
-    a: 255,
-};
-/// 非活跃标签悬停背景色
-pub const TAB_HOVER_BG: Color = Color {
-    r: 50,
-    g: 50,
-    b: 50,
-    a: 255,
-};
-/// 标签文字颜色
-pub const TAB_TEXT: Color = Color {
-    r: 200,
-    g: 200,
-    b: 200,
-    a: 255,
-};
-/// 标签关闭按钮颜色
-pub const TAB_CLOSE: Color = Color {
-    r: 150,
-    g: 150,
-    b: 150,
-    a: 255,
-};
-/// 地址栏背景色
-pub const ADDRESS_BAR_BG: Color = Color {
-    r: 50,
-    g: 50,
-    b: 50,
-    a: 255,
-};
-/// 地址栏聚焦背景色
-pub const ADDRESS_BAR_BG_FOCUSED: Color = Color {
-    r: 60,
-    g: 60,
-    b: 60,
-    a: 255,
-};
-/// 地址栏文字颜色
-pub const ADDRESS_BAR_TEXT: Color = Color {
-    r: 240,
-    g: 240,
-    b: 240,
-    a: 255,
-};
-/// 地址栏占位文字颜色
-pub const ADDRESS_BAR_PLACEHOLDER: Color = Color {
-    r: 160,
-    g: 160,
-    b: 160,
-    a: 255,
-};
-/// 地址栏选区高亮背景
-pub const ADDRESS_BAR_SELECTION_BG: Color = Color {
-    r: 70,
-    g: 110,
-    b: 180,
-    a: 255,
-};
-/// 页面文本选区高亮
-pub const TEXT_SELECTION_BG: Color = Color {
-    r: 180,
-    g: 215,
-    b: 255,
-    a: 255,
-};
-/// 页面内容区域背景色（白色）
-pub const PAGE_BG: Color = Color {
-    r: 255,
-    g: 255,
-    b: 255,
-    a: 255,
-};
-/// 导航按钮颜色
-pub const NAV_BUTTON: Color = Color {
-    r: 180,
-    g: 180,
-    b: 180,
-    a: 255,
-};
-/// 不可用导航按钮颜色（后退/前进无历史）
-pub const NAV_BUTTON_DISABLED: Color = Color {
-    r: 90,
-    g: 90,
-    b: 90,
-    a: 255,
-};
-/// 分隔线颜色
-pub const SEPARATOR: Color = Color {
-    r: 70,
-    g: 70,
-    b: 70,
-    a: 255,
-};
-/// 加载指示器颜色
-pub const LOADING_INDICATOR: Color = Color {
-    r: 66,
-    g: 133,
-    b: 244,
-    a: 255,
-};
-/// 页面标题颜色
-pub const PAGE_TITLE: Color = Color {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 255,
-};
-/// 页面 URL 颜色
-pub const PAGE_URL: Color = Color {
-    r: 100,
-    g: 100,
-    b: 100,
-    a: 255,
-};
-/// 页面内容提示颜色
-pub const PAGE_HINT: Color = Color {
-    r: 150,
-    g: 150,
-    b: 150,
-    a: 255,
-};
-/// 状态栏文字颜色
-pub const STATUS_TEXT: Color = Color {
-    r: 120,
-    g: 120,
-    b: 120,
-    a: 255,
-};
-/// 自动补全下拉背景色
-pub const AUTOCOMPLETE_BG: Color = Color {
-    r: 45,
-    g: 45,
-    b: 45,
-    a: 255,
-};
-/// 自动补全悬停背景色
-pub const AUTOCOMPLETE_HOVER_BG: Color = Color {
-    r: 60,
-    g: 60,
-    b: 60,
-    a: 255,
-};
-/// 自动补全文字颜色
-pub const AUTOCOMPLETE_TEXT: Color = Color {
-    r: 220,
-    g: 220,
-    b: 220,
-    a: 255,
-};
-/// 自动补全 URL 颜色
-pub const AUTOCOMPLETE_URL: Color = Color {
-    r: 140,
-    g: 140,
-    b: 140,
-    a: 255,
-};
-/// 自动补全书签标记颜色
-pub const AUTOCOMPLETE_BOOKMARK: Color = Color {
-    r: 255,
-    g: 193,
-    b: 7,
-    a: 255,
-};
-/// 查找栏背景色
-pub const FIND_BAR_BG: Color = Color {
-    r: 50,
-    g: 50,
-    b: 50,
-    a: 245,
-};
-/// 查找栏文字颜色
-pub const FIND_BAR_TEXT: Color = Color {
-    r: 220,
-    g: 220,
-    b: 220,
-    a: 255,
-};
-/// 查找栏匹配数颜色
-pub const FIND_MATCH_TEXT: Color = Color {
-    r: 160,
-    g: 160,
-    b: 160,
-    a: 255,
-};
-/// 新建标签按钮颜色
-pub const NEW_TAB_BUTTON: Color = Color {
-    r: 160,
-    g: 160,
-    b: 160,
-    a: 255,
-};
-/// 窗口控制按钮悬停背景
-pub const WINDOW_CONTROL_HOVER: Color = Color {
-    r: 60,
-    g: 60,
-    b: 60,
-    a: 255,
-};
-/// 窗口关闭按钮悬停背景
-pub const WINDOW_CONTROL_CLOSE_HOVER: Color = Color {
-    r: 196,
-    g: 43,
-    b: 28,
-    a: 255,
-};
-/// 窗口控制按钮图标颜色
-pub const WINDOW_CONTROL_ICON: Color = Color {
-    r: 200,
-    g: 200,
-    b: 200,
-    a: 255,
-};
-/// 右键上下文菜单背景色
-pub const CONTEXT_MENU_BG: Color = Color {
-    r: 48,
-    g: 48,
-    b: 48,
-    a: 255,
-};
-/// 右键上下文菜单悬停背景色
-pub const CONTEXT_MENU_HOVER_BG: Color = Color {
-    r: 65,
-    g: 65,
-    b: 65,
-    a: 255,
-};
-/// 右键上下文菜单文字颜色
-pub const CONTEXT_MENU_TEXT: Color = Color {
-    r: 220,
-    g: 220,
-    b: 220,
-    a: 255,
-};
-/// 右键上下文菜单分隔线颜色
-pub const CONTEXT_MENU_SEPARATOR: Color = Color {
-    r: 70,
-    g: 70,
-    b: 70,
-    a: 255,
-};
-/// 书签栏背景色
-pub const BOOKMARKS_BAR_BG: Color = Color {
-    r: 42,
-    g: 42,
-    b: 42,
-    a: 255,
-};
-/// 书签栏文字颜色
-pub const BOOKMARKS_BAR_TEXT: Color = Color {
-    r: 190,
-    g: 190,
-    b: 190,
-    a: 255,
-};
-/// 书签栏悬停背景色
-pub const BOOKMARKS_BAR_HOVER_BG: Color = Color {
-    r: 55,
-    g: 55,
-    b: 55,
-    a: 255,
-};
-/// 书签栏图标颜色（★）
-pub const BOOKMARKS_BAR_ICON: Color = Color {
-    r: 255,
-    g: 193,
-    b: 7,
-    a: 255,
-};
-/// 下载进度条背景色
-pub const DOWNLOAD_BAR_BG: Color = Color {
-    r: 40,
-    g: 40,
-    b: 40,
-    a: 255,
-};
-/// 下载进度条填充色
-pub const DOWNLOAD_BAR_FILL: Color = Color {
-    r: 66,
-    g: 133,
-    b: 244,
-    a: 255,
-};
-/// 下载进度条文字色
-pub const DOWNLOAD_BAR_TEXT: Color = Color {
-    r: 220,
-    g: 220,
-    b: 220,
-    a: 255,
-};
+const fn rgb(r: u8, g: u8, b: u8) -> Color {
+    Color { r, g, b, a: 255 }
+}
+
+const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
+    Color { r, g, b, a }
+}
+
+/// 浏览器外壳配色方案。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChromePalette {
+    pub background: Color,
+    pub tab_bar_bg: Color,
+    pub tab_active_bg: Color,
+    pub tab_hover_bg: Color,
+    pub tab_text: Color,
+    pub tab_close: Color,
+    pub address_bar_bg: Color,
+    pub address_bar_bg_focused: Color,
+    pub address_bar_text: Color,
+    pub address_bar_placeholder: Color,
+    pub address_bar_selection_bg: Color,
+    pub text_selection_bg: Color,
+    pub page_bg: Color,
+    pub nav_button: Color,
+    pub nav_button_disabled: Color,
+    pub separator: Color,
+    pub loading_indicator: Color,
+    pub page_title: Color,
+    pub page_url: Color,
+    pub page_hint: Color,
+    pub status_text: Color,
+    pub autocomplete_bg: Color,
+    pub autocomplete_hover_bg: Color,
+    pub autocomplete_text: Color,
+    pub autocomplete_url: Color,
+    pub autocomplete_bookmark: Color,
+    pub find_bar_bg: Color,
+    pub find_bar_text: Color,
+    pub find_match_text: Color,
+    pub new_tab_button: Color,
+    pub window_control_hover: Color,
+    pub window_control_close_hover: Color,
+    pub window_control_icon: Color,
+    pub context_menu_bg: Color,
+    pub context_menu_hover_bg: Color,
+    pub context_menu_text: Color,
+    pub context_menu_separator: Color,
+    pub bookmarks_bar_bg: Color,
+    pub bookmarks_bar_text: Color,
+    pub bookmarks_bar_hover_bg: Color,
+    pub bookmarks_bar_icon: Color,
+    pub download_bar_bg: Color,
+    pub download_bar_fill: Color,
+    pub download_bar_text: Color,
+}
+
+impl ChromePalette {
+    /// 按颜色方案返回 Chrome 配色。
+    pub fn for_scheme(scheme: PrefersColorSchemeValue) -> Self {
+        match scheme {
+            PrefersColorSchemeValue::Dark => Self::dark(),
+            PrefersColorSchemeValue::Light => Self::light(),
+        }
+    }
+
+    /// 亮色 Chrome 风格配色。
+    pub const fn light() -> Self {
+        Self {
+            background: rgb(241, 243, 244),
+            tab_bar_bg: rgb(222, 225, 230),
+            tab_active_bg: rgb(255, 255, 255),
+            tab_hover_bg: rgb(232, 234, 237),
+            tab_text: rgb(32, 33, 36),
+            tab_close: rgb(95, 99, 104),
+            address_bar_bg: rgb(241, 243, 244),
+            address_bar_bg_focused: rgb(255, 255, 255),
+            address_bar_text: rgb(32, 33, 36),
+            address_bar_placeholder: rgb(128, 134, 139),
+            address_bar_selection_bg: rgb(168, 199, 250),
+            text_selection_bg: rgb(180, 215, 255),
+            page_bg: rgb(255, 255, 255),
+            nav_button: rgb(95, 99, 104),
+            nav_button_disabled: rgb(189, 193, 198),
+            separator: rgb(218, 220, 224),
+            loading_indicator: rgb(66, 133, 244),
+            page_title: rgb(32, 33, 36),
+            page_url: rgb(95, 99, 104),
+            page_hint: rgb(128, 134, 139),
+            status_text: rgb(95, 99, 104),
+            autocomplete_bg: rgb(255, 255, 255),
+            autocomplete_hover_bg: rgb(241, 243, 244),
+            autocomplete_text: rgb(32, 33, 36),
+            autocomplete_url: rgb(95, 99, 104),
+            autocomplete_bookmark: rgb(234, 134, 0),
+            find_bar_bg: rgba(255, 255, 255, 245),
+            find_bar_text: rgb(32, 33, 36),
+            find_match_text: rgb(128, 134, 139),
+            new_tab_button: rgb(95, 99, 104),
+            window_control_hover: rgb(218, 220, 224),
+            window_control_close_hover: rgb(196, 43, 28),
+            window_control_icon: rgb(95, 99, 104),
+            context_menu_bg: rgb(255, 255, 255),
+            context_menu_hover_bg: rgb(241, 243, 244),
+            context_menu_text: rgb(32, 33, 36),
+            context_menu_separator: rgb(218, 220, 224),
+            bookmarks_bar_bg: rgb(255, 255, 255),
+            bookmarks_bar_text: rgb(60, 64, 67),
+            bookmarks_bar_hover_bg: rgb(241, 243, 244),
+            bookmarks_bar_icon: rgb(234, 134, 0),
+            download_bar_bg: rgb(241, 243, 244),
+            download_bar_fill: rgb(66, 133, 244),
+            download_bar_text: rgb(32, 33, 36),
+        }
+    }
+
+    /// 深色 Chrome 风格配色。
+    pub const fn dark() -> Self {
+        Self {
+            background: rgb(30, 30, 30),
+            tab_bar_bg: rgb(40, 40, 40),
+            tab_active_bg: rgb(60, 60, 60),
+            tab_hover_bg: rgb(50, 50, 50),
+            tab_text: rgb(200, 200, 200),
+            tab_close: rgb(150, 150, 150),
+            address_bar_bg: rgb(50, 50, 50),
+            address_bar_bg_focused: rgb(60, 60, 60),
+            address_bar_text: rgb(240, 240, 240),
+            address_bar_placeholder: rgb(160, 160, 160),
+            address_bar_selection_bg: rgb(70, 110, 180),
+            text_selection_bg: rgb(180, 215, 255),
+            page_bg: rgb(255, 255, 255),
+            nav_button: rgb(180, 180, 180),
+            nav_button_disabled: rgb(90, 90, 90),
+            separator: rgb(70, 70, 70),
+            loading_indicator: rgb(66, 133, 244),
+            page_title: rgb(0, 0, 0),
+            page_url: rgb(100, 100, 100),
+            page_hint: rgb(150, 150, 150),
+            status_text: rgb(120, 120, 120),
+            autocomplete_bg: rgb(45, 45, 45),
+            autocomplete_hover_bg: rgb(60, 60, 60),
+            autocomplete_text: rgb(220, 220, 220),
+            autocomplete_url: rgb(140, 140, 140),
+            autocomplete_bookmark: rgb(255, 193, 7),
+            find_bar_bg: rgba(50, 50, 50, 245),
+            find_bar_text: rgb(220, 220, 220),
+            find_match_text: rgb(160, 160, 160),
+            new_tab_button: rgb(160, 160, 160),
+            window_control_hover: rgb(60, 60, 60),
+            window_control_close_hover: rgb(196, 43, 28),
+            window_control_icon: rgb(200, 200, 200),
+            context_menu_bg: rgb(48, 48, 48),
+            context_menu_hover_bg: rgb(65, 65, 65),
+            context_menu_text: rgb(220, 220, 220),
+            context_menu_separator: rgb(70, 70, 70),
+            bookmarks_bar_bg: rgb(42, 42, 42),
+            bookmarks_bar_text: rgb(190, 190, 190),
+            bookmarks_bar_hover_bg: rgb(55, 55, 55),
+            bookmarks_bar_icon: rgb(255, 193, 7),
+            download_bar_bg: rgb(40, 40, 40),
+            download_bar_fill: rgb(66, 133, 244),
+            download_bar_text: rgb(220, 220, 220),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn light_and_dark_palettes_differ() {
+        let light = ChromePalette::light();
+        let dark = ChromePalette::dark();
+        assert_ne!(light.tab_bar_bg, dark.tab_bar_bg);
+        assert_ne!(light.tab_text, dark.tab_text);
+        assert_ne!(light.background, dark.background);
+    }
+
+    #[test]
+    fn for_scheme_selects_palette() {
+        assert_eq!(
+            ChromePalette::for_scheme(PrefersColorSchemeValue::Light),
+            ChromePalette::light()
+        );
+        assert_eq!(
+            ChromePalette::for_scheme(PrefersColorSchemeValue::Dark),
+            ChromePalette::dark()
+        );
+    }
+}

@@ -11,6 +11,8 @@ mod input_keys;
 mod layout;
 mod page_selection;
 mod pages;
+mod tab_chrome;
+mod tab_favicon;
 mod text_input;
 mod ui_icons;
 
@@ -487,7 +489,7 @@ mod tests {
 
         // 应有下载栏的 fill（至少一个蓝色进度条填充）
         assert!(
-            fills.iter().any(|f| f.color == colors::DOWNLOAD_BAR_BG),
+            fills.iter().any(|f| f.color == app.chrome_palette().download_bar_bg),
             "should have download bar background"
         );
 
@@ -845,6 +847,7 @@ fn main() {
                                 app.set_window_size(logical_size);
                                 app.physical_size = (physical_size.width, physical_size.height);
                                 app.scale_factor = scale_factor;
+                                app.sync_color_scheme_from_window(win);
                                 app.ensure_startup_tab();
                                 app.sync_webview_viewport();
                                 tracing::debug!(
@@ -895,6 +898,12 @@ fn main() {
                         app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true);
                     }
                     app.needs_redraw = false;
+                    if app.any_tab_loading()
+                        && let Some(ref win) = window
+                    {
+                        app.needs_redraw = true;
+                        win.request_redraw();
+                    }
                 }
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {

@@ -1,7 +1,9 @@
 //! 浏览器 UI 布局常量
 
+/// Chrome 工具栏/标签统一字号（逻辑像素）
+pub const CHROME_FONT_SIZE: f32 = 13.0;
 /// 标签栏高度
-pub const TAB_BAR_HEIGHT: f32 = 36.0;
+pub const TAB_BAR_HEIGHT: f32 = 32.0;
 /// 地址栏高度
 pub const ADDRESS_BAR_HEIGHT: f32 = 36.0;
 /// 地址栏内边距
@@ -22,6 +24,14 @@ pub const TAB_MIN_WIDTH: f32 = 100.0;
 pub const TAB_MAX_WIDTH: f32 = 240.0;
 /// 标签关闭按钮大小
 pub const TAB_CLOSE_SIZE: f32 = 16.0;
+/// 标签页顶部圆角半径
+pub const TAB_TOP_RADIUS: f32 = 7.0;
+/// 激活标签底部曲线半径（Chrome 风格二次贝塞尔「脚」）
+pub const TAB_FOOT_RADIUS: f32 = 7.0;
+/// 标签页内图标边长
+pub const TAB_ICON_SIZE: f32 = 14.0;
+/// 相邻非激活标签之间的竖线分隔，距标签栏上下边的内边距
+pub const TAB_SEPARATOR_INSET: f32 = 8.0;
 /// 自动补全下拉最大显示条数
 pub const AUTOCOMPLETE_MAX_VISIBLE: usize = 6;
 /// 自动补全下拉行高
