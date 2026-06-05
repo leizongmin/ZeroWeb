@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,250 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 924 个用例（25 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，**border-image 9-region 渲染集成**
+**执行状态**: 16/16 crate 已实现，~11,262 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 924 个用例（25 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，**column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成**
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,218 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` 11,262 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -27,7 +27,7 @@
 | css-parser | 2488 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字**、**word-break 属性**、**writing-mode 属性**、**text-decoration-line/text-transform/letter-spacing/word-spacing**、**3D transform 函数**、**媒体查询 only/逗号 OR/prefers-color-scheme/prefers-reduced-motion/pointer/resolution**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**counter-reset/counter-increment/content/quotes**、**page-break/box-decoration-break/image-rendering/isolation**、**overflow-wrap/text-align-last/font-variant-numeric**、**direction/unicode-bidi/tab-size**、**column-count/column-width/object-fit/filter**、**border-image-source/slice/width/repeat/outset**、**parse_stylesheet 全路径覆盖测试（40 测试覆盖所有 @规则、选择器、组合器、声明）**、**coverage round 7（145 测试：nth 表达式边界、container 条件、3D transform、conic gradient、calc/min/max/clamp、parse_length 全单位）** |
 | style-system | 1845 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、**matcher 覆盖率测试（SubsequentSibling/PseudoElement/nth-last-child/nth-last-of-type/nth-of-type/:not/:is/:where/:lang/:has NextSibling+SubsequentSibling/container 范围/操作符/冒号语法/@supports AND/OR/NOT/@media+@container 集成/属性选择器 DashMatch/Prefix/Suffix/Substring）**、**apply_property_value 全分支覆盖测试（107 测试覆盖所有 CSS 属性）**、**apply_coverage_extra（77 测试覆盖 invalid fall-through、background-position TwoValue、border-image 非 Px、columns 简写、filter 函数）+ parse.rs 覆盖率（20 测试覆盖 border-style/outline-style/grid-line/cursor/scroll-snap/font-family/line-height 等）**、**matcher coverage round 3（168 测试：nth 负系数、length_to_px 非 px 单位、get_axis_size、ContainerContext、@layer/@supports/@container 集成、evaluate_supports_condition 逻辑运算符）** |
 | layout-engine | 710 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块**、**grid 3x3 区域/auto-fill minmax/命名区域解析/百分比 gap**、**grid dense/span/min-max 约束**、**负 margin 合并/grid 行跨行/混合 CJK-Latin/absolute-in-relative/flex 不增长**、**grid 全跨/flex gap/大 padding/absolute 拉伸/inline-block 百分比**、**CJK 字符检测/字符串宽度估算/converter 私有函数/overflow 转换/fixed 视口调整/absolute_position 边界**、**letter-spacing + word-spacing 行内布局集成** |
-| engine | 780 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**资源预加载**（ResourcePreloader：preload/prefetch/preconnect/dns-prefetch、优先级排序、URL 去重、生命周期追踪）、**DOM Bridge（polyfill: 事件系统 + Fetch API + console + setTimeout/setInterval + insertBefore/replaceChild/cloneNode + CSSStyleDeclaration + DOMTokenList + innerHTML/outerHTML + textContent/innerText + 导航属性）**、**opacity/text-decoration/text-transform 渲染集成**、**letter-spacing + word-spacing 渲染集成**、**text-overflow: ellipsis 渲染**、**CSS filter 渲染（FilterPrimitive + 10 种滤镜函数）**、**命令解析边界测试**、**DomBridge 句柄映射边界**、**DomResult 构造/相等性**、**paint 辅助函数边界/compositing 默认值/dirty 坐标验证/pipeline 状态/dom_bridge 边界**、**paint helpers 覆盖率测试（radial gradient 4 种 size 变体、所有 linear gradient 方向、opacity 全图元类型、clip start index、text transform 边界）** |
+| engine | 815 | ✅ | 渲染管线、paint（文本/glyph、overflow clip、border-radius）、dirty tracking、compositing（z-index 排序）、CSS transform、增量渲染、**资源预加载**（ResourcePreloader：preload/prefetch/preconnect/dns-prefetch、优先级排序、URL 去重、生命周期追踪）、**DOM Bridge（polyfill: 事件系统 + Fetch API + console + setTimeout/setInterval + insertBefore/replaceChild/cloneNode + CSSStyleDeclaration + DOMTokenList + innerHTML/outerHTML + textContent/innerText + 导航属性）**、**opacity/text-decoration/text-transform 渲染集成**、**letter-spacing + word-spacing 渲染集成**、**text-overflow: ellipsis 渲染**、**CSS filter 渲染（FilterPrimitive + 10 种滤镜函数）**、**column-rule 渲染（多列分隔线）**、**list-style-image 渲染（URL 列表标记）**、**empty-cells:hide 渲染（空表格单元格跳过背景边框）** |
 | render-foundation | 300 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积**、**20 非重叠 rect/Color lerp 透明/缓存 GC 优先级/帧缓冲四角/圆角矩形包围盒** |
 | host-runtime | 228 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码**、**连续 resize/全修饰键/中键/IME 空/键盘释放**、**HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** |
 | net | 307 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界**、**HTTP 响应缓存（Cache-Control/ETag/LRU 淘汰/条件请求头/大小写不敏感解析/可缓存状态码过滤）** |
@@ -105,7 +105,20 @@
 
 ## 最近完成的改进
 
-### -91. border-image 9-region 渲染集成（本轮，~11,250 测试）
+### -92. column-rule + list-style-image + empty-cells:hide 渲染集成（本轮，~11,262 测试）
+
+将 column-rule、list-style-image、empty-cells 从"已解析存储"推进到"已渲染集成"：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/painter | **column-rule 渲染**：paint_column_rules() 根据 column-count/column-width 计算列数，在列之间绘制 column-rule-style (solid/dotted/dashed) 的垂直分隔线 | +4 |
+| engine/paint/painter | **list-style-image 渲染**：list-style-image:url() 优先于 list-style-type，生成 ImagePrimitive 作为列表标记 | +2 |
+| engine/paint/painter | **empty-cells:hide 渲染**：无子节点的空表格单元格跳过背景和边框绘制（paint_node + paint_node_in_rect 双路径） | +2 |
+| engine/tests/paint | 更新 test_paint_empty_cells_hide_no_panic 断言，匹配新的 empty-cells:hide 行为 | 1 updated |
+
+Tests: ~11,250 → ~11,262 (+12), clippy clean.
+
+### -91. border-image 9-region 渲染集成（前轮，~11,250 测试）
 
 将 border-image 从"已解析存储"推进到"已渲染集成"：
 
