@@ -62,6 +62,7 @@ softbuffer = "0.4"
 
 # 窗口与平台
 winit = "0.30"
+arboard = "3"
 
 # 网络
 hyper = "1"

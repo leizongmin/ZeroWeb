@@ -74,6 +74,8 @@ pub struct WindowConfig {
     pub fullscreen: bool,
     /// 启动时是否最大化
     pub maximized: bool,
+    /// macOS：隐藏标题栏、全尺寸内容视图（Chrome 式标签栏与 traffic lights 同排）
+    pub unified_titlebar: bool,
 }
 
 impl WindowConfig {
@@ -87,6 +89,7 @@ impl WindowConfig {
             decorations: true,
             fullscreen: false,
             maximized: false,
+            unified_titlebar: false,
         }
     }
 
@@ -120,6 +123,12 @@ impl WindowConfig {
         self.maximized = maximized;
         self
     }
+
+    /// macOS 一体化标题栏（系统 traffic lights + 自绘标签栏同排）
+    pub fn with_unified_titlebar(mut self, unified_titlebar: bool) -> Self {
+        self.unified_titlebar = unified_titlebar;
+        self
+    }
 }
 
 fn window_attributes_from_config(config: &WindowConfig) -> winit::window::WindowAttributes {
@@ -133,6 +142,14 @@ fn window_attributes_from_config(config: &WindowConfig) -> winit::window::Window
     }
     if config.maximized {
         attrs = attrs.with_maximized(true);
+    }
+    #[cfg(target_os = "macos")]
+    if config.unified_titlebar {
+        use winit::platform::macos::WindowAttributesExtMacOS;
+        attrs = attrs
+            .with_titlebar_hidden(true)
+            .with_titlebar_transparent(true)
+            .with_fullsize_content_view(true);
     }
     attrs
 }

@@ -28,6 +28,8 @@ pub const AUTOCOMPLETE_MAX_VISIBLE: usize = 6;
 pub const AUTOCOMPLETE_ROW_HEIGHT: f32 = 28.0;
 /// 书签栏高度
 pub const BOOKMARKS_BAR_HEIGHT: f32 = 26.0;
+/// macOS 一体化标题栏：为系统 traffic lights 预留的左侧间距
+pub const MACOS_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 /// 查找栏高度
 pub const FIND_BAR_HEIGHT: f32 = 36.0;
 /// 状态栏高度

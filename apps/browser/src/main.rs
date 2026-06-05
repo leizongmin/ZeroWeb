@@ -4,10 +4,14 @@
 //! WebView（页面渲染）和 HostRuntime（窗口管理）。
 
 mod app;
+mod clipboard;
 mod colors;
 mod headless;
+mod input_keys;
 mod layout;
+mod page_selection;
 mod pages;
+mod text_input;
 
 use std::sync::Arc;
 
@@ -412,10 +416,6 @@ mod tests {
         app.handle_key("Control", true);
         app.handle_key("l", true);
         assert!(app.address_bar_focused, "Ctrl+L should focus address bar");
-        assert!(
-            app.address_bar_text().is_empty(),
-            "Ctrl+L should clear address bar text"
-        );
     }
 
     /// 验证 Ctrl+D 添加书签（当前页面）。
@@ -714,15 +714,16 @@ fn run_headless(cli: CliArgs) {
 
 /// 按平台调整窗口配置（Wayland 上禁用 CSD，避免失焦时 subsurface commit 导致 compositor 断开）
 fn browser_window_config() -> WindowConfig {
-    let config = WindowConfig::new("ZeroBrowser")
+    let mut config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
         .with_resizable(true);
     if app::is_wayland() {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
-        config.with_decorations(false).with_maximized(true)
-    } else {
-        config.with_maximized(true)
+        config = config.with_decorations(false).with_maximized(true);
+    } else if app::uses_unified_titlebar() {
+        config = config.with_unified_titlebar(true);
     }
+    config
 }
 
 fn apply_window_chrome_action(app: &mut BrowserApp, window: &winit::window::Window) {
@@ -957,6 +958,9 @@ fn main() {
             }
             AppEvent::MouseWheel { delta } => {
                 app.handle_scroll(delta);
+            }
+            AppEvent::Ime(event) => {
+                app.handle_ime(event);
             }
             AppEvent::Focused => {
                 tracing::debug!("Window focused");

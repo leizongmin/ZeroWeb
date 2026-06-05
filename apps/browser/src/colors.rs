@@ -72,6 +72,20 @@ pub const ADDRESS_BAR_PLACEHOLDER: Color = Color {
     b: 160,
     a: 255,
 };
+/// 地址栏选区高亮背景
+pub const ADDRESS_BAR_SELECTION_BG: Color = Color {
+    r: 70,
+    g: 110,
+    b: 180,
+    a: 255,
+};
+/// 页面文本选区高亮
+pub const TEXT_SELECTION_BG: Color = Color {
+    r: 180,
+    g: 215,
+    b: 255,
+    a: 255,
+};
 /// 页面内容区域背景色（白色）
 pub const PAGE_BG: Color = Color {
     r: 255,
