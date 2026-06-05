@@ -19,7 +19,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: underline solid; font-size: 20px; }</style>
 <p class="t">Solid underline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -28,7 +29,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── text-decoration: underline dotted ──
         TestCase {
             id: "render/text-decoration-dotted".to_string(),
@@ -37,7 +37,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: underline dotted; font-size: 20px; }</style>
 <p class="t">Dotted underline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -46,7 +47,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "stroke_count_ge:1".to_string(),
             ],
         },
-
         // ── text-decoration: underline dashed ──
         TestCase {
             id: "render/text-decoration-dashed".to_string(),
@@ -55,7 +55,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: underline dashed; font-size: 20px; }</style>
 <p class="t">Dashed underline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -64,7 +65,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "stroke_count_ge:1".to_string(),
             ],
         },
-
         // ── text-decoration: line-through double ──
         TestCase {
             id: "render/text-decoration-double".to_string(),
@@ -73,7 +73,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: line-through double; font-size: 20px; }</style>
 <p class="t">Double line-through text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -82,7 +83,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "fill_count_ge:2".to_string(),
             ],
         },
-
         // ── text-decoration: underline wavy ──
         TestCase {
             id: "render/text-decoration-wavy".to_string(),
@@ -91,7 +91,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: underline wavy; font-size: 20px; }</style>
 <p class="t">Wavy underline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -100,7 +101,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "fill_count_ge:4".to_string(),
             ],
         },
-
         // ── text-decoration: overline dotted red ──
         TestCase {
             id: "render/text-decoration-overline-color".to_string(),
@@ -109,7 +109,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration: overline dotted red; font-size: 20px; }</style>
 <p class="t">Colored dotted overline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -118,7 +119,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "stroke_count_ge:1".to_string(),
             ],
         },
-
         // ── text-decoration-color 长属性 ──
         TestCase {
             id: "render/text-decoration-color-blue".to_string(),
@@ -127,7 +127,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.t { text-decoration-line: underline; text-decoration-color: blue; font-size: 20px; }</style>
 <p class="t">Blue underline text</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -136,7 +137,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ═══════════════════════════════════════════════════════════════
         //  CSS 3D 变换渲染扩展
         // ═══════════════════════════════════════════════════════════════
@@ -149,7 +149,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.box { width: 100px; height: 80px; background: #4488cc; transform: rotateX(30deg); }</style>
 <div class="box">Rotated X</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -158,7 +159,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── transform: rotateY ──
         TestCase {
             id: "render/transform-rotateY".to_string(),
@@ -167,7 +167,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.box { width: 100px; height: 80px; background: #cc44aa; transform: rotateY(45deg); }</style>
 <div class="box">Rotated Y</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -176,7 +177,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── transform: perspective ──
         TestCase {
             id: "render/transform-perspective".to_string(),
@@ -185,7 +185,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.box { width: 100px; height: 80px; background: #44cc88; transform: perspective(500px) rotateY(30deg); }</style>
 <div class="box">Perspective</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -194,7 +195,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── transform: scale3d ──
         TestCase {
             id: "render/transform-scale3d".to_string(),
@@ -203,7 +203,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.box { width: 60px; height: 40px; background: #ff8844; transform: scale3d(1.5, 1.5, 1); }</style>
 <div class="box">Scaled 3D</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -212,7 +213,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── transform: translate3d ──
         TestCase {
             id: "render/transform-translate3d".to_string(),
@@ -221,7 +221,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             html: r#"<html><body>
 <style>.box { width: 80px; height: 60px; background: #8844ff; transform: translate3d(20px, 10px, 0); }</style>
 <div class="box">Translated 3D</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -230,7 +231,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ═══════════════════════════════════════════════════════════════
         //  CSS 组合渲染
         // ═══════════════════════════════════════════════════════════════
@@ -249,7 +249,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
 }
 </style>
 <div class="card">Transformed with shadow</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -259,7 +260,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "shadow_count_ge:1".to_string(),
             ],
         },
-
         // ── 多层渐变 + transform ──
         TestCase {
             id: "render/gradient-transform-combo".to_string(),
@@ -275,7 +275,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
 }
 </style>
 <div class="box">Gradient + Transform</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -284,7 +285,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "gradient_count_ge:1".to_string(),
             ],
         },
-
         // ── filter + opacity + transform ──
         TestCase {
             id: "render/filter-opacity-transform".to_string(),
@@ -298,7 +298,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
 }
 </style>
 <div class="box">Filtered + Transparent + Skewed</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -307,7 +308,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "has_fill_primitives".to_string(),
             ],
         },
-
         // ── text-decoration + text-shadow 组合 ──
         TestCase {
             id: "render/text-decoration-shadow-combo".to_string(),
@@ -323,7 +323,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
 }
 </style>
 <p class="fancy">Fancy text decoration</p>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -333,7 +334,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "shadow_count_ge:1".to_string(),
             ],
         },
-
         // ── column-count + column-rule 综合页面 ──
         TestCase {
             id: "render/multi-column-page".to_string(),
@@ -351,7 +351,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
   <p>Second paragraph that flows across columns automatically.</p>
   <p>Third paragraph continuing the multi-column layout flow.</p>
 </div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),
@@ -360,7 +361,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "glyph_count_ge:1".to_string(),
             ],
         },
-
         // ── white-space + overflow 组合 ──
         TestCase {
             id: "render/white-space-overflow".to_string(),
@@ -376,7 +376,8 @@ pub fn render_extended_tests() -> Vec<TestCase> {
 </style>
 <div class="pre-box">This text preserves     whitespace
 and newlines within the constrained box.</div>
-</body></html>"#.to_string(),
+</body></html>"#
+                .to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),

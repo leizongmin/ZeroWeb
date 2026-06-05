@@ -1080,7 +1080,10 @@ fn test_decoration_style_double() {
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 2, "double 应生成 2 个平行填充");
     // 第二条线应在第一条线下方
-    assert!(fills[1].rect.origin.y > fills[0].rect.origin.y, "double 第二条线应在第一条下方");
+    assert!(
+        fills[1].rect.origin.y > fills[0].rect.origin.y,
+        "double 第二条线应在第一条下方"
+    );
 }
 
 /// 测试 text-decoration-style: dotted 生成 StrokePrimitive（Dotted）。
@@ -1095,7 +1098,10 @@ fn test_decoration_style_dotted() {
 
     assert!(!painter.primitives().strokes.is_empty(), "dotted 应生成 stroke 图元");
     let stroke = &painter.primitives().strokes[0];
-    assert!(matches!(stroke.style, zero_render_foundation::primitive::LineStyle::Dotted));
+    assert!(matches!(
+        stroke.style,
+        zero_render_foundation::primitive::LineStyle::Dotted
+    ));
 }
 
 /// 测试 text-decoration-style: dashed 生成 StrokePrimitive（Dashed）。
@@ -1110,7 +1116,10 @@ fn test_decoration_style_dashed() {
 
     assert!(!painter.primitives().strokes.is_empty(), "dashed 应生成 stroke 图元");
     let stroke = &painter.primitives().strokes[0];
-    assert!(matches!(stroke.style, zero_render_foundation::primitive::LineStyle::Dashed));
+    assert!(matches!(
+        stroke.style,
+        zero_render_foundation::primitive::LineStyle::Dashed
+    ));
 }
 
 /// 测试 text-decoration-style: wavy 生成多个交替偏移的填充矩形（正弦波近似）。
@@ -1209,6 +1218,8 @@ fn test_decoration_blink_none_no_output() {
 
     style.text_decoration_line = TextDecorationLineValue::None;
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style);
-    assert!(painter.primitives().fills.is_empty() && painter.primitives().strokes.is_empty(),
-        "none 不应生成装饰");
+    assert!(
+        painter.primitives().fills.is_empty() && painter.primitives().strokes.is_empty(),
+        "none 不应生成装饰"
+    );
 }
