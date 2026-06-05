@@ -1,0 +1,370 @@
+//! 绘制命令生成器 — 模块拆分入口。
+//!
+//! Painter 结构体定义和核心绘制方法（递归遍历 + 背景绘制）。
+//! 边框、效果、文本等子模块通过 `impl Painter` 扩展。
+
+mod border;
+mod effects;
+mod text;
+
+use std::collections::{HashMap, HashSet};
+
+use zero_css_parser::values::{ColorValue, VisibilityValue};
+use zero_dom::{Document, NodeId};
+use zero_layout_engine::LayoutBox;
+use zero_layout_engine::types::OverflowClip;
+use zero_render_foundation::geometry::Rect;
+use zero_render_foundation::primitive::RenderPrimitives;
+use zero_style_system::{
+    BackgroundClipComputedValue, ComputedStyle, ContainComputedValue, MixBlendModeComputedValue, ResizeValue,
+};
+
+use super::color::color_value_to_render;
+use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, clip_fills, clip_glyphs};
+
+/// 绘制命令生成器 — 将布局盒树转换为渲染图元。
+pub struct Painter {
+    /// 生成的渲染图元列表。
+    pub(crate) primitives: RenderPrimitives,
+    /// 已由父级行内格式化上下文绘制过文本的节点。
+    pub(crate) painted_inline_nodes: HashSet<NodeId>,
+}
+
+impl Painter {
+    /// 创建新的绘制命令生成器。
+    pub fn new() -> Self {
+        Self {
+            primitives: RenderPrimitives::new(),
+            painted_inline_nodes: HashSet::new(),
+        }
+    }
+
+    /// 绘制整个布局树。
+    ///
+    /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
+    /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
+    pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
+        self.paint_node(layout, styles, 0.0, 0.0, doc);
+    }
+
+    /// 仅绘制与脏区域相交的节点（增量绘制）。
+    ///
+    /// 遍历布局树时跳过与脏区域完全不相交的子树，
+    /// 只生成落在脏区域内的图元。
+    pub fn paint_in_rect(
+        &mut self,
+        layout: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        dirty_rect: &Rect,
+        doc: Option<&Document>,
+    ) {
+        self.paint_node_in_rect(layout, styles, 0.0, 0.0, dirty_rect, doc);
+    }
+
+    /// 绘制与脏区域相交的节点（递归）。
+    fn paint_node_in_rect(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        dirty_rect: &Rect,
+        doc: Option<&Document>,
+    ) {
+        let abs_x = offset_x + box_node.x;
+        let abs_y = offset_y + box_node.y;
+
+        // 快速剔除：如果节点包围盒完全不在脏区域内，跳过整个子树
+        let node_right = abs_x + box_node.width;
+        let node_bottom = abs_y + box_node.height;
+        if node_right <= dirty_rect.left()
+            || node_bottom <= dirty_rect.top()
+            || abs_x >= dirty_rect.right()
+            || abs_y >= dirty_rect.bottom()
+        {
+            return;
+        }
+
+        // 节点与脏区域相交，执行正常绘制
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
+
+        let is_hidden = if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
+
+            let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
+                && box_node.children.is_empty();
+
+            if !hidden && !skip_empty_cell {
+                self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                if style.background_color != ColorValue::Transparent {
+                    self.paint_background(box_node, abs_x, abs_y, style);
+                }
+                self.paint_background_image(box_node, abs_x, abs_y, style);
+                if box_node.border_top > 0.0
+                    || box_node.border_right > 0.0
+                    || box_node.border_bottom > 0.0
+                    || box_node.border_left > 0.0
+                {
+                    self.paint_borders(box_node, abs_x, abs_y, style);
+                }
+                self.paint_outline(box_node, abs_x, abs_y, style);
+            }
+
+            if !hidden {
+                if let Some(doc) = doc {
+                    self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+                }
+                self.paint_text(box_node, abs_x, abs_y, style, doc);
+            }
+
+            hidden
+        } else {
+            false
+        };
+
+        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+
+        let fills_before = self.primitives.fills.len();
+        let glyphs_before = self.primitives.glyphs.len();
+
+        for child in &box_node.children {
+            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
+        }
+
+        if needs_clip {
+            let clip_rect = Rect::new(
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            );
+            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
+            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        let _ = is_hidden;
+    }
+
+    /// 绘制单个节点（递归）。
+    ///
+    /// 根据节点的计算样式生成背景色填充和边框填充图元，
+    /// 然后递归绘制子节点。当 overflow 不为 Visible 时，
+    /// 子节点产生的图元会被裁剪到内容盒范围内。
+    /// 当传入 `doc` 时，使用行内格式化上下文处理文本换行。
+    fn paint_node(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        doc: Option<&Document>,
+    ) {
+        let abs_x = offset_x + box_node.x;
+        let abs_y = offset_y + box_node.y;
+
+        // 判断是否需要裁剪子内容（overflow 或 contain:paint 触发）
+        let needs_clip = if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            box_node.overflow_x != OverflowClip::Visible
+                || box_node.overflow_y != OverflowClip::Visible
+                || matches!(
+                    style.contain,
+                    ContainComputedValue::Paint
+                        | ContainComputedValue::Strict
+                        | ContainComputedValue::Content
+                        | ContainComputedValue::Custom(_)
+                )
+        } else {
+            box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible
+        };
+
+        // 获取该节点对应的计算样式
+        // 记录绘制前的图元数量，用于 opacity 应用
+        let counts_before = PrimitiveCounts::snapshot(&self.primitives);
+
+        let is_hidden = if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
+
+            // empty-cells:hide — 空表格单元格不绘制背景和边框
+            let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
+                && box_node.children.is_empty();
+
+            if !hidden && !skip_empty_cell {
+                // 0. box-shadow（位于背景之下）
+                self.paint_box_shadow(box_node, abs_x, abs_y, style);
+
+                // 1. 背景色填充（根据 border-radius 生成圆角矩形图元）
+                if style.background_color != ColorValue::Transparent {
+                    self.paint_background(box_node, abs_x, abs_y, style);
+                }
+
+                // 1b. 背景图片（在背景色之上）
+                self.paint_background_image(box_node, abs_x, abs_y, style);
+
+                // 2. 边框填充（根据 border-radius 生成圆角边框图元）
+                if box_node.border_top > 0.0
+                    || box_node.border_right > 0.0
+                    || box_node.border_bottom > 0.0
+                    || box_node.border_left > 0.0
+                {
+                    self.paint_borders(box_node, abs_x, abs_y, style);
+                }
+
+                // 2b. Border-image 绘制（替换或覆盖常规边框）
+                self.paint_border_image(box_node, abs_x, abs_y, style);
+
+                // 2c. Column-rule 绘制（多列之间的分隔线）
+                self.paint_column_rules(box_node, abs_x, abs_y, style);
+
+                // 3. Outline 绘制（位于 border 外侧）
+                self.paint_outline(box_node, abs_x, abs_y, style);
+            }
+
+            // 列表标记和文本始终绘制（不受 empty-cells 影响）
+            if !hidden {
+                // 4. 列表标记绘制（bullets/numbers，位于文本之前）
+                if let Some(doc) = doc {
+                    self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+                }
+
+                // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
+                self.paint_text(box_node, abs_x, abs_y, style, doc);
+            }
+
+            hidden
+        } else {
+            false
+        };
+
+        // 6. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
+        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+
+        // 记录子节点绘制前的图元数量，用于裁剪
+        let fills_before = self.primitives.fills.len();
+        let glyphs_before = self.primitives.glyphs.len();
+
+        for child in &box_node.children {
+            self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+        }
+
+        // 如果需要裁剪，将子节点产生的图元裁剪到内容盒范围内
+        if needs_clip {
+            let clip_rect = Rect::new(
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            );
+            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
+            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        // CSS filter — 对元素及其子元素产生的图元应用滤镜效果
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.apply_filter(box_node, abs_x, abs_y, style);
+        }
+
+        // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && style.opacity < 1.0
+        {
+            let opacity = style.opacity as f32;
+            apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
+        }
+
+        // CSS mix-blend-mode — 对元素及其子元素产生的图元应用混合模式
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.mix_blend_mode, MixBlendModeComputedValue::Normal)
+        {
+            self.apply_blend_mode(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS resize — 绘制调整大小手柄指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.resize, ResizeValue::None)
+        {
+            self.paint_resize_handle(box_node, abs_x, abs_y, style);
+        }
+
+        let _ = is_hidden; // visibility 在 if let 块内处理
+    }
+
+    /// 绘制背景（考虑 border-radius）。
+    ///
+    /// 当 border-radius 为零时退化为普通矩形填充。
+    fn paint_background(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let radii = super::helpers::BorderRadiusSpec::from_style(style);
+
+        // 根据 background-clip 决定背景绘制区域
+        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
+            BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundClipComputedValue::PaddingBox => (
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundClipComputedValue::ContentBox => (
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+            BackgroundClipComputedValue::Text => {
+                // background-clip: text — 暂按 content-box 处理
+                (
+                    abs_x + box_node.border_left + box_node.padding_left,
+                    abs_y + box_node.border_top + box_node.padding_top,
+                    box_node.content_width,
+                    box_node.content_height,
+                )
+            }
+        };
+
+        if radii.is_zero() {
+            // 无圆角：简单矩形填充
+            self.primitives.add_fill(
+                Rect::new(clip_x, clip_y, clip_w, clip_h),
+                color_value_to_render(&style.background_color),
+            );
+        } else {
+            // 圆角矩形：生成带圆角信息的填充图元
+            self.primitives.add_fill(
+                Rect::new(clip_x, clip_y, clip_w, clip_h),
+                color_value_to_render(&style.background_color),
+            );
+            // 存储圆角信息（当前架构下 FillPrimitive 没有圆角字段，
+            // 通过附加的元数据图元标记圆角）
+            self.add_rounded_rect_metadata(clip_x, clip_y, clip_w, clip_h, &radii);
+        }
+    }
+
+    /// 获取生成的渲染图元（消费 painter）。
+    pub fn into_primitives(self) -> RenderPrimitives {
+        self.primitives
+    }
+
+    /// 获取渲染图元引用。
+    pub fn primitives(&self) -> &RenderPrimitives {
+        &self.primitives
+    }
+}
+
+impl Default for Painter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
