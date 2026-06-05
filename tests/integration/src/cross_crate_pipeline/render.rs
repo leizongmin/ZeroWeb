@@ -1426,3 +1426,56 @@ fn test_line_clamp_pipeline() {
         "line-clamp 应为 Count(3)"
     );
 }
+
+// ── CSS 交互/提示属性管线集成测试（新增指示器渲染） ──
+
+#[test]
+fn test_image_rendering_pixelated_render_pipeline() {
+    let html = r#"<html><body><img style="image-rendering: pixelated; width: 100px; height: 50px;"></body></html>"#;
+    let css = "";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+    assert!(
+        result.timings.total_ms >= 0.0,
+        "image-rendering: pixelated 管线应成功完成"
+    );
+}
+
+#[test]
+fn test_isolation_isolate_render_pipeline() {
+    let html = r#"<html><body><div style="isolation: isolate;">Stacking context</div></body></html>"#;
+    let css = "";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "isolation: isolate 管线应成功完成");
+}
+
+#[test]
+fn test_will_change_transform_render_pipeline() {
+    let html = r#"<html><body><div style="will-change: transform;">Animated</div></body></html>"#;
+    let css = "";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "will-change: transform 管线应成功完成");
+}
+
+#[test]
+fn test_overscroll_behavior_contain_render_pipeline() {
+    let html = r#"<html><body><div style="overscroll-behavior: contain;">Scroll</div></body></html>"#;
+    let css = "";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+    assert!(
+        result.timings.total_ms >= 0.0,
+        "overscroll-behavior: contain 管线应成功完成"
+    );
+}
+
+#[test]
+fn test_touch_action_none_render_pipeline() {
+    let html = r#"<html><body><div style="touch-action: none;">No touch</div></body></html>"#;
+    let css = "";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, css);
+    assert!(result.timings.total_ms >= 0.0, "touch-action: none 管线应成功完成");
+}

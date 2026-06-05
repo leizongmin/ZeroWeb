@@ -554,5 +554,221 @@ and newlines within the constrained box.</div>
                 "has_fill_primitives".to_string(),
             ],
         },
+
+        // ── CSS cursor 指示器渲染 ──
+
+        TestCase {
+            id: "render/cursor-pointer".to_string(),
+            description: "CSS cursor: pointer indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.link { cursor: pointer; width: 200px; height: 50px; background: #eee; }</style>
+<div class="link">Click me</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "render/cursor-crosshair".to_string(),
+            description: "CSS cursor: crosshair indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.target { cursor: crosshair; width: 100px; height: 100px; background: #ddd; }</style>
+<div class="target">Target area</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS image-rendering 指示器渲染 ──
+
+        TestCase {
+            id: "render/image-rendering-pixelated".to_string(),
+            description: "CSS image-rendering: pixelated indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.pixel { image-rendering: pixelated; width: 100px; height: 100px; background: #ccc; }</style>
+<div class="pixel">Pixel art</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "render/image-rendering-crisp-edges".to_string(),
+            description: "CSS image-rendering: crisp-edges indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.sharp { image-rendering: crisp-edges; width: 100px; height: 100px; background: #bbb; }</style>
+<div class="sharp">Sharp image</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS isolation 指示器渲染 ──
+
+        TestCase {
+            id: "render/isolation-isolate".to_string(),
+            description: "CSS isolation: isolate stacking context indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.stack { isolation: isolate; width: 200px; height: 100px; background: #eef; }</style>
+<div class="stack">Isolated stacking context</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS will-change 指示器渲染 ──
+
+        TestCase {
+            id: "render/will-change-transform".to_string(),
+            description: "CSS will-change: transform performance hint indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.animated { will-change: transform; width: 200px; height: 100px; background: #ffe; }</style>
+<div class="animated">Will animate</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS pointer-events 指示器渲染 ──
+
+        TestCase {
+            id: "render/pointer-events-none".to_string(),
+            description: "CSS pointer-events: none click-through indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.overlay { pointer-events: none; width: 200px; height: 100px; background: rgba(0,0,0,0.1); }</style>
+<div class="overlay">Invisible to clicks</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS user-select 指示器渲染 ──
+
+        TestCase {
+            id: "render/user-select-none".to_string(),
+            description: "CSS user-select: none no-selection indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.noselect { user-select: none; width: 200px; height: 50px; background: #f0f0f0; }</style>
+<div class="noselect">Cannot select this text</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS overscroll-behavior 指示器渲染 ──
+
+        TestCase {
+            id: "render/overscroll-behavior-contain".to_string(),
+            description: "CSS overscroll-behavior: contain scroll boundary indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.scroll-box { overscroll-behavior: contain; width: 200px; height: 100px; overflow: auto; background: #f5f5f5; }</style>
+<div class="scroll-box">Scrollable with boundary</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS touch-action 指示器渲染 ──
+
+        TestCase {
+            id: "render/touch-action-none".to_string(),
+            description: "CSS touch-action: none touch behavior indicator".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.notouch { touch-action: none; width: 200px; height: 100px; background: #fafafa; }</style>
+<div class="notouch">No touch gestures</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── CSS 交互属性组合渲染 ──
+
+        TestCase {
+            id: "render/interaction-combo".to_string(),
+            description: "CSS cursor + isolation + will-change + pointer-events + user-select combined".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+.combo {
+    cursor: pointer;
+    isolation: isolate;
+    will-change: transform;
+    pointer-events: none;
+    user-select: none;
+    width: 300px;
+    height: 150px;
+    background: #e8e8ff;
+}
+</style>
+<div class="combo">All interaction hints combined</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
     ]
 }

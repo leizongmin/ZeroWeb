@@ -17,8 +17,9 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
-    CaretColorComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue, MixBlendModeComputedValue,
-    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
+    CaretColorComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, QuotesComputedValue,
+    ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue, WillChangeValue,
 };
 
 use super::color::color_value_to_render;
@@ -391,6 +392,72 @@ impl Painter {
             && matches!(style.quotes, QuotesComputedValue::Pairs(_))
         {
             self.paint_quotes(box_node, abs_x, abs_y, style, 0);
+        }
+
+        // CSS cursor — 光标类型指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_cursor_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS image-rendering — 图片质量指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.image_rendering, ImageRenderingValue::Auto)
+        {
+            self.paint_image_rendering_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS isolation: isolate — 堆叠上下文指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.isolation, IsolationValue::Isolate)
+        {
+            self.paint_isolation_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS will-change — 性能提示指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.will_change, WillChangeValue::Auto)
+        {
+            self.paint_will_change_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS pointer-events: none — 点击穿透指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.pointer_events, PointerEventsValue::None)
+        {
+            self.paint_pointer_events_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS user-select: none — 文本不可选择指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.user_select, UserSelectValue::None)
+        {
+            self.paint_user_select_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS overscroll-behavior — 滚动边界限制指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.overscroll_behavior_x, OverscrollBehaviorValue::Auto)
+        {
+            self.paint_overscroll_behavior_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS touch-action — 触摸行为指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(
+                style.touch_action,
+                TouchActionValue::Auto | TouchActionValue::Manipulation
+            )
+        {
+            self.paint_touch_action_indicator(box_node, abs_x, abs_y, style);
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理

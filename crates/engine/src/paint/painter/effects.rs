@@ -3,6 +3,8 @@
 //! 包含 paint_box_shadow、paint_background_image、apply_filter、apply_blend_mode、
 //! paint_resize_handle、add_rounded_rect_metadata、paint_text_decoration，
 //! 以及 background-position/size 辅助函数。
+//! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
+//! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
 use zero_css_parser::values::ColorValue;
 use zero_layout_engine::LayoutBox;
@@ -15,8 +17,10 @@ use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundImageComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
     BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle, FilterComputedValue, HyphensComputedValue,
-    LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue,
+    ImageRenderingValue, IsolationValue, LineClampComputedValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
+    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue, TouchActionValue, UserSelectValue,
+    WillChangeValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -944,6 +948,269 @@ fn resolve_repeat_params(
                 tile_h,
             )
         }
+    }
+}
+
+impl super::Painter {
+    // ── CSS 交互/提示属性指示器 ──────────────────────────
+
+    /// 绘制 CSS cursor 类型指示器。
+    ///
+    /// 在元素右上角渲染一个 4×4 像素的小方块，颜色根据 cursor 类型不同而变化。
+    /// 仅对非 auto/default 的 cursor 值渲染指示器。
+    pub(super) fn paint_cursor_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::CursorValue;
+
+        let color = match style.cursor {
+            CursorValue::Auto | CursorValue::Default => return,
+            CursorValue::Pointer => Color::rgba(0, 120, 215, 200), // 蓝色 — 手指光标
+            CursorValue::Text => Color::rgba(0, 0, 0, 200),        // 黑色 — 文本光标
+            CursorValue::Crosshair => Color::rgba(255, 0, 0, 200), // 红色 — 十字光标
+            CursorValue::Move => Color::rgba(128, 0, 128, 200),    // 紫色 — 移动光标
+            CursorValue::Wait => Color::rgba(255, 165, 0, 200),    // 橙色 — 等待光标
+            CursorValue::Help => Color::rgba(0, 128, 0, 200),      // 绿色 — 帮助光标
+            CursorValue::NotAllowed => Color::rgba(200, 0, 0, 200), // 深红 — 禁止光标
+            CursorValue::Grab | CursorValue::Grabbing => Color::rgba(139, 69, 19, 200), // 棕色 — 抓取
+            CursorValue::ColResize | CursorValue::EwResize => Color::rgba(0, 128, 128, 200), // 青色 — 水平调整
+            CursorValue::RowResize | CursorValue::NsResize => Color::rgba(128, 128, 0, 200), // 橄榄 — 垂直调整
+            CursorValue::None => Color::rgba(200, 200, 200, 100),  // 浅灰 — 无光标
+            CursorValue::Progress => Color::rgba(0, 0, 200, 200),  // 蓝色 — 进度
+            CursorValue::Cell => Color::rgba(0, 200, 0, 200),      // 绿色 — 单元格
+            CursorValue::Copy => Color::rgba(100, 100, 255, 200),  // 淡蓝 — 复制
+            CursorValue::Alias => Color::rgba(200, 100, 0, 200),   // 深橙 — 别名
+            CursorValue::AllScroll => Color::rgba(128, 128, 128, 200), // 灰色 — 全方向滚动
+            CursorValue::ZoomIn | CursorValue::ZoomOut => Color::rgba(200, 200, 0, 200), // 黄色 — 缩放
+        };
+
+        // 在元素右上角绘制 4×4 指示方块
+        let x = abs_x + box_node.width - 6.0;
+        let y = abs_y + 2.0;
+        self.primitives.add_fill(Rect::new(x, y, 4.0, 4.0), color);
+    }
+
+    /// 绘制 CSS image-rendering 质量指示器。
+    ///
+    /// 对非 auto 值的 image-rendering，在图片右下角绘制一个小质量标记：
+    /// - pixelated → 方格图案（2×2 网格）
+    /// - crisp-edges → 粗线边框
+    /// - smooth/high-quality → 圆滑标记
+    pub(super) fn paint_image_rendering_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        match style.image_rendering {
+            ImageRenderingValue::Auto => {}
+            ImageRenderingValue::Pixelated => {
+                // 2×2 方格图案表示像素化
+                let x = abs_x + box_node.width - 8.0;
+                let y = abs_y + box_node.height - 8.0;
+                let c = Color::rgba(255, 0, 255, 180);
+                self.primitives.add_fill(Rect::new(x, y, 4.0, 4.0), c);
+                self.primitives.add_fill(Rect::new(x + 4.0, y + 4.0, 4.0, 4.0), c);
+            }
+            ImageRenderingValue::CrispEdges => {
+                // 粗线边框表示锐利边缘
+                let x = abs_x + box_node.width - 10.0;
+                let y = abs_y + box_node.height - 10.0;
+                let c = Color::rgba(255, 140, 0, 180);
+                self.primitives.add_fill(Rect::new(x, y, 10.0, 2.0), c);
+                self.primitives.add_fill(Rect::new(x, y, 2.0, 10.0), c);
+            }
+            ImageRenderingValue::Smooth | ImageRenderingValue::HighQuality => {
+                // 圆滑标记（单个圆点）
+                let x = abs_x + box_node.width - 6.0;
+                let y = abs_y + box_node.height - 6.0;
+                self.primitives
+                    .add_fill(Rect::new(x, y, 4.0, 4.0), Color::rgba(0, 200, 100, 180));
+            }
+        }
+    }
+
+    /// 绘制 CSS isolation: isolate 指示器。
+    ///
+    /// 在元素左上角绘制一个紫色 L 形标记，表示创建了新的堆叠上下文。
+    pub(super) fn paint_isolation_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !matches!(style.isolation, IsolationValue::Isolate) {
+            return;
+        }
+
+        let c = Color::rgba(128, 0, 128, 160);
+        // L 形标记：水平线 + 垂直线
+        self.primitives.add_fill(Rect::new(abs_x, abs_y, 8.0, 2.0), c);
+        self.primitives.add_fill(Rect::new(abs_x, abs_y, 2.0, 8.0), c);
+    }
+
+    /// 绘制 CSS will-change 指示器。
+    ///
+    /// 在元素右上角绘制一个黄色三角形警告标记，表示即将发生的变化。
+    pub(super) fn paint_will_change_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if matches!(style.will_change, WillChangeValue::Auto) {
+            return;
+        }
+
+        let x = abs_x + box_node.width - 8.0;
+        let y = abs_y + 2.0;
+        let c = Color::rgba(255, 200, 0, 200);
+        // 用 3 个 fill 模拟三角形标记
+        self.primitives.add_fill(Rect::new(x + 3.0, y, 2.0, 2.0), c);
+        self.primitives.add_fill(Rect::new(x + 2.0, y + 2.0, 4.0, 2.0), c);
+        self.primitives.add_fill(Rect::new(x + 1.0, y + 4.0, 6.0, 2.0), c);
+    }
+
+    /// 绘制 CSS pointer-events: none 指示器。
+    ///
+    /// 在元素右上角绘制一个红色 × 标记，表示元素不接收指针事件。
+    pub(super) fn paint_pointer_events_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !matches!(style.pointer_events, PointerEventsValue::None) {
+            return;
+        }
+
+        let x = abs_x + box_node.width - 8.0;
+        let y = abs_y + 2.0;
+        let c = Color::rgba(220, 20, 20, 180);
+        // × 标记：两条交叉对角线（用 stroke）
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x,
+            y1: y,
+            x2: x + 6.0,
+            y2: y + 6.0,
+            width: 1.5,
+            color: c,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 6.0,
+            y1: y,
+            x2: x,
+            y2: y + 6.0,
+            width: 1.5,
+            color: c,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+    }
+
+    /// 绘制 CSS user-select: none 指示器。
+    ///
+    /// 在元素左上角绘制一个灰色锁形标记，表示文本不可选择。
+    pub(super) fn paint_user_select_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !matches!(style.user_select, UserSelectValue::None) {
+            return;
+        }
+
+        let x = abs_x + 2.0;
+        let y = abs_y + 2.0;
+        let c = Color::rgba(128, 128, 128, 180);
+        // 锁形标记：矩形锁体 + 半弧锁扣
+        self.primitives.add_fill(Rect::new(x, y + 4.0, 6.0, 4.0), c);
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 1.5,
+            y1: y + 4.0,
+            x2: x + 1.5,
+            y2: y + 1.0,
+            width: 1.0,
+            color: c,
+            style: LineStyle::Solid,
+            cap: LineCap::Round,
+        });
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 4.5,
+            y1: y + 4.0,
+            x2: x + 4.5,
+            y2: y + 1.0,
+            width: 1.0,
+            color: c,
+            style: LineStyle::Solid,
+            cap: LineCap::Round,
+        });
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 1.5,
+            y1: y + 1.0,
+            x2: x + 4.5,
+            y2: y + 1.0,
+            width: 1.0,
+            color: c,
+            style: LineStyle::Solid,
+            cap: LineCap::Round,
+        });
+    }
+
+    /// 绘制 CSS overscroll-behavior 指示器。
+    ///
+    /// 对 contain/none 值，在元素底部中央绘制一条水平线，表示滚动边界被限制。
+    pub(super) fn paint_overscroll_behavior_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let (c, w) = match style.overscroll_behavior_x {
+            OverscrollBehaviorValue::Contain => (Color::rgba(255, 100, 0, 180), 12.0),
+            OverscrollBehaviorValue::None => (Color::rgba(200, 0, 0, 200), 16.0),
+            OverscrollBehaviorValue::Auto => return,
+        };
+
+        let x = abs_x + (box_node.width - w) / 2.0;
+        let y = abs_y + box_node.height - 3.0;
+        self.primitives.add_fill(Rect::new(x, y, w, 2.0), c);
+    }
+
+    /// 绘制 CSS touch-action 指示器。
+    ///
+    /// 对非 auto 值，在元素右下角绘制一个小标记。
+    pub(super) fn paint_touch_action_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let c = match style.touch_action {
+            TouchActionValue::Auto | TouchActionValue::Manipulation => return,
+            TouchActionValue::None => Color::rgba(200, 0, 0, 180),
+            TouchActionValue::PanX => Color::rgba(0, 100, 200, 180),
+            TouchActionValue::PanY => Color::rgba(0, 200, 100, 180),
+            TouchActionValue::PanXPanY => Color::rgba(100, 100, 200, 180),
+        };
+
+        let x = abs_x + box_node.width - 5.0;
+        let y = abs_y + box_node.height - 5.0;
+        self.primitives.add_fill(Rect::new(x, y, 3.0, 3.0), c);
     }
 }
 

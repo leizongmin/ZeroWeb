@@ -9,6 +9,7 @@ mod counters;
 mod css_unpainted;
 mod effects;
 mod helpers;
+mod interaction_indicators;
 mod ui_indicators;
 mod visual;
 mod visual_inline;
