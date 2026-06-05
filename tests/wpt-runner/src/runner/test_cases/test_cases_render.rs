@@ -1428,5 +1428,226 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "nonzero_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  background-repeat 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── background-repeat: repeat 默认平铺 ──
+        TestCase {
+            id: "render/bg-repeat-default".to_string(),
+            description: "background-repeat default tiling".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;background-image:url('tile.png');background-size:50px 50px;">Tiled</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:4".to_string(),
+            ],
+        },
+
+        // ── background-repeat: repeat-x 仅水平平铺 ──
+        TestCase {
+            id: "render/bg-repeat-x".to_string(),
+            description: "background-repeat-x horizontal only".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;background-image:url('stripe.png');background-size:40px 100px;background-repeat:repeat-x;">H-Stripe</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:3".to_string(),
+            ],
+        },
+
+        // ── background-repeat: repeat-y 仅垂直平铺 ──
+        TestCase {
+            id: "render/bg-repeat-y".to_string(),
+            description: "background-repeat-y vertical only".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:100px;height:200px;background-image:url('stripe.png');background-size:100px 40px;background-repeat:repeat-y;">V-Stripe</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:3".to_string(),
+            ],
+        },
+
+        // ── background-repeat: no-repeat 不平铺 ──
+        TestCase {
+            id: "render/bg-no-repeat".to_string(),
+            description: "background-repeat no-repeat single tile".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;background-image:url('photo.png');background-size:50px 50px;background-repeat:no-repeat;">Single</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── background-repeat: round 缩放平铺 ──
+        TestCase {
+            id: "render/bg-repeat-round".to_string(),
+            description: "background-repeat round scaled tiles".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;background-image:url('tile.png');background-size:60px 60px;background-repeat:round;">Rounded</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:3".to_string(),
+            ],
+        },
+
+        // ── background-repeat: space 均匀分布 ──
+        TestCase {
+            id: "render/bg-repeat-space".to_string(),
+            description: "background-repeat space evenly distributed".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:100px;background-image:url('dot.png');background-size:30px 30px;background-repeat:space;">Spaced</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:2".to_string(),
+            ],
+        },
+
+        // ── background-repeat + position + size 组合 ──
+        TestCase {
+            id: "render/bg-repeat-position-size".to_string(),
+            description: "background-repeat with position and size".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:300px;height:200px;background-image:url('icon.png');background-size:40px 40px;background-position:10px 10px;background-repeat:repeat;">Pattern</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "image_count_ge:10".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 表格渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 基础 HTML 表格渲染 ──
+        TestCase {
+            id: "render/html-table-basic".to_string(),
+            description: "Basic HTML table rendering".to_string(),
+            category: "html-layout".to_string(),
+            html: r#"<html><body>
+<table style="border-collapse:collapse;width:100%;">
+  <tr><th style="border:1px solid #333;background:#eee;padding:4px;">Name</th><th style="border:1px solid #333;background:#eee;padding:4px;">Value</th></tr>
+  <tr><td style="border:1px solid #333;padding:4px;">Alpha</td><td style="border:1px solid #333;padding:4px;">100</td></tr>
+  <tr><td style="border:1px solid #333;padding:4px;">Beta</td><td style="border:1px solid #333;padding:4px;">200</td></tr>
+</table>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── 带标题的表格 ──
+        TestCase {
+            id: "render/html-table-caption".to_string(),
+            description: "HTML table with caption".to_string(),
+            category: "html-layout".to_string(),
+            html: r#"<html><body>
+<table style="border-collapse:collapse;">
+  <caption style="text-align:center;font-weight:bold;padding:4px;">Data Table</caption>
+  <tr><td style="border:1px solid;padding:4px;">A</td><td style="border:1px solid;padding:4px;">B</td></tr>
+</table>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── 嵌套表格 ──
+        TestCase {
+            id: "render/html-table-nested".to_string(),
+            description: "Nested HTML tables".to_string(),
+            category: "html-layout".to_string(),
+            html: r#"<html><body>
+<table style="border:1px solid #000;"><tr><td style="padding:8px;">
+  <table style="border:1px solid #999;"><tr><td style="padding:4px;">Inner</td></tr></table>
+</td></tr></table>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 多列布局渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── column-count 多列文本 ──
+        TestCase {
+            id: "render/multi-column-text".to_string(),
+            description: "Multi-column text layout with column-count".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="column-count:3;column-gap:20px;column-rule:1px solid #ccc;">
+  <p>Column one text content for testing multi-column layout rendering.</p>
+  <p>Column two continues with more content to fill the space.</p>
+  <p>Column three wraps up the text across three columns.</p>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── column-width 固定列宽 ──
+        TestCase {
+            id: "render/multi-column-width".to_string(),
+            description: "Multi-column layout with column-width".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="column-width:150px;column-gap:16px;column-rule:2px dashed #999;width:500px;">
+  <p>Fixed width columns with dashed rules between them for visual separation.</p>
+  <p>More content to demonstrate the column-width property rendering.</p>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
     ]
 }
