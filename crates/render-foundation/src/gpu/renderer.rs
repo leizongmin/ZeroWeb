@@ -450,6 +450,10 @@ impl GpuRenderer {
                 placement.y_offset,
                 placement.height as u16,
             );
+            // 对齐到整数像素边界，确保 GPU 路径与 CPU 路径和 OmniTerm 一致，
+            // 避免子像素定位导致的模糊
+            let gx = gx.round();
+            let gy = gy.round();
             let gw = placement.width as f32;
             let gh = placement.height as f32;
             let (r, g, b) = color_to_f32(color);
