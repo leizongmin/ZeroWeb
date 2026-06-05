@@ -11,6 +11,12 @@ fn render_pipeline(html: &str, css: &str) -> zero_engine::RenderResult {
     pipeline.render_html(html, css)
 }
 
+/// 辅助函数：创建管线并渲染带动画的 HTML。
+fn render_pipeline_animated(html: &str, css: &str, current_time: f64) -> zero_engine::RenderResult {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html_animated(html, css, current_time)
+}
+
 // ── 1. CSS Grid 高级属性 ──────────────────────────────────────────
 
 #[test]
@@ -1157,4 +1163,111 @@ fn test_empty_cells_hide() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
+}
+
+// ── CSS 动画管线集成测试 ──
+
+/// 测试 @keyframes 动画通过完整管线渲染。
+#[test]
+fn test_keyframes_animation_pipeline() {
+    let html = r#"<html><body><div class="animated">Anim</div></body></html>"#;
+    let css = r#"
+        @keyframes fadeIn { from { opacity: 0.0; } to { opacity: 1.0; } }
+        .animated { animation: fadeIn 1s linear; background-color: blue; width: 100px; height: 80px; }
+    "#;
+    let result = render_pipeline_animated(html, css, 0.5);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty(), "animated element should produce fills");
+}
+
+/// 测试动画 timing function ease 渲染管线。
+#[test]
+fn test_animation_timing_ease_pipeline() {
+    let html = r#"<html><body><div class="ease">Ease</div></body></html>"#;
+    let css = r#"
+        @keyframes slide { from { opacity: 0.2; } to { opacity: 1.0; } }
+        .ease { animation: slide 2s ease; background-color: green; width: 150px; height: 100px; }
+    "#;
+    let result = render_pipeline_animated(html, css, 0.5);
+    assert!(result.timings.total_ms >= 0.0);
+}
+
+/// 测试动画 fill-mode forwards 渲染管线。
+#[test]
+fn test_animation_fill_forwards_pipeline() {
+    let html = r#"<html><body><div class="fill">Fill</div></body></html>"#;
+    let css = r#"
+        @keyframes grow { from { opacity: 0.0; } to { opacity: 1.0; } }
+        .fill { animation: grow 0.5s linear forwards; background-color: orange; width: 200px; height: 120px; }
+    "#;
+    // t=0: animation starts, opacity should be near 0.0
+    let r0 = render_pipeline_animated(html, css, 0.0);
+    assert!(r0.timings.total_ms >= 0.0);
+    // t=1.0: animation complete, forwards keeps opacity at 1.0
+    let r1 = render_pipeline_animated(html, css, 1.0);
+    assert!(r1.timings.total_ms >= 0.0);
+    assert!(!r1.primitives.fills.is_empty());
+}
+
+/// 测试动画 direction alternate 渲染管线。
+#[test]
+fn test_animation_direction_alternate_pipeline() {
+    let html = r#"<html><body><div class="alt">Alt</div></body></html>"#;
+    let css = r#"
+        @keyframes pulse { 0% { opacity: 0.3; } 100% { opacity: 1.0; } }
+        .alt { animation: pulse 1s linear infinite alternate; background-color: purple; width: 100px; height: 100px; }
+    "#;
+    let result = render_pipeline_animated(html, css, 0.5);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+/// 测试 CSS transition 定义通过渲染管线不崩溃。
+#[test]
+fn test_transition_property_pipeline() {
+    let html = r#"<html><body><div class="trans">Transition</div></body></html>"#;
+    let css = r#"
+        .trans {
+            transition: opacity 0.5s ease, background-color 0.3s linear;
+            opacity: 1.0; background-color: steelblue;
+            width: 200px; height: 100px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+/// 测试 transition 多属性管线渲染。
+#[test]
+fn test_transition_multi_property_pipeline() {
+    let html = r#"<html><body><div class="multi">Multi</div></body></html>"#;
+    let css = r#"
+        .multi {
+            transition-property: opacity, width;
+            transition-duration: 0.3s, 0.5s;
+            transition-timing-function: ease, linear;
+            opacity: 0.8; width: 180px; background-color: teal; height: 100px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
+}
+
+/// 测试动画 + transition 组合通过渲染管线。
+#[test]
+fn test_animation_transition_combo_pipeline() {
+    let html = r#"<html><body><div class="combo">Combo</div></body></html>"#;
+    let css = r#"
+        @keyframes colorShift { 0% { opacity: 0.5; } 100% { opacity: 1.0; } }
+        .combo {
+            animation: colorShift 1s linear;
+            transition: background-color 0.3s ease;
+            background-color: navy; width: 200px; height: 120px;
+        }
+    "#;
+    let result = render_pipeline_animated(html, css, 0.5);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(!result.primitives.fills.is_empty());
 }
