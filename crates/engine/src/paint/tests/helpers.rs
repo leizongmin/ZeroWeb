@@ -535,7 +535,10 @@ fn test_gradient_to_primitive_conic() {
     let result = gradient_to_primitive(&gradient, &rect);
     assert!(result.is_some(), "conic-gradient 应返回 Some");
     let prim = result.unwrap();
-    assert!(matches!(prim.kind, zero_render_foundation::primitive::GradientKind::Conic { .. }));
+    assert!(matches!(
+        prim.kind,
+        zero_render_foundation::primitive::GradientKind::Conic { .. }
+    ));
     assert_eq!(prim.stops.len(), 2);
 }
 

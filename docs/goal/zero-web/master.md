@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,427 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1023 个用例（21 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成）
+**执行状态**: 16/16 crate 已实现，~11,438 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1023 个用例（21 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` 11,271 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,438 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -107,7 +107,26 @@
 
 ## 最近完成的改进
 
-### -96. TransformPrimitive 渲染 + CSS 计数器渲染（本轮，~11,427 测试）
+### -97. background-repeat 渲染集成（本轮，~11,438 测试）
+
+实现 CSS background-repeat 完整渲染，支持 6 种平铺模式：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/effects | **background-repeat 渲染**：paint_background_image 根据 repeat 模式（repeat/repeat-x/repeat-y/no-repeat/space/round）生成平铺 ImagePrimitive；resolve_repeat_params 计算平铺范围和 tile 尺寸；clip_tile_to_origin 裁剪到 origin 区域 | +11 |
+| engine/paint/tests/visual | **修复 5 个既有测试**：background-position/size 测试显式设置 no-repeat，适配 repeat 默认值变更 | 5 updated |
+
+渲染特性：
+- **repeat**：水平和垂直方向都平铺，tile 裁剪到 origin 区域
+- **repeat-x**：仅水平平铺，垂直方向单行
+- **repeat-y**：仅垂直平铺，水平方向单列
+- **no-repeat**：单个 tile，不重复
+- **space**：均匀分布 tile，计算间距
+- **round**：缩放 tile 使整数个刚好覆盖容器
+
+Tests: ~11,427 → ~11,438 (+11), clippy clean.
+
+### -96. TransformPrimitive 渲染 + CSS 计数器渲染（前轮，~11,427 测试）
 
 实现 CSS 变换完整渲染（rotate/scale/skew + transform-origin）和 CSS 计数器跟踪系统：
 
@@ -1702,6 +1721,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | **background-origin** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：border-box/padding-box/content-box） |
 | **border-image** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：9-region slicing，4角+4边+中心） |
 | **mix-blend-mode** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：16 种混合模式 BlendModePrimitive） |
+| **background-repeat** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：6 种平铺模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪到 origin 区域） |
 | **resize** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：手柄指示器 stroke 图元） |
 
 ---

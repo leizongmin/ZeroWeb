@@ -12,8 +12,8 @@ use zero_render_foundation::primitive::{
 };
 use zero_style_system::{
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
-    BackgroundSizeComputedValue, ComputedStyle, FilterComputedValue, MixBlendModeComputedValue, ResizeValue,
-    TextDecorationLineValue,
+    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, ComputedStyle, FilterComputedValue,
+    MixBlendModeComputedValue, ResizeValue, TextDecorationLineValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -52,6 +52,8 @@ impl super::Painter {
     }
 
     /// 绘制背景图片 / 渐变。
+    ///
+    /// 支持 background-repeat 渲染：根据 repeat 模式生成平铺的 ImagePrimitive。
     pub(super) fn paint_background_image(
         &mut self,
         box_node: &LayoutBox,
@@ -93,11 +95,37 @@ impl super::Painter {
             BackgroundImageComputedValue::None => {}
             BackgroundImageComputedValue::Url(url) => {
                 let key = simple_hash(url);
-                let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
-                self.primitives.add_image(ImagePrimitive {
-                    rect,
-                    image_key: ImageKey::new(key),
-                });
+                let repeat = &style.background_repeat;
+
+                // 根据重复模式计算平铺参数
+                let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
+                    repeat,
+                    origin_x,
+                    origin_y,
+                    origin_w,
+                    origin_h,
+                    positioned_x,
+                    positioned_y,
+                    sized_w,
+                    sized_h,
+                );
+
+                let mut y = repeat_y.0;
+                while y < repeat_y.1 {
+                    let mut x = repeat_x.0;
+                    while x < repeat_x.1 {
+                        // 裁剪到 origin 区域
+                        let clipped = clip_tile_to_origin(x, y, tile_w, tile_h, origin_x, origin_y, origin_w, origin_h);
+                        if let Some((cx, cy, cw, ch)) = clipped {
+                            self.primitives.add_image(ImagePrimitive {
+                                rect: Rect::new(cx, cy, cw, ch),
+                                image_key: ImageKey::new(key),
+                            });
+                        }
+                        x += tile_w;
+                    }
+                    y += tile_h;
+                }
             }
             BackgroundImageComputedValue::Gradient(gradient) => {
                 let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
@@ -336,5 +364,156 @@ fn resolve_background_position(
             resolve_position_component(single, container_w, img_w),
             resolve_position_component(&BackgroundPositionComputedValue::Center, container_h, img_h),
         ),
+    }
+}
+
+/// 根据 background-repeat 模式计算平铺范围和 tile 尺寸。
+#[allow(clippy::too_many_arguments)]
+///
+/// 返回 ((x_start, x_end), (y_start, y_end), tile_w, tile_h)。
+fn resolve_repeat_params(
+    repeat: &BackgroundRepeatComputedValue,
+    origin_x: f32,
+    origin_y: f32,
+    origin_w: f32,
+    origin_h: f32,
+    positioned_x: f32,
+    positioned_y: f32,
+    sized_w: f32,
+    sized_h: f32,
+) -> ((f32, f32), (f32, f32), f32, f32) {
+    if sized_w <= 0.0 || sized_h <= 0.0 {
+        return (
+            (positioned_x, positioned_x + sized_w),
+            (positioned_y, positioned_y + sized_h),
+            sized_w,
+            sized_h,
+        );
+    }
+
+    let x_range = |do_repeat: bool| {
+        if do_repeat {
+            // 从 origin 左边界开始，确保覆盖整个区域
+            let start = origin_x - ((origin_x - positioned_x) % sized_w).abs();
+            (start, origin_x + origin_w)
+        } else {
+            (positioned_x, positioned_x + sized_w)
+        }
+    };
+
+    let y_range = |do_repeat: bool| {
+        if do_repeat {
+            let start = origin_y - ((origin_y - positioned_y) % sized_h).abs();
+            (start, origin_y + origin_h)
+        } else {
+            (positioned_y, positioned_y + sized_h)
+        }
+    };
+
+    match repeat {
+        BackgroundRepeatComputedValue::Repeat => (x_range(true), y_range(true), sized_w, sized_h),
+        BackgroundRepeatComputedValue::RepeatX => (x_range(true), y_range(false), sized_w, sized_h),
+        BackgroundRepeatComputedValue::RepeatY => (x_range(false), y_range(true), sized_w, sized_h),
+        BackgroundRepeatComputedValue::NoRepeat => (x_range(false), y_range(false), sized_w, sized_h),
+        BackgroundRepeatComputedValue::Space => {
+            // space 模式：均匀分布，至少两个 tile 才有意义
+            let tiles_x = if origin_w >= sized_w && sized_w > 0.0 {
+                (origin_w / sized_w).floor() as usize
+            } else {
+                1
+            };
+            let tiles_y = if origin_h >= sized_h && sized_h > 0.0 {
+                (origin_h / sized_h).floor() as usize
+            } else {
+                1
+            };
+
+            if tiles_x <= 1 && tiles_y <= 1 {
+                return (
+                    (positioned_x, positioned_x + sized_w),
+                    (positioned_y, positioned_y + sized_h),
+                    sized_w,
+                    sized_h,
+                );
+            }
+
+            let space_x = if tiles_x > 1 {
+                (origin_w - sized_w * tiles_x as f32) / (tiles_x - 1) as f32
+            } else {
+                0.0
+            };
+            let space_y = if tiles_y > 1 {
+                (origin_h - sized_h * tiles_y as f32) / (tiles_y - 1) as f32
+            } else {
+                0.0
+            };
+
+            let eff_w = sized_w + space_x;
+            let eff_h = sized_h + space_y;
+
+            (
+                (origin_x, origin_x + origin_w),
+                (origin_y, origin_y + origin_h),
+                eff_w,
+                eff_h,
+            )
+        }
+        BackgroundRepeatComputedValue::Round => {
+            // round 模式：缩放 tile 使整数个刚好覆盖容器
+            let tile_w = if origin_w > 0.0 && sized_w > 0.0 {
+                let n = (origin_w / sized_w).round().max(1.0);
+                origin_w / n
+            } else {
+                sized_w
+            };
+            let tile_h = if origin_h > 0.0 && sized_h > 0.0 {
+                let n = (origin_h / sized_h).round().max(1.0);
+                origin_h / n
+            } else {
+                sized_h
+            };
+            (
+                (origin_x, origin_x + origin_w),
+                (origin_y, origin_y + origin_h),
+                tile_w,
+                tile_h,
+            )
+        }
+    }
+}
+
+/// 裁剪单个 tile 到 origin 区域，返回裁剪后的 (x, y, w, h)。
+#[allow(clippy::too_many_arguments)]
+///
+/// 如果 tile 完全在 origin 外返回 None。
+fn clip_tile_to_origin(
+    tile_x: f32,
+    tile_y: f32,
+    tile_w: f32,
+    tile_h: f32,
+    origin_x: f32,
+    origin_y: f32,
+    origin_w: f32,
+    origin_h: f32,
+) -> Option<(f32, f32, f32, f32)> {
+    let tile_right = tile_x + tile_w;
+    let tile_bottom = tile_y + tile_h;
+    let origin_right = origin_x + origin_w;
+    let origin_bottom = origin_y + origin_h;
+
+    // 完全在区域外
+    if tile_right <= origin_x || tile_x >= origin_right || tile_bottom <= origin_y || tile_y >= origin_bottom {
+        return None;
+    }
+
+    let cx = tile_x.max(origin_x);
+    let cy = tile_y.max(origin_y);
+    let cw = tile_right.min(origin_right) - cx;
+    let ch = tile_bottom.min(origin_bottom) - cy;
+
+    if cw > 0.0 && ch > 0.0 {
+        Some((cx, cy, cw, ch))
+    } else {
+        None
     }
 }

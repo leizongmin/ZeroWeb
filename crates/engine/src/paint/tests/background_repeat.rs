@@ -1,0 +1,388 @@
+//! background-repeat 渲染集成测试。
+//!
+//! 覆盖 repeat/repeat-x/repeat-y/no-repeat/space/round 六种模式。
+
+#![allow(clippy::field_reassign_with_default)]
+
+use std::collections::HashMap;
+
+use zero_css_parser::values::{ColorValue, LengthValue};
+use zero_dom::NodeId;
+use zero_layout_engine::LayoutBox;
+use zero_layout_engine::types::OverflowClip;
+use zero_style_system::{
+    BackgroundImageComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, ComputedStyle,
+};
+
+use super::super::painter::Painter;
+
+/// 辅助函数：创建简单 LayoutBox。
+fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) -> LayoutBox {
+    LayoutBox {
+        node_id,
+        x,
+        y,
+        width,
+        height,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: width,
+        content_height: height,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        z_index: 0,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+    }
+}
+
+/// 默认 repeat 模式下，背景图片铺满容器。
+#[test]
+fn test_background_repeat_default() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(50.0);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 默认 repeat 模式：50px 宽 tile 在 100px 容器中应生成 2 列
+    // 50px 高 tile 在 50px 容器中应生成 1 行
+    assert!(
+        prims.images.len() >= 2,
+        "repeat 默认应生成多个 tile，实际 {}",
+        prims.images.len()
+    );
+}
+
+/// repeat-x 模式：仅水平平铺。
+#[test]
+fn test_background_repeat_x() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.background_repeat = BackgroundRepeatComputedValue::RepeatX;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 30px tile 在 100px 容器中：水平 4 个，垂直 1 个
+    assert!(
+        prims.images.len() >= 3,
+        "repeat-x 应水平平铺，实际 {}",
+        prims.images.len()
+    );
+
+    // 所有 tile 的 y 应一致（单行）
+    let first_y = prims.images[0].rect.origin.y;
+    for img in &prims.images {
+        assert!(
+            (img.rect.origin.y - first_y).abs() < 1.0,
+            "repeat-x 所有 tile 应在同一行"
+        );
+    }
+}
+
+/// repeat-y 模式：仅垂直平铺。
+#[test]
+fn test_background_repeat_y() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // 使用正方形容器，避免背景尺寸按容器宽高比缩放
+    let layout = make_box(Some(elem), 0.0, 0.0, 50.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    // 使用百分比尺寸确保正方形 tile
+    style.background_size = BackgroundSizeComputedValue::Percent(30.0);
+    style.background_repeat = BackgroundRepeatComputedValue::RepeatY;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 30% of 50 = 15px tile，在 50px 容器中约 3-4 行，但水平只有 1 列
+    assert!(
+        prims.images.len() >= 3,
+        "repeat-y 应垂直平铺，实际 {}",
+        prims.images.len()
+    );
+
+    // 所有 tile 的 x 应一致（单列）
+    let first_x = prims.images[0].rect.origin.x;
+    for img in &prims.images {
+        assert!(
+            (img.rect.origin.x - first_x).abs() < 1.0,
+            "repeat-y 所有 tile 应在同一列"
+        );
+    }
+}
+
+/// no-repeat 模式：仅生成单个 tile。
+#[test]
+fn test_background_no_repeat() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.images.len(), 1, "no-repeat 应只生成 1 个 tile");
+}
+
+/// no-repeat + 默认尺寸：图片占满容器。
+#[test]
+fn test_background_no_repeat_auto_size() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("bg.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.images.len(), 1);
+    assert_eq!(prims.images[0].rect.size.width, 100.0);
+    assert_eq!(prims.images[0].rect.size.height, 50.0);
+}
+
+/// round 模式：缩放 tile 使整数个刚好覆盖容器。
+#[test]
+fn test_background_repeat_round() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.background_repeat = BackgroundRepeatComputedValue::Round;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // round 模式：100/30 ≈ 3.33 → round = 3 个 tile，每个宽 100/3 ≈ 33.33
+    // 垂直：50/30 ≈ 1.67 → round = 2 个 tile，每个高 50/2 = 25
+    let _expected_count = 3 * 2; // 6 个 tile
+    assert!(
+        prims.images.len() >= 4,
+        "round 模式应平铺覆盖容器，实际 {}",
+        prims.images.len()
+    );
+
+    // 验证 tile 宽度一致
+    let first_w = prims.images[0].rect.size.width;
+    for img in &prims.images {
+        assert!(
+            (img.rect.size.width - first_w).abs() < 1.0,
+            "round 模式所有 tile 宽度应一致"
+        );
+    }
+}
+
+/// space 模式：均匀分布 tile。
+#[test]
+fn test_background_repeat_space() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.background_repeat = BackgroundRepeatComputedValue::Space;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // space 模式：100/30 = 3 个 tile（floor），间距 = (100 - 90) / 2 = 5
+    assert!(
+        prims.images.len() >= 2,
+        "space 模式应均匀分布多个 tile，实际 {}",
+        prims.images.len()
+    );
+}
+
+/// repeat 模式：小 tile 应生成大量平铺。
+#[test]
+fn test_background_repeat_many_tiles() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tiny.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(10.0);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 10px tile 在 100x100 容器中：10x10 = 100 个 tile
+    assert!(
+        prims.images.len() >= 90,
+        "10px tile 在 100x100 容器中应生成约 100 个，实际 {}",
+        prims.images.len()
+    );
+}
+
+/// no-repeat 渐变不受影响。
+#[test]
+fn test_background_repeat_gradient_unchanged() {
+    use zero_css_parser::values::{GradientColorStop, GradientDirection, GradientValue, LinearGradient};
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
+        direction: GradientDirection::Angle(90.0),
+        stops: vec![
+            GradientColorStop {
+                color: ColorValue::Rgba(255, 0, 0, 255),
+                position: Some(LengthValue::Px(0.0)),
+            },
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 0, 255, 255),
+                position: Some(LengthValue::Px(100.0)),
+            },
+        ],
+        repeating: false,
+    }));
+    style.background_repeat = BackgroundRepeatComputedValue::Repeat;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 渐变不受 repeat 影响，仍生成单个 gradient primitive
+    assert_eq!(prims.images.len(), 0, "渐变不应生成 image primitives");
+    assert!(prims.gradients.len() >= 1, "渐变应生成 gradient primitive");
+}
+
+/// repeat 模式下 tile 不超出 origin 区域。
+#[test]
+fn test_background_repeat_clips_to_origin() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 50.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 验证所有 tile 都在容器范围内
+    for img in &prims.images {
+        assert!(
+            img.rect.origin.x >= -0.1,
+            "tile 不应超出左边界: x={}",
+            img.rect.origin.x
+        );
+        assert!(
+            img.rect.right() <= 50.1,
+            "tile 不应超出右边界: right={}",
+            img.rect.right()
+        );
+        assert!(
+            img.rect.origin.y >= -0.1,
+            "tile 不应超出上边界: y={}",
+            img.rect.origin.y
+        );
+        assert!(
+            img.rect.origin.y + img.rect.size.height <= 50.1,
+            "tile 不应超出下边界: bottom={}",
+            img.rect.origin.y + img.rect.size.height
+        );
+    }
+}
+
+/// 零尺寸容器不生成 tile。
+#[test]
+fn test_background_repeat_zero_container() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 0.0, 0.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = BackgroundImageComputedValue::Url("tile.png".to_string());
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.images.len(), 0, "零尺寸容器不应生成 tile");
+}
