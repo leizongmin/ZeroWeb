@@ -905,5 +905,144 @@ pub fn typography_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
         },
+        // ── letter-spacing + word-spacing 渲染测试 ──
+        TestCase {
+            id: "typography/letter-spacing-positive".into(),
+            description: "CSS letter-spacing 正间距增大 glyph 间距".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 16px; letter-spacing: 10px;">Spaced Out Text</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/letter-spacing-negative".into(),
+            description: "CSS letter-spacing 负间距减小 glyph 间距".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 16px; letter-spacing: -2px;">Tight Text</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/word-spacing".into(),
+            description: "CSS word-spacing 增加单词间距".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 16px; word-spacing: 20px;">Words have extra space between them</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/letter-word-spacing-combined".into(),
+            description: "CSS letter-spacing + word-spacing 组合使用".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 16px; letter-spacing: 3px; word-spacing: 8px;">Combined letter and word spacing effects</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        // ── text-overflow: ellipsis 测试 ──
+        TestCase {
+            id: "typography/text-overflow-ellipsis".into(),
+            description: "CSS text-overflow: ellipsis 在溢出时显示省略号".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: black; font-size: 16px; border: 1px solid #ccc;">
+                This is a very long text that should overflow and show ellipsis
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/text-overflow-clip".into(),
+            description: "CSS text-overflow: clip 裁剪溢出文本".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="width: 100px; white-space: nowrap; overflow: hidden; text-overflow: clip; color: black; font-size: 16px;">
+                Clipped text content here
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        // ── CSS filter 测试 ──
+        TestCase {
+            id: "typography/filter-blur".into(),
+            description: "CSS filter: blur() 高斯模糊".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: blur(5px); color: black; font-size: 16px; padding: 10px; background: white;">
+                Blurred text content
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/filter-grayscale".into(),
+            description: "CSS filter: grayscale() 灰度滤镜".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: grayscale(1); color: blue; font-size: 16px; padding: 10px; background: red;">
+                Grayscale effect applied
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/filter-brightness".into(),
+            description: "CSS filter: brightness() 亮度调节".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: brightness(2); color: black; font-size: 16px; padding: 10px; background: #333;">
+                Bright text content
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/filter-sepia".into(),
+            description: "CSS filter: sepia() 棕褐色调".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: sepia(0.8); color: black; font-size: 16px; padding: 10px; background: #eee;">
+                Sepia toned content
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/filter-drop-shadow".into(),
+            description: "CSS filter: drop-shadow() 投影".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: drop-shadow(2 4 6 rgba(0,0,0,0.5)); color: black; font-size: 16px; padding: 10px; background: white;">
+                Shadow effect text
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/filter-hue-rotate".into(),
+            description: "CSS filter: hue-rotate() 色相旋转".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <div style="filter: hue-rotate(90deg); color: red; font-size: 16px; padding: 10px; background: blue;">
+                Hue rotated content
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
     ]
 }
