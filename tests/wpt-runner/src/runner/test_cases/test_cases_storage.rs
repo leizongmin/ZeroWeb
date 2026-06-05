@@ -678,5 +678,127 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
                 "dom_has_select".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  localStorage / sessionStorage 高级
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Storage 迭代和枚举 ──
+        TestCase {
+            id: "storage/localstorage-iteration".into(),
+            description: "localStorage 键值迭代".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            localStorage.clear();
+            localStorage.setItem('user', 'alice');
+            localStorage.setItem('theme', 'dark');
+            localStorage.setItem('lang', 'zh');
+            var keys = [];
+            for (var i = 0; i < localStorage.length; i++) {
+                keys.push(localStorage.key(i));
+            }
+            document.body.innerHTML += '<p>Keys: ' + keys.join(', ') + '</p>';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── sessionStorage 独立存储 ──
+        TestCase {
+            id: "storage/sessionstorage-ops".into(),
+            description: "sessionStorage CRUD 操作".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            sessionStorage.clear();
+            sessionStorage.setItem('tab', 'test');
+            sessionStorage.setItem('temp', 'value');
+            var val = sessionStorage.getItem('tab');
+            sessionStorage.removeItem('temp');
+            var count = sessionStorage.length;
+            document.body.innerHTML += '<p>Tab: ' + val + ', Count: ' + count + '</p>';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  IndexedDB 高级
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── IndexedDB 事务和索引 ──
+        TestCase {
+            id: "storage/indexeddb-index".into(),
+            description: "IndexedDB 索引查询".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            var req = indexedDB.open('TestIndexDB', 1);
+            req.onupgradeneeded = function(e) {
+                var db = e.target.result;
+                var store = db.createObjectStore('users', {keyPath: 'id'});
+                store.createIndex('name', 'name', {unique: false});
+                store.createIndex('email', 'email', {unique: true});
+            };
+            req.onsuccess = function(e) {
+                document.body.innerHTML += '<p>IndexedDB with indexes created</p>';
+            };
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Cache API
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Cache API 存储和匹配 ──
+        TestCase {
+            id: "storage/cache-api-ops".into(),
+            description: "Cache API 存储和匹配操作".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            if ('caches' in window) {
+                caches.open('test-cache').then(function(cache) {
+                    document.body.innerHTML += '<p>Cache opened</p>';
+                }).catch(function() {
+                    document.body.innerHTML += '<p>Cache failed</p>';
+                });
+            } else {
+                document.body.innerHTML += '<p>Cache API not available</p>';
+            }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Cookie 操作
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Cookie 设置和读取 ──
+        TestCase {
+            id: "storage/cookie-ops".into(),
+            description: "Cookie 设置、读取和删除".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            document.cookie = 'test=value; path=/';
+            document.cookie = 'session=abc123; path=/';
+            document.cookie = 'pref=dark; max-age=3600';
+            var cookies = document.cookie;
+            document.body.innerHTML += '<p>Cookies: ' + cookies + '</p>';
+            document.cookie = 'test=; max-age=0';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }
