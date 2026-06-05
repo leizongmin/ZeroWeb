@@ -829,5 +829,123 @@ aside { float: right; width: 200px; background: #f5f5f5; padding: 10px; }
                 "render_completes".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  链接和导航交互
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 多种链接类型 ──
+        TestCase {
+            id: "navigation/link-types".to_string(),
+            description: "多种链接类型渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <nav>
+                <a href="https://example.com">External link</a>
+                <a href="/about">Relative link</a>
+                <a href="#section">Anchor link</a>
+                <a href="mailto:test@example.com">Email link</a>
+                <a href="tel:+1234567890">Phone link</a>
+                <a href="javascript:void(0)">JavaScript link</a>
+                <a href="data:text/plain,Hello">Data URI link</a>
+            </nav>
+            <section id="section">Target section</section>
+            </body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 图片映射和图片链接 ──
+        TestCase {
+            id: "navigation/image-links".to_string(),
+            description: "图片链接渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <a href="https://example.com"><img src="logo.png" alt="Logo"></a>
+            <a href="https://example.com"><img src="banner.png" alt="Banner" width="300" height="100"></a>
+            <figure>
+                <a href="https://example.com"><img src="photo.jpg" alt="Photo"></a>
+                <figcaption>Click photo to visit</figcaption>
+            </figure>
+            </body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── 面包屑导航 ──
+        TestCase {
+            id: "navigation/breadcrumb".to_string(),
+            description: "面包屑导航渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <nav aria-label="Breadcrumb">
+                <ol>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/products">Products</a></li>
+                    <li><a href="/products/electronics">Electronics</a></li>
+                    <li aria-current="page">Smartphones</li>
+                </ol>
+            </nav>
+            </body></html>"##.to_string(),
+            css: "nav ol { display: flex; list-style: none; gap: 8px; } li+li::before { content: '›'; margin-right: 8px; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── 分页导航 ──
+        TestCase {
+            id: "navigation/pagination".to_string(),
+            description: "分页导航渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <nav aria-label="Pagination">
+                <ul>
+                    <li><a href="?page=1">1</a></li>
+                    <li><a href="?page=2">2</a></li>
+                    <li aria-current="page">3</li>
+                    <li><a href="?page=4">4</a></li>
+                    <li><a href="?page=5">5</a></li>
+                    <li><a href="?page=4">Next</a></li>
+                </ul>
+            </nav>
+            </body></html>"##.to_string(),
+            css: "nav ul { display: flex; gap: 4px; list-style: none; } li { padding: 4px 12px; border: 1px solid #ccc; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── meta 刷新和重定向 ──
+        TestCase {
+            id: "navigation/meta-tags".to_string(),
+            description: "meta 标签渲染（charset/viewport/description）".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="description" content="Test page">
+            <meta name="author" content="ZeroWeb">
+            <link rel="icon" href="favicon.ico">
+            <link rel="stylesheet" href="style.css">
+            <base target="_blank">
+            </head><body>
+            <p>Page with meta tags</p>
+            </body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
