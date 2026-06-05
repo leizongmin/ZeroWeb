@@ -1760,5 +1760,182 @@ pub fn css_layout_compliance_tests() -> Vec<TestCase> {
                 "layout_has_children".to_string(),
             ],
         },
+        // ── CSS filter 布局集成测试 ──
+        TestCase {
+            id: "css-layout/filter-blur-layout".to_string(),
+            description: "CSS filter: blur() 不影响布局但生成 FilterPrimitive".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="width: 200px; height: 100px; background: #e0e0e0; filter: blur(3px);">
+                <p style="color: black; font-size: 14px;">Blurred content</p>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/filter-grayscale-card".to_string(),
+            description: "CSS filter: grayscale() 应用于卡片布局".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="display: flex; gap: 10px;">
+                <div style="filter: grayscale(1); background: #f0f0f0; padding: 10px; width: 150px;">
+                    <h3 style="color: #333; font-size: 16px;">Gray Card</h3>
+                    <p style="color: #666; font-size: 12px;">Desaturated</p>
+                </div>
+                <div style="background: #f0f0f0; padding: 10px; width: 150px;">
+                    <h3 style="color: #333; font-size: 16px;">Normal Card</h3>
+                    <p style="color: #666; font-size: 12px;">Full color</p>
+                </div>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        // ── text-overflow 布局测试 ──
+        TestCase {
+            id: "css-layout/text-overflow-ellipsis-flex".to_string(),
+            description: "text-overflow: ellipsis 在 flex 容器中".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="display: flex; width: 300px; border: 1px solid #ccc;">
+                <div style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: black; font-size: 14px;">
+                    This is a very long text that should be truncated with ellipsis
+                </div>
+                <div style="flex-shrink: 0; color: blue; font-size: 14px;">More</div>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        // ── 多属性组合布局测试 ──
+        TestCase {
+            id: "css-layout/multi-column-with-spacing".to_string(),
+            description: "column-count + letter-spacing 组合渲染".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="column-count: 2; column-gap: 20px; letter-spacing: 1px; color: #333; font-size: 14px; width: 400px;">
+                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.</p>
+                <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.</p>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        TestCase {
+            id: "css-layout/positioned-with-filter".to_string(),
+            description: "absolute 定位 + CSS filter 组合".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="position: relative; width: 300px; height: 200px; background: #f5f5f5;">
+                <div style="position: absolute; top: 20px; left: 20px; width: 100px; height: 80px; background: #42A5F5; filter: brightness(1.2);"></div>
+                <div style="position: absolute; bottom: 20px; right: 20px; width: 100px; height: 80px; background: #66BB6A; filter: sepia(0.5);"></div>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+        // ── 响应式布局测试 ──
+        TestCase {
+            id: "css-layout/responsive-pricing-table".to_string(),
+            description: "响应式定价卡片 — flexbox + filter + text-overflow".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body style="margin: 0; padding: 20px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: center;">
+                <div style="width: 200px; padding: 20px; background: white; border: 1px solid #e0e0e0;">
+                    <h3 style="color: #333; font-size: 18px; margin: 0 0 8px;">Basic</h3>
+                    <div style="color: #2196F3; font-size: 32px; font-weight: bold;">$9</div>
+                    <p style="color: #666; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Essential features for getting started with the platform</p>
+                </div>
+                <div style="width: 200px; padding: 20px; background: white; border: 2px solid #2196F3; filter: drop-shadow(0 4 12 rgba(33,150,243,0.3));">
+                    <h3 style="color: #2196F3; font-size: 18px; margin: 0 0 8px;">Pro</h3>
+                    <div style="color: #2196F3; font-size: 32px; font-weight: bold;">$29</div>
+                    <p style="color: #666; font-size: 12px;">Advanced features for growing teams</p>
+                </div>
+                <div style="width: 200px; padding: 20px; background: white; border: 1px solid #e0e0e0; filter: grayscale(0.3);">
+                    <h3 style="color: #333; font-size: 18px; margin: 0 0 8px;">Enterprise</h3>
+                    <div style="color: #333; font-size: 32px; font-weight: bold;">$99</div>
+                    <p style="color: #666; font-size: 12px;">Complete solution for large organizations</p>
+                </div>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
+        // ── 间距属性综合测试 ──
+        TestCase {
+            id: "css-layout/spacing-comprehensive".to_string(),
+            description: "letter-spacing + word-spacing + line-height 综合排版".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="width: 400px; color: #222;">
+                <h1 style="font-size: 24px; letter-spacing: 2px; word-spacing: 5px; line-height: 1.4; margin: 0 0 12px;">Spaced Heading Title</h1>
+                <p style="font-size: 14px; letter-spacing: 0.5px; line-height: 1.8; margin: 0 0 8px;">Body text with slight letter spacing and generous line height for readability.</p>
+                <p style="font-size: 12px; letter-spacing: -0.5px; word-spacing: -2px; color: #888;">Condensed text with negative spacing for captions.</p>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_glyph_primitives".to_string(),
+                "glyph_count_ge:10".to_string(),
+            ],
+        },
+        // ── Grid + 间距组合测试 ──
+        TestCase {
+            id: "css-layout/grid-with-typography".to_string(),
+            description: "Grid 布局 + 排版间距组合".to_string(),
+            category: "css-layout".to_string(),
+            html: r#"<html><body>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 400px;">
+                <div style="background: #e3f2fd; padding: 12px;">
+                    <h3 style="color: #1565C0; font-size: 16px; letter-spacing: 1px; margin: 0 0 4px;">Column A</h3>
+                    <p style="color: #333; font-size: 13px; word-spacing: 3px; margin: 0;">Text with word spacing in grid cell</p>
+                </div>
+                <div style="background: #e8f5e9; padding: 12px;">
+                    <h3 style="color: #2E7D32; font-size: 16px; letter-spacing: 1px; margin: 0 0 4px;">Column B</h3>
+                    <p style="color: #333; font-size: 13px; word-spacing: 3px; margin: 0;">Another grid cell text</p>
+                </div>
+                <div style="background: #fff3e0; padding: 12px; grid-column: span 2;">
+                    <p style="color: #E65100; font-size: 14px; letter-spacing: 2px; text-align: center;">Spanning full width with centered spaced text</p>
+                </div>
+            </div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+                "has_glyph_primitives".to_string(),
+            ],
+        },
     ]
 }
