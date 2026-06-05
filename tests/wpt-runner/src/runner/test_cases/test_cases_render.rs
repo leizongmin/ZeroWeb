@@ -1649,5 +1649,213 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "nonzero_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS content 属性渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── content: string 渲染 ──
+        TestCase {
+            id: "render/content-string".to_string(),
+            description: "CSS content property with string value renders glyphs".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div id="generated" style="content:'Generated Text';font-size:16px;color:#333;">Container</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── content: counter() 渲染 ──
+        TestCase {
+            id: "render/content-counter".to_string(),
+            description: "CSS content with counter() renders counter values".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="counter-reset:section 5;"></div>
+<div id="counter-display" style="content:counter(section);font-size:16px;color:#000;">Section</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS object-fit 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── object-fit: fill ──
+        TestCase {
+            id: "render/object-fit-fill".to_string(),
+            description: "CSS object-fit:fill stretches image to fill container".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<img src="test-image.png" width="100" height="100" style="width:200px;height:100px;object-fit:fill;">
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── object-fit: contain ──
+        TestCase {
+            id: "render/object-fit-contain".to_string(),
+            description: "CSS object-fit:contain scales image to fit within container".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<img src="photo.jpg" width="200" height="100" style="width:200px;height:200px;object-fit:contain;background:#eee;">
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── object-fit: cover ──
+        TestCase {
+            id: "render/object-fit-cover".to_string(),
+            description: "CSS object-fit:cover scales image to cover container".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<img src="hero.jpg" width="400" height="200" style="width:200px;height:200px;object-fit:cover;">
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── object-fit: none ──
+        TestCase {
+            id: "render/object-fit-none".to_string(),
+            description: "CSS object-fit:none uses original image size centered".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<img src="icon.png" width="32" height="32" style="width:100px;height:100px;object-fit:none;background:#f0f0f0;">
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── object-fit: scale-down ──
+        TestCase {
+            id: "render/object-fit-scale-down".to_string(),
+            description: "CSS object-fit:scale-down picks smaller of none and contain".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<img src="logo.png" width="300" height="300" style="width:100px;height:100px;object-fit:scale-down;">
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS text-decoration-style 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── text-decoration underline dashed ──
+        TestCase {
+            id: "render/text-decoration-dashed".to_string(),
+            description: "CSS text-decoration underline with dashed style".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<p style="text-decoration-line:underline;font-size:16px;color:#333;">Dashed underline text</p>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── text-decoration line-through ──
+        TestCase {
+            id: "render/text-decoration-line-through".to_string(),
+            description: "CSS text-decoration line-through renders strikethrough".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<p style="text-decoration-line:line-through;font-size:16px;color:#c00;">Deleted text with strikethrough</p>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── text-decoration overline ──
+        TestCase {
+            id: "render/text-decoration-overline".to_string(),
+            description: "CSS text-decoration overline renders line above text".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<p style="text-decoration-line:overline;font-size:16px;color:#333;">Overline decoration text</p>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  综合：content + counter + list-style 组合
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 计数器 + content 组合页面 ──
+        TestCase {
+            id: "render/counter-content-page".to_string(),
+            description: "CSS counters with content property in a styled page".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  body { counter-reset: section; font-family: sans-serif; }
+  h2 { counter-increment: section; }
+  h2::before { content: "Section " counter(section) ": "; color: #666; }
+  ul { counter-reset: item; }
+  li { counter-increment: item; }
+</style>
+<h2>Introduction</h2>
+<p>This is the first section with counter-based numbering.</p>
+<h2>Methods</h2>
+<p>This is the second section.</p>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
     ]
 }

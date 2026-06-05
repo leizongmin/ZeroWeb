@@ -234,7 +234,13 @@ impl Painter {
                 // 4. 列表标记绘制（bullets/numbers，位于文本之前）
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+
+                    // 4b. <img> 元素绘制（含 object-fit）
+                    self.paint_img_element(box_node, abs_x, abs_y, style, doc);
                 }
+
+                // 4c. CSS `content` 属性生成的文本（在普通文本之前）
+                self.paint_content(box_node, abs_x, abs_y, style);
 
                 // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
                 self.paint_text(box_node, abs_x, abs_y, style, doc);
