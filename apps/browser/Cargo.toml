@@ -24,3 +24,6 @@ serde_json = { workspace = true }
 tungstenite = { workspace = true }
 arboard = { workspace = true }
 resvg = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+png = "0.17"
+url = { workspace = true }
