@@ -4,7 +4,9 @@ use zero_css_parser::values::{
     GradientColorStop, GradientDirection, GradientValue, LengthValue, RadialSize, TransformFunction, TransformValue,
 };
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{GradientKind, GradientPrimitive, GradientStop, RenderPrimitives};
+use zero_render_foundation::primitive::{
+    GradientKind, GradientPrimitive, GradientStop, RenderPrimitives, TransformPrimitive,
+};
 use zero_style_system::{ComputedStyle, TextTransformValue};
 
 use super::color::color_value_to_render;
@@ -12,6 +14,7 @@ use super::color::color_value_to_render;
 /// 从 ComputedStyle 的 transform 计算偏移量。
 ///
 /// 返回 (dx, dy) 偏移，用于调整图元位置。
+/// 仅提取 translate 分量；rotate/scale/skew 由 TransformPrimitive 处理。
 pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -> (f32, f32) {
     match &style.transform {
         TransformValue::None => (0.0, 0.0),
@@ -36,6 +39,154 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
             }
             (dx, dy)
         }
+    }
+}
+
+/// 计算 2D 仿射变换矩阵（含 transform-origin）。
+///
+/// 变换矩阵按 CSS 规范组合：
+/// 1. 平移到 transform-origin
+/// 2. 应用所有 transform 函数
+/// 3. 平移回
+///
+/// 返回 None 如果变换为 None 或全部是 identity。
+pub fn compute_transform_matrix(
+    style: &ComputedStyle,
+    rect: &Rect,
+) -> Option<TransformPrimitive> {
+    let funcs = match &style.transform {
+        TransformValue::None => return None,
+        TransformValue::List(f) => f,
+    };
+
+    // 检查是否只有 translate 函数（由 offset 处理，不需要 TransformPrimitive）
+    let has_non_translate = funcs.iter().any(|f| {
+        !matches!(
+            f,
+            TransformFunction::Translate(_, _)
+                | TransformFunction::TranslateX(_)
+                | TransformFunction::TranslateY(_)
+        )
+    });
+    if !has_non_translate {
+        return None;
+    }
+
+    // 计算 transform-origin（相对于视口绝对坐标）
+    let origin_x = rect.origin.x
+        + match &style.transform_origin_x {
+            LengthValue::Percentage(p) => rect.size.width * (*p as f32 / 100.0),
+            LengthValue::Px(p) => *p as f32,
+            _ => rect.size.width / 2.0,
+        };
+    let origin_y = rect.origin.y
+        + match &style.transform_origin_y {
+            LengthValue::Percentage(p) => rect.size.height * (*p as f32 / 100.0),
+            LengthValue::Px(p) => *p as f32,
+            _ => rect.size.height / 2.0,
+        };
+
+    // 构建累积变换矩阵（3x3 仿射，存储为 [a, b, c, d, tx, ty]）
+    // | a  c  tx |
+    // | b  d  ty |
+    // | 0  0   1 |
+    let mut a = 1.0_f32;
+    let mut b = 0.0_f32;
+    let mut c = 0.0_f32;
+    let mut d = 1.0_f32;
+    let mut tx = 0.0_f32;
+    let mut ty = 0.0_f32;
+
+    for func in funcs {
+        let (fa, fb, fc, fd, ftx, fty) = match func {
+            TransformFunction::Translate(dx, dy) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
+            TransformFunction::TranslateX(dx) => (1.0, 0.0, 0.0, 1.0, *dx as f32, 0.0),
+            TransformFunction::TranslateY(dy) => (1.0, 0.0, 0.0, 1.0, 0.0, *dy as f32),
+            TransformFunction::Rotate(deg) => {
+                let rad = deg.to_radians() as f32;
+                let cos = rad.cos();
+                let sin = rad.sin();
+                (cos, sin, -sin, cos, 0.0, 0.0)
+            }
+            TransformFunction::Scale(sx, sy) => {
+                let sy = sy.unwrap_or(*sx) as f32;
+                (*sx as f32, 0.0, 0.0, sy, 0.0, 0.0)
+            }
+            TransformFunction::ScaleX(sx) => (*sx as f32, 0.0, 0.0, 1.0, 0.0, 0.0),
+            TransformFunction::ScaleY(sy) => (1.0, 0.0, 0.0, *sy as f32, 0.0, 0.0),
+            TransformFunction::Skew(ax, ay) => {
+                let tan_ax = ax.to_radians().tan() as f32;
+                let tan_ay = ay.map(|v| v.to_radians().tan() as f32).unwrap_or(0.0);
+                (1.0, tan_ay, tan_ax, 1.0, 0.0, 0.0)
+            }
+            // 3D 变换函数降级为 2D 近似
+            TransformFunction::Translate3d(dx, dy, _) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
+            TransformFunction::RotateX(_) | TransformFunction::RotateY(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            TransformFunction::RotateZ(deg) => {
+                let rad = deg.to_radians() as f32;
+                let cos = rad.cos();
+                let sin = rad.sin();
+                (cos, sin, -sin, cos, 0.0, 0.0)
+            }
+            TransformFunction::Rotate3d(_, _, _, _) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            TransformFunction::Scale3d(sx, sy, _) => (*sx as f32, 0.0, 0.0, *sy as f32, 0.0, 0.0),
+            TransformFunction::Perspective(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            TransformFunction::Matrix(ma, mb, mc, md, me, mf) => {
+                (*ma as f32, *mb as f32, *mc as f32, *md as f32, *me as f32, *mf as f32)
+            }
+        };
+
+        // 矩阵乘法：current = current * func
+        let new_a = a * fa + c * fb;
+        let new_b = b * fa + d * fb;
+        let new_c = a * fc + c * fd;
+        let new_d = b * fc + d * fd;
+        let new_tx = a * ftx + c * fty + tx;
+        let new_ty = b * ftx + d * fty + ty;
+        a = new_a;
+        b = new_b;
+        c = new_c;
+        d = new_d;
+        tx = new_tx;
+        ty = new_ty;
+    }
+
+    // 应用 transform-origin 偏移
+    // 最终变换：translate(origin) * matrix * translate(-origin)
+    // 对 affine [a,b,c,d,tx,ty] 来说：
+    // new_tx = origin_x * (1 - a) - origin_y * c + tx
+    // new_ty = -origin_x * b + origin_y * (1 - d) + ty
+    let final_tx = origin_x * (1.0 - a) - origin_y * c + tx;
+    let final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
+
+    // 检查是否为 identity 变换
+    let is_identity = (a - 1.0).abs() < 1e-6
+        && b.abs() < 1e-6
+        && c.abs() < 1e-6
+        && (d - 1.0).abs() < 1e-6
+        && final_tx.abs() < 1e-6
+        && final_ty.abs() < 1e-6;
+    if is_identity {
+        return None;
+    }
+
+    Some(TransformPrimitive {
+        rect: *rect,
+        origin_x,
+        origin_y,
+        a,
+        b,
+        c,
+        d,
+        tx: final_tx,
+        ty: final_ty,
+    })
+}
+
+/// 如果样式包含非平移变换，将 TransformPrimitive 添加到图元列表。
+pub fn apply_transform(style: &ComputedStyle, rect: &Rect, primitives: &mut RenderPrimitives) {
+    if let Some(tp) = compute_transform_matrix(style, rect) {
+        primitives.add_transform(tp);
     }
 }
 
@@ -445,6 +596,140 @@ mod tests {
         assert_eq!((dx, dy), (0.0, 0.0));
     }
 
+    // ── compute_transform_matrix ────────────────────────────────────────
+
+    #[test]
+    fn test_compute_transform_none_returns_none() {
+        let style = ComputedStyle::default();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        assert!(compute_transform_matrix(&style, &rect).is_none());
+    }
+
+    #[test]
+    fn test_compute_transform_translate_only_returns_none() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(10.0, 20.0)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // translate-only should NOT generate TransformPrimitive
+        assert!(compute_transform_matrix(&style, &rect).is_none());
+    }
+
+    #[test]
+    fn test_compute_transform_rotate_90() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        // Rotate 90°: cos(90°) ≈ 0, sin(90°) ≈ 1
+        assert!(tp.a.abs() < 0.01, "a should be ~0, got {}", tp.a);
+        assert!((tp.b - 1.0).abs() < 0.01, "b should be ~1, got {}", tp.b);
+        assert!((tp.c + 1.0).abs() < 0.01, "c should be ~-1, got {}", tp.c);
+        assert!(tp.d.abs() < 0.01, "d should be ~0, got {}", tp.d);
+
+        // origin at center (50, 50)
+        assert!((tp.origin_x - 50.0).abs() < 0.1);
+        assert!((tp.origin_y - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_compute_transform_scale_2x() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Scale(2.0, None)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        assert!((tp.a - 2.0).abs() < 0.01);
+        assert!((tp.d - 2.0).abs() < 0.01);
+        assert!(tp.b.abs() < 0.01);
+        assert!(tp.c.abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_transform_scale_x_y() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Scale(3.0, Some(0.5))]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        assert!((tp.a - 3.0).abs() < 0.01);
+        assert!((tp.d - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_transform_custom_origin() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+        style.transform_origin_x = LengthValue::Px(0.0);
+        style.transform_origin_y = LengthValue::Px(0.0);
+        let rect = Rect::new(10.0, 20.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        // origin at top-left corner (10, 20)
+        assert!((tp.origin_x - 10.0).abs() < 0.1);
+        assert!((tp.origin_y - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_compute_transform_combined_translate_rotate() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Translate(10.0, 20.0),
+            TransformFunction::Rotate(45.0),
+        ]);
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        // rotate 45°: cos = sin ≈ 0.707
+        let cos45 = 45.0_f64.to_radians().cos() as f32;
+        let sin45 = 45.0_f64.to_radians().sin() as f32;
+        assert!((tp.a - cos45).abs() < 0.01);
+        assert!((tp.b - sin45).abs() < 0.01);
+        assert!((tp.c + sin45).abs() < 0.01);
+        assert!((tp.d - cos45).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_transform_skew_x() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Skew(45.0, None)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        assert!((tp.a - 1.0).abs() < 0.01);
+        assert!(tp.b.abs() < 0.01);
+        assert!((tp.c - 1.0).abs() < 0.01, "tan(45°) = 1.0, got {}", tp.c);
+        assert!((tp.d - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_transform_identity_skew_0() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Skew(0.0, None)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // skew(0) is identity → should return None
+        assert!(compute_transform_matrix(&style, &rect).is_none());
+    }
+
+    #[test]
+    fn test_apply_transform_noop_for_none() {
+        let style = ComputedStyle::default();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut p = RenderPrimitives::default();
+        apply_transform(&style, &rect, &mut p);
+        assert!(p.transforms.is_empty());
+    }
+
+    #[test]
+    fn test_apply_transform_adds_for_rotate() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Rotate(30.0)]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut p = RenderPrimitives::default();
+        apply_transform(&style, &rect, &mut p);
+        assert_eq!(p.transforms.len(), 1);
+    }
+
     // ── clip_fills ──────────────────────────────────────────────────────
 
     #[test]
@@ -829,9 +1114,6 @@ mod tests {
 
     #[test]
     fn test_radial_closest_side() {
-        // Use Px values since length_to_f32 only handles Px
-        // cx = rect.left() + 50/100*200 = 0 + 100 = 100
-        // cy = rect.top() + 50/100*100 = 0 + 50 = 50
         let grad = GradientValue::Radial(RadialGradient {
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Px(50.0),
@@ -849,10 +1131,8 @@ mod tests {
             cx, cy, outer_radius, ..
         } = prim.kind
         {
-            // cx = 0 + 50/100*200 = 100, cy = 0 + 50/100*100 = 50
             assert!((cx - 100.0).abs() < 0.1);
             assert!((cy - 50.0).abs() < 0.1);
-            // closest side from (100, 50): min(100, 100, 50, 50) = 50
             assert!((outer_radius - 50.0).abs() < 0.1);
         } else {
             panic!("expected radial gradient");
@@ -861,7 +1141,6 @@ mod tests {
 
     #[test]
     fn test_radial_farthest_side() {
-        // cx = 0 + 50/100*200 = 100, cy = 0 + 50/100*100 = 50
         let grad = GradientValue::Radial(RadialGradient {
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Px(50.0),
@@ -876,7 +1155,6 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
         let prim = gradient_to_primitive(&grad, &rect).unwrap();
         if let GradientKind::Radial { outer_radius, .. } = prim.kind {
-            // center at (100, 50), farthest side = max(100, 100, 50, 50) = 100
             assert!((outer_radius - 100.0).abs() < 0.1);
         } else {
             panic!("expected radial gradient");

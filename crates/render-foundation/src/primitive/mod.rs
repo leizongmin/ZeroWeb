@@ -256,6 +256,36 @@ pub struct FilterPrimitive {
     pub filters: Vec<FilterKind>,
 }
 
+/// CSS transform 图元 — 对指定区域内的所有图元应用 2D 仿射变换。
+///
+/// 变换以 3x3 仿射矩阵表示（最后一行 [0, 0, 1] 省略）：
+/// ```text
+/// | a  c  tx |
+/// | b  d  ty |
+/// | 0  0   1 |
+/// ```
+#[derive(Debug, Clone)]
+pub struct TransformPrimitive {
+    /// 变换应用区域（元素的盒模型区域）
+    pub rect: Rect,
+    /// 变换原点（相对于视口的绝对坐标）
+    pub origin_x: f32,
+    /// 变换原点 Y
+    pub origin_y: f32,
+    /// 仿射矩阵 a 分量（水平缩放/旋转）
+    pub a: f32,
+    /// 仿射矩阵 b 分量（垂直旋转/倾斜）
+    pub b: f32,
+    /// 仿射矩阵 c 分量（水平倾斜/旋转）
+    pub c: f32,
+    /// 仿射矩阵 d 分量（垂直缩放/旋转）
+    pub d: f32,
+    /// 仿射矩阵 tx 分量（水平平移）
+    pub tx: f32,
+    /// 仿射矩阵 ty 分量（垂直平移）
+    pub ty: f32,
+}
+
 /// CSS mix-blend-mode 混合模式枚举。
 /// 定义元素与下层内容混合的方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -381,6 +411,8 @@ pub struct RenderPrimitives {
     pub filters: Vec<FilterPrimitive>,
     /// Blend mode 列表（混合模式应用区域）
     pub blend_modes: Vec<BlendModePrimitive>,
+    /// Transform 列表（2D 仿射变换）
+    pub transforms: Vec<TransformPrimitive>,
 }
 
 impl RenderPrimitives {
@@ -468,6 +500,7 @@ impl RenderPrimitives {
             + self.glyphs.len()
             + self.filters.len()
             + self.blend_modes.len()
+            + self.transforms.len()
     }
 
     /// 是否为空
@@ -484,6 +517,12 @@ impl RenderPrimitives {
             && self.glyphs.is_empty()
             && self.filters.is_empty()
             && self.blend_modes.is_empty()
+            && self.transforms.is_empty()
+    }
+
+    /// 添加变换图元。
+    pub fn add_transform(&mut self, transform: TransformPrimitive) {
+        self.transforms.push(transform);
     }
 }
 

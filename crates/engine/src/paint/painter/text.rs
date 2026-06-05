@@ -227,7 +227,11 @@ impl super::Painter {
                 );
             }
             ListStyleTypeValue::Decimal | ListStyleTypeValue::DecimalLeadingZero => {
-                let index = self.compute_list_item_index(doc, node_id);
+                // 优先使用 CSS counter "list-item"，回退到兄弟索引
+                let index = self
+                    .get_counter("list-item")
+                    .map(|v| v as usize)
+                    .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let text = if matches!(style.list_style_type, ListStyleTypeValue::DecimalLeadingZero) && index < 10 {
                     format!("0{index}.")
                 } else {
@@ -250,7 +254,10 @@ impl super::Painter {
                 }
             }
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
-                let index = self.compute_list_item_index(doc, node_id);
+                let index = self
+                    .get_counter("list-item")
+                    .map(|v| v as usize)
+                    .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let ch = if index > 0 && index <= 26 {
                     let base = if matches!(style.list_style_type, ListStyleTypeValue::LowerAlpha) {
                         b'a'
@@ -279,7 +286,10 @@ impl super::Painter {
                 }
             }
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
-                let index = self.compute_list_item_index(doc, node_id);
+                let index = self
+                    .get_counter("list-item")
+                    .map(|v| v as usize)
+                    .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let roman = to_roman(index);
                 let text = if matches!(style.list_style_type, ListStyleTypeValue::LowerRoman) {
                     format!("{}.", roman.to_lowercase())
