@@ -17,6 +17,7 @@ use crate::animation::AnimationClock;
 use crate::dirty::DirtyTracker;
 use crate::hit_test;
 use crate::paint::Painter;
+use crate::transition::TransitionClock;
 
 /// 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
 ///
@@ -35,6 +36,10 @@ pub struct RenderPipeline {
     dirty_tracker: DirtyTracker,
     /// CSS 动画时钟。
     animation_clock: AnimationClock,
+    /// CSS 过渡时钟。
+    transition_clock: TransitionClock,
+    /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
+    cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -83,6 +88,8 @@ impl RenderPipeline {
             layout_engine: LayoutEngine::new(viewport_width, viewport_height),
             dirty_tracker: DirtyTracker::new(),
             animation_clock: AnimationClock::new(),
+            transition_clock: TransitionClock::new(),
+            cached_styles: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
         }
@@ -96,6 +103,11 @@ impl RenderPipeline {
     /// 获取动画时钟的可变引用。
     pub fn animation_clock_mut(&mut self) -> &mut AnimationClock {
         &mut self.animation_clock
+    }
+
+    /// 获取过渡时钟的可变引用。
+    pub fn transition_clock_mut(&mut self) -> &mut TransitionClock {
+        &mut self.transition_clock
     }
 
     /// 渲染 HTML 文档（带动画）。
@@ -130,8 +142,32 @@ impl RenderPipeline {
         let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
 
+        // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
+        {
+            let old = std::mem::replace(&mut self.cached_styles, styles.clone());
+            for (nid, ns) in &styles {
+                if let Some(os) = old.get(nid) {
+                    self.transition_clock
+                        .start_transitions(nid.data().as_ffi(), os, ns, current_time);
+                }
+            }
+        }
+
         // 5. 启动动画并应用插值覆盖
         apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time);
+
+        // 5b. 应用活跃的过渡插值
+        let node_ids: Vec<NodeId> = styles.keys().copied().collect();
+        for nid in node_ids {
+            let key = nid.data().as_ffi();
+            let props = self.transition_clock.tick(key, current_time);
+            if !props.is_empty()
+                && let Some(s) = styles.get_mut(&nid)
+            {
+                TransitionClock::apply_to_computed_style(&props, s);
+            }
+        }
+        self.transition_clock.cleanup_finished();
 
         // 6. 计算布局
         let layout_start = Instant::now();
@@ -1932,5 +1968,19 @@ mod tests {
         let result = pipeline.render_html_animated(html, "", 1.0);
         assert!(result.timings.total_ms >= 0.0);
         assert!(!result.primitives.fills.is_empty());
+    }
+
+    /// 测试 render_html_animated 处理 CSS transition 不崩溃。
+    #[test]
+    fn test_render_html_animated_with_transition() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="box" style="transition: opacity 0.5s; opacity: 0.5;">Trans</div>
+        </body></html>"#;
+        let r1 = pipeline.render_html_animated(html, "", 0.0);
+        assert!(r1.timings.total_ms >= 0.0);
+        // Second frame — transition detection compares cached styles
+        let r2 = pipeline.render_html_animated(html, "", 0.25);
+        assert!(r2.timings.total_ms >= 0.0);
     }
 }
