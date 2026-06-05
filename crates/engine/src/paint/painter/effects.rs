@@ -4,17 +4,18 @@
 //! paint_resize_handle、add_rounded_rect_metadata、paint_text_decoration，
 //! 以及 background-position/size 辅助函数。
 
+use zero_css_parser::values::ColorValue;
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, LineCap, LineStyle, ShadowPrimitive, StrokePrimitive,
 };
-use zero_css_parser::values::ColorValue;
 use zero_style_system::{
-    BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
-    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, ComputedStyle, FilterComputedValue,
-    MixBlendModeComputedValue, ResizeValue, TextDecorationLineValue, TextDecorationStyleValue,
+    AccentColorComputedValue, AppearanceComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
+    BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue,
+    CaretColorComputedValue, ComputedStyle, FilterComputedValue, MixBlendModeComputedValue, ResizeValue,
+    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -188,7 +189,8 @@ impl super::Painter {
     ) {
         match decoration_style {
             TextDecorationStyleValue::Solid => {
-                self.primitives.add_fill(Rect::new(base_x, y, total_width, line_width), color);
+                self.primitives
+                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
             }
             TextDecorationStyleValue::Dotted => {
                 self.primitives.add_stroke(StrokePrimitive {
@@ -216,11 +218,10 @@ impl super::Painter {
             }
             TextDecorationStyleValue::Double => {
                 let gap = line_width * 2.0;
-                self.primitives.add_fill(Rect::new(base_x, y, total_width, line_width), color);
-                self.primitives.add_fill(
-                    Rect::new(base_x, y + gap + line_width, total_width, line_width),
-                    color,
-                );
+                self.primitives
+                    .add_fill(Rect::new(base_x, y, total_width, line_width), color);
+                self.primitives
+                    .add_fill(Rect::new(base_x, y + gap + line_width, total_width, line_width), color);
             }
             TextDecorationStyleValue::Wavy => {
                 // 波浪线：用交替偏移的小填充矩形近似正弦波
@@ -337,6 +338,206 @@ impl super::Painter {
                         cap: LineCap::Butt,
                     });
                 }
+            }
+        }
+    }
+
+    /// 绘制 CSS accent-color 指示器。
+    ///
+    /// accent-color 影响表单控件（checkbox/radio/range 等）的主题颜色。
+    /// 渲染为元素右下角的 6×6 色块指示器，标识该元素的 accent-color 值。
+    pub(super) fn paint_accent_color_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let color = match &style.accent_color {
+            AccentColorComputedValue::Auto => return,
+            AccentColorComputedValue::Color(c) => color_value_to_render(c),
+        };
+
+        let indicator_size = 6.0;
+        let ix = abs_x + box_node.width - indicator_size - 2.0;
+        let iy = abs_y + 2.0;
+        self.primitives
+            .add_fill(Rect::new(ix, iy, indicator_size, indicator_size), color);
+    }
+
+    /// 绘制 CSS caret-color 指示器。
+    ///
+    /// caret-color 影响文本插入光标（caret）的颜色。
+    /// 渲染为元素左侧边缘的竖线指示器，标识该元素的 caret-color 值。
+    pub(super) fn paint_caret_color_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let color = match &style.caret_color {
+            CaretColorComputedValue::Auto => return,
+            CaretColorComputedValue::Color(c) => color_value_to_render(c),
+        };
+
+        let caret_height = (box_node.height * 0.6).clamp(8.0, 16.0);
+        let caret_width = 2.0;
+        let cx = abs_x + box_node.border_left + 2.0;
+        let cy = abs_y + (box_node.height - caret_height) / 2.0;
+        self.primitives
+            .add_fill(Rect::new(cx, cy, caret_width, caret_height), color);
+    }
+
+    /// 绘制 CSS scrollbar-width 指示器。
+    ///
+    /// scrollbar-width 控制滚动条宽度（auto/thin/none）。
+    /// 渲染为元素右侧边缘的竖条指示器。
+    pub(super) fn paint_scrollbar_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        // 仅在有 overflow 时显示滚动条指示器
+        if box_node.overflow_x == zero_layout_engine::OverflowClip::Visible
+            && box_node.overflow_y == zero_layout_engine::OverflowClip::Visible
+        {
+            return;
+        }
+
+        let (bar_width, bar_alpha) = match style.scrollbar_width {
+            ScrollbarWidthComputedValue::Auto => (10.0, 60u8),
+            ScrollbarWidthComputedValue::Thin => (6.0, 50u8),
+            ScrollbarWidthComputedValue::None => return,
+        };
+
+        let track_x = abs_x + box_node.width - bar_width;
+        let track_y = abs_y;
+        let track_h = box_node.height;
+
+        // 滚动条轨道背景
+        let track_color = Color {
+            r: 240,
+            g: 240,
+            b: 240,
+            a: bar_alpha,
+        };
+        self.primitives
+            .add_fill(Rect::new(track_x, track_y, bar_width, track_h), track_color);
+
+        // 滚动条拇指（固定比例，简化实现）
+        let thumb_margin = 1.0;
+        let thumb_h = (track_h * 0.3).max(20.0).min(track_h - 2.0);
+        let thumb_color = Color {
+            r: 180,
+            g: 180,
+            b: 180,
+            a: (bar_alpha as f32 * 1.5).min(255.0) as u8,
+        };
+        self.primitives.add_fill(
+            Rect::new(
+                track_x + thumb_margin,
+                track_y + thumb_margin,
+                bar_width - 2.0 * thumb_margin,
+                thumb_h,
+            ),
+            thumb_color,
+        );
+    }
+
+    /// 绘制 CSS appearance 指示器。
+    ///
+    /// appearance 控制元素是否使用平台原生样式。
+    /// 当 appearance 不是 none 时，在元素内绘制简化原生控件外观。
+    pub(super) fn paint_appearance(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        match style.appearance {
+            AppearanceComputedValue::None | AppearanceComputedValue::Auto => return,
+            _ => {}
+        }
+
+        // 使用 accent-color 或默认蓝色
+        let accent = match &style.accent_color {
+            AccentColorComputedValue::Auto => Color {
+                r: 0,
+                g: 120,
+                b: 215,
+                a: 255,
+            },
+            AccentColorComputedValue::Color(c) => color_value_to_render(c),
+        };
+
+        let cx = abs_x + box_node.border_left;
+        let cy = abs_y + box_node.border_top;
+        let cw = box_node.content_width;
+        let ch = box_node.content_height;
+
+        match style.appearance {
+            AppearanceComputedValue::Checkbox | AppearanceComputedValue::Radio => {
+                let size = ch.min(cw).clamp(8.0, 16.0);
+                let ox = cx + (cw - size) / 2.0;
+                let oy = cy + (ch - size) / 2.0;
+                // 边框
+                let border_color = Color {
+                    r: 100,
+                    g: 100,
+                    b: 100,
+                    a: 255,
+                };
+                self.primitives.add_fill(Rect::new(ox, oy, size, 1.0), border_color);
+                self.primitives
+                    .add_fill(Rect::new(ox, oy + size - 1.0, size, 1.0), border_color);
+                self.primitives.add_fill(Rect::new(ox, oy, 1.0, size), border_color);
+                self.primitives
+                    .add_fill(Rect::new(ox + size - 1.0, oy, 1.0, size), border_color);
+                // 内部填充色
+                self.primitives
+                    .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, size - 2.0), accent);
+            }
+            AppearanceComputedValue::Button
+            | AppearanceComputedValue::PushButton
+            | AppearanceComputedValue::SquareButton => {
+                // 按钮背景
+                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), accent);
+                // 高光线
+                let highlight = Color {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 80,
+                };
+                self.primitives.add_fill(Rect::new(cx, cy, cw, ch * 0.4), highlight);
+            }
+            AppearanceComputedValue::Textfield | AppearanceComputedValue::Textarea => {
+                // 文本输入框：白色背景 + 边框
+                let bg = Color {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                };
+                let border = Color {
+                    r: 120,
+                    g: 120,
+                    b: 120,
+                    a: 255,
+                };
+                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), bg);
+                self.primitives.add_fill(Rect::new(cx, cy, cw, 1.0), border);
+                self.primitives.add_fill(Rect::new(cx, cy + ch - 1.0, cw, 1.0), border);
+                self.primitives.add_fill(Rect::new(cx, cy, 1.0, ch), border);
+                self.primitives.add_fill(Rect::new(cx + cw - 1.0, cy, 1.0, ch), border);
+            }
+            _ => {
+                // 其他 appearance 类型：灰色背景指示器
+                let indicator = Color {
+                    r: 230,
+                    g: 230,
+                    b: 230,
+                    a: 200,
+                };
+                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), indicator);
             }
         }
     }

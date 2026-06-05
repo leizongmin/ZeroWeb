@@ -8,5 +8,6 @@ mod content_objectfit;
 mod counters;
 mod effects;
 mod helpers;
+mod ui_indicators;
 mod visual;
 mod visual_inline;

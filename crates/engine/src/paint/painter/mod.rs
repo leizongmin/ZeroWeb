@@ -16,7 +16,8 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_style_system::{
-    BackgroundClipComputedValue, ComputedStyle, ContainComputedValue, MixBlendModeComputedValue, ResizeValue,
+    AccentColorComputedValue, AppearanceComputedValue, BackgroundClipComputedValue, CaretColorComputedValue,
+    ComputedStyle, ContainComputedValue, MixBlendModeComputedValue, ResizeValue,
 };
 
 use super::color::color_value_to_render;
@@ -321,6 +322,40 @@ impl Painter {
             && !matches!(style.resize, ResizeValue::None)
         {
             self.paint_resize_handle(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS accent-color — 绘制强调色指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.accent_color, AccentColorComputedValue::Auto)
+        {
+            self.paint_accent_color_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS caret-color — 绘制光标颜色指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.caret_color, CaretColorComputedValue::Auto)
+        {
+            self.paint_caret_color_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS scrollbar-width — 绘制滚动条指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_scrollbar_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS appearance — 绘制原生控件外观
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(
+                style.appearance,
+                AppearanceComputedValue::None | AppearanceComputedValue::Auto
+            )
+        {
+            self.paint_appearance(box_node, abs_x, abs_y, style);
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理
