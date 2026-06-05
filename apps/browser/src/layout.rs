@@ -5,9 +5,13 @@ pub const CHROME_FONT_SIZE: f32 = 13.0;
 /// 标签栏高度
 pub const TAB_BAR_HEIGHT: f32 = 32.0;
 /// 地址栏高度
-pub const ADDRESS_BAR_HEIGHT: f32 = 36.0;
+pub const ADDRESS_BAR_HEIGHT: f32 = 40.0;
 /// 地址栏内边距
 pub const ADDRESS_BAR_PADDING: f32 = 8.0;
+/// 地址栏行内胶囊输入框上下留白（相对地址栏行）
+pub const ADDRESS_BAR_INPUT_V_INSET: f32 = 4.0;
+/// 地址栏胶囊内文字上下留白
+pub const ADDRESS_BAR_TEXT_V_PAD: f32 = 2.0;
 /// 工具栏总高度
 pub const TOOLBAR_HEIGHT: f32 = TAB_BAR_HEIGHT + ADDRESS_BAR_HEIGHT;
 /// 新建标签按钮宽度
@@ -46,3 +50,13 @@ pub const FIND_BAR_HEIGHT: f32 = 36.0;
 pub const STATUS_BAR_HEIGHT: f32 = 22.0;
 /// 下载栏高度（有活跃下载时显示）
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
+/// 页面视口相对 chrome 的水平内边距
+pub const PAGE_FRAME_INSET_H: f32 = 8.0;
+/// 页面视口距书签栏的下间距
+pub const PAGE_FRAME_INSET_TOP: f32 = 4.0;
+/// 页面视口距状态栏的上间距
+pub const PAGE_FRAME_INSET_BOTTOM: f32 = 0.0;
+/// 页面视口边框宽度
+pub const PAGE_FRAME_BORDER: f32 = 1.0;
+/// 页面视口顶部圆角半径
+pub const PAGE_FRAME_RADIUS: f32 = 8.0;

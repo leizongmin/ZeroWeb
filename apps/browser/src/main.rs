@@ -291,10 +291,12 @@ mod tests {
         app.physical_size = (3840, 2160);
         app.scale_factor = 2.0;
         let (w, h) = app.content_logical_size();
-        assert_eq!(w, 1920);
+        let frame_w = 2.0 * (layout::PAGE_FRAME_INSET_H + layout::PAGE_FRAME_BORDER) * app.scale_factor;
+        let expected_w = ((3840.0 - frame_w) / app.scale_factor).round() as u32;
+        assert_eq!(w, expected_w);
         assert!(h > 0);
         let (phys_w, phys_h) = app.content_physical_size();
-        assert_eq!(phys_w, 3840);
+        assert_eq!(phys_w, (3840.0 - frame_w) as u32);
         assert!(phys_h > h);
     }
 
@@ -586,8 +588,8 @@ mod tests {
         app.load_webview_html(tab_id, tall_html, None);
         app.sync_webview_viewport();
 
-        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) as f64;
-        app.mouse_pos = (640.0, chrome_top + 100.0);
+        let (_, content_y, _, _) = app.page_content_rect();
+        app.mouse_pos = (640.0, content_y as f64 + 100.0);
 
         let (fills_at_zero, _) = app.build_scene_for_test(1280, 900);
 
@@ -599,14 +601,14 @@ mod tests {
             "tall page should scroll with negative line delta (scroll down on Linux)"
         );
 
-        let chrome_top_f = chrome_top as f32;
+        let content_top = content_y;
         let (fills_after, _) = app.build_scene_for_test(1280, 900);
         assert!(
             fills_after
                 .iter()
                 .filter(|f| f.rect.size.height > 2000.0)
-                .all(|f| f.rect.origin.y >= chrome_top_f),
-            "scrolled page fills must not paint above content area (chrome_top={chrome_top_f})"
+                .all(|f| f.rect.origin.y >= content_top),
+            "scrolled page fills must not paint above content area (content_top={content_top})"
         );
         let _ = fills_at_zero;
     }
@@ -823,6 +825,8 @@ fn main() {
     let mut cpu_surface: Option<softbuffer::Surface<Arc<winit::window::Window>, Arc<winit::window::Window>>> = None;
 
     if let Err(e) = runtime.run_with_window(move |event, window| {
+        app.poll_tab_fetch();
+
         match event {
             AppEvent::RedrawRequested => {
                 if !app.window_focused {
@@ -898,11 +902,12 @@ fn main() {
                         app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true);
                     }
                     app.needs_redraw = false;
-                    if app.any_tab_loading()
-                        && let Some(ref win) = window
-                    {
+                    app.begin_tab_fetch_after_paint();
+                    if app.any_tab_loading() || app.tab_fetch_active() {
                         app.needs_redraw = true;
-                        win.request_redraw();
+                        if let Some(ref win) = window {
+                            win.request_redraw();
+                        }
                     }
                 }
             }

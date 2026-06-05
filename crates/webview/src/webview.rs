@@ -352,6 +352,11 @@ impl WebView {
         self.title.as_deref()
     }
 
+    /// 当前缓存的 HTML 源码（用于提取 `<title>` 等）。
+    pub fn html_content(&self) -> &str {
+        &self.cached_html
+    }
+
     /// 获取配置。
     pub fn config(&self) -> &WebViewConfig {
         &self.config

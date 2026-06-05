@@ -64,28 +64,37 @@ impl BrowserApp {
         let bookmarks_bar_y = toolbar_h;
         self.render_bookmarks_bar(&mut fills, &mut glyphs, width, bookmarks_bar_y, s);
 
-        // 9. 页面内容区域
+        // 9. 页面内容区域（圆角边框视口）
         let chrome_top = toolbar_h + layout::BOOKMARKS_BAR_HEIGHT * s;
-        let page_h = height as f32 - chrome_top - layout::STATUS_BAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, chrome_top, width as f32, page_h, self.chrome_palette.page_bg));
+        let page_gutter_h = height as f32 - chrome_top - layout::STATUS_BAR_HEIGHT * s;
+        fills.push(rect_fill(
+            0.0,
+            chrome_top,
+            width as f32,
+            page_gutter_h,
+            self.chrome_palette.background,
+        ));
+        let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect();
+        self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
+        let (content_x, content_y, content_w, _) = self.page_content_rect();
 
         // 10. 加载指示器
         if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
             fills.push(rect_fill(
-                0.0,
-                chrome_top,
-                width as f32,
+                content_x,
+                content_y,
+                content_w,
                 2.0 * s,
                 self.chrome_palette.loading_indicator,
             ));
         }
 
         // 11. 页面内容（含滚动偏移）
-        self.render_page_content(&mut fills, &mut glyphs, width, chrome_top, font_size, s);
+        self.render_page_content(&mut fills, &mut glyphs, width, content_x, content_y, font_size, s);
 
         // 12. 查找栏（覆盖在页面内容上方）
         if self.shell.find_state().is_active() {
-            self.render_find_bar(&mut fills, &mut glyphs, width, chrome_top, font_size, s);
+            self.render_find_bar(&mut fills, &mut glyphs, width, content_y, font_size, s);
         }
 
         // 13. 自动补全下拉
@@ -140,6 +149,8 @@ impl BrowserApp {
         let icon_size = layout::TAB_ICON_SIZE * s;
         let spinner_angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
         let text_left_inset = 10.0 * s + icon_size + 6.0 * s;
+        let (text_top, text_baseline) = self.ui_text_centered_in_height(tab_bar_h, font_size);
+        let icon_cy = text_baseline - font_size * 0.48;
 
         struct TabPaint {
             id: TabId,
@@ -227,7 +238,6 @@ impl BrowserApp {
 
         for tab in &tabs {
             let icon_cx = tab.x + 10.0 * s + icon_size * 0.5;
-            let icon_cy = tab_bar_h / 2.0;
             if tab.is_loading {
                 crate::tab_chrome::push_loading_spinner(
                     fills,
@@ -258,7 +268,6 @@ impl BrowserApp {
             if self.font_id.is_some() {
                 let text_area_w = tab.tab_w - text_left_inset - 28.0 * s;
                 let truncated = self.truncate_ui_text(&tab.label, text_area_w.max(0.0), font_size);
-                let text_top = tab_bar_h / 2.0 - font_size / 2.0;
                 self.draw_ui_text(
                     &truncated,
                     tab.x + text_left_inset,
@@ -495,7 +504,9 @@ impl BrowserApp {
             let inner_y = bar_y + border;
             let inner_h = bar_h - 2.0 * border;
             let text_x = inner_x + 10.0 * s;
-            let text_top = inner_y + inner_h / 2.0 - font_size / 2.0;
+            let text_pad = layout::ADDRESS_BAR_TEXT_V_PAD * s;
+            let (text_top, text_ascent) =
+                self.ui_text_top_in_box(inner_y + text_pad, inner_h - 2.0 * text_pad, font_size);
 
             if self.address_bar_focused && self.address_bar.has_selection() {
                 let (sel_start, sel_end) = self.address_bar.selection_char_range();
@@ -503,11 +514,13 @@ impl BrowserApp {
                 let selected = Self::chars_slice(text, sel_start, sel_end);
                 let sel_x = text_x + self.measure_ui_text_width(before, font_size);
                 let sel_w = self.measure_ui_text_width(selected, font_size).max(1.0);
+                let (_, descent) = self.ui_line_metrics(font_size);
+                let selection_h = text_ascent - descent;
                 fills.push(rect_fill(
                     sel_x,
                     text_top,
                     sel_w,
-                    font_size,
+                    selection_h,
                     self.chrome_palette.address_bar_selection_bg,
                 ));
             }
@@ -543,9 +556,9 @@ impl BrowserApp {
                 let cursor_x = text_x + self.measure_ui_text_width(before, font_size);
                 fills.push(rect_fill(
                     cursor_x,
-                    text_top + font_size * 0.12,
+                    text_top + text_ascent * 0.12,
                     1.5 * s,
-                    font_size * 0.76,
+                    text_ascent * 0.76,
                     self.chrome_palette.address_bar_text,
                 ));
             }
@@ -621,12 +634,42 @@ impl BrowserApp {
         }
     }
 
+    /// 渲染页面视口边框（顶部圆角 + 灰色描边）
+    fn render_page_frame(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        s: f32,
+    ) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let border = layout::PAGE_FRAME_BORDER * s;
+        let radius = layout::PAGE_FRAME_RADIUS * s;
+        push_rounded_top_rect_fill(fills, x, y, w, h, radius, self.chrome_palette.separator);
+        let inner_r = (radius - border).max(0.0);
+        push_rounded_top_rect_fill(
+            fills,
+            x + border,
+            y + border,
+            w - 2.0 * border,
+            h - 2.0 * border,
+            inner_r,
+            self.chrome_palette.page_bg,
+        );
+    }
+
     /// 渲染页面内容
+    #[allow(clippy::too_many_arguments)]
     fn render_page_content(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         _width: u32,
+        content_x: f32,
         page_y: f32,
         font_size: f32,
         s: f32,
@@ -657,14 +700,14 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
 
-        if !is_loading && self.render_active_webview(fills, glyphs, y, fid, scroll_y) {
+        if !is_loading && self.render_active_webview(fills, glyphs, content_x, page_y, fid, scroll_y) {
             return;
         }
 
         if !title.is_empty() {
             self.draw_ui_text(
                 &title,
-                20.0 * s,
+                content_x + 20.0 * s,
                 y + 20.0 * s,
                 24.0 * s,
                 self.chrome_palette.page_title,
@@ -674,16 +717,30 @@ impl BrowserApp {
         }
 
         if !url.is_empty() {
-            self.draw_ui_text(&url, 20.0 * s, y, 12.0 * s, self.chrome_palette.page_url, glyphs);
+            self.draw_ui_text(
+                &url,
+                content_x + 20.0 * s,
+                y,
+                12.0 * s,
+                self.chrome_palette.page_url,
+                glyphs,
+            );
             y += 28.0 * s;
         }
 
         if is_loading {
-            self.draw_ui_text("Loading...", 20.0 * s, y, font_size, self.chrome_palette.page_hint, glyphs);
+            self.draw_ui_text(
+                "Loading...",
+                content_x + 20.0 * s,
+                y,
+                font_size,
+                self.chrome_palette.page_hint,
+                glyphs,
+            );
         } else if title.is_empty() && url.is_empty() {
             self.draw_ui_text(
                 "Welcome to ZeroBrowser — Press L to focus address bar, T for new tab",
-                20.0 * s,
+                content_x + 20.0 * s,
                 y,
                 font_size,
                 self.chrome_palette.page_hint,
@@ -697,6 +754,7 @@ impl BrowserApp {
         &self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
+        content_x: f32,
         y_offset: f32,
         fallback_font_id: u32,
         scroll_y: f32,
@@ -726,8 +784,10 @@ impl BrowserApp {
         } else {
             0.0
         };
-        let clip_bottom = y_offset - find_offset + self.content_physical_size().1 as f32;
-        let content_y = y_offset - scroll_y;
+        let (_, content_y, _, content_h) = self.page_content_rect();
+        let clip_top = content_y + find_offset;
+        let clip_bottom = content_y + content_h;
+        let content_y_draw = y_offset - scroll_y;
         let s = self.scale_factor;
 
         if let Some(sel) = self.page_selection.get(&tab_id)
@@ -737,11 +797,11 @@ impl BrowserApp {
             let end = end.min(page_primitives.glyphs.len().saturating_sub(1));
             if start <= end {
                 for glyph in &page_primitives.glyphs[start..=end] {
-                    let x = glyph.x * s;
-                    let top = glyph.y * s + content_y - glyph.font_size * s;
+                    let x = glyph.x * s + content_x;
+                    let top = glyph.y * s + content_y_draw - glyph.font_size * s;
                     let w = glyph.font_size * s * 0.55;
                     let h = glyph.font_size * s;
-                    if top + h <= y_offset || top >= clip_bottom {
+                    if top + h <= clip_top || top >= clip_bottom {
                         continue;
                     }
                     fills.push(rect_fill(x, top, w.max(1.0), h, self.chrome_palette.text_selection_bg));
@@ -753,11 +813,11 @@ impl BrowserApp {
             &page_primitives,
             fills,
             glyphs,
-            0.0,
+            content_x,
             y_offset - scroll_y,
             fallback_font_id,
             self.scale_factor,
-            Some((y_offset, clip_bottom)),
+            Some((clip_top, clip_bottom)),
         )
     }
 
@@ -767,7 +827,7 @@ impl BrowserApp {
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
-        chrome_top: f32,
+        content_y: f32,
         font_size: f32,
         s: f32,
     ) {
@@ -775,7 +835,7 @@ impl BrowserApp {
             return;
         }
 
-        let y = chrome_top;
+        let y = content_y;
         let bar_w = 320.0 * s;
         let bar_x = width as f32 - bar_w - 10.0 * s;
 
@@ -1084,6 +1144,30 @@ impl BrowserApp {
         );
     }
 
+    /// fontdue 行 metrics；无字体时回退为 `(font_size, 0)`。
+    fn ui_line_metrics(&self, font_size: f32) -> (f32, f32) {
+        let Some(primary) = self.font_id else {
+            return (font_size, 0.0);
+        };
+        self.font_loader
+            .line_metrics(primary, font_size)
+            .unwrap_or((font_size, 0.0))
+    }
+
+    /// 在给定高度内垂直居中 UI 文本，返回 `(text_top, baseline_y)`。
+    fn ui_text_centered_in_height(&self, height: f32, font_size: f32) -> (f32, f32) {
+        let (text_top, ascent) = self.ui_text_top_in_box(0.0, height, font_size);
+        (text_top, text_top + ascent)
+    }
+
+    /// 在给定矩形高度内垂直居中 UI 文本，返回 `(text_top, ascent)`。
+    fn ui_text_top_in_box(&self, box_y: f32, box_h: f32, font_size: f32) -> (f32, f32) {
+        let (ascent, descent) = self.ui_line_metrics(font_size);
+        let line_h = ascent - descent;
+        let text_top = box_y + (box_h - line_h) / 2.0;
+        (text_top, ascent)
+    }
+
     /// 绘制 UI 文本（使用字体回退链和真实 advance 宽度）
     fn draw_ui_text(
         &self,
@@ -1097,6 +1181,8 @@ impl BrowserApp {
         let Some(primary) = self.font_id else {
             return;
         };
+        let (ascent, _) = self.ui_line_metrics(font_size);
+        let baseline_y = start_y + ascent;
         let mut x = start_x;
         for ch in text.chars() {
             let font_id = self
@@ -1107,7 +1193,7 @@ impl BrowserApp {
             glyphs.push(GlyphDraw {
                 ch,
                 x,
-                baseline_y: start_y + font_size,
+                baseline_y,
                 color,
                 font_id,
                 font_size,
@@ -1229,6 +1315,51 @@ fn rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimitive {
     FillPrimitive {
         rect: zero_render_foundation::geometry::Rect::new(x, y, w, h),
         color,
+    }
+}
+
+/// 仅顶部两角圆角的矩形填充（页面视口风格）。
+fn push_rounded_top_rect_fill(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    color: Color,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r = radius.min(w * 0.5).min(h);
+    if r <= f32::EPSILON {
+        fills.push(rect_fill(x, y, w, h, color));
+        return;
+    }
+
+    let r_sq = r * r;
+    let min_y = y.floor() as i32;
+    let max_y = (y + h).ceil() as i32;
+
+    for row in min_y..max_y {
+        let yf = row as f32 + 0.5;
+        if yf < y || yf >= y + h {
+            continue;
+        }
+
+        let mut x_start = x;
+        let mut x_end = x + w;
+
+        let dy_top = (y + r) - yf;
+        if dy_top > 0.0 {
+            let dx = (r_sq - dy_top * dy_top).max(0.0).sqrt();
+            x_start = x + r - dx;
+            x_end = x + w - r + dx;
+        }
+
+        if x_end > x_start {
+            fills.push(rect_fill(x_start, row as f32, x_end - x_start, 1.0, color));
+        }
     }
 }
 
