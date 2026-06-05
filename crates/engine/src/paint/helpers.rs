@@ -355,6 +355,16 @@ pub fn length_to_f32(v: &LengthValue) -> f32 {
     }
 }
 
+/// 将位置 LengthValue 解析为相对于容器尺寸的像素偏移。
+/// 支持百分比和绝对长度值。
+fn resolve_position(v: &LengthValue, container_size: f32) -> f32 {
+    match v {
+        LengthValue::Percentage(p) => *p as f32 / 100.0 * container_size,
+        LengthValue::Px(p) => *p as f32,
+        _ => container_size / 2.0, // 默认居中
+    }
+}
+
 /// 简单的字符串哈希函数（用于从 URL 字符串生成 ImageKey）。
 pub fn simple_hash(s: &str) -> u64 {
     let mut hash: u64 = 5381;
@@ -421,9 +431,20 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
                 stops,
             })
         }
-        GradientValue::Conic(_) => {
-            // conic-gradient 暂不支持渲染
-            None
+        GradientValue::Conic(cg) => {
+            let cx = rect.left() + resolve_position(&cg.position_x, w);
+            let cy = rect.top() + resolve_position(&cg.position_y, h);
+            let start_angle = cg.from_angle.to_radians() as f32;
+            let stops = convert_color_stops(&cg.stops);
+            Some(GradientPrimitive {
+                rect: *rect,
+                kind: GradientKind::Conic {
+                    cx,
+                    cy,
+                    start_angle,
+                },
+                stops,
+            })
         }
     }
 }
@@ -1100,16 +1121,35 @@ mod tests {
     }
 
     #[test]
-    fn test_conic_gradient_returns_none() {
+    fn test_conic_gradient_to_primitive() {
         let grad = GradientValue::Conic(ConicGradient {
             repeating: false,
-            from_angle: 0.0,
+            from_angle: 90.0,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
-            stops: vec![],
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
         });
-        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
-        assert!(gradient_to_primitive(&grad, &rect).is_none());
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let prim = gradient_to_primitive(&grad, &rect).expect("conic gradient should convert");
+        assert!(matches!(prim.kind, GradientKind::Conic { .. }));
+        assert_eq!(prim.stops.len(), 2);
+        if let GradientKind::Conic {
+            cx, cy, start_angle, ..
+        } = prim.kind
+        {
+            assert!((cx - 100.0).abs() < 0.1);
+            assert!((cy - 50.0).abs() < 0.1);
+            assert!((start_angle - 90.0_f64.to_radians() as f32).abs() < 0.01);
+        }
     }
 
     #[test]

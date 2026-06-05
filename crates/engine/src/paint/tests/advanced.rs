@@ -542,7 +542,7 @@ fn test_paint_radial_gradient_custom_position() {
     }
 }
 
-/// 测试 conic-gradient 不生成图元（暂不支持）。
+/// 测试 conic-gradient 生成渐变图元。
 #[test]
 fn test_paint_conic_gradient_no_primitive() {
     let mut doc = zero_dom::Document::new();
@@ -574,8 +574,8 @@ fn test_paint_conic_gradient_no_primitive() {
     painter.paint(&layout, &styles, None);
 
     assert!(
-        painter.primitives().gradients.is_empty(),
-        "conic-gradient 暂不支持渲染，不应生成渐变图元"
+        !painter.primitives().gradients.is_empty(),
+        "conic-gradient 应生成渐变图元"
     );
 }
 
