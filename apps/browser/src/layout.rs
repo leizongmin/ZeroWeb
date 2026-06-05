@@ -46,19 +46,29 @@ pub const BOOKMARKS_BAR_HEIGHT: f32 = 26.0;
 pub const MACOS_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 /// 查找栏高度
 pub const FIND_BAR_HEIGHT: f32 = 36.0;
-/// 状态栏高度
+/// 链接悬停浮动状态栏高度
 pub const STATUS_BAR_HEIGHT: f32 = 22.0;
+/// 浮动状态栏距页面内容区边缘的外边距
+pub const STATUS_BAR_FLOAT_MARGIN: f32 = 8.0;
+/// 浮动状态栏文本左右内边距
+pub const STATUS_BAR_FLOAT_PAD_H: f32 = 8.0;
+/// 浮动状态栏圆角半径
+pub const STATUS_BAR_FLOAT_RADIUS: f32 = 3.0;
 /// 下载栏高度（有活跃下载时显示）
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
 /// 页面视口相对 chrome 的水平内边距（与 [`PAGE_FRAME_INSET_TOP`] 一致）
 pub const PAGE_FRAME_INSET_H: f32 = 4.0;
 /// 页面视口距书签栏的下间距
 pub const PAGE_FRAME_INSET_TOP: f32 = 4.0;
-/// 页面视口距状态栏的上间距（与顶部 gutter 对齐；圆角可见性由 [`PAGE_FRAME_BOTTOM_CLIP_GUARD`] 保障）
+/// 页面视口距窗口底 clip guard 的下间距（与顶部 gutter 对齐）
 pub const PAGE_FRAME_INSET_BOTTOM: f32 = 4.0;
-/// 视口底部额外留白：Windows/WSLg 最大化时 `inner_size` 常大于可见客户区，
+/// 视口底部额外留白：Windows/WSLg **最大化**时 `inner_size` 常大于可见客户区，
 /// 若不预留此空间，视口下缘圆角与底边会被裁到屏幕外（侧边框看似直通窗口底）。
+/// 非最大化窗口不使用此值。
 pub const PAGE_FRAME_BOTTOM_CLIP_GUARD: f32 = 24.0;
+/// 最大化时额外 UI 预留（原常驻状态栏高度）：与 [`PAGE_FRAME_BOTTOM_CLIP_GUARD`] 一并启用，
+/// 保证浮动链接状态栏时代的外框底边位置与圆角可见性；非最大化时不使用。
+pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
 /// 页面视口边框宽度
 pub const PAGE_FRAME_BORDER: f32 = 1.0;
 /// 页面视口圆角半径

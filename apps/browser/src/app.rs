@@ -181,6 +181,8 @@ pub struct BrowserApp {
     color_scheme_window_synced: bool,
     /// 标签页 URL 加载（延迟绘制 loading / 后台 HTTP）
     tab_fetch: TabFetchState,
+    /// 鼠标悬停链接时在浮动状态栏中显示的 URL
+    hovered_link_url: Option<String>,
 }
 
 impl BrowserApp {
@@ -237,7 +239,30 @@ impl BrowserApp {
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             color_scheme_window_synced: false,
             tab_fetch: TabFetchState::None,
+            hovered_link_url: None,
         }
+    }
+
+    /// 当前悬停链接 URL（浮动状态栏内容；无悬停时为 `None`）。
+    #[cfg(test)]
+    pub fn hovered_link_url(&self) -> Option<&str> {
+        self.hovered_link_url.as_deref()
+    }
+
+    fn set_hovered_link_url(&mut self, url: Option<String>) {
+        if self.hovered_link_url != url {
+            self.hovered_link_url = url;
+            self.needs_redraw = true;
+        }
+    }
+
+    fn update_hovered_link_at(&mut self, x: f64, y: f64) {
+        let href = if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
+            self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y))
+        } else {
+            None
+        };
+        self.set_hovered_link_url(href);
     }
 
     /// 是否有进行中的标签页 fetch（含等待首帧绘制）。
@@ -344,11 +369,24 @@ impl BrowserApp {
         self.pending_window_chrome_action.take()
     }
 
-    /// 同步窗口最大化/全屏状态（用于控制按钮图标）
+    /// 同步窗口最大化/全屏状态（用于控制按钮图标与视口底部留白）
     pub fn set_window_maximized(&mut self, maximized: bool) {
         if self.window_is_maximized != maximized {
             self.window_is_maximized = maximized;
+            self.sync_webview_viewport();
             self.needs_redraw = true;
+        }
+    }
+
+    /// 最大化/全屏时视口底部额外留白（物理像素）；普通窗口仅保留 [`PAGE_FRAME_INSET_BOTTOM`]。
+    fn page_frame_bottom_reserves(&self, scale: f32) -> (f32, f32) {
+        if self.window_is_maximized {
+            (
+                layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * scale,
+                layout::PAGE_FRAME_BOTTOM_UI_GUARD * scale,
+            )
+        } else {
+            (0.0, 0.0)
         }
     }
 
@@ -589,20 +627,19 @@ impl BrowserApp {
     pub fn page_frame_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
-        let status_h = layout::STATUS_BAR_HEIGHT * s;
         let inset_h = layout::PAGE_FRAME_INSET_H * s;
         let inset_top = layout::PAGE_FRAME_INSET_TOP * s;
         let inset_bottom = layout::PAGE_FRAME_INSET_BOTTOM * s;
-        let clip_guard = layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * s;
+        let (clip_guard, ui_guard) = self.page_frame_bottom_reserves(s);
         let x = inset_h;
         let y = chrome_top + inset_top;
         let w = width as f32 - 2.0 * inset_h;
-        let h = (height as f32 - status_h - y - inset_bottom - clip_guard).max(0.0);
+        let h = (height as f32 - y - inset_bottom - clip_guard - ui_guard).max(0.0);
         (x, y, w, h)
     }
 
-    /// 状态栏顶部 Y：紧贴视口外框 + 下间距，不贴窗口物理底边。
-    pub fn status_bar_y_for(&self, width: u32, height: u32) -> f32 {
+    /// 视口外框底边 + 下间距（页面 gutter 底边；浮动 UI 锚点）。
+    pub fn page_frame_bottom_y_for(&self, width: u32, height: u32) -> f32 {
         let (_, fy, _, fh) = self.page_frame_rect_for(width, height);
         let _ = height;
         fy + fh + layout::PAGE_FRAME_INSET_BOTTOM * self.scale_factor
@@ -1392,6 +1429,8 @@ impl BrowserApp {
             sel.focus = idx;
             self.needs_redraw = true;
         }
+
+        self.update_hovered_link_at(x, y);
     }
 
     /// 处理鼠标点击（物理像素坐标）
@@ -1507,6 +1546,7 @@ impl BrowserApp {
                     }
                     if Some(id) != self.shell.active_tab_id() {
                         self.shell.switch_tab(id);
+                        self.set_hovered_link_url(None);
                         self.update_address_bar_from_active_tab();
                         self.needs_redraw = true;
                     }
