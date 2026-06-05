@@ -523,6 +523,41 @@ impl Painter {
             }
         }
 
+        // CSS direction — 文本方向指示器（rtl 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_direction_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS tab-size — 制表符宽度指示器（非默认值 8 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_tab_size_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS border-collapse — 边框合并指示器（collapse 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_border_collapse_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS table-layout — 表格布局模式指示器（fixed 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_table_layout_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS font-variant-numeric — 数字变体指示器（非 normal 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_font_variant_numeric_indicator(box_node, abs_x, abs_y, style);
+        }
+
         let _ = is_hidden; // visibility 在 if let 块内处理
     }
 
