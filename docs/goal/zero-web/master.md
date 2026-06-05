@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,462 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1057 个用例（22 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式）+ **`TextDecorationStyleValue` 类型定义**（solid/double/dotted/dashed/wavy）
+**最后更新**: 2026-06-06
+**执行状态**: 16/16 crate 已实现，~11,478 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1064 个用例（23 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -107,7 +107,28 @@
 
 ## 最近完成的改进
 
-### -99. CSS content + object-fit + TextDecorationStyleValue 渲染集成（本轮，~11,462 测试）
+### -100. text-decoration-color/style 完整渲染集成 + WPT 扩展（本轮，~11,478 测试）
+
+实现 CSS text-decoration-color 和 text-decoration-style 完整渲染集成，扩展 WPT 测试至 1064 用例：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| style-system/property | **text-decoration-color + text-decoration-style**：ComputedStyle 字段、apply/default/inherit/registry 管线集成 | — |
+| engine/paint/effects | **paint_text_decoration_from_style**：重构从 ComputedStyle 读取装饰线/颜色/样式；**5 种装饰样式渲染**：solid（fill）、dotted（stroke Dotted）、dashed（stroke Dashed）、double（双平行 fill）、wavy（正弦波交替偏移 fill 近似） | +10 引擎单元测试 |
+| engine/paint/text | 调用点迁移到 paint_text_decoration_from_style | — |
+| integration/render | **text-decoration-style/color 管线集成测试**：dotted/dashed/wavy/double/color/shorthand 7 个端到端管线测试 | +7 集成测试 |
+| WPT runner/render_extended | **18 个 WPT 渲染扩展测试**：text-decoration-style 7 个（solid/dotted/dashed/double/wavy/overline-color/color-blue）、CSS 3D transform 5 个（rotateX/rotateY/perspective/scale3d/translate3d）、组合渲染 6 个（transform+shadow/gradient+transform/filter+opacity+transform/decoration+shadow/column-page/white-space-overflow） | +18 WPT 用例 |
+
+渲染特性：
+- **text-decoration-color**：支持 CurrentColor（回退到文本颜色）和自定义颜色（Named/RGB/HSL 等）
+- **text-decoration-style: solid**：单条 fill 矩形（默认）
+- **text-decoration-style: dotted**：StrokePrimitive（LineStyle::Dotted, Round cap）
+- **text-decoration-style: dashed**：StrokePrimitive（LineStyle::Dashed, Square cap）
+- **text-decoration-style: double**：两条平行 fill 矩形（gap = line_width × 2）
+- **text-decoration-style: wavy**：交替偏移的小 fill 矩形近似正弦波（4+ segments）
+- **text-decoration 简写展开**：已有 underline dotted red 等组合正确展开 line/style/color
+
+Tests: ~11,462 → ~11,478 (+16 unit + integration tests), WPT: 1046 → 1064 (+18), clippy clean.
 
 实现三个 CSS 渲染功能：
 

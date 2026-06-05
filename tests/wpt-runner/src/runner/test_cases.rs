@@ -21,6 +21,7 @@
 //! - `test_cases_interactive`: HTML 交互元素和表单合规性测试（form/dialog/details/table/iframe）
 //! - `test_cases_typography`: CSS 排版和高级视觉效果测试（font/color/border/gradient/transform/filter）
 //! - `test_cases_render`: 渲染管线高级合规性测试（多属性组合、z-index、响应式布局、综合页面）
+//! - `test_cases_render_extended`: 渲染扩展测试（text-decoration-style/color、3D 变换、组合渲染）
 
 mod test_cases_a11y_i18n;
 mod test_cases_canvas;
@@ -36,6 +37,7 @@ mod test_cases_interactive;
 mod test_cases_js_dom;
 mod test_cases_navigation;
 mod test_cases_render;
+mod test_cases_render_extended;
 mod test_cases_security;
 mod test_cases_standard;
 mod test_cases_storage;
@@ -70,5 +72,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_interactive::interactive_tests());
     tests.extend(test_cases_typography::typography_tests());
     tests.extend(test_cases_render::render_rendance_tests());
+    tests.extend(test_cases_render_extended::render_extended_tests());
     tests
 }
