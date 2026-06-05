@@ -1489,7 +1489,10 @@ mod tests {
         }
 
         let total = layout_height(&result.layout.root, 0.0);
-        assert!(total < 150.0, "2x2 grid with 50px cells should be ~110px tall, got {total}");
+        assert!(
+            total < 150.0,
+            "2x2 grid with 50px cells should be ~110px tall, got {total}"
+        );
     }
 
     /// `<style>` 内 CSS 文本默认参与排版会撑高页面，需显式隐藏 head 内元素。
