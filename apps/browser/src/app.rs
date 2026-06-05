@@ -373,6 +373,12 @@ impl BrowserApp {
         &self.address_bar_text
     }
 
+    /// 测试用：获取标签页滚动偏移（物理像素）
+    #[cfg(test)]
+    pub fn scroll_offset_for_tab(&self, tab_id: TabId) -> f32 {
+        self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0)
+    }
+
     /// 计算网页内容区域物理像素尺寸（用于滚动、合成区域）
     pub fn content_physical_size(&self) -> (u32, u32) {
         let s = self.scale_factor;
@@ -618,6 +624,7 @@ impl BrowserApp {
             wv.set_prefers_color_scheme(self.color_scheme);
             wv.load_html(&html, None);
         }
+        self.shell.on_page_loaded("设置");
         self.address_bar_text = "zero://settings".to_string();
         self.needs_redraw = true;
     }
@@ -634,30 +641,39 @@ impl BrowserApp {
             None => return,
         };
 
-        // 提取 Y 方向滚动量
+        let s = self.scale_factor;
+        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let content_bottom = self.physical_size.1 as f32 - layout::STATUS_BAR_HEIGHT * s;
+        let mouse_y = self.mouse_pos.1 as f32;
+
+        // 仅在 WebView 内容区响应滚轮；mouse_pos 初始为 (0,0)，未移动过时不拦截
+        if mouse_y > 0.0 && (mouse_y < chrome_top || mouse_y >= content_bottom) {
+            return;
+        }
+
+        // 提取 Y 方向滚动量（滚轮向下增大 scroll offset，与 Linux/winit 符号相反故取反）
         let delta_y = match delta {
-            zero_host_runtime::event::MouseScrollDelta::PixelDelta(_, y) => y as f32,
-            zero_host_runtime::event::MouseScrollDelta::LineDelta(_, y) => y * 40.0, // 每行约 40 像素
+            zero_host_runtime::event::MouseScrollDelta::PixelDelta(_, y) => -(y as f32),
+            zero_host_runtime::event::MouseScrollDelta::LineDelta(_, y) => -(y * 40.0),
         };
 
-        let content_h = self.content_physical_size().1 as f32;
-        let s = self.scale_factor;
+        self.ensure_webview(tab_id);
 
-        // 获取页面实际高度（如果有的话）
-        let page_height = self
+        let content_h = self.content_physical_size().1 as f32;
+
+        // 文档高度：优先布局树，回退到图元包围盒
+        let page_height_logical = self
             .webviews
             .get(&tab_id)
-            .and_then(|wv| wv.last_render())
-            .map(|r| {
-                r.primitives
-                    .fills
-                    .iter()
-                    .map(|f| f.rect.origin.y + f.rect.size.height)
-                    .fold(0.0f32, f32::max)
-                    * s
+            .and_then(|wv| {
+                wv.document_height().or_else(|| {
+                    wv.last_render()
+                        .map(|r| primitives_content_height(&r.primitives))
+                })
             })
-            .unwrap_or(content_h);
+            .unwrap_or(0.0);
 
+        let page_height = page_height_logical * s;
         let max_scroll = (page_height - content_h).max(0.0);
         let offset = self.scroll_offset.entry(tab_id).or_insert(0.0);
         *offset = (*offset + delta_y).clamp(0.0, max_scroll);

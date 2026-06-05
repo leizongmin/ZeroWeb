@@ -386,6 +386,11 @@ impl WebView {
         self.pipeline.hit_test_link(x, y)
     }
 
+    /// 文档布局高度（CSS 逻辑像素）。
+    pub fn document_height(&self) -> Option<f32> {
+        self.pipeline.document_height()
+    }
+
     /// 执行 JavaScript。
     ///
     /// 需要 zero-script-sandbox 后端引擎（V8/QuickJS）。

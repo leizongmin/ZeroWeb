@@ -267,6 +267,13 @@ impl RenderPipeline {
         self.cached_layout.as_ref()
     }
 
+    /// 文档布局高度（CSS 逻辑像素，含溢出内容）。
+    pub fn document_height(&self) -> Option<f32> {
+        self.cached_layout
+            .as_ref()
+            .map(|layout| layout_extent_y(&layout.root, 0.0))
+    }
+
     /// 获取视口宽度。
     pub fn viewport_width(&self) -> f32 {
         self.viewport_width
@@ -286,6 +293,14 @@ impl RenderPipeline {
     pub fn dirty_tracker_mut(&mut self) -> &mut DirtyTracker {
         &mut self.dirty_tracker
     }
+}
+
+fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
+    let mut max_y = offset_y + b.y + b.height;
+    for child in &b.children {
+        max_y = max_y.max(layout_extent_y(child, offset_y + b.y));
+    }
+    max_y
 }
 
 /// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。

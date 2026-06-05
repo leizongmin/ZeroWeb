@@ -493,6 +493,13 @@ impl BrowserApp {
             reflow_webview_glyphs(&mut page_primitives.glyphs, &self.font_loader, primary);
         }
 
+        let find_offset = if self.shell.find_state().is_active() {
+            layout::FIND_BAR_HEIGHT * self.scale_factor
+        } else {
+            0.0
+        };
+        let clip_bottom = y_offset - find_offset + self.content_physical_size().1 as f32;
+
         append_webview_primitives(
             &page_primitives,
             fills,
@@ -501,6 +508,7 @@ impl BrowserApp {
             y_offset - scroll_y,
             fallback_font_id,
             self.scale_factor,
+            Some((y_offset, clip_bottom)),
         )
     }
 
@@ -1027,7 +1035,25 @@ fn reflow_webview_glyphs(
     }
 }
 
+/// 从渲染图元估算文档高度（逻辑像素，fills + glyphs 下界）。
+pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
+    let fill_max = primitives
+        .fills
+        .iter()
+        .map(|f| f.rect.origin.y + f.rect.size.height)
+        .fold(0.0f32, f32::max);
+    let glyph_max = primitives
+        .glyphs
+        .iter()
+        .map(|g| g.y + g.font_size)
+        .fold(0.0f32, f32::max);
+    fill_max.max(glyph_max)
+}
+
 /// 将 WebView 输出的基础图元追加到浏览器场景。
+///
+/// `clip_y` 为物理像素坐标 `(top, bottom)`，fill 与该区间求交后绘制，glyph 完全落在区间外则跳过。
+#[allow(clippy::too_many_arguments)]
 pub fn append_webview_primitives(
     primitives: &RenderPrimitives,
     fills: &mut Vec<FillPrimitive>,
@@ -1036,16 +1062,38 @@ pub fn append_webview_primitives(
     y_offset: f32,
     fallback_font_id: u32,
     s: f32,
+    clip_y: Option<(f32, f32)>,
 ) -> bool {
     let fill_start = fills.len();
     let glyph_start = glyphs.len();
 
     for fill in &primitives.fills {
+        let x = fill.rect.origin.x * s + x_offset;
+        let mut y = fill.rect.origin.y * s + y_offset;
+        let w = fill.rect.size.width * s;
+        let mut h = fill.rect.size.height * s;
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            let bottom = y + h;
+            if bottom <= clip_top || y >= clip_bottom {
+                continue;
+            }
+            if y < clip_top {
+                h -= clip_top - y;
+                y = clip_top;
+            }
+            let bottom = y + h;
+            if bottom > clip_bottom {
+                h -= bottom - clip_bottom;
+            }
+            if h <= 0.0 {
+                continue;
+            }
+        }
         let mut translated = fill.clone();
-        translated.rect.origin.x = fill.rect.origin.x * s + x_offset;
-        translated.rect.origin.y = fill.rect.origin.y * s + y_offset;
-        translated.rect.size.width *= s;
-        translated.rect.size.height *= s;
+        translated.rect.origin.x = x;
+        translated.rect.origin.y = y;
+        translated.rect.size.width = w;
+        translated.rect.size.height = h;
         fills.push(translated);
     }
 
@@ -1056,17 +1104,27 @@ pub fn append_webview_primitives(
         if ch == '\0' {
             continue;
         }
+        let x = glyph.x * s + x_offset;
+        let baseline_y = glyph.y * s + y_offset;
+        let font_size = glyph.font_size * s;
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            let top = baseline_y - font_size;
+            let bottom = baseline_y + font_size * 0.25;
+            if bottom <= clip_top || top >= clip_bottom || top < clip_top {
+                continue;
+            }
+        }
         glyphs.push(GlyphDraw {
             ch,
-            x: glyph.x * s + x_offset,
-            baseline_y: glyph.y * s + y_offset,
+            x,
+            baseline_y,
             color: glyph.color,
             font_id: if glyph.font_id.0 == 0 {
                 fallback_font_id
             } else {
                 glyph.font_id.0
             },
-            font_size: glyph.font_size * s,
+            font_size,
         });
     }
 
