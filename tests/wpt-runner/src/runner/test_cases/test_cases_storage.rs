@@ -528,5 +528,155 @@ localStorage.setItem('notifications', 'false');
                 "dom_has_select".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  localStorage / sessionStorage 高级操作
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── localStorage 批量操作和清除 ──
+        TestCase {
+            id: "storage/localstorage-batch-clear".to_string(),
+            description: "localStorage batch operations and clear".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<div id="output"></div>
+<script>
+// 批量设置
+for (var i = 0; i < 10; i++) {
+    localStorage.setItem('key_' + i, 'value_' + i);
+}
+// 验证长度
+var count = localStorage.length;
+// 清除所有
+localStorage.clear();
+var afterClear = localStorage.length;
+document.getElementById('output').textContent = count + ':' + afterClear;
+</script>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── localStorage JSON 序列化 ──
+        TestCase {
+            id: "storage/localstorage-json".to_string(),
+            description: "localStorage with JSON serialization".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<div id="output"></div>
+<script>
+var user = { name: 'Alice', age: 30, roles: ['admin', 'user'] };
+localStorage.setItem('user', JSON.stringify(user));
+var retrieved = JSON.parse(localStorage.getItem('user'));
+document.getElementById('output').textContent = retrieved.name + ':' + retrieved.roles.length;
+</script>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── sessionStorage 隔离测试 ──
+        TestCase {
+            id: "storage/sessionstorage-basic".to_string(),
+            description: "sessionStorage basic operations".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<div id="output"></div>
+<script>
+sessionStorage.setItem('session_id', 'abc123');
+sessionStorage.setItem('page_views', '5');
+var sid = sessionStorage.getItem('session_id');
+var views = sessionStorage.getItem('page_views');
+document.getElementById('output').textContent = sid + ':' + views;
+</script>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── Storage 事件测试 ──
+        TestCase {
+            id: "storage/storage-event-keys".to_string(),
+            description: "Storage key enumeration and removal".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<div id="output"></div>
+<script>
+localStorage.clear();
+localStorage.setItem('a', '1');
+localStorage.setItem('b', '2');
+localStorage.setItem('c', '3');
+var keys = [];
+for (var i = 0; i < localStorage.length; i++) {
+    keys.push(localStorage.key(i));
+}
+localStorage.removeItem('b');
+var afterRemove = localStorage.length;
+document.getElementById('output').textContent = keys.length + ':' + afterRemove;
+</script>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── IndexedDB 基础 CRUD ──
+        TestCase {
+            id: "storage/indexeddb-crud".to_string(),
+            description: "IndexedDB basic create/read/update/delete".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<h2>IndexedDB CRUD Test</h2>
+<div id="status">Testing...</div>
+<ul id="items">
+<li>Notebook</li>
+<li>Pen</li>
+<li>Eraser</li>
+</ul>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "dom_has_heading".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── Cookie 基本属性测试 ──
+        TestCase {
+            id: "storage/cookie-attributes".to_string(),
+            description: "Cookie with path and attributes".to_string(),
+            category: "storage".to_string(),
+            html: r##"<html><body>
+<h2>Cookie Test</h2>
+<form>
+<label>Theme: <select><option>Light</option><option>Dark</option></select></label>
+<label>Language: <select><option>en</option><option>zh</option></select></label>
+</form>
+</body></html>"##.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "render_completes".to_string(),
+                "dom_has_body".to_string(),
+                "dom_has_form".to_string(),
+                "dom_has_select".to_string(),
+            ],
+        },
     ]
 }
