@@ -347,6 +347,14 @@ fn check_assertion(name: &str, output: &RenderOutput) -> Result<(), String> {
                 .unwrap_or(0);
             assert_gradient_count_ge(output, n)
         }
+        // 精确图元断言：image_count_ge:N — 图片图元数量 >= N
+        _ if name.starts_with("image_count_ge:") => {
+            let n = name
+                .strip_prefix("image_count_ge:")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            assert_image_count_ge(output, n)
+        }
         // 精确图元断言：shadow_count_ge:N — 阴影图元数量 >= N
         _ if name.starts_with("shadow_count_ge:") => {
             let n = name
@@ -811,6 +819,15 @@ fn assert_gradient_count_ge(output: &RenderOutput, min: usize) -> Result<(), Str
         Ok(())
     } else {
         Err(format!("gradient count={count} (expected >= {min})"))
+    }
+}
+
+fn assert_image_count_ge(output: &RenderOutput, min: usize) -> Result<(), String> {
+    let count = output.primitives.images.len();
+    if count >= min {
+        Ok(())
+    } else {
+        Err(format!("image count={count} (expected >= {min})"))
     }
 }
 

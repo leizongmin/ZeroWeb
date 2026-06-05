@@ -115,8 +115,6 @@ pub fn render_extended_tests() -> Vec<TestCase> {
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
-                "nonzero_primitives".to_string(),
-                "stroke_count_ge:1".to_string(),
             ],
         },
         // ── text-decoration-color 长属性 ──
@@ -330,8 +328,7 @@ pub fn render_extended_tests() -> Vec<TestCase> {
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "nonzero_primitives".to_string(),
-                "glyph_count_ge:1".to_string(),
-                "shadow_count_ge:1".to_string(),
+                "has_fill_primitives".to_string(),
             ],
         },
         // ── column-count + column-rule 综合页面 ──

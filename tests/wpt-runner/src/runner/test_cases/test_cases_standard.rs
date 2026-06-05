@@ -26,7 +26,7 @@ pub fn standard_compliance_tests() -> Vec<TestCase> {
             category: "css".to_string(),
             html: r#"<html><body><div class="box">Dashed border</div></body></html>"#.to_string(),
             css: ".box { border: 2px dashed red; width: 200px; height: 100px; }".to_string(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "stroke_count_ge:1".to_string()],
         },
         TestCase {
             id: "css/border-style-dotted".to_string(),
@@ -34,7 +34,7 @@ pub fn standard_compliance_tests() -> Vec<TestCase> {
             category: "css".to_string(),
             html: r#"<html><body><div class="box">Dotted border</div></body></html>"#.to_string(),
             css: ".box { border: 3px dotted blue; width: 200px; height: 100px; }".to_string(),
-            assertions: vec!["render_completes".to_string(), "has_fill_primitives".to_string()],
+            assertions: vec!["render_completes".to_string(), "stroke_count_ge:1".to_string()],
         },
         TestCase {
             id: "css/border-style-double".to_string(),
