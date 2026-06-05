@@ -341,6 +341,22 @@ impl GpuRenderer {
         self.render_scene_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, 1.0);
     }
 
+    /// 渲染填充矩形和 glyph 文本到当前表面，并支持 overlay_glyphs。
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_scene_ext(
+        &mut self,
+        fills: &[FillPrimitive],
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
+        overlay_glyphs: &[GlyphDraw],
+    ) {
+        self.render_scene_with_clip_scaled(
+            fills, font_loader, glyph_cache, glyphs, overlay_fills, overlay_glyphs, None, 1.0,
+        );
+    }
+
     /// 渲染填充矩形和 glyph 文本到当前表面，并应用逻辑像素到物理像素的缩放。
     #[allow(clippy::too_many_arguments)]
     pub fn render_scene_scaled(
@@ -353,13 +369,7 @@ impl GpuRenderer {
         scale_factor: f32,
     ) {
         self.render_scene_with_clip_scaled(
-            fills,
-            font_loader,
-            glyph_cache,
-            glyphs,
-            overlay_fills,
-            None,
-            scale_factor,
+            fills, font_loader, glyph_cache, glyphs, overlay_fills, &[], None, scale_factor,
         );
     }
 
@@ -374,7 +384,7 @@ impl GpuRenderer {
         overlay_fills: &[FillPrimitive],
         clip_rect: Option<Rect>,
     ) {
-        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, clip_rect, 1.0);
+        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, &[], clip_rect, 1.0);
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域和缩放）。
@@ -386,6 +396,7 @@ impl GpuRenderer {
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
         overlay_fills: &[FillPrimitive],
+        overlay_glyphs: &[GlyphDraw],
         clip_rect: Option<Rect>,
         scale_factor: f32,
     ) {
@@ -477,6 +488,66 @@ impl GpuRenderer {
                 fill.rect.bottom() * scale,
                 fill.color,
             );
+        }
+
+        // 4. Overlay glyphs（最顶层控制元素，如右键菜单的文字）
+        if !overlay_glyphs.is_empty() {
+            let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = overlay_glyphs
+                .iter()
+                .filter_map(|gd| {
+                    let physical_font_size = gd.font_size * scale;
+                    let (resolved_id, bitmap) = font_loader
+                        .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
+                        .ok()?;
+                    let cache_key =
+                        crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+                    let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
+                    Some((
+                        gd.ch,
+                        gd.x * scale,
+                        gd.baseline_y * scale,
+                        gd.color,
+                        resolved_id,
+                        physical_font_size,
+                        cached.clone(),
+                    ))
+                })
+                .collect();
+
+            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in og_data {
+                let atlas_key = GlyphAtlasKey::new(font_id, ch as u32, font_size);
+                let placement = match self.upload_glyph_to_atlas(
+                    atlas_key,
+                    &bitmap.data,
+                    bitmap.width as u32,
+                    bitmap.height as u32,
+                    bitmap.x_offset,
+                    bitmap.y_offset,
+                    bitmap.advance,
+                ) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let (u0, v0, u1, v1) = placement.uv();
+                let (gx, gy) = glyph_top_left(
+                    x,
+                    baseline_y,
+                    placement.x_offset,
+                    placement.y_offset,
+                    placement.height as u16,
+                );
+                let gx = gx.round();
+                let gy = gy.round();
+                let gw = placement.width as f32;
+                let gh = placement.height as f32;
+                let (r, g, b) = color_to_f32(color);
+                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            }
         }
 
         self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
@@ -1214,7 +1285,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let clip = Rect::new(16.0, 16.0, 32.0, 32.0); // 中心 32x32 区域
 
-        renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], Some(clip), 1.0);
+        renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], &[], Some(clip), 1.0);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
 

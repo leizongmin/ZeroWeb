@@ -566,14 +566,14 @@ impl BrowserApp {
         &mut self,
         width: u32,
         height: u32,
-    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>) {
+    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>, Vec<GlyphDraw>) {
         self.build_scene(width, height)
     }
 
     /// 测试用：构建场景并 CPU 渲染为帧缓冲。
     #[cfg(test)]
     pub fn render_scene_for_test(&mut self, width: u32, height: u32) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, _overlay_glyphs) = self.build_scene(width, height);
         render_scene_to_framebuffer(
             width,
             height,
