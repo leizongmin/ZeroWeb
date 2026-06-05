@@ -1012,4 +1012,3 @@ fn test_paint_text_decoration_none() {
     assert_eq!(prims.fills.len(), 0, "text-decoration: none 不应生成额外填充图元");
     assert_eq!(prims.glyphs.len(), 1, "应有 1 个 glyph");
 }
-

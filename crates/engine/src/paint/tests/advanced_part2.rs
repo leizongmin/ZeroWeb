@@ -14,17 +14,16 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GradientKind;
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundPositionComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedValue,
-    BorderImageRepeatComputedValue, BorderImageSliceComputedValue, BorderImageSourceComputedValue,
-    BorderImageWidthComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle,
-    ContainComputedValue, FilterComputedValue, MixBlendModeComputedValue, OutlineStyleValue, ResizeValue,
-    TextDecorationLineValue, TextOverflowValue, TextTransformValue,
+    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedValue, BorderImageRepeatComputedValue,
+    BorderImageSliceComputedValue, BorderImageSourceComputedValue, BorderImageWidthComputedValue, BorderStyleValue,
+    BoxShadowComputedValue, ComputedStyle, ContainComputedValue, FilterComputedValue, MixBlendModeComputedValue,
+    OutlineStyleValue, ResizeValue, TextDecorationLineValue, TextOverflowValue, TextTransformValue,
 };
 
 use crate::paint::color::{color_value_to_render, named_color_to_render};
 use crate::paint::helpers::{
-    BorderRadiusSpec, PrimitiveCounts, apply_opacity_to_new_primitives, gradient_to_primitive,
-    length_to_f32, linear_direction_to_kind, simple_hash,
+    BorderRadiusSpec, PrimitiveCounts, apply_opacity_to_new_primitives, gradient_to_primitive, length_to_f32,
+    linear_direction_to_kind, simple_hash,
 };
 use crate::paint::painter::Painter;
 
