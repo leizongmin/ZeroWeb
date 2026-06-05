@@ -256,6 +256,53 @@ pub struct FilterPrimitive {
     pub filters: Vec<FilterKind>,
 }
 
+/// CSS mix-blend-mode 混合模式枚举。
+/// 定义元素与下层内容混合的方式。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BlendMode {
+    /// normal — 默认值，不混合
+    Normal,
+    /// multiply — 正片叠底
+    Multiply,
+    /// screen — 滤色
+    Screen,
+    /// overlay — 叠加
+    Overlay,
+    /// darken — 变暗
+    Darken,
+    /// lighten — 变亮
+    Lighten,
+    /// color-dodge — 颜色减淡
+    ColorDodge,
+    /// color-burn — 颜色加深
+    ColorBurn,
+    /// hard-light — 强光
+    HardLight,
+    /// soft-light — 柔光
+    SoftLight,
+    /// difference — 差值
+    Difference,
+    /// exclusion — 排除
+    Exclusion,
+    /// hue — 色相
+    Hue,
+    /// saturation — 饱和度
+    Saturation,
+    /// color — 颜色
+    Color,
+    /// luminosity — 亮度
+    Luminosity,
+}
+
+/// 混合模式图元 — 标记区域内图元需要与下层内容混合。
+#[derive(Debug, Clone)]
+pub struct BlendModePrimitive {
+    /// 混合模式应用区域（元素盒模型区域）
+    pub rect: Rect,
+    /// 混合模式类型
+    pub mode: BlendMode,
+}
+
 /// 字体 ID 标识符
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontId(pub u32);
@@ -332,6 +379,8 @@ pub struct RenderPrimitives {
     pub glyphs: Vec<GlyphPrimitive>,
     /// Filter 列表
     pub filters: Vec<FilterPrimitive>,
+    /// Blend mode 列表（混合模式应用区域）
+    pub blend_modes: Vec<BlendModePrimitive>,
 }
 
 impl RenderPrimitives {
@@ -400,6 +449,11 @@ impl RenderPrimitives {
         self.filters.push(filter);
     }
 
+    /// 添加一个混合模式
+    pub fn add_blend_mode(&mut self, blend: BlendModePrimitive) {
+        self.blend_modes.push(blend);
+    }
+
     /// 图元总数
     pub fn len(&self) -> usize {
         self.clips.len()
@@ -413,6 +467,7 @@ impl RenderPrimitives {
             + self.images.len()
             + self.glyphs.len()
             + self.filters.len()
+            + self.blend_modes.len()
     }
 
     /// 是否为空
@@ -428,6 +483,7 @@ impl RenderPrimitives {
             && self.images.is_empty()
             && self.glyphs.is_empty()
             && self.filters.is_empty()
+            && self.blend_modes.is_empty()
     }
 }
 

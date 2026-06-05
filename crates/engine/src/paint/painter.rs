@@ -15,14 +15,15 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{
-    FilterKind, FilterPrimitive, FontId, GlyphPrimitive, ImagePrimitive, LineCap, LineStyle, RenderPrimitives,
-    ShadowPrimitive, StrokePrimitive,
+    BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, FontId, GlyphPrimitive, ImagePrimitive, LineCap,
+    LineStyle, RenderPrimitives, ShadowPrimitive, StrokePrimitive,
 };
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderImageSourceComputedValue, BorderStyleValue,
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, FilterComputedValue, OutlineStyleValue, TextDecorationLineValue, TextOverflowValue,
+    ComputedStyle, FilterComputedValue, MixBlendModeComputedValue, OutlineStyleValue, ResizeValue,
+    TextDecorationLineValue, TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -288,6 +289,22 @@ impl Painter {
         {
             let opacity = style.opacity as f32;
             apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
+        }
+
+        // CSS mix-blend-mode — 对元素及其子元素产生的图元应用混合模式
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.mix_blend_mode, MixBlendModeComputedValue::Normal)
+        {
+            self.apply_blend_mode(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS resize — 绘制调整大小手柄指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.resize, ResizeValue::None)
+        {
+            self.paint_resize_handle(box_node, abs_x, abs_y, style);
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理
@@ -1673,6 +1690,102 @@ impl Painter {
 
         let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
         self.primitives.add_filter(FilterPrimitive { rect, filters });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CSS mix-blend-mode 混合模式
+    // ═══════════════════════════════════════════════════════════════
+
+    /// 应用 CSS mix-blend-mode — 生成 BlendModePrimitive 标记元素区域需要混合。
+    fn apply_blend_mode(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let mode = match style.mix_blend_mode {
+            MixBlendModeComputedValue::Normal => return,
+            MixBlendModeComputedValue::Multiply => BlendMode::Multiply,
+            MixBlendModeComputedValue::Screen => BlendMode::Screen,
+            MixBlendModeComputedValue::Overlay => BlendMode::Overlay,
+            MixBlendModeComputedValue::Darken => BlendMode::Darken,
+            MixBlendModeComputedValue::Lighten => BlendMode::Lighten,
+            MixBlendModeComputedValue::ColorDodge => BlendMode::ColorDodge,
+            MixBlendModeComputedValue::ColorBurn => BlendMode::ColorBurn,
+            MixBlendModeComputedValue::HardLight => BlendMode::HardLight,
+            MixBlendModeComputedValue::SoftLight => BlendMode::SoftLight,
+            MixBlendModeComputedValue::Difference => BlendMode::Difference,
+            MixBlendModeComputedValue::Exclusion => BlendMode::Exclusion,
+            MixBlendModeComputedValue::Hue => BlendMode::Hue,
+            MixBlendModeComputedValue::Saturation => BlendMode::Saturation,
+            MixBlendModeComputedValue::Color => BlendMode::Color,
+            MixBlendModeComputedValue::Luminosity => BlendMode::Luminosity,
+        };
+        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        self.primitives.add_blend_mode(BlendModePrimitive { rect, mode });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CSS resize 调整大小手柄
+    // ═══════════════════════════════════════════════════════════════
+
+    /// 绘制 resize 手柄指示器 — 在元素右下角绘制三条小斜线。
+    fn paint_resize_handle(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let handle_size = 8.0;
+        let corner_x = abs_x + box_node.width - handle_size;
+        let corner_y = abs_y + box_node.height - handle_size;
+
+        // 手柄颜色：半透明灰色
+        let color = Color {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 180,
+        };
+
+        match style.resize {
+            ResizeValue::None => {}
+            ResizeValue::Both | ResizeValue::Block => {
+                for i in 0..3 {
+                    let offset = 2.0 + i as f32 * 2.5;
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: corner_x + handle_size,
+                        y1: corner_y + offset,
+                        x2: corner_x + offset,
+                        y2: corner_y + handle_size,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Solid,
+                        cap: LineCap::Butt,
+                    });
+                }
+            }
+            ResizeValue::Horizontal | ResizeValue::Inline => {
+                for i in 0..2 {
+                    let y = corner_y + 2.0 + i as f32 * 3.0;
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: corner_x + 2.0,
+                        y1: y,
+                        x2: corner_x + handle_size,
+                        y2: y,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Solid,
+                        cap: LineCap::Butt,
+                    });
+                }
+            }
+            ResizeValue::Vertical => {
+                for i in 0..2 {
+                    let x = corner_x + 2.0 + i as f32 * 3.0;
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: x,
+                        y1: corner_y + 2.0,
+                        x2: x,
+                        y2: corner_y + handle_size,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Solid,
+                        cap: LineCap::Butt,
+                    });
+                }
+            }
+        }
     }
 }
 

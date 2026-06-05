@@ -1668,3 +1668,163 @@ fn test_empty_cells_show() {
         "empty-cells:show should render background for empty cell"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  CSS mix-blend-mode 渲染集成测试
+// ═══════════════════════════════════════════════════════════════
+
+/// 测试 mix-blend-mode:multiply 生成 BlendModePrimitive。
+#[test]
+fn test_mix_blend_mode_multiply_generates_blend_primitive() {
+    use zero_style_system::MixBlendModeComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.mix_blend_mode = MixBlendModeComputedValue::Multiply;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        !painter.primitives().blend_modes.is_empty(),
+        "mix-blend-mode:multiply should generate BlendModePrimitive"
+    );
+    assert_eq!(
+        painter.primitives().blend_modes[0].mode,
+        zero_render_foundation::primitive::BlendMode::Multiply
+    );
+}
+
+/// 测试 mix-blend-mode:normal 不生成 BlendModePrimitive。
+#[test]
+fn test_mix_blend_mode_normal_no_blend_primitive() {
+    use zero_style_system::MixBlendModeComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.mix_blend_mode = MixBlendModeComputedValue::Normal;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        painter.primitives().blend_modes.is_empty(),
+        "mix-blend-mode:normal should not generate BlendModePrimitive"
+    );
+}
+
+/// 测试 mix-blend-mode:screen 生成正确模式。
+#[test]
+fn test_mix_blend_mode_screen_generates_blend_primitive() {
+    use zero_style_system::MixBlendModeComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.mix_blend_mode = MixBlendModeComputedValue::Screen;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        !painter.primitives().blend_modes.is_empty(),
+        "mix-blend-mode:screen should generate BlendModePrimitive"
+    );
+    assert_eq!(
+        painter.primitives().blend_modes[0].mode,
+        zero_render_foundation::primitive::BlendMode::Screen
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CSS resize 渲染集成测试
+// ═══════════════════════════════════════════════════════════════
+
+/// 测试 resize:both 生成调整手柄 stroke 图元。
+#[test]
+fn test_resize_both_generates_strokes() {
+    use zero_style_system::ResizeValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.resize = ResizeValue::Both;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        painter.primitives().strokes.len() >= 3,
+        "resize:both should generate at least 3 stroke primitives, got {}",
+        painter.primitives().strokes.len()
+    );
+}
+
+/// 测试 resize:none 不生成调整手柄。
+#[test]
+fn test_resize_none_no_extra_strokes() {
+    use zero_style_system::ResizeValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.resize = ResizeValue::None;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(
+        painter.primitives().strokes.len(),
+        0,
+        "resize:none should not generate resize handle strokes"
+    );
+}
+
+/// 测试 resize:horizontal 生成水平手柄 stroke 图元。
+#[test]
+fn test_resize_horizontal_generates_strokes() {
+    use zero_style_system::ResizeValue;
+
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.resize = ResizeValue::Horizontal;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        painter.primitives().strokes.len() >= 2,
+        "resize:horizontal should generate at least 2 stroke primitives, got {}",
+        painter.primitives().strokes.len()
+    );
+}
