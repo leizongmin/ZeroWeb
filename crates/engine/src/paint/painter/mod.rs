@@ -230,6 +230,9 @@ impl Painter {
 
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
+
+                // 3b. clip-path 视觉指示器
+                self.paint_clip_path(box_node, abs_x, abs_y, style);
             }
 
             // 列表标记和文本始终绘制（不受 empty-cells 影响）

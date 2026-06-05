@@ -293,6 +293,9 @@ impl PropertyRegistry {
                 inset: false,
             })),
 
+            // Clip Path
+            "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
+
             _ => None,
         }
     }
@@ -535,6 +538,7 @@ impl PropertyRegistry {
             "border-image-outset",
             "text-shadow",
             "box-shadow",
+            "clip-path",
         ]
     }
 }

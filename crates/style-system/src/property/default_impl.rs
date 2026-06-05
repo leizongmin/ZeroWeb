@@ -311,6 +311,7 @@ impl Default for ComputedStyle {
                 color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
                 inset: false,
             },
+            clip_path: ClipPathComputedValue::None,
         }
     }
 }

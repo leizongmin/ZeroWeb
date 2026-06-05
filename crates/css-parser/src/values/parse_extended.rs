@@ -1780,3 +1780,243 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
     }
     parse_counter_list(v).map(CounterSetValue::Actions)
 }
+
+/// 解析 CSS clip-path 属性值。
+///
+/// 支持：none | inset() | circle() | ellipse() | polygon()
+pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(ClipPathValue::None);
+    }
+    if let Some(rest) = v.strip_prefix("inset(") {
+        return parse_clip_inset(rest);
+    }
+    if let Some(rest) = v.strip_prefix("circle(") {
+        return parse_clip_circle(rest);
+    }
+    if let Some(rest) = v.strip_prefix("ellipse(") {
+        return parse_clip_ellipse(rest);
+    }
+    if let Some(rest) = v.strip_prefix("polygon(") {
+        return parse_clip_polygon(rest);
+    }
+    None
+}
+
+/// 解析 inset() 参数：top right bottom left [round <border-radius>]
+fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
+    let inner = rest.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    // 分离 round 部分
+    let (inset_part, round) = if let Some(idx) = find_keyword_pos(inner, "round") {
+        (&inner[..idx], Some(inner[idx + 5..].trim()))
+    } else {
+        (inner, None)
+    };
+
+    let values: Vec<&str> = split_comma_or_space(inset_part);
+    let top = parse_length(values.first()?)?;
+    let right = values
+        .get(1)
+        .and_then(|s| parse_length(s))
+        .unwrap_or_else(|| top.clone());
+    let bottom = values
+        .get(2)
+        .and_then(|s| parse_length(s))
+        .unwrap_or_else(|| top.clone());
+    let left = values
+        .get(3)
+        .and_then(|s| parse_length(s))
+        .unwrap_or_else(|| right.clone());
+
+    let round_val = round.and_then(parse_clip_radius_single);
+
+    Some(ClipPathValue::Inset {
+        top,
+        right,
+        bottom,
+        left,
+        round: round_val,
+    })
+}
+
+/// 解析 circle() 参数：[<radius>] [at <position>]
+fn parse_clip_circle(rest: &str) -> Option<ClipPathValue> {
+    let inner = rest.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        // circle() 默认 closest-side at center
+        return Some(ClipPathValue::Circle {
+            radius: ClipPathRadius::ClosestSide,
+            position: None,
+        });
+    }
+
+    let (radius_part, position) = parse_shape_position(inner);
+    let radius = if radius_part.is_empty() {
+        ClipPathRadius::ClosestSide
+    } else {
+        parse_clip_radius(radius_part)?
+    };
+
+    Some(ClipPathValue::Circle { radius, position })
+}
+
+/// 解析 ellipse() 参数：[<rx> <ry>] [at <position>]
+fn parse_clip_ellipse(rest: &str) -> Option<ClipPathValue> {
+    let inner = rest.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        return Some(ClipPathValue::Ellipse {
+            rx: ClipPathRadius::ClosestSide,
+            ry: ClipPathRadius::ClosestSide,
+            position: None,
+        });
+    }
+
+    let (dims_part, position) = parse_shape_position(inner);
+
+    let (rx, ry) = if dims_part.is_empty() {
+        (ClipPathRadius::ClosestSide, ClipPathRadius::ClosestSide)
+    } else {
+        let parts: Vec<&str> = split_comma_or_space(dims_part);
+        let rx = parse_clip_radius(parts.first()?)?;
+        let ry = parse_clip_radius(parts.get(1)?)?;
+        (rx, ry)
+    };
+
+    Some(ClipPathValue::Ellipse { rx, ry, position })
+}
+
+/// 解析 polygon() 参数：[<fill-rule>,] <point> [<point>]*
+fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
+    let inner = rest.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+
+    let mut fill_rule = PolygonFillRule::NonZero;
+    let points_str = if inner.starts_with("nonzero") || inner.starts_with("NonZero") || inner.starts_with("NONZERO") {
+        let after = inner[7..].trim();
+        if after.starts_with(',') {
+            fill_rule = PolygonFillRule::NonZero;
+            after.strip_prefix(',').unwrap().trim()
+        } else {
+            inner
+        }
+    } else if inner.starts_with("evenodd") || inner.starts_with("EvenOdd") || inner.starts_with("EVENODD") {
+        let after = inner[7..].trim();
+        if after.starts_with(',') {
+            fill_rule = PolygonFillRule::EvenOdd;
+            after.strip_prefix(',').unwrap().trim()
+        } else {
+            inner
+        }
+    } else {
+        inner
+    };
+
+    let mut points = Vec::new();
+    for pair in points_str.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let coords: Vec<&str> = pair.split_whitespace().collect();
+        if coords.len() < 2 {
+            continue;
+        }
+        let x = parse_length(coords[0])?;
+        let y = parse_length(coords[1])?;
+        points.push((x, y));
+    }
+
+    if points.is_empty() {
+        return None;
+    }
+
+    Some(ClipPathValue::Polygon { fill_rule, points })
+}
+
+/// 解析 clip-path 半径值（circle/ellipse 的半径参数）。
+fn parse_clip_radius(value: &str) -> Option<ClipPathRadius> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("closest-side") {
+        return Some(ClipPathRadius::ClosestSide);
+    }
+    if v.eq_ignore_ascii_case("farthest-side") {
+        return Some(ClipPathRadius::FarthestSide);
+    }
+    parse_length(v).map(ClipPathRadius::Length)
+}
+
+/// 解析单个圆角半径（用于 inset 的 round 参数）。
+fn parse_clip_radius_single(value: &str) -> Option<ClipPathRadius> {
+    parse_clip_radius(value)
+}
+
+/// 在字符串中查找关键字的位置（大小写不敏感，要求完整单词匹配）。
+fn find_keyword_pos(s: &str, keyword: &str) -> Option<usize> {
+    let lower = s.to_ascii_lowercase();
+    let kw = keyword.to_ascii_lowercase();
+    let mut start = 0;
+    while let Some(idx) = lower[start..].find(&kw) {
+        let abs_idx = start + idx;
+        // 确保是完整单词（前面是空格，后面是空格或结尾）
+        let before_ok = abs_idx == 0 || *s.as_bytes().get(abs_idx - 1)? == b' ';
+        let after_idx = abs_idx + kw.len();
+        let after_ok = after_idx >= s.len() || *s.as_bytes().get(after_idx)? == b' ';
+        if before_ok && after_ok {
+            return Some(abs_idx);
+        }
+        start = abs_idx + 1;
+    }
+    None
+}
+
+/// 从形状参数中分离 "at <position>" 部分。
+///
+/// 返回 (形状参数部分, 位置部分)。
+fn parse_shape_position(inner: &str) -> (&str, Option<(LengthValue, LengthValue)>) {
+    if let Some(at_idx) = find_keyword_pos(inner, "at") {
+        let shape_part = inner[..at_idx].trim();
+        let pos_str = inner[at_idx + 2..].trim();
+        let pos = parse_position_pair(pos_str);
+        (shape_part, pos)
+    } else {
+        (inner, None)
+    }
+}
+
+/// 解析位置对 "x y" 或 "center" 等。
+fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let x = if parts[0].eq_ignore_ascii_case("center") {
+        LengthValue::Percentage(50.0)
+    } else if parts[0].eq_ignore_ascii_case("left") {
+        LengthValue::Percentage(0.0)
+    } else if parts[0].eq_ignore_ascii_case("right") {
+        LengthValue::Percentage(100.0)
+    } else {
+        parse_length(parts[0])?
+    };
+    let y = if parts.len() < 2 || parts[1].eq_ignore_ascii_case("center") {
+        LengthValue::Percentage(50.0)
+    } else if parts[1].eq_ignore_ascii_case("top") {
+        LengthValue::Percentage(0.0)
+    } else if parts[1].eq_ignore_ascii_case("bottom") {
+        LengthValue::Percentage(100.0)
+    } else {
+        parse_length(parts[1])?
+    };
+    Some((x, y))
+}
+
+/// 按空格分割字符串（忽略连续空格）。
+fn split_comma_or_space(s: &str) -> Vec<&str> {
+    s.split_whitespace().collect()
+}

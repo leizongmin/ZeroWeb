@@ -6,7 +6,7 @@
 //! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
-use zero_css_parser::values::{ColorValue, LengthValue};
+use zero_css_parser::values::{ClipPathRadius, ColorValue, LengthValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -16,15 +16,15 @@ use zero_render_foundation::primitive::{
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundImageComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle, FilterComputedValue, HyphensComputedValue,
-    ImageRenderingValue, IsolationValue, LineClampComputedValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
-    TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue, TouchActionValue, UserSelectValue,
-    WillChangeValue,
+    BackgroundSizeComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, FilterComputedValue,
+    HyphensComputedValue, ImageRenderingValue, IsolationValue, LineClampComputedValue, MixBlendModeComputedValue,
+    OverscrollBehaviorValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue,
+    TouchActionValue, UserSelectValue, WillChangeValue,
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{BorderRadiusSpec, gradient_to_primitive, simple_hash};
+use super::super::helpers::{BorderRadiusSpec, gradient_to_primitive, length_to_f32, simple_hash};
 
 impl super::Painter {
     /// 添加圆角矩形元数据图元。
@@ -1461,6 +1461,157 @@ impl super::Painter {
                     Color::rgba(128, 77, 179, 153),
                 );
             }
+        }
+    }
+
+    /// 绘制 CSS clip-path 视觉指示器。
+    ///
+    /// 为非 none 的 clip-path 渲染指示性图元：
+    /// - inset()：在裁剪区域内绘制虚线边框
+    /// - circle()/ellipse()：绘制圆/椭圆轮廓线
+    /// - polygon()：绘制多边形轮廓线
+    pub(super) fn paint_clip_path(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let clip = &style.clip_path;
+        if matches!(clip, ClipPathComputedValue::None) {
+            return;
+        }
+
+        let w = box_node.width;
+        let h = box_node.height;
+
+        match clip {
+            ClipPathComputedValue::Inset {
+                top,
+                right,
+                bottom,
+                left,
+                ..
+            } => {
+                let t = length_to_f32(top);
+                let r = length_to_f32(right);
+                let b = length_to_f32(bottom);
+                let l = length_to_f32(left);
+                let clip_x = abs_x + l;
+                let clip_y = abs_y + t;
+                let clip_w = w - l - r;
+                let clip_h = h - t - b;
+                if clip_w > 0.0 && clip_h > 0.0 {
+                    let color = Color::rgba(128, 0, 128, 100);
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: clip_x,
+                        y1: clip_y,
+                        x2: clip_x + clip_w,
+                        y2: clip_y,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: clip_x + clip_w,
+                        y1: clip_y,
+                        x2: clip_x + clip_w,
+                        y2: clip_y + clip_h,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: clip_x + clip_w,
+                        y1: clip_y + clip_h,
+                        x2: clip_x,
+                        y2: clip_y + clip_h,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: clip_x,
+                        y1: clip_y + clip_h,
+                        x2: clip_x,
+                        y2: clip_y,
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                }
+            }
+            ClipPathComputedValue::Circle { radius, position } => {
+                let r = match radius {
+                    ClipPathRadius::Length(l) => length_to_f32(l),
+                    ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => w.min(h) / 2.0,
+                };
+                let cx = position.as_ref().map(|(x, _)| length_to_f32(x)).unwrap_or(w / 2.0);
+                let cy = position.as_ref().map(|(_, y)| length_to_f32(y)).unwrap_or(h / 2.0);
+                let color = Color::rgba(0, 128, 128, 100);
+                let segs = 12;
+                for i in 0..segs {
+                    let a1 = (i as f32 / segs as f32) * 2.0 * std::f32::consts::PI;
+                    let a2 = ((i + 1) as f32 / segs as f32) * 2.0 * std::f32::consts::PI;
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: abs_x + cx + r * a1.cos(),
+                        y1: abs_y + cy + r * a1.sin(),
+                        x2: abs_x + cx + r * a2.cos(),
+                        y2: abs_y + cy + r * a2.sin(),
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dotted,
+                        cap: LineCap::Round,
+                    });
+                }
+            }
+            ClipPathComputedValue::Ellipse { rx, ry, position } => {
+                let rx_v = match rx {
+                    ClipPathRadius::Length(l) => length_to_f32(l),
+                    ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => w / 2.0,
+                };
+                let ry_v = match ry {
+                    ClipPathRadius::Length(l) => length_to_f32(l),
+                    ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => h / 2.0,
+                };
+                let cx = position.as_ref().map(|(x, _)| length_to_f32(x)).unwrap_or(w / 2.0);
+                let cy = position.as_ref().map(|(_, y)| length_to_f32(y)).unwrap_or(h / 2.0);
+                let color = Color::rgba(128, 128, 0, 100);
+                let segs = 12;
+                for i in 0..segs {
+                    let a1 = (i as f32 / segs as f32) * 2.0 * std::f32::consts::PI;
+                    let a2 = ((i + 1) as f32 / segs as f32) * 2.0 * std::f32::consts::PI;
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: abs_x + cx + rx_v * a1.cos(),
+                        y1: abs_y + cy + ry_v * a1.sin(),
+                        x2: abs_x + cx + rx_v * a2.cos(),
+                        y2: abs_y + cy + ry_v * a2.sin(),
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dotted,
+                        cap: LineCap::Round,
+                    });
+                }
+            }
+            ClipPathComputedValue::Polygon { points, .. } => {
+                if points.len() < 2 {
+                    return;
+                }
+                let color = Color::rgba(0, 128, 0, 100);
+                for i in 0..points.len() {
+                    let (x1, y1) = &points[i];
+                    let (x2, y2) = &points[(i + 1) % points.len()];
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: abs_x + length_to_f32(x1),
+                        y1: abs_y + length_to_f32(y1),
+                        x2: abs_x + length_to_f32(x2),
+                        y2: abs_y + length_to_f32(y2),
+                        width: 1.0,
+                        color,
+                        style: LineStyle::Dashed,
+                        cap: LineCap::Square,
+                    });
+                }
+            }
+            _ => {}
         }
     }
 }

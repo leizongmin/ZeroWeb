@@ -4,10 +4,10 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 pub use zero_css_parser::values::{
-    self, AlignmentValue, BoxSizingValue, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
+    self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue,
-    FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PositionValue, QuotesValue,
-    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue,
+    FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PolygonFillRule, PositionValue,
+    QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue,
     VisibilityValue,
 };
 
@@ -1374,6 +1374,8 @@ pub enum PropertyValue {
     TextShadow(TextShadowComputedValue),
     /// box-shadow 值。
     BoxShadow(BoxShadowComputedValue),
+    /// clip-path 值。
+    ClipPath(ClipPathComputedValue),
     /// justify-items 值。
     JustifyItems(JustifyItemsValue),
     /// justify-self 值。
@@ -1465,6 +1467,12 @@ pub enum FilterComputedValue {
     /// drop-shadow(x-offset, y-offset, blur-radius, color)。
     DropShadow(f32, f32, f32, ColorValue),
 }
+
+/// CSS clip-path 属性计算值。
+///
+/// 直接复用 css-parser 的 ClipPathValue 类型，
+/// 因为计算阶段不需要额外转换。
+pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
 
