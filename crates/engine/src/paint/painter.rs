@@ -20,10 +20,10 @@ use zero_render_foundation::primitive::{
 };
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderImageSourceComputedValue, BorderStyleValue,
-    ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, FilterComputedValue, MixBlendModeComputedValue, OutlineStyleValue, ResizeValue,
-    TextDecorationLineValue, TextOverflowValue,
+    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderCollapseValue, BorderImageSourceComputedValue,
+    BorderStyleValue, ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue,
+    ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, FilterComputedValue, MixBlendModeComputedValue,
+    OutlineStyleValue, ResizeValue, TextDecorationLineValue, TextOverflowValue,
 };
 
 use super::color::color_value_to_render;
@@ -187,8 +187,22 @@ impl Painter {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
-        // 判断是否需要裁剪子内容
-        let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
+        // 判断是否需要裁剪子内容（overflow 或 contain:paint 触发）
+        let needs_clip = if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            box_node.overflow_x != OverflowClip::Visible
+                || box_node.overflow_y != OverflowClip::Visible
+                || matches!(
+                    style.contain,
+                    ContainComputedValue::Paint
+                        | ContainComputedValue::Strict
+                        | ContainComputedValue::Content
+                        | ContainComputedValue::Custom(_)
+                )
+        } else {
+            box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible
+        };
 
         // 获取该节点对应的计算样式
         // 记录绘制前的图元数量，用于 opacity 应用
@@ -382,6 +396,10 @@ impl Painter {
         let w = box_node.width;
         let h = box_node.height;
 
+        // border-collapse:collapse 时，内边框（右和下）厚度减半，避免与邻居重叠
+        let collapse = matches!(style.border_collapse, BorderCollapseValue::Collapse);
+        let half = |v: f32| if collapse { v / 2.0 } else { v };
+
         // 上边框
         if box_node.border_top > 0.0
             && style.border_top_style != BorderStyleValue::None
@@ -393,7 +411,7 @@ impl Painter {
                     y1: abs_y,
                     x2: abs_x + w,
                     y2: abs_y,
-                    thickness: box_node.border_top,
+                    thickness: half(box_node.border_top),
                     is_horizontal: true,
                     extend_left: false,
                 },
@@ -410,10 +428,10 @@ impl Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x + w,
-                    y1: abs_y + box_node.border_top,
+                    y1: abs_y + half(box_node.border_top),
                     x2: abs_x + w,
-                    y2: abs_y + h - box_node.border_bottom,
-                    thickness: box_node.border_right,
+                    y2: abs_y + h - half(box_node.border_bottom),
+                    thickness: half(box_node.border_right),
                     is_horizontal: false,
                     extend_left: true,
                 },
@@ -433,7 +451,7 @@ impl Painter {
                     y1: abs_y + h,
                     x2: abs_x + w,
                     y2: abs_y + h,
-                    thickness: box_node.border_bottom,
+                    thickness: half(box_node.border_bottom),
                     is_horizontal: true,
                     extend_left: false,
                 },
@@ -450,10 +468,10 @@ impl Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x,
-                    y1: abs_y + box_node.border_top,
+                    y1: abs_y + half(box_node.border_top),
                     x2: abs_x,
-                    y2: abs_y + h - box_node.border_bottom,
-                    thickness: box_node.border_left,
+                    y2: abs_y + h - half(box_node.border_bottom),
+                    thickness: half(box_node.border_left),
                     is_horizontal: false,
                     extend_left: false,
                 },
