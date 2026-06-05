@@ -112,18 +112,18 @@ impl BrowserApp {
             self.render_autocomplete(&mut fills, &mut glyphs, width, font_size, s);
         }
 
-        // 14. 上下文菜单（最上层覆盖）
-        if self.context_menu.visible {
-            self.render_context_menu(&mut fills, &mut glyphs, s);
-        }
-
-        // 15. 下载进度条（有活跃下载时显示在状态栏上方）
+        // 14. 下载进度条（有活跃下载时显示在状态栏上方）
         if self.shell.downloads().active_count() > 0 {
             self.render_download_bar(&mut fills, &mut glyphs, width, height, font_size, s);
         }
 
-        // 16. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
+        // 15. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
         self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
+
+        // 16. 上下文菜单（必须最顶层，在所有内容之上）
+        if self.context_menu.visible {
+            self.render_context_menu(&mut fills, &mut glyphs, s);
+        }
 
         // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
         self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
