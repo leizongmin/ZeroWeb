@@ -1245,5 +1245,188 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
             "#.to_string(),
             assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Transform-origin + 非 translate 变换渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── rotate + transform-origin 渲染 ──
+        TestCase {
+            id: "render/transform-origin-rotate".to_string(),
+            description: "CSS rotate with transform-origin".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:100px;height:100px;background:#e74c3c;transform:rotate(45deg);transform-origin:0 0">Rotated</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── scale 变换渲染 ──
+        TestCase {
+            id: "render/transform-scale".to_string(),
+            description: "CSS scale transform rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:100px;height:50px;background:#3498db;transform:scale(2,0.5)">Scaled</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── skew 变换渲染 ──
+        TestCase {
+            id: "render/transform-skew".to_string(),
+            description: "CSS skew transform rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:100px;height:80px;background:#9b59b6;transform:skew(20deg,10deg)">Skewed</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── matrix() 变换渲染 ──
+        TestCase {
+            id: "render/transform-matrix".to_string(),
+            description: "CSS matrix() transform rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:100px;height:60px;background:#1abc9c;transform:matrix(0.866,0.5,-0.5,0.866,10,20)">Matrix</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── 变换组合 (translate + rotate + scale) ──
+        TestCase {
+            id: "render/transform-combined".to_string(),
+            description: "Combined transform functions".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:80px;height:80px;background:#e67e22;transform:translate(50px,20px) rotate(30deg) scale(1.5)">Combined</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Conic-gradient 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── conic-gradient 基础渲染 ──
+        TestCase {
+            id: "render/conic-gradient-basic".to_string(),
+            description: "Basic conic-gradient rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:200px;background:conic-gradient(red,yellow,green,blue,red)">Color Wheel</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "gradient_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── conic-gradient with from angle ──
+        TestCase {
+            id: "render/conic-gradient-from-angle".to_string(),
+            description: "Conic-gradient with from angle".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:150px;height:150px;background:conic-gradient(from 90deg,#ff0,#0ff,#f0f,#ff0)">Angle</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "gradient_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── conic-gradient with position ──
+        TestCase {
+            id: "render/conic-gradient-position".to_string(),
+            description: "Conic-gradient with center position".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="width:200px;height:200px;background:conic-gradient(from 45deg at 25% 75%,#2ecc71,#e74c3c,#2ecc71)">Position</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "gradient_count_ge:1".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS Counters
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 有序列表 + counter-increment ──
+        TestCase {
+            id: "render/counter-ordered-list".to_string(),
+            description: "Ordered list with counter-increment".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<ol style="counter-reset:item">
+  <li style="counter-increment:item">First</li>
+  <li style="counter-increment:item">Second</li>
+  <li style="counter-increment:item">Third</li>
+</ol>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── 嵌套计数器 ──
+        TestCase {
+            id: "render/counter-nested".to_string(),
+            description: "Nested counters with reset/increment".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<div style="counter-reset:section 0">
+  <h2 style="counter-increment:section">Section 1</h2>
+  <div style="counter-reset:subsection 0">
+    <p style="counter-increment:subsection">Sub 1.1</p>
+    <p style="counter-increment:subsection">Sub 1.2</p>
+  </div>
+  <h2 style="counter-increment:section">Section 2</h2>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
     ]
 }
