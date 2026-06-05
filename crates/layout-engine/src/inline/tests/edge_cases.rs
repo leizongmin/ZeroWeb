@@ -486,3 +486,90 @@ fn test_no_wrap_long_text_single_line() {
     let total_width: f32 = ctx.lines[0].runs.iter().map(|r| r.width).sum();
     assert!(total_width > 100.0, "文本宽度应超出容器，实际 {}", total_width);
 }
+
+// ── word-break: break-all 测试 ──
+
+/// 测试 word-break: break-all 允许在任意字符间断行。
+#[test]
+fn test_word_break_break_all_splits_long_word() {
+    // 窄容器（60px），一个长单词 "ABCDEFGHIJ"，break-all 应逐字符拆分
+    let mut ctx = InlineFormattingContext::new(60.0).with_word_break(WordBreakMode::BreakAll);
+    ctx.break_into_lines(vec![make_run("ABCDEFGHIJ")]);
+    // break-all 应产生多行，因为长单词超过容器宽度
+    assert!(
+        ctx.lines.len() > 1,
+        "break-all 应将长单词拆分到多行，实际 {} 行",
+        ctx.lines.len()
+    );
+    // 每行的宽度不应超过容器宽度（容差 1px）
+    for (i, line) in ctx.lines.iter().enumerate() {
+        let line_end_x = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+        assert!(
+            line_end_x <= 62.0,
+            "第 {} 行宽度 {} 应不超过容器宽度 60（+容差），实际 {}",
+            i,
+            line_end_x,
+            60.0
+        );
+    }
+}
+
+/// 测试 word-break: break-all 短单词不拆分。
+#[test]
+fn test_word_break_break_all_short_word_stays() {
+    // 宽容器，短单词不应被拆分
+    let mut ctx = InlineFormattingContext::new(800.0).with_word_break(WordBreakMode::BreakAll);
+    ctx.break_into_lines(vec![make_run("Hello")]);
+    assert_eq!(ctx.lines.len(), 1, "短单词应在一行中");
+    assert_eq!(ctx.lines[0].runs.len(), 1, "短单词不应被拆分");
+}
+
+// ── word-break: keep-all 测试 ──
+
+/// 测试 word-break: keep-all 保持 CJK 文本为单词。
+#[test]
+fn test_word_break_keep_all_cjk_stays_together() {
+    // keep-all 模式下，连续 CJK 文本应作为一个整体
+    let mut ctx = InlineFormattingContext::new(50.0).with_word_break(WordBreakMode::KeepAll);
+    ctx.break_into_lines(vec![make_run("中文文本测试")]);
+    // keep-all 应将 CJK 文本保持为单个单词，不拆分
+    assert_eq!(ctx.lines.len(), 1, "keep-all 下 CJK 文本应作为单个单词（溢出）");
+    assert_eq!(ctx.lines[0].runs.len(), 1, "CJK 文本不应被拆分");
+}
+
+/// 测试 word-break: keep-all 拉丁文本正常断行。
+#[test]
+fn test_word_break_keep_all_latin_breaks_at_spaces() {
+    let mut ctx = InlineFormattingContext::new(80.0).with_word_break(WordBreakMode::KeepAll);
+    ctx.break_into_lines(vec![make_run("Hello World Foo Bar")]);
+    // keep-all 不影响拉丁文本（本来就在空格处断行）
+    assert!(ctx.lines.len() >= 2, "keep-all 下拉丁文本应在空格处正常换行");
+}
+
+/// 测试 word-break: keep-all 空白处断行。
+#[test]
+fn test_word_break_keep_all_breaks_at_whitespace() {
+    let mut ctx = InlineFormattingContext::new(50.0).with_word_break(WordBreakMode::KeepAll);
+    // CJK 文本之间有空格，可以在空格处断行
+    ctx.break_into_lines(vec![make_run("中文 文本 测试")]);
+    // 有空格时可以断行
+    assert_eq!(ctx.lines.len(), 3, "keep-all 应在空白处断行");
+}
+
+/// 测试 word-break 默认值 (Normal)。
+#[test]
+fn test_word_break_default_is_normal() {
+    let ctx = InlineFormattingContext::new(800.0);
+    assert_eq!(ctx.word_break, WordBreakMode::Normal);
+}
+
+/// 测试 word-break: break-all 多行内容所有字符都布局。
+#[test]
+fn test_word_break_break_all_preserves_all_chars() {
+    let mut ctx = InlineFormattingContext::new(40.0).with_word_break(WordBreakMode::BreakAll);
+    let text = "ABCDEFGH";
+    ctx.break_into_lines(vec![make_run(text)]);
+    // 验证所有字符都被布局了
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.as_str()).collect();
+    assert_eq!(all_text.replace(' ', ""), text, "所有字符都应被布局");
+}

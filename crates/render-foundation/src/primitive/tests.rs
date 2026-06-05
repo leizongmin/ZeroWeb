@@ -262,6 +262,7 @@ fn test_glyph_primitive_creation() {
         font_id: FontId(1),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
+        rotation: 0.0,
     };
     assert_eq!(g.x, 10.0);
     assert_eq!(g.font_id, FontId(1));
@@ -280,6 +281,7 @@ fn test_glyph_in_render_primitives() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     assert_eq!(p.glyphs.len(), 1);
     assert!(!p.is_empty());
@@ -303,6 +305,7 @@ fn test_bounding_box_with_glyphs() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 5.0);
@@ -380,6 +383,7 @@ fn test_render_primitives_mixed_types_count() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     assert_eq!(p.len(), 5);
     assert!(!p.is_empty());
@@ -467,6 +471,7 @@ fn test_len_all_primitive_types() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     assert_eq!(p.len(), 10);
 }
@@ -558,6 +563,7 @@ fn test_bounding_box_glyph_with_bitmap_dims() {
         font_id: FontId(0),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
+        rotation: 0.0,
     });
 
     let bb = p.bounding_box().expect("glyph 应产生包围盒");
@@ -938,6 +944,7 @@ fn test_add_glyph_multiple() {
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         });
     }
     assert_eq!(p.glyphs.len(), 10);
@@ -1000,6 +1007,7 @@ fn test_stats_mixed_primitives() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     p.add_glyph(GlyphPrimitive {
         x: 10.0,
@@ -1010,6 +1018,7 @@ fn test_stats_mixed_primitives() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     let stats = p.stats();
     assert_eq!(stats.total_primitives(), 4);
@@ -1060,6 +1069,7 @@ fn test_batch_fills_preserves_other_primitives() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     let batched = p.batch_fills();
     assert_eq!(batched.fills.len(), 1);
@@ -1091,6 +1101,7 @@ fn test_cull_invisible_keeps_clips_and_glyphs() {
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
+        rotation: 0.0,
     });
     let (culled, _) = p.cull_invisible(viewport);
     assert_eq!(culled.clips.len(), 1);

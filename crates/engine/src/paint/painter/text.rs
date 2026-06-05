@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{ColorValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{InlineFormattingContext, LayoutBox, estimate_char_width};
+use zero_layout_engine::{InlineFormattingContext, LayoutBox, WordBreakMode, estimate_char_width};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
@@ -251,6 +251,7 @@ impl super::Painter {
                         font_id: default_font_id,
                         bitmap_width: None,
                         bitmap_height: None,
+                        rotation: 0.0,
                     });
                     char_x += estimate_char_width(ch, font_size * 0.85);
                 }
@@ -283,6 +284,7 @@ impl super::Painter {
                         font_id: default_font_id,
                         bitmap_width: None,
                         bitmap_height: None,
+                        rotation: 0.0,
                     });
                     char_x += estimate_char_width(ch, font_size * 0.85);
                 }
@@ -310,6 +312,7 @@ impl super::Painter {
                         font_id: default_font_id,
                         bitmap_width: None,
                         bitmap_height: None,
+                        rotation: 0.0,
                     });
                     char_x += estimate_char_width(ch, font_size * 0.85);
                 }
@@ -396,6 +399,7 @@ impl super::Painter {
                 font_id: default_font_id,
                 bitmap_width: None,
                 bitmap_height: None,
+                rotation: 0.0,
             });
             char_x += estimate_char_width(ch, font_size);
         }
@@ -544,10 +548,18 @@ impl super::Painter {
             // CSS line-clamp: 限制最大行数
             let max_lines = super::Painter::resolve_line_clamp(style);
 
+            // 将 CSS word-break 映射到布局引擎的 WordBreakMode
+            let word_break_mode = match style.word_break {
+                zero_style_system::WordBreakValue::BreakAll => WordBreakMode::BreakAll,
+                zero_style_system::WordBreakValue::KeepAll => WordBreakMode::KeepAll,
+                _ => WordBreakMode::Normal,
+            };
+
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_break_word(break_word)
                 .with_no_wrap(no_wrap)
-                .with_preserve_whitespace(preserve_whitespace);
+                .with_preserve_whitespace(preserve_whitespace)
+                .with_word_break(word_break_mode);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
@@ -563,6 +575,13 @@ impl super::Painter {
                     LengthValue::Em(v) => v as f32 * font_size,
                     _ => 0.0,
                 };
+
+                // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
+                let is_vertical = matches!(
+                    style.writing_mode,
+                    zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+                );
+                let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
 
                 let first_line_y = fragments[0].y;
 
@@ -591,6 +610,7 @@ impl super::Painter {
                                 font_id: default_font_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
+                                rotation,
                             });
                         }
 
@@ -603,6 +623,7 @@ impl super::Painter {
                             font_id: default_font_id,
                             bitmap_width: None,
                             bitmap_height: None,
+                            rotation,
                         });
                         char_x += estimate_char_width(ch, fragment.font_size);
                         char_x += letter_spacing;
@@ -688,6 +709,7 @@ impl super::Painter {
                                 font_id: default_font_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
+                                rotation: 0.0,
                             });
                         }
                     }
@@ -741,6 +763,7 @@ impl super::Painter {
                                 font_id: default_font_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
+                                rotation: 0.0,
                             });
                         }
                     }
@@ -764,6 +787,7 @@ impl super::Painter {
                 font_id: default_font_id,
                 bitmap_width: None,
                 bitmap_height: None,
+                rotation: 0.0,
             });
         }
 
@@ -776,6 +800,7 @@ impl super::Painter {
             font_id: default_font_id,
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         });
 
         self.paint_text_decoration_from_style(

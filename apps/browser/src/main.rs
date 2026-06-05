@@ -231,6 +231,7 @@ mod tests {
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,
+            rotation: 0.0,
         });
 
         let mut fills = Vec::new();

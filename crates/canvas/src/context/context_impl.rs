@@ -132,6 +132,7 @@ impl CanvasContext {
                     font_id: zero_render_foundation::primitive::FontId(0),
                     bitmap_width: None,
                     bitmap_height: None,
+                    rotation: 0.0,
                 });
             offset_x += em_width;
         }
@@ -156,6 +157,7 @@ impl CanvasContext {
                     font_id: zero_render_foundation::primitive::FontId(0),
                     bitmap_width: None,
                     bitmap_height: None,
+                    rotation: 0.0,
                 });
             offset_x += em_width;
         }

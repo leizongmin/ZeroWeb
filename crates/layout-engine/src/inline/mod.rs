@@ -246,6 +246,18 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
     (font_size, line_height)
 }
 
+/// CSS word-break 行为 — 控制单词内的断行规则。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WordBreakMode {
+    /// normal — 标准断行规则。
+    #[default]
+    Normal,
+    /// break-all — 允许在任意两个字符间断行（包括非 CJK 文本）。
+    BreakAll,
+    /// keep-all — 禁止在 CJK 字符间断行（CJK 文本视为单词）。
+    KeepAll,
+}
+
 /// 行内格式化上下文 — 负责将行内内容排列成行盒。
 #[derive(Debug, Clone)]
 pub struct InlineFormattingContext {
@@ -259,6 +271,8 @@ pub struct InlineFormattingContext {
     pub no_wrap: bool,
     /// 是否保留空白字符序列（white-space: pre / pre-wrap 时为 true）。
     pub preserve_whitespace: bool,
+    /// CSS word-break 行为。
+    pub word_break: WordBreakMode,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -272,6 +286,7 @@ impl InlineFormattingContext {
             break_word: false,
             no_wrap: false,
             preserve_whitespace: false,
+            word_break: WordBreakMode::default(),
             lines: Vec::new(),
         }
     }
@@ -297,6 +312,12 @@ impl InlineFormattingContext {
     /// 设置是否保留空白字符（white-space: pre / pre-wrap）。
     pub fn with_preserve_whitespace(mut self, preserve: bool) -> Self {
         self.preserve_whitespace = preserve;
+        self
+    }
+
+    /// 设置 word-break 行为。
+    pub fn with_word_break(mut self, mode: WordBreakMode) -> Self {
+        self.word_break = mode;
         self
     }
 
@@ -462,13 +483,15 @@ impl InlineFormattingContext {
                             current_x = 0.0;
                         }
 
-                        // overflow-wrap: break-word / anywhere — 如果单词仍超出行宽，
-                        // 逐字符拆分并在行边界处断行
-                        if !self.no_wrap
-                            && self.break_word
+                        // overflow-wrap: break-word / anywhere 或 word-break: break-all —
+                        // 如果单词仍超出行宽，逐字符拆分并在行边界处断行。
+                        // word-break: break-all 允许在任意字符间断行（即使单词未超出行宽），
+                        // 但为了简化，仅在单词超出行宽时逐字符拆分。
+                        let need_char_break = !self.no_wrap
+                            && (self.break_word || self.word_break == WordBreakMode::BreakAll)
                             && current_x + word_width > self.container_width
-                            && !word.is_empty()
-                        {
+                            && !word.is_empty();
+                        if need_char_break {
                             let fragment_height = run.line_height;
                             let chars: Vec<char> = word.chars().collect();
                             let mut partial_x = current_x;
@@ -688,7 +711,33 @@ impl InlineFormattingContext {
     }
 
     /// 将文本按空白字符分割成单词。
+    ///
+    /// - `preserve_whitespace` 模式：保留空白字符序列和换行符。
+    /// - `keep-all` 模式：CJK 文本不按字符拆分，而是保持为连续的"单词"。
+    /// - 默认模式：按空白字符分割，每个单词追加尾部空格。
     fn split_into_words(&self, text: &str) -> Vec<String> {
+        // word-break: keep-all — CJK 字符不被视为断行点，
+        // 将连续的 CJK 文本保持为一个单词（类似拉丁文本的行为）
+        if self.word_break == WordBreakMode::KeepAll {
+            let mut result = Vec::new();
+            let mut current = String::new();
+            for ch in text.chars() {
+                if ch.is_ascii_whitespace() {
+                    // 空白字符处可以断行
+                    if !current.is_empty() {
+                        result.push(format!("{current} "));
+                        current.clear();
+                    }
+                } else {
+                    current.push(ch);
+                }
+            }
+            if !current.is_empty() {
+                result.push(format!("{current} "));
+            }
+            return result;
+        }
+
         if self.preserve_whitespace {
             // 保留空白字符序列：不折叠空格，保留换行符作为强制换行点
             // 将文本按换行符分段，每段再按空格序列切分

@@ -11,11 +11,11 @@ use zero_css_parser::values::ColorValue;
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
-use zero_style_system::property::types::{
-    BackfaceVisibilityValue, BorderSpacingComputedValue, CaptionSideValue, LengthValue,
-    ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness, ScrollSnapType, TransformStyleValue,
-};
 use zero_style_system::ComputedStyle;
+use zero_style_system::property::types::{
+    BackfaceVisibilityValue, BorderSpacingComputedValue, CaptionSideValue, LengthValue, ScrollSnapAlign,
+    ScrollSnapAxis, ScrollSnapStrictness, ScrollSnapType, TransformStyleValue,
+};
 
 use super::super::painter::Painter;
 
@@ -75,11 +75,10 @@ fn test_scroll_snap_mandatory_x_axis() {
 
     // Mandatory X 应在底部生成水平吸附线
     let prims = painter.primitives();
-    let has_snap_line = prims.fills.iter().any(|f| {
-        f.rect.size.height == 2.0
-            && (f.rect.origin.y - 48.0).abs() < 1.0
-            && f.rect.size.width == 100.0
-    });
+    let has_snap_line = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.height == 2.0 && (f.rect.origin.y - 48.0).abs() < 1.0 && f.rect.size.width == 100.0);
     assert!(has_snap_line, "mandatory X 应生成底部水平吸附线");
 }
 
@@ -103,11 +102,10 @@ fn test_scroll_snap_proximity_y_axis() {
 
     // Proximity Y 应在右侧生成垂直吸附线
     let prims = painter.primitives();
-    let has_snap_line = prims.fills.iter().any(|f| {
-        f.rect.size.width == 2.0
-            && (f.rect.origin.x - 98.0).abs() < 1.0
-            && f.rect.size.height == 50.0
-    });
+    let has_snap_line = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.width == 2.0 && (f.rect.origin.x - 98.0).abs() < 1.0 && f.rect.size.height == 50.0);
     assert!(has_snap_line, "proximity Y 应生成右侧垂直吸附线");
 }
 
@@ -131,8 +129,14 @@ fn test_scroll_snap_both_axes() {
 
     // Both 轴应生成水平和垂直两条线
     let prims = painter.primitives();
-    let has_horizontal = prims.fills.iter().any(|f| f.rect.size.height == 2.0 && f.rect.size.width == 100.0);
-    let has_vertical = prims.fills.iter().any(|f| f.rect.size.width == 2.0 && f.rect.size.height == 50.0);
+    let has_horizontal = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.height == 2.0 && f.rect.size.width == 100.0);
+    let has_vertical = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.width == 2.0 && f.rect.size.height == 50.0);
     assert!(has_horizontal, "Both 应生成水平线");
     assert!(has_vertical, "Both 应生成垂直线");
 }
@@ -157,7 +161,10 @@ fn test_scroll_snap_none_no_render() {
 
     // None strictness 不应有 2px 高/宽的吸附线
     let prims = painter.primitives();
-    let has_snap_line = prims.fills.iter().any(|f| f.rect.size.height == 2.0 || f.rect.size.width == 2.0);
+    let has_snap_line = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.height == 2.0 || f.rect.size.width == 2.0);
     assert!(!has_snap_line, "None strictness 不应渲染吸附线");
 }
 
@@ -183,10 +190,7 @@ fn test_scroll_snap_align_start_point() {
     // Start align 应在左上角生成 4×4 小方块
     let prims = painter.primitives();
     let has_start_point = prims.fills.iter().any(|f| {
-        f.rect.size.width == 4.0
-            && f.rect.size.height == 4.0
-            && f.rect.origin.x == 0.0
-            && f.rect.origin.y == 0.0
+        f.rect.size.width == 4.0 && f.rect.size.height == 4.0 && f.rect.origin.x == 0.0 && f.rect.origin.y == 0.0
     });
     assert!(has_start_point, "Start 应在左上角生成对齐点");
 }
@@ -329,8 +333,14 @@ fn test_border_spacing_renders() {
 
     // border-spacing 应生成 2 条间距标记线（1px 高的 + 1px 宽的）
     let prims = painter.primitives();
-    let has_h_marker = prims.fills.iter().any(|f| f.rect.size.height == 1.0 && f.rect.size.width > 0.0);
-    let has_v_marker = prims.fills.iter().any(|f| f.rect.size.width == 1.0 && f.rect.size.height > 0.0);
+    let has_h_marker = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.height == 1.0 && f.rect.size.width > 0.0);
+    let has_v_marker = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.size.width == 1.0 && f.rect.size.height > 0.0);
     assert!(has_h_marker, "应有水平间距标记线");
     assert!(has_v_marker, "应有垂直间距标记线");
 }
@@ -376,7 +386,10 @@ fn test_caption_side_bottom_renders() {
 
     // bottom 应生成底部指示条（y > 50）
     let prims = painter.primitives();
-    let has_bottom_bar = prims.fills.iter().any(|f| f.rect.origin.y > 50.0 && f.rect.size.height == 3.0);
+    let has_bottom_bar = prims
+        .fills
+        .iter()
+        .any(|f| f.rect.origin.y > 50.0 && f.rect.size.height == 3.0);
     assert!(has_bottom_bar, "caption-side:bottom 应在元素下方渲染指示条");
 }
 

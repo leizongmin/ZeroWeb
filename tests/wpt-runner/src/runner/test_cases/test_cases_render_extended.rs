@@ -973,5 +973,139 @@ td { padding: 8px; background: #eee; border: 1px solid #ccc; }
                 "has_fill_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS writing-mode 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── writing-mode: horizontal-tb（默认）──
+        TestCase {
+            id: "render/writing-mode-horizontal-tb".to_string(),
+            description: "CSS writing-mode: horizontal-tb default rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.htb { writing-mode: horizontal-tb; background: #f0f0f0; }</style>
+<div class="htb">Horizontal text</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── writing-mode: vertical-rl ──
+        TestCase {
+            id: "render/writing-mode-vertical-rl".to_string(),
+            description: "CSS writing-mode: vertical-rl rotated glyph rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.vrl { writing-mode: vertical-rl; background: #e0ffe0; height: 200px; }</style>
+<div class="vrl">Vertical right-to-left</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── writing-mode: vertical-lr ──
+        TestCase {
+            id: "render/writing-mode-vertical-lr".to_string(),
+            description: "CSS writing-mode: vertical-lr rotated glyph rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.vlr { writing-mode: vertical-lr; background: #e0e0ff; height: 200px; }</style>
+<div class="vlr">Vertical left-to-right</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS word-break 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── word-break: break-all ──
+        TestCase {
+            id: "render/word-break-break-all".to_string(),
+            description: "CSS word-break: break-all character-level breaking".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.ba { word-break: break-all; background: #fff0f0; width: 80px; }</style>
+<div class="ba">Supercalifragilisticexpialidocious</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── word-break: keep-all ──
+        TestCase {
+            id: "render/word-break-keep-all".to_string(),
+            description: "CSS word-break: keep-all CJK text stays together".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.ka { word-break: keep-all; background: #f0fff0; width: 100px; }</style>
+<div class="ka">中文文本内容测试</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── word-break: normal ──
+        TestCase {
+            id: "render/word-break-normal".to_string(),
+            description: "CSS word-break: normal default rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.n { word-break: normal; background: #f0f0ff; }</style>
+<div class="n">Normal word breaking behavior</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── word-break + writing-mode 组合 ──
+        TestCase {
+            id: "render/word-break-writing-mode-combo".to_string(),
+            description: "CSS word-break: break-all + writing-mode: vertical-rl combo".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.combo { word-break: break-all; writing-mode: vertical-rl; background: #fffff0; height: 200px; width: 60px; }</style>
+<div class="combo">LongVerticalTextWithBreakAll</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
     ]
 }
