@@ -466,4 +466,6 @@ pub struct ComputedStyle {
     pub text_shadow: TextShadowComputedValue,
     /// box-shadow 属性。
     pub box_shadow: BoxShadowComputedValue,
+    /// clip-path 属性。
+    pub clip_path: ClipPathComputedValue,
 }

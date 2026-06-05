@@ -1232,6 +1232,12 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        "clip-path" => {
+            if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
+                style.clip_path = v;
+                return true;
+            }
+        }
         "justify-items" => {
             let lower = value.to_ascii_lowercase();
             let v = match lower.as_str() {

@@ -933,6 +933,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.box_shadow = default_style.box_shadow;
             true
         }
+        "clip-path" => {
+            style.clip_path = default_style.clip_path;
+            true
+        }
         "justify-items" => {
             style.justify_items = default_style.justify_items;
             true

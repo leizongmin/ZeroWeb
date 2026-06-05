@@ -386,6 +386,75 @@ pub enum CalcOp {
     Divide,
 }
 
+/// CSS clip-path 基本形状值。
+///
+/// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状，
+/// 以及 none 关键字。不支持 url() 引用 SVG clipPath 元素。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClipPathValue {
+    /// none — 不裁剪（默认值）。
+    None,
+    /// inset() — 矩形裁剪，四个内缩距离。
+    Inset {
+        /// 上内缩。
+        top: LengthValue,
+        /// 右内缩。
+        right: LengthValue,
+        /// 下内缩。
+        bottom: LengthValue,
+        /// 左内缩。
+        left: LengthValue,
+        /// 可选圆角半径（border-radius 语法）。
+        round: Option<ClipPathRadius>,
+    },
+    /// circle() — 圆形裁剪。
+    Circle {
+        /// 圆的半径。
+        radius: ClipPathRadius,
+        /// 圆心位置（at 关键字）。
+        position: Option<(LengthValue, LengthValue)>,
+    },
+    /// ellipse() — 椭圆形裁剪。
+    Ellipse {
+        /// 水平半径。
+        rx: ClipPathRadius,
+        /// 垂直半径。
+        ry: ClipPathRadius,
+        /// 圆心位置（at 关键字）。
+        position: Option<(LengthValue, LengthValue)>,
+    },
+    /// polygon() — 多边形裁剪。
+    Polygon {
+        /// 填充规则（nonzero 或 evenodd）。
+        fill_rule: PolygonFillRule,
+        /// 顶点坐标列表。
+        points: Vec<(LengthValue, LengthValue)>,
+    },
+}
+
+/// clip-path 半径值。
+///
+/// 可以是具体长度、百分比或 closest-side/farthest-side 关键字。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClipPathRadius {
+    /// 具体长度值。
+    Length(LengthValue),
+    /// closest-side — 最近边。
+    ClosestSide,
+    /// farthest-side — 最远边。
+    FarthestSide,
+}
+
+/// polygon() 填充规则。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum PolygonFillRule {
+    /// nonzero（默认）。
+    #[default]
+    NonZero,
+    /// evenodd。
+    EvenOdd,
+}
+
 /// CSS calc() 表达式求值上下文。
 ///
 /// 提供相对单位转换为像素值所需的参考尺寸。
