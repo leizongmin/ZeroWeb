@@ -59,6 +59,7 @@ wgpu = "24"
 fontdue = "0.9"
 swash = "0.2"
 softbuffer = "0.4"
+resvg = "0.44"
 
 # 窗口与平台
 winit = "0.30"
