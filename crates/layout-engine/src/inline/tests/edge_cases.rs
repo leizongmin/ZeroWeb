@@ -367,3 +367,122 @@ fn test_resolve_font_metrics_large_font_size() {
         line_height
     );
 }
+
+// ── white-space 属性测试 ──
+
+/// 辅助：创建测试用 TextRun。
+fn make_run(text: &str) -> TextRun {
+    TextRun {
+        text: text.to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 19.2,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    }
+}
+
+/// 测试 white-space: normal — 默认行为，自动换行。
+#[test]
+fn test_white_space_normal_wraps() {
+    let mut ctx = InlineFormattingContext::new(50.0);
+    ctx.break_into_lines(vec![make_run("hello world test")]);
+    // 50px 容器 + 16px 字号，"hello world test" 应被分成多行
+    assert!(
+        ctx.lines.len() >= 2,
+        "normal 模式应自动换行，实际 {} 行",
+        ctx.lines.len()
+    );
+}
+
+/// 测试 white-space: nowrap — 不换行，所有文本在一行。
+#[test]
+fn test_white_space_nowrap_no_wrap() {
+    let mut ctx = InlineFormattingContext::new(50.0).with_no_wrap(true);
+    ctx.break_into_lines(vec![make_run("hello world test")]);
+    // nowrap：即使超出容器宽度也不换行
+    assert_eq!(ctx.lines.len(), 1, "nowrap 模式应只有一行，实际 {} 行", ctx.lines.len());
+}
+
+/// 测试 white-space: pre — 保留空白且不换行。
+#[test]
+fn test_white_space_pre_preserves_and_no_wrap() {
+    let mut ctx = InlineFormattingContext::new(50.0)
+        .with_no_wrap(true)
+        .with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("hello  world")]);
+    // pre 模式：不换行
+    assert_eq!(ctx.lines.len(), 1, "pre 模式应只有一行");
+    // 保留空白：所有文本应该包含多空格
+    let all_text: String = ctx
+        .lines
+        .iter()
+        .flat_map(|l| l.runs.iter())
+        .map(|r| r.text.clone())
+        .collect();
+    assert!(all_text.contains("  "), "pre 模式应保留多空格");
+}
+
+/// 测试 white-space: pre-wrap — 保留空白且自动换行。
+#[test]
+fn test_white_space_pre_wrap_preserves_and_wraps() {
+    let mut ctx = InlineFormattingContext::new(50.0).with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("hello  world  test  data")]);
+    // pre-wrap 模式：保留空白，但超宽时换行
+    assert!(ctx.lines.len() >= 2, "pre-wrap 模式应换行，实际 {} 行", ctx.lines.len());
+    // 保留空白
+    let all_text: String = ctx
+        .lines
+        .iter()
+        .flat_map(|l| l.runs.iter())
+        .map(|r| r.text.clone())
+        .collect();
+    assert!(all_text.contains("  "), "pre-wrap 模式应保留多空格");
+}
+
+/// 测试 no_wrap=false + preserve_whitespace=false = normal 行为。
+#[test]
+fn test_white_space_default_equals_normal() {
+    let mut c1 = InlineFormattingContext::new(80.0);
+    let mut c2 = InlineFormattingContext::new(80.0)
+        .with_no_wrap(false)
+        .with_preserve_whitespace(false);
+    let runs = vec![make_run("hello world")];
+    c1.break_into_lines(runs.clone());
+    c2.break_into_lines(runs);
+    assert_eq!(c1.lines.len(), c2.lines.len(), "默认行为应与 normal 一致");
+}
+
+/// 测试 split_into_words 在 preserve_whitespace 模式下保留多空格。
+#[test]
+fn test_split_into_words_preserve_whitespace() {
+    let ctx = InlineFormattingContext::new(200.0).with_preserve_whitespace(true);
+    let words = ctx.split_into_words("hello  world");
+    // 在保留模式下，多空格应该被保留
+    let joined: String = words.join("");
+    assert!(joined.contains("hello"), "应包含 hello");
+    assert!(joined.contains("world"), "应包含 world");
+}
+
+/// 测试 split_into_words 在普通模式下折叠空白。
+#[test]
+fn test_split_into_words_normal_collapses() {
+    let ctx = InlineFormattingContext::new(200.0);
+    let words = ctx.split_into_words("hello  world");
+    // 普通模式：split_whitespace 折叠多空格
+    assert_eq!(words.len(), 2, "普通模式应折叠空白为 2 个单词");
+    assert_eq!(words[0], "hello ");
+    assert_eq!(words[1], "world ");
+}
+
+/// 测试 no_wrap 模式下长文本不换行。
+#[test]
+fn test_no_wrap_long_text_single_line() {
+    let mut ctx = InlineFormattingContext::new(100.0).with_no_wrap(true);
+    let long_text = "This is a very long text that should not wrap even though it exceeds the container width";
+    ctx.break_into_lines(vec![make_run(long_text)]);
+    assert_eq!(ctx.lines.len(), 1, "no_wrap 长文本应保持单行");
+    let total_width: f32 = ctx.lines[0].runs.iter().map(|r| r.width).sum();
+    assert!(total_width > 100.0, "文本宽度应超出容器，实际 {}", total_width);
+}
