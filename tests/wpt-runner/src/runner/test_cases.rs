@@ -35,13 +35,13 @@ mod test_cases_html_layout;
 mod test_cases_interactive;
 mod test_cases_js_dom;
 mod test_cases_navigation;
+mod test_cases_render;
 mod test_cases_security;
 mod test_cases_standard;
 mod test_cases_storage;
 mod test_cases_typography;
 mod test_cases_web_api;
 mod test_cases_web_platform;
-mod test_cases_render;
 mod test_cases_wpt;
 
 use super::TestCase;

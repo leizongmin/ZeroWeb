@@ -1698,18 +1698,18 @@ fn test_word_spacing_applied_in_style() {
     style_sys.set_viewport(800.0, 600.0);
     let styles = style_sys.compute_styles(&doc, &stylesheets);
 
-    let has_word_spacing = styles.values().any(|s| {
-        matches!(s.word_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0)
-    });
+    let has_word_spacing = styles
+        .values()
+        .any(|s| matches!(s.word_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0));
     assert!(has_word_spacing, "word-spacing:10px 应在 ComputedStyle 中可见");
 
     // 验证 letter-spacing 也被解析
     let css2 = "p { color: black; font-size: 16px; letter-spacing: 3px; }";
     let stylesheets2 = vec![CssParser::parse_stylesheet(css2)];
     let styles2 = style_sys.compute_styles(&doc, &stylesheets2);
-    let has_letter_spacing = styles2.values().any(|s| {
-        matches!(s.letter_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0)
-    });
+    let has_letter_spacing = styles2
+        .values()
+        .any(|s| matches!(s.letter_spacing, zero_css_parser::values::LengthValue::Px(v) if v > 0.0));
     assert!(has_letter_spacing, "letter-spacing:3px 应在 ComputedStyle 中可见");
 }
 
