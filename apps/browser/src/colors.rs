@@ -58,6 +58,8 @@ pub struct ChromePalette {
     pub download_bar_bg: Color,
     pub download_bar_fill: Color,
     pub download_bar_text: Color,
+    /// Wayland 无系统装饰时，非最大化窗口外框描边
+    pub window_frame_border: Color,
 }
 
 impl ChromePalette {
@@ -116,6 +118,7 @@ impl ChromePalette {
             download_bar_bg: rgb(241, 243, 244),
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(32, 33, 36),
+            window_frame_border: rgb(160, 164, 169),
         }
     }
 
@@ -166,6 +169,7 @@ impl ChromePalette {
             download_bar_bg: rgb(40, 40, 40),
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(220, 220, 220),
+            window_frame_border: rgb(90, 90, 90),
         }
     }
 }

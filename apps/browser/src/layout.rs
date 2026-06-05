@@ -73,3 +73,5 @@ pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
 pub const PAGE_FRAME_BORDER: f32 = 1.0;
 /// 页面视口圆角半径
 pub const PAGE_FRAME_RADIUS: f32 = 8.0;
+/// Wayland 无系统装饰时，非最大化窗口外框描边宽度
+pub const WINDOW_FRAME_BORDER: f32 = 1.0;

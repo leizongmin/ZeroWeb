@@ -330,6 +330,37 @@ mod tests {
         }
     }
 
+    /// Wayland 非最大化时应自绘窗口外框，便于与桌面其他窗口区分。
+    #[test]
+    fn custom_window_frame_border_on_wayland_when_not_maximized() {
+        if !crate::app::is_wayland() {
+            return;
+        }
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (800, 600);
+        app.scale_factor = 1.0;
+        app.set_window_maximized(false);
+
+        let (_, _, overlay) = app.build_scene_for_test(800, 600);
+        let border = app.chrome_palette().window_frame_border;
+        assert!(
+            overlay.iter().any(|f| {
+                f.color == border && f.rect.origin.x <= 0.5 && f.rect.origin.y <= 0.5 && f.rect.size.width >= 799.0
+            }),
+            "non-maximized Wayland window should draw top frame border"
+        );
+
+        app.set_window_maximized(true);
+        let (_, _, overlay_max) = app.build_scene_for_test(800, 600);
+        assert!(
+            !overlay_max
+                .iter()
+                .any(|f| f.color == border && f.rect.size.width >= 799.0),
+            "maximized window should not draw outer frame border"
+        );
+    }
+
     #[test]
     fn wayland_forces_cpu_present_for_gpu_and_auto() {
         let gpu = BrowserApp::new(RenderMode::Gpu);
