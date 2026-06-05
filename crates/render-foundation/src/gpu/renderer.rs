@@ -353,7 +353,14 @@ impl GpuRenderer {
         overlay_glyphs: &[GlyphDraw],
     ) {
         self.render_scene_with_clip_scaled(
-            fills, font_loader, glyph_cache, glyphs, overlay_fills, overlay_glyphs, None, 1.0,
+            fills,
+            font_loader,
+            glyph_cache,
+            glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            None,
+            1.0,
         );
     }
 
@@ -369,7 +376,14 @@ impl GpuRenderer {
         scale_factor: f32,
     ) {
         self.render_scene_with_clip_scaled(
-            fills, font_loader, glyph_cache, glyphs, overlay_fills, &[], None, scale_factor,
+            fills,
+            font_loader,
+            glyph_cache,
+            glyphs,
+            overlay_fills,
+            &[],
+            None,
+            scale_factor,
         );
     }
 
@@ -384,7 +398,16 @@ impl GpuRenderer {
         overlay_fills: &[FillPrimitive],
         clip_rect: Option<Rect>,
     ) {
-        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, &[], clip_rect, 1.0);
+        self.render_scene_with_clip_scaled(
+            fills,
+            font_loader,
+            glyph_cache,
+            glyphs,
+            overlay_fills,
+            &[],
+            clip_rect,
+            1.0,
+        );
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域和缩放）。
@@ -499,8 +522,7 @@ impl GpuRenderer {
                     let (resolved_id, bitmap) = font_loader
                         .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
                         .ok()?;
-                    let cache_key =
-                        crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+                    let cache_key = crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
                     let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
                     Some((
                         gd.ch,

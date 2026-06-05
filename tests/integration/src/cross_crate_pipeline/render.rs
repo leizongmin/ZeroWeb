@@ -1218,7 +1218,10 @@ fn test_text_decoration_color_custom_pipeline() {
     let span_style = styles.get(&span).expect("span 应有计算样式");
     // red 解析为 Named("red")，apply 会转为 Rgba
     assert!(
-        !matches!(span_style.text_decoration_color, zero_css_parser::values::ColorValue::CurrentColor),
+        !matches!(
+            span_style.text_decoration_color,
+            zero_css_parser::values::ColorValue::CurrentColor
+        ),
         "text-decoration-color 不应为 CurrentColor，应为 red"
     );
 }
