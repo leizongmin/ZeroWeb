@@ -1194,6 +1194,10 @@ pub enum PropertyValue {
     TextDecoration(TextDecorationValue),
     /// text-decoration-line 值。
     TextDecorationLine(TextDecorationLineValue),
+    /// text-decoration-color 值。
+    TextDecorationColor(ColorValue),
+    /// text-decoration-style 值。
+    TextDecorationStyle(TextDecorationStyleValue),
     /// text-transform 值。
     TextTransform(TextTransformValue),
     /// white-space 值。

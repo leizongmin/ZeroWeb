@@ -128,6 +128,10 @@ pub struct ComputedStyle {
     pub text_decoration: TextDecorationValue,
     /// text-decoration-line 属性。
     pub text_decoration_line: TextDecorationLineValue,
+    /// text-decoration-color 属性（不继承）。
+    pub text_decoration_color: ColorValue,
+    /// text-decoration-style 属性（不继承）。
+    pub text_decoration_style: TextDecorationStyleValue,
     /// text-transform 属性。
     pub text_transform: TextTransformValue,
     /// letter-spacing 属性。

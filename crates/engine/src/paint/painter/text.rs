@@ -610,13 +610,13 @@ impl super::Painter {
                             if ch == ' ' { w + word_spacing } else { w }
                         })
                         .sum();
-                    self.paint_text_decoration(
+                    self.paint_text_decoration_from_style(
                         frag_base_x,
                         frag_base_y,
                         fragment.font_size,
                         text_width,
                         color,
-                        &style.text_decoration_line,
+                        style,
                     );
                 }
 
@@ -717,13 +717,13 @@ impl super::Painter {
             bitmap_height: None,
         });
 
-        self.paint_text_decoration(
+        self.paint_text_decoration_from_style(
             glyph_x,
             glyph_y + font_size,
             font_size,
             estimate_char_width('A', font_size),
             color,
-            &style.text_decoration_line,
+            style,
         );
     }
 }

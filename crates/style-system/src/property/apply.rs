@@ -356,6 +356,24 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
                 return true;
             }
         }
+        "text-decoration-color" => {
+            if let Some(v) = values::parse_color(value) {
+                style.text_decoration_color = v;
+                return true;
+            }
+        }
+        "text-decoration-style" => {
+            if let Some(v) = values::parse_text_decoration_style(value) {
+                style.text_decoration_style = match v {
+                    values::TextDecorationStyleValue::Solid => super::types::TextDecorationStyleValue::Solid,
+                    values::TextDecorationStyleValue::Double => super::types::TextDecorationStyleValue::Double,
+                    values::TextDecorationStyleValue::Dotted => super::types::TextDecorationStyleValue::Dotted,
+                    values::TextDecorationStyleValue::Dashed => super::types::TextDecorationStyleValue::Dashed,
+                    values::TextDecorationStyleValue::Wavy => super::types::TextDecorationStyleValue::Wavy,
+                };
+                return true;
+            }
+        }
         "text-transform" => {
             if let Some(v) = parse_text_transform(value) {
                 style.text_transform = v;
