@@ -1023,5 +1023,70 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "fill_count_ge:2".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  渲染管线扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 多层 box-shadow 组合渲染 ──
+        TestCase {
+            id: "render/box-shadow-multi-layer".to_string(),
+            description: "多层 box-shadow 与 background-color 组合渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width:200px;height:100px;background:white;margin:40px;box-shadow:0 2px 4px rgba(0,0,0,0.1),0 8px 16px rgba(0,0,0,0.1),0 16px 32px rgba(0,0,0,0.05)">Multi shadow</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── border-image 简写渲染 ──
+        TestCase {
+            id: "render/border-image-shorthand".to_string(),
+            description: "border-image 简写渲染验证".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width:200px;height:100px;border:20px solid;border-image:url('border.png') 30 round">Border image</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── text-overflow: ellipsis 溢出截断 ──
+        TestCase {
+            id: "render/text-overflow-ellipsis".to_string(),
+            description: "text-overflow:ellipsis 溢出文本截断渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid #ccc;padding:4px">This text is too long and should be truncated with ellipsis</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "glyph_count_ge:1".to_string()],
+        },
+
+        // ── CSS filter blur 组合渲染 ──
+        TestCase {
+            id: "render/filter-blur-composite".to_string(),
+            description: "CSS filter:blur 与 opacity 组合渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width:200px;height:80px;background:coral;filter:blur(2px);opacity:0.8">Blurred content</div>
+            <div style="width:200px;height:80px;background:steelblue;filter:grayscale(50%) brightness(1.2)">Filtered</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 复杂渐变组合渲染 ──
+        TestCase {
+            id: "render/gradient-layered".to_string(),
+            description: "多层渐变叠加渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+            <div style="width:300px;height:200px;background:linear-gradient(135deg,rgba(255,0,0,0.3),rgba(0,0,255,0.3)),linear-gradient(to right,#e0e0e0,#f0f0f0)">Layered gradients</div>
+            </body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "gradient_count_ge:1".to_string()],
+        },
     ]
 }

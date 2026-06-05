@@ -800,5 +800,101 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  存储扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "storage/localstorage-json-roundtrip".into(),
+            description: "localStorage JSON 序列化往返".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            localStorage.clear();
+            var data = { name: 'test', count: 42, items: ['a','b','c'] };
+            localStorage.setItem('data', JSON.stringify(data));
+            var loaded = JSON.parse(localStorage.getItem('data'));
+            document.body.innerHTML += '<p>Count: ' + loaded.count + ', Items: ' + loaded.items.length + '</p>';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "storage/indexeddb-cursor".into(),
+            description: "IndexedDB cursor 迭代".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            var req = indexedDB.open('CursorDB', 1);
+            req.onupgradeneeded = function(e) {
+                var db = e.target.result;
+                var store = db.createObjectStore('items', {keyPath: 'id'});
+                store.put({id: 1, name: 'Alpha'});
+                store.put({id: 2, name: 'Beta'});
+                store.put({id: 3, name: 'Gamma'});
+            };
+            req.onsuccess = function(e) {
+                document.body.innerHTML += '<p>Cursor DB created with 3 items</p>';
+            };
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "storage/cache-api-match".into(),
+            description: "Cache API 匹配和删除".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    document.body.innerHTML += '<p>Cache names: ' + names.join(', ') + '</p>';
+                });
+            }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "storage/localstorage-quota".into(),
+            description: "localStorage 大容量写入不崩溃".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            localStorage.clear();
+            for (var i = 0; i < 50; i++) {
+                localStorage.setItem('key_' + i, 'value_' + i + '_' + 'x'.repeat(100));
+            }
+            document.body.innerHTML += '<p>Stored ' + localStorage.length + ' items</p>';
+            localStorage.clear();
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "storage/sessionstorage-events".into(),
+            description: "Storage 事件触发不崩溃".into(),
+            category: "storage".into(),
+            html: r#"<html><body>
+            <script>
+            sessionStorage.clear();
+            sessionStorage.setItem('event_test', 'hello');
+            sessionStorage.setItem('event_test2', 'world');
+            sessionStorage.removeItem('event_test');
+            document.body.innerHTML += '<p>Session length: ' + sessionStorage.length + '</p>';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }

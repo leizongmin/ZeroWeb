@@ -675,5 +675,135 @@ pub fn html_layout_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  HTML 布局扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "html-layout/table-complex".into(),
+            description: "复杂表格渲染（合并单元格+表头+表尾）".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <table border="1">
+                <caption>Quarterly Sales Report</caption>
+                <colgroup>
+                    <col style="background: #f0f0f0;">
+                    <col span="3" style="background: #fafafa;">
+                </colgroup>
+                <thead>
+                    <tr><th>Product</th><th>Q1</th><th>Q2</th><th>Q3</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Widget A</td><td>100</td><td>150</td><td>200</td></tr>
+                    <tr><td>Widget B</td><td>80</td><td colspan="2">160 (Q2+Q3)</td></tr>
+                    <tr><td>Total</td><td colspan="3">690</td></tr>
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="4">Updated: 2026-06</td></tr>
+                </tfoot>
+            </table>
+            </body></html>"#.into(),
+            css: "table { border-collapse: collapse; width: 100%; } th, td { padding: 8px; text-align: left; border: 1px solid #ddd; } caption { font-weight: bold; margin-bottom: 8px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
+        },
+
+        TestCase {
+            id: "html-layout/form-advanced".into(),
+            description: "高级表单控件渲染（fieldset/output/progress/meter）".into(),
+            category: "html".into(),
+            html: r##"<html><body>
+            <form>
+                <fieldset>
+                    <legend>Personal Info</legend>
+                    <label>Name: <input type="text" required></label>
+                    <label>Email: <input type="email"></label>
+                    <label>Birthday: <input type="date"></label>
+                </fieldset>
+                <fieldset>
+                    <legend>Preferences</legend>
+                    <label>Satisfaction: <input type="range" min="0" max="10" value="7"></label>
+                    <label>Color: <input type="color" value="#ff0000"></label>
+                    <output>Score: 42</output>
+                </fieldset>
+                <progress value="70" max="100">70%</progress>
+                <meter value="0.8" min="0" max="1" low="0.3" high="0.7" optimum="0.5">80%</meter>
+            </form>
+            </body></html>"##.into(),
+            css: "fieldset { margin: 10px 0; padding: 12px; border: 1px solid #ccc; } legend { font-weight: bold; } label { display: block; margin: 4px 0; }".into(),
+            assertions: vec!["dom_has_body".into(), "dom_has_form".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "html-layout/details-accordion".into(),
+            description: "details/summary 手风琴组件渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <div class="accordion">
+                <details open>
+                    <summary>Section 1: Introduction</summary>
+                    <p>This section is open by default with detailed content about the introduction.</p>
+                </details>
+                <details>
+                    <summary>Section 2: Getting Started</summary>
+                    <p>Follow these steps to get started with the project.</p>
+                    <ol>
+                        <li>Install dependencies</li>
+                        <li>Configure settings</li>
+                        <li>Run the application</li>
+                    </ol>
+                </details>
+                <details>
+                    <summary>Section 3: FAQ</summary>
+                    <dl>
+                        <dt>Question 1?</dt><dd>Answer 1</dd>
+                        <dt>Question 2?</dt><dd>Answer 2</dd>
+                    </dl>
+                </details>
+            </div>
+            </body></html>"#.into(),
+            css: ".accordion { max-width: 600px; margin: 20px; } details { border: 1px solid #ddd; margin: 4px 0; } summary { padding: 10px; background: #f5f5f5; cursor: pointer; font-weight: bold; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "has_fill_primitives".into()],
+        },
+
+        TestCase {
+            id: "html-layout/mark-ruby-bdi".into(),
+            description: "语义化文本元素（mark/ruby/bdi/bdo）渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <p>Highlight <mark>important text</mark> in a paragraph.</p>
+            <p><ruby>漢字<rt>kanji</rt></ruby> are Chinese characters used in Japanese.</p>
+            <p>User <bdi>إبراهيم</bdi> posted a comment.</p>
+            <p><bdo dir="rtl">This text is reversed</bdo></p>
+            <p>Abbreviations: <abbr title="HyperText Markup Language">HTML</abbr> and <abbr title="Cascading Style Sheets">CSS</abbr>.</p>
+            <p>Time: <time datetime="2026-06-05">June 5, 2026</time></p>
+            <p>Keyboard: Press <kbd>Ctrl</kbd> + <kbd>S</kbd> to save.</p>
+            </body></html>"#.into(),
+            css: "mark { background: yellow; padding: 2px 4px; } ruby rt { font-size: 0.6em; } kbd { background: #eee; border: 1px solid #999; padding: 2px 6px; font-family: monospace; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "html-layout/dialog-modal".into(),
+            description: "dialog 模态对话框渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <main>
+                <h1>Page Content</h1>
+                <p>This is the main page content behind the dialog.</p>
+                <button id="open-dialog">Open Dialog</button>
+            </main>
+            <dialog id="modal" open>
+                <form method="dialog">
+                    <h2>Modal Dialog</h2>
+                    <p>This is a native HTML dialog element.</p>
+                    <button value="confirm">Confirm</button>
+                    <button value="cancel">Cancel</button>
+                </form>
+            </dialog>
+            </body></html>"#.into(),
+            css: "dialog { border: 2px solid #333; border-radius: 8px; padding: 24px; max-width: 400px; background: white; } dialog h2 { margin-top: 0; }".into(),
+            assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "render_completes".into()],
+        },
     ]
 }

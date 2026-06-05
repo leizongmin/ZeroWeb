@@ -664,5 +664,156 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  ARIA 扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "a11y-i18n/aria/tab-panel".into(),
+            description: "ARIA tabpanel 选项卡模式不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div role="tablist">
+                <button role="tab" aria-selected="true" aria-controls="panel-1">Tab 1</button>
+                <button role="tab" aria-selected="false" aria-controls="panel-2">Tab 2</button>
+            </div>
+            <div id="panel-1" role="tabpanel">Panel 1 content</div>
+            <div id="panel-2" role="tabpanel" hidden>Panel 2 content</div>
+            </body></html>"#.into(),
+            css: "[role=tablist] { display: flex; gap: 4px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/aria/tooltip".into(),
+            description: "ARIA tooltip 模式不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div>
+                <button aria-describedby="tip-1">Hover me</button>
+                <div id="tip-1" role="tooltip">Tooltip text explaining the button</div>
+            </div>
+            </body></html>"#.into(),
+            css: "[role=tooltip] { background: #333; color: white; padding: 4px 8px; font-size: 12px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/aria/tree-view".into(),
+            description: "ARIA tree 树形视图不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <ul role="tree">
+                <li role="treeitem" aria-expanded="true">
+                    Folder A
+                    <ul role="group">
+                        <li role="treeitem">File 1</li>
+                        <li role="treeitem">File 2</li>
+                    </ul>
+                </li>
+                <li role="treeitem" aria-expanded="false">Folder B</li>
+            </ul>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/aria/dialog-modal".into(),
+            description: "ARIA dialog 模态对话框不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div role="dialog" aria-labelledby="dlg-title" aria-modal="true">
+                <h2 id="dlg-title">Confirm Action</h2>
+                <p>Are you sure you want to proceed?</p>
+                <button>OK</button>
+                <button>Cancel</button>
+            </div>
+            </body></html>"#.into(),
+            css: "[role=dialog] { border: 1px solid #999; padding: 20px; background: white; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "has_fill_primitives".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/aria/meter-progress".into(),
+            description: "ARIA meter 和 progressbar 不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div role="progressbar" aria-valuenow="70" aria-valuemin="0" aria-valuemax="100">70%</div>
+            <div role="meter" aria-valuenow="3.5" aria-valuemin="0" aria-valuemax="5">Rating: 3.5/5</div>
+            </body></html>"#.into(),
+            css: "[role=progressbar] { background: #e0e0e0; height: 20px; width: 200px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  i18n 扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "a11y-i18n/i18n/thai-lao".into(),
+            description: "泰文和老挝文渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p>Thai: สวัสดีครับ ภาษาไทย</p>
+            <p>Lao: ສະບາຍດີ ພາສາລາວ</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "glyph_count_ge:1".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/i18n/devanagari-bengali".into(),
+            description: "天城文和孟加拉文渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p>Hindi: नमस्ते दुनिया</p>
+            <p>Bengali: হ্যালো বিশ্ব</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "glyph_count_ge:1".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/i18n/vertical-cjk".into(),
+            description: "竖排 CJK 文本渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div style="writing-mode: vertical-rl; height: 300px;">
+                <p>日本語の縦書きテスト</p>
+                <p>中文竖排文字测试</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/i18n/emoji-complex".into(),
+            description: "复杂 emoji 序列渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p>Family: 👨‍👩‍👧‍👦</p>
+            <p>Skintone: 👋🏽🤷🏻‍♀️</p>
+            <p>Flags: 🇯🇵🇰🇷🇨🇳🇬🇧</p>
+            <p>ZWJ sequences: 👩‍💻👨‍🚀🧑‍🎨</p>
+            </body></html>"#.into(),
+            css: "p { font-size: 24px; margin: 8px; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "a11y-i18n/i18n/bidi-mixed".into(),
+            description: "双向文本混合渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p dir="ltr">English and <span dir="rtl">עברית</span> mixed</p>
+            <p dir="rtl">العربية مع <span dir="ltr">English</span> مختلطة</p>
+            <p>Number 123 in <bdo dir="rtl">reversed</bdo> context</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }

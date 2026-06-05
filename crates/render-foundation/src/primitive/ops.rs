@@ -226,6 +226,7 @@ impl RenderPrimitives {
             + self.images.len()
             + glyph_keys.len()
             + self.filters.len()
+            + self.blend_modes.len()
             + self.clips.len().min(1); // clips 合并为一个
 
         RenderStats {
@@ -470,6 +471,7 @@ impl RenderPrimitives {
             images,
             glyphs: self.glyphs.clone(), // glyphs 保留
             filters,
+            blend_modes: self.blend_modes.clone(), // blend_modes 保留
         };
 
         let culled_count = original_len - result.len();

@@ -947,5 +947,147 @@ aside { float: right; width: 200px; background: #f5f5f5; padding: 10px; }
                 "render_completes".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  导航扩展（+5 测试）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "navigation/hash-fragments".to_string(),
+            description: "Hash 片段链接渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <nav>
+                <a href="#section-1">Section 1</a>
+                <a href="#section-2">Section 2</a>
+                <a href="#section-3">Section 3</a>
+            </nav>
+            <section id="section-1"><h2>Section 1</h2><p>Content for section 1</p></section>
+            <section id="section-2"><h2>Section 2</h2><p>Content for section 2</p></section>
+            <section id="section-3"><h2>Section 3</h2><p>Content for section 3</p></section>
+            </body></html>"##.to_string(),
+            css: "nav { background: #eee; padding: 8px; margin-bottom: 10px; } nav a { margin-right: 10px; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_nav".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "navigation/nav-menu-responsive".to_string(),
+            description: "响应式导航菜单渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <header>
+                <nav>
+                    <a href="/" class="logo">ZeroWeb</a>
+                    <ul class="menu">
+                        <li><a href="/features">Features</a></li>
+                        <li><a href="/docs">Docs</a></li>
+                        <li><a href="/about">About</a></li>
+                        <li><a href="/contact">Contact</a></li>
+                    </ul>
+                </nav>
+            </header>
+            </body></html>"##.to_string(),
+            css: "header { background: #2c3e50; padding: 10px 20px; } nav { display: flex; justify-content: space-between; align-items: center; } .menu { display: flex; list-style: none; gap: 20px; } .menu a { color: white; text-decoration: none; } .logo { color: white; font-size: 20px; font-weight: bold; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_nav".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "navigation/skip-links".to_string(),
+            description: "跳转链接和锚点渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <a href="#main" class="skip">Skip to main content</a>
+            <header>Header with navigation</header>
+            <main id="main">
+                <h1>Main Content</h1>
+                <p>This is the main content area.</p>
+            </main>
+            <footer>Footer</footer>
+            </body></html>"##.to_string(),
+            css: ".skip { position: absolute; top: -40px; left: 0; background: #000; color: #fff; padding: 8px; } .skip:focus { top: 0; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_link".to_string(),
+                "dom_has_heading".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "navigation/table-of-contents".to_string(),
+            description: "目录导航渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <aside>
+                <h2>Table of Contents</h2>
+                <ol>
+                    <li><a href="#ch1">Chapter 1: Introduction</a></li>
+                    <li><a href="#ch2">Chapter 2: Getting Started</a></li>
+                    <li><a href="#ch3">Chapter 3: Advanced Topics</a></li>
+                    <li><a href="#ch4">Chapter 4: API Reference</a></li>
+                    <li><a href="#ch5">Chapter 5: Deployment</a></li>
+                </ol>
+            </aside>
+            <main>
+                <h1 id="ch1">Introduction</h1><p>Intro text</p>
+                <h1 id="ch2">Getting Started</h1><p>Setup text</p>
+                <h1 id="ch3">Advanced Topics</h1><p>Advanced text</p>
+            </main>
+            </body></html>"##.to_string(),
+            css: "aside { float: left; width: 250px; background: #f8f8f8; padding: 16px; margin-right: 20px; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_link".to_string(),
+                "dom_has_heading".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        TestCase {
+            id: "navigation/sitemap-links".to_string(),
+            description: "站点地图和多层级链接渲染".to_string(),
+            category: "navigation".to_string(),
+            html: r##"<html><body>
+            <nav aria-label="Sitemap">
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li>
+                        <a href="/products">Products</a>
+                        <ul>
+                            <li><a href="/products/software">Software</a></li>
+                            <li><a href="/products/hardware">Hardware</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="/support">Support</a>
+                        <ul>
+                            <li><a href="/support/docs">Documentation</a></li>
+                            <li><a href="/support/forum">Forum</a></li>
+                            <li><a href="/support/contact">Contact Us</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </nav>
+            </body></html>"##.to_string(),
+            css: "ul { list-style: none; } ul ul { margin-left: 20px; } li { padding: 2px 0; }".to_string(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "dom_has_nav".to_string(),
+                "dom_has_link".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
     ]
 }
