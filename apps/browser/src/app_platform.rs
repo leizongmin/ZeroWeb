@@ -92,14 +92,14 @@ impl BrowserApp {
         if self.address_bar_focused {
             let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
             let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-            let bar_y = layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_INPUT_V_INSET;
+            let bar_y = layout::TAB_STRIP_HEIGHT + layout::ADDRESS_BAR_INPUT_V_INSET;
             window.set_ime_cursor_area(
                 LogicalPosition::new(bar_x, bar_y),
                 LogicalSize::new(480.0, layout::ADDRESS_BAR_HEIGHT),
             );
         } else if self.shell.find_state().is_active() {
             window.set_ime_cursor_area(
-                LogicalPosition::new(8.0, layout::TAB_BAR_HEIGHT + layout::ADDRESS_BAR_HEIGHT + 4.0),
+                LogicalPosition::new(8.0, layout::TOOLBAR_HEIGHT + 4.0),
                 LogicalSize::new(240.0, layout::FIND_BAR_HEIGHT),
             );
         }
