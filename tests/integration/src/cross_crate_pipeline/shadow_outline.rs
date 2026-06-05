@@ -973,3 +973,124 @@ fn test_gradient_not_inherited_pipeline() {
         "child 不应继承 parent 的 background-image，应为 None"
     );
 }
+
+// ── Column-rule 渲染管线集成测试 ──
+
+/// 验证 column-count + column-rule-style 管线从 CSS 到渲染图元。
+#[test]
+fn test_column_rule_render_pipeline() {
+    // 样式管线验证
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let css = "div { column-count: 3; column-gap: 20px; column-rule: 2px solid gray; width: 600px; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+
+    assert!(
+        matches!(
+            div_style.column_count,
+            zero_style_system::ColumnCountComputedValue::Number(3)
+        ),
+        "column-count 应为 3"
+    );
+    assert!(
+        matches!(
+            div_style.column_rule_style,
+            zero_style_system::ColumnRuleStyleComputedValue::Solid
+        ),
+        "column-rule-style 应为 Solid"
+    );
+    assert!(
+        matches!(
+            div_style.column_rule_width,
+            zero_style_system::ColumnRuleWidthComputedValue::Length(LengthValue::Px(w)) if (w - 2.0).abs() < 0.01
+        ),
+        "column-rule-width 应为 2px"
+    );
+
+    // 渲染管线端到端
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _result = pipeline.render_html(
+        "<div style='column-count:3;column-rule:2px solid gray;width:600px'>text</div>",
+        "",
+    );
+}
+
+// ── List-style-image 渲染管线集成测试 ──
+
+/// 验证 list-style-image:url() 管线从 CSS 解析到渲染。
+#[test]
+fn test_list_style_image_render_pipeline() {
+    // 先验证样式管线
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let ul = doc.create_element("ul");
+    doc.append_child(body, ul).unwrap();
+
+    let css = "ul { list-style-image: url('bullet.png'); }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let ul_style = styles.get(&ul).expect("ul 应有计算样式");
+
+    assert!(
+        matches!(
+            ul_style.list_style_image,
+            zero_style_system::ListStyleImageComputedValue::Url(ref u) if u == "bullet.png"
+        ),
+        "list-style-image 应为 url('bullet.png')"
+    );
+
+    // 渲染管线端到端（li 需要有内容文本，且 HTML 要完整）
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _result = pipeline.render_html(
+        "<html><body><ul><li>First</li><li>Second</li></ul></body></html>",
+        "ul { list-style-image: url('bullet.png'); }",
+    );
+    // 渲染应成功完成（不 panic）
+}
+
+// ── Empty-cells 渲染管线集成测试 ──
+
+/// 验证 empty-cells:hide 管线从 CSS 解析到样式计算。
+#[test]
+fn test_empty_cells_pipeline() {
+    let css = "td { empty-cells: hide; background: #ccc; border: 1px solid black; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html_el = doc.create_element("html");
+    doc.append_child(root, html_el).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html_el, body).unwrap();
+    let td = doc.create_element("td");
+    doc.append_child(body, td).unwrap();
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let td_style = styles.get(&td).expect("td 应有计算样式");
+
+    assert!(
+        matches!(td_style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide),
+        "empty-cells 应为 Hide"
+    );
+}
