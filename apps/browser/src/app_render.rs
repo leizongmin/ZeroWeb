@@ -112,11 +112,12 @@ impl BrowserApp {
         } else {
             0.0
         };
-        let tabs_max_width = width as f32 - window_controls_w - new_tab_btn_w;
+        let leading = self.tab_bar_leading_inset() * s;
+        let tabs_max_width = width as f32 - window_controls_w - new_tab_btn_w - leading;
         let tab_w = (tabs_max_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
 
         self.tab_layout.clear();
-        let mut x = 0.0_f32;
+        let mut x = leading;
 
         for tab in self.shell.tabs() {
             let is_active = Some(tab.id()) == active_id;
@@ -304,31 +305,52 @@ impl BrowserApp {
         };
         fills.push(rect_fill(bar_x, bar_y, bar_w, bar_h, bg));
 
-        let display_text = if self.address_bar_text.is_empty() && !self.address_bar_focused {
-            "Search or enter URL...".to_string()
-        } else {
-            self.address_bar_text.clone()
-        };
+        let text = self.address_bar.text();
+        let show_placeholder =
+            text.is_empty() && !self.address_bar_focused && self.address_bar_ime_preedit.is_empty();
 
         if self.font_id.is_some() {
-            let color = if self.address_bar_focused {
-                colors::ADDRESS_BAR_TEXT
-            } else if self.address_bar_text.is_empty() {
+            let text_x = bar_x + 10.0 * s;
+            let text_y = bar_y + 3.0 * s;
+
+            if self.address_bar_focused && self.address_bar.has_selection() {
+                let (sel_start, sel_end) = self.address_bar.selection_char_range();
+                let before = Self::chars_slice(text, 0, sel_start);
+                let selected = Self::chars_slice(text, sel_start, sel_end);
+                let sel_x = text_x + self.measure_ui_text_width(before, font_size);
+                let sel_w = self.measure_ui_text_width(selected, font_size).max(1.0);
+                fills.push(rect_fill(sel_x, bar_y + 2.0 * s, sel_w, bar_h - 4.0 * s, colors::ADDRESS_BAR_SELECTION_BG));
+            }
+
+            let color = if show_placeholder {
                 colors::ADDRESS_BAR_PLACEHOLDER
             } else {
                 colors::ADDRESS_BAR_TEXT
             };
-            self.draw_ui_text(
-                &display_text,
-                bar_x + 10.0 * s,
-                bar_y + 3.0 * s,
-                font_size,
-                color,
-                glyphs,
-            );
+            let visible = if show_placeholder {
+                "Search or enter URL..."
+            } else {
+                text
+            };
+            self.draw_ui_text(visible, text_x, text_y, font_size, color, glyphs);
 
-            if self.address_bar_focused {
-                let cursor_x = bar_x + 10.0 * s + self.measure_ui_text_width(&self.address_bar_text, font_size);
+            if !self.address_bar_ime_preedit.is_empty() {
+                let before = Self::chars_slice(text, 0, self.address_bar.cursor());
+                let preedit_x = text_x + self.measure_ui_text_width(before, font_size);
+                self.draw_ui_text(
+                    &self.address_bar_ime_preedit,
+                    preedit_x,
+                    text_y,
+                    font_size,
+                    colors::ADDRESS_BAR_TEXT,
+                    glyphs,
+                );
+            }
+
+            if self.address_bar_focused && !self.address_bar.has_selection() && self.address_bar_ime_preedit.is_empty()
+            {
+                let before = Self::chars_slice(text, 0, self.address_bar.cursor());
+                let cursor_x = text_x + self.measure_ui_text_width(before, font_size);
                 fills.push(rect_fill(
                     cursor_x,
                     bar_y + 4.0 * s,
@@ -338,6 +360,22 @@ impl BrowserApp {
                 ));
             }
         }
+    }
+
+    fn byte_at_char(text: &str, char_idx: usize) -> usize {
+        if char_idx == 0 {
+            return 0;
+        }
+        text.char_indices()
+            .nth(char_idx)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len())
+    }
+
+    fn chars_slice(text: &str, start: usize, end: usize) -> &str {
+        let b0 = Self::byte_at_char(text, start);
+        let b1 = Self::byte_at_char(text, end);
+        &text[b0..b1]
     }
 
     /// 渲染书签栏
@@ -499,6 +537,27 @@ impl BrowserApp {
             0.0
         };
         let clip_bottom = y_offset - find_offset + self.content_physical_size().1 as f32;
+        let content_y = y_offset - scroll_y;
+        let s = self.scale_factor;
+
+        if let Some(sel) = self.page_selection.get(&tab_id)
+            && !sel.is_collapsed()
+        {
+            let (start, end) = sel.normalized();
+            let end = end.min(page_primitives.glyphs.len().saturating_sub(1));
+            if start <= end {
+                for glyph in &page_primitives.glyphs[start..=end] {
+                    let x = glyph.x * s;
+                    let top = glyph.y * s + content_y - glyph.font_size * s;
+                    let w = glyph.font_size * s * 0.55;
+                    let h = glyph.font_size * s;
+                    if top + h <= y_offset || top >= clip_bottom {
+                        continue;
+                    }
+                    fills.push(rect_fill(x, top, w.max(1.0), h, colors::TEXT_SELECTION_BG));
+                }
+            }
+        }
 
         append_webview_primitives(
             &page_primitives,
@@ -974,7 +1033,7 @@ fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32,
 }
 
 /// 按真实字体 advance 重新排列 WebView 文本 glyph（与 UI 文本一致）
-fn reflow_webview_glyphs(
+pub(crate) fn reflow_webview_glyphs(
     glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive],
     font_loader: &FontLoader,
     primary_id: u32,

@@ -15,8 +15,11 @@ use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
 use zero_webview::WebViewBuilder;
 
 use crate::colors;
+use crate::input_keys::key_matches;
 use crate::layout;
+use crate::page_selection::{GlyphSelection, hit_test_glyph};
 use crate::pages;
+use crate::text_input::TextInput;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
@@ -108,10 +111,16 @@ pub struct BrowserApp {
     pub gpu_surface_stale: bool,
     /// 窗口是否获得焦点（Wayland 下失焦时 surface 可能挂起）
     pub window_focused: bool,
-    /// 地址栏当前文本
-    address_bar_text: String,
+    /// 地址栏文本编辑状态
+    address_bar: TextInput,
     /// 地址栏是否获得焦点
     pub address_bar_focused: bool,
+    /// 地址栏 IME 预编辑文本
+    address_bar_ime_preedit: String,
+    /// 地址栏左键拖选
+    address_bar_drag: bool,
+    /// 地址栏双击检测
+    address_bar_last_click: Option<(Instant, f64, f64)>,
     /// 窗口物理像素尺寸
     pub physical_size: (u32, u32),
     /// 窗口缩放因子
@@ -134,6 +143,12 @@ pub struct BrowserApp {
     context_menu: ContextMenuState,
     /// 页面滚动偏移（物理像素）
     scroll_offset: HashMap<TabId, f32>,
+    /// 页面文本选区（glyph 索引）
+    page_selection: HashMap<TabId, GlyphSelection>,
+    /// 页面选区拖拽中
+    page_selection_drag: bool,
+    /// 左键是否按下
+    left_button_down: bool,
     /// 待执行的窗口控制动作
     pending_window_chrome_action: Option<WindowChromeAction>,
     /// 窗口控制按钮悬停索引（0=最小化, 1=最大化, 2=关闭）
@@ -171,8 +186,11 @@ impl BrowserApp {
             surface_configured: false,
             gpu_surface_stale: false,
             window_focused: true,
-            address_bar_text: String::new(),
+            address_bar: TextInput::new(),
             address_bar_focused: false,
+            address_bar_ime_preedit: String::new(),
+            address_bar_drag: false,
+            address_bar_last_click: None,
             physical_size: (1024, 768),
             scale_factor: 1.0,
             needs_redraw: true,
@@ -184,6 +202,9 @@ impl BrowserApp {
             tab_layout: Vec::new(),
             context_menu: ContextMenuState::new(),
             scroll_offset: HashMap::new(),
+            page_selection: HashMap::new(),
+            page_selection_drag: false,
+            left_button_down: false,
             pending_window_chrome_action: None,
             window_control_hover: None,
             window_is_maximized: false,
@@ -196,6 +217,20 @@ impl BrowserApp {
     /// Wayland 无系统装饰时需自绘窗口控制按钮
     pub fn uses_custom_window_controls(&self) -> bool {
         is_wayland()
+    }
+
+    /// macOS 一体化标题栏（系统 traffic lights 与标签栏同排）
+    pub fn tab_bar_leading_inset(&self) -> f32 {
+        if uses_unified_titlebar() {
+            layout::MACOS_TRAFFIC_LIGHT_INSET
+        } else {
+            0.0
+        }
+    }
+
+    /// 标签栏空白区可拖动窗口
+    pub fn supports_tab_bar_window_drag(&self) -> bool {
+        self.uses_custom_window_controls() || uses_unified_titlebar()
     }
 
     /// 取出并清除待执行的窗口控制动作
@@ -248,6 +283,10 @@ impl BrowserApp {
     fn is_tab_bar_blank_hit(&self, x: f32, y: f32, width: f32, s: f32) -> bool {
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
         if y >= tab_bar_h {
+            return false;
+        }
+        let leading = self.tab_bar_leading_inset() * s;
+        if x < leading {
             return false;
         }
         if self.window_control_hit_test(x, y, width, s).is_some() {
@@ -370,7 +409,7 @@ impl BrowserApp {
     /// 测试用：获取地址栏文本
     #[cfg(test)]
     pub fn address_bar_text(&self) -> &str {
-        &self.address_bar_text
+        self.address_bar.text()
     }
 
     /// 测试用：获取标签页滚动偏移（物理像素）
@@ -458,7 +497,7 @@ impl BrowserApp {
         tracing::info!("Navigating to: {url}");
 
         self.shell.navigate(&url);
-        self.address_bar_text = url.clone();
+        self.address_bar.set_text(url.clone());
         self.autocomplete.clear();
 
         let tab_id = match self.shell.active_tab_id() {
@@ -467,8 +506,9 @@ impl BrowserApp {
         };
         self.ensure_webview(tab_id);
 
-        // 重置滚动偏移
+        // 重置滚动偏移与页面选区
         self.scroll_offset.insert(tab_id, 0.0);
+        self.page_selection.remove(&tab_id);
 
         self.fetch_tab_url(tab_id, &url);
         self.needs_redraw = true;
@@ -512,9 +552,9 @@ impl BrowserApp {
         self.webviews.insert(tab_id, webview);
 
         if let Some(url) = url {
-            self.address_bar_text = url.to_string();
+            self.address_bar.set_text(url.to_string());
         } else {
-            self.address_bar_text.clear();
+            self.address_bar.clear();
             self.load_welcome_page(tab_id);
         }
 
@@ -585,7 +625,7 @@ impl BrowserApp {
             None => return,
         };
 
-        self.address_bar_text = url.clone();
+        self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
@@ -604,7 +644,7 @@ impl BrowserApp {
             None => return,
         };
 
-        self.address_bar_text = url.clone();
+        self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
         self.ensure_webview(tab_id);
 
@@ -625,7 +665,7 @@ impl BrowserApp {
             wv.load_html(&html, None);
         }
         self.shell.on_page_loaded("设置");
-        self.address_bar_text = "zero://settings".to_string();
+        self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;
     }
 
@@ -706,7 +746,7 @@ impl BrowserApp {
                     self.context_menu.close();
                     self.needs_redraw = true;
                 }
-                "Up" if !self.context_menu.items.is_empty() => {
+                k if key_matches(k, "Up") && !self.context_menu.items.is_empty() => {
                     let next = self
                         .context_menu
                         .hovered_index
@@ -721,7 +761,7 @@ impl BrowserApp {
                     self.context_menu.hovered_index = Some(next);
                     self.needs_redraw = true;
                 }
-                "Down" if !self.context_menu.items.is_empty() => {
+                k if key_matches(k, "Down") && !self.context_menu.items.is_empty() => {
                     let next = self
                         .context_menu
                         .hovered_index
@@ -784,9 +824,39 @@ impl BrowserApp {
     }
 
     fn handle_address_bar_key(&mut self, key: &str) {
+        let extend = self.shift_pressed;
+        if self.ctrl_pressed {
+            match key {
+                "a" | "A" => {
+                    self.address_bar.select_all();
+                    self.needs_redraw = true;
+                    return;
+                }
+                "c" | "C" => {
+                    let _ = self.address_bar.copy_selection();
+                    return;
+                }
+                "x" | "X" => {
+                    if self.address_bar.cut_selection() {
+                        self.update_autocomplete();
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
+                "v" | "V" => {
+                    if self.address_bar.paste_from_clipboard() {
+                        self.update_autocomplete();
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match key {
             "Enter" => {
-                let url = self.address_bar_text.trim().to_string();
+                let url = self.address_bar.text().trim().to_string();
                 if !url.is_empty() {
                     let nav_url = if let Some(idx) = self.autocomplete.hovered_index {
                         self.autocomplete
@@ -800,19 +870,42 @@ impl BrowserApp {
                     self.navigate_to(&nav_url);
                 }
                 self.address_bar_focused = false;
+                self.address_bar_ime_preedit.clear();
                 self.autocomplete.clear();
             }
             "Escape" => {
                 self.address_bar_focused = false;
+                self.address_bar_ime_preedit.clear();
                 self.autocomplete.clear();
                 self.update_address_bar_from_active_tab();
             }
             "Backspace" => {
-                self.address_bar_text.pop();
+                self.address_bar.delete_backward();
                 self.update_autocomplete();
                 self.needs_redraw = true;
             }
-            "Down" => {
+            "Delete" => {
+                self.address_bar.delete_forward();
+                self.update_autocomplete();
+                self.needs_redraw = true;
+            }
+            k if key_matches(k, "Left") => {
+                self.address_bar.move_left(extend);
+                self.needs_redraw = true;
+            }
+            k if key_matches(k, "Right") => {
+                self.address_bar.move_right(extend);
+                self.needs_redraw = true;
+            }
+            "Home" => {
+                self.address_bar.move_home(extend);
+                self.needs_redraw = true;
+            }
+            "End" => {
+                self.address_bar.move_end(extend);
+                self.needs_redraw = true;
+            }
+            k if key_matches(k, "Down") => {
                 if !self.autocomplete.suggestions.is_empty() {
                     let next = self
                         .autocomplete
@@ -823,7 +916,7 @@ impl BrowserApp {
                     self.needs_redraw = true;
                 }
             }
-            "Up" => {
+            k if key_matches(k, "Up") => {
                 if let Some(i) = self.autocomplete.hovered_index {
                     if i > 0 {
                         self.autocomplete.hovered_index = Some(i - 1);
@@ -835,14 +928,14 @@ impl BrowserApp {
             }
             "Tab" => {
                 if let Some(sug) = self.autocomplete.suggestions.first() {
-                    self.address_bar_text = sug.url().to_string();
+                    self.address_bar.set_text(sug.url().to_string());
                     self.autocomplete.clear();
                     self.needs_redraw = true;
                 }
             }
             _ => {
                 if key.len() == 1 {
-                    self.address_bar_text.push_str(key);
+                    self.address_bar.insert_str(key);
                     self.update_autocomplete();
                     self.needs_redraw = true;
                 }
@@ -856,7 +949,26 @@ impl BrowserApp {
             match key {
                 "l" | "L" => {
                     self.address_bar_focused = true;
-                    self.address_bar_text.clear();
+                    self.address_bar.select_all();
+                    self.needs_redraw = true;
+                }
+                "c" | "C" => {
+                    if self.address_bar_focused {
+                        let _ = self.address_bar.copy_selection();
+                    } else if self.copy_page_selection() {
+                        self.needs_redraw = true;
+                    }
+                }
+                "v" | "V" if self.address_bar_focused && self.address_bar.paste_from_clipboard() => {
+                    self.update_autocomplete();
+                    self.needs_redraw = true;
+                }
+                "x" | "X" if self.address_bar_focused && self.address_bar.cut_selection() => {
+                    self.update_autocomplete();
+                    self.needs_redraw = true;
+                }
+                "a" | "A" if self.address_bar_focused => {
+                    self.address_bar.select_all();
                     self.needs_redraw = true;
                 }
                 "t" | "T" => {
@@ -914,10 +1026,10 @@ impl BrowserApp {
             "r" => {
                 self.refresh_page();
             }
-            "Left" => {
+            k if key_matches(k, "Left") => {
                 self.go_back();
             }
-            "Right" => {
+            k if key_matches(k, "Right") => {
                 self.go_forward();
             }
             "Home" => {
@@ -951,7 +1063,7 @@ impl BrowserApp {
 
     /// 更新自动补全建议
     fn update_autocomplete(&mut self) {
-        let query = self.address_bar_text.trim();
+        let query = self.address_bar.text().trim();
         if query.is_empty() {
             self.autocomplete.clear();
             return;
@@ -984,6 +1096,18 @@ impl BrowserApp {
         }
 
         if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
+            if self.address_bar_drag && self.address_bar_focused && self.left_button_down {
+                let s = self.scale_factor;
+                let font_size = 14.0 * s;
+                let (bar_x, _, _, _) = self.address_bar_layout();
+                let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
+                let idx = self
+                    .address_bar
+                    .x_to_cursor(rel_x, |t| self.measure_ui_text_width(t, font_size));
+                self.address_bar.set_cursor(idx, true);
+                self.needs_redraw = true;
+            }
+
             let toolbar_h = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * self.scale_factor;
             if (y as f32) < toolbar_h {
                 self.needs_redraw = true;
@@ -993,14 +1117,42 @@ impl BrowserApp {
             }
             self.update_tab_bar_drag(x, y);
         }
+
+        if self.page_selection_drag
+            && self.left_button_down
+            && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
+            && let Some(glyphs) = self.page_glyphs(tab_id)
+            && let Some(idx) = hit_test_glyph(&glyphs, doc_x, doc_y)
+            && let Some(sel) = self.page_selection.get_mut(&tab_id)
+        {
+            sel.focus = idx;
+            self.needs_redraw = true;
+        }
     }
 
     /// 处理鼠标点击（物理像素坐标）
     pub fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool, button: &str) {
-        if !pressed {
-            if button == "Left" {
+        if button == "Left" {
+            if pressed {
+                self.left_button_down = true;
+            } else {
+                self.left_button_down = false;
                 self.tab_bar_drag_press = None;
+                self.address_bar_drag = false;
+                if self.page_selection_drag {
+                    self.page_selection_drag = false;
+                    if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
+                        let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
+                        if collapsed
+                            && let Some(href) = self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y))
+                        {
+                            self.navigate_to(&href);
+                        }
+                    }
+                }
+                return;
             }
+        } else if !pressed {
             return;
         }
 
@@ -1098,7 +1250,7 @@ impl BrowserApp {
                 }
             }
 
-            if self.uses_custom_window_controls() && self.is_tab_bar_blank_hit(x_f, y_f, width, s) {
+            if self.supports_tab_bar_window_drag() && self.is_tab_bar_blank_hit(x_f, y_f, width, s) {
                 self.handle_tab_bar_blank_press(x, y);
             }
             return;
@@ -1124,10 +1276,7 @@ impl BrowserApp {
             }
 
             if x_f >= addr_bar_x && x_f <= width - addr_padding {
-                if !self.address_bar_focused {
-                    self.address_bar_focused = true;
-                    self.needs_redraw = true;
-                }
+                self.handle_address_bar_press(x, y);
                 return;
             }
         }
@@ -1172,15 +1321,21 @@ impl BrowserApp {
 
         if y_f >= page_top {
             if button == "Left"
-                && let Some(tab_id) = self.shell.active_tab_id()
+                && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
+                && let Some(glyphs) = self.page_glyphs(tab_id)
             {
-                let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
-                let doc_x = x_f / s;
-                let doc_y = (y_f - page_top + scroll_y) / s;
-                if let Some(href) = self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y)) {
-                    self.navigate_to(&href);
-                    return;
+                let idx = hit_test_glyph(&glyphs, doc_x, doc_y).unwrap_or(0);
+                if self.shift_pressed {
+                    if let Some(sel) = self.page_selection.get_mut(&tab_id) {
+                        sel.focus = idx;
+                    } else {
+                        self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
+                    }
+                } else {
+                    self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
                 }
+                self.page_selection_drag = true;
+                self.needs_redraw = true;
             }
 
             if self.address_bar_focused {
@@ -1213,18 +1368,152 @@ impl BrowserApp {
         }
     }
 
+    /// 处理 IME 输入（地址栏）
+    pub fn handle_ime(&mut self, event: zero_host_runtime::event::ImeEvent) {
+        if !self.address_bar_focused {
+            return;
+        }
+        match event {
+            zero_host_runtime::event::ImeEvent::Preedit { text, .. } => {
+                self.address_bar_ime_preedit = text;
+                self.needs_redraw = true;
+            }
+            zero_host_runtime::event::ImeEvent::Commit(text) => {
+                self.address_bar_ime_preedit.clear();
+                if !text.is_empty() {
+                    self.address_bar.insert_str(&text);
+                    self.update_autocomplete();
+                }
+                self.needs_redraw = true;
+            }
+            zero_host_runtime::event::ImeEvent::Enabled | zero_host_runtime::event::ImeEvent::Disabled => {}
+        }
+    }
+
+    fn copy_page_selection(&self) -> bool {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return false;
+        };
+        let Some(sel) = self.page_selection.get(&tab_id) else {
+            return false;
+        };
+        if sel.is_collapsed() {
+            return false;
+        }
+        let Some(glyphs) = self.page_glyphs(tab_id) else {
+            return false;
+        };
+        let text = GlyphSelection::selected_text(&glyphs, sel);
+        if text.is_empty() {
+            return false;
+        }
+        crate::clipboard::write_text(&text)
+    }
+
+    fn page_doc_point(&self, x_f: f32, y_f: f32) -> Option<(TabId, f32, f32)> {
+        let s = self.scale_factor;
+        let tab_id = self.shell.active_tab_id()?;
+        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let find_bar_h = if self.shell.find_state().is_active() {
+            layout::FIND_BAR_HEIGHT * s
+        } else {
+            0.0
+        };
+        let page_top = chrome_top + find_bar_h;
+        let content_bottom = self.physical_size.1 as f32 - layout::STATUS_BAR_HEIGHT * s;
+        if y_f < page_top || y_f >= content_bottom {
+            return None;
+        }
+        let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
+        Some((tab_id, x_f / s, (y_f - page_top + scroll_y) / s))
+    }
+
+    /// 与渲染一致的页面 glyph 列表（含字体 reflow）。
+    fn page_glyphs(&self, tab_id: TabId) -> Option<Vec<zero_render_foundation::primitive::GlyphPrimitive>> {
+        let wv = self.webviews.get(&tab_id)?;
+        let mut glyphs = wv.last_render()?.primitives.glyphs.clone();
+        if let Some(primary) = self.font_id {
+            reflow_webview_glyphs(&mut glyphs, &self.font_loader, primary);
+        }
+        Some(glyphs)
+    }
+
+    fn address_bar_layout(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
+        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
+        let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
+        let bar_y = layout::TAB_BAR_HEIGHT * s + 4.0 * s;
+        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 8.0 * s;
+        (bar_x, bar_y, bar_w, bar_h)
+    }
+
+    fn address_bar_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let s = self.scale_factor;
+        let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
+        let addr_bar_h = layout::ADDRESS_BAR_HEIGHT * s;
+        if y_f >= tab_bar_h + addr_bar_h {
+            return false;
+        }
+        let (bar_x, _, bar_w, _) = self.address_bar_layout();
+        x_f >= bar_x && x_f <= bar_x + bar_w
+    }
+
+    fn handle_address_bar_press(&mut self, x: f64, y: f64) {
+        let s = self.scale_factor;
+        let font_size = 14.0 * s;
+        let (bar_x, _, _, _) = self.address_bar_layout();
+        let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
+        let measure = |t: &str| self.measure_ui_text_width(t, font_size);
+        let idx = self.address_bar.x_to_cursor(rel_x, measure);
+        let extend = self.shift_pressed;
+        if let Some((last_t, last_x, last_y)) = self.address_bar_last_click
+            && last_t.elapsed() < TAB_BAR_DOUBLE_CLICK_INTERVAL
+            && (x - last_x).abs() < 5.0
+            && (y - last_y).abs() < 5.0
+        {
+            self.address_bar.select_word_at(idx);
+            self.address_bar_last_click = None;
+            self.address_bar_focused = true;
+            self.address_bar_drag = false;
+            self.needs_redraw = true;
+            return;
+        }
+        self.address_bar_last_click = Some((Instant::now(), x, y));
+        self.address_bar.set_cursor(idx, extend);
+        self.address_bar_focused = true;
+        self.address_bar_drag = true;
+        self.autocomplete.clear();
+        self.needs_redraw = true;
+    }
+
     /// 显示右键上下文菜单
     fn show_context_menu(&mut self, x: f64, y: f64) {
         let s = self.scale_factor;
         let y_f = y as f32;
+        let x_f = x as f32;
         let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
 
-        // 工具栏区域不显示上下文菜单
-        if y_f < chrome_top {
+        let context_type = if self.address_bar_hit_test(x_f, y_f) {
+            ContextType::Editable
+        } else if y_f < chrome_top {
             return;
-        }
+        } else if let Some(tab_id) = self.shell.active_tab_id()
+            && self.page_selection.get(&tab_id).is_some_and(|sel| !sel.is_collapsed())
+        {
+            ContextType::Selection
+        } else if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
+            && self
+                .webviews
+                .get(&tab_id)
+                .and_then(|wv| wv.hit_test_link(doc_x, doc_y))
+                .is_some()
+        {
+            ContextType::Link
+        } else {
+            ContextType::Page
+        };
 
-        let context_type = ContextType::Page;
         let menu = ContextMenu::new(context_type);
         let items: Vec<String> = menu
             .items()
@@ -1268,8 +1557,25 @@ impl BrowserApp {
             "后退" => self.go_back(),
             "前进" => self.go_forward(),
             "重新加载" => self.refresh_page(),
+            "复制" => {
+                if self.context_menu.context_type == ContextType::Editable {
+                    let _ = self.address_bar.copy_selection();
+                } else {
+                    let _ = self.copy_page_selection();
+                }
+            }
+            "剪切" if self.address_bar.cut_selection() => {
+                self.update_autocomplete();
+            }
+            "粘贴" if self.address_bar.paste_from_clipboard() => {
+                self.update_autocomplete();
+            }
+            "全选" => {
+                self.address_bar.select_all();
+            }
             _ => {}
         }
+        self.needs_redraw = true;
     }
 
     /// 上下文菜单命中检测
@@ -1502,7 +1808,7 @@ impl BrowserApp {
     /// 从活跃标签更新地址栏文本
     fn update_address_bar_from_active_tab(&mut self) {
         if let Some(tab) = self.shell.active_tab() {
-            self.address_bar_text = tab.url().unwrap_or("").to_string();
+            self.address_bar.set_text(tab.url().unwrap_or("").to_string());
         }
     }
 }
@@ -1517,6 +1823,18 @@ pub fn is_wayland() -> bool {
                 .unwrap_or(false)
     }
     #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// macOS 一体化标题栏模式
+pub fn uses_unified_titlebar() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
     {
         false
     }
