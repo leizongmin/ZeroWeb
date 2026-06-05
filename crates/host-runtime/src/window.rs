@@ -150,8 +150,7 @@ fn window_attributes_from_config(config: &WindowConfig) -> winit::window::Window
         attrs = attrs
             .with_titlebar_transparent(true)
             .with_title_hidden(true)
-            .with_fullsize_content_view(true)
-            .with_movable_by_window_background(true);
+            .with_fullsize_content_view(true);
     }
     attrs
 }
