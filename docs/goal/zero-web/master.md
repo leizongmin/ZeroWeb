@@ -1793,7 +1793,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | **text-align-last** | ✅ 已实现（属性解析 + 样式管线集成） |
 | **font-variant-numeric** | ✅ 已实现（属性解析 + 样式管线集成） |
 | **text-shadow** | ✅ 已实现（属性解析 + 样式管线集成 + **渲染集成**，继承属性） |
-| **box-shadow** | ✅ 已实现（属性解析 + 样式管线集成，含 inset） |
+| **box-shadow** | ✅ 已实现（属性解析 + 样式管线集成 + **渲染集成** ShadowPrimitive，含 inset） |
 | **outline 简写** | ✅ 已实现（outline-width/style/color 简写展开） |
 | **list-style-image** | ✅ 已实现（none/url，继承属性） |
 | **column-gap** | ✅ 已实现（长度值，非继承） |
