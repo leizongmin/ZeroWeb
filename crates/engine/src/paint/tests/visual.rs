@@ -1564,3 +1564,107 @@ fn test_column_rules_single_column() {
     let strokes = &painter.primitives().strokes;
     assert_eq!(strokes.len(), 0, "1 column should not produce column-rule strokes");
 }
+
+/// 测试 list-style-image:url() 生成 ImagePrimitive 标记。
+#[test]
+fn test_list_style_image_url() {
+    use zero_style_system::ListStyleImageComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    doc.append_child(ul, li);
+
+    let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
+
+    let mut style = ComputedStyle::default();
+    style.list_style_image = ListStyleImageComputedValue::Url("bullet.png".to_string());
+    let mut styles = HashMap::new();
+    styles.insert(li, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let images = &painter.primitives().images;
+    assert!(
+        images
+            .iter()
+            .any(|img| img.rect.size.width > 0.0 && img.rect.size.height > 0.0),
+        "list-style-image should generate at least one image primitive"
+    );
+}
+
+/// 测试 list-style-image:none 不生成图片图元。
+#[test]
+fn test_list_style_image_none() {
+    let mut doc = zero_dom::Document::new();
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    doc.append_child(ul, li);
+
+    let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
+
+    let mut style = ComputedStyle::default();
+    // list-style-image defaults to None
+    style.list_style_type = zero_css_parser::values::ListStyleTypeValue::Disc;
+    let mut styles = HashMap::new();
+    styles.insert(li, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let images = &painter.primitives().images;
+    assert_eq!(
+        images.len(),
+        0,
+        "list-style-image:none should not generate image primitives"
+    );
+}
+
+/// 测试 empty-cells:hide 跳过空单元格的背景绘制。
+#[test]
+fn test_empty_cells_hide() {
+    use zero_style_system::EmptyCellsComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let td = doc.create_element("td");
+    let layout = make_box(Some(td), 0.0, 0.0, 100.0, 50.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.empty_cells = EmptyCellsComputedValue::Hide;
+    // No children → empty cell
+    let mut styles = HashMap::new();
+    styles.insert(td, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // empty-cells:hide should skip background for empty cell
+    let fills = &painter.primitives().fills;
+    assert!(
+        fills.iter().all(|f| f.color.r != 255 || f.color.a == 0),
+        "empty-cells:hide should not render background for empty cell"
+    );
+}
+
+/// 测试 empty-cells:show 绘制空单元格的背景。
+#[test]
+fn test_empty_cells_show() {
+    use zero_style_system::EmptyCellsComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let td = doc.create_element("td");
+    let layout = make_box(Some(td), 0.0, 0.0, 100.0, 50.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.empty_cells = EmptyCellsComputedValue::Show;
+    let mut styles = HashMap::new();
+    styles.insert(td, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(
+        fills.iter().any(|f| f.color.r == 255 && f.color.a > 0),
+        "empty-cells:show should render background for empty cell"
+    );
+}

@@ -114,7 +114,10 @@ impl Painter {
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
-            if !hidden {
+            let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
+                && box_node.children.is_empty();
+
+            if !hidden && !skip_empty_cell {
                 self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
@@ -128,6 +131,9 @@ impl Painter {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
                 self.paint_outline(box_node, abs_x, abs_y, style);
+            }
+
+            if !hidden {
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
                 }
@@ -192,7 +198,11 @@ impl Painter {
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
-            if !hidden {
+            // empty-cells:hide — 空表格单元格不绘制背景和边框
+            let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
+                && box_node.children.is_empty();
+
+            if !hidden && !skip_empty_cell {
                 // 0. box-shadow（位于背景之下）
                 self.paint_box_shadow(box_node, abs_x, abs_y, style);
 
@@ -221,7 +231,10 @@ impl Painter {
 
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
+            }
 
+            // 列表标记和文本始终绘制（不受 empty-cells 影响）
+            if !hidden {
                 // 4. 列表标记绘制（bullets/numbers，位于文本之前）
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
@@ -1165,6 +1178,26 @@ impl Painter {
         match &node.kind {
             NodeKind::Element(elem) if elem.local_name() == "li" => {}
             _ => return,
+        }
+
+        // list-style-image 优先于 list-style-type
+        match &style.list_style_image {
+            zero_style_system::ListStyleImageComputedValue::Url(url) => {
+                // 图片标记：使用 ImagePrimitive，尺寸约 1em
+                let font_size: f32 = match style.font_size {
+                    LengthValue::Px(s) => s as f32,
+                    _ => 16.0,
+                };
+                let img_size = font_size;
+                let marker_x = abs_x + box_node.border_left - img_size * 1.5;
+                let marker_y = abs_y + box_node.border_top + box_node.padding_top;
+                self.primitives.add_image(ImagePrimitive {
+                    rect: Rect::new(marker_x, marker_y, img_size, img_size),
+                    image_key: ImageKey::new(simple_hash(url)),
+                });
+                return;
+            }
+            zero_style_system::ListStyleImageComputedValue::None => {}
         }
 
         // 检查 list-style-type

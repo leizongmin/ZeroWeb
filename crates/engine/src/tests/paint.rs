@@ -1008,10 +1008,10 @@ fn test_paint_empty_cells_hide_no_panic() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, Some(&doc));
 
-    // 验证 paint 完成且产生了输出
+    // empty-cells:hide + no children → 不绘制背景和边框
     assert!(
-        !painter.primitives().fills.is_empty(),
-        "empty-cells:hide 元素 paint 应生成填充图元"
+        painter.primitives().fills.is_empty(),
+        "empty-cells:hide empty cell should not generate fill primitives"
     );
 }
 

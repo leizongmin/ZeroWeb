@@ -666,10 +666,8 @@ impl BrowserApp {
             .webviews
             .get(&tab_id)
             .and_then(|wv| {
-                wv.document_height().or_else(|| {
-                    wv.last_render()
-                        .map(|r| primitives_content_height(&r.primitives))
-                })
+                wv.document_height()
+                    .or_else(|| wv.last_render().map(|r| primitives_content_height(&r.primitives)))
             })
             .unwrap_or(0.0);
 
