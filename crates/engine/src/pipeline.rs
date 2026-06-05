@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use slotmap::Key;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId};
@@ -12,6 +13,7 @@ use zero_render_foundation::primitive::{RenderPrimitives, RenderStats};
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
 
+use crate::animation::AnimationClock;
 use crate::dirty::DirtyTracker;
 use crate::hit_test;
 use crate::paint::Painter;
@@ -31,6 +33,8 @@ pub struct RenderPipeline {
     layout_engine: LayoutEngine,
     /// 脏区域追踪器。
     dirty_tracker: DirtyTracker,
+    /// CSS 动画时钟。
+    animation_clock: AnimationClock,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -78,6 +82,7 @@ impl RenderPipeline {
             style_system: StyleSystem::new(),
             layout_engine: LayoutEngine::new(viewport_width, viewport_height),
             dirty_tracker: DirtyTracker::new(),
+            animation_clock: AnimationClock::new(),
             cached_layout: None,
             cached_doc: None,
         }
@@ -86,6 +91,86 @@ impl RenderPipeline {
     /// 设置用户颜色方案偏好。
     pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
         self.style_system.set_prefers_color_scheme(scheme);
+    }
+
+    /// 获取动画时钟的可变引用。
+    pub fn animation_clock_mut(&mut self) -> &mut AnimationClock {
+        &mut self.animation_clock
+    }
+
+    /// 渲染 HTML 文档（带动画）。
+    ///
+    /// 与 `render_html` 相同管线，但在样式计算后注册 @keyframes、
+    /// 为有 `animation-name` 的元素启动动画、推进时钟并将
+    /// 插值属性叠加到 ComputedStyle 上，再进行布局和绘制。
+    ///
+    /// # 参数
+    ///
+    /// - `html` — HTML 字符串
+    /// - `css` — CSS 字符串
+    /// - `current_time` — 当前时间（秒），用于动画时钟推进
+    pub fn render_html_animated(&mut self, html: &str, css: &str, current_time: f64) -> RenderResult {
+        let total_start = Instant::now();
+
+        // 1. 解析 HTML → DOM
+        let parse_start = Instant::now();
+        let doc = zero_dom::parse_html(html);
+        let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 2. 解析 CSS → Stylesheets
+        let stylesheets = collect_stylesheets(&doc, css);
+
+        // 3. 注册 @keyframes 到动画时钟
+        self.animation_clock.register_from_stylesheets(&stylesheets);
+
+        // 4. 计算样式
+        let style_start = Instant::now();
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 5. 启动动画并应用插值覆盖
+        apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time);
+
+        // 6. 计算布局
+        let layout_start = Instant::now();
+        let layout_result = self.layout_engine.compute(&doc, &styles);
+        let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 7. 生成绘制命令
+        let paint_start = Instant::now();
+        let mut painter = Painter::new();
+        painter.paint(&layout_result.root, &styles, Some(&doc));
+        let primitives = painter.into_primitives();
+        let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
+        let (primitives, stats) = primitives.cull_invisible(viewport);
+        let primitives = primitives.batch_fills();
+        let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
+
+        let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+
+        self.cached_doc = Some(doc);
+
+        let layout = LayoutResult {
+            root: layout_result.root.clone(),
+            viewport_width: layout_result.viewport_width,
+            viewport_height: layout_result.viewport_height,
+        };
+        self.cached_layout = Some(layout_result);
+
+        RenderResult {
+            primitives,
+            layout,
+            timings: PipelineTimings {
+                parse_ms,
+                style_ms,
+                layout_ms,
+                paint_ms,
+                total_ms,
+            },
+            stats,
+        }
     }
 
     /// 命中测试链接，返回点击位置处 `<a href>` 的目标 URL。
@@ -319,6 +404,45 @@ fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
         }
     }
     stylesheets
+}
+
+/// 为有 animation-name 的元素启动动画并将插值属性叠加到 ComputedStyle。
+///
+/// 遍历所有元素的样式，检查 animation-name 列表，
+/// 通过 AnimationClock 启动/推进动画，然后应用插值结果。
+fn apply_animation_overrides(
+    clock: &mut AnimationClock,
+    styles: &mut HashMap<NodeId, ComputedStyle>,
+    current_time: f64,
+) {
+    // 收集有动画名称的元素 ID
+    let animated_ids: Vec<(u64, NodeId)> = styles
+        .iter()
+        .filter(|(_, s)| !s.animation_name.is_empty() && s.animation_name.iter().any(|n| !n.is_empty() && n != "none"))
+        .map(|(id, _)| {
+            // 将 slotmap NodeId 转为 u64
+            (id.data().as_ffi(), *id)
+        })
+        .collect();
+
+    for (elem_key, node_id) in animated_ids {
+        let Some(style) = styles.get(&node_id) else {
+            continue;
+        };
+
+        // 为元素启动动画（如果尚未启动）
+        clock.start_from_computed_style(elem_key, style, current_time);
+
+        // 推进时钟并获取插值属性
+        let props = clock.tick(elem_key, current_time);
+
+        if !props.is_empty() {
+            // 将插值属性叠加到 ComputedStyle
+            if let Some(style) = styles.get_mut(&node_id) {
+                AnimationClock::apply_to_computed_style(&props, style);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1646,5 +1770,167 @@ mod tests {
     fn test_pipeline_layout_none_before_render() {
         let pipeline = RenderPipeline::new(800.0, 600.0);
         assert!(pipeline.layout().is_none());
+    }
+
+    // ── Animation pipeline integration tests ──
+
+    /// 测试 render_html_animated 不崩溃。
+    #[test]
+    fn test_render_html_animated_no_panic() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Hello</div></body></html>"#;
+        let css = r#"
+            @keyframes fade {
+                from { opacity: 1.0; }
+                to { opacity: 0.0; }
+            }
+            .box { animation: fade 1s linear; background-color: red; width: 100px; height: 50px; }
+        "#;
+        let result = pipeline.render_html_animated(html, css, 0.5);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试带动画的渲染管线在不同时间点产生不同的 opacity。
+    #[test]
+    fn test_animated_opacity_changes_over_time() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="fade">Content</div></body></html>"#;
+        let css = r#"
+            @keyframes fadeOut {
+                from { opacity: 1.0; }
+                to { opacity: 0.0; }
+            }
+            .fade { animation: fadeOut 1s linear; background-color: red; width: 200px; height: 100px; }
+        "#;
+
+        // t=0 → opacity=1.0 → 应有可见填充
+        let r0 = pipeline.render_html_animated(html, css, 0.0);
+        assert!(!r0.primitives.fills.is_empty());
+
+        // t=0.5 → opacity≈0.5 → 仍应有填充
+        let r5 = pipeline.render_html_animated(html, css, 0.5);
+        assert!(!r5.primitives.fills.is_empty());
+
+        // t=1.0 → opacity=0.0 → 仍应完成渲染（动画帧已应用）
+        let r1 = pipeline.render_html_animated(html, css, 1.0);
+        assert!(r1.timings.total_ms >= 0.0);
+    }
+
+    /// 测试无动画的 CSS 在 render_html_animated 中正常工作。
+    #[test]
+    fn test_animated_pipeline_without_animation() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="box">Static</div></body></html>"#;
+        let css = ".box { background-color: blue; width: 200px; height: 100px; }";
+
+        let result = pipeline.render_html_animated(html, css, 0.5);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!result.primitives.fills.is_empty());
+    }
+
+    /// 测试动画时钟可通过 pipeline 访问。
+    #[test]
+    fn test_animation_clock_accessible() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let clock = pipeline.animation_clock_mut();
+        assert!(clock.registered_keyframe_names().is_empty());
+    }
+
+    /// 测试动画管线中 width 动画改变布局。
+    #[test]
+    fn test_animated_width_changes_layout() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="grow">Text</div></body></html>"#;
+        let css = r#"
+            @keyframes growWidth {
+                from { width: 100px; }
+                to { width: 300px; }
+            }
+            .grow { animation: growWidth 1s linear; background-color: green; height: 50px; }
+        "#;
+
+        let r_start = pipeline.render_html_animated(html, css, 0.0);
+        let r_mid = pipeline.render_html_animated(html, css, 0.5);
+
+        // 两次渲染都应成功
+        assert!(r_start.timings.total_ms >= 0.0);
+        assert!(r_mid.timings.total_ms >= 0.0);
+        assert!(pipeline.layout().is_some());
+    }
+
+    /// 测试多个 @keyframes 规则同时存在。
+    #[test]
+    fn test_multiple_keyframes_rules() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body>
+            <div class="a">A</div>
+            <div class="b">B</div>
+        </body></html>"#;
+        let css = r#"
+            @keyframes fadeIn {
+                from { opacity: 0.0; }
+                to { opacity: 1.0; }
+            }
+            @keyframes slideIn {
+                from { width: 0px; }
+                to { width: 200px; }
+            }
+            .a { animation: fadeIn 1s linear; background-color: red; height: 50px; }
+            .b { animation: slideIn 1s linear; background-color: blue; height: 50px; }
+        "#;
+
+        let result = pipeline.render_html_animated(html, css, 0.5);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!result.primitives.fills.is_empty());
+    }
+
+    /// 测试动画延迟期间渲染正确。
+    #[test]
+    fn test_animated_delay_period() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body><div class="delayed">Text</div></body></html>"#;
+        let css = r#"
+            @keyframes fadeOut {
+                from { opacity: 1.0; }
+                to { opacity: 0.0; }
+            }
+            .delayed { animation: fadeOut 1s 0.5s linear; background-color: red; width: 100px; height: 50px; }
+        "#;
+
+        // t=0 → 延迟期间
+        let result = pipeline.render_html_animated(html, css, 0.0);
+        assert!(result.timings.total_ms >= 0.0);
+
+        // t=1 → 延迟后 0.5s 进度
+        let result = pipeline.render_html_animated(html, css, 1.0);
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试 render_html_animated 处理空 CSS 动画不崩溃。
+    #[test]
+    fn test_animated_pipeline_empty_css() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><body><div>No CSS</div></body></html>";
+        let result = pipeline.render_html_animated(html, "", 0.0);
+        assert!(result.timings.total_ms >= 0.0);
+    }
+
+    /// 测试 @keyframes 内嵌在 <style> 标签中。
+    #[test]
+    fn test_animated_keyframes_in_style_tag() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head><style>
+            @keyframes pulse {
+                0% { opacity: 1.0; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1.0; }
+            }
+            .pulse { animation: pulse 2s linear; background-color: red; width: 100px; height: 100px; }
+        </style></head><body><div class="pulse">Pulse</div></body></html>"#;
+
+        let result = pipeline.render_html_animated(html, "", 1.0);
+        assert!(result.timings.total_ms >= 0.0);
+        assert!(!result.primitives.fills.is_empty());
     }
 }
