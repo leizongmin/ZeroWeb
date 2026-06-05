@@ -100,6 +100,13 @@ pub const NAV_BUTTON: Color = Color {
     b: 180,
     a: 255,
 };
+/// 不可用导航按钮颜色（后退/前进无历史）
+pub const NAV_BUTTON_DISABLED: Color = Color {
+    r: 90,
+    g: 90,
+    b: 90,
+    a: 255,
+};
 /// 分隔线颜色
 pub const SEPARATOR: Color = Color {
     r: 70,

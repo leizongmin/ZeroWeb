@@ -5,6 +5,13 @@
 // --- BrowserApp 渲染 impl ---
 
 impl BrowserApp {
+    /// 鼠标指针是否落在矩形区域内（物理像素坐标）
+    fn pointer_in_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        let mx = self.mouse_pos.0 as f32;
+        let my = self.mouse_pos.1 as f32;
+        mx >= x && mx < x + w && my >= y && my < y + h
+    }
+
     /// 构建浏览器 UI 渲染图元（物理像素坐标）
     fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
         let s = self.scale_factor;
@@ -44,7 +51,7 @@ impl BrowserApp {
         ));
 
         // 5. 导航按钮
-        self.render_nav_buttons(&mut fills, addr_y, font_size, s);
+        self.render_nav_buttons(&mut fills, &mut glyphs, addr_y, font_size, s);
 
         // 6. 地址栏
         self.render_address_bar(&mut fills, &mut glyphs, width, addr_y, font_size, s);
@@ -163,15 +170,26 @@ impl BrowserApp {
             }
 
             let close_x = x + tab_w - 24.0 * s;
-            let close_cx = close_x + 12.0 * s;
-            let close_cy = 8.0 * s + font_size * 0.5;
-            draw_close_x(
-                fills,
+            let close_hit = 24.0 * s;
+            let close_cx = close_x + close_hit / 2.0;
+            let close_cy = tab_bar_h / 2.0;
+            let close_hovered = self.pointer_in_rect(close_x, 0.0, close_hit, tab_bar_h);
+            if close_hovered && is_active {
+                push_circle_fill(fills, close_cx, close_cy, close_hit, colors::TAB_HOVER_BG);
+            }
+            let close_color = if close_hovered {
+                colors::ADDRESS_BAR_TEXT
+            } else {
+                colors::TAB_CLOSE
+            };
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                crate::ui_icons::Icon::Close,
                 close_cx,
                 close_cy,
-                10.0 * s,
-                (1.2 * s).max(1.0),
-                colors::TAB_CLOSE,
+                12.0 * s,
+                close_color,
             );
 
             self.tab_layout.push((tab.id(), x, tab_w));
@@ -179,7 +197,7 @@ impl BrowserApp {
         }
 
         // 新建标签按钮 (+)，紧跟最后一个标签
-        if self.font_id.is_some() {
+        {
             let btn_x = x;
             let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
             let is_hovered = {
@@ -188,22 +206,40 @@ impl BrowserApp {
                 mx >= btn_x && mx < btn_x + new_tab_btn_w && my < tab_bar_h
             };
             if is_hovered {
-                fills.push(rect_fill(btn_x, 0.0, new_tab_btn_w, tab_bar_h, colors::TAB_HOVER_BG));
+                push_circle_fill(
+                    fills,
+                    btn_x + new_tab_btn_w / 2.0,
+                    tab_bar_h / 2.0,
+                    24.0 * s,
+                    colors::TAB_HOVER_BG,
+                );
             }
-            let plus_advance = self.measure_ui_text_width("+", font_size);
-            let text_x = btn_x + (new_tab_btn_w - plus_advance) / 2.0;
-            self.draw_ui_text("+", text_x, 8.0 * s, font_size, colors::NEW_TAB_BUTTON, glyphs);
+            let plus_color = if is_hovered {
+                colors::ADDRESS_BAR_TEXT
+            } else {
+                colors::NEW_TAB_BUTTON
+            };
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                crate::ui_icons::Icon::Plus,
+                btn_x + new_tab_btn_w / 2.0,
+                tab_bar_h / 2.0,
+                16.0 * s,
+                plus_color,
+            );
         }
 
         if self.uses_custom_window_controls() {
-            self.render_window_controls(fills, width, s);
+            self.render_window_controls(fills, glyphs, width, s);
         }
     }
 
     /// 渲染窗口控制按钮（最小化 / 最大化 / 关闭）
     fn render_window_controls(
-        &self,
+        &mut self,
         fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
         width: u32,
         s: f32,
     ) {
@@ -248,12 +284,13 @@ impl BrowserApp {
                     draw_hollow_square(fills, cx - size / 2.0, cy - size / 2.0, size, thickness, icon);
                 }
                 2 => {
-                    draw_close_x(
-                        fills,
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
+                        glyphs,
+                        crate::ui_icons::Icon::Close,
                         cx,
                         cy,
-                        10.0 * s,
-                        thickness,
+                        12.0 * s,
                         icon,
                     );
                 }
@@ -263,24 +300,52 @@ impl BrowserApp {
     }
 
     /// 渲染导航按钮（矢量图标，不依赖字体符号覆盖）
-    fn render_nav_buttons(&mut self, fills: &mut Vec<FillPrimitive>, y: f32, _font_size: f32, s: f32) {
+    fn render_nav_buttons(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        y: f32,
+        _font_size: f32,
+        s: f32,
+    ) {
         let x = 8.0 * s;
         let btn_w = layout::NAV_BUTTON_WIDTH * s;
         let btn_h = layout::ADDRESS_BAR_HEIGHT * s;
         let cy = y + btn_h / 2.0;
-        let icon_size = 12.0 * s;
-        let thickness = (1.5 * s).max(1.0);
-        let color = colors::NAV_BUTTON;
 
-        for i in 0..4 {
-            let cx = x + btn_w * i as f32 + btn_w / 2.0;
-            match i {
-                0 => draw_chevron_left(fills, cx, cy, icon_size, thickness, color),
-                1 => draw_chevron_right(fills, cx, cy, icon_size, thickness, color),
-                2 => draw_refresh_icon(fills, cx, cy, icon_size, thickness, color),
-                3 => draw_home_icon(fills, cx, cy, icon_size, thickness, color),
-                _ => {}
+        let nav_icons = [
+            crate::ui_icons::Icon::ChevronLeft,
+            crate::ui_icons::Icon::ChevronRight,
+            crate::ui_icons::Icon::Refresh,
+            crate::ui_icons::Icon::Home,
+        ];
+        let can_back = self
+            .shell
+            .active_tab()
+            .is_some_and(|tab| tab.history_index() > 0);
+        let can_forward = self.shell.active_tab().is_some_and(|tab| {
+            let history = tab.navigation_history();
+            !history.is_empty() && tab.history_index() < history.len() - 1
+        });
+        let nav_enabled = [can_back, can_forward, true, true];
+        let hover_diameter = 28.0 * s;
+
+        for (i, &icon) in nav_icons.iter().enumerate() {
+            let bx = x + btn_w * i as f32;
+            let cx = bx + btn_w / 2.0;
+            let enabled = nav_enabled[i];
+            let hovered = enabled && self.pointer_in_rect(bx, y, btn_w, btn_h);
+            if hovered {
+                push_circle_fill(fills, cx, cy, hover_diameter, colors::TAB_HOVER_BG);
             }
+            let color = if !enabled {
+                colors::NAV_BUTTON_DISABLED
+            } else if hovered {
+                colors::ADDRESS_BAR_TEXT
+            } else {
+                colors::NAV_BUTTON
+            };
+            crate::ui_icons::render_icon(&mut self.font_loader, glyphs, icon, cx, cy, 16.0 * s, color);
         }
     }
 
@@ -575,7 +640,7 @@ impl BrowserApp {
 
     /// 渲染查找栏
     fn render_find_bar(
-        &self,
+        &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
@@ -648,20 +713,35 @@ impl BrowserApp {
         let next_x = bar_x + bar_w - 70.0 * s;
         let close_x = bar_x + bar_w - 40.0 * s;
         let btn_w = 24.0 * s;
-        let icon_size = 10.0 * s;
-        let thickness = (1.2 * s).max(1.0);
-        let icon_color = colors::FIND_BAR_TEXT;
+        let bar_h = layout::FIND_BAR_HEIGHT * s;
+        let icon_size = 16.0 * s;
         let btn_cy = btn_y + btn_size * 0.5;
-        draw_chevron_up(fills, prev_x + btn_w / 2.0, btn_cy, icon_size, thickness, icon_color);
-        draw_chevron_down(fills, next_x + btn_w / 2.0, btn_cy, icon_size, thickness, icon_color);
-        draw_close_x(
-            fills,
-            close_x + btn_w / 2.0,
-            btn_cy,
-            icon_size,
-            thickness,
-            icon_color,
-        );
+
+        for (bx, icon) in [
+            (prev_x, crate::ui_icons::Icon::ChevronUp),
+            (next_x, crate::ui_icons::Icon::ChevronDown),
+            (close_x, crate::ui_icons::Icon::Close),
+        ] {
+            let icon_cx = bx + btn_w / 2.0;
+            let hovered = self.pointer_in_rect(bx, y, btn_w, bar_h);
+            if hovered {
+                push_circle_fill(fills, icon_cx, btn_cy, icon_size + 8.0 * s, colors::TAB_HOVER_BG);
+            }
+            let icon_color = if hovered {
+                colors::ADDRESS_BAR_TEXT
+            } else {
+                colors::FIND_BAR_TEXT
+            };
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                icon,
+                icon_cx,
+                btn_cy,
+                icon_size,
+                icon_color,
+            );
+        }
     }
 
     /// 渲染自动补全下拉
@@ -1036,149 +1116,25 @@ fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32,
     fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
 }
 
-/// 轴对齐矩形近似线段（UI 图标用，跨平台一致）
-fn draw_line(
-    fills: &mut Vec<FillPrimitive>,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len < f32::EPSILON {
+/// 实心圆盘（用于图标 hover 背景等）
+fn push_circle_fill(fills: &mut Vec<FillPrimitive>, cx: f32, cy: f32, diameter: f32, color: Color) {
+    let r = diameter * 0.5;
+    if r <= 0.0 {
         return;
     }
-    let steps = (len / thickness).ceil() as i32;
-    let steps = steps.clamp(1, 64);
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        fills.push(rect_fill(
-            x0 + dx * t - thickness / 2.0,
-            y0 + dy * t - thickness / 2.0,
-            thickness,
-            thickness,
-            color,
-        ));
+    let min_y = (cy - r).floor() as i32;
+    let max_y = (cy + r).ceil() as i32;
+    let r_sq = r * r;
+
+    for y in min_y..=max_y {
+        let yf = y as f32 + 0.5;
+        let dy = yf - cy;
+        let dx_max = (r_sq - dy * dy).max(0.0).sqrt();
+        if dx_max <= f32::EPSILON {
+            continue;
+        }
+        fills.push(rect_fill(cx - dx_max, y as f32, dx_max * 2.0, 1.0, color));
     }
-}
-
-fn draw_close_x(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx - half, cy - half, cx + half, cy + half, thickness, color);
-    draw_line(fills, cx + half, cy - half, cx - half, cy + half, thickness, color);
-}
-
-fn draw_chevron_left(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx + half * 0.35, cy - half, cx - half * 0.55, cy, thickness, color);
-    draw_line(fills, cx - half * 0.55, cy, cx + half * 0.35, cy + half, thickness, color);
-}
-
-fn draw_chevron_right(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx - half * 0.35, cy - half, cx + half * 0.55, cy, thickness, color);
-    draw_line(fills, cx + half * 0.55, cy, cx - half * 0.35, cy + half, thickness, color);
-}
-
-fn draw_chevron_up(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx - half, cy + half * 0.35, cx, cy - half * 0.55, thickness, color);
-    draw_line(fills, cx, cy - half * 0.55, cx + half, cy + half * 0.35, thickness, color);
-}
-
-fn draw_chevron_down(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx - half, cy - half * 0.35, cx, cy + half * 0.55, thickness, color);
-    draw_line(fills, cx, cy + half * 0.55, cx + half, cy - half * 0.35, thickness, color);
-}
-
-fn draw_refresh_icon(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let r = size * 0.38;
-    let segments = 10;
-    for i in 0..segments {
-        let a0 = std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / segments as f32;
-        let a1 = a0 + std::f32::consts::PI / segments as f32;
-        draw_line(
-            fills,
-            cx + a0.cos() * r,
-            cy + a0.sin() * r,
-            cx + a1.cos() * r,
-            cy + a1.sin() * r,
-            thickness,
-            color,
-        );
-    }
-    let tip_x = cx + r * 0.85;
-    let tip_y = cy - r * 0.55;
-    draw_line(fills, tip_x, tip_y, tip_x + size * 0.18, tip_y - size * 0.12, thickness, color);
-    draw_line(fills, tip_x, tip_y, tip_x - size * 0.05, tip_y - size * 0.18, thickness, color);
-}
-
-fn draw_home_icon(
-    fills: &mut Vec<FillPrimitive>,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    thickness: f32,
-    color: Color,
-) {
-    let half = size / 2.0;
-    draw_line(fills, cx, cy - half, cx - half * 0.9, cy - half * 0.05, thickness, color);
-    draw_line(fills, cx, cy - half, cx + half * 0.9, cy - half * 0.05, thickness, color);
-    let body_w = size * 0.72;
-    let body_h = size * 0.48;
-    let body_x = cx - body_w / 2.0;
-    let body_y = cy - half * 0.05;
-    fills.push(rect_fill(body_x, body_y, body_w, thickness, color));
-    fills.push(rect_fill(body_x, body_y, thickness, body_h, color));
-    fills.push(rect_fill(body_x + body_w - thickness, body_y, thickness, body_h, color));
-    fills.push(rect_fill(body_x, body_y + body_h - thickness, body_w, thickness, color));
 }
 
 /// 按真实字体 advance 重新排列 WebView 文本 glyph（与 UI 文本一致）

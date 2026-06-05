@@ -13,6 +13,8 @@ pub struct FontLoader {
     family_map: HashMap<String, Vec<u32>>,
     /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
     fallback_chain: Vec<u32>,
+    /// 预注册位图 glyph（font_id, glyph_id, size_bits）→ 光栅结果
+    bitmap_glyphs: HashMap<(u32, u32, u32), GlyphBitmap>,
 }
 
 impl FontLoader {
@@ -23,7 +25,19 @@ impl FontLoader {
             next_id: 0,
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
+            bitmap_glyphs: HashMap::new(),
         }
+    }
+
+    /// 注册预光栅化的位图 glyph（如图标 atlas），按 `(font_id, glyph_id, size_px)` 查找。
+    pub fn register_bitmap_glyph(&mut self, font_id: u32, glyph_id: u32, size_px: f32, bitmap: GlyphBitmap) {
+        self.bitmap_glyphs
+            .insert((font_id, glyph_id, size_px.to_bits()), bitmap);
+    }
+
+    /// 是否已注册指定位图 glyph。
+    pub fn has_bitmap_glyph(&self, font_id: u32, glyph_id: u32, size_px: f32) -> bool {
+        self.bitmap_glyphs.contains_key(&(font_id, glyph_id, size_px.to_bits()))
     }
 
     /// 设置回退字体链（按优先级排序）
@@ -89,6 +103,10 @@ impl FontLoader {
         code_point: char,
         size: f32,
     ) -> Result<(u32, GlyphBitmap), FontError> {
+        if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
+            return Ok((primary_id, bitmap.clone()));
+        }
+
         let mut chain = Vec::with_capacity(1 + self.fallback_chain.len());
         chain.push(primary_id);
         for &id in &self.fallback_chain {
@@ -120,6 +138,9 @@ impl FontLoader {
 
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
+        if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
+            return bitmap.advance;
+        }
         self.rasterize_glyph_with_fallback(primary_id, code_point, size)
             .map(|(_, bitmap)| bitmap.advance)
             .unwrap_or(size * 0.5)

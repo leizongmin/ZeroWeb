@@ -1095,6 +1095,13 @@ impl BrowserApp {
             }
         }
 
+        let s = self.scale_factor;
+        let y_f = y as f32;
+        let chrome_bottom = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        if y_f < chrome_bottom {
+            self.needs_redraw = true;
+        }
+
         if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
             if self.address_bar_drag && self.address_bar_focused && self.left_button_down {
                 let s = self.scale_factor;

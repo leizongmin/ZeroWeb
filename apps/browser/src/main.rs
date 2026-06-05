@@ -12,6 +12,7 @@ mod layout;
 mod page_selection;
 mod pages;
 mod text_input;
+mod ui_icons;
 
 use std::sync::Arc;
 
