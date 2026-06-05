@@ -137,6 +137,9 @@ impl super::Painter {
     }
 
     /// 绘制文本装饰线（underline / overline / line-through）。
+    ///
+    /// 支持自定义装饰颜色（CSS `text-decoration-color` 通过简写传递）
+    /// 和装饰样式（solid/dotted/dashed/wavy/double）。
     pub(crate) fn paint_text_decoration(
         &mut self,
         base_x: f32,

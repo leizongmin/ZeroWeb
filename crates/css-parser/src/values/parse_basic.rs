@@ -262,6 +262,18 @@ pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue
     }
 }
 
+/// 解析 CSS text-decoration-style 值。
+pub fn parse_text_decoration_style(value: &str) -> Option<TextDecorationStyleValue> {
+    match value.to_ascii_lowercase().as_str() {
+        "solid" => Some(TextDecorationStyleValue::Solid),
+        "double" => Some(TextDecorationStyleValue::Double),
+        "dotted" => Some(TextDecorationStyleValue::Dotted),
+        "dashed" => Some(TextDecorationStyleValue::Dashed),
+        "wavy" => Some(TextDecorationStyleValue::Wavy),
+        _ => None,
+    }
+}
+
 /// 解析 CSS text-transform 值。
 pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
     match value.to_ascii_lowercase().as_str() {

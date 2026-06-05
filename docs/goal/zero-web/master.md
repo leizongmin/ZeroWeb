@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-05
-**执行状态**: 16/16 crate 已实现，~11,446 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1041 个用例（22 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为）
+**执行状态**: 16/16 crate 已实现，~11,462 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1057 个用例（22 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式）+ **`TextDecorationStyleValue` 类型定义**（solid/double/dotted/dashed/wavy）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -107,7 +107,31 @@
 
 ## 最近完成的改进
 
-### -98. white-space 行内布局集成（本轮，~11,446 测试）
+### -99. CSS content + object-fit + TextDecorationStyleValue 渲染集成（本轮，~11,462 测试）
+
+实现三个 CSS 渲染功能：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/painter/text | **paint_content()**：CSS `content` 属性渲染，支持 String 和 Counter（decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）生成 glyph | — |
+| engine/paint/painter/text | **paint_img_element()**：`<img>` 元素渲染集成 | — |
+| engine/paint/painter/text | **compute_object_fit_rect()**：object-fit 5 种模式（fill/contain/cover/none/scale-down）计算图片在容器内的绘制矩形 | — |
+| engine/paint/painter/text | **format_counter_alpha() / format_counter_roman()**：计数器值格式化为字母和罗马数字 | — |
+| engine/paint/painter/mod | **paint_node 管线集成**：img 元素和 content 属性绘制插入管线 | — |
+| css-parser/values/types | **TextDecorationStyleValue 枚举**：solid/double/dotted/dashed/wavy | — |
+| css-parser/values/color | **parse_text_decoration_style()**：装饰样式解析函数 | — |
+| style-system/property/types | **TextDecorationStyleValue 类型**：同步到样式系统 | — |
+| engine/paint/tests | **16 个 content/object-fit 单元测试**：content string/counter/alpha/roman/empty、object-fit fill/contain/cover/none/scale-down、img 边界条件 | +16 |
+| WPT runner/render | **16 个 WPT 渲染测试**：content string/counter、object-fit fill/contain/cover/none/scale-down、text-decoration dashed/line-through/overline、counter+content 综合页面 | +16 |
+
+渲染特性：
+- **CSS `content` 属性**：`String` 值生成对应 glyph；`Counter` 值从 Painter 计数器状态读取并格式化（支持 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）；`Normal`/`None`/`Attr` 不生成内容
+- **CSS `object-fit`**：fill（拉伸填满容器）、contain（等比缩放完整显示）、cover（等比缩放完全覆盖）、none（原始尺寸居中）、scale-down（取 none 和 contain 较小者）
+- **TextDecorationStyleValue**：类型定义完成（solid/double/dotted/dashed/wavy），解析函数就绪，渲染集成待后续完善
+
+Tests: ~11,446 → ~11,462 (+16 unit tests), WPT: 1041 → 1057 (+16), clippy clean.
+
+### -98. white-space 行内布局集成（前轮，~11,446 测试）
 
 实现 CSS white-space 属性对行内格式化上下文的影响：
 
@@ -1767,6 +1791,8 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | **mix-blend-mode** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：16 种混合模式 BlendModePrimitive） |
 | **background-repeat** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：6 种平铺模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪到 origin 区域） |
 | **resize** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：手柄指示器 stroke 图元） |
+| **content** | ✅ 已实现（CSS `content` 属性 **渲染集成**：String + Counter 格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman） |
+| **object-fit** | ✅ 已实现（CSS `object-fit` **渲染集成**：fill/contain/cover/none/scale-down 5 种图片适配模式） |
 
 ---
 

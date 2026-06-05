@@ -7,10 +7,12 @@ use std::collections::HashMap;
 use zero_css_parser::values::{ColorValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::{InlineFormattingContext, LayoutBox, estimate_char_width};
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, LineCap, StrokePrimitive};
+use zero_render_foundation::geometry::Rect;
+use zero_render_foundation::image_cache::ImageKey;
+use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, TextOverflowValue, WhiteSpaceValue,
+    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TextOverflowValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -341,6 +343,131 @@ impl super::Painter {
         if found { index + 1 } else { 1 }
     }
 
+    /// 绘制 CSS `content` 属性生成的文本内容。
+    ///
+    /// 当元素的 `content` 属性为 `String` 或 `Counter` 时，
+    /// 在元素的内容区域起始位置绘制对应的文本。
+    /// 支持计数器值的十进制、小写字母、大写字母、小写罗马、大写罗马格式化。
+    pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        let text = match &style.content {
+            ContentComputedValue::Normal | ContentComputedValue::None | ContentComputedValue::Attr(_) => return,
+            ContentComputedValue::String(s) => s.clone(),
+            ContentComputedValue::Counter {
+                name,
+                style: counter_style,
+            } => {
+                let value = self.get_counter(name).unwrap_or(0);
+                match counter_style.as_deref() {
+                    Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
+                    Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
+                    Some("lower-roman") => format_counter_roman(value, false),
+                    Some("upper-roman") => format_counter_roman(value, true),
+                    _ => value.to_string(), // decimal (default)
+                }
+            }
+        };
+
+        if text.is_empty() {
+            return;
+        }
+
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+
+        let color = super::super::color::color_value_to_render(&style.color);
+        let default_font_id = FontId(0);
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+
+        let mut char_x = content_x;
+        let char_y = content_y + font_size;
+        for ch in text.chars() {
+            self.primitives.add_glyph(GlyphPrimitive {
+                x: char_x,
+                y: char_y,
+                font_size,
+                color,
+                glyph_id: ch as u32,
+                font_id: default_font_id,
+                bitmap_width: None,
+                bitmap_height: None,
+            });
+            char_x += estimate_char_width(ch, font_size);
+        }
+    }
+
+    /// 绘制 `<img>` 元素，根据 `object-fit` 属性决定图片如何适配容器。
+    ///
+    /// - `fill`：拉伸图片填满容器（默认）
+    /// - `contain`：等比缩放，完整显示图片
+    /// - `cover`：等比缩放，完全覆盖容器
+    /// - `none`：原始尺寸
+    /// - `scale-down`：取 none 和 contain 中较小的结果
+    pub(crate) fn paint_img_element(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        let node_id = match box_node.node_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let node = match doc.get(node_id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        // 仅处理 <img> 元素
+        let elem = match &node.kind {
+            NodeKind::Element(elem) if elem.local_name() == "img" => elem,
+            _ => return,
+        };
+
+        // 获取 src URL 作为图片键
+        let src = elem.get_attribute("src").unwrap_or_default();
+        if src.is_empty() {
+            return;
+        }
+
+        let container_w = box_node.content_width;
+        let container_h = box_node.content_height;
+        if container_w <= 0.0 || container_h <= 0.0 {
+            return;
+        }
+
+        // 尝试获取图片的固有尺寸（从 width/height 属性或回退到容器尺寸）
+        let (intrinsic_w, intrinsic_h) = get_img_intrinsic_size(node, container_w, container_h);
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+
+        let image_key = ImageKey::new(super::super::helpers::simple_hash(&src));
+
+        let (img_x, img_y, img_w, img_h) = compute_object_fit_rect(
+            &style.object_fit,
+            container_w,
+            container_h,
+            intrinsic_w,
+            intrinsic_h,
+            content_x,
+            content_y,
+        );
+
+        self.primitives.add_image(ImagePrimitive {
+            rect: Rect::new(img_x, img_y, img_w, img_h),
+            image_key,
+        });
+    }
+
     /// 绘制文本内容（生成多字符 GlyphPrimitive）。
     pub fn paint_text(
         &mut self,
@@ -638,4 +765,105 @@ fn has_direct_paintable_text(doc: &Document, node_id: NodeId) -> bool {
             Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
         )
     })
+}
+
+/// 将计数器值格式化为字母序列（a/b/.../z/aa/ab/...）。
+fn format_counter_alpha(value: i32, upper: bool) -> String {
+    if value <= 0 {
+        return value.to_string();
+    }
+    let mut v = value as u32;
+    let mut result = String::new();
+    while v > 0 {
+        v -= 1;
+        let ch = (b'a' + (v % 26) as u8) as char;
+        result.push(ch);
+        v /= 26;
+    }
+    let s: String = result.chars().rev().collect();
+    if upper { s.to_uppercase() } else { s }
+}
+
+/// 将计数器值格式化为罗马数字。
+fn format_counter_roman(value: i32, upper: bool) -> String {
+    let s = to_roman(value.max(0) as usize);
+    if upper { s } else { s.to_lowercase() }
+}
+
+/// 获取 `<img>` 元素的固有尺寸（从 width/height 属性）。
+fn get_img_intrinsic_size(node: &zero_dom::NodeData, fallback_w: f32, fallback_h: f32) -> (f32, f32) {
+    let elem = match &node.kind {
+        NodeKind::Element(e) => e,
+        _ => return (fallback_w, fallback_h),
+    };
+    let w = elem
+        .get_attribute("width")
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(fallback_w);
+    let h = elem
+        .get_attribute("height")
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(fallback_h);
+    (w.max(1.0), h.max(1.0))
+}
+
+/// 根据 `object-fit` 计算图片在容器内的绘制矩形。
+pub(super) fn compute_object_fit_rect(
+    fit: &ObjectFitComputedValue,
+    container_w: f32,
+    container_h: f32,
+    intrinsic_w: f32,
+    intrinsic_h: f32,
+    content_x: f32,
+    content_y: f32,
+) -> (f32, f32, f32, f32) {
+    match fit {
+        ObjectFitComputedValue::Fill => {
+            // 拉伸填满容器
+            (content_x, content_y, container_w, container_h)
+        }
+        ObjectFitComputedValue::Contain => {
+            // 等比缩放，完整显示
+            let scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
+            let w = intrinsic_w * scale;
+            let h = intrinsic_h * scale;
+            let x = content_x + (container_w - w) / 2.0;
+            let y = content_y + (container_h - h) / 2.0;
+            (x, y, w, h)
+        }
+        ObjectFitComputedValue::Cover => {
+            // 等比缩放，完全覆盖
+            let scale = (container_w / intrinsic_w).max(container_h / intrinsic_h);
+            let w = intrinsic_w * scale;
+            let h = intrinsic_h * scale;
+            let x = content_x + (container_w - w) / 2.0;
+            let y = content_y + (container_h - h) / 2.0;
+            (x, y, w, h)
+        }
+        ObjectFitComputedValue::None => {
+            // 原始尺寸，居中
+            let x = content_x + (container_w - intrinsic_w) / 2.0;
+            let y = content_y + (container_h - intrinsic_h) / 2.0;
+            (x, y, intrinsic_w, intrinsic_h)
+        }
+        ObjectFitComputedValue::ScaleDown => {
+            // 取 none 和 contain 中较小的结果
+            let none_w = intrinsic_w;
+            let contain_scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
+            let contain_w = intrinsic_w * contain_scale;
+            if none_w <= contain_w {
+                // none 更小，使用原始尺寸居中
+                let x = content_x + (container_w - intrinsic_w) / 2.0;
+                let y = content_y + (container_h - intrinsic_h) / 2.0;
+                (x, y, intrinsic_w, intrinsic_h)
+            } else {
+                // contain 更小
+                let w = contain_w;
+                let h = intrinsic_h * contain_scale;
+                let x = content_x + (container_w - w) / 2.0;
+                let y = content_y + (container_h - h) / 2.0;
+                (x, y, w, h)
+            }
+        }
+    }
 }

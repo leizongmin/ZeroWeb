@@ -286,6 +286,21 @@ pub enum TextDecorationLineValue {
     Blink,
 }
 
+/// CSS text-decoration-style 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextDecorationStyleValue {
+    /// solid（默认）。
+    Solid,
+    /// double。
+    Double,
+    /// dotted。
+    Dotted,
+    /// dashed。
+    Dashed,
+    /// wavy。
+    Wavy,
+}
+
 /// CSS text-transform 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextTransformValue {
