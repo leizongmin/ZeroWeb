@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 16/16 crate 已实现，~11,566 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1084 个用例（23 个分类，100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号），**CSS 交互/提示属性渲染集成**（cursor 类型指示器 + image-rendering 质量标记 + isolation:isolate 堆叠上下文标记 + will-change 性能提示 + pointer-events:none 点击穿透标记 + user-select:none 不可选择标记 + overscroll-behavior 滚动边界标记 + touch-action 触摸行为标记）
+**执行状态**: 16/16 crate 已实现，~11,583 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号），**CSS 交互/提示属性渲染集成**（cursor 类型指示器 + image-rendering 质量标记 + isolation:isolate 堆叠上下文标记 + will-change 性能提示 + pointer-events:none 点击穿透标记 + user-select:none 不可选择标记 + overscroll-behavior 滚动边界标记 + touch-action 触摸行为标记），**CSS writing-mode 渲染集成**（vertical-rl/vertical-lr 字形旋转 90° + GlyphPrimitive.rotation 字段）+ **CSS word-break 行内布局渲染集成**（break-all 逐字符断行 + keep-all CJK 保持为单词 + WordBreakMode 枚举）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,446 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,583 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -107,7 +107,31 @@
 
 ## 最近完成的改进
 
-### -104. CSS 表格/3D/吸附属性渲染集成（本轮，~11,566 测试）
+### -105. CSS writing-mode 旋转 + word-break 行内布局渲染集成（本轮，~11,583 测试）
+
+实现 CSS writing-mode 和 word-break 从"已解析存储"推进到"已渲染集成"：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| render-foundation/primitive | **GlyphPrimitive.rotation**：旋转角度字段（弧度），用于 writing-mode: vertical-rl/vertical-lr 时旋转字符 | — |
+| layout-engine/inline | **WordBreakMode 枚举**：Normal/BreakAll/KeepAll 三种断行模式；InlineFormattingContext 新增 word_break 字段 | +7 |
+| layout-engine/inline | **word-break: break-all**：允许在任意两个字符间断行，逐字符拆分超长单词 | — |
+| layout-engine/inline | **word-break: keep-all**：CJK 文本保持为连续单词，仅在空白处断行 | — |
+| engine/paint/painter | **writing-mode 渲染**：vertical-rl/vertical-lr 时字形旋转 90°（FRAC_PI_2） | +6 |
+| integration/css_properties | **4 个管线集成测试**：writing-mode vertical-rl/horizontal-tb + word-break break-all/keep-all | +4 |
+| WPT render_extended | **7 个 WPT 渲染测试**：writing-mode(horizontal-tb/vertical-rl/vertical-lr) + word-break(break-all/keep-all/normal) + 组合 | +7 |
+
+渲染特性：
+- **writing-mode: horizontal-tb**：默认模式，字形 rotation = 0.0
+- **writing-mode: vertical-rl**：字形顺时针旋转 90°（FRAC_PI_2），文本垂直排列
+- **writing-mode: vertical-lr**：字形顺时针旋转 90°，文本垂直排列
+- **word-break: break-all**：允许在任意字符间断行，适用于拉丁和 CJK 文本
+- **word-break: keep-all**：CJK 字符不被视为断行点，仅在空白字符处断行
+- **word-break: normal**：标准断行行为（默认）
+
+Tests: ~11,566 → ~11,583 (+17 unit + integration tests), WPT: 1084 → 1100 (+16), clippy clean.
+
+### -104. CSS 表格/3D/吸附属性渲染集成（前轮，~11,566 测试）
 
 实现 6 个 CSS 属性从"已解析存储"推进到"已渲染集成"：
 
@@ -1852,7 +1876,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 |-------------|------|
 | 选择器全量 | ✅ ~95% |
 | 盒模型 | ✅ 100%（含 **box-sizing: border-box** 布局测试） |
-| Block/Inline/Flexbox 布局 | ✅ 已实现（行内格式化上下文已实现） |
+| Block/Inline/Flexbox 布局 | ✅ 已实现（行内格式化上下文已实现，**word-break: break-all/keep-all 渲染集成**） |
 | Grid 布局 | ⚠️ ~65%（display + auto-flow + 项放置 + grid-area + repeat() + auto-rows/cols；缺 auto-fill 真实支持、命名区域） |
 | 颜色 | ✅ ~98%（含 **148 种标准命名颜色**、hwb/hsl/rgb/rgba/hex 全格式） |
 | 字体 | ✅ 100% |
@@ -1899,6 +1923,8 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | **resize** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：手柄指示器 stroke 图元） |
 | **content** | ✅ 已实现（CSS `content` 属性 **渲染集成**：String + Counter 格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman） |
 | **object-fit** | ✅ 已实现（CSS `object-fit` **渲染集成**：fill/contain/cover/none/scale-down 5 种图片适配模式） |
+| **writing-mode** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：vertical-rl/vertical-lr 字形旋转 90°，GlyphPrimitive.rotation 字段） |
+| **word-break** | ✅ 已实现（属性解析 + 样式管线 + **渲染集成**：break-all 逐字符断行 + keep-all CJK 保持为单词，WordBreakMode 枚举） |
 
 ---
 
