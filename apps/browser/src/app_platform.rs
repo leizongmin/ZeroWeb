@@ -136,8 +136,14 @@ impl BrowserApp {
                 self.gpu_renderer = gpu;
                 return;
             }
-            let (fills, glyphs) = self.build_scene(width, height);
-            renderer.render_scene(&fills, &self.font_loader, &mut self.glyph_cache, &glyphs);
+            let (fills, glyphs, overlay_fills) = self.build_scene(width, height);
+            renderer.render_scene(
+                &fills,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                &glyphs,
+                &overlay_fills,
+            );
         }
         self.gpu_renderer = gpu;
     }
@@ -156,7 +162,7 @@ impl BrowserApp {
             return;
         }
 
-        let (fills, glyphs) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills) = self.build_scene(width, height);
         let fb = render_scene_to_framebuffer(
             width,
             height,
@@ -165,6 +171,7 @@ impl BrowserApp {
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,
+            &overlay_fills,
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }

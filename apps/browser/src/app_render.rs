@@ -12,11 +12,19 @@ impl BrowserApp {
         mx >= x && mx < x + w && my >= y && my < y + h
     }
 
-    /// 构建浏览器 UI 渲染图元（物理像素坐标）
-    fn build_scene(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    /// 构建浏览器 UI 渲染图元（物理像素坐标）。
+    ///
+    /// 返回 `(fills, glyphs, overlay_fills)`：`overlay_fills` 在 glyphs 之后绘制
+    /// （圆角溢出遮罩与视口边框），避免页面内容覆盖底部圆角。
+    fn build_scene(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>) {
         let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
+        let mut overlay_fills = Vec::new();
         let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 1. 整体背景
@@ -66,7 +74,8 @@ impl BrowserApp {
 
         // 9. 页面内容区域（圆角边框视口）
         let chrome_top = toolbar_h + layout::BOOKMARKS_BAR_HEIGHT * s;
-        let page_gutter_h = height as f32 - chrome_top - layout::STATUS_BAR_HEIGHT * s;
+        let status_y = self.status_bar_y_for(width, height);
+        let page_gutter_h = status_y - chrome_top;
         fills.push(rect_fill(
             0.0,
             chrome_top,
@@ -74,9 +83,9 @@ impl BrowserApp {
             page_gutter_h,
             self.chrome_palette.background,
         ));
-        let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect();
+        let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect_for(width, height);
         self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
-        let (content_x, content_y, content_w, _) = self.page_content_rect();
+        let (content_x, content_y, content_w, _) = self.page_content_rect_for(width, height);
 
         // 10. 加载指示器
         if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
@@ -115,7 +124,11 @@ impl BrowserApp {
         // 16. 状态栏
         self.render_status_bar(&mut fills, &mut glyphs, width, height, font_size, s);
 
-        (fills, glyphs)
+        // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
+        self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
+        self.render_page_frame_border(&mut overlay_fills, frame_x, frame_y, frame_w, frame_h, s);
+
+        (fills, glyphs, overlay_fills)
     }
 
     /// 渲染标签页
@@ -634,7 +647,7 @@ impl BrowserApp {
         }
     }
 
-    /// 渲染页面视口边框（顶部圆角 + 灰色描边）
+    /// 渲染页面视口背景（外圈灰色圆角 + 内圈白色圆角，四角一致）
     fn render_page_frame(
         &self,
         fills: &mut Vec<FillPrimitive>,
@@ -649,9 +662,9 @@ impl BrowserApp {
         }
         let border = layout::PAGE_FRAME_BORDER * s;
         let radius = layout::PAGE_FRAME_RADIUS * s;
-        push_rounded_top_rect_fill(fills, x, y, w, h, radius, self.chrome_palette.separator);
         let inner_r = (radius - border).max(0.0);
-        push_rounded_top_rect_fill(
+        push_rounded_rect_fill(fills, x, y, w, h, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
             fills,
             x + border,
             y + border,
@@ -659,6 +672,51 @@ impl BrowserApp {
             h - 2.0 * border,
             inner_r,
             self.chrome_palette.page_bg,
+        );
+    }
+
+    /// 清掉圆角外溢出的页面像素（内圈用边框色、外圈用 gutter 色）。
+    fn render_page_frame_corner_masks(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        let (fx, fy, fw, fh) = self.page_frame_rect_for(width, height);
+        let outer_r = layout::PAGE_FRAME_RADIUS * s;
+        push_rounded_rect_outside_corner_masks(fills, fx, fy, fw, fh, outer_r, self.chrome_palette.background);
+
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let border = layout::PAGE_FRAME_BORDER * s;
+        let inner_r = (layout::PAGE_FRAME_RADIUS * s - border).max(0.0);
+        push_rounded_rect_outside_corner_masks(fills, cx, cy, cw, ch, inner_r, self.chrome_palette.separator);
+    }
+
+    /// 渲染页面视口灰色描边（在内容之上绘制，避免圆角处被内容污染）
+    fn render_page_frame_border(
+        &self,
+        fills: &mut Vec<FillPrimitive>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        s: f32,
+    ) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let border = layout::PAGE_FRAME_BORDER * s;
+        let radius = layout::PAGE_FRAME_RADIUS * s;
+        push_rounded_rect_border(
+            fills,
+            x,
+            y,
+            w,
+            h,
+            radius,
+            border,
+            self.chrome_palette.separator,
         );
     }
 
@@ -784,11 +842,15 @@ impl BrowserApp {
         } else {
             0.0
         };
-        let (_, content_y, _, content_h) = self.page_content_rect();
+        let (_, content_y, content_w, content_h) = self.page_content_rect();
         let clip_top = content_y + find_offset;
-        let clip_bottom = content_y + content_h;
+        let (_, fy, _, fh) = self.page_frame_rect();
+        let clip_bottom = (content_y + content_h).min(fy + fh);
         let content_y_draw = y_offset - scroll_y;
         let s = self.scale_factor;
+        let border = layout::PAGE_FRAME_BORDER * s;
+        let radius = (layout::PAGE_FRAME_RADIUS * s - border).max(0.0);
+        let clip_rounded = Some((content_x, content_y, content_w, content_h, radius));
 
         if let Some(sel) = self.page_selection.get(&tab_id)
             && !sel.is_collapsed()
@@ -804,7 +866,23 @@ impl BrowserApp {
                     if top + h <= clip_top || top >= clip_bottom {
                         continue;
                     }
-                    fills.push(rect_fill(x, top, w.max(1.0), h, self.chrome_palette.text_selection_bg));
+                    if let Some((rx, ry, rw, rh, rr)) = clip_rounded {
+                        push_fill_clipped_to_rounded_rect(
+                            fills,
+                            x,
+                            top,
+                            w.max(1.0),
+                            h,
+                            self.chrome_palette.text_selection_bg,
+                            rx,
+                            ry,
+                            rw,
+                            rh,
+                            rr,
+                        );
+                    } else {
+                        fills.push(rect_fill(x, top, w.max(1.0), h, self.chrome_palette.text_selection_bg));
+                    }
                 }
             }
         }
@@ -818,6 +896,7 @@ impl BrowserApp {
             fallback_font_id,
             self.scale_factor,
             Some((clip_top, clip_bottom)),
+            clip_rounded,
         )
     }
 
@@ -1113,7 +1192,7 @@ impl BrowserApp {
         }
 
         let status_h = layout::STATUS_BAR_HEIGHT * s;
-        let status_y = height as f32 - status_h;
+        let status_y = self.status_bar_y_for(width, height);
 
         fills.push(rect_fill(0.0, status_y, width as f32, status_h, self.chrome_palette.background));
         fills.push(rect_fill(0.0, status_y, width as f32, s, self.chrome_palette.separator));
@@ -1247,8 +1326,8 @@ impl BrowserApp {
         }
 
         let bar_h = layout::DOWNLOAD_BAR_HEIGHT * s;
-        let status_h = layout::STATUS_BAR_HEIGHT * s;
-        let bar_y = height as f32 - status_h - bar_h;
+        let status_y = self.status_bar_y_for(width, height);
+        let bar_y = status_y - bar_h;
 
         // 背景
         fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, self.chrome_palette.download_bar_bg));
@@ -1318,8 +1397,107 @@ fn rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimitive {
     }
 }
 
-/// 仅顶部两角圆角的矩形填充（页面视口风格）。
-fn push_rounded_top_rect_fill(
+/// 圆角矩形在指定行的水平可见区间 `(x_start, x_end)`。
+fn rounded_rect_x_span_at_y(yf: f32, x: f32, y: f32, w: f32, h: f32, radius: f32) -> Option<(f32, f32)> {
+    if yf < y || yf >= y + h {
+        return None;
+    }
+    let r = radius.min(w * 0.5).min(h * 0.5);
+    if r <= f32::EPSILON {
+        return Some((x, x + w));
+    }
+
+    let r_sq = r * r;
+    let mut x_start = x;
+    let mut x_end = x + w;
+
+    let dy_top = (y + r) - yf;
+    if dy_top > 0.0 {
+        let dx = (r_sq - dy_top * dy_top).max(0.0).sqrt();
+        x_start = x + r - dx;
+        x_end = x + w - r + dx;
+    } else {
+        let dy_bottom = yf - (y + h - r);
+        if dy_bottom > 0.0 {
+            let dx = (r_sq - dy_bottom * dy_bottom).max(0.0).sqrt();
+            x_start = x + r - dx;
+            x_end = x + w - r + dx;
+        }
+    }
+
+    if x_end <= x_start {
+        None
+    } else {
+        Some((x_start, x_end))
+    }
+}
+
+/// 将轴对齐矩形裁剪到圆角矩形内，按行写入 fill。
+#[allow(clippy::too_many_arguments)]
+fn push_fill_clipped_to_rounded_rect(
+    fills: &mut Vec<FillPrimitive>,
+    fx: f32,
+    fy: f32,
+    fw: f32,
+    fh: f32,
+    color: Color,
+    rx: f32,
+    ry: f32,
+    rw: f32,
+    rh: f32,
+    radius: f32,
+) {
+    let ix0 = fx.max(rx);
+    let iy0 = fy.max(ry);
+    let ix1 = (fx + fw).min(rx + rw);
+    let iy1 = (fy + fh).min(ry + rh);
+    if ix0 >= ix1 || iy0 >= iy1 {
+        return;
+    }
+
+    let min_row = iy0.floor() as i32;
+    let max_row = iy1.ceil() as i32;
+    for row in min_row..max_row {
+        let yf = row as f32 + 0.5;
+        if yf < iy0 || yf >= iy1 {
+            continue;
+        }
+        let Some((mut xs, mut xe)) = rounded_rect_x_span_at_y(yf, rx, ry, rw, rh, radius) else {
+            continue;
+        };
+        xs = xs.max(ix0);
+        xe = xe.min(ix1);
+        if xe > xs {
+            fills.push(rect_fill(xs, row as f32, xe - xs, 1.0, color));
+        }
+    }
+}
+
+/// 轴对齐矩形是否与圆角矩形有交集（用于 glyph 裁剪）。
+#[allow(clippy::too_many_arguments)]
+fn axis_rect_intersects_rounded_rect(
+    ax: f32,
+    ay: f32,
+    aw: f32,
+    ah: f32,
+    rx: f32,
+    ry: f32,
+    rw: f32,
+    rh: f32,
+    radius: f32,
+) -> bool {
+    if ax >= rx + rw || ax + aw <= rx || ay >= ry + rh || ay + ah <= ry {
+        return false;
+    }
+    let sample_y = (ay + ah * 0.5).clamp(ry, ry + rh - f32::EPSILON);
+    let Some((xs, xe)) = rounded_rect_x_span_at_y(sample_y, rx, ry, rw, rh, radius) else {
+        return false;
+    };
+    ax + aw > xs && ax < xe
+}
+
+/// 将圆角矩形外、轴对齐包围盒内的区域用指定颜色覆盖（清除四角溢出）。
+fn push_rounded_rect_outside_corner_masks(
     fills: &mut Vec<FillPrimitive>,
     x: f32,
     y: f32,
@@ -1331,34 +1509,74 @@ fn push_rounded_top_rect_fill(
     if w <= 0.0 || h <= 0.0 {
         return;
     }
-    let r = radius.min(w * 0.5).min(h);
+    let r = radius.min(w * 0.5).min(h * 0.5);
     if r <= f32::EPSILON {
-        fills.push(rect_fill(x, y, w, h, color));
         return;
     }
 
-    let r_sq = r * r;
-    let min_y = y.floor() as i32;
-    let max_y = (y + h).ceil() as i32;
+    let min_row = y.floor() as i32;
+    let max_row = (y + h).ceil() as i32;
 
-    for row in min_y..max_y {
+    for row in min_row..max_row {
         let yf = row as f32 + 0.5;
         if yf < y || yf >= y + h {
             continue;
         }
-
-        let mut x_start = x;
-        let mut x_end = x + w;
-
-        let dy_top = (y + r) - yf;
-        if dy_top > 0.0 {
-            let dx = (r_sq - dy_top * dy_top).max(0.0).sqrt();
-            x_start = x + r - dx;
-            x_end = x + w - r + dx;
+        let Some((xs, xe)) = rounded_rect_x_span_at_y(yf, x, y, w, h, r) else {
+            continue;
+        };
+        if xs > x {
+            fills.push(rect_fill(x, row as f32, xs - x, 1.0, color));
         }
+        if x + w > xe {
+            fills.push(rect_fill(xe, row as f32, x + w - xe, 1.0, color));
+        }
+    }
+}
 
-        if x_end > x_start {
-            fills.push(rect_fill(x_start, row as f32, x_end - x_start, 1.0, color));
+/// 圆角矩形描边（在内容之上绘制，仅输出边框环）。
+#[allow(clippy::too_many_arguments)]
+fn push_rounded_rect_border(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    border: f32,
+    color: Color,
+) {
+    if w <= 0.0 || h <= 0.0 || border <= 0.0 {
+        return;
+    }
+    let outer_r = radius.min(w * 0.5).min(h * 0.5);
+    let inner_r = (outer_r - border).max(0.0);
+    let min_row = y.floor() as i32;
+    let max_row = (y + h).ceil() as i32;
+
+    for row in min_row..max_row {
+        let yf = row as f32 + 0.5;
+        if yf < y || yf >= y + h {
+            continue;
+        }
+        let Some((ox0, ox1)) = rounded_rect_x_span_at_y(yf, x, y, w, h, outer_r) else {
+            continue;
+        };
+        if inner_r <= f32::EPSILON {
+            fills.push(rect_fill(ox0, row as f32, ox1 - ox0, 1.0, color));
+            continue;
+        }
+        let Some((ix0, ix1)) =
+            rounded_rect_x_span_at_y(yf, x + border, y + border, w - 2.0 * border, h - 2.0 * border, inner_r)
+        else {
+            fills.push(rect_fill(ox0, row as f32, ox1 - ox0, 1.0, color));
+            continue;
+        };
+        if ix0 > ox0 {
+            fills.push(rect_fill(ox0, row as f32, ix0 - ox0, 1.0, color));
+        }
+        if ox1 > ix1 {
+            fills.push(rect_fill(ix1, row as f32, ox1 - ix1, 1.0, color));
         }
     }
 }
@@ -1523,6 +1741,7 @@ pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
 /// 将 WebView 输出的基础图元追加到浏览器场景。
 ///
 /// `clip_y` 为物理像素坐标 `(top, bottom)`，fill 与该区间求交后绘制，glyph 完全落在区间外则跳过。
+/// `clip_rounded` 为 `(x, y, w, h, radius)`，将内容裁剪到圆角矩形内。
 #[allow(clippy::too_many_arguments)]
 pub fn append_webview_primitives(
     primitives: &RenderPrimitives,
@@ -1533,6 +1752,7 @@ pub fn append_webview_primitives(
     fallback_font_id: u32,
     s: f32,
     clip_y: Option<(f32, f32)>,
+    clip_rounded: Option<(f32, f32, f32, f32, f32)>,
 ) -> bool {
     let fill_start = fills.len();
     let glyph_start = glyphs.len();
@@ -1559,12 +1779,16 @@ pub fn append_webview_primitives(
                 continue;
             }
         }
-        let mut translated = fill.clone();
-        translated.rect.origin.x = x;
-        translated.rect.origin.y = y;
-        translated.rect.size.width = w;
-        translated.rect.size.height = h;
-        fills.push(translated);
+        if let Some((rx, ry, rw, rh, radius)) = clip_rounded {
+            push_fill_clipped_to_rounded_rect(fills, x, y, w, h, fill.color, rx, ry, rw, rh, radius);
+        } else {
+            let mut translated = fill.clone();
+            translated.rect.origin.x = x;
+            translated.rect.origin.y = y;
+            translated.rect.size.width = w;
+            translated.rect.size.height = h;
+            fills.push(translated);
+        }
     }
 
     for glyph in &primitives.glyphs {
@@ -1581,6 +1805,14 @@ pub fn append_webview_primitives(
             let top = baseline_y - font_size;
             let bottom = baseline_y + font_size * 0.25;
             if bottom <= clip_top || top >= clip_bottom || top < clip_top {
+                continue;
+            }
+        }
+        if let Some((rx, ry, rw, rh, radius)) = clip_rounded {
+            let top = baseline_y - font_size;
+            let bottom = baseline_y + font_size * 0.25;
+            let width = font_size * 0.6;
+            if !axis_rect_intersects_rounded_rect(x, top, width, bottom - top, rx, ry, rw, rh, radius) {
                 continue;
             }
         }

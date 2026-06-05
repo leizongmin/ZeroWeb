@@ -492,10 +492,38 @@ impl BrowserApp {
         }
     }
 
+    /// 测试用：获取标签 WebView 的逻辑视口尺寸
+    #[cfg(test)]
+    pub fn webview_logical_size_for_tab(&self, tab_id: zero_browser_shell::TabId) -> Option<(u32, u32)> {
+        self.webviews
+            .get(&tab_id)
+            .map(|wv| (wv.config().width, wv.config().height))
+    }
+
     /// 测试用：构建场景（暴露私有方法给测试模块）
     #[cfg(test)]
-    pub fn build_scene_for_test(&mut self, width: u32, height: u32) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    pub fn build_scene_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>) {
         self.build_scene(width, height)
+    }
+
+    /// 测试用：构建场景并 CPU 渲染为帧缓冲。
+    #[cfg(test)]
+    pub fn render_scene_for_test(&mut self, width: u32, height: u32) -> zero_render_foundation::surface::FrameBuffer {
+        let (fills, glyphs, overlay_fills) = self.build_scene(width, height);
+        render_scene_to_framebuffer(
+            width,
+            height,
+            1.0,
+            &fills,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            &glyphs,
+            &overlay_fills,
+        )
     }
 
     /// 测试用：当前 Chrome 配色
@@ -536,31 +564,53 @@ impl BrowserApp {
         (w.max(0.0) as u32, h.max(0.0) as u32)
     }
 
-    /// WebView 布局视口（CSS 逻辑像素，与 devicePixelRatio 对应）
+    /// WebView 布局视口（CSS 逻辑像素，与 devicePixelRatio 对应）。
+    ///
+    /// 高度用 `floor` 而非 `round`，保证 `logical_h * scale_factor` 不超过内容区物理高度，
+    /// 避免页面背景在底部溢出并盖住圆角。
     pub fn content_logical_size(&self) -> (u32, u32) {
         let s = self.scale_factor.max(f32::EPSILON);
         let (_, _, w, h) = self.page_content_rect();
-        ((w / s).round().max(1.0) as u32, (h / s).round().max(0.0) as u32)
+        let logical_w = (w / s).floor().max(1.0) as u32;
+        let logical_h = if h <= f32::EPSILON {
+            0
+        } else {
+            (h / s).floor().max(1.0) as u32
+        };
+        (logical_w, logical_h)
     }
 
     /// 页面视口外框（物理像素）：含圆角与边框的 `(x, y, w, h)`。
     pub fn page_frame_rect(&self) -> (f32, f32, f32, f32) {
+        self.page_frame_rect_for(self.physical_size.0, self.physical_size.1)
+    }
+
+    /// 按指定窗口物理尺寸计算视口外框（渲染与布局应使用同一组 `(width, height)`）。
+    pub fn page_frame_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
         let status_h = layout::STATUS_BAR_HEIGHT * s;
         let inset_h = layout::PAGE_FRAME_INSET_H * s;
         let inset_top = layout::PAGE_FRAME_INSET_TOP * s;
         let inset_bottom = layout::PAGE_FRAME_INSET_BOTTOM * s;
+        let clip_guard = layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * s;
         let x = inset_h;
         let y = chrome_top + inset_top;
-        let w = self.physical_size.0 as f32 - 2.0 * inset_h;
-        let h = (self.physical_size.1 as f32 - status_h - y - inset_bottom).max(0.0);
+        let w = width as f32 - 2.0 * inset_h;
+        let h = (height as f32 - status_h - y - inset_bottom - clip_guard).max(0.0);
         (x, y, w, h)
     }
 
-    /// 页面内容区（物理像素，边框内侧）：WebView 绘制与命中区域。
-    pub fn page_content_rect(&self) -> (f32, f32, f32, f32) {
-        let (x, y, w, h) = self.page_frame_rect();
+    /// 状态栏顶部 Y：紧贴视口外框 + 下间距，不贴窗口物理底边。
+    pub fn status_bar_y_for(&self, width: u32, height: u32) -> f32 {
+        let (_, fy, _, fh) = self.page_frame_rect_for(width, height);
+        let _ = height;
+        fy + fh + layout::PAGE_FRAME_INSET_BOTTOM * self.scale_factor
+    }
+
+    /// 按指定窗口物理尺寸计算内容区（边框内侧）。
+    pub fn page_content_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
+        let (x, y, w, h) = self.page_frame_rect_for(width, height);
         let border = layout::PAGE_FRAME_BORDER * self.scale_factor;
         (
             x + border,
@@ -568,6 +618,11 @@ impl BrowserApp {
             (w - 2.0 * border).max(0.0),
             (h - 2.0 * border).max(0.0),
         )
+    }
+
+    /// 页面内容区（物理像素，边框内侧）：WebView 绘制与命中区域。
+    pub fn page_content_rect(&self) -> (f32, f32, f32, f32) {
+        self.page_content_rect_for(self.physical_size.0, self.physical_size.1)
     }
 
     /// 创建指定视口尺寸的 WebView

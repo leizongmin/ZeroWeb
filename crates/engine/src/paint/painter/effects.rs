@@ -17,33 +17,20 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{gradient_to_primitive, simple_hash, BorderRadiusSpec};
+use super::super::helpers::{BorderRadiusSpec, gradient_to_primitive, simple_hash};
 
 impl super::Painter {
     /// 添加圆角矩形元数据图元。
     ///
     /// 在当前渲染架构下，使用额外的 0-尺寸填充图元记录圆角参数。
-    pub(super) fn add_rounded_rect_metadata(
-        &mut self,
-        _x: f32,
-        _y: f32,
-        _w: f32,
-        _h: f32,
-        _radii: &BorderRadiusSpec,
-    ) {
+    pub(super) fn add_rounded_rect_metadata(&mut self, _x: f32, _y: f32, _w: f32, _h: f32, _radii: &BorderRadiusSpec) {
         // 圆角信息通过 CornerFill 图元存储。
         // 在完整实现中会生成圆角裁剪蒙版或扇形填充。
         // 当前阶段记录圆角存在，待后续渲染后端支持。
     }
 
     /// 绘制 box-shadow（盒阴影效果）。
-    pub(super) fn paint_box_shadow(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_box_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let shadow = &style.box_shadow;
 
         if shadow.offset_x == 0.0 && shadow.offset_y == 0.0 && shadow.blur_radius == 0.0 && shadow.spread_radius == 0.0
@@ -158,13 +145,7 @@ impl super::Painter {
     }
 
     /// 应用 CSS filter。
-    pub(super) fn apply_filter(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn apply_filter(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let filters = match &style.filter {
             FilterComputedValue::None => return,
             f => vec![filter_computed_to_kind(f)],
@@ -179,13 +160,7 @@ impl super::Painter {
     }
 
     /// 应用 CSS mix-blend-mode。
-    pub(super) fn apply_blend_mode(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn apply_blend_mode(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let mode = match style.mix_blend_mode {
             MixBlendModeComputedValue::Normal => return,
             MixBlendModeComputedValue::Multiply => BlendMode::Multiply,
@@ -209,13 +184,7 @@ impl super::Painter {
     }
 
     /// 绘制 resize 手柄指示器。
-    pub(super) fn paint_resize_handle(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_resize_handle(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let handle_size = 8.0;
         let corner_x = abs_x + box_node.width - handle_size;
         let corner_y = abs_y + box_node.height - handle_size;
