@@ -12,6 +12,7 @@
 //! - [`pipeline`] — 端到端渲染管线，编排 HTML→CSS→Layout→Paint
 //! - [`preload`] — 资源预加载，解析 `<link rel="preload/prefetch">` 提示
 //! - [`animation`] — CSS 动画运行时，关键帧插值与动画时钟
+//! - [`transition`] — CSS Transition 执行引擎，样式变化过渡插值
 
 #![warn(missing_docs)]
 
@@ -23,6 +24,7 @@ pub mod hit_test;
 pub mod paint;
 pub mod pipeline;
 pub mod preload;
+pub mod transition;
 
 pub use animation::*;
 pub use composite::*;
@@ -32,6 +34,7 @@ pub use hit_test::*;
 pub use paint::*;
 pub use pipeline::*;
 pub use preload::*;
+pub use transition::*;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;
 
 #[cfg(test)]
