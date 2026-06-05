@@ -1804,6 +1804,321 @@ impl super::Painter {
         // 标记方块（颜色区分变体类型）
         self.primitives.add_fill(Rect::new(x + 2.0, y + 2.0, 6.0, 6.0), color);
     }
+
+    /// 绘制 CSS contain 属性指示器。
+    ///
+    /// 非 none 值时在右上角绘制包含标记（不同包含类型用不同颜色表示）。
+    pub(super) fn paint_contain_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::ContainComputedValue;
+        let (color, label) = match &style.contain {
+            ContainComputedValue::None => return,
+            ContainComputedValue::Strict => (Color::rgba(220, 40, 40, 200), "S"),
+            ContainComputedValue::Content => (Color::rgba(40, 160, 40, 200), "C"),
+            ContainComputedValue::Size => (Color::rgba(40, 80, 200, 200), "Sz"),
+            ContainComputedValue::Layout => (Color::rgba(200, 120, 40, 200), "L"),
+            ContainComputedValue::Style => (Color::rgba(160, 40, 160, 200), "St"),
+            ContainComputedValue::Paint => (Color::rgba(40, 180, 180, 200), "P"),
+            ContainComputedValue::Custom(_) => (Color::rgba(120, 120, 120, 200), "M"),
+        };
+        let w = box_node.width;
+        let x = abs_x + w - 16.0;
+        let y = abs_y + 2.0;
+        // 背景框
+        self.primitives.add_fill(Rect::new(x, y, 14.0, 10.0), Color::rgba(240, 240, 240, 200));
+        // 颜色标记方块
+        self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 12.0, 8.0), color);
+        // 带有虚线边框表示"包含"
+        let border = Color::rgba(60, 60, 60, 180);
+        self.primitives
+            .add_fill(Rect::new(x, y, 14.0, 1.0), border);
+        self.primitives
+            .add_fill(Rect::new(x, y + 9.0, 14.0, 1.0), border);
+        let _ = label;
+    }
+
+    /// 绘制 CSS unicode-bidi 属性指示器。
+    ///
+    /// 非 normal 值时在左侧绘制双向文本覆盖标记。
+    pub(super) fn paint_unicode_bidi_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::UnicodeBidiValue;
+        let color = match &style.unicode_bidi {
+            UnicodeBidiValue::Normal => return,
+            UnicodeBidiValue::Embed => Color::rgba(80, 140, 220, 200),
+            UnicodeBidiValue::Isolate => Color::rgba(140, 80, 220, 200),
+            UnicodeBidiValue::BidiOverride => Color::rgba(220, 60, 60, 200),
+            UnicodeBidiValue::IsolateOverride => Color::rgba(220, 100, 60, 200),
+            UnicodeBidiValue::Plaintext => Color::rgba(60, 180, 120, 200),
+        };
+        let h = box_node.height;
+        let x = abs_x - 4.0;
+        let y = abs_y;
+        // 垂直条标记（表示双向文本覆盖）
+        self.primitives.add_fill(Rect::new(x, y, 3.0, h), color);
+        // 顶部三角标记
+        self.primitives.add_fill(Rect::new(x - 2.0, y, 2.0, 4.0), color);
+    }
+
+    /// 绘制 CSS box-decoration-break 属性指示器。
+    ///
+    /// clone 值时在元素右侧绘制克隆标记（slice 为默认不渲染）。
+    pub(super) fn paint_box_decoration_break_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::BoxDecorationBreakValue;
+        if matches!(style.box_decoration_break, BoxDecorationBreakValue::Slice) {
+            return;
+        }
+        let w = box_node.width;
+        let h = box_node.height;
+        let x = abs_x + w - 8.0;
+        let y = abs_y + h - 8.0;
+        let color = Color::rgba(100, 160, 60, 200);
+        // 克隆标记：两个重叠的小方块
+        self.primitives.add_fill(Rect::new(x, y, 6.0, 6.0), Color::rgba(240, 240, 240, 200));
+        self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 5.0, 5.0), color);
+        self.primitives.add_fill(Rect::new(x + 2.0, y + 2.0, 5.0, 5.0), color);
+    }
+
+    /// 绘制 CSS overflow-wrap 属性指示器。
+    ///
+    /// break-word 或 anywhere 时在右下角绘制断词标记。
+    pub(super) fn paint_overflow_wrap_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::OverflowWrapValue;
+        let color = match &style.overflow_wrap {
+            OverflowWrapValue::Normal => return,
+            OverflowWrapValue::BreakWord => Color::rgba(220, 120, 40, 200),
+            OverflowWrapValue::Anywhere => Color::rgba(180, 60, 180, 200),
+        };
+        let w = box_node.width;
+        let h = box_node.height;
+        let x = abs_x + w - 10.0;
+        let y = abs_y + h - 8.0;
+        // 断词标记：折线（模拟文字断开效果）
+        self.primitives.add_fill(Rect::new(x, y, 8.0, 1.0), color);
+        self.primitives.add_fill(Rect::new(x, y + 3.0, 4.0, 1.0), color);
+        self.primitives.add_fill(Rect::new(x + 4.0, y + 6.0, 4.0, 1.0), color);
+    }
+
+    /// 绘制 CSS text-align-last 属性指示器。
+    ///
+    /// 非 auto 值时在右下角绘制末行对齐标记。
+    pub(super) fn paint_text_align_last_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::TextAlignLastValue;
+        let (color, lines) = match &style.text_align_last {
+            TextAlignLastValue::Auto => return,
+            TextAlignLastValue::Start | TextAlignLastValue::Left => (Color::rgba(80, 140, 220, 200), 1),
+            TextAlignLastValue::End | TextAlignLastValue::Right => (Color::rgba(220, 80, 80, 200), 2),
+            TextAlignLastValue::Center => (Color::rgba(80, 180, 80, 200), 3),
+            TextAlignLastValue::Justify => (Color::rgba(180, 140, 40, 200), 4),
+        };
+        let w = box_node.width;
+        let h = box_node.height;
+        let x = abs_x + w - 14.0;
+        let y = abs_y + h - 8.0;
+        // 根据对齐类型绘制不同数量的横线
+        for i in 0..lines {
+            let lw = match i {
+                0 => 10.0,
+                1 => 7.0,
+                2 => 5.0,
+                _ => 4.0,
+            };
+            self.primitives
+                .add_fill(Rect::new(x, y + (i as f32) * 2.0, lw, 1.0), color);
+        }
+    }
+
+    /// 绘制 CSS break-before/after/inside 属性指示器。
+    ///
+    /// 非 auto 值时在元素边缘绘制断点标记。
+    pub(super) fn paint_break_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::{BreakInsideValue, BreakValue, PageBreakValue};
+        let w = box_node.width;
+        let h = box_node.height;
+
+        // break-before / page-break-before
+        if !matches!(style.break_before, BreakValue::Auto)
+            || !matches!(style.page_break_before, PageBreakValue::Auto)
+        {
+            let color = Color::rgba(200, 60, 60, 200);
+            // 顶部断点标记：双横线
+            self.primitives.add_fill(Rect::new(abs_x, abs_y, w, 1.0), color);
+            self.primitives.add_fill(Rect::new(abs_x, abs_y + 2.0, w, 1.0), color);
+        }
+
+        // break-after / page-break-after
+        if !matches!(style.break_after, BreakValue::Auto)
+            || !matches!(style.page_break_after, PageBreakValue::Auto)
+        {
+            let color = Color::rgba(60, 60, 200, 200);
+            // 底部断点标记：双横线
+            self.primitives
+                .add_fill(Rect::new(abs_x, abs_y + h - 3.0, w, 1.0), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x, abs_y + h - 1.0, w, 1.0), color);
+        }
+
+        // break-inside / page-break-inside
+        if !matches!(style.break_inside, BreakInsideValue::Auto)
+            || !matches!(style.page_break_inside, PageBreakValue::Auto)
+        {
+            let color = Color::rgba(200, 160, 40, 200);
+            // 内部断点标记：四周虚线框
+            self.primitives.add_fill(Rect::new(abs_x, abs_y, w, 1.0), color);
+            self.primitives.add_fill(Rect::new(abs_x, abs_y + h - 1.0, w, 1.0), color);
+            self.primitives.add_fill(Rect::new(abs_x, abs_y, 1.0, h), color);
+            self.primitives.add_fill(Rect::new(abs_x + w - 1.0, abs_y, 1.0, h), color);
+        }
+    }
+
+    /// 绘制 CSS scroll-margin / scroll-padding 属性指示器。
+    ///
+    /// 非零值时在元素周围绘制滚动吸附区域标记。
+    pub(super) fn paint_scroll_area_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::ScrollPadding;
+
+        // scroll-margin — 红色虚线边框
+        let sm_t = style.scroll_margin_top;
+        let sm_r = style.scroll_margin_right;
+        let sm_b = style.scroll_margin_bottom;
+        let sm_l = style.scroll_margin_left;
+        if sm_t > 0.0 || sm_r > 0.0 || sm_b > 0.0 || sm_l > 0.0 {
+            let color = Color::rgba(220, 80, 80, 120);
+            let x = abs_x - sm_l;
+            let y = abs_y - sm_t;
+            let w = box_node.width + sm_l + sm_r;
+            let h = box_node.height + sm_t + sm_b;
+            self.primitives.add_fill(Rect::new(x, y, w, 1.0), color);
+            self.primitives.add_fill(Rect::new(x, y + h - 1.0, w, 1.0), color);
+            self.primitives.add_fill(Rect::new(x, y, 1.0, h), color);
+            self.primitives.add_fill(Rect::new(x + w - 1.0, y, 1.0, h), color);
+        }
+
+        // scroll-padding — 蓝色虚线边框
+        let sp_t = match &style.scroll_padding_top {
+            ScrollPadding::Length(v) => *v,
+            ScrollPadding::Auto => 0.0,
+        };
+        let sp_r = match &style.scroll_padding_right {
+            ScrollPadding::Length(v) => *v,
+            ScrollPadding::Auto => 0.0,
+        };
+        let sp_b = match &style.scroll_padding_bottom {
+            ScrollPadding::Length(v) => *v,
+            ScrollPadding::Auto => 0.0,
+        };
+        let sp_l = match &style.scroll_padding_left {
+            ScrollPadding::Length(v) => *v,
+            ScrollPadding::Auto => 0.0,
+        };
+        if sp_t > 0.0 || sp_r > 0.0 || sp_b > 0.0 || sp_l > 0.0 {
+            let color = Color::rgba(80, 120, 220, 120);
+            let x = abs_x + sp_l;
+            let y = abs_y + sp_t;
+            let w = box_node.width - sp_l - sp_r;
+            let h = box_node.height - sp_t - sp_b;
+            if w > 0.0 && h > 0.0 {
+                self.primitives.add_fill(Rect::new(x, y, w, 1.0), color);
+                self.primitives.add_fill(Rect::new(x, y + h - 1.0, w, 1.0), color);
+                self.primitives.add_fill(Rect::new(x, y, 1.0, h), color);
+                self.primitives.add_fill(Rect::new(x + w - 1.0, y, 1.0, h), color);
+            }
+        }
+    }
+
+    /// 绘制 CSS scroll-snap-stop 属性指示器。
+    ///
+    /// always 值时在吸附轴位置绘制强制停止标记。
+    pub(super) fn paint_scroll_snap_stop_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::ScrollSnapStop;
+        if matches!(style.scroll_snap_stop, ScrollSnapStop::Normal) {
+            return;
+        }
+        let color = Color::rgba(220, 40, 40, 200);
+        let w = box_node.width;
+        let h = box_node.height;
+        // 强制停止标记：中心红色方块 + 十字线
+        let cx = abs_x + w / 2.0;
+        let cy = abs_y + h / 2.0;
+        self.primitives.add_fill(Rect::new(cx - 3.0, cy - 3.0, 6.0, 6.0), color);
+        self.primitives.add_fill(Rect::new(cx - 8.0, cy, 16.0, 1.0), color);
+        self.primitives.add_fill(Rect::new(cx, cy - 8.0, 1.0, 16.0), color);
+    }
+
+    /// 绘制 CSS container-type 属性指示器。
+    ///
+    /// 非 normal 值时在左上角绘制容器查询上下文标记。
+    pub(super) fn paint_container_type_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::ContainerType;
+        let (color, tag) = match &style.container_type {
+            ContainerType::Normal => return,
+            ContainerType::Size => (Color::rgba(60, 140, 220, 200), "S"),
+            ContainerType::InlineSize => (Color::rgba(140, 60, 200, 200), "I"),
+        };
+        let x = abs_x + 2.0;
+        let y = abs_y + 2.0;
+        // 容器标记：方块 + 标签背景
+        self.primitives.add_fill(Rect::new(x, y, 12.0, 8.0), Color::rgba(240, 240, 240, 200));
+        self.primitives.add_fill(Rect::new(x + 1.0, y + 1.0, 10.0, 6.0), color);
+        // container-name 存在时额外标记
+        if style.container_name.is_some() {
+            let name_color = Color::rgba(200, 160, 40, 200);
+            self.primitives.add_fill(Rect::new(x + 12.0, y, 4.0, 4.0), name_color);
+        }
+        let _ = tag;
+    }
 }
 
 /// 裁剪单个 tile 到 origin 区域，返回裁剪后的 (x, y, w, h)。
