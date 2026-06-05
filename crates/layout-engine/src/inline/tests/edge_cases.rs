@@ -291,6 +291,55 @@ fn test_split_into_words_whitespace_only() {
     assert!(words.is_empty(), "仅空白字符不应产生单词");
 }
 
+// ── overflow-wrap: break-word 测试 ──
+
+/// break_word=false 时，超长单词不应在字符边界断行。
+#[test]
+fn test_break_word_false_long_word_no_split() {
+    use crate::{InlineItem, TextRun};
+    use zero_style_system::VerticalAlignValue;
+    let mut ctx = InlineFormattingContext::new(50.0);
+    let items = vec![InlineItem::Text(TextRun::simple(
+        "Supercalifragilistic".to_string(),
+        zero_dom::NodeId::default(),
+        14.0,
+        18.0,
+        VerticalAlignValue::Baseline,
+    ))];
+    ctx.break_items_into_lines(items);
+    // 不应拆分，整行一个 fragment
+    let frags = ctx.all_fragments();
+    assert_eq!(frags.len(), 1, "break_word=false 时不拆分长单词");
+}
+
+/// break_word=true 时，超长单词应在字符边界断行。
+#[test]
+fn test_break_word_true_long_word_splits() {
+    use crate::{InlineItem, TextRun};
+    use zero_style_system::VerticalAlignValue;
+    let mut ctx = InlineFormattingContext::new(50.0).with_break_word(true);
+    let items = vec![InlineItem::Text(TextRun::simple(
+        "Supercalifragilistic".to_string(),
+        zero_dom::NodeId::default(),
+        14.0,
+        18.0,
+        VerticalAlignValue::Baseline,
+    ))];
+    ctx.break_items_into_lines(items);
+    let frags = ctx.all_fragments();
+    assert!(
+        frags.len() > 1,
+        "break_word=true 时应将超长单词拆分为多个 fragment，实际 {} 个",
+        frags.len()
+    );
+    // 应产生多行
+    assert!(
+        ctx.lines.len() > 1,
+        "break_word=true 时应产生多行，实际 {} 行",
+        ctx.lines.len()
+    );
+}
+
 // ── resolve_font_metrics 边界条件 ──
 
 /// 测试 resolve_font_metrics：零值 font-size。

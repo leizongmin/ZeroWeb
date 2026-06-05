@@ -1044,5 +1044,71 @@ pub fn typography_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "has_fill_primitives".into(), "has_glyph_primitives".into(), "no_panic".into()],
         },
+        // ── text-indent 测试 ──
+        TestCase {
+            id: "typography/text-indent-px".into(),
+            description: "CSS text-indent: 32px 首行缩进".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 16px; text-indent: 32px;">This paragraph has a first line indent of 32px. The second line should not be indented.</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/text-indent-em".into(),
+            description: "CSS text-indent: 2em 按字号缩放".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 20px; text-indent: 2em;">Paragraph with 2em indent on first line.</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        // ── overflow-wrap 测试 ──
+        TestCase {
+            id: "typography/overflow-wrap-break-word".into(),
+            description: "CSS overflow-wrap: break-word 允许单词内断行".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 14px; width: 60px; overflow-wrap: break-word;">Supercalifragilisticexpialidocious</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        TestCase {
+            id: "typography/overflow-wrap-normal".into(),
+            description: "CSS overflow-wrap: normal 不在单词内断行".into(),
+            category: "typography".into(),
+            html: r#"<html><body>
+            <p style="color: black; font-size: 14px; width: 100px; overflow-wrap: normal;">Short words only here</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into(), "no_panic".into()],
+        },
+        // ── 综合排版测试 ──
+        TestCase {
+            id: "typography/article-with-indent-spacing".into(),
+            description: "文章排版：text-indent + letter-spacing + overflow-wrap 组合".into(),
+            category: "typography".into(),
+            html: r#"<html><body style="margin: 0; padding: 20px;">
+            <article style="max-width: 400px;">
+                <h1 style="font-size: 22px; letter-spacing: 1px; color: #1a1a1a; margin: 0 0 12px;">Article Title</h1>
+                <p style="font-size: 14px; text-indent: 28px; letter-spacing: 0.3px; line-height: 1.7; color: #333; margin: 0 0 12px; overflow-wrap: break-word;">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.
+                </p>
+                <p style="font-size: 14px; text-indent: 28px; letter-spacing: 0.3px; line-height: 1.7; color: #333; margin: 0; overflow-wrap: break-word;">
+                    Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+                </p>
+            </article>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "has_glyph_primitives".into(),
+                "glyph_count_ge:20".into(),
+            ],
+        },
     ]
 }

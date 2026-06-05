@@ -1927,3 +1927,100 @@ fn test_filter_drop_shadow() {
         "filter 应为 DropShadow(2, 3, 4, black)"
     );
 }
+
+// ==================== CSS text-indent 渲染测试 ====================
+
+/// text-indent: 32px 应使首行第一个 glyph 的 x 坐标偏移。
+#[test]
+fn test_text_indent_px_offsets_first_line() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline_no_indent = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>First line text</p></body></html>";
+    let css_base = "p { color: black; font-size: 16px; }";
+    let result_base = pipeline_no_indent.render_html(html, css_base);
+    let glyphs_base: Vec<_> = result_base
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_base.is_empty() {
+        return;
+    }
+    let first_x_base = glyphs_base[0].x;
+
+    let mut pipeline_indent = RenderPipeline::new(800.0, 600.0);
+    let css_indent = "p { color: black; font-size: 16px; text-indent: 32px; }";
+    let result_indent = pipeline_indent.render_html(html, css_indent);
+    let glyphs_indent: Vec<_> = result_indent
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    if glyphs_indent.is_empty() {
+        return;
+    }
+    let first_x_indent = glyphs_indent[0].x;
+
+    assert!(
+        first_x_indent > first_x_base,
+        "text-indent: 32px 应使首行 glyph 右移: got {first_x_indent} vs base {first_x_base}"
+    );
+    assert!(
+        (first_x_indent - first_x_base - 32.0).abs() < 2.0,
+        "偏移量应约 32px: got {}",
+        first_x_indent - first_x_base
+    );
+}
+
+/// text-indent: 0 不应产生偏移。
+#[test]
+fn test_text_indent_zero_no_offset() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Text</p></body></html>";
+    let css = "p { color: black; font-size: 16px; text-indent: 0; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    assert!(!glyphs.is_empty(), "应有 glyph");
+}
+
+/// text-indent: 2em 应按字号缩放。
+#[test]
+fn test_text_indent_em_units() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>Indented paragraph</p></body></html>";
+    let css = "p { color: black; font-size: 20px; text-indent: 2em; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    assert!(!glyphs.is_empty(), "text-indent: 2em 应生成 glyph");
+}
+
+// ==================== CSS overflow-wrap: break-word 渲染测试 ====================
+
+/// overflow-wrap: break-word 不应导致 panic。
+#[test]
+fn test_overflow_wrap_break_word_no_panic() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(60.0, 200.0);
+    let html = "<html><body><p>Supercalifragilisticexpialidocious</p></body></html>";
+    let css = "p { color: black; font-size: 14px; overflow-wrap: break-word; }";
+    let result = pipeline.render_html(html, css);
+    // 不 panic，且有 glyph 输出
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    assert!(!glyphs.is_empty(), "overflow-wrap: break-word 应生成 glyph");
+}
+
+/// overflow-wrap: normal 不应断开长单词。
+#[test]
+fn test_overflow_wrap_normal_no_break() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(100.0, 200.0);
+    let html = "<html><body><p>Short words only</p></body></html>";
+    let css = "p { color: black; font-size: 14px; overflow-wrap: normal; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs: Vec<_> = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+    assert!(!glyphs.is_empty(), "overflow-wrap: normal 应生成 glyph");
+}

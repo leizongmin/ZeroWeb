@@ -253,6 +253,8 @@ pub struct InlineFormattingContext {
     pub container_width: f32,
     /// 文本对齐方式。
     pub text_align: TextAlign,
+    /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
+    pub break_word: bool,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -263,6 +265,7 @@ impl InlineFormattingContext {
         Self {
             container_width,
             text_align: TextAlign::default(),
+            break_word: false,
             lines: Vec::new(),
         }
     }
@@ -270,6 +273,12 @@ impl InlineFormattingContext {
     /// 设置文本对齐方式。
     pub fn with_text_align(mut self, align: TextAlign) -> Self {
         self.text_align = align;
+        self
+    }
+
+    /// 设置是否允许单词内断行（overflow-wrap: break-word / anywhere）。
+    pub fn with_break_word(mut self, break_word: bool) -> Self {
+        self.break_word = break_word;
         self
     }
 
@@ -432,20 +441,58 @@ impl InlineFormattingContext {
                             current_x = 0.0;
                         }
 
-                        let fragment_height = run.line_height;
-                        current_line.runs.push(TextFragment {
-                            x: current_x,
-                            y: 0.0,
-                            width: word_width,
-                            height: fragment_height,
-                            text: word.clone(),
-                            node_id: run.node_id,
-                            font_size: run.font_size,
-                            vertical_align: run.vertical_align.clone(),
-                        });
+                        // overflow-wrap: break-word / anywhere — 如果单词仍超出行宽，
+                        // 逐字符拆分并在行边界处断行
+                        if self.break_word && current_x + word_width > self.container_width && !word.is_empty() {
+                            let fragment_height = run.line_height;
+                            let chars: Vec<char> = word.chars().collect();
+                            let mut partial_x = current_x;
 
-                        current_x += word_width;
-                        current_line.height = current_line.height.max(fragment_height);
+                            for (ci, ch) in chars.iter().enumerate() {
+                                let ch_width = estimate_char_width(*ch, run.font_size) + run.letter_spacing;
+
+                                if partial_x + ch_width > self.container_width && ci > 0 {
+                                    // 当前行满了，开始新行
+                                    self.lines.push(current_line);
+                                    current_line = LineBox {
+                                        y: 0.0,
+                                        height: 0.0,
+                                        runs: Vec::new(),
+                                    };
+                                    partial_x = 0.0;
+                                }
+
+                                current_line.runs.push(TextFragment {
+                                    x: partial_x,
+                                    y: 0.0,
+                                    width: ch_width,
+                                    height: fragment_height,
+                                    text: ch.to_string(),
+                                    node_id: run.node_id,
+                                    font_size: run.font_size,
+                                    vertical_align: run.vertical_align.clone(),
+                                });
+
+                                partial_x += ch_width;
+                                current_line.height = current_line.height.max(fragment_height);
+                            }
+                            current_x = partial_x;
+                        } else {
+                            let fragment_height = run.line_height;
+                            current_line.runs.push(TextFragment {
+                                x: current_x,
+                                y: 0.0,
+                                width: word_width,
+                                height: fragment_height,
+                                text: word.clone(),
+                                node_id: run.node_id,
+                                font_size: run.font_size,
+                                vertical_align: run.vertical_align.clone(),
+                            });
+
+                            current_x += word_width;
+                            current_line.height = current_line.height.max(fragment_height);
+                        }
                     }
                 }
                 InlineItem::InlineBlock(box_info) => {
