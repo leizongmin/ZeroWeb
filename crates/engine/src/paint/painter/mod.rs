@@ -122,7 +122,7 @@ impl Painter {
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
                 }
-                self.paint_text(box_node, abs_x, abs_y, style, doc);
+                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
             }
 
             hidden
@@ -249,7 +249,7 @@ impl Painter {
                 self.paint_content(box_node, abs_x, abs_y, style);
 
                 // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
-                self.paint_text(box_node, abs_x, abs_y, style, doc);
+                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
             }
 
             hidden

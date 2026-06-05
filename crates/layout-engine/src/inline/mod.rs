@@ -258,6 +258,22 @@ pub enum WordBreakMode {
     KeepAll,
 }
 
+/// 浮动排除区域 — 描述一个浮动元素占据的空间。
+///
+/// 浮动元素（float: left/right）会占据行内内容的一部分空间，
+/// 导致文本在浮动元素周围环绕排列。
+#[derive(Debug, Clone)]
+pub struct FloatExclusion {
+    /// 排除区域的起始 y 坐标（相对于容器内容区域顶部）。
+    pub y: f32,
+    /// 排除区域的高度。
+    pub height: f32,
+    /// 排除区域占据的宽度（px）。
+    pub width: f32,
+    /// 浮动方向：true = 左浮动，false = 右浮动。
+    pub is_left: bool,
+}
+
 /// 行内格式化上下文 — 负责将行内内容排列成行盒。
 #[derive(Debug, Clone)]
 pub struct InlineFormattingContext {
@@ -277,6 +293,8 @@ pub struct InlineFormattingContext {
     pub word_break: WordBreakMode,
     /// 首行文本缩进（CSS text-indent，px）。仅影响第一行的起始 x 坐标。
     pub text_indent: f32,
+    /// 浮动排除区域 — 浮动元素占据的空间，文本需环绕排列。
+    pub float_exclusions: Vec<FloatExclusion>,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -293,6 +311,7 @@ impl InlineFormattingContext {
             preserve_whitespace: false,
             word_break: WordBreakMode::default(),
             text_indent: 0.0,
+            float_exclusions: Vec::new(),
             lines: Vec::new(),
         }
     }
@@ -339,6 +358,42 @@ impl InlineFormattingContext {
     pub fn with_word_break(mut self, mode: WordBreakMode) -> Self {
         self.word_break = mode;
         self
+    }
+
+    /// 设置浮动排除区域 — 浮动元素占据的空间。
+    ///
+    /// 文本在排列时会自动避开这些区域，实现文本环绕浮动元素的效果。
+    pub fn with_float_exclusions(mut self, exclusions: Vec<FloatExclusion>) -> Self {
+        self.float_exclusions = exclusions;
+        self
+    }
+
+    /// 计算指定 y 范围内的有效内容区域。
+    ///
+    /// 返回 `(left_offset, available_width)`：
+    /// - `left_offset` — 左侧浮动占据的宽度（文本起始 x 坐标）
+    /// - `available_width` — 扣除左右浮动后的剩余可用宽度
+    fn effective_content_area(&self, line_y: f32, line_height: f32) -> (f32, f32) {
+        let mut left_offset = 0.0_f32;
+        let mut right_reduction = 0.0_f32;
+
+        for excl in &self.float_exclusions {
+            // 检查排除区域是否与当前行的 y 范围重叠
+            let excl_bottom = excl.y + excl.height;
+            let line_bottom = line_y + line_height;
+            if excl.y < line_bottom && excl_bottom > line_y {
+                if excl.is_left {
+                    // 左浮动：取最大偏移（多个左浮动取最宽的）
+                    left_offset = left_offset.max(excl.width);
+                } else {
+                    // 右浮动：取最大缩减
+                    right_reduction = right_reduction.max(excl.width);
+                }
+            }
+        }
+
+        let available = (self.container_width - left_offset - right_reduction).max(0.0);
+        (left_offset, available)
     }
 
     /// 对文档中指定节点的行内子内容执行布局。
@@ -459,9 +514,14 @@ impl InlineFormattingContext {
     /// 将行内级条目按可用宽度分割成行盒。
     ///
     /// 支持 `InlineItem::Text`（按单词拆分行）、`InlineItem::InlineBlock`（原子盒，不可拆分）
-    /// 和 `InlineItem::Br`（强制换行）。
+    /// 和 `InlineItem::Br`（强制换行）。浮动排除区域会缩小每行的可用宽度。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
+
+        // 追踪当前行的 y 偏移量（用于计算浮动排除区域）
+        let mut current_y = 0.0_f32;
+        // 估算默认行高（用于初始浮动排除计算）
+        let default_line_height = 20.0_f32;
 
         let mut current_line = LineBox {
             y: 0.0,
@@ -483,34 +543,52 @@ impl InlineFormattingContext {
                         let mut word_width =
                             estimate_string_width(word, run.font_size) + run.letter_spacing * char_count as f32;
                         // 非首个单词：追加 word-spacing（单词间间距）
-                        // 注意：split_into_words 在每个单词后添加空格，最后一个单词也有空格
-                        // word-spacing 仅在单词之间（非最后一个）或单词内含空格时生效
                         if word_idx > 0 {
                             word_width += run.word_spacing;
                         }
 
-                        // 检查当前行是否放得下
+                        // 计算当前行的有效可用宽度（扣除浮动排除区域）
+                        let est_height = if current_line.height > 0.0 {
+                            current_line.height
+                        } else {
+                            run.line_height.max(default_line_height)
+                        };
+                        let (left_offset, avail_width) =
+                            self.effective_content_area(current_y, est_height);
+
+                        // 调整 current_x 到浮动排除区域之后（仅在行首且无 text-indent 时）
+                        if current_line.runs.is_empty() && self.text_indent >= 0.0 && current_x < left_offset {
+                            current_x = left_offset;
+                        }
+
+                        // 检查当前行是否放得下（使用有效可用宽度）
                         if !self.no_wrap
-                            && current_x + word_width > self.container_width
+                            && current_x + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
                             // 当前行放不下，开始新行
                             self.lines.push(current_line);
+                            current_y += est_height;
                             current_line = LineBox {
                                 y: 0.0,
                                 height: 0.0,
                                 runs: Vec::new(),
                             };
-                            current_x = 0.0;
+                            // 新行重新计算浮动偏移
+                            let (new_left, _) = self.effective_content_area(current_y, run.line_height);
+                            current_x = new_left;
                         }
 
-                        // overflow-wrap: break-word / anywhere 或 word-break: break-all —
-                        // 如果单词仍超出行宽，逐字符拆分并在行边界处断行。
-                        // word-break: break-all 允许在任意字符间断行（即使单词未超出行宽），
-                        // 但为了简化，仅在单词超出行宽时逐字符拆分。
+                        // 计算当前有效宽度（可能在换行后更新）
+                        let (_, avail_w) = self.effective_content_area(
+                            current_y,
+                            current_line.height.max(run.line_height),
+                        );
+
+                        // overflow-wrap: break-word / anywhere 或 word-break: break-all
                         let need_char_break = !self.no_wrap
                             && (self.break_word || self.word_break == WordBreakMode::BreakAll)
-                            && current_x + word_width > self.container_width
+                            && current_x + word_width > current_x + avail_w
                             && !word.is_empty();
                         if need_char_break {
                             let fragment_height = run.line_height;
@@ -520,15 +598,23 @@ impl InlineFormattingContext {
                             for (ci, ch) in chars.iter().enumerate() {
                                 let ch_width = estimate_char_width(*ch, run.font_size) + run.letter_spacing;
 
-                                if partial_x + ch_width > self.container_width && ci > 0 {
+                                let (_, avail) = self.effective_content_area(
+                                    current_y,
+                                    current_line.height.max(fragment_height),
+                                );
+                                let line_limit = current_line.runs.first().map_or(partial_x, |r| r.x) + avail;
+
+                                if partial_x + ch_width > line_limit && ci > 0 {
                                     // 当前行满了，开始新行
                                     self.lines.push(current_line);
+                                    current_y += fragment_height;
                                     current_line = LineBox {
                                         y: 0.0,
                                         height: 0.0,
                                         runs: Vec::new(),
                                     };
-                                    partial_x = 0.0;
+                                    let (new_left, _) = self.effective_content_area(current_y, fragment_height);
+                                    partial_x = new_left;
                                 }
 
                                 current_line.runs.push(TextFragment {
@@ -569,16 +655,31 @@ impl InlineFormattingContext {
                     let box_width = box_info.width;
                     let box_height = box_info.height;
 
+                    let est_height = if current_line.height > 0.0 {
+                        current_line.height
+                    } else {
+                        box_height.max(default_line_height)
+                    };
+                    let (left_offset, avail_width) =
+                        self.effective_content_area(current_y, est_height);
+
+                    // 调整 current_x 到浮动排除区域之后
+                    if current_line.runs.is_empty() && current_x < left_offset {
+                        current_x = left_offset;
+                    }
+
                     // 检查当前行是否放得下（当行非空时）
-                    if !self.no_wrap && current_x + box_width > self.container_width && !current_line.runs.is_empty() {
+                    if !self.no_wrap && current_x + box_width > left_offset + avail_width && !current_line.runs.is_empty() {
                         // 当前行放不下，开始新行
                         self.lines.push(current_line);
+                        current_y += est_height;
                         current_line = LineBox {
                             y: 0.0,
                             height: 0.0,
                             runs: Vec::new(),
                         };
-                        current_x = 0.0;
+                        let (new_left, _) = self.effective_content_area(current_y, box_height);
+                        current_x = new_left;
                     }
 
                     // inline-block 片段不使用 font_size，设为 0
@@ -599,13 +700,20 @@ impl InlineFormattingContext {
                 InlineItem::Br => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
+                    let est_height = if current_line.height > 0.0 {
+                        current_line.height
+                    } else {
+                        default_line_height
+                    };
                     self.lines.push(current_line);
+                    current_y += est_height;
                     current_line = LineBox {
                         y: 0.0,
                         height: 0.0,
                         runs: Vec::new(),
                     };
-                    current_x = 0.0;
+                    let (new_left, _) = self.effective_content_area(current_y, default_line_height);
+                    current_x = new_left;
                 }
             }
         }

@@ -661,7 +661,7 @@ fn test_paint_text_lowercase_transform() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None);
+    painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
     assert_eq!(painter.primitives().glyphs.len(), 1);
 }
 

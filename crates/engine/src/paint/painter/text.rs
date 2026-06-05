@@ -4,9 +4,9 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{ColorValue, LengthValue, ListStyleTypeValue};
+use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
@@ -122,6 +122,54 @@ impl super::Painter {
                 }
             }
         }
+    }
+
+    /// 收集浮动子元素的排除区域（带样式映射版本）。
+    ///
+    /// 遍历 `box_node` 的直接子元素，找出带有 `float: left/right` 样式的子元素，
+    /// 计算它们相对于容器内容区域的位置和尺寸。
+    pub(super) fn collect_float_exclusions_with_styles(
+        &self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> Vec<FloatExclusion> {
+        let mut exclusions = Vec::new();
+
+        // 容器内容区域的原点 y 偏移（浮动排除区域相对于内容区域顶部计算）
+        let content_offset_y = box_node.border_top + box_node.padding_top;
+
+        for child in &box_node.children {
+            // 跳过绝对定位子元素（不参与浮动流）
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+
+            if let Some(node_id) = child.node_id
+                && let Some(child_style) = styles.get(&node_id)
+            {
+                let is_left = matches!(
+                    child_style.float,
+                    FloatValue::Left | FloatValue::InlineStart
+                );
+                let is_right = matches!(
+                    child_style.float,
+                    FloatValue::Right | FloatValue::InlineEnd
+                );
+
+                if is_left || is_right {
+                    // 浮动子元素相对于容器内容区域的位置
+                    let rel_y = child.y - content_offset_y;
+                    exclusions.push(FloatExclusion {
+                        y: rel_y,
+                        height: child.height,
+                        width: child.width,
+                        is_left,
+                    });
+                }
+            }
+        }
+
+        exclusions
     }
 
     /// 绘制列表标记（disc/circle/square/decimal 等）。
@@ -481,6 +529,7 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
         doc: Option<&Document>,
+        styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
@@ -580,6 +629,11 @@ impl super::Painter {
                 _ => 0.0,
             };
 
+            // 收集浮动子元素的排除区域
+            let float_exclusions = styles
+                .map(|s| self.collect_float_exclusions_with_styles(box_node, s))
+                .unwrap_or_default();
+
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
@@ -587,7 +641,8 @@ impl super::Painter {
                 .with_no_wrap(no_wrap)
                 .with_preserve_whitespace(preserve_whitespace)
                 .with_word_break(word_break_mode)
-                .with_text_indent(text_indent_px);
+                .with_text_indent(text_indent_px)
+                .with_float_exclusions(float_exclusions);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
