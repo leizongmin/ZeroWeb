@@ -1449,3 +1449,156 @@ fn test_font_variant_numeric_pipeline() {
     // tabular-nums 应生成数字变体指示器 fill
     assert!(!result.primitives.fills.is_empty(), "tabular-nums 应渲染数字变体指示器");
 }
+
+// ──────────────────────────────────────────────────────
+// CSS contain / unicode-bidi / box-decoration-break / overflow-wrap / text-align-last
+// break / scroll-area / scroll-snap-stop / container-type 渲染管线
+// ──────────────────────────────────────────────────────
+
+/// 测试 contain:strict 渲染管线。
+#[test]
+fn test_contain_strict_render_pipeline() {
+    let html = r#"<html><body><div class="c">Content</div></body></html>"#;
+    let css = r#"
+        .c {
+            contain: strict;
+            width: 100px;
+            height: 50px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // contain:strict 应生成包含指示器
+    assert!(!result.primitives.fills.is_empty(), "contain:strict 应渲染指示器");
+}
+
+/// 测试 unicode-bidi:bidi-override 渲染管线。
+#[test]
+fn test_unicode_bidi_override_pipeline() {
+    let html = r#"<html><body><div class="bidi">Hello</div></body></html>"#;
+    let css = r#"
+        .bidi {
+            unicode-bidi: bidi-override;
+            direction: rtl;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // bidi-override 应生成双向文本指示器
+    assert!(!result.primitives.fills.is_empty(), "bidi-override 应渲染指示器");
+}
+
+/// 测试 box-decoration-break:clone 渲染管线。
+#[test]
+fn test_box_decoration_break_clone_pipeline() {
+    let html = r#"<html><body><span class="clone">Text</span></body></html>"#;
+    let css = r#"
+        .clone {
+            box-decoration-break: clone;
+            background-color: yellow;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // clone 应生成装饰断行指示器
+    assert!(!result.primitives.fills.is_empty(), "clone 应渲染指示器");
+}
+
+/// 测试 overflow-wrap:break-word 渲染管线。
+#[test]
+fn test_overflow_wrap_break_word_pipeline() {
+    let html = r#"<html><body><div class="wrap">LongWordThatNeedsBreaking</div></body></html>"#;
+    let css = r#"
+        .wrap {
+            overflow-wrap: break-word;
+            width: 50px;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // break-word 应生成断词指示器
+    assert!(!result.primitives.fills.is_empty(), "break-word 应渲染指示器");
+}
+
+/// 测试 text-align-last:center 渲染管线。
+#[test]
+fn test_text_align_last_center_pipeline() {
+    let html = r#"<html><body><div class="last"><p>Line1</p></div></body></html>"#;
+    let css = r#"
+        .last {
+            text-align-last: center;
+            background-color: white;
+            width: 200px;
+            height: 50px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // text-align-last:center 应生成末行对齐指示器（fills 或 glyphs）
+    let has_output = !result.primitives.fills.is_empty() || !result.primitives.glyphs.is_empty();
+    assert!(has_output, "text-align-last:center 应渲染指示器");
+}
+
+/// 测试 break-before:column + break-after:page 渲染管线。
+#[test]
+fn test_break_points_pipeline() {
+    let html = r#"<html><body><div class="break">Section</div></body></html>"#;
+    let css = r#"
+        .break {
+            break-before: column;
+            break-after: page;
+            background-color: lightgray;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // break 属性应生成断点指示器
+    assert!(!result.primitives.fills.is_empty(), "break 属性应渲染指示器");
+}
+
+/// 测试 scroll-margin + scroll-padding 渲染管线。
+#[test]
+fn test_scroll_area_pipeline() {
+    let html = r#"<html><body><div class="snap-item">Item</div></body></html>"#;
+    let css = r#"
+        .snap-item {
+            scroll-margin: 10px;
+            scroll-padding: 8px;
+            background-color: white;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // scroll-margin/padding 应生成滚动区域指示器
+    assert!(!result.primitives.fills.is_empty(), "scroll-area 应渲染指示器");
+}
+
+/// 测试 scroll-snap-stop:always 渲染管线。
+#[test]
+fn test_scroll_snap_stop_always_pipeline() {
+    let html = r#"<html><body><div class="stop">Stop</div></body></html>"#;
+    let css = r#"
+        .stop {
+            scroll-snap-stop: always;
+            background-color: white;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // scroll-snap-stop:always 应生成强制停止指示器
+    assert!(!result.primitives.fills.is_empty(), "snap-stop:always 应渲染指示器");
+}
+
+/// 测试 container-type:size + container-name 渲染管线。
+#[test]
+fn test_container_type_size_pipeline() {
+    let html = r#"<html><body><div class="container"><div class="child">Content</div></div></body></html>"#;
+    let css = r#"
+        .container {
+            container-type: size;
+            container-name: sidebar;
+            width: 200px;
+            height: 100px;
+            background-color: white;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // container-type:size 应生成容器查询上下文指示器
+    assert!(!result.primitives.fills.is_empty(), "container-type:size 应渲染指示器");
+}

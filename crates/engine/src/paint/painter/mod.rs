@@ -558,6 +558,75 @@ impl Painter {
             self.paint_font_variant_numeric_indicator(box_node, abs_x, abs_y, style);
         }
 
+        // CSS contain — 包含指示器（非 none 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::ContainComputedValue;
+            if !matches!(style.contain, ContainComputedValue::None) {
+                self.paint_contain_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS unicode-bidi — 双向文本覆盖指示器（非 normal 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            use zero_style_system::UnicodeBidiValue;
+            if !matches!(style.unicode_bidi, UnicodeBidiValue::Normal) {
+                self.paint_unicode_bidi_indicator(box_node, abs_x, abs_y, style);
+            }
+        }
+
+        // CSS box-decoration-break — 装饰断行指示器（clone 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_box_decoration_break_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS overflow-wrap — 断词模式指示器（非 normal 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_overflow_wrap_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS text-align-last — 末行对齐指示器（非 auto 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_text_align_last_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS break-before/after/inside + page-break-* — 断点指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_break_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS scroll-margin/padding — 滚动吸附区域指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_scroll_area_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS scroll-snap-stop:always — 强制停止标记
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_scroll_snap_stop_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS container-type — 容器查询上下文指示器（非 normal 时渲染）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_container_type_indicator(box_node, abs_x, abs_y, style);
+        }
+
         let _ = is_hidden; // visibility 在 if let 块内处理
     }
 
