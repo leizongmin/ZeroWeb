@@ -10,7 +10,8 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_style_system::{
     BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue,
+    BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderStyleValue,
+    ComputedStyle, OutlineStyleValue,
 };
 
 use super::super::color::{hsla_to_rgba, named_color_to_render};
@@ -1080,6 +1081,7 @@ fn test_background_position_length() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
     style.background_position = BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Length(20.0)),
         Box::new(BackgroundPositionComputedValue::Length(10.0)),
@@ -1101,6 +1103,7 @@ fn test_background_position_percent() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
     style.background_size = BackgroundSizeComputedValue::Length(50.0);
     style.background_position = BackgroundPositionComputedValue::Percent(50.0);
     let mut styles = HashMap::new();
@@ -1159,6 +1162,7 @@ fn test_background_size_length() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
     style.background_size = BackgroundSizeComputedValue::Length(100.0);
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -1181,6 +1185,7 @@ fn test_background_size_percent() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
     style.background_size = BackgroundSizeComputedValue::Percent(50.0);
     let mut styles = HashMap::new();
     styles.insert(nid, style);
@@ -1286,6 +1291,7 @@ fn test_background_position_right_bottom_with_small_size() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
     style.background_size = BackgroundSizeComputedValue::Length(50.0);
     style.background_position = BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Right),

@@ -50,10 +50,7 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
 /// 3. 平移回
 ///
 /// 返回 None 如果变换为 None 或全部是 identity。
-pub fn compute_transform_matrix(
-    style: &ComputedStyle,
-    rect: &Rect,
-) -> Option<TransformPrimitive> {
+pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<TransformPrimitive> {
     let funcs = match &style.transform {
         TransformValue::None => return None,
         TransformValue::List(f) => f,
@@ -63,9 +60,7 @@ pub fn compute_transform_matrix(
     let has_non_translate = funcs.iter().any(|f| {
         !matches!(
             f,
-            TransformFunction::Translate(_, _)
-                | TransformFunction::TranslateX(_)
-                | TransformFunction::TranslateY(_)
+            TransformFunction::Translate(_, _) | TransformFunction::TranslateX(_) | TransformFunction::TranslateY(_)
         )
     });
     if !has_non_translate {
@@ -438,11 +433,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             let stops = convert_color_stops(&cg.stops);
             Some(GradientPrimitive {
                 rect: *rect,
-                kind: GradientKind::Conic {
-                    cx,
-                    cy,
-                    start_angle,
-                },
+                kind: GradientKind::Conic { cx, cy, start_angle },
                 stops,
             })
         }

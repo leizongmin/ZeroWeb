@@ -1177,7 +1177,10 @@ fn test_keyframes_animation_pipeline() {
     "#;
     let result = render_pipeline_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty(), "animated element should produce fills");
+    assert!(
+        !result.primitives.fills.is_empty(),
+        "animated element should produce fills"
+    );
 }
 
 /// 测试动画 timing function ease 渲染管线。
