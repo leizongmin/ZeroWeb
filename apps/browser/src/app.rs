@@ -143,6 +143,8 @@ pub struct BrowserApp {
     pub mouse_pos: (f64, f64),
     /// Ctrl 键是否按住
     ctrl_pressed: bool,
+    /// Cmd (macOS) / Meta 键是否按住
+    cmd_pressed: bool,
     /// Shift 键是否按住
     shift_pressed: bool,
     /// 自动补全状态
@@ -220,6 +222,7 @@ impl BrowserApp {
             needs_redraw: true,
             mouse_pos: (0.0, 0.0),
             ctrl_pressed: false,
+            cmd_pressed: false,
             shift_pressed: false,
             autocomplete: AutocompleteState::new(),
             find_input: String::new(),
@@ -597,10 +600,25 @@ impl BrowserApp {
         }
     }
 
-    /// 测试用：获取 Ctrl 修饰键状态
+    /// 平台感知的修饰键（macOS 用 Cmd，其他平台用 Ctrl）
+    fn is_modifier_pressed(&self) -> bool {
+        if cfg!(target_os = "macos") {
+            self.cmd_pressed
+        } else {
+            self.ctrl_pressed
+        }
+    }
+
+    /// 测试用：获取修饰键状态（平台感知：macOS 用 Cmd，其他用 Ctrl）
     #[cfg(test)]
     pub fn is_ctrl_pressed(&self) -> bool {
-        self.ctrl_pressed
+        self.is_modifier_pressed()
+    }
+
+    /// 测试用：设置平台修饰键（macOS 用 Meta，其他用 Control）
+    #[cfg(test)]
+    pub fn test_modifier_key_name() -> &'static str {
+        if cfg!(target_os = "macos") { "Meta" } else { "Control" }
     }
 
     /// 测试用：获取地址栏文本
@@ -1040,6 +1058,10 @@ impl BrowserApp {
                 self.ctrl_pressed = pressed;
                 return;
             }
+            "Meta" | "MetaLeft" | "MetaRight" | "Super" | "SuperLeft" | "SuperRight" => {
+                self.cmd_pressed = pressed;
+                return;
+            }
             "Shift" => {
                 self.shift_pressed = pressed;
                 return;
@@ -1138,7 +1160,7 @@ impl BrowserApp {
 
     fn handle_address_bar_key(&mut self, key: &str) {
         let extend = self.shift_pressed;
-        if self.ctrl_pressed {
+        if self.is_modifier_pressed() {
             match key {
                 "a" | "A" => {
                     self.address_bar.select_all();
@@ -1258,7 +1280,7 @@ impl BrowserApp {
 
     fn handle_global_key(&mut self, key: &str) {
         // Ctrl 修饰键快捷键
-        if self.ctrl_pressed {
+        if self.is_modifier_pressed() {
             match key {
                 "l" | "L" => {
                     self.address_bar_focused = true;
