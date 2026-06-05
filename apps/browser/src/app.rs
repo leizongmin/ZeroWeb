@@ -390,6 +390,25 @@ impl BrowserApp {
         }
     }
 
+    /// 是否显示书签栏（设置开启且至少有一个根书签）。
+    pub fn bookmarks_bar_visible(&self) -> bool {
+        self.shell.settings().show_bookmarks_bar && !self.shell.bookmarks().list_root().is_empty()
+    }
+
+    /// 书签栏占用高度（物理像素）；不可见时为 0。
+    pub fn bookmarks_bar_height_for(&self, scale: f32) -> f32 {
+        if self.bookmarks_bar_visible() {
+            layout::BOOKMARKS_BAR_HEIGHT * scale
+        } else {
+            0.0
+        }
+    }
+
+    /// 页面内容区上沿 Y（工具栏 + 可选书签栏），物理像素。
+    pub fn chrome_top_y_for(&self, scale: f32) -> f32 {
+        layout::TOOLBAR_HEIGHT * scale + self.bookmarks_bar_height_for(scale)
+    }
+
     /// 窗口 surface 尺寸可能变化（全屏/最大化切换后需重新配置）
     pub fn mark_surface_stale(&mut self) {
         self.gpu_surface_stale = true;
@@ -626,7 +645,7 @@ impl BrowserApp {
     /// 按指定窗口物理尺寸计算视口外框（渲染与布局应使用同一组 `(width, height)`）。
     pub fn page_frame_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
-        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let chrome_top = self.chrome_top_y_for(s);
         let inset_h = layout::PAGE_FRAME_INSET_H * s;
         let inset_top = layout::PAGE_FRAME_INSET_TOP * s;
         let inset_bottom = layout::PAGE_FRAME_INSET_BOTTOM * s;
@@ -1280,8 +1299,11 @@ impl BrowserApp {
                     self.needs_redraw = true;
                 }
                 "d" | "D" => {
-                    // 收藏当前页面
+                    let was_visible = self.bookmarks_bar_visible();
                     self.shell.add_bookmark();
+                    if self.bookmarks_bar_visible() != was_visible {
+                        self.sync_webview_viewport();
+                    }
                     self.needs_redraw = true;
                 }
                 "+" | "=" => {
@@ -1391,7 +1413,7 @@ impl BrowserApp {
 
         let s = self.scale_factor;
         let y_f = y as f32;
-        let chrome_bottom = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let chrome_bottom = self.chrome_top_y_for(s);
         if y_f < chrome_bottom {
             self.needs_redraw = true;
         }
@@ -1409,7 +1431,7 @@ impl BrowserApp {
                 self.needs_redraw = true;
             }
 
-            let toolbar_h = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * self.scale_factor;
+            let toolbar_h = self.chrome_top_y_for(self.scale_factor);
             if (y as f32) < toolbar_h {
                 self.needs_redraw = true;
             }
@@ -1488,8 +1510,7 @@ impl BrowserApp {
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
         let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
-        let bookmarks_bar_h = layout::BOOKMARKS_BAR_HEIGHT * s;
-        let chrome_top = toolbar_h + bookmarks_bar_h;
+        let chrome_top = self.chrome_top_y_for(s);
         let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
         let nav_btn_w = layout::NAV_BUTTON_WIDTH * s;
         let addr_padding = layout::ADDRESS_BAR_PADDING * s;
@@ -1810,7 +1831,7 @@ impl BrowserApp {
         let s = self.scale_factor;
         let y_f = y as f32;
         let x_f = x as f32;
-        let chrome_top = (layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT) * s;
+        let chrome_top = self.chrome_top_y_for(s);
 
         let context_type = if self.address_bar_hit_test(x_f, y_f) {
             ContextType::Editable

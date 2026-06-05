@@ -68,12 +68,13 @@ impl BrowserApp {
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
         fills.push(rect_fill(0.0, toolbar_h - s, width as f32, s, self.chrome_palette.separator));
 
-        // 8. 书签栏
-        let bookmarks_bar_y = toolbar_h;
-        self.render_bookmarks_bar(&mut fills, &mut glyphs, width, bookmarks_bar_y, s);
+        // 8. 书签栏（有书签且设置开启时显示；否则不占高度）
+        if self.bookmarks_bar_visible() {
+            self.render_bookmarks_bar(&mut fills, &mut glyphs, width, toolbar_h, s);
+        }
 
         // 9. 页面内容区域（圆角边框视口）
-        let chrome_top = toolbar_h + layout::BOOKMARKS_BAR_HEIGHT * s;
+        let chrome_top = self.chrome_top_y_for(s);
         let frame_bottom_y = self.page_frame_bottom_y_for(width, height);
         let page_gutter_h = frame_bottom_y - chrome_top;
         fills.push(rect_fill(
