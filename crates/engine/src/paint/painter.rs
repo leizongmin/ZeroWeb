@@ -575,7 +575,11 @@ impl Painter {
             }
 
             let container_width = box_node.content_width;
-            let mut inline_ctx = InlineFormattingContext::new(container_width);
+            let break_word = matches!(
+                style.overflow_wrap,
+                zero_style_system::OverflowWrapValue::BreakWord | zero_style_system::OverflowWrapValue::Anywhere
+            );
+            let mut inline_ctx = InlineFormattingContext::new(container_width).with_break_word(break_word);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
@@ -589,11 +593,28 @@ impl Painter {
                 // 记录片段绘制前的 glyph 数量，用于 ellipsis 后处理
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
+                // text-indent：首行缩进偏移（仅应用到第一行第一个片段）
+                let text_indent: f32 = match style.text_indent {
+                    LengthValue::Px(v) => v as f32,
+                    LengthValue::Em(v) => v as f32 * font_size,
+                    _ => 0.0,
+                };
+
+                // 记录第一行的 y 坐标，用于判断哪些片段属于首行
+                let first_line_y = fragments[0].y;
+
                 // 有文本片段 — 为每个片段中的每个字符生成独立 glyph
-                for fragment in &fragments {
+                for (frag_idx, fragment) in fragments.iter().enumerate() {
                     self.painted_inline_nodes.insert(fragment.node_id);
 
-                    let frag_base_x = content_x + fragment.x + tx;
+                    // 首行片段追加 text-indent 偏移
+                    let indent = if frag_idx == 0 || (fragment.y == first_line_y && text_indent != 0.0) {
+                        // 如果是首行（y 坐标与第一个片段相同），应用缩进
+                        if fragment.y == first_line_y { text_indent } else { 0.0 }
+                    } else {
+                        0.0
+                    };
+                    let frag_base_x = content_x + fragment.x + tx + indent;
                     let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
                     let mut char_x = frag_base_x;
 

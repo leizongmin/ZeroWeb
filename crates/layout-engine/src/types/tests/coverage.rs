@@ -638,7 +638,7 @@ fn test_nth_box_basic() {
         z_index: 0,
     };
     // Index 0 = root
-    let (x0, y0, w0, h0) = root.nth_box(0).unwrap();
+    let (_x0, _y0, w0, h0) = root.nth_box(0).unwrap();
     assert_eq!(w0, 800.0);
     assert_eq!(h0, 600.0);
     // Index 1 = first child
