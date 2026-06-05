@@ -249,6 +249,7 @@ impl DemoState {
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,
+            &[],
             self.scale_factor,
         );
     }
@@ -263,6 +264,7 @@ impl DemoState {
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,
+            &[],
         );
         let Some(surface) = self.cpu_surface.as_mut() else {
             return;

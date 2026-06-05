@@ -179,6 +179,7 @@ fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> Frame
         &font_loader,
         &mut glyph_cache,
         &glyph_draws,
+        &[],
     )
 }
 

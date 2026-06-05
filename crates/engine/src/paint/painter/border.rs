@@ -35,13 +35,7 @@ impl super::Painter {
     /// - Dashed：方头虚线描边
     /// - Double：双线填充矩形（中间留空隙）
     /// - Groove/Ridge/Inset/Outset：3D 效果双色填充
-    pub(super) fn paint_borders(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let w = box_node.width;
         let h = box_node.height;
 
@@ -135,13 +129,7 @@ impl super::Painter {
     /// 当 border-image-source 不为 none 时，将图片按 slice 分割为
     /// 9 个区域（4 角 + 4 边 + 中心），分别绘制到边框的对应区域。
     /// 当前实现支持 stretch 模式（默认），生成 ImagePrimitive 图元。
-    pub(super) fn paint_border_image(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_border_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let url = match &style.border_image_source {
             BorderImageSourceComputedValue::None => return,
             BorderImageSourceComputedValue::Url(u) => u.clone(),
@@ -195,8 +183,7 @@ impl super::Painter {
                 .add_image(make_img(Rect::new(bx + w - br, by + h - bb, br, bb)));
         }
         if bl > 0.0 && bb > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
+            self.primitives.add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
         }
 
         // 四条边（stretch 模式）
@@ -342,13 +329,7 @@ impl super::Painter {
     /// 绘制 outline（位于 border 外侧，支持多种 outline-style）。
     ///
     /// outline 绘制为 4 条边框段，根据 outline-style 生成不同图元类型。
-    pub(super) fn paint_outline(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_outline(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         use zero_style_system::OutlineStyleValue;
 
         let outline_width = length_to_f32(&style.outline_width);

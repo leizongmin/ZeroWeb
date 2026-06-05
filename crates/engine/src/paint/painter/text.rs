@@ -18,35 +18,27 @@ use super::super::helpers::apply_text_transform;
 
 impl super::Painter {
     /// 绘制多列布局的 column-rule（列之间的分隔线）。
-    pub(super) fn paint_column_rules(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-    ) {
+    pub(super) fn paint_column_rules(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         use zero_render_foundation::geometry::Rect;
         use zero_render_foundation::primitive::LineCap;
 
         // 计算 column-count
         let count = match &style.column_count {
-            ColumnCountComputedValue::Auto => {
-                match &style.column_width {
-                    ColumnWidthComputedValue::Auto => return,
-                    ColumnWidthComputedValue::Length(LengthValue::Px(w)) => {
-                        let content_w = box_node.content_width;
-                        if content_w <= 0.0 || *w <= 0.0 {
-                            return;
-                        }
-                        let gap: f32 = match style.column_gap {
-                            LengthValue::Px(g) => g as f32,
-                            _ => 0.0,
-                        };
-                        ((content_w + gap) / (*w as f32 + gap)).max(1.0).floor() as u32
+            ColumnCountComputedValue::Auto => match &style.column_width {
+                ColumnWidthComputedValue::Auto => return,
+                ColumnWidthComputedValue::Length(LengthValue::Px(w)) => {
+                    let content_w = box_node.content_width;
+                    if content_w <= 0.0 || *w <= 0.0 {
+                        return;
                     }
-                    _ => return,
+                    let gap: f32 = match style.column_gap {
+                        LengthValue::Px(g) => g as f32,
+                        _ => 0.0,
+                    };
+                    ((content_w + gap) / (*w as f32 + gap)).max(1.0).floor() as u32
                 }
-            }
+                _ => return,
+            },
             ColumnCountComputedValue::Number(n) => *n,
         };
 

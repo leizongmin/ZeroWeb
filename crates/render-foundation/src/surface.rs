@@ -247,7 +247,7 @@ mod tests {
             }];
             let font_loader = FontLoader::new();
             let mut glyph_cache = GlyphCache::new(64);
-            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
             let gpu_pixels = gpu_renderer.read_pixels().expect("read_pixels");
 
             assert_eq!(gpu_pixels.len(), cpu_fb.data.len());
@@ -275,7 +275,7 @@ mod tests {
             }];
             let font_loader = FontLoader::new();
             let mut glyph_cache = GlyphCache::new(64);
-            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+            gpu_renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
             let gpu_pixels = gpu_renderer.read_pixels().expect("read_pixels");
 
             assert_eq!(gpu_pixels.len(), cpu_fb.data.len());

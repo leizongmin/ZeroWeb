@@ -50,13 +50,16 @@ pub const FIND_BAR_HEIGHT: f32 = 36.0;
 pub const STATUS_BAR_HEIGHT: f32 = 22.0;
 /// 下载栏高度（有活跃下载时显示）
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
-/// 页面视口相对 chrome 的水平内边距
-pub const PAGE_FRAME_INSET_H: f32 = 8.0;
+/// 页面视口相对 chrome 的水平内边距（与 [`PAGE_FRAME_INSET_TOP`] 一致）
+pub const PAGE_FRAME_INSET_H: f32 = 4.0;
 /// 页面视口距书签栏的下间距
 pub const PAGE_FRAME_INSET_TOP: f32 = 4.0;
-/// 页面视口距状态栏的上间距
-pub const PAGE_FRAME_INSET_BOTTOM: f32 = 0.0;
+/// 页面视口距状态栏的上间距（与顶部 gutter 对齐；圆角可见性由 [`PAGE_FRAME_BOTTOM_CLIP_GUARD`] 保障）
+pub const PAGE_FRAME_INSET_BOTTOM: f32 = 4.0;
+/// 视口底部额外留白：Windows/WSLg 最大化时 `inner_size` 常大于可见客户区，
+/// 若不预留此空间，视口下缘圆角与底边会被裁到屏幕外（侧边框看似直通窗口底）。
+pub const PAGE_FRAME_BOTTOM_CLIP_GUARD: f32 = 24.0;
 /// 页面视口边框宽度
 pub const PAGE_FRAME_BORDER: f32 = 1.0;
-/// 页面视口顶部圆角半径
+/// 页面视口圆角半径
 pub const PAGE_FRAME_RADIUS: f32 = 8.0;

@@ -336,8 +336,9 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
     ) {
-        self.render_scene_scaled(fills, font_loader, glyph_cache, glyphs, 1.0);
+        self.render_scene_scaled(fills, font_loader, glyph_cache, glyphs, overlay_fills, 1.0);
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面，并应用逻辑像素到物理像素的缩放。
@@ -348,9 +349,18 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
         scale_factor: f32,
     ) {
-        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, None, scale_factor);
+        self.render_scene_with_clip_scaled(
+            fills,
+            font_loader,
+            glyph_cache,
+            glyphs,
+            overlay_fills,
+            None,
+            scale_factor,
+        );
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域）
@@ -361,9 +371,18 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
         clip_rect: Option<Rect>,
     ) {
-        self.render_scene_with_clip_scaled(fills, font_loader, glyph_cache, glyphs, clip_rect, 1.0);
+        self.render_scene_with_clip_scaled(
+            fills,
+            font_loader,
+            glyph_cache,
+            glyphs,
+            overlay_fills,
+            clip_rect,
+            1.0,
+        );
     }
 
     /// 渲染填充矩形和 glyph 文本到当前表面（带可选裁剪区域和缩放）。
@@ -374,6 +393,7 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
         clip_rect: Option<Rect>,
         scale_factor: f32,
     ) {
@@ -449,6 +469,18 @@ impl GpuRenderer {
             vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
             vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
             vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+        }
+
+        // 3. Overlay fills（圆角遮罩、边框等，绘制在 glyphs 之上）
+        for fill in overlay_fills {
+            push_fill_quad(
+                &mut vertices,
+                fill.rect.left() * scale,
+                fill.rect.top() * scale,
+                fill.rect.right() * scale,
+                fill.rect.bottom() * scale,
+                fill.color,
+            );
         }
 
         self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
@@ -883,7 +915,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer
             .read_pixels()
@@ -908,7 +940,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 绿色 (R=0, G=255, B=0, A=255)
@@ -925,7 +957,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 白色背景 (R=255, G=255, B=255, A=255)
@@ -970,7 +1002,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let clip = Rect::new(0.0, 0.0, 8.0, 8.0);
 
-        renderer.render_scene_with_clip(&fills, &font_loader, &mut glyph_cache, &[], Some(clip));
+        renderer.render_scene_with_clip(&fills, &font_loader, &mut glyph_cache, &[], &[], Some(clip));
 
         let pixels = renderer.read_pixels().expect("read_pixels");
 
@@ -1002,7 +1034,7 @@ mod tests {
         }];
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels[0], 0);
         assert_eq!(pixels[1], 0);
@@ -1020,7 +1052,7 @@ mod tests {
         }];
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels[0], 0);
         assert_eq!(pixels[1], 0);
@@ -1065,7 +1097,7 @@ mod tests {
                 rect: Rect::new(0.0, 0.0, 16.0, 16.0),
                 color: Color::RED,
             }];
-            renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+            renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
         }
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 16 * 16 * 4);
@@ -1111,7 +1143,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[], &[]);
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 白色背景
         for chunk in pixels.chunks_exact(4) {
@@ -1162,7 +1194,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 2.0);
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], 2.0);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 整个图像应为黑色（16 * 2 = 32）
@@ -1186,7 +1218,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let clip = Rect::new(16.0, 16.0, 32.0, 32.0); // 中心 32x32 区域
 
-        renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], Some(clip), 1.0);
+        renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], Some(clip), 1.0);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
 
@@ -1210,7 +1242,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 验证像素被正确渲染
@@ -1246,7 +1278,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 应为 10 * 20 * 4 字节
@@ -1266,7 +1298,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 测试非常大的缩放
-        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 100.0);
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], 100.0);
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 4 * 4 * 4);
     }
@@ -1287,7 +1319,7 @@ mod tests {
             font_id: 0,
             font_size: 8.0,
         }];
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 16 * 16 * 4);
@@ -1309,7 +1341,7 @@ mod tests {
             font_id: 0,
             font_size: 8.0,
         }];
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         // 应保持背景色（白色）
@@ -1361,7 +1393,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 1.0 缩放应该保持原始尺寸
-        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], 1.0);
+        renderer.render_scene_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], 1.0);
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 16 * 16 * 4);
         assert_eq!(pixels[0], 0); // 蓝色 R=0
@@ -1460,7 +1492,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[]);
+        renderer.render_scene(&fills, &font_loader, &mut glyph_cache, &[], &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 1 * 1 * 4);
@@ -1493,7 +1525,7 @@ mod tests {
             },
         ];
 
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 64 * 64 * 4);
@@ -1516,7 +1548,7 @@ mod tests {
             font_size: 8.0,
         }];
 
-        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs);
+        renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
 
         let pixels = renderer.read_pixels().expect("read_pixels");
         assert_eq!(pixels.len(), 32 * 32 * 4);

@@ -245,6 +245,7 @@ mod tests {
             7,
             1.0,
             None,
+            None,
         ));
 
         assert_eq!(fills.len(), 1);
@@ -277,6 +278,7 @@ mod tests {
             1,
             2.0,
             None,
+            None,
         ));
 
         assert_eq!(fills[0].rect.origin.x, 20.0);
@@ -292,12 +294,13 @@ mod tests {
         app.scale_factor = 2.0;
         let (w, h) = app.content_logical_size();
         let frame_w = 2.0 * (layout::PAGE_FRAME_INSET_H + layout::PAGE_FRAME_BORDER) * app.scale_factor;
-        let expected_w = ((3840.0 - frame_w) / app.scale_factor).round() as u32;
+        let expected_w = ((3840.0 - frame_w) / app.scale_factor).floor() as u32;
         assert_eq!(w, expected_w);
         assert!(h > 0);
         let (phys_w, phys_h) = app.content_physical_size();
         assert_eq!(phys_w, (3840.0 - frame_w) as u32);
-        assert!(phys_h > h);
+        assert!(phys_h >= h);
+        assert!((h as f32 * app.scale_factor) <= phys_h as f32 + f32::EPSILON);
     }
 
     #[test]
@@ -487,7 +490,7 @@ mod tests {
             .start_download("https://example.com/file.zip", "file.zip");
 
         // 构建场景应不 panic
-        let (fills, glyphs) = app.build_scene_for_test(800, 600);
+        let (fills, glyphs, _) = app.build_scene_for_test(800, 600);
 
         // 应有下载栏的 fill（至少一个蓝色进度条填充）
         assert!(
@@ -591,7 +594,7 @@ mod tests {
         let (_, content_y, _, _) = app.page_content_rect();
         app.mouse_pos = (640.0, content_y as f64 + 100.0);
 
-        let (fills_at_zero, _) = app.build_scene_for_test(1280, 900);
+        let (fills_at_zero, _, _) = app.build_scene_for_test(1280, 900);
 
         // Linux/WSL 滚轮向下通常为负 LineDelta
         app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0));
@@ -602,7 +605,7 @@ mod tests {
         );
 
         let content_top = content_y;
-        let (fills_after, _) = app.build_scene_for_test(1280, 900);
+        let (fills_after, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
             fills_after
                 .iter()
@@ -611,6 +614,119 @@ mod tests {
             "scrolled page fills must not paint above content area (content_top={content_top})"
         );
         let _ = fills_at_zero;
+    }
+
+    /// WebView 视口与页面框布局应落在窗口内，且缩放后高度不超过内容区。
+    #[test]
+    fn page_layout_and_webview_fit_within_frame() {
+        for scale in [1.0_f32, 1.25, 1.5, 2.0] {
+            let mut app = BrowserApp::new(RenderMode::Cpu);
+            app.physical_size = (1280, 900);
+            app.scale_factor = scale;
+
+            let tab_id = app.shell.active_tab_id().unwrap();
+            app.ensure_webview(tab_id);
+            app.sync_webview_viewport();
+            app.load_webview_html(
+                tab_id,
+                "<html><body style='margin:0;background:#f4f6f8;height:100%'>Hi</body></html>",
+                None,
+            );
+
+            let (fx, fy, fw, fh) = app.page_frame_rect_for(1280, 900);
+            let (cx, cy, cw, ch) = app.page_content_rect_for(1280, 900);
+            let status_y = app.status_bar_y_for(1280, 900);
+            let frame_bottom = fy + fh;
+
+            assert!(
+                frame_bottom + layout::PAGE_FRAME_INSET_BOTTOM * scale <= status_y + 0.5,
+                "scale={scale}: status bar should sit below frame + inset"
+            );
+            assert!(
+                status_y + layout::STATUS_BAR_HEIGHT * scale
+                    <= 900.0 - layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * scale + 0.5,
+                "scale={scale}: status bar should stay above bottom clip guard"
+            );
+            assert!(
+                (cx + cw) <= fx + fw + 0.5 && (cy + ch) <= fy + fh - layout::PAGE_FRAME_BORDER * scale + 0.5,
+                "scale={scale}: content rect must fit inside frame"
+            );
+
+            let (logical_w, logical_h) = app.content_logical_size();
+            let Some((wv_w, wv_h)) = app.webview_logical_size_for_tab(tab_id) else {
+                panic!("scale={scale}: missing webview");
+            };
+            assert_eq!((wv_w, wv_h), (logical_w, logical_h));
+            assert!(
+                wv_h as f32 * scale <= ch + 0.5,
+                "scale={scale}: webview scaled height {} exceeds content h {ch}",
+                wv_h as f32 * scale
+            );
+
+            let (_, _, overlay) = app.build_scene_for_test(1280, 900);
+            assert!(!overlay.is_empty(), "scale={scale}: overlay fills missing");
+
+            let fb = app.render_scene_for_test(1280, 900);
+            let sep = app.chrome_palette().separator;
+            for (px, py) in [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)] {
+                let x = px.round() as u32;
+                let y = py.round() as u32;
+                let i = ((y * fb.width + x) * 4) as usize;
+                assert_eq!(
+                    (fb.data[i], fb.data[i + 1], fb.data[i + 2]),
+                    (sep.r, sep.g, sep.b),
+                    "scale={scale}: bottom corner ({x},{y}) should be separator"
+                );
+            }
+        }
+    }
+
+    /// 底部圆角由 overlay 遮罩绘制；角落像素应为边框色而非页面背景色。
+    #[test]
+    fn page_frame_bottom_corners_use_separator_overlay() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+        app.load_webview_html(
+            tab_id,
+            "<html><body><div style='height:2400px;background:#ff3232'>Tall</div></body></html>",
+            Some("html, body { margin: 0; background: #ff3232; }"),
+        );
+        app.sync_webview_viewport();
+        app.shell.on_page_loaded("Tall");
+
+        let (_, _, overlay_fills) = app.build_scene_for_test(1280, 900);
+        assert!(
+            !overlay_fills.is_empty(),
+            "page frame overlay should include corner masks and border"
+        );
+
+        let fb = app.render_scene_for_test(1280, 900);
+        let (cx, cy, cw, ch) = app.page_content_rect();
+        let sep = app.chrome_palette().separator;
+
+        let sample_points = [
+            (cx + 2.0, cy + ch - 2.0),
+            (cx + cw - 3.0, cy + ch - 2.0),
+        ];
+        for (px, py) in sample_points {
+            let x = px.round() as u32;
+            let y = py.round() as u32;
+            let i = ((y * fb.width + x) * 4) as usize;
+            let r = fb.data[i];
+            let g = fb.data[i + 1];
+            let b = fb.data[i + 2];
+            assert!(
+                (r as i16 - sep.r as i16).abs() <= 2
+                    && (g as i16 - sep.g as i16).abs() <= 2
+                    && (b as i16 - sep.b as i16).abs() <= 2,
+                "corner pixel at ({x},{y}) should match separator {:?}, got rgb({r},{g},{b})",
+                sep
+            );
+        }
     }
 
     #[test]
@@ -630,6 +746,7 @@ mod tests {
             1,
             1.0,
             Some((50.0, 80.0)),
+            None,
         ));
         assert_eq!(fills.len(), 1, "only fill intersecting clip band should remain");
         assert_eq!(fills[0].rect.origin.y, 50.0);
@@ -652,6 +769,7 @@ mod tests {
             1,
             1.0,
             Some((50.0, 80.0)),
+            None,
         ));
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].rect.origin.y, 50.0);
@@ -677,6 +795,7 @@ mod tests {
             1,
             1.0,
             Some((chrome_top, 878.0)),
+            None,
         ));
         assert!(!fills.is_empty());
         assert!(
