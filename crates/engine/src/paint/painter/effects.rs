@@ -12,10 +12,11 @@ use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, LineCap, LineStyle, ShadowPrimitive, StrokePrimitive,
 };
 use zero_style_system::{
-    AccentColorComputedValue, AppearanceComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue,
-    CaretColorComputedValue, ComputedStyle, FilterComputedValue, MixBlendModeComputedValue, ResizeValue,
-    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue,
+    AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundImageComputedValue,
+    BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
+    BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle, FilterComputedValue, HyphensComputedValue,
+    LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -539,6 +540,202 @@ impl super::Painter {
                 };
                 self.primitives.add_fill(Rect::new(cx, cy, cw, ch), indicator);
             }
+        }
+    }
+
+    /// 绘制 CSS scrollbar-gutter 指示器。
+    ///
+    /// scrollbar-gutter 控制是否为滚动条预留空间。
+    /// - auto: 默认行为，不预留额外空间
+    /// - stable: 始终预留滚动条空间（即使内容不溢出）
+    /// - stable both-edges: 两侧都预留空间
+    pub(super) fn paint_scrollbar_gutter(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let gutter_width = match style.scrollbar_gutter {
+            ScrollbarGutterComputedValue::Auto => return,
+            ScrollbarGutterComputedValue::Stable | ScrollbarGutterComputedValue::StableBothEdges => {
+                // 使用与 scrollbar-width auto 相同的宽度
+                match style.scrollbar_width {
+                    ScrollbarWidthComputedValue::None => return,
+                    ScrollbarWidthComputedValue::Auto => 10.0,
+                    ScrollbarWidthComputedValue::Thin => 6.0,
+                }
+            }
+        };
+
+        let gutter_color = Color {
+            r: 245,
+            g: 245,
+            b: 245,
+            a: 120,
+        };
+
+        // 右侧 gutter
+        let gx = abs_x + box_node.width - gutter_width;
+        self.primitives
+            .add_fill(Rect::new(gx, abs_y, gutter_width, box_node.height), gutter_color);
+
+        // both-edges: 左侧也预留
+        if matches!(style.scrollbar_gutter, ScrollbarGutterComputedValue::StableBothEdges) {
+            self.primitives
+                .add_fill(Rect::new(abs_x, abs_y, gutter_width, box_node.height), gutter_color);
+        }
+    }
+
+    /// 绘制 CSS background-attachment: fixed 指示器。
+    ///
+    /// background-attachment: fixed 时，背景不随内容滚动。
+    /// 渲染为元素左上角的锁定图标指示器（小方块+角标）。
+    pub(super) fn paint_background_attachment_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+            return;
+        }
+
+        // 固定背景指示器：左上角 8×8 锁定图钉
+        let pin_size = 3.0;
+        let pin_color = Color {
+            r: 100,
+            g: 100,
+            b: 200,
+            a: 180,
+        };
+        // 图钉头部（圆）
+        self.primitives
+            .add_fill(Rect::new(abs_x + 2.0, abs_y + 2.0, pin_size, pin_size), pin_color);
+        // 图钉针脚
+        self.primitives
+            .add_fill(Rect::new(abs_x + 2.0, abs_y + 2.0 + pin_size, 1.0, 3.0), pin_color);
+    }
+
+    /// 绘制 CSS hyphens 指示器。
+    ///
+    /// hyphens: auto 时，在文本换行处可能显示连字符。
+    /// 渲染为元素底部的小横线指示器。
+    pub(super) fn paint_hyphens_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !matches!(style.hyphens, HyphensComputedValue::Auto) {
+            return;
+        }
+
+        // hyphens: auto 指示器 — 元素底部中央的短横线
+        let line_width = 8.0;
+        let line_x = abs_x + (box_node.width - line_width) / 2.0;
+        let line_y = abs_y + box_node.height - 4.0;
+        let hyphen_color = Color {
+            r: 150,
+            g: 150,
+            b: 150,
+            a: 160,
+        };
+        self.primitives
+            .add_fill(Rect::new(line_x, line_y, line_width, 1.0), hyphen_color);
+    }
+
+    /// 绘制 CSS quotes 引号标记。
+    ///
+    /// quotes 属性定义了嵌套引号对。渲染为文本内容前后的引号 glyph。
+    /// 支持嵌套层级：第一层使用第一对引号，第二层使用第二对，以此类推。
+    pub(super) fn paint_quotes(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        _nesting_depth: usize,
+    ) {
+        let (open_q, close_q) = match &style.quotes {
+            QuotesComputedValue::None => return,
+            QuotesComputedValue::Auto => ("«".to_string(), "»".to_string()),
+            QuotesComputedValue::Pairs(pairs) => {
+                if pairs.is_empty() {
+                    return;
+                }
+                // 根据嵌套深度选择引号对
+                let idx = _nesting_depth.min(pairs.len() - 1);
+                (pairs[idx].0.clone(), pairs[idx].1.clone())
+            }
+        };
+
+        let font_size: f32 = match style.font_size {
+            zero_css_parser::values::LengthValue::Px(s) => s as f32,
+            _ => 12.0,
+        };
+        let color = color_value_to_render(&style.color);
+        let default_font_id = zero_render_foundation::primitive::FontId(0);
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+
+        // 开引号
+        for (i, ch) in open_q.chars().enumerate() {
+            self.primitives
+                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
+                    x: content_x + i as f32 * font_size * 0.6,
+                    y: content_y + font_size,
+                    font_size,
+                    color,
+                    glyph_id: ch as u32,
+                    font_id: default_font_id,
+                    bitmap_width: None,
+                    bitmap_height: None,
+                });
+        }
+
+        // 闭引号
+        let text_width = box_node.content_width;
+        let close_x = content_x + text_width - close_q.chars().count() as f32 * font_size * 0.6;
+        for (i, ch) in close_q.chars().enumerate() {
+            self.primitives
+                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
+                    x: close_x + i as f32 * font_size * 0.6,
+                    y: content_y + font_size,
+                    font_size,
+                    color,
+                    glyph_id: ch as u32,
+                    font_id: default_font_id,
+                    bitmap_width: None,
+                    bitmap_height: None,
+                });
+        }
+    }
+
+    /// 应用 CSS text-wrap 到 InlineFormattingContext 配置。
+    ///
+    /// 返回 (no_wrap_override, description) — 如果 text-wrap 要求禁止换行，
+    /// 返回 Some(true)；否则返回 None（不覆盖 white-space 的换行设置）。
+    pub(crate) fn resolve_text_wrap(style: &ComputedStyle) -> Option<bool> {
+        match style.text_wrap {
+            TextWrapComputedValue::Wrap
+            | TextWrapComputedValue::Balance
+            | TextWrapComputedValue::Pretty
+            | TextWrapComputedValue::Stable => None,
+            TextWrapComputedValue::Nowrap => Some(true),
+        }
+    }
+
+    /// 应用 CSS line-clamp：限制可见行数并在截断处添加省略号。
+    ///
+    /// 返回最大允许行数，None 表示不限制。
+    pub(crate) fn resolve_line_clamp(style: &ComputedStyle) -> Option<u32> {
+        match style.line_clamp {
+            LineClampComputedValue::None => None,
+            LineClampComputedValue::Count(n) => Some(n),
         }
     }
 }

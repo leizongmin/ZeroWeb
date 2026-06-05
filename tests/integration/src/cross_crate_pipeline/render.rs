@@ -1295,3 +1295,134 @@ fn test_text_decoration_style_double_pipeline() {
         "text-decoration-style 应为 Double"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  CSS quotes / scrollbar-gutter / background-attachment / hyphens 管线测试
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_quotes_pairs_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let q = doc.create_element("q");
+    doc.append_child(body, q).unwrap();
+    let text = doc.create_text_node("Hello");
+    doc.append_child(q, text).unwrap();
+
+    let css = r#"q { quotes: "\201C" "\201D" "\2018" "\2019"; }"#;
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let q_style = styles.get(&q).expect("q 应有计算样式");
+    assert!(
+        matches!(q_style.quotes, zero_style_system::QuotesComputedValue::Pairs(_)),
+        "quotes 应为 Pairs"
+    );
+}
+
+#[test]
+fn test_scrollbar_gutter_stable_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let css = "div { scrollbar-gutter: stable; overflow: auto; width: 200px; height: 100px; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.scrollbar_gutter,
+        zero_style_system::ScrollbarGutterComputedValue::Stable,
+        "scrollbar-gutter 应为 Stable"
+    );
+}
+
+#[test]
+fn test_background_attachment_fixed_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let css = "div { background-attachment: fixed; background-image: url(test.png); }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.background_attachment,
+        zero_style_system::BackgroundAttachmentComputedValue::Fixed,
+        "background-attachment 应为 Fixed"
+    );
+}
+
+#[test]
+fn test_hyphens_auto_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let p = doc.create_element("p");
+    doc.append_child(body, p).unwrap();
+
+    let css = "p { hyphens: auto; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let p_style = styles.get(&p).expect("p 应有计算样式");
+    assert_eq!(
+        p_style.hyphens,
+        zero_style_system::HyphensComputedValue::Auto,
+        "hyphens 应为 Auto"
+    );
+}
+
+#[test]
+fn test_text_wrap_nowrap_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let css = "div { text-wrap: nowrap; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.text_wrap,
+        zero_style_system::TextWrapComputedValue::Nowrap,
+        "text-wrap 应为 Nowrap"
+    );
+}
+
+#[test]
+fn test_line_clamp_pipeline() {
+    let (mut doc, body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let css = "div { line-clamp: 3; }";
+    let stylesheet = CssParser::parse_stylesheet(css);
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.line_clamp,
+        zero_style_system::LineClampComputedValue::Count(3),
+        "line-clamp 应为 Count(3)"
+    );
+}
