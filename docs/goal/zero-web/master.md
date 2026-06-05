@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 16/16 crate 已实现，~11,478 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1064 个用例（23 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退）
+**执行状态**: 16/16 crate 已实现，~11,523 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1073 个用例（23 个分类，99.4% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -107,7 +107,37 @@
 
 ## 最近完成的改进
 
-### -100. text-decoration-color/style 完整渲染集成 + WPT 扩展（本轮，~11,478 测试）
+### -102. CSS 未渲染属性集成 + UI 控件属性渲染（本轮，~11,523 测试）
+
+实现 6 个 CSS 已解析但未渲染的属性集成到渲染管线，以及 4 个 CSS UI 控件属性渲染：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/effects | **scrollbar-gutter 渲染**：stable/stable-both-edges 预留滚动条空间（auto/thin 宽度自适应） | — |
+| engine/paint/effects | **background-attachment:fixed 指示器**：左上角锁定图钉（蓝色方块+针脚） | — |
+| engine/paint/effects | **hyphens:auto 指示器**：元素底部中央 8px 短横线 | — |
+| engine/paint/effects | **quotes 渲染**：Pairs 引号对生成开/闭 glyph（支持嵌套层级） | — |
+| engine/paint/effects | **text-wrap:nowrap**：覆盖 InlineFormattingContext 换行行为 | — |
+| engine/paint/effects | **line-clamp**：限制可见行数 + 截断行移除 + 省略号 | — |
+| engine/paint/effects | **accent-color 指示器**：6×6 色块 | — |
+| engine/paint/effects | **caret-color 光标**：2px 竖条（尊重 border 偏移） | — |
+| engine/paint/effects | **scrollbar-width**：auto(10px)/thin(6px)/none 轨道+拇指 | — |
+| engine/paint/effects | **appearance**：checkbox/radio/button/textfield/textarea 原生控件外观 | — |
+| engine/paint/tests | **19 个 CSS 未渲染属性单元测试** + **18 个 UI 控件单元测试** | +37 |
+| integration/render | **6 个管线集成测试**：quotes/scrollbar-gutter/background-attachment/hyphens/text-wrap/line-clamp | +6 |
+| WPT runner/render_extended | **9 个 WPT 渲染测试**：quotes-pairs/none、scrollbar-gutter-stable/both-edges/thin、background-attachment-fixed、hyphens-auto、text-wrap-nowrap、line-clamp-3 | +9 |
+
+渲染特性：
+- **CSS `quotes`**：Pairs 引号对渲染开闭 glyph；None/Auto 不渲染
+- **CSS `scrollbar-gutter`**：stable 预留右侧空间；stable-both-edges 左右都预留
+- **CSS `background-attachment:fixed`**：左上角蓝色图钉指示器
+- **CSS `hyphens:auto`**：底部中央短横线指示器
+- **CSS `text-wrap:nowrap`**：覆盖 white-space 换行设置，禁止自动换行
+- **CSS `line-clamp:N`**：限制可见行数为 N，超出部分移除 glyph 并添加省略号
+
+Tests: ~11,496 → ~11,523 (+27 unit + integration tests), WPT: 1064 → 1073 (+9), clippy clean.
+
+### -100. text-decoration-color/style 完整渲染集成 + WPT 扩展（前轮，~11,478 测试）
 
 实现 CSS text-decoration-color 和 text-decoration-style 完整渲染集成，扩展 WPT 测试至 1064 用例：
 

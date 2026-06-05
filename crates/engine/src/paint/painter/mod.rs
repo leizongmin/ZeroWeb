@@ -16,8 +16,9 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_style_system::{
-    AccentColorComputedValue, AppearanceComputedValue, BackgroundClipComputedValue, CaretColorComputedValue,
-    ComputedStyle, ContainComputedValue, MixBlendModeComputedValue, ResizeValue,
+    AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
+    CaretColorComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue, MixBlendModeComputedValue,
+    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
 };
 
 use super::color::color_value_to_render;
@@ -356,6 +357,40 @@ impl Painter {
             )
         {
             self.paint_appearance(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS scrollbar-gutter — 预留滚动条空间
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto)
+        {
+            self.paint_scrollbar_gutter(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS background-attachment: fixed — 固定背景指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed)
+        {
+            self.paint_background_attachment_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS hyphens: auto — 连字符指示器
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.hyphens, HyphensComputedValue::Auto)
+        {
+            self.paint_hyphens_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // CSS quotes — 引号标记（仅限显式设置 quotes: Pairs 的元素）
+        // 注意：quotes 默认为 Auto，但只有 <q> 元素才需要引号渲染。
+        // 目前仅在 quotes 为 Pairs 时渲染，Auto 时不自动推断 <q>。
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && matches!(style.quotes, QuotesComputedValue::Pairs(_))
+        {
+            self.paint_quotes(box_node, abs_x, abs_y, style, 0);
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理

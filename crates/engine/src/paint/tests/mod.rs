@@ -6,6 +6,7 @@ mod background_repeat;
 mod basic;
 mod content_objectfit;
 mod counters;
+mod css_unpainted;
 mod effects;
 mod helpers;
 mod ui_indicators;

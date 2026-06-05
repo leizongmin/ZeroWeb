@@ -527,7 +527,7 @@ impl super::Painter {
             );
 
             // 根据 white-space 属性设置换行和空白保留行为
-            let (no_wrap, preserve_whitespace) = match style.white_space {
+            let (mut no_wrap, preserve_whitespace) = match style.white_space {
                 WhiteSpaceValue::Normal => (false, false),
                 WhiteSpaceValue::Nowrap => (true, false),
                 WhiteSpaceValue::Pre => (true, true),
@@ -535,6 +535,14 @@ impl super::Painter {
                 WhiteSpaceValue::PreLine => (false, false),
                 WhiteSpaceValue::BreakSpaces => (false, true),
             };
+
+            // CSS text-wrap: nowrap 覆盖换行行为
+            if let Some(wrap_override) = super::Painter::resolve_text_wrap(style) {
+                no_wrap = wrap_override;
+            }
+
+            // CSS line-clamp: 限制最大行数
+            let max_lines = super::Painter::resolve_line_clamp(style);
 
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_break_word(break_word)
@@ -677,6 +685,59 @@ impl super::Painter {
                                 font_size,
                                 color,
                                 glyph_id: *ch as u32,
+                                font_id: default_font_id,
+                                bitmap_width: None,
+                                bitmap_height: None,
+                            });
+                        }
+                    }
+                }
+
+                // CSS line-clamp 后处理：限制可见行数并在截断处添加省略号
+                if let Some(max) = max_lines {
+                    let glyphs = &self.primitives.glyphs;
+                    let fragment_glyphs = &glyphs[glyphs_before_fragments..];
+
+                    // 收集唯一的行 Y 坐标（用于计算总行数）
+                    let mut line_ys: Vec<f32> = fragment_glyphs
+                        .iter()
+                        .filter(|g| g.font_size > 0.0)
+                        .map(|g| g.y)
+                        .collect();
+                    line_ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    line_ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+
+                    if line_ys.len() > max as usize {
+                        // 需要截断：找到第 max+1 行的 Y 坐标
+                        let cutoff_y = line_ys[max as usize];
+
+                        // 移除截断行及之后的所有 glyph
+                        let glyphs = &mut self.primitives.glyphs;
+                        for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                            if g.y >= cutoff_y - 0.5 {
+                                g.font_size = 0.0;
+                                g.glyph_id = 0;
+                            }
+                        }
+
+                        // 在最后一行末尾添加省略号
+                        let last_line_y = line_ys[max as usize - 1];
+                        let last_glyph_x = glyphs[glyphs_before_fragments..]
+                            .iter()
+                            .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
+                            .map(|g| g.x)
+                            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                            .unwrap_or(content_x + tx);
+
+                        let ellipsis_width = estimate_char_width('.', font_size);
+                        let default_font_id = FontId(0);
+                        for i in 0..3 {
+                            self.primitives.add_glyph(GlyphPrimitive {
+                                x: last_glyph_x + ellipsis_width * (i as f32 + 1.0),
+                                y: last_line_y,
+                                font_size,
+                                color,
+                                glyph_id: '.' as u32,
                                 font_id: default_font_id,
                                 bitmap_width: None,
                                 bitmap_height: None,

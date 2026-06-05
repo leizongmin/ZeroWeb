@@ -387,5 +387,175 @@ and newlines within the constrained box.</div>
                 "has_fill_primitives".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS quotes / scrollbar-gutter / background-attachment / hyphens 渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── quotes: 自定义引号对 ──
+        TestCase {
+            id: "render/quotes-pairs".to_string(),
+            description: "CSS quotes: Pairs custom quote marks rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>q { quotes: "«" "»" "‹" "›"; }</style>
+<q>First level <q>nested</q> quote</q>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── quotes: none ──
+        TestCase {
+            id: "render/quotes-none".to_string(),
+            description: "CSS quotes: none suppresses quote marks".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>q { quotes: none; }</style>
+<q>No quotes here</q>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+            ],
+        },
+
+        // ── scrollbar-gutter: stable ──
+        TestCase {
+            id: "render/scrollbar-gutter-stable".to_string(),
+            description: "CSS scrollbar-gutter: stable reserves gutter space".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.box { scrollbar-gutter: stable; width: 200px; height: 100px; overflow: auto; }</style>
+<div class="box">Scrollable content with stable gutter.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── scrollbar-gutter: stable both-edges ──
+        TestCase {
+            id: "render/scrollbar-gutter-both-edges".to_string(),
+            description: "CSS scrollbar-gutter: stable both-edges rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.box { scrollbar-gutter: stable both-edges; width: 200px; height: 100px; overflow: auto; }</style>
+<div class="box">Content with gutters on both edges.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "fill_count_ge:2".to_string(),
+            ],
+        },
+
+        // ── background-attachment: fixed ──
+        TestCase {
+            id: "render/background-attachment-fixed".to_string(),
+            description: "CSS background-attachment: fixed indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.bg { background-attachment: fixed; background-image: url(/img/bg.png); width: 200px; height: 100px; }</style>
+<div class="bg">Fixed background content.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── hyphens: auto ──
+        TestCase {
+            id: "render/hyphens-auto".to_string(),
+            description: "CSS hyphens: auto indicator rendering".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>p { hyphens: auto; width: 100px; }</style>
+<p>Longwordthatneedshyphenation support.</p>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
+
+        // ── text-wrap: nowrap ──
+        TestCase {
+            id: "render/text-wrap-nowrap".to_string(),
+            description: "CSS text-wrap: nowrap prevents line wrapping".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.nowrap { text-wrap: nowrap; width: 100px; }</style>
+<div class="nowrap">This is a long text that should not wrap.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ── line-clamp: 3 ──
+        TestCase {
+            id: "render/line-clamp-3".to_string(),
+            description: "CSS line-clamp: 3 limits text to 3 lines with ellipsis".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.clamped { line-clamp: 3; width: 200px; }</style>
+<div class="clamped">This is the first line of text. This is the second line. This is the third line. This is the fourth line that should be clamped.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:1".to_string(),
+            ],
+        },
+
+        // ── 组合: scrollbar-gutter + scrollbar-width ──
+        TestCase {
+            id: "render/scrollbar-gutter-thin".to_string(),
+            description: "CSS scrollbar-gutter: stable with scrollbar-width: thin".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>.box { scrollbar-gutter: stable; scrollbar-width: thin; width: 200px; height: 100px; overflow: auto; }</style>
+<div class="box">Thin scrollbar gutter content.</div>
+</body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "has_fill_primitives".to_string(),
+            ],
+        },
     ]
 }
