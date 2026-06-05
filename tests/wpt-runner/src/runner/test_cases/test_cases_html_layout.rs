@@ -564,5 +564,116 @@ pub fn html_layout_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  HTML5 语义布局
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 响应式图片 ──
+        TestCase {
+            id: "html-layout/responsive-images".into(),
+            description: "响应式图片（srcset/picture）渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <img src="small.png" srcset="small.png 320w, medium.png 640w, large.png 1024w" alt="Responsive">
+            <picture>
+                <source srcset="wide.png" media="(min-width: 800px)">
+                <source srcset="narrow.png" media="(max-width: 400px)">
+                <img src="default.png" alt="Fallback">
+            </picture>
+            </body></html>"#.into(),
+            css: "img { max-width: 100%; height: auto; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 文章和博客布局 ──
+        TestCase {
+            id: "html-layout/article-blog".into(),
+            description: "文章和博客布局（time/address/figure）".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <article>
+                <header>
+                    <h1>Article Title</h1>
+                    <time datetime="2026-06-05">June 5, 2026</time>
+                    <address>By <a href="/author">Author</a></address>
+                </header>
+                <figure>
+                    <img src="photo.jpg" alt="Article image">
+                    <figcaption>Figure 1: Caption</figcaption>
+                </figure>
+                <p>Article body text.</p>
+                <footer>
+                    <p>Published in <span class="tag">Technology</span></p>
+                </footer>
+            </article>
+            </body></html>"#.into(),
+            css: "article { max-width: 800px; margin: 0 auto; } figcaption { font-size: 0.9em; color: #666; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 定义列表和引用 ──
+        TestCase {
+            id: "html-layout/dl-blockquote".into(),
+            description: "定义列表和引用块渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <dl>
+                <dt>HTML</dt>
+                <dd>HyperText Markup Language</dd>
+                <dt>CSS</dt>
+                <dd>Cascading Style Sheets</dd>
+            </dl>
+            <blockquote cite="https://example.com">
+                <p>The best way to predict the future is to invent it.</p>
+                <footer>— <cite>Alan Kay</cite></footer>
+            </blockquote>
+            <q>This is an inline quote.</q>
+            </body></html>"#.into(),
+            css: "blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 16px; } dt { font-weight: bold; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 代码和预格式文本 ──
+        TestCase {
+            id: "html-layout/code-preformatted".into(),
+            description: "代码和预格式文本渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <p>Use <code>console.log()</code> for debugging.</p>
+            <pre><code>function hello() {
+    console.log("Hello, World!");
+    return 42;
+}</code></pre>
+            <p>Press <kbd>Ctrl</kbd> + <kbd>S</kbd> to save.</p>
+            <p>Output: <samp>Hello, World!</samp></p>
+            <p>Variable <var>x</var> = 42</p>
+            </body></html>"#.into(),
+            css: "pre { background: #f5f5f5; padding: 12px; overflow-x: auto; } code { font-family: monospace; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 内联框架和多媒体占位 ──
+        TestCase {
+            id: "html-layout/iframe-media".into(),
+            description: "iframe 和多媒体元素占位渲染".into(),
+            category: "html".into(),
+            html: r#"<html><body>
+            <iframe srcdoc="<h1>Embedded</h1><p>Content</p>" width="300" height="200"></iframe>
+            <video width="320" height="240" controls>
+                <source src="video.mp4" type="video/mp4">
+                Your browser does not support video.
+            </video>
+            <audio controls>
+                <source src="audio.mp3" type="audio/mpeg">
+            </audio>
+            <embed type="application/pdf" width="300" height="200">
+            <object data="data.pdf" width="300" height="200">
+                <p>PDF plugin not available</p>
+            </object>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }

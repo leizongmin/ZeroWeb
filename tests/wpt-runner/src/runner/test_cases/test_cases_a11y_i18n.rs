@@ -568,5 +568,101 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
                 "nonzero_primitives".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  屏幕阅读器和键盘导航
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── tabindex 和焦点管理 ──
+        TestCase {
+            id: "a11y-i18n/keyboard-tabindex".into(),
+            description: "tabindex 焦点管理".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div tabindex="0" role="button">Focusable div</div>
+            <div tabindex="-1" role="textbox">Programmatically focusable</div>
+            <div tabindex="3">Third in order</div>
+            <div tabindex="1">First in order</div>
+            <div tabindex="2">Second in order</div>
+            </body></html>"#.into(),
+            css: "[tabindex]:focus { outline: 2px solid blue; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 跳过导航链接 ──
+        TestCase {
+            id: "a11y-i18n/skip-navigation".into(),
+            description: "跳过导航链接".into(),
+            category: "a11y-i18n".into(),
+            html: r##"<html><body>
+            <a href="#main" class="skip-link">Skip to main content</a>
+            <nav>
+                <ul><li><a href="/">Home</a></li><li><a href="/about">About</a></li></ul>
+            </nav>
+            <main id="main">
+                <h1>Main Content</h1>
+                <p>This is the main content area.</p>
+            </main>
+            </body></html>"##.into(),
+            css: ".skip-link { position: absolute; top: -40px; left: 0; background: #000; color: #fff; padding: 8px; } .skip-link:focus { top: 0; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── aria-describedby 和说明文本 ──
+        TestCase {
+            id: "a11y-i18n/aria-describedby".into(),
+            description: "aria-describedby 关联说明文本".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <label for="password">Password</label>
+            <input type="password" id="password" aria-describedby="pwd-help" minlength="8">
+            <span id="pwd-help">Must be at least 8 characters with one number.</span>
+            <div role="group" aria-labelledby="group-label">
+                <span id="group-label">Notification preferences</span>
+                <label><input type="checkbox"> Email</label>
+                <label><input type="checkbox"> SMS</label>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── 错误提示和验证 ──
+        TestCase {
+            id: "a11y-i18n/form-error-states".into(),
+            description: "表单错误提示状态".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <form>
+                <div>
+                    <label for="email">Email</label>
+                    <input type="email" id="email" aria-invalid="true" aria-describedby="email-error" value="invalid">
+                    <span id="email-error" role="alert">Please enter a valid email address.</span>
+                </div>
+                <div>
+                    <label for="name">Name</label>
+                    <input type="text" id="name" aria-required="true">
+                </div>
+            </form>
+            </body></html>"#.into(),
+            css: "[aria-invalid] { border-color: red; }".into(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
+        },
+
+        // ── 高对比度和视觉辅助 ──
+        TestCase {
+            id: "a11y-i18n/visual-aids".into(),
+            description: "高对比度和视觉辅助渲染".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p style="color: #000; background: #fff; font-size: 18px;">High contrast text</p>
+            <p style="color: #fff; background: #000; padding: 16px;">Inverted contrast</p>
+            <progress value="75" max="100" style="width: 200px; height: 24px;"></progress>
+            <meter value="0.8" min="0" max="1" style="width: 200px;"></meter>
+            <details><summary>Expand for more info</summary><p>Detailed content</p></details>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "nonzero_primitives".into()],
+        },
     ]
 }

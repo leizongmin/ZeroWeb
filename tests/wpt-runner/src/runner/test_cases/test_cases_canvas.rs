@@ -683,5 +683,146 @@ ctx.fillText('Hello', 150, 50);
             css: String::new(),
             assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Canvas 高级操作
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Canvas 裁剪路径 ──
+        TestCase {
+            id: "canvas/clip-path".to_string(),
+            description: "Canvas clip() 裁剪路径".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="200" height="200"></canvas>
+            <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.beginPath();
+            ctx.arc(100, 100, 80, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.fillStyle = 'orange';
+            ctx.fillRect(0, 0, 200, 200);
+            ctx.fillStyle = 'blue';
+            ctx.font = '24px sans-serif';
+            ctx.fillText('Clipped!', 50, 110);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Canvas 阴影效果 ──
+        TestCase {
+            id: "canvas/shadow-effects".to_string(),
+            description: "Canvas shadowBlur/shadowColor 效果".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="300" height="200"></canvas>
+            <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 5;
+            ctx.shadowOffsetY = 5;
+            ctx.fillStyle = 'coral';
+            ctx.fillRect(20, 20, 100, 60);
+            ctx.shadowColor = 'rgba(0, 0, 255, 0.3)';
+            ctx.shadowBlur = 15;
+            ctx.shadowOffsetX = -3;
+            ctx.shadowOffsetY = -3;
+            ctx.fillStyle = 'gold';
+            ctx.fillRect(160, 40, 100, 60);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Canvas 线型（lineDash/cap/join） ──
+        TestCase {
+            id: "canvas/line-styles".to_string(),
+            description: "Canvas lineDash/lineCap/lineJoin 样式".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="300" height="200"></canvas>
+            <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.setLineDash([10, 5]);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'red';
+            ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(20, 30); ctx.lineTo(280, 30); ctx.stroke();
+            ctx.setLineDash([2, 4]);
+            ctx.lineCap = 'butt';
+            ctx.strokeStyle = 'green';
+            ctx.beginPath(); ctx.moveTo(20, 80); ctx.lineTo(280, 80); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.lineWidth = 10;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'blue';
+            ctx.beginPath(); ctx.moveTo(50, 120); ctx.lineTo(150, 180); ctx.lineTo(250, 120); ctx.stroke();
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Canvas 文本度量 ──
+        TestCase {
+            id: "canvas/text-metrics".to_string(),
+            description: "Canvas measureText 文本度量".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="400" height="100"></canvas>
+            <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.font = '20px serif';
+            var m = ctx.measureText('Hello World');
+            ctx.fillStyle = 'black';
+            ctx.fillText('Hello World', 10, 30);
+            ctx.strokeStyle = 'red';
+            ctx.strokeRect(10, 30 - m.actualBoundingBoxAscent, m.width, m.actualBoundingBoxAscent + m.actualBoundingBoxDescent);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+
+        // ── Canvas globalAlpha 和状态保存 ──
+        TestCase {
+            id: "canvas/state-management".to_string(),
+            description: "Canvas save/restore + globalAlpha 状态管理".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="200" height="200"></canvas>
+            <script>
+            var ctx = document.getElementById('c').getContext('2d');
+            ctx.fillStyle = 'red';
+            ctx.globalAlpha = 1.0;
+            ctx.fillRect(10, 10, 80, 80);
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = 'green';
+            ctx.fillRect(50, 50, 80, 80);
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(90, 90, 80, 80);
+            ctx.restore();
+            ctx.fillStyle = 'yellow';
+            ctx.fillRect(110, 30, 80, 40);
+            ctx.restore();
+            ctx.fillStyle = 'purple';
+            ctx.fillRect(30, 110, 80, 40);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
     ]
 }
