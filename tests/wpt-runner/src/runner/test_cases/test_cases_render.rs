@@ -1088,5 +1088,162 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "gradient_count_ge:1".to_string()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 动画/过渡渲染
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── @keyframes 动画定义 + 渲染 ──
+        TestCase {
+            id: "render/animation-keyframes".to_string(),
+            description: "@keyframes 动画定义渲染不崩溃".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="anim">Animated</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes fadeIn {
+                    from { opacity: 0.0; }
+                    to { opacity: 1.0; }
+                }
+                .anim { animation: fadeIn 1s linear; background-color: blue; width: 100px; height: 80px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 动画 timing function: ease ──
+        TestCase {
+            id: "render/animation-timing-ease".to_string(),
+            description: "animation timing ease 渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="ease-box">Ease</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes slide { from { opacity: 0.2; } to { opacity: 1.0; } }
+                .ease-box { animation: slide 2s ease; background-color: green; width: 150px; height: 100px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 动画 timing function: steps ──
+        TestCase {
+            id: "render/animation-timing-steps".to_string(),
+            description: "animation timing steps 渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="steps-box">Steps</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes fade { 0% { opacity: 1.0; } 100% { opacity: 0.0; } }
+                .steps-box { animation: fade 1s steps(4); background-color: red; width: 100px; height: 100px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 动画 fill-mode: forwards ──
+        TestCase {
+            id: "render/animation-fill-forwards".to_string(),
+            description: "animation fill-mode forwards 渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="fill-box">Fill</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes grow { from { opacity: 0.0; } to { opacity: 1.0; } }
+                .fill-box { animation: grow 0.5s linear forwards; background-color: orange; width: 200px; height: 120px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 动画 direction: alternate ──
+        TestCase {
+            id: "render/animation-direction-alternate".to_string(),
+            description: "animation direction alternate 渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="alt-box">Alt</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes pulse { 0% { opacity: 0.3; } 100% { opacity: 1.0; } }
+                .alt-box { animation: pulse 1s linear infinite alternate; background-color: purple; width: 100px; height: 100px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 多元素同时动画 ──
+        TestCase {
+            id: "render/animation-multiple-elements".to_string(),
+            description: "多元素同时动画渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+                <div class="a1">One</div>
+                <div class="a2">Two</div>
+                <div class="a3">Three</div>
+            </body></html>"#.to_string(),
+            css: r#"
+                @keyframes fade { from { opacity: 0.0; } to { opacity: 1.0; } }
+                .a1 { animation: fade 1s linear; background-color: red; width: 80px; height: 60px; }
+                .a2 { animation: fade 1.5s ease; background-color: blue; width: 80px; height: 60px; }
+                .a3 { animation: fade 2s ease-in-out; background-color: green; width: 80px; height: 60px; }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "fill_count_ge:3".to_string()],
+        },
+
+        // ── CSS transition 属性定义渲染 ──
+        TestCase {
+            id: "render/transition-property".to_string(),
+            description: "CSS transition 属性定义渲染不崩溃".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="trans">Transition</div></body></html>"#.to_string(),
+            css: r#"
+                .trans {
+                    transition: opacity 0.5s ease, background-color 0.3s linear;
+                    opacity: 1.0; background-color: steelblue;
+                    width: 200px; height: 100px; color: white;
+                }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── transition with delay ──
+        TestCase {
+            id: "render/transition-delay".to_string(),
+            description: "CSS transition delay 渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="delayed">Delayed</div></body></html>"#.to_string(),
+            css: r#"
+                .delayed {
+                    transition: opacity 1s 0.5s ease-in-out;
+                    opacity: 0.8; background-color: coral;
+                    width: 150px; height: 80px;
+                }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── transition 多属性 ──
+        TestCase {
+            id: "render/transition-multi-property".to_string(),
+            description: "CSS transition 多属性过渡渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="multi">Multi</div></body></html>"#.to_string(),
+            css: r#"
+                .multi {
+                    transition-property: opacity, width, background-color;
+                    transition-duration: 0.3s, 0.5s, 0.4s;
+                    transition-timing-function: ease, linear, ease-in;
+                    opacity: 0.7; width: 180px; background-color: teal; height: 100px;
+                }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
+
+        // ── 动画 + transition 组合 ──
+        TestCase {
+            id: "render/animation-transition-combo".to_string(),
+            description: "动画与过渡组合渲染".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body><div class="combo">Combo</div></body></html>"#.to_string(),
+            css: r#"
+                @keyframes colorShift { 0% { opacity: 0.5; } 100% { opacity: 1.0; } }
+                .combo {
+                    animation: colorShift 1s linear;
+                    transition: background-color 0.3s ease;
+                    background-color: navy; width: 200px; height: 120px; color: white;
+                }
+            "#.to_string(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string(), "has_fill_primitives".to_string()],
+        },
     ]
 }
