@@ -275,6 +275,8 @@ pub struct InlineFormattingContext {
     pub preserve_whitespace: bool,
     /// CSS word-break 行为。
     pub word_break: WordBreakMode,
+    /// 首行文本缩进（CSS text-indent，px）。仅影响第一行的起始 x 坐标。
+    pub text_indent: f32,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
@@ -290,6 +292,7 @@ impl InlineFormattingContext {
             no_wrap: false,
             preserve_whitespace: false,
             word_break: WordBreakMode::default(),
+            text_indent: 0.0,
             lines: Vec::new(),
         }
     }
@@ -305,6 +308,12 @@ impl InlineFormattingContext {
     /// None 表示末行跟随 text_align 设置（默认行为）。
     pub fn with_text_align_last(mut self, align: Option<TextAlign>) -> Self {
         self.text_align_last = align;
+        self
+    }
+
+    /// 设置首行文本缩进（CSS text-indent）。
+    pub fn with_text_indent(mut self, indent: f32) -> Self {
+        self.text_indent = indent;
         self
     }
 
@@ -459,7 +468,8 @@ impl InlineFormattingContext {
             height: 0.0,
             runs: Vec::new(),
         };
-        let mut current_x = 0.0;
+        // text-indent 仅作用于首行
+        let mut current_x = self.text_indent;
 
         for item in items {
             match item {

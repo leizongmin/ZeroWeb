@@ -573,13 +573,21 @@ impl super::Painter {
                 TextAlignLastValue::Justify => Some(TextAlign::Justify),
             };
 
+            // text-indent 首行缩进（px）
+            let text_indent_px: f32 = match style.text_indent {
+                LengthValue::Px(v) => v as f32,
+                LengthValue::Em(v) => v as f32 * font_size,
+                _ => 0.0,
+            };
+
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
                 .with_break_word(break_word)
                 .with_no_wrap(no_wrap)
                 .with_preserve_whitespace(preserve_whitespace)
-                .with_word_break(word_break_mode);
+                .with_word_break(word_break_mode)
+                .with_text_indent(text_indent_px);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
@@ -590,12 +598,6 @@ impl super::Painter {
             if !fragments.is_empty() {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
-                let text_indent: f32 = match style.text_indent {
-                    LengthValue::Px(v) => v as f32,
-                    LengthValue::Em(v) => v as f32 * font_size,
-                    _ => 0.0,
-                };
-
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
                 let is_vertical = matches!(
                     style.writing_mode,
@@ -603,17 +605,11 @@ impl super::Painter {
                 );
                 let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
 
-                let first_line_y = fragments[0].y;
-
-                for (frag_idx, fragment) in fragments.iter().enumerate() {
+                for fragment in fragments.iter() {
                     self.painted_inline_nodes.insert(fragment.node_id);
 
-                    let indent = if frag_idx == 0 || (fragment.y == first_line_y && text_indent != 0.0) {
-                        if fragment.y == first_line_y { text_indent } else { 0.0 }
-                    } else {
-                        0.0
-                    };
-                    let frag_base_x = content_x + fragment.x + tx + indent;
+                    // text-indent 已在 InlineFormattingContext 中处理，fragment.x 包含缩进
+                    let frag_base_x = content_x + fragment.x + tx;
                     let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
                     let mut char_x = frag_base_x;
 
