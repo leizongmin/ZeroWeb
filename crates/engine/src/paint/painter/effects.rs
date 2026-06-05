@@ -171,7 +171,7 @@ impl super::Painter {
 
         let line_width = (font_size * 0.06).max(1.0);
 
-        self.paint_decoration_line(base_x, y, font_size, total_width, line_width, color, &style.text_decoration_style);
+        self.paint_decoration_line(base_x, y, total_width, line_width, color, &style.text_decoration_style);
     }
 
     /// 绘制文本装饰线的底层实现。
@@ -181,7 +181,6 @@ impl super::Painter {
         &mut self,
         base_x: f32,
         y: f32,
-        font_size: f32,
         total_width: f32,
         line_width: f32,
         color: Color,
@@ -225,7 +224,7 @@ impl super::Painter {
             }
             TextDecorationStyleValue::Wavy => {
                 // 波浪线：用交替偏移的小填充矩形近似正弦波
-                let wave_len = (font_size * 1.5).max(8.0);
+                let wave_len = (total_width / 4.0).max(8.0).min(line_width * 25.0);
                 let amplitude = line_width * 2.0;
                 let steps = ((total_width / wave_len * 8.0).ceil() as usize).max(4);
                 let step_w = total_width / steps as f32;
