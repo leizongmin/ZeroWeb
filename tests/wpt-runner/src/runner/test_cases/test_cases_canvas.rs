@@ -543,5 +543,145 @@ ctx.fillText('Hello', 150, 50);
             css: String::new(),
             assertions: vec!["render_completes".to_string()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        //  Canvas 绘图操作
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Canvas 变换操作 ──
+        TestCase {
+            id: "canvas/transform-ops".to_string(),
+            description: "Canvas 变换（translate/rotate/scale/save/restore）".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="300" height="200"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            ctx.save();
+            ctx.translate(50, 50);
+            ctx.fillStyle = 'red';
+            ctx.fillRect(0, 0, 40, 40);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(0, 0, 40, 40);
+            ctx.restore();
+            ctx.save();
+            ctx.scale(2, 0.5);
+            ctx.fillStyle = 'green';
+            ctx.fillRect(100, 100, 30, 60);
+            ctx.restore();
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        // ── Canvas 渐变和图案 ──
+        TestCase {
+            id: "canvas/gradient-pattern".to_string(),
+            description: "Canvas 渐变填充（linear/radial）".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="400" height="200"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            var lg = ctx.createLinearGradient(0, 0, 200, 0);
+            lg.addColorStop(0, 'red');
+            lg.addColorStop(0.5, 'yellow');
+            lg.addColorStop(1, 'green');
+            ctx.fillStyle = lg;
+            ctx.fillRect(0, 0, 200, 100);
+            var rg = ctx.createRadialGradient(300, 100, 10, 300, 100, 80);
+            rg.addColorStop(0, 'white');
+            rg.addColorStop(1, 'blue');
+            ctx.fillStyle = rg;
+            ctx.fillRect(200, 0, 200, 200);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        // ── Canvas 路径绘制 ──
+        TestCase {
+            id: "canvas/path-drawing".to_string(),
+            description: "Canvas 路径绘制（arc/bezier/quadratic）".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="300" height="300"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            ctx.beginPath();
+            ctx.arc(60, 60, 40, 0, Math.PI * 2);
+            ctx.strokeStyle = 'orange';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(150, 20);
+            ctx.bezierCurveTo(200, 80, 250, 20, 280, 100);
+            ctx.strokeStyle = 'purple';
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(20, 200);
+            ctx.quadraticCurveTo(150, 150, 280, 250);
+            ctx.strokeStyle = 'teal';
+            ctx.stroke();
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        // ── Canvas 像素操作 ──
+        TestCase {
+            id: "canvas/pixel-ops".to_string(),
+            description: "Canvas 像素操作（createImageData/putImageData）".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="100" height="100"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            var img = ctx.createImageData(100, 100);
+            for (var i = 0; i < img.data.length; i += 4) {
+                img.data[i] = Math.random() * 255;
+                img.data[i+1] = Math.random() * 255;
+                img.data[i+2] = Math.random() * 255;
+                img.data[i+3] = 255;
+            }
+            ctx.putImageData(img, 0, 0);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
+        // ── Canvas 合成模式 ──
+        TestCase {
+            id: "canvas/composite-modes".to_string(),
+            description: "Canvas globalCompositeOperation 多种合成模式".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="200" height="200"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(20, 20, 80, 80);
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.fillStyle = 'red';
+            ctx.fillRect(60, 60, 80, 80);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = 'green';
+            ctx.fillRect(100, 100, 80, 80);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
     ]
 }
