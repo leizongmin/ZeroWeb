@@ -310,6 +310,38 @@ mod tests {
     }
 
     #[test]
+    fn bookmarks_bar_hidden_without_bookmarks_or_when_disabled() {
+        let app = BrowserApp::new(RenderMode::Cpu);
+        assert!(!app.bookmarks_bar_visible());
+        assert_eq!(app.bookmarks_bar_height_for(1.0), 0.0);
+        assert_eq!(app.chrome_top_y_for(1.0), layout::TOOLBAR_HEIGHT);
+
+        let mut with_bookmark = BrowserApp::new(RenderMode::Cpu);
+        with_bookmark
+            .shell
+            .bookmarks_mut()
+            .add("Example", "https://example.com", None);
+        assert!(with_bookmark.bookmarks_bar_visible());
+        assert_eq!(
+            with_bookmark.bookmarks_bar_height_for(1.0),
+            layout::BOOKMARKS_BAR_HEIGHT
+        );
+        assert_eq!(
+            with_bookmark.chrome_top_y_for(1.0),
+            layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT
+        );
+
+        let mut disabled = BrowserApp::new(RenderMode::Cpu);
+        disabled
+            .shell
+            .bookmarks_mut()
+            .add("Example", "https://example.com", None);
+        disabled.shell.settings_mut().show_bookmarks_bar = false;
+        assert!(!disabled.bookmarks_bar_visible());
+        assert_eq!(disabled.chrome_top_y_for(1.0), layout::TOOLBAR_HEIGHT);
+    }
+
+    #[test]
     fn unfocus_marks_gpu_surface_stale() {
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.gpu_surface_stale = false;
@@ -902,7 +934,7 @@ mod tests {
 
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
-        let chrome_top = layout::TOOLBAR_HEIGHT + layout::BOOKMARKS_BAR_HEIGHT;
+        let chrome_top = layout::TOOLBAR_HEIGHT;
         let scroll = 40.0;
         assert!(append_webview_primitives(
             &primitives,
