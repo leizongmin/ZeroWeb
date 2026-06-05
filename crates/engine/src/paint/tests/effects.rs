@@ -1937,3 +1937,261 @@ fn test_paint_text_shadow_with_transform() {
         "阴影 glyph y 应包含 translate + shadow offset"
     );
 }
+
+// ── CSS direction 指示器测试 ──
+
+/// direction:ltr（默认值）不应渲染指示器。
+#[test]
+fn test_paint_direction_ltr_no_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.direction = zero_style_system::DirectionValue::Ltr;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // ltr 不应产生任何 stroke
+    assert!(painter.primitives().strokes.is_empty(), "ltr 不应渲染方向指示器");
+}
+
+/// direction:rtl 应在左上角渲染箭头指示器（3 条 stroke + 1 个 fill）。
+#[test]
+fn test_paint_direction_rtl_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.direction = zero_style_system::DirectionValue::Rtl;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 应产生 3 条 stroke（箭头主线 + 两个头部）+ 1 个 fill（标记方块）
+    assert!(prims.strokes.len() >= 3, "rtl 应渲染方向箭头（≥3 stroke）");
+    assert!(prims.fills.len() >= 1, "rtl 应渲染标记方块");
+}
+
+// ── CSS tab-size 指示器测试 ──
+
+/// tab-size:8（默认值）不应渲染指示器。
+#[test]
+fn test_paint_tab_size_default_no_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.tab_size = zero_style_system::TabSizeValue::Number(8);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.is_empty(), "默认 tab-size 8 不应渲染指示器");
+}
+
+/// tab-size:4 应渲染指示器（4 个小方块）。
+#[test]
+fn test_paint_tab_size_four() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.tab_size = zero_style_system::TabSizeValue::Number(4);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 应产生 4 个 fill（每个 tab 一个小方块）
+    assert!(painter.primitives().fills.len() >= 4, "tab-size:4 应渲染 4 个方块");
+}
+
+/// tab-size:0 不应渲染指示器。
+#[test]
+fn test_paint_tab_size_zero() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.tab_size = zero_style_system::TabSizeValue::Number(0);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.is_empty(), "tab-size:0 不应渲染指示器");
+}
+
+// ── CSS border-collapse 指示器测试 ──
+
+/// border-collapse:separate（默认值）不应渲染指示器。
+#[test]
+fn test_paint_border_collapse_separate_no_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_collapse = zero_style_system::BorderCollapseValue::Separate;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        painter.primitives().strokes.is_empty(),
+        "separate 不应渲染边框合并指示器"
+    );
+}
+
+/// border-collapse:collapse 应渲染双线指示器。
+#[test]
+fn test_paint_border_collapse_collapse_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_collapse = zero_style_system::BorderCollapseValue::Collapse;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 应产生 2 条 stroke（双线标记）
+    assert!(painter.primitives().strokes.len() >= 2, "collapse 应渲染双线指示器");
+}
+
+// ── CSS table-layout 指示器测试 ──
+
+/// table-layout:auto（默认值）不应渲染指示器。
+#[test]
+fn test_paint_table_layout_auto_no_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.table_layout = zero_style_system::TableLayoutValue::Auto;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.is_empty(), "auto 不应渲染表格布局指示器");
+}
+
+/// table-layout:fixed 应渲染网格图标指示器。
+#[test]
+fn test_paint_table_layout_fixed_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.table_layout = zero_style_system::TableLayoutValue::Fixed;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 应产生 ≥4 个 fill（网格外框 + 2 竖线 + 1 横线）
+    assert!(painter.primitives().fills.len() >= 4, "fixed 应渲染网格图标");
+}
+
+// ── CSS font-variant-numeric 指示器测试 ──
+
+/// font-variant-numeric:normal（默认值）不应渲染指示器。
+#[test]
+fn test_paint_font_variant_numeric_normal_no_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_variant_numeric = zero_style_system::FontVariantNumericValue::Normal;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.is_empty(), "normal 不应渲染数字变体指示器");
+}
+
+/// font-variant-numeric:tabular-nums 应渲染指示器。
+#[test]
+fn test_paint_font_variant_numeric_tabular_nums() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_variant_numeric = zero_style_system::FontVariantNumericValue::TabularNums;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 应产生 2 个 fill（背景 + 标记方块）
+    assert!(
+        painter.primitives().fills.len() >= 2,
+        "tabular-nums 应渲染数字变体指示器"
+    );
+}
+
+/// font-variant-numeric:slashed-zero 应渲染指示器。
+#[test]
+fn test_paint_font_variant_numeric_slashed_zero() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_variant_numeric = zero_style_system::FontVariantNumericValue::SlashedZero;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.len() >= 2, "slashed-zero 应渲染指示器");
+}
+
+/// font-variant-numeric:diagonal-fractions 应渲染指示器。
+#[test]
+fn test_paint_font_variant_numeric_diagonal_fractions() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_variant_numeric = zero_style_system::FontVariantNumericValue::DiagonalFractions;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().fills.len() >= 2, "diagonal-fractions 应渲染指示器");
+}

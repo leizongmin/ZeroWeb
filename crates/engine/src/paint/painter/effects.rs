@@ -1614,6 +1614,196 @@ impl super::Painter {
             _ => {}
         }
     }
+
+    /// 绘制 CSS direction 属性指示器。
+    ///
+    /// direction:rtl 时在左上角绘制红色 → 箭头（表示从右到左的文本方向）。
+    pub(super) fn paint_direction_indicator(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::DirectionValue;
+        if matches!(style.direction, DirectionValue::Ltr) {
+            return;
+        }
+        // direction:rtl — 红色左箭头 ←
+        let x = abs_x;
+        let y = abs_y;
+        let color = Color::rgba(220, 50, 50, 180);
+        // 箭头主线 ←
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 12.0,
+            y1: y + 6.0,
+            x2: x + 2.0,
+            y2: y + 6.0,
+            width: 2.0,
+            color,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+        // 箭头头部 ∧
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 5.0,
+            y1: y + 3.0,
+            x2: x + 2.0,
+            y2: y + 6.0,
+            width: 2.0,
+            color,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+        // 箭头头部 ∨
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: x + 5.0,
+            y1: y + 9.0,
+            x2: x + 2.0,
+            y2: y + 6.0,
+            width: 2.0,
+            color,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+        // RTL 标记小方块
+        self.primitives.add_fill(Rect::new(x + 14.0, y + 2.0, 6.0, 8.0), color);
+    }
+
+    /// 绘制 CSS tab-size 属性指示器。
+    ///
+    /// 非 8（默认值）时在右上角绘制青色等宽方块表示制表符宽度。
+    pub(super) fn paint_tab_size_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::TabSizeValue;
+        let w = box_node.width;
+        let tab_count = match &style.tab_size {
+            TabSizeValue::Number(n) => *n,
+            TabSizeValue::Length(l) => {
+                let px = length_to_f32(l);
+                if px > 0.0 { (px / 8.0).round() as u32 } else { return }
+            }
+        };
+        // 默认值 8 不渲染
+        if tab_count == 8 || tab_count == 0 {
+            return;
+        }
+        let color = Color::rgba(0, 180, 180, 160);
+        let start_x = abs_x + w - 6.0 * tab_count.min(6) as f32 - 4.0;
+        let y = abs_y + 2.0;
+        let count = tab_count.min(6);
+        for i in 0..count {
+            self.primitives
+                .add_fill(Rect::new(start_x + i as f32 * 6.0, y, 4.0, 4.0), color);
+        }
+    }
+
+    /// 绘制 CSS border-collapse 属性指示器。
+    ///
+    /// collapse 时在右下角绘制橙色双线边框标记（表示合并边框模型）。
+    pub(super) fn paint_border_collapse_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::BorderCollapseValue;
+        if matches!(style.border_collapse, BorderCollapseValue::Separate) {
+            return;
+        }
+        let w = box_node.width;
+        let h = box_node.height;
+        let color = Color::rgba(255, 165, 0, 180);
+        // 双线 — 外线
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: abs_x + w - 14.0,
+            y1: abs_y + h - 2.0,
+            x2: abs_x + w - 2.0,
+            y2: abs_y + h - 2.0,
+            width: 1.0,
+            color,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+        // 双线 — 内线
+        self.primitives.add_stroke(StrokePrimitive {
+            x1: abs_x + w - 14.0,
+            y1: abs_y + h - 5.0,
+            x2: abs_x + w - 2.0,
+            y2: abs_y + h - 5.0,
+            width: 1.0,
+            color,
+            style: LineStyle::Solid,
+            cap: LineCap::Square,
+        });
+    }
+
+    /// 绘制 CSS table-layout 属性指示器。
+    ///
+    /// fixed 时在右上角绘制蓝色网格图标。
+    pub(super) fn paint_table_layout_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::TableLayoutValue;
+        if matches!(style.table_layout, TableLayoutValue::Auto) {
+            return;
+        }
+        let w = box_node.width;
+        let x = abs_x + w - 16.0;
+        let y = abs_y + 2.0;
+        let color = Color::rgba(50, 120, 220, 180);
+        // 网格外框
+        self.primitives.add_fill(Rect::new(x, y, 12.0, 10.0), color);
+        // 网格分割线（用背景色填充两个竖条模拟）
+        let bg = Color::rgba(255, 255, 255, 200);
+        self.primitives.add_fill(Rect::new(x + 3.0, y, 1.0, 10.0), bg);
+        self.primitives.add_fill(Rect::new(x + 7.0, y, 1.0, 10.0), bg);
+        // 水平分割线
+        self.primitives.add_fill(Rect::new(x, y + 4.0, 12.0, 1.0), bg);
+    }
+
+    /// 绘制 CSS font-variant-numeric 属性指示器。
+    ///
+    /// 非 normal 值时在左下角绘制对应样式的数字标记。
+    pub(super) fn paint_font_variant_numeric_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_style_system::FontVariantNumericValue;
+        let h = box_node.height;
+        let (color, _variant) = match &style.font_variant_numeric {
+            FontVariantNumericValue::Normal => return,
+            FontVariantNumericValue::Ordinal => (Color::rgba(100, 80, 200, 180), "ord"),
+            FontVariantNumericValue::SlashedZero => (Color::rgba(200, 80, 100, 180), "0/"),
+            FontVariantNumericValue::LiningNums => (Color::rgba(80, 160, 80, 180), "ln"),
+            FontVariantNumericValue::OldstyleNums => (Color::rgba(160, 120, 40, 180), "on"),
+            FontVariantNumericValue::ProportionalNums => (Color::rgba(80, 120, 200, 180), "pm"),
+            FontVariantNumericValue::TabularNums => (Color::rgba(200, 120, 80, 180), "tm"),
+            FontVariantNumericValue::DiagonalFractions => (Color::rgba(180, 60, 160, 180), "df"),
+            FontVariantNumericValue::StackedFractions => (Color::rgba(60, 160, 180, 180), "sf"),
+        };
+        // 在左下角绘制小标记
+        let x = abs_x + 2.0;
+        let y = abs_y + h - 12.0;
+        // 标记背景
+        self.primitives
+            .add_fill(Rect::new(x, y, 20.0, 10.0), Color::rgba(240, 240, 240, 200));
+        // 标记方块（颜色区分变体类型）
+        self.primitives.add_fill(Rect::new(x + 2.0, y + 2.0, 6.0, 6.0), color);
+    }
 }
 
 /// 裁剪单个 tile 到 origin 区域，返回裁剪后的 (x, y, w, h)。

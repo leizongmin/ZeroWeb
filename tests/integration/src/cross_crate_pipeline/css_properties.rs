@@ -1355,3 +1355,97 @@ fn test_word_break_keep_all_pipeline() {
     let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "keep-all 应生成字形");
 }
+
+// ── CSS direction / tab-size / border-collapse / table-layout / font-variant-numeric ──
+
+/// 测试 direction:rtl 渲染管线。
+#[test]
+fn test_direction_rtl_pipeline() {
+    let html = r#"<html><body><div class="rtl">مرحبا</div></body></html>"#;
+    let css = r#"
+        .rtl {
+            direction: rtl;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // rtl 应生成方向指示器 stroke
+    assert!(!result.primitives.strokes.is_empty(), "rtl 应渲染方向指示器 stroke");
+}
+
+/// 测试 direction:ltr 渲染管线（无指示器）。
+#[test]
+fn test_direction_ltr_pipeline() {
+    let html = r#"<html><body><div class="ltr">Hello</div></body></html>"#;
+    let css = r#"
+        .ltr {
+            direction: ltr;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // ltr 不应生成方向指示器
+    assert!(result.primitives.strokes.is_empty(), "ltr 不应渲染方向指示器");
+}
+
+/// 测试 tab-size 渲染管线。
+#[test]
+fn test_tab_size_pipeline() {
+    let html = r#"<html><body><div class="tab">a\tb</div></body></html>"#;
+    let css = r#"
+        .tab {
+            tab-size: 4;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // tab-size:4 应生成指示器 fill
+    assert!(!result.primitives.fills.is_empty(), "tab-size:4 应渲染指示器");
+}
+
+/// 测试 border-collapse:collapse 渲染管线。
+#[test]
+fn test_border_collapse_pipeline() {
+    let html = r#"<html><body><table class="tbl"><tr><td>A</td></tr></table></body></html>"#;
+    let css = r#"
+        .tbl {
+            border-collapse: collapse;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // collapse 应生成边框合并指示器 stroke
+    assert!(!result.primitives.strokes.is_empty(), "collapse 应渲染边框合并指示器");
+}
+
+/// 测试 table-layout:fixed 渲染管线。
+#[test]
+fn test_table_layout_fixed_pipeline() {
+    let html = r#"<html><body><table class="ft"><tr><td>A</td></tr></table></body></html>"#;
+    let css = r#"
+        .ft {
+            table-layout: fixed;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // fixed 应生成表格布局指示器 fill
+    assert!(!result.primitives.fills.is_empty(), "fixed 应渲染表格布局指示器");
+}
+
+/// 测试 font-variant-numeric:tabular-nums 渲染管线。
+#[test]
+fn test_font_variant_numeric_pipeline() {
+    let html = r#"<html><body><div class="nums">12345</div></body></html>"#;
+    let css = r#"
+        .nums {
+            font-variant-numeric: tabular-nums;
+            color: black;
+            font-size: 14px;
+        }
+    "#;
+    let result = render_pipeline(html, css);
+    // tabular-nums 应生成数字变体指示器 fill
+    assert!(!result.primitives.fills.is_empty(), "tabular-nums 应渲染数字变体指示器");
+}
