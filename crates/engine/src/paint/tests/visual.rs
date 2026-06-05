@@ -8,7 +8,10 @@ use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue};
+use zero_style_system::{
+    BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundOriginComputedValue,
+    BackgroundPositionComputedValue, BackgroundSizeComputedValue, BorderStyleValue, ComputedStyle, OutlineStyleValue,
+};
 
 use super::super::color::{hsla_to_rgba, named_color_to_render};
 use super::super::helpers::{BorderRadiusSpec, apply_transform_offset};
@@ -992,4 +995,330 @@ fn test_named_colors_extended() {
     assert_eq!(named_color_to_render("navy"), Color::rgb(0, 0, 128));
     assert_eq!(named_color_to_render("teal"), Color::rgb(0, 128, 128));
     assert_eq!(named_color_to_render("silver"), Color::rgb(192, 192, 192));
+}
+
+// ── background-position / background-size / background-clip 测试 ──────
+
+/// 辅助：创建带 node_id 和样式的背景测试环境。
+fn setup_bg_test() -> (Painter, zero_dom::NodeId, LayoutBox, HashMap<NodeId, ComputedStyle>) {
+    let mut doc = zero_dom::Document::new();
+    let node_id = doc.create_element("div");
+    let layout = make_box(Some(node_id), 0.0, 0.0, 200.0, 100.0);
+    let styles = HashMap::new();
+    (Painter::new(), node_id, layout, styles)
+}
+
+/// 辅助：创建带 border/padding 的 box。
+fn make_box_with_padding(
+    node_id: Option<NodeId>, x: f32, y: f32, w: f32, h: f32,
+    bt: f32, bl: f32, pt: f32, pl: f32, cw: f32, ch: f32,
+) -> LayoutBox {
+    let mut b = make_box(node_id, x, y, w, h);
+    b.border_top = bt;
+    b.border_left = bl;
+    b.padding_top = pt;
+    b.padding_left = pl;
+    b.content_width = cw;
+    b.content_height = ch;
+    b
+}
+
+/// 测试 background-position: center 居中偏移。
+#[test]
+fn test_background_position_center() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_position = BackgroundPositionComputedValue::Center;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.origin.x, 0.0);
+    assert_eq!(img[0].rect.origin.y, 0.0);
+    assert_eq!(img[0].rect.size.width, 200.0);
+    assert_eq!(img[0].rect.size.height, 100.0);
+}
+
+/// 测试 background-position: right bottom 右下角偏移。
+#[test]
+fn test_background_position_right_bottom() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_position = BackgroundPositionComputedValue::TwoValue(
+        Box::new(BackgroundPositionComputedValue::Right),
+        Box::new(BackgroundPositionComputedValue::Bottom),
+    );
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.origin.x, 0.0);
+    assert_eq!(img[0].rect.origin.y, 0.0);
+}
+
+/// 测试 background-position 长度值偏移。
+#[test]
+fn test_background_position_length() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_position =
+        BackgroundPositionComputedValue::TwoValue(Box::new(BackgroundPositionComputedValue::Length(20.0)), Box::new(BackgroundPositionComputedValue::Length(10.0)));
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.origin.x, 20.0);
+    assert_eq!(img[0].rect.origin.y, 10.0);
+}
+
+/// 测试 background-position 百分比偏移。
+#[test]
+fn test_background_position_percent() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(50.0);
+    style.background_position = BackgroundPositionComputedValue::Percent(50.0);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 50.0);
+    // percent 50: offset_x = (200 - 50) * 50 / 100 = 75.0
+    assert_eq!(img[0].rect.origin.x, 75.0);
+}
+
+/// 测试 background-size: cover 覆盖容器。
+#[test]
+fn test_background_size_cover() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Cover;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 200.0);
+    assert_eq!(img[0].rect.size.height, 100.0);
+}
+
+/// 测试 background-size: contain 包含在容器内。
+#[test]
+fn test_background_size_contain() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Contain;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 200.0);
+    assert_eq!(img[0].rect.size.height, 100.0);
+}
+
+/// 测试 background-size: Length(100px) 固定宽度。
+#[test]
+fn test_background_size_length() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 300.0, 200.0);
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(100.0);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 100.0);
+    let expected_h = 100.0 * 200.0 / 300.0;
+    assert!((img[0].rect.size.height - expected_h).abs() < 0.01);
+}
+
+/// 测试 background-size: Percent(50%) 百分比尺寸。
+#[test]
+fn test_background_size_percent() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 400.0, 200.0);
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Percent(50.0);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 200.0);
+    let expected_h = 200.0 * 200.0 / 400.0;
+    assert!((img[0].rect.size.height - expected_h).abs() < 0.01);
+}
+
+/// 测试 background-clip: content-box 限制背景绘制区域。
+#[test]
+fn test_background_clip_content_box() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 5.0, 5.0, 180.0, 80.0);
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.background_clip = BackgroundClipComputedValue::ContentBox;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].rect.origin.x, 15.0);
+    assert_eq!(fills[0].rect.origin.y, 15.0);
+    assert_eq!(fills[0].rect.size.width, 180.0);
+    assert_eq!(fills[0].rect.size.height, 80.0);
+}
+
+/// 测试 background-clip: padding-box 限制背景绘制区域。
+#[test]
+fn test_background_clip_padding_box() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 0.0, 0.0, 190.0, 90.0);
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.background_clip = BackgroundClipComputedValue::PaddingBox;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].rect.origin.x, 10.0);
+    assert_eq!(fills[0].rect.origin.y, 10.0);
+    assert_eq!(fills[0].rect.size.width, 190.0);
+    assert_eq!(fills[0].rect.size.height, 90.0);
+}
+
+/// 测试 background-clip: border-box（默认值）与无 border 时等价于整盒。
+#[test]
+fn test_background_clip_border_box_default() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(0, 128, 0, 255);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].rect.origin.x, 0.0);
+    assert_eq!(fills[0].rect.origin.y, 0.0);
+    assert_eq!(fills[0].rect.size.width, 200.0);
+    assert_eq!(fills[0].rect.size.height, 100.0);
+}
+
+/// 测试 background-origin: content-box 影响图片定位。
+#[test]
+fn test_background_origin_content_box() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 5.0, 5.0, 180.0, 80.0);
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_origin = BackgroundOriginComputedValue::ContentBox;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.origin.x, 15.0);
+    assert_eq!(img[0].rect.origin.y, 15.0);
+    assert_eq!(img[0].rect.size.width, 180.0);
+    assert_eq!(img[0].rect.size.height, 80.0);
+}
+
+/// 测试 background-position + background-size 组合。
+#[test]
+fn test_background_position_right_bottom_with_small_size() {
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Url("img.png".to_string());
+    style.background_size = BackgroundSizeComputedValue::Length(50.0);
+    style.background_position = BackgroundPositionComputedValue::TwoValue(
+        Box::new(BackgroundPositionComputedValue::Right),
+        Box::new(BackgroundPositionComputedValue::Bottom),
+    );
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.size.width, 50.0);
+    assert_eq!(img[0].rect.origin.x, 150.0);
+    assert_eq!(img[0].rect.origin.y, 75.0);
+}
+
+/// 测试渐变也受 background-position/size 影响。
+#[test]
+fn test_gradient_with_position_and_size() {
+    use zero_css_parser::values::{GradientColorStop, GradientDirection, GradientValue, LinearGradient};
+
+    let (mut painter, nid, layout, _) = setup_bg_test();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(200, 200, 200, 255);
+    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
+        direction: GradientDirection::ToRight,
+        stops: vec![
+            GradientColorStop { color: ColorValue::Rgba(255, 0, 0, 255), position: None },
+            GradientColorStop { color: ColorValue::Rgba(0, 0, 255, 255), position: None },
+        ],
+        repeating: false,
+    }));
+    style.background_size = BackgroundSizeComputedValue::Percent(50.0);
+    style.background_position = BackgroundPositionComputedValue::TwoValue(
+        Box::new(BackgroundPositionComputedValue::Left),
+        Box::new(BackgroundPositionComputedValue::Top),
+    );
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    painter.paint(&layout, &styles, None);
+
+    let gradients = &painter.primitives().gradients;
+    assert_eq!(gradients.len(), 1);
+    assert_eq!(gradients[0].rect.size.width, 100.0);
+    assert_eq!(gradients[0].rect.origin.x, 0.0);
+    assert_eq!(gradients[0].rect.origin.y, 0.0);
 }
