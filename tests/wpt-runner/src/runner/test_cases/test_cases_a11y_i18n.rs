@@ -466,5 +466,107 @@ pub fn a11y_i18n_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_button".into(), "no_panic".into()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        //  表单可访问性
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── 表单标签关联 ──
+        TestCase {
+            id: "a11y-i18n/form-label-association".into(),
+            description: "label 与 input 关联的可访问性渲染".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <form>
+                <label for="name">Full Name</label>
+                <input type="text" id="name" placeholder="Enter name">
+                <label for="email">Email</label>
+                <input type="email" id="email" required>
+                <fieldset>
+                    <legend>Preferences</legend>
+                    <label><input type="checkbox"> Newsletter</label>
+                    <label><input type="radio" name="theme" value="dark"> Dark</label>
+                    <label><input type="radio" name="theme" value="light"> Light</label>
+                </fieldset>
+            </form>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        // ── aria-live 区域 ──
+        TestCase {
+            id: "a11y-i18n/aria-live-regions".into(),
+            description: "aria-live 区域渲染不崩溃".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <div aria-live="polite">Status: idle</div>
+            <div aria-live="assertive" role="alert">Error: required field</div>
+            <div role="log" aria-relevant="additions">
+                <div>Log entry 1</div>
+            </div>
+            <div role="marquee" aria-live="off">Scrolling text</div>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        // ═══════════════════════════════════════════════════════════════
+        //  更多 Unicode 支持
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── Unicode 标点和符号 ──
+        TestCase {
+            id: "a11y-i18n/unicode-symbols".into(),
+            description: "Unicode 数学符号和特殊标点渲染".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p>数学: ∀x∈ℝ: x² ≥ 0 ≈ ∑ ∫ ∂ √ ∞</p>
+            <p>箭头: ← → ↑ ↓ ⇐ ⇒ ⇑ ⇓</p>
+            <p>标点: «» ‹› „"" †‡ • … – —</p>
+            <p>货币: $ € £ ¥ ₹ ₽ ₩ ₺</p>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "nonzero_primitives".into(),
+            ],
+        },
+        // ── 混合方向文本 ──
+        TestCase {
+            id: "a11y-i18n/mixed-direction".into(),
+            description: "混合 LTR/RTL 文本渲染".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p dir="ltr">English with العربية in the middle.</p>
+            <p dir="rtl">العربية مع English في الوسط.</p>
+            <p>Hebrew: שלום עולם mixed with hello world.</p>
+            <bdo dir="rtl">Explicitly reversed text</bdo>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        // ── 缩写和定义 ──
+        TestCase {
+            id: "a11y-i18n/abbreviations".into(),
+            description: "缩写、定义和时间标签渲染".into(),
+            category: "a11y-i18n".into(),
+            html: r#"<html><body>
+            <p><abbr title="HyperText Markup Language">HTML</abbr> is a standard.</p>
+            <p><dfn>Browser</dfn> is a software application.</p>
+            <p>The meeting is on <time datetime="2026-06-05">June 5th</time>.</p>
+            <p><mark>Highlighted text</mark> stands out.</p>
+            <p><s>Deprecated info</s> replaced by new info.</p>
+            </body></html>"#
+                .into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                "nonzero_primitives".into(),
+            ],
+        },
     ]
 }
