@@ -497,13 +497,14 @@ mod tests {
     fn ctrl_key_tracking() {
         let mut app = BrowserApp::new(RenderMode::Cpu);
 
-        // Ctrl 按下
-        app.handle_key("Control", true);
-        assert!(app.is_ctrl_pressed(), "ctrl_pressed should be true after Ctrl down");
+        // 平台修饰键按下
+        let mod_key = BrowserApp::test_modifier_key_name();
+        app.handle_key(mod_key, true);
+        assert!(app.is_ctrl_pressed(), "modifier should be true after modifier down");
 
-        // Ctrl 释放
-        app.handle_key("Control", false);
-        assert!(!app.is_ctrl_pressed(), "ctrl_pressed should be false after Ctrl up");
+        // 平台修饰键释放
+        app.handle_key(mod_key, false);
+        assert!(!app.is_ctrl_pressed(), "modifier should be false after modifier up");
     }
 
     /// 验证 Ctrl+L 聚焦地址栏并清空文本。
@@ -513,9 +514,9 @@ mod tests {
         assert!(!app.address_bar_focused);
 
         // Ctrl 按下 + L
-        app.handle_key("Control", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true);
         app.handle_key("l", true);
-        assert!(app.address_bar_focused, "Ctrl+L should focus address bar");
+        assert!(app.address_bar_focused, "Mod+L should focus address bar");
     }
 
     /// 验证 Ctrl+D 添加书签（当前页面）。
@@ -530,7 +531,7 @@ mod tests {
         app.shell.on_page_loaded("Example");
 
         let count_before = app.shell.bookmarks().len();
-        app.handle_key("Control", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true);
         app.handle_key("d", true);
         assert_eq!(
             app.shell.bookmarks().len(),
@@ -547,7 +548,7 @@ mod tests {
         let count_before = app.shell.tab_count();
         assert!(count_before >= 2);
 
-        app.handle_key("Control", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true);
         app.handle_key("w", true);
         assert_eq!(
             app.shell.tab_count(),
@@ -563,8 +564,8 @@ mod tests {
         app.new_tab(None);
 
         // 按下并释放 Ctrl
-        app.handle_key("Control", true);
-        app.handle_key("Control", false);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), false);
         assert!(!app.is_ctrl_pressed());
 
         // 确认 ctrl_pressed 为 false
