@@ -13,7 +13,7 @@ use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::gpu::renderer::GlyphDraw;
-use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive};
+use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, RoundedRectPrimitive};
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;
@@ -272,8 +272,9 @@ pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> F
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     let result = pipeline.render_html(html, css);
 
-    // 从 RenderPrimitives 提取 fills 和 glyphs
+    // 从 RenderPrimitives 提取 fills、rounded_rects 和 glyphs
     let fills: Vec<FillPrimitive> = result.primitives.fills.clone();
+    let rounded_rects: Vec<RoundedRectPrimitive> = result.primitives.rounded_rects.clone();
     let glyph_primitives: Vec<GlyphPrimitive> = result.primitives.glyphs.clone();
 
     // 将 GlyphPrimitive 转换为 GlyphDraw（CPU 渲染器需要的格式）
@@ -297,6 +298,7 @@ pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> F
         config.viewport_height,
         config.scale_factor,
         &fills,
+        &rounded_rects,
         &font_loader,
         &mut glyph_cache,
         &glyph_draws,

@@ -102,19 +102,19 @@ fn test_paint_border_radius_clip() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, Some(&doc));
 
-    // 带圆角的背景仍生成填充图元
+    // border-radius 生成 RoundedRectPrimitive 而非 FillPrimitive
     assert_eq!(
-        painter.primitives().fills.len(),
+        painter.primitives().rounded_rects.len(),
         1,
-        "border-radius element should produce exactly 1 fill"
+        "border-radius element should produce exactly 1 RoundedRectPrimitive"
     );
-    let fill = &painter.primitives().fills[0];
-    assert_eq!(fill.rect.size.width, 200.0, "fill width should match element width");
-    assert_eq!(fill.rect.size.height, 100.0, "fill height should match element height");
-    assert_eq!(fill.color.r, 100);
-    assert_eq!(fill.color.g, 149);
-    assert_eq!(fill.color.b, 237);
-    assert_eq!(fill.color.a, 255);
+    let rr = &painter.primitives().rounded_rects[0];
+    assert_eq!(rr.rect.size.width, 200.0, "width should match element width");
+    assert_eq!(rr.rect.size.height, 100.0, "height should match element height");
+    assert_eq!(rr.color.r, 100);
+    assert_eq!(rr.color.g, 149);
+    assert_eq!(rr.color.b, 237);
+    assert_eq!(rr.color.a, 255);
 }
 /// outline-width 为 0 时 paint_outline 提前返回，不应产生填充图元。
 #[test]
@@ -550,13 +550,13 @@ fn test_paint_border_radius_clipping_values() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, Some(&doc));
 
-    assert_eq!(painter.primitives().fills.len(), 1);
-    let fill = &painter.primitives().fills[0];
-    // 验证填充位置和尺寸
-    assert_eq!(fill.rect.origin.x, 50.0);
-    assert_eq!(fill.rect.origin.y, 50.0);
-    assert_eq!(fill.rect.size.width, 300.0);
-    assert_eq!(fill.rect.size.height, 200.0);
+    assert_eq!(painter.primitives().rounded_rects.len(), 1);
+    let rr = &painter.primitives().rounded_rects[0];
+    // 验证圆角矩形位置和尺寸
+    assert_eq!(rr.rect.origin.x, 50.0);
+    assert_eq!(rr.rect.origin.y, 50.0);
+    assert_eq!(rr.rect.size.width, 300.0);
+    assert_eq!(rr.rect.size.height, 200.0);
 }
 // ── 新增边界条件测试 ──────────────────────────────────────────
 

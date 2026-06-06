@@ -15,7 +15,7 @@ use zero_dom::{Document, NodeId};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::RenderPrimitives;
+use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     CaretColorComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue, ImageRenderingValue,
@@ -698,14 +698,15 @@ impl Painter {
                 color_value_to_render(&style.background_color),
             );
         } else {
-            // 圆角矩形：生成带圆角信息的填充图元
-            self.primitives.add_fill(
-                Rect::new(clip_x, clip_y, clip_w, clip_h),
-                color_value_to_render(&style.background_color),
-            );
-            // 存储圆角信息（当前架构下 FillPrimitive 没有圆角字段，
-            // 通过附加的元数据图元标记圆角）
-            self.add_rounded_rect_metadata(clip_x, clip_y, clip_w, clip_h, &radii);
+            // 圆角矩形：生成 RoundedRectPrimitive
+            self.primitives.rounded_rects.push(RoundedRectPrimitive {
+                rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
+                color: color_value_to_render(&style.background_color),
+                top_left_radius: radii.top_left,
+                top_right_radius: radii.top_right,
+                bottom_right_radius: radii.bottom_right,
+                bottom_left_radius: radii.bottom_left,
+            });
         }
     }
 

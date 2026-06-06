@@ -261,6 +261,7 @@ impl DemoState {
             height,
             self.scale_factor,
             &fills,
+            &[],
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,
