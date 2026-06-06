@@ -1013,6 +1013,7 @@ mod tests {
             "html-layout",
             "multiprocess",
             "css-layout-subset",
+            "accessibility",
         ];
         for t in &tests {
             assert!(
