@@ -38,6 +38,7 @@ mod test_cases_js_dom;
 mod test_cases_multiprocess;
 mod test_cases_navigation;
 mod test_cases_render;
+mod test_cases_render_detail;
 mod test_cases_render_extended;
 mod test_cases_security;
 mod test_cases_standard;

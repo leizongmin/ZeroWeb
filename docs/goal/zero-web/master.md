@@ -2298,7 +2298,7 @@ Total: 6219 → 6378 tests (+159)
 5. ~~**CSP 完整实现**（M13 剩余）~~ ✅ script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复
 6. ~~**HSTS 预加载 + 混合内容执行引擎**~~ ✅ SecurityContext 统一安全门面 + 40+ 预加载域名 + WebView 集成
 7. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1175 用例（100% 通过率）
+8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1194 用例（100% 通过率）
 9. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
 
 ## 浏览器质量测试体系推进计划
@@ -2311,16 +2311,16 @@ Total: 6219 → 6378 tests (+159)
 
 | 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
 |--------|------|------|----------|----------|
-| 1. 标准合规测试 | [ ] | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | 扩展 WPT 子集；为 JS/DOM/Web API 绑定增加 testharness 类测试；用 expected metadata 管理已知失败 | 按标准模块输出通过率；PR 只阻断 unexpected fail |
-| 2. 渲染正确性测试 | [ ] | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | 推进下方 WebView 渲染合规 Phase 1-4 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
-| 3. 真实网站兼容性测试 | [ ] | 验证真实页面组合能力，而不只验证单项标准 | 建 Top 20/50 网站 smoke；记录 load、首屏截图、console/network error、crash | 每个站点有可复现结果和兼容性问题清单 |
-| 4. 安全测试 | [ ] | 验证浏览器安全边界不被绕过 | 扩展 CORS/CSP/mixed content/sandbox/permission/cookie/storage isolation；增加 HTML/CSS/URL/parser fuzz 和 sanitizer 运行 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
-| 5. 运行时和事件循环测试 | [ ] | 验证 JS + DOM + Web API 的组合时序 | 覆盖 timers、microtask、Promise、MutationObserver、Workers、Modules、WASM、导航中断和页面关闭清理 | DOM mutation 后 style/layout/paint 更新顺序可测试；关闭/导航不泄漏状态 |
-| 6. 网络和导航测试 | [ ] | 验证导航状态机、资源加载和历史行为 | 覆盖 redirects、cache、cookie、HSTS、abort、timeout、partial response、fragment navigation、reload/back/forward、Service Worker fetch、下载中断 | 导航和网络异常路径可复现；历史和资源状态稳定 |
-| 7. 性能测试 | [ ] | 从 crate benchmark 上升到页面级性能预算 | 增加 parse/style/layout/paint/composite 分阶段预算；覆盖首屏、重复渲染、增量渲染、scroll frame time、内存增长、长页面压力 | 页面级性能报告可比较；关键预算有阈值和趋势 |
+| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1194 用例（25+ 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-2 ✅（layout/primitive snapshot + 16 reftest）；Phase 3-4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
+| 3. 真实网站兼容性测试 | [ ] | 验证真实页面组合能力，而不只验证单项标准 | 建 Top 20/50 网站 smoke；记录 load、首屏截图、console/network error、crash（需要 GPU/Display 环境） | 每个站点有可复现结果和兼容性问题清单 |
+| 4. 安全测试 | 🔄 | 验证浏览器安全边界不被绕过 | 52 个跨 crate 安全管线测试 + SecurityContext 集成 + HSTS preload + 混合内容执行引擎 + 19 WPT 安全扩展 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
+| 5. 运行时和事件循环测试 | 🔄 | 验证 JS + DOM + Web API 的组合时序 | 9 个 WPT 运行时测试（Timer/Promise/async-await/Error/rAF/MutationObserver/Event/Console/Worker） | DOM mutation 后 style/layout/paint 更新顺序可测试；关闭/导航不泄漏状态 |
+| 6. 网络和导航测试 | 🔄 | 验证导航状态机、资源加载和历史行为 | 10 个 WPT 导航测试（Redirect/Hash/Cache/Cookie/HSTS/StateMachine/SW/Timeout/CORS）+ 13 个 URL+安全管线集成测试 | 导航和网络异常路径可复现；历史和资源状态稳定 |
+| 7. 性能测试 | 🔄 | 从 crate benchmark 上升到页面级性能预算 | 16/16 crate 有 criterion 基准（78+ 个）；中等复杂度页面首屏 < 2s 验证通过；增量布局验证 | 页面级性能报告可比较；关键预算有阈值和趋势 |
 | 8. 平台和输入测试 | [ ] | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 建 Windows/macOS/Linux/Android 矩阵；覆盖 HiDPI、resize、IME、快捷键、鼠标、触摸、滚轮、CJK、emoji、RTL、字体 fallback | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
 | 9. 产品层测试 | [ ] | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 覆盖标签页、地址栏、书签、历史、下载、设置、查找、缩放、session restore、WebView API contract、demo/app smoke | 产品级 smoke 可在发布前阻断明显退化 |
-| 10. 无头协议和自动化控制面 | [ ] | 支持外部自动化工具驱动 ZeroWeb，用协议统一真实站点、截图、性能和产品 smoke | WebDriver BiDi 优先；CDP 实现最小兼容子集；接入 Playwright/Puppeteer/Selenium 类客户端 | 外部客户端可连接、建上下文、导航、执行脚本、截图并收集网络/日志事件 |
+| 10. 无头协议和自动化控制面 | ✅ | 支持外部自动化工具驱动 ZeroWeb，用协议统一真实站点、截图、性能和产品 smoke | Phase 1-5 全部完成（WebSocket 服务器 + JSON 消息路由 + CDP 命令 + 自动化测试 + 安全加固） | 外部客户端可连接、建上下文、导航、执行脚本、截图并收集网络/日志事件 |
 
 ### WebView 渲染合规测试阶段
 
