@@ -2381,7 +2381,7 @@ Total: 6219 → 6378 tests (+159)
 5. ~~**CSP 完整实现**（M13 剩余）~~ ✅ script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复
 6. ~~**HSTS 预加载 + 混合内容执行引擎**~~ ✅ SecurityContext 统一安全门面 + 40+ 预加载域名 + WebView 集成
 7. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1194 用例（100% 通过率）
+8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1266 用例（100% 通过率） ✅ 按分类通过率追踪 ✅ CSS/Layout 子集 74 用例
 9. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
 10. ~~**HTTP User-Agent 修复**~~ ✅ HttpClient 默认发送 "ZeroWeb/1.0" User-Agent + 启用 gzip/brotli/deflate 解压
 
@@ -2454,7 +2454,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整） |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1239 用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 45 用例（Phase 3）** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1266 用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
 | 5. 单元测试与质量 | ✅ | 11,835 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）** |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
@@ -2471,6 +2471,8 @@ Total: 6219 → 6378 tests (+159)
 6. ~~V8 快照优化（M13 剩余）~~ ✅ 已完成
 7. ~~浏览器质量测试体系 P0~~ ✅ 全部完成
 8. ~~无头浏览器协议 Phase 1-5~~ ✅ 全部完成
+9. ~~WPT 按分类通过率追踪~~ ✅ CategorySummary + 文本/JSON 报告
+10. ~~质量测试矩阵 Phase 3~~ ✅ 74 个 CSS/Layout 子集测试（15 个 CSS 规范领域）
 
 ---
 
