@@ -153,7 +153,7 @@ pub fn run_single_with_expectations(case: &TestCase, ctx: &TestContext, expectat
 
     // 跳过的测试直接返回
     if expected == TestExpectation::Skip {
-        return TestResult::skip(&case.id, &case.description);
+        return TestResult::skip_with_category(&case.id, &case.description, &case.category);
     }
 
     let mut pipeline = RenderPipeline::new(ctx.viewport_width, ctx.viewport_height);
@@ -202,10 +202,18 @@ pub fn run_single_with_expectations(case: &TestCase, ctx: &TestContext, expectat
     let (actual_passed, message, duration_ms) = actual_result;
 
     match (expected, actual_passed) {
-        (TestExpectation::Pass, true) => TestResult::pass(&case.id, &case.description, duration_ms),
-        (TestExpectation::Pass, false) => TestResult::fail(&case.id, &case.description, &message, duration_ms),
-        (TestExpectation::Fail, true) => TestResult::unexpected_pass(&case.id, &case.description, duration_ms),
-        (TestExpectation::Fail, false) => TestResult::expected_fail(&case.id, &case.description, &message, duration_ms),
+        (TestExpectation::Pass, true) => {
+            TestResult::pass_with_category(&case.id, &case.description, &case.category, duration_ms)
+        }
+        (TestExpectation::Pass, false) => {
+            TestResult::fail_with_category(&case.id, &case.description, &case.category, &message, duration_ms)
+        }
+        (TestExpectation::Fail, true) => {
+            TestResult::unexpected_pass_with_category(&case.id, &case.description, &case.category, duration_ms)
+        }
+        (TestExpectation::Fail, false) => {
+            TestResult::expected_fail_with_category(&case.id, &case.description, &case.category, &message, duration_ms)
+        }
         (TestExpectation::Skip, _) => unreachable!(),
     }
 }
@@ -1004,6 +1012,7 @@ mod tests {
             "es-modules",
             "html-layout",
             "multiprocess",
+            "css-layout-subset",
         ];
         for t in &tests {
             assert!(

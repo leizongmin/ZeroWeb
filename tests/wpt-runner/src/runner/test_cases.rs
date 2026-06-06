@@ -29,6 +29,7 @@ mod test_cases_core;
 mod test_cases_css_compliance;
 mod test_cases_css_extended;
 mod test_cases_css_layout;
+mod test_cases_css_layout_subset;
 mod test_cases_dom_api;
 mod test_cases_es_modules;
 mod test_cases_geometry;
@@ -77,5 +78,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_render::render_rendance_tests());
     tests.extend(test_cases_render_extended::render_extended_tests());
     tests.extend(test_cases_multiprocess::multiprocess_tests());
+    tests.extend(test_cases_css_layout_subset::css_layout_subset_tests());
     tests
 }

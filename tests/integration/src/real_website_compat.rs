@@ -34,10 +34,7 @@ fn assert_valid_render(result: &zero_webview::WebViewRenderResult, site: &str) {
         "{site}: 渲染结果应包含至少一个图元，实际 primitives.len() = {total}"
     );
 
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "{site}: 总渲染时间应为非负值"
-    );
+    assert!(result.timings.total_ms >= 0.0, "{site}: 总渲染时间应为非负值");
 
     // 至少应有文字（glyph）或填充（fill）图元
     let has_glyphs = !result.primitives.glyphs.is_empty();
@@ -54,10 +51,7 @@ fn assert_valid_render(result: &zero_webview::WebViewRenderResult, site: &str) {
 /// - 非空
 /// - 包含 <html> 或 <body> 标签
 fn assert_valid_html(html: &str, site: &str) {
-    assert!(
-        !html.is_empty(),
-        "{site}: HTML 内容不应为空"
-    );
+    assert!(!html.is_empty(), "{site}: HTML 内容不应为空");
     let lower = html.to_lowercase();
     assert!(
         lower.contains("<html") || lower.contains("<body") || lower.contains("<!doctype"),
@@ -111,7 +105,9 @@ fn test_site_info_cern_ch() {
 #[ignore = "需要网络连接"]
 fn test_site_httpbin_html() {
     let mut wv = test_webview();
-    let result = wv.fetch_url("https://httpbin.org/html").expect("httpbin.org/html 应可访问");
+    let result = wv
+        .fetch_url("https://httpbin.org/html")
+        .expect("httpbin.org/html 应可访问");
 
     assert_valid_render(&result, "httpbin.org/html");
     assert_valid_html(wv.html_content(), "httpbin.org/html");
@@ -218,7 +214,9 @@ fn test_site_datatracker_ietf() {
 #[ignore = "需要网络连接"]
 fn test_site_rust_lang() {
     let mut wv = test_webview();
-    let result = wv.fetch_url("https://www.rust-lang.org").expect("rust-lang.org 应可访问");
+    let result = wv
+        .fetch_url("https://www.rust-lang.org")
+        .expect("rust-lang.org 应可访问");
 
     assert_valid_render(&result, "rust-lang.org");
     assert_valid_html(wv.html_content(), "rust-lang.org");
@@ -400,9 +398,7 @@ fn test_responsive_render_example_com() {
 #[ignore = "需要网络连接"]
 fn test_page_structure_w3_org() {
     let mut wv = test_webview();
-    let result = wv
-        .fetch_url("https://www.w3.org")
-        .expect("w3.org 应可访问");
+    let result = wv.fetch_url("https://www.w3.org").expect("w3.org 应可访问");
 
     assert_valid_render(&result, "w3.org");
     let html = wv.html_content();
@@ -416,10 +412,7 @@ fn test_page_structure_w3_org() {
 
     // 渲染结果应有大量图元（W3C 页面内容丰富）
     let total = result.primitives.len();
-    assert!(
-        total > 10,
-        "W3C 页面应产生大量渲染图元，实际: {total}"
-    );
+    assert!(total > 10, "W3C 页面应产生大量渲染图元，实际: {total}");
 }
 
 /// 性能验证：中等复杂页面首屏渲染时间
@@ -427,9 +420,7 @@ fn test_page_structure_w3_org() {
 #[ignore = "需要网络连接"]
 fn test_performance_python_org() {
     let mut wv = test_webview();
-    let result = wv
-        .fetch_url("https://www.python.org")
-        .expect("python.org 应可访问");
+    let result = wv.fetch_url("https://www.python.org").expect("python.org 应可访问");
 
     assert_valid_render(&result, "python.org");
 
