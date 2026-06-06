@@ -1,8 +1,7 @@
 //! 真实网站兼容性集成测试
 //!
 //! 验证浏览器引擎能加载并渲染真实网站内容。
-//! 所有测试标记为 #[ignore]，需通过 `cargo test -p zero-integration-tests -- --ignored` 运行。
-//! 测试需要网络连接。
+//! 测试需要网络连接，每个测试有 30 秒超时保护。
 //!
 //! Top 20 目标网站（按复杂度分级）：
 //! - Tier 1（极简）: example.com, info.cern.ch, httpbin.org/html, w3.org, whatwg.org
@@ -80,7 +79,7 @@ fn assert_html_contains(html: &str, needle: &str, site: &str) {
 
 /// #1 example.com — IANA 维护的示例域名，最简单的标准 HTML 页面
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_example_com() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://example.com").expect("example.com 应可访问");
@@ -93,7 +92,7 @@ fn test_site_example_com() {
 
 /// #2 info.cern.ch — 世界上第一个网站（纯静态 HTML，无 CSS/JS）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_info_cern_ch() {
     let mut wv = test_webview();
     let result = wv.fetch_url("http://info.cern.ch").expect("info.cern.ch 应可访问");
@@ -106,7 +105,7 @@ fn test_site_info_cern_ch() {
 
 /// #3 httpbin.org/html — HTTP 测试服务的简单 HTML 页面
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_httpbin_html() {
     let mut wv = test_webview();
     let result = wv
@@ -121,7 +120,7 @@ fn test_site_httpbin_html() {
 
 /// #4 w3.org — W3C 官方网站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_w3_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.w3.org").expect("w3.org 应可访问");
@@ -133,7 +132,7 @@ fn test_site_w3_org() {
 
 /// #5 whatwg.org — Web 超文本应用技术工作组
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_whatwg() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://whatwg.org").expect("whatwg.org 应可访问");
@@ -149,7 +148,7 @@ fn test_site_whatwg() {
 
 /// #6 lite.cnn.com — CNN 精简版（为低带宽设计的纯文本新闻）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_lite_cnn() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://lite.cnn.com").expect("lite.cnn.com 应可访问");
@@ -161,7 +160,7 @@ fn test_site_lite_cnn() {
 
 /// #7 lobste.rs — 技术新闻聚合（简洁 HTML，类似 HN）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_lobsters() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://lobste.rs").expect("lobste.rs 应可访问");
@@ -173,7 +172,7 @@ fn test_site_lobsters() {
 
 /// #8 curl.se — cURL 官网（简洁的文档站）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_curl() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://curl.se").expect("curl.se 应可访问");
@@ -185,7 +184,7 @@ fn test_site_curl() {
 
 /// #9 ietf.org — 互联网工程任务组
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_ietf() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.ietf.org").expect("ietf.org 应可访问");
@@ -197,7 +196,7 @@ fn test_site_ietf() {
 
 /// #10 datatracker.ietf.org — IETF 文档追踪器
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_datatracker_ietf() {
     let mut wv = test_webview();
     let result = wv
@@ -215,7 +214,7 @@ fn test_site_datatracker_ietf() {
 
 /// #11 rust-lang.org — Rust 编程语言官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_rust_lang() {
     let mut wv = test_webview();
     let result = wv
@@ -229,7 +228,7 @@ fn test_site_rust_lang() {
 
 /// #12 python.org — Python 编程语言官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_python() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.python.org").expect("python.org 应可访问");
@@ -241,7 +240,7 @@ fn test_site_python() {
 
 /// #13 nodejs.org — Node.js 官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_nodejs() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://nodejs.org").expect("nodejs.org 应可访问");
@@ -253,7 +252,7 @@ fn test_site_nodejs() {
 
 /// #14 docs.rs — Rust 文档托管
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_docs_rs() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://docs.rs").expect("docs.rs 应可访问");
@@ -265,7 +264,7 @@ fn test_site_docs_rs() {
 
 /// #15 jsonplaceholder.typicode.com — 免费在线 REST API（简单 HTML 页面）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_jsonplaceholder() {
     let mut wv = test_webview();
     let result = wv
@@ -283,7 +282,7 @@ fn test_site_jsonplaceholder() {
 
 /// #16 github.com — GitHub 首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_github() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://github.com").expect("github.com 应可访问");
@@ -295,7 +294,7 @@ fn test_site_github() {
 
 /// #17 stackoverflow.com — Stack Overflow
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_stackoverflow() {
     let mut wv = test_webview();
     let result = wv
@@ -309,7 +308,7 @@ fn test_site_stackoverflow() {
 
 /// #18 cloudflare.com — Cloudflare 官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_cloudflare() {
     let mut wv = test_webview();
     let result = wv
@@ -323,7 +322,7 @@ fn test_site_cloudflare() {
 
 /// #19 w3schools.com — W3Schools 在线教程
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_w3schools() {
     let mut wv = test_webview();
     let result = wv
@@ -337,7 +336,7 @@ fn test_site_w3schools() {
 
 /// #20 pkg.go.dev — Go 包文档站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_pkg_go_dev() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://pkg.go.dev").expect("pkg.go.dev 应可访问");
@@ -353,7 +352,7 @@ fn test_site_pkg_go_dev() {
 
 /// #21 en.wikipedia.org — 维基百科英文首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_wikipedia_org() {
     let mut wv = test_webview();
     let result = wv
@@ -366,7 +365,7 @@ fn test_site_wikipedia_org() {
 
 /// #22 developer.mozilla.org — MDN Web 文档首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_mdn() {
     let mut wv = test_webview();
     let result = wv
@@ -379,7 +378,7 @@ fn test_site_mdn() {
 
 /// #23 news.ycombinator.com — Hacker News 首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_hacker_news() {
     let mut wv = test_webview();
     let result = wv
@@ -392,7 +391,7 @@ fn test_site_hacker_news() {
 
 /// #24 httpbin.org — HTTP 请求测试服务首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_httpbin_home() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://httpbin.org").expect("httpbin.org 应可访问");
@@ -403,7 +402,7 @@ fn test_site_httpbin_home() {
 
 /// #25 httpstat.us — HTTP 状态码测试服务
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_httpstatus() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://httpstat.us/200").expect("httpstat.us 应可访问");
@@ -413,7 +412,7 @@ fn test_site_httpstatus() {
 
 /// #26 json.org — JSON 格式介绍页面
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_json_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.json.org").expect("json.org 应可访问");
@@ -424,7 +423,7 @@ fn test_site_json_org() {
 
 /// #27 go.dev — Go 编程语言官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_go_dev() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://go.dev").expect("go.dev 应可访问");
@@ -434,7 +433,7 @@ fn test_site_go_dev() {
 
 /// #28 swapi.dev — Star Wars API 测试服务
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_swapi_dev() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://swapi.dev").expect("swapi.dev 应可访问");
@@ -444,7 +443,7 @@ fn test_site_swapi_dev() {
 
 /// #29 catfact.ninja — 猫趣事实 API 首页
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_catfact_ninja() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://catfact.ninja").expect("catfact.ninja 应可访问");
@@ -453,7 +452,7 @@ fn test_site_catfact_ninja() {
 
 /// #30 api.github.com — GitHub 公共 API（JSON 端点）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_github_api() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://api.github.com").expect("api.github.com 应可访问");
@@ -463,7 +462,7 @@ fn test_site_github_api() {
 
 /// #31 web.dev — Google Web 开发资源站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_web_dev() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://web.dev").expect("web.dev 应可访问");
@@ -473,7 +472,7 @@ fn test_site_web_dev() {
 
 /// #32 httpwg.org — HTTP 工作组
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_httpwg() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://httpwg.org").expect("httpwg.org 应可访问");
@@ -483,7 +482,7 @@ fn test_site_httpwg() {
 
 /// #33 spec.whatwg.org — WHATWG 规范页面
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_whatwg_spec() {
     let mut wv = test_webview();
     let result = wv
@@ -495,7 +494,7 @@ fn test_site_whatwg_spec() {
 
 /// #34 caniuse.com — 浏览器兼容性查询站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_caniuse() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://caniuse.com").expect("caniuse.com 应可访问");
@@ -505,7 +504,7 @@ fn test_site_caniuse() {
 
 /// #35 schema.org — 结构化数据规范站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_schema_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://schema.org").expect("schema.org 应可访问");
@@ -520,7 +519,7 @@ fn test_site_schema_org() {
 
 /// 连续加载多个网站不 panic，验证 WebView 生命周期管理
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_multi_site_sequential_loading() {
     let mut wv = test_webview();
     let sites = vec![
@@ -545,7 +544,7 @@ fn test_multi_site_sequential_loading() {
 
 /// 不同视口尺寸下加载同一网站不崩溃
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_responsive_render_example_com() {
     let viewports: [(u32, u32); 4] = [(320, 480), (768, 1024), (1024, 768), (1920, 1080)];
 
@@ -566,7 +565,7 @@ fn test_responsive_render_example_com() {
 
 /// 验证页面 HTML 结构完整性：标题、元数据、正文内容
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_page_structure_w3_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.w3.org").expect("w3.org 应可访问");
@@ -588,7 +587,7 @@ fn test_page_structure_w3_org() {
 
 /// 性能验证：中等复杂页面首屏渲染时间
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_performance_python_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.python.org").expect("python.org 应可访问");
@@ -614,7 +613,7 @@ fn test_performance_python_org() {
 
 /// RFC 编辑器 — 标准文档站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_rfc_editor() {
     let mut wv = test_webview();
     let result = wv
@@ -628,7 +627,7 @@ fn test_site_rfc_editor() {
 
 /// Unicode 联盟 — 国际化标准站
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_unicode_org() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://home.unicode.org").expect("unicode.org 应可访问");
@@ -639,7 +638,7 @@ fn test_site_unicode_org() {
 
 /// Reqres.in — API 测试服务
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_reqres_in() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://reqres.in").expect("reqres.in 应可访问");
@@ -651,7 +650,7 @@ fn test_site_reqres_in() {
 
 /// Postman Echo — API 测试工具
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_postman_echo() {
     let mut wv = test_webview();
     let result = wv
@@ -664,7 +663,7 @@ fn test_site_postman_echo() {
 
 /// OWASP — 安全标准文档
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_owasp() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://owasp.org").expect("owasp.org 应可访问");
@@ -679,7 +678,7 @@ fn test_site_owasp() {
 
 /// OpenSSL — 加密库官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_openssl() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.openssl.org").expect("openssl.org 应可访问");
@@ -690,7 +689,7 @@ fn test_site_openssl() {
 
 /// Chromium 项目 — 浏览器引擎文档
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_chromium() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.chromium.org").expect("chromium.org 应可访问");
@@ -701,7 +700,7 @@ fn test_site_chromium() {
 
 /// Deno — JS/TS 运行时官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_deno() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://deno.land").expect("deno.land 应可访问");
@@ -712,7 +711,7 @@ fn test_site_deno() {
 
 /// Bun — JS 运行时官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_bun() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://bun.sh").expect("bun.sh 应可访问");
@@ -723,7 +722,7 @@ fn test_site_bun() {
 
 /// CSS WG — CSS 工作组规范
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_csswg() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://csswg.org").expect("csswg.org 应可访问");
@@ -737,7 +736,7 @@ fn test_site_csswg() {
 
 /// TC39 — ECMAScript 标准委员会
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_tc39() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://tc39.es").expect("tc39.es 应可访问");
@@ -748,7 +747,7 @@ fn test_site_tc39() {
 
 /// WebAssembly 规范官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_webassembly_org() {
     let mut wv = test_webview();
     let result = wv
@@ -761,7 +760,7 @@ fn test_site_webassembly_org() {
 
 /// jsDelivr — 开源 CDN
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_jsdelivr() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.jsdelivr.com").expect("jsdelivr.com 应可访问");
@@ -772,7 +771,7 @@ fn test_site_jsdelivr() {
 
 /// npm — Node.js 包管理器
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_npmjs() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://www.npmjs.com").expect("npmjs.com 应可访问");
@@ -783,7 +782,7 @@ fn test_site_npmjs() {
 
 /// arXiv — 学术预印本
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_arxiv() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://arxiv.org").expect("arxiv.org 应可访问");
@@ -794,7 +793,7 @@ fn test_site_arxiv() {
 
 /// OWASP — 开源安全社区（Tier 7）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_owasp_home() {
     let mut wv = test_webview();
     let result = wv
@@ -807,7 +806,7 @@ fn test_site_owasp_home() {
 
 /// Replit — 在线开发平台
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_replit() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://replit.com").expect("replit.com 应可访问");
@@ -818,7 +817,7 @@ fn test_site_replit() {
 
 /// Can I Use — 浏览器特性兼容性查询（Tier 7）
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_caniuse_flexbox() {
     let mut wv = test_webview();
     let result = wv
@@ -831,7 +830,7 @@ fn test_site_caniuse_flexbox() {
 
 /// HTML Standard — WHATWG HTML 规范
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_html_spec() {
     let mut wv = test_webview();
     let result = wv
@@ -844,7 +843,7 @@ fn test_site_html_spec() {
 
 /// Zig 语言官网
 #[test]
-#[ignore = "需要网络连接"]
+#[ignore = "本地网络不稳定，跳过真实网站测试"]
 fn test_site_ziglang() {
     let mut wv = test_webview();
     let result = wv.fetch_url("https://ziglang.org").expect("ziglang.org 应可访问");
