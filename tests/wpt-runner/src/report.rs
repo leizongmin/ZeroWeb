@@ -26,6 +26,8 @@ pub struct TestResult {
     pub id: String,
     /// 测试描述。
     pub description: String,
+    /// 测试分类（如 html、css、layout）。
+    pub category: String,
     /// 测试状态。
     pub status: TestStatus,
     /// 失败原因（通过时为空字符串）。
@@ -49,45 +51,78 @@ impl TestResult {
         self.status == TestStatus::Fail
     }
 
-    /// 创建通过结果。
+    /// 创建通过结果（向后兼容，无分类）。
+    #[allow(dead_code)]
     pub fn pass(id: &str, description: &str, duration_ms: f64) -> Self {
+        Self::pass_with_category(id, description, "", duration_ms)
+    }
+
+    /// 创建通过结果（含分类）。
+    pub fn pass_with_category(id: &str, description: &str, category: &str, duration_ms: f64) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
+            category: category.to_string(),
             status: TestStatus::Pass,
             message: String::new(),
             duration_ms,
         }
     }
 
-    /// 创建失败结果。
+    /// 创建失败结果（向后兼容，无分类）。
+    #[allow(dead_code)]
     pub fn fail(id: &str, description: &str, message: &str, duration_ms: f64) -> Self {
+        Self::fail_with_category(id, description, "", message, duration_ms)
+    }
+
+    /// 创建失败结果（含分类）。
+    pub fn fail_with_category(id: &str, description: &str, category: &str, message: &str, duration_ms: f64) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
+            category: category.to_string(),
             status: TestStatus::Fail,
             message: message.to_string(),
             duration_ms,
         }
     }
 
-    /// 创建预期失败结果。
+    /// 创建预期失败结果（向后兼容，无分类）。
     #[allow(dead_code)]
     pub fn expected_fail(id: &str, description: &str, message: &str, duration_ms: f64) -> Self {
+        Self::expected_fail_with_category(id, description, "", message, duration_ms)
+    }
+
+    /// 创建预期失败结果（含分类）。
+    pub fn expected_fail_with_category(
+        id: &str,
+        description: &str,
+        category: &str,
+        message: &str,
+        duration_ms: f64,
+    ) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
+            category: category.to_string(),
             status: TestStatus::ExpectedFail,
             message: format!("[EXPECTED FAIL] {message}"),
             duration_ms,
         }
     }
 
-    /// 创建意外通过结果。
+    /// 创建意外通过结果（向后兼容，无分类）。
+    #[allow(dead_code)]
     pub fn unexpected_pass(id: &str, description: &str, duration_ms: f64) -> Self {
+        Self::unexpected_pass_with_category(id, description, "", duration_ms)
+    }
+
+    /// 创建意外通过结果（含分类）。
+    pub fn unexpected_pass_with_category(id: &str, description: &str, category: &str, duration_ms: f64) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
+            category: category.to_string(),
             status: TestStatus::UnexpectedPass,
             message: "[UNEXPECTED PASS] test expected to fail but passed".to_string(),
             duration_ms,
@@ -97,9 +132,15 @@ impl TestResult {
     /// 创建跳过结果。
     #[allow(dead_code)]
     pub fn skip(id: &str, description: &str) -> Self {
+        Self::skip_with_category(id, description, "")
+    }
+
+    /// 创建跳过结果（含分类）。
+    pub fn skip_with_category(id: &str, description: &str, category: &str) -> Self {
         Self {
             id: id.to_string(),
             description: description.to_string(),
+            category: category.to_string(),
             status: TestStatus::Skip,
             message: "[SKIPPED]".to_string(),
             duration_ms: 0.0,
@@ -164,6 +205,142 @@ impl TestSummary {
             self.passed as f64 / executed as f64
         }
     }
+}
+
+/// 按分类汇总的测试结果。
+#[derive(Debug, Clone)]
+pub struct CategorySummary {
+    /// 分类名称。
+    pub category: String,
+    /// 总测试数。
+    pub total: usize,
+    /// 通过数。
+    pub passed: usize,
+    /// 意外失败数。
+    pub failed: usize,
+    /// 预期失败数。
+    pub expected_failures: usize,
+    /// 跳过数。
+    pub skipped: usize,
+    /// 意外通过数。
+    pub unexpected_passes: usize,
+    /// 总耗时（毫秒）。
+    pub total_duration_ms: f64,
+}
+
+impl CategorySummary {
+    /// 从指定分类的测试结果生成汇总。
+    pub fn from_results(category: &str, results: &[TestResult]) -> Self {
+        let cat_results: Vec<&TestResult> = results.iter().filter(|r| r.category == category).collect();
+        let total = cat_results.len();
+        let passed = cat_results.iter().filter(|r| r.status == TestStatus::Pass).count();
+        let failed = cat_results.iter().filter(|r| r.status == TestStatus::Fail).count();
+        let expected_failures = cat_results
+            .iter()
+            .filter(|r| r.status == TestStatus::ExpectedFail)
+            .count();
+        let skipped = cat_results.iter().filter(|r| r.status == TestStatus::Skip).count();
+        let unexpected_passes = cat_results
+            .iter()
+            .filter(|r| r.status == TestStatus::UnexpectedPass)
+            .count();
+        let total_duration_ms = cat_results.iter().map(|r| r.duration_ms).sum();
+
+        Self {
+            category: category.to_string(),
+            total,
+            passed,
+            failed,
+            expected_failures,
+            skipped,
+            unexpected_passes,
+            total_duration_ms,
+        }
+    }
+
+    /// 通过率（0.0 ~ 1.0）— 仅统计已执行的非跳过测试。
+    pub fn pass_rate(&self) -> f64 {
+        let executed = self.total - self.skipped;
+        if executed == 0 {
+            0.0
+        } else {
+            self.passed as f64 / executed as f64
+        }
+    }
+}
+
+/// 从测试结果中提取所有唯一分类。
+pub fn extract_categories(results: &[TestResult]) -> Vec<String> {
+    let mut categories: Vec<String> = results
+        .iter()
+        .map(|r| r.category.clone())
+        .filter(|c| !c.is_empty())
+        .collect();
+    categories.sort();
+    categories.dedup();
+    categories
+}
+
+/// 生成按分类汇总的报告文本。
+pub fn format_category_report(results: &[TestResult]) -> String {
+    let categories = extract_categories(results);
+    if categories.is_empty() {
+        return "No categories found.\n".to_string();
+    }
+
+    let mut out = String::new();
+    out.push_str("\n── Per-Category Pass Rate ──────────────────────────────────────\n");
+    out.push_str(&format!(
+        "{:<20} {:>6} {:>6} {:>6} {:>6} {:>8}  {}\n",
+        "Category", "Total", "Pass", "Fail", "XFail", "Skip", "Rate"
+    ));
+    out.push_str(&"-".repeat(78));
+    out.push('\n');
+
+    let mut cat_summaries: Vec<CategorySummary> = Vec::new();
+    for cat in &categories {
+        cat_summaries.push(CategorySummary::from_results(cat, results));
+    }
+
+    // 按通过率排序（最低在前，便于发现薄弱点）
+    cat_summaries.sort_by(|a, b| {
+        a.pass_rate()
+            .partial_cmp(&b.pass_rate())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    for cs in &cat_summaries {
+        let rate_pct = format!("{:.1}%", cs.pass_rate() * 100.0);
+        let fail_indicator = if cs.failed > 0 { "⚠" } else { "✓" };
+        out.push_str(&format!(
+            "{:<20} {:>6} {:>6} {:>6} {:>6} {:>8}  {} {}\n",
+            cs.category, cs.total, cs.passed, cs.failed, cs.expected_failures, cs.skipped, rate_pct, fail_indicator
+        ));
+    }
+
+    out.push_str(&"-".repeat(78));
+    out.push('\n');
+    out.push_str(&format!("Total categories: {}\n", categories.len()));
+
+    out
+}
+
+/// 生成按分类汇总的 JSON 报告。
+pub fn format_category_report_json(results: &[TestResult]) -> String {
+    let categories = extract_categories(results);
+    let mut json = String::from("{\"categories\":[");
+    for (i, cat) in categories.iter().enumerate() {
+        if i > 0 {
+            json.push(',');
+        }
+        let cs = CategorySummary::from_results(cat, results);
+        json.push_str(&format!(
+            "{{\"category\":\"{}\",\"total\":{},\"passed\":{},\"failed\":{},\"expected_failures\":{},\"skipped\":{},\"unexpected_passes\":{},\"pass_rate\":{:.4},\"duration_ms\":{:.2}}}",
+            cat, cs.total, cs.passed, cs.failed, cs.expected_failures, cs.skipped, cs.unexpected_passes, cs.pass_rate(), cs.total_duration_ms
+        ));
+    }
+    json.push_str("]}");
+    json
 }
 
 /// 将测试结果格式化为可读文本。
@@ -353,6 +530,7 @@ mod tests {
         TestResult {
             id: id.to_string(),
             description: format!("Test {id}"),
+            category: "test".to_string(),
             status,
             message: message.to_string(),
             duration_ms: 1.0,
@@ -529,5 +707,119 @@ mod tests {
         let summary = TestSummary::from_results(&results);
         // Just ensure it doesn't panic
         print_summary(&summary);
+    }
+
+    // ── 分类报告测试 ─────────────────────────────────────
+
+    fn make_cat_result(id: &str, category: &str, status: TestStatus, message: &str) -> TestResult {
+        TestResult {
+            id: id.to_string(),
+            description: format!("Test {id}"),
+            category: category.to_string(),
+            status,
+            message: message.to_string(),
+            duration_ms: 1.0,
+        }
+    }
+
+    #[test]
+    fn test_extract_categories() {
+        let results = vec![
+            make_cat_result("a", "css", TestStatus::Pass, ""),
+            make_cat_result("b", "html", TestStatus::Pass, ""),
+            make_cat_result("c", "css", TestStatus::Fail, "err"),
+        ];
+        let cats = extract_categories(&results);
+        assert_eq!(cats, vec!["css", "html"]);
+    }
+
+    #[test]
+    fn test_extract_categories_empty() {
+        let results: Vec<TestResult> = vec![];
+        let cats = extract_categories(&results);
+        assert!(cats.is_empty());
+    }
+
+    #[test]
+    fn test_category_summary_from_results() {
+        let results = vec![
+            make_cat_result("a", "css", TestStatus::Pass, ""),
+            make_cat_result("b", "css", TestStatus::Pass, ""),
+            make_cat_result("c", "css", TestStatus::Fail, "err"),
+            make_cat_result("d", "html", TestStatus::Pass, ""),
+        ];
+        let cs = CategorySummary::from_results("css", &results);
+        assert_eq!(cs.total, 3);
+        assert_eq!(cs.passed, 2);
+        assert_eq!(cs.failed, 1);
+        assert!((cs.pass_rate() - (2.0 / 3.0)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_category_summary_no_results() {
+        let results: Vec<TestResult> = vec![];
+        let cs = CategorySummary::from_results("css", &results);
+        assert_eq!(cs.total, 0);
+        assert!((cs.pass_rate() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_format_category_report() {
+        let results = vec![
+            make_cat_result("a", "css", TestStatus::Pass, ""),
+            make_cat_result("b", "css", TestStatus::Fail, "err"),
+            make_cat_result("c", "html", TestStatus::Pass, ""),
+        ];
+        let report = format_category_report(&results);
+        assert!(report.contains("css"));
+        assert!(report.contains("html"));
+        assert!(report.contains("Per-Category"));
+    }
+
+    #[test]
+    fn test_format_category_report_json() {
+        let results = vec![
+            make_cat_result("a", "css", TestStatus::Pass, ""),
+            make_cat_result("b", "html", TestStatus::Fail, "err"),
+        ];
+        let json = format_category_report_json(&results);
+        assert!(json.contains("\"categories\""));
+        assert!(json.contains("\"category\":\"css\""));
+        let _: serde_json::Value = serde_json::from_str(&json).expect("Should be valid JSON");
+    }
+
+    #[test]
+    fn test_pass_with_category() {
+        let r = TestResult::pass_with_category("t1", "desc", "css", 5.0);
+        assert_eq!(r.category, "css");
+        assert!(r.passed());
+    }
+
+    #[test]
+    fn test_fail_with_category() {
+        let r = TestResult::fail_with_category("t2", "desc", "html", "broken", 3.0);
+        assert_eq!(r.category, "html");
+        assert!(r.is_unexpected_fail());
+    }
+
+    #[test]
+    fn test_expected_fail_with_category() {
+        let r = TestResult::expected_fail_with_category("t3", "desc", "layout", "known", 2.0);
+        assert_eq!(r.category, "layout");
+        assert!(r.passed());
+    }
+
+    #[test]
+    fn test_skip_with_category() {
+        let r = TestResult::skip_with_category("t4", "desc", "canvas");
+        assert_eq!(r.category, "canvas");
+        assert!(r.passed());
+    }
+
+    #[test]
+    fn test_unexpected_pass_with_category() {
+        let r = TestResult::unexpected_pass_with_category("t5", "desc", "security", 1.0);
+        assert_eq!(r.category, "security");
+        assert_eq!(r.status, TestStatus::UnexpectedPass);
     }
 }

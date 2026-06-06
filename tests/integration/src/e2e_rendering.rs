@@ -496,24 +496,21 @@ fn test_incremental_render_performance_criterion() {
     let full_primitives = full_result.primitives.len();
     let full_time_ms = full_result.timings.total_ms;
 
-    assert!(
-        full_primitives > 0,
-        "全量渲染应产生图元"
-    );
+    assert!(full_primitives > 0, "全量渲染应产生图元");
 
     // 2. 增量渲染：仅重绘小脏区域（50x50 像素，约占视口 0.3%）
     let dirty_rect = Rect {
         origin: Point::new(100.0, 100.0),
-        size: Size { width: 50.0, height: 50.0 },
+        size: Size {
+            width: 50.0,
+            height: 50.0,
+        },
     };
     let doc = zero_dom::parse_html(html);
     let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
     let inc_primitives = pipeline.incremental_paint(&doc, &[stylesheet], dirty_rect);
 
-    assert!(
-        inc_primitives.is_some(),
-        "增量渲染应返回结果"
-    );
+    assert!(inc_primitives.is_some(), "增量渲染应返回结果");
 
     let inc_count = inc_primitives.unwrap().len();
 
@@ -561,12 +558,24 @@ fn test_incremental_render_dirty_area_sizes() {
     let doc = zero_dom::parse_html(html);
 
     // 小脏区域（1%）
-    let small = Rect { origin: Point::new(10.0, 10.0), size: Size { width: 80.0, height: 60.0 } };
+    let small = Rect {
+        origin: Point::new(10.0, 10.0),
+        size: Size {
+            width: 80.0,
+            height: 60.0,
+        },
+    };
     let small_inc = pipeline.incremental_paint(&doc, &[], small).unwrap();
     assert!(small_inc.len() < full_count, "小脏区域增量渲染应更少图元");
 
     // 中等脏区域（10%）
-    let medium = Rect { origin: Point::new(0.0, 0.0), size: Size { width: 250.0, height: 200.0 } };
+    let medium = Rect {
+        origin: Point::new(0.0, 0.0),
+        size: Size {
+            width: 250.0,
+            height: 200.0,
+        },
+    };
     let medium_inc = pipeline.incremental_paint(&doc, &[], medium).unwrap();
     assert!(medium_inc.len() < full_count, "中等脏区域增量渲染应更少图元");
 

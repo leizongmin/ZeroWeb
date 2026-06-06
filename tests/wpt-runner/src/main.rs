@@ -163,6 +163,8 @@ fn cmd_run(options: &CliOptions, filter: Option<&str>) {
         OutputFormat::Json => {
             let json = report::format_results_json(&results, &summary);
             println!("{json}");
+            let cat_json = report::format_category_report_json(&results);
+            eprintln!("{cat_json}");
         }
         OutputFormat::Tap => {
             let tap = report::format_tap(&results);
@@ -237,6 +239,10 @@ fn cmd_summary(options: &CliOptions, filter: Option<&str>) {
     let summary = report::TestSummary::from_results(&results);
 
     report::print_summary(&summary);
+
+    // 输出按分类汇总
+    let cat_report = report::format_category_report(&results);
+    eprintln!("{cat_report}");
 
     if summary.failed > 0 {
         std::process::exit(1);
