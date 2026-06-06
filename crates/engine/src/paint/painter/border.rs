@@ -9,7 +9,9 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
-use zero_style_system::{BorderCollapseValue, BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle};
+use zero_style_system::{
+    BorderCollapseValue, BorderImageRepeatComputedMode, BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle,
+};
 
 use super::super::color::color_value_to_render;
 use super::super::helpers::{length_to_f32, simple_hash};
@@ -128,7 +130,7 @@ impl super::Painter {
     ///
     /// 当 border-image-source 不为 none 时，将图片按 slice 分割为
     /// 9 个区域（4 角 + 4 边 + 中心），分别绘制到边框的对应区域。
-    /// 当前实现支持 stretch 模式（默认），生成 ImagePrimitive 图元。
+    /// 支持所有 border-image-repeat 模式：stretch/repeat/round/space。
     pub(super) fn paint_border_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let url = match &style.border_image_source {
             BorderImageSourceComputedValue::None => return,
@@ -165,13 +167,13 @@ impl super::Painter {
 
         let fill = style.border_image_slice.fill;
 
-        // 中心区域（当 fill 为 true 时绘制）
+        // 中心区域（当 fill 为 true 时绘制，始终 stretch）
         if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
             self.primitives
                 .add_image(make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h)));
         }
 
-        // 四个角
+        // 四个角（始终 stretch，不受 repeat 模式影响）
         if bl > 0.0 && bt > 0.0 {
             self.primitives.add_image(make_img(Rect::new(bx, by, bl, bt)));
         }
@@ -186,22 +188,208 @@ impl super::Painter {
             self.primitives.add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
         }
 
-        // 四条边（stretch 模式）
+        // 四条边 — 根据 border-image-repeat 模式生成图元
+        let h_mode = &style.border_image_repeat.horizontal;
+        let v_mode = &style.border_image_repeat.vertical;
+
+        // 上边（水平 repeat 模式）
         if edge_h_w > 0.0 && bt > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + bl, by, edge_h_w, bt)));
+            self.paint_border_image_edge_h(
+                make_img,
+                bx + bl,
+                by,
+                edge_h_w,
+                bt,
+                bl, // 自然 tile 宽度 = 左边框宽度
+                h_mode,
+            );
         }
+        // 右边（垂直 repeat 模式）
         if br > 0.0 && edge_v_h > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + w - br, by + bt, br, edge_v_h)));
+            self.paint_border_image_edge_v(
+                make_img,
+                bx + w - br,
+                by + bt,
+                br,
+                edge_v_h,
+                bt, // 自然 tile 高度 = 上边框高度
+                v_mode,
+            );
         }
+        // 下边（水平 repeat 模式）
         if edge_h_w > 0.0 && bb > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + bl, by + h - bb, edge_h_w, bb)));
+            self.paint_border_image_edge_h(
+                make_img,
+                bx + bl,
+                by + h - bb,
+                edge_h_w,
+                bb,
+                bl, // 自然 tile 宽度 = 左边框宽度
+                h_mode,
+            );
         }
+        // 左边（垂直 repeat 模式）
         if bl > 0.0 && edge_v_h > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx, by + bt, bl, edge_v_h)));
+            self.paint_border_image_edge_v(
+                make_img,
+                bx,
+                by + bt,
+                bl,
+                edge_v_h,
+                bt, // 自然 tile 高度 = 上边框高度
+                v_mode,
+            );
+        }
+    }
+
+    /// 绘制水平方向的 border-image 边（上边/下边）。
+    ///
+    /// `tile_w` 是单个 tile 的自然宽度（对应边框宽度），
+    /// `total_w` 是需要覆盖的总宽度。
+    #[allow(clippy::too_many_arguments)]
+    fn paint_border_image_edge_h(
+        &mut self,
+        make_img: impl Fn(Rect) -> ImagePrimitive,
+        start_x: f32,
+        y: f32,
+        total_w: f32,
+        edge_h: f32,
+        tile_w: f32,
+        mode: &BorderImageRepeatComputedMode,
+    ) {
+        match mode {
+            BorderImageRepeatComputedMode::Stretch => {
+                // 拉伸单个 tile 覆盖整条边
+                self.primitives
+                    .add_image(make_img(Rect::new(start_x, y, total_w, edge_h)));
+            }
+            BorderImageRepeatComputedMode::Repeat => {
+                // 以自然 tile 大小重复，从中心向两边展开
+                let n = (total_w / tile_w).ceil().max(1.0) as usize;
+                let total_tiles_w = n as f32 * tile_w;
+                let mut x = start_x + (total_w - total_tiles_w) / 2.0;
+                for _ in 0..n {
+                    let clipped = Self::clip_tile(x, y, tile_w, edge_h, start_x, y, total_w, edge_h);
+                    if let Some((cx, cy, cw, ch)) = clipped {
+                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch)));
+                    }
+                    x += tile_w;
+                }
+            }
+            BorderImageRepeatComputedMode::Round => {
+                // 拉伸 tile 使整数个刚好覆盖
+                let n = (total_w / tile_w).round().max(1.0) as usize;
+                let stretched = total_w / n as f32;
+                let mut x = start_x;
+                for _ in 0..n {
+                    self.primitives.add_image(make_img(Rect::new(x, y, stretched, edge_h)));
+                    x += stretched;
+                }
+            }
+            BorderImageRepeatComputedMode::Space => {
+                // 均匀分布 tile，不足 2 个时退化为 stretch
+                let n = (total_w / tile_w).floor().max(0.0) as usize;
+                if n <= 1 {
+                    self.primitives
+                        .add_image(make_img(Rect::new(start_x, y, total_w, edge_h)));
+                } else {
+                    let gap = (total_w - n as f32 * tile_w) / (n + 1) as f32;
+                    let mut x = start_x + gap;
+                    for _ in 0..n {
+                        self.primitives.add_image(make_img(Rect::new(x, y, tile_w, edge_h)));
+                        x += tile_w + gap;
+                    }
+                }
+            }
+        }
+    }
+
+    /// 绘制垂直方向的 border-image 边（左边/右边）。
+    #[allow(clippy::too_many_arguments)]
+    fn paint_border_image_edge_v(
+        &mut self,
+        make_img: impl Fn(Rect) -> ImagePrimitive,
+        x: f32,
+        start_y: f32,
+        edge_w: f32,
+        total_h: f32,
+        tile_h: f32,
+        mode: &BorderImageRepeatComputedMode,
+    ) {
+        match mode {
+            BorderImageRepeatComputedMode::Stretch => {
+                self.primitives
+                    .add_image(make_img(Rect::new(x, start_y, edge_w, total_h)));
+            }
+            BorderImageRepeatComputedMode::Repeat => {
+                let n = (total_h / tile_h).ceil().max(1.0) as usize;
+                let total_tiles_h = n as f32 * tile_h;
+                let mut y = start_y + (total_h - total_tiles_h) / 2.0;
+                for _ in 0..n {
+                    let clipped = Self::clip_tile(x, y, edge_w, tile_h, x, start_y, edge_w, total_h);
+                    if let Some((cx, cy, cw, ch)) = clipped {
+                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch)));
+                    }
+                    y += tile_h;
+                }
+            }
+            BorderImageRepeatComputedMode::Round => {
+                let n = (total_h / tile_h).round().max(1.0) as usize;
+                let stretched = total_h / n as f32;
+                let mut y = start_y;
+                for _ in 0..n {
+                    self.primitives.add_image(make_img(Rect::new(x, y, edge_w, stretched)));
+                    y += stretched;
+                }
+            }
+            BorderImageRepeatComputedMode::Space => {
+                let n = (total_h / tile_h).floor().max(0.0) as usize;
+                if n <= 1 {
+                    self.primitives
+                        .add_image(make_img(Rect::new(x, start_y, edge_w, total_h)));
+                } else {
+                    let gap = (total_h - n as f32 * tile_h) / (n + 1) as f32;
+                    let mut y = start_y + gap;
+                    for _ in 0..n {
+                        self.primitives.add_image(make_img(Rect::new(x, y, edge_w, tile_h)));
+                        y += tile_h + gap;
+                    }
+                }
+            }
+        }
+    }
+
+    /// 裁剪单个 tile 到边界区域，返回裁剪后的 (x, y, w, h)。
+    /// 如果 tile 完全在边界外返回 None。
+    #[allow(clippy::too_many_arguments)]
+    fn clip_tile(
+        tile_x: f32,
+        tile_y: f32,
+        tile_w: f32,
+        tile_h: f32,
+        clip_x: f32,
+        clip_y: f32,
+        clip_w: f32,
+        clip_h: f32,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let tile_right = tile_x + tile_w;
+        let tile_bottom = tile_y + tile_h;
+        let clip_right = clip_x + clip_w;
+        let clip_bottom = clip_y + clip_h;
+
+        if tile_right <= clip_x || tile_x >= clip_right || tile_bottom <= clip_y || tile_y >= clip_bottom {
+            return None;
+        }
+
+        let cx = tile_x.max(clip_x);
+        let cy = tile_y.max(clip_y);
+        let cw = tile_right.min(clip_right) - cx;
+        let ch = tile_bottom.min(clip_bottom) - cy;
+
+        if cw > 0.0 && ch > 0.0 {
+            Some((cx, cy, cw, ch))
+        } else {
+            None
         }
     }
 
