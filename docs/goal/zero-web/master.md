@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,937 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1317 个用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，22 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,947 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1323 个用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，22 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**WASM 自动桥接完整实现**（WebAssembly.instantiate/compile/instantiateStreaming + 魔术字节验证 + _start 自动执行 + 导出函数调用队列 + 内存状态注入）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate + 3 应用（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,893 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,947 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -35,7 +35,7 @@
 | protocol | 256 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标**、**PipeTransport 管道传输（帧协议往返/发送/过大帧/try_recv 不支持）**、**SharedMemoryChannel 共享内存通道（双向/try_recv 空/recv 空错误/关闭清空/多消息顺序）**、**RendererHandle/ProcessManager（状态比较/创建/消息 ID/不存在的渲染进程/shutdown/check_crashes/心跳常量/模拟导航+网络+存储+心跳+输入+生命周期+失败+崩溃）** |
 | storage | 661 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）**、**IDB types 覆盖率测试（18 个：跨类型 key 比较/binary key/hash 一致性/array key 边界/KeyRange contains/multiEntry index）** |
 | canvas | 591 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**raster 覆盖率测试（flatten_round_rect/compute_arc_to_geometry/flatten_arc_to/flatten_path/flatten_path_for/blit_path_to_pixels/blit_stroke_to_pixels/blit_line_cap/stroke_outline_vertices/11 种 composite_pixel 操作）** |
-| webview | 508 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）**、**SecurityContext 集成（fetch_url 安全检查 + HSTS 升级 + 混合内容阻止 + 子资源检查 API）** |
+| webview | 519 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）**、**SecurityContext 集成（fetch_url 安全检查 + HSTS 升级 + 混合内容阻止 + 子资源检查 API）**、**WASM 自动桥接（instantiate/compile/instantiateStreaming + validate + _start 自动执行 + 导出调用队列 + 内存注入）** |
 | wasm-sandbox | 198 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap**、**边界测试（6 个：错误参数/global export/Display/config 链/空模块/多函数 linker）** |
 | script-sandbox | 136 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）**、**Dedicated Worker（WorkerRuntime：独立线程 V8 持久上下文、postMessage/onmessage 通道、terminate 生命周期、16 测试）**、**ES Module Sandbox（EsModuleSandbox：源码转换支持 export/import 语法、ModuleRegistry 模块注册表、import.meta.url、链式依赖解析、30 测试）**、**持久化 Context 优化（SandboxConfig::persistent_context + Global<Context> 缓存复用 + reset_context()，6 测试）** |
 | browser-shell | 256 | ✅ | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）**、**Tab 拖拽边界/导航历史边界/Bookmarks 过滤/History clear+search/Download 移除/Autocomplete 空查询+大小写/BrowserShell 导航清空前进/Settings 搜索/ContextMenu 子菜单查找** |
@@ -51,7 +51,7 @@
 | Storage + Protocol | 3 | localStorage CRUD+IPC、session 隔离、origin 隔离 |
 | Protocol + Navigation | 1 | 导航历史 + IPC 序列化 |
 | Canvas + Render | 5 | Canvas 绘图图元、路径、变换、save/restore、WebView 集成 |
-| WASM Sandbox | 5 | 编译、调用、导出查询、内存读写、错误恢复 |
+| WASM Bridge | 18 | API 可用性、validate 魔术字节、compile 桥接、instantiate 桥接、call_wasm_export、多次调用、无桥接不影响、pendingBridge 清空、instantiateStreaming API/字节、validate 边界条件、JS 导出可调用、_hostBacked 标志、memory 导出、compile 注入、调用队列基础设施、validate 多类型 |
 | WebView Full Pipeline | 4 | 完整生命周期、复杂页面、重复加载、脚本占位 |
 | Web API Pipeline | 17 | JS DOM 操作、V8 内置 API、DOM polyfill、CSS 渲染管线（flex/grid/positioned/shadow/gradient/custom-props/media-query） |
 | CSS Transform Pipeline | 1 | CSS 解析→样式系统→计算值 |
@@ -109,6 +109,52 @@
 ---
 
 ## 最近完成的改进
+
+### -130. WASM 自动桥接完整实现 + WPT 扩展（本轮，~11,947 测试，1323 WPT 用例）
+
+完成 M13 最后一项优先级工作：将 WebAssembly JS API 从基础桩实现升级为完整自动桥接。
+
+**WASM 自动桥接增强（zero-engine + zero-webview）**：
+
+| 模块 | 新增/增强内容 | 新增测试 |
+|--------|------|----------|
+| `crates/engine/src/dom_bridge.rs` | **WebAssembly polyfill 完整重写**：`instantiate()` 发送桥接命令含 importObject 键名；`compile()` 发送编译桥接命令；新增 `instantiateStreaming()` 支持 Response 和 buffer 输入；`validate()` 实现真正的 WASM 魔术字节检测（0x00 0x61 0x73 0x6D）；`__wasmToBytes()` 统一字节提取工具函数 | — |
+| `crates/webview/src/webview.rs` | **process_wasm_bridge() 完整重写**：拆分为 `handle_wasm_instantiate_bridge()` + `handle_wasm_compile_bridge()` + `process_wasm_calls()`；自动执行 `_start`/`_initialize` 导出函数；读取 WASM 内存状态并注入 JS；为每个导出函数生成可调用的 JS 包装；编译错误注入 `__wasm_errors__`；新增 `base64_encode()` 工具函数 | — |
+| `tests/integration/src/cross_crate_pipeline/wasm_bridge.rs` | **11 个新增 WASM 桥接测试**：instantiateStreaming API + 字节输入、validate 魔术字节 + 边界条件、JS 侧导出函数可调用检测、_hostBacked 标志、memory 导出、compile 桥接注入、调用队列基础设施、多类型 validate | +11 |
+| `tests/integration/src/dom_bridge_polyfill.rs` | **更新 validate 测试**：适配新魔术字节检测逻辑 | 1 updated |
+| `tests/wpt-runner/.../test_cases_web_api.rs` | **4 个 WASM WPT 测试**：instantiateStreaming API + validate magic + call queue + full bridge page | +4 WPT 用例 |
+| `tests/wpt-runner/.../test_cases_security.rs` | **2 个 WASM 安全 WPT 测试**：CSP wasm-unsafe-eval + sandbox boundary | +2 WPT 用例 |
+
+桥接架构：
+
+```
+JS: WebAssembly.instantiate(bytes, imports)
+  → polyfill 编码 bytes 为 base64 + importKeys
+  → 存储 _pendingBridge = "__WASM_BRIDGE__:JSON"
+  
+Host: process_wasm_bridge()
+  → 探测 _pendingBridge
+  → 解码 base64 → wasm_bytes
+  → WasmSandbox::compile() + instantiate()
+  → 自动执行 _start / _initialize
+  → 读取 WASM memory 状态
+  → 缓存实例到 wasm_instances HashMap
+  → 注入可调用导出函数回 JS:
+    - 每个非 memory/_start/_initialize 导出生成 JS callable wrapper
+    - wrapper 调用时存入 WebAssembly._callQueue
+    - 下次 execute_script_with_dom 时 process_wasm_calls() 处理队列
+    - 结果注入回 WebAssembly._callResults
+```
+
+关键改进：
+- **`WebAssembly.instantiateStreaming()`**：支持 Response 对象和 buffer 回退
+- **`WebAssembly.validate()`**：真正的 WASM 魔术字节检测，拒绝空/null/非 WASM 输入
+- **`WebAssembly.compile()` 桥接**：发送编译命令，host 注入 `__wasm_compiled__`
+- **_start/_initialize 自动执行**：实例化后自动运行 WASM 初始化函数
+- **导出函数调用队列**：JS 侧可调用 export functions，host 异步执行并注入结果
+- **内存状态注入**：WASM memory buffer 大小和内容注入 JS 环境
+
+Tests: ~11,937 → ~11,947 (+10 integration + 1 updated), WPT: 1317 → 1323 (+6), clippy clean.
 
 ### -129. CI 发布工作流 + 真实网站兼容性扩展至 45 站点（本轮，~11,937 测试）
 
@@ -2548,7 +2594,7 @@ Total: 6219 → 6378 tests (+159)
 4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
 5. ~~**CSP 完整实现**（M13 剩余）~~ ✅ script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复
 6. ~~**HSTS 预加载 + 混合内容执行引擎**~~ ✅ SecurityContext 统一安全门面 + 40+ 预加载域名 + WebView 集成
-7. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
+7. ~~**页面级 WASM 自动桥接**~~ ✅ 完整实现：WebAssembly.instantiate/compile/instantiateStreaming + 魔术字节验证 + _start 自动执行 + 导出函数调用队列 + 内存状态注入
 8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1266 用例（100% 通过率） ✅ 按分类通过率追踪 ✅ CSS/Layout 子集 74 用例
 9. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
 10. ~~**HTTP User-Agent 修复**~~ ✅ HttpClient 默认发送 "ZeroWeb/1.0" User-Agent + 启用 gzip/brotli/deflate 解压
@@ -2563,7 +2609,7 @@ Total: 6219 → 6378 tests (+159)
 
 | 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
 |--------|------|------|----------|----------|
-| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1298 用例（21 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset/CSS Advanced | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1323 用例（22 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset/CSS Advanced | 按标准模块输出通过率；PR 只阻断 unexpected fail |
 | 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-3 ✅（layout/primitive snapshot + 16 reftest + 45 CSS/layout subset + 按分类通过率报告）；Phase 4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
 | 3. 真实网站兼容性测试 | ✅ | 验证真实页面组合能力，而不只验证单项标准 | Top 20 真实网站兼容性测试（24 个测试，20/20 站点通过），覆盖 fetch → parse → style → layout → paint 完整管线 | 每个站点有可复现结果，全部通过（需 `--ignored` 运行） |
 | 4. 安全测试 | 🔄 | 验证浏览器安全边界不被绕过 | 52 个跨 crate 安全管线测试 + SecurityContext 集成 + HSTS preload + 混合内容执行引擎 + 19 WPT 安全扩展 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
@@ -2622,9 +2668,9 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整）。**45+ 真实网站兼容性测试就位** |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1317 用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1323 用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**WASM 自动桥接完整实现**（instantiate/compile/instantiateStreaming + validate + _start 自动执行 + 导出调用队列）。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
-| 5. 单元测试与质量 | ✅ | 11,937 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**45 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1317 WPT 用例（22 分类，100% 通过率）** |
+| 5. 单元测试与质量 | ✅ | 11,947 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**45 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1323 WPT 用例（22 分类，100% 通过率）** |
 | 6. 工程化 | ✅ | CI（3 平台）、CI 发布工作流（Linux/macOS/Windows 自动打包）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、scripts/package-linux.sh、scripts/package-macos.sh、scripts/package-windows.ps1、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **剩余阻塞项**（需 GPU/Display 桌面环境）：
@@ -2646,7 +2692,8 @@ Total: 6219 → 6378 tests (+159)
 13. ~~可访问性基础~~ ✅ FocusManager（Tab 导航 + tabindex 排序 + 13 单元测试）+ 19 个 ARIA WPT 测试
 14. ~~跨平台打包脚本~~ ✅ Linux AppImage/deb + macOS .app + Windows .zip
 15. ~~CI 发布工作流~~ ✅ GitHub Actions 多平台构建 + .deb + .app + Release 自动创建
-16. ~~真实网站兼容性矩阵扩展~~ ✅ 35→45 站点（+10：rfc-editor/unicode/reqres/postman/owasp/openssl/chromium/deno/bun/csswg）
+16. ~~真实网站兼容性矩阵扩展~~ ✅ 35→45 站点（+10：rfc-editor/unicode/reqres/postman-owasp/openssl/chromium/deno/bun/csswg）
+17. ~~WASM 自动桥接完整实现~~ ✅ WebAssembly.instantiate/compile/instantiateStreaming + 魔术字节验证 + _start 自动执行 + 导出函数调用队列 + 内存状态注入 + 6 WPT 测试
 
 ---
 

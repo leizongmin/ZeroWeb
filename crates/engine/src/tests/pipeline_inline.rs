@@ -291,7 +291,10 @@ fn test_full_vs_incremental_render_primitive_count() {
     let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
 
     let inc_count = inc_primitives.map(|p| p.len()).unwrap_or(0);
-    assert!(inc_count <= full_count, "incremental paint should produce <= primitives of full paint");
+    assert!(
+        inc_count <= full_count,
+        "incremental paint should produce <= primitives of full paint"
+    );
 }
 
 /// 测试 DOM 修改后 recompute_styles 生成不同的图元。
@@ -406,7 +409,9 @@ fn test_dirty_mark_triggers_rerender_lifecycle() {
     assert!(pipeline.layout().is_some());
     assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
 
-    pipeline.dirty_tracker_mut().mark_dirty(Rect::new(0.0, 0.0, 200.0, 100.0));
+    pipeline
+        .dirty_tracker_mut()
+        .mark_dirty(Rect::new(0.0, 0.0, 200.0, 100.0));
     assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 1);
     assert!(pipeline.dirty_tracker().dirty_area() > 0.0);
 
@@ -531,7 +536,8 @@ fn test_mixed_render_operations() {
 #[test]
 fn test_render_html_with_inline_styles() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
-    let html = r#"<html><body><div style="background-color: red; width: 200px; height: 100px;">Styled</div></body></html>"#;
+    let html =
+        r#"<html><body><div style="background-color: red; width: 200px; height: 100px;">Styled</div></body></html>"#;
     let css = "div { background-color: red; width: 200px; height: 100px; }";
     let result = pipeline.render_html(html, css);
 
@@ -808,7 +814,10 @@ fn test_pipeline_inline_style_grid_two_columns() {
     let result = pipeline.render_html(html, "");
 
     let total = layout_height(&result.layout.root, 0.0);
-    assert!(total < 150.0, "2x2 grid with 50px cells should be ~110px tall, got {total}");
+    assert!(
+        total < 150.0,
+        "2x2 grid with 50px cells should be ~110px tall, got {total}"
+    );
 }
 
 /// 测试 `<style>` 内 CSS 文本不参与排版。
@@ -890,10 +899,14 @@ fn test_pipeline_multiple_render_different_viewports() {
 fn test_dirty_tracker_mut_persistence() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
 
-    pipeline.dirty_tracker_mut().mark_dirty(Rect::new(10.0, 20.0, 50.0, 30.0));
+    pipeline
+        .dirty_tracker_mut()
+        .mark_dirty(Rect::new(10.0, 20.0, 50.0, 30.0));
     assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 1);
 
-    pipeline.dirty_tracker_mut().mark_dirty(Rect::new(100.0, 100.0, 20.0, 20.0));
+    pipeline
+        .dirty_tracker_mut()
+        .mark_dirty(Rect::new(100.0, 100.0, 20.0, 20.0));
     assert_eq!(pipeline.dirty_tracker().dirty_rects().len(), 2);
 
     assert_eq!(pipeline.dirty_tracker().dirty_rects()[0].origin.x, 10.0);

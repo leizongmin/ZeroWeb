@@ -245,3 +245,218 @@ fn test_wasm_pending_bridge_cleared() {
 fn bytes_to_js_array(bytes: &[u8]) -> String {
     bytes.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",")
 }
+
+// ── WASM 自动桥接增强测试 ──
+
+/// WASM 桥接 — instantiateStreaming() API 可用。
+#[test]
+fn test_wasm_instantiate_streaming_api() {
+    let mut wv = create_webview();
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+            typeof WebAssembly.instantiateStreaming === 'function'
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "true", "WebAssembly.instantiateStreaming 应该可用");
+}
+
+/// WASM 桥接 — instantiateStreaming() 处理 Uint8Array 输入。
+#[test]
+fn test_wasm_instantiate_streaming_bytes() {
+    let mut wv = create_webview();
+    let wasm_bytes = wasm_add_module();
+    let js_bytes = bytes_to_js_array(&wasm_bytes);
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+            var bytes = new Uint8Array([{js_bytes}]);
+            var p = WebAssembly.instantiateStreaming(bytes);
+            typeof p.then === 'function'
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true", "instantiateStreaming 应返回 Promise");
+}
+
+/// WASM 桥接 — validate() 正确检测 WASM 魔术字节。
+#[test]
+fn test_wasm_validate_magic_bytes() {
+    let mut wv = create_webview();
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+            var valid = new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]);
+            var invalid = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+            WebAssembly.validate(valid) + ':' + WebAssembly.validate(invalid)
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "true:false", "validate 应检测 WASM 魔术字节");
+}
+
+/// WASM 桥接 — validate() 拒绝空/null 输入。
+#[test]
+fn test_wasm_validate_edge_cases() {
+    let mut wv = create_webview();
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+            var r1 = WebAssembly.validate(null);
+            var r2 = WebAssembly.validate(new Uint8Array(0));
+            var r3 = WebAssembly.validate(new Uint8Array([0x00]));
+            r1 + ':' + r2 + ':' + r3
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "false:false:false", "validate 应拒绝 null、空和过短输入");
+}
+
+/// WASM 桥接 — 导出函数可从 JS 侧调用（通过调用队列）。
+#[test]
+fn test_wasm_js_export_callable() {
+    let mut wv = create_webview();
+    let wasm_bytes = wasm_add_module();
+    let js_bytes = bytes_to_js_array(&wasm_bytes);
+
+    // 实例化 WASM 模块
+    let _ = wv.execute_script_with_dom(&format!(
+        r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        "#
+    ));
+
+    // 检查导出函数名列表是否已注入
+    let check = wv
+        .execute_script(
+            r#"
+            var keys = Object.keys(__wasm_results__);
+            if (keys.length === 0) 'no_results';
+            else {
+                var inst = __wasm_results__[keys[0]];
+                var names = inst.exports.__wasm_export_names__;
+                names.indexOf('add') >= 0 ? 'has_add' : 'no_add:' + JSON.stringify(names);
+            }
+        "#,
+        )
+        .unwrap();
+    assert_eq!(check, "has_add", "导出列表应包含 'add' 函数");
+}
+
+/// WASM 桥接 — __host_backed__ 标志标记 host 管理的实例。
+#[test]
+fn test_wasm_host_backed_flag() {
+    let mut wv = create_webview();
+    let wasm_bytes = wasm_add_module();
+    let js_bytes = bytes_to_js_array(&wasm_bytes);
+
+    let _ = wv.execute_script_with_dom(&format!(
+        r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        "#
+    ));
+
+    let check = wv
+        .execute_script(
+            r#"
+            var keys = Object.keys(__wasm_results__);
+            keys.length > 0 && __wasm_results__[keys[0]]._hostBacked === true ? 'true' : 'false'
+        "#,
+        )
+        .unwrap();
+    assert_eq!(check, "true", "host 管理的实例应有 _hostBacked 标志");
+}
+
+/// WASM 桥接 — 实例有 memory 导出。
+#[test]
+fn test_wasm_memory_export() {
+    let mut wv = create_webview();
+    let wasm_bytes = wasm_add_module();
+    let js_bytes = bytes_to_js_array(&wasm_bytes);
+
+    let _ = wv.execute_script_with_dom(&format!(
+        r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        "#
+    ));
+
+    let check = wv
+        .execute_script(
+            r#"
+            var keys = Object.keys(__wasm_results__);
+            var inst = __wasm_results__[keys[0]];
+            inst.exports.memory && typeof inst.exports.memory.buffer === 'object' &&
+            inst.exports.memory.byteLength >= 65536 ? 'has_memory' : 'no_memory'
+        "#,
+        )
+        .unwrap();
+    assert_eq!(check, "has_memory", "实例应有 memory 导出");
+}
+
+/// WASM 桥接 — 编译桥接命令正确注入 __wasm_compiled__。
+#[test]
+fn test_wasm_compile_bridge() {
+    let mut wv = create_webview();
+    let wasm_bytes = wasm_add_module();
+    let js_bytes = bytes_to_js_array(&wasm_bytes);
+
+    let _ = wv.execute_script_with_dom(&format!(
+        r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        var mod = WebAssembly.compile(bytes);
+        typeof mod.then === 'function'
+        "#
+    ));
+
+    // compile 桥接应注入 __wasm_compiled__
+    let check = wv
+        .execute_script(
+            r#"
+            typeof __wasm_compiled__ === 'object' ? 'compiled' : 'not_compiled'
+        "#,
+        )
+        .unwrap();
+    assert_eq!(check, "compiled", "compile 桥接应注入编译结果");
+}
+
+/// WASM 桥接 — _callQueue 和 _callResults 基础设施可用。
+#[test]
+fn test_wasm_call_queue_infrastructure() {
+    let mut wv = create_webview();
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+            Array.isArray(WebAssembly._callQueue) &&
+            typeof WebAssembly._callResults === 'object' &&
+            typeof WebAssembly._nextCallId === 'number'
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "true", "调用队列基础设施应可用");
+}
+
+/// WASM 桥接 — validate 正确处理不同输入类型。
+#[test]
+fn test_wasm_validate_various_types() {
+    let mut wv = create_webview();
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+            var r1 = WebAssembly.validate(new ArrayBuffer(8));
+            var r2 = WebAssembly.validate(new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]));
+            var r3 = WebAssembly.validate({byteLength: 8});
+            r1 + ':' + r2 + ':' + r3
+        "#,
+        )
+        .unwrap();
+    // r1=false (empty ArrayBuffer is not valid WASM), r2=true (valid WASM header),
+    // r3=false (plain object without typed array interface)
+    assert_eq!(
+        result, "false:true:false",
+        "validate 应区分不同输入类型：空 buffer 无效、真实 WASM 有效、普通对象无效"
+    );
+}

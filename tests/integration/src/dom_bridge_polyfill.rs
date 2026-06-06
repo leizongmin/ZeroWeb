@@ -720,10 +720,19 @@ fn test_polyfill_webassembly_exists() {
 fn test_polyfill_webassembly_validate() {
     let result = eval_polyfill(
         r#"
-        WebAssembly.validate(new ArrayBuffer(8)) ? 'valid' : 'invalid';
+        // WASM 魔术字节: 0x00 0x61 0x73 0x6D + 版本号 0x01 0x00 0x00 0x00
+        var validWasm = new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]);
+        var validResult = WebAssembly.validate(validWasm) ? 'valid' : 'invalid';
+        // 非 WASM 字节应返回 false
+        var invalidResult = WebAssembly.validate(new ArrayBuffer(8)) ? 'valid' : 'invalid';
+        validResult + ':' + invalidResult;
         "#,
     );
-    assert_eq!(result.trim(), "valid", "WebAssembly.validate 应返回 true");
+    assert_eq!(
+        result.trim(),
+        "valid:invalid",
+        "WebAssembly.validate 应正确检测 WASM 魔术字节"
+    );
 }
 
 #[test]

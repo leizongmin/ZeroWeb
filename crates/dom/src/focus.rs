@@ -24,9 +24,7 @@ struct FocusableItem {
 }
 
 /// 默认可聚焦的 HTML 元素标签（不含 tabindex 时可通过 Tab 聚焦）。
-const FOCUSABLE_TAGS: &[&str] = &[
-    "a", "button", "input", "select", "textarea", "summary", "details",
-];
+const FOCUSABLE_TAGS: &[&str] = &["a", "button", "input", "select", "textarea", "summary", "details"];
 
 impl FocusManager {
     /// 创建新的焦点管理器。
@@ -126,7 +124,7 @@ impl FocusManager {
                 let current_idx = self.focus_order.iter().position(|item| item.node == current);
                 match current_idx {
                     Some(idx) if idx + 1 < self.focus_order.len() => idx + 1,
-                    Some(_) => 0,  // 循环回到第一个
+                    Some(_) => 0, // 循环回到第一个
                     None => 0,
                 }
             }
