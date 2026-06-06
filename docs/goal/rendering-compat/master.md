@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 296 个内联 reftest |
+| WPT Runner | ✅ reftest 级 | 1,341 个手写 TestCase + 685 个内联 reftest（13 目录 ≥50） |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -33,7 +33,7 @@
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
-| Quirks Mode | ✅ 大部分完成 | CSS parser + style system quirks 已实现，layout engine quirks 待 M4 |
+| Quirks Mode | ✅ 完成 | CSS parser + style system + layout engine quirks 全部实现 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
 
 ---
