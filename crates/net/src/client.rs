@@ -38,12 +38,20 @@ impl HttpClient {
         Self::with_config(30, max)
     }
 
+    /// HTTP 客户端默认 User-Agent
+    const DEFAULT_USER_AGENT: &str = "ZeroWeb/1.0";
+
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs))
             // 禁用 reqwest 内置重定向，由我们手动处理以跟踪重定向次数
             .redirect(reqwest::redirect::Policy::none())
+            .user_agent(Self::DEFAULT_USER_AGENT)
+            // 启用 gzip / brotli / deflate 自动解压
+            .gzip(true)
+            .brotli(true)
+            .deflate(true)
             .build()
             .unwrap_or_default();
 
