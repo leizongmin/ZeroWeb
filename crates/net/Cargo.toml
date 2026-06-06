@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 hyper = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["blocking", "gzip", "brotli", "deflate"] }
 url = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
