@@ -1,0 +1,48 @@
+# WPT Reftest Skip List
+# 每行一条规则，支持：
+#   - 精确路径匹配：css/css-svg/foo.html
+#   - 目录前缀匹配（以 / 结尾）：css/css-svg/
+#   - 注释行（以 # 开头）
+#   - 空行忽略
+#
+# 这些 reftest 因超出当前渲染兼容性目标范围而被跳过。
+
+# ── SVG 渲染（不在范围内） ──
+css/css-svg/
+css/css-masking/
+css/css-shapes/
+css/css-transforms/svg/
+svg/
+html/canvas/
+
+# ── Canvas / WebGL / WebGPU（不在范围内） ──
+canvas/
+webgl/
+webgpu/
+offscreencanvas/
+
+# ── 动画（不在核心范围内） ──
+css/css-animations/
+css/css-transitions/
+css/web-animations/
+
+# ── 媒体（不在范围内） ──
+media/
+html/semantics/embedded-content/media/
+html/semantics/embedded-content/video/
+html/semantics/embedded-content/audio/
+
+# ── 交互/pointer事件（不在范围内） ──
+pointerevents/
+pointerlock/
+html/editing/
+css/css-ui/appearance-
+
+# ── 已知依赖 JS DOM API（当前不支持） ──
+# 注意：部分 CSS reftest 依赖 JS 动态设置样式，但先跳过明确依赖 DOM API 的
+html/dom/
+html/infrastructure/
+html/webappapis/
+
+# ── 依赖外部资源（图片、字体等） ──
+# 暂不跳过，在导入时按需处理

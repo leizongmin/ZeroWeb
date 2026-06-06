@@ -506,7 +506,7 @@ pub fn write_junit_xml<W: Write>(results: &[TestResult], writer: &mut W) -> std:
 
 // ── 辅助函数 ─────────────────────────────────────────────────────
 
-fn escape_json_string(s: &str) -> String {
+pub fn escape_json_string(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")

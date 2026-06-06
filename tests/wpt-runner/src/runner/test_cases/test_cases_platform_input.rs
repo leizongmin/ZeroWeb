@@ -56,10 +56,7 @@ pub fn platform_input_tests() -> Vec<TestCase> {
             </body></html>"#
                 .into(),
             css: r#"#editor { border: 1px solid #ccc; padding: 8px; min-height: 100px; }"#.into(),
-            assertions: vec![
-                "dom_has_body".into(),
-                "render_completes".into(),
-            ],
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // 鼠标事件处理页面
@@ -271,10 +268,7 @@ pub fn platform_input_tests() -> Vec<TestCase> {
                 }
             "#
             .into(),
-            assertions: vec![
-                "dom_has_body".into(),
-                "nonzero_primitives".into(),
-            ],
+            assertions: vec!["dom_has_body".into(), "nonzero_primitives".into()],
         },
         TestCase {
             id: "platform-input/viewport/flexible-grid".into(),
@@ -303,10 +297,7 @@ pub fn platform_input_tests() -> Vec<TestCase> {
                 }
             "#
             .into(),
-            assertions: vec![
-                "dom_has_body".into(),
-                "nonzero_primitives".into(),
-            ],
+            assertions: vec!["dom_has_body".into(), "nonzero_primitives".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // HiDPI / 缩放
@@ -410,11 +401,7 @@ pub fn platform_input_tests() -> Vec<TestCase> {
             </body></html>"#
                 .into(),
             css: String::new(),
-            assertions: vec![
-                "dom_has_body".into(),
-                "dom_has_input".into(),
-                "render_completes".into(),
-            ],
+            assertions: vec!["dom_has_body".into(), "dom_has_input".into(), "render_completes".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // 焦点管理
@@ -520,10 +507,7 @@ pub fn platform_input_tests() -> Vec<TestCase> {
                 }
             "#
             .into(),
-            assertions: vec![
-                "dom_has_body".into(),
-                "nonzero_primitives".into(),
-            ],
+            assertions: vec!["dom_has_body".into(), "nonzero_primitives".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // 综合场景
