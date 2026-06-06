@@ -19,7 +19,7 @@ use super::super::helpers::{BorderRadiusSpec, apply_transform_offset};
 use super::super::painter::Painter;
 
 /// 辅助函数：创建简单 LayoutBox。
-fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) -> LayoutBox {
+pub(super) fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) -> LayoutBox {
     LayoutBox {
         node_id,
         x,

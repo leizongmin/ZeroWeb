@@ -4,6 +4,7 @@ mod advanced;
 mod advanced_part2;
 mod background_repeat;
 mod basic;
+mod border_image_repeat;
 mod content_objectfit;
 mod counters;
 mod css_remaining;
