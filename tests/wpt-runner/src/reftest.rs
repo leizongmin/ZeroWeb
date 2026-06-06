@@ -5,6 +5,7 @@
 //! - mismatch：两个页面的像素应有显著差异
 //!
 //! 支持分类容差（布局类 vs 文字类）和 per-test WPT fuzzy 注解覆盖。
+//! 支持 CPU 软件渲染和 GPU 无头渲染两种模式。
 
 #![allow(dead_code)]
 
@@ -12,7 +13,7 @@ use zero_engine::RenderPipeline;
 use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
-use zero_render_foundation::gpu::renderer::GlyphDraw;
+use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, RoundedRectPrimitive};
 use zero_render_foundation::surface::FrameBuffer;
 
@@ -305,6 +306,156 @@ pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> F
         &[],
         &[],
     )
+}
+
+/// 将 HTML 渲染到帧缓冲（GPU 无头模式 + CPU 圆角矩形叠加）。
+///
+/// 使用 GpuRenderer 无头模式渲染 fills 和 glyphs，
+/// 然后在 CPU 侧叠加圆角矩形（GPU 渲染器尚不支持 RoundedRectPrimitive）。
+/// 如果 GPU 初始化失败，自动回退到纯 CPU 渲染。
+pub fn render_to_framebuffer_gpu(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
+    execute_scripts(html);
+
+    let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
+    let result = pipeline.render_html(html, css);
+
+    let fills: Vec<FillPrimitive> = result.primitives.fills.clone();
+    let rounded_rects: Vec<RoundedRectPrimitive> = result.primitives.rounded_rects.clone();
+    let glyph_primitives: Vec<GlyphPrimitive> = result.primitives.glyphs.clone();
+
+    let glyph_draws: Vec<GlyphDraw> = glyph_primitives
+        .iter()
+        .map(|g| GlyphDraw {
+            ch: char::from_u32(g.glyph_id).unwrap_or('?'),
+            x: g.x,
+            baseline_y: g.y,
+            font_size: g.font_size,
+            color: g.color,
+            font_id: g.font_id.0,
+        })
+        .collect();
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(1024);
+
+    // 尝试 GPU 无头渲染
+    match GpuRenderer::new_headless(config.viewport_width, config.viewport_height) {
+        Ok(mut gpu) => {
+            gpu.render_scene_ext(&fills, &font_loader, &mut glyph_cache, &glyph_draws, &[], &[]);
+
+            if let Some(pixels) = gpu.read_pixels() {
+                let width = config.viewport_width;
+                let height = config.viewport_height;
+
+                // GPU 渲染的 fills + glyphs 已回读，现在叠加 rounded rects
+                let mut fb =
+                    FrameBuffer::from_rgba(pixels, width, height).unwrap_or_else(|_| FrameBuffer::new(width, height));
+
+                // 在 CPU 侧光栅化圆角矩形并叠加到帧缓冲
+                if !rounded_rects.is_empty() {
+                    let scale = config.scale_factor;
+                    for rr in &rounded_rects {
+                        rasterize_rounded_rect_into(&mut fb, rr, scale);
+                    }
+                }
+
+                return fb;
+            }
+        }
+        Err(e) => {
+            eprintln!("  [reftest GPU] Headless GPU init failed: {e}, falling back to CPU");
+        }
+    }
+
+    // GPU 失败回退到 CPU
+    render_scene_to_framebuffer(
+        config.viewport_width,
+        config.viewport_height,
+        config.scale_factor,
+        &fills,
+        &rounded_rects,
+        &font_loader,
+        &mut glyph_cache,
+        &glyph_draws,
+        &[],
+        &[],
+    )
+}
+
+/// 在帧缓冲上光栅化单个圆角矩形。
+///
+/// 直接操作帧缓冲像素，跳过 GPU 不支持的 RoundedRectPrimitive。
+fn rasterize_rounded_rect_into(fb: &mut FrameBuffer, rr: &RoundedRectPrimitive, scale: f32) {
+    let left = (rr.rect.left() * scale).floor().max(0.0) as u32;
+    let top = (rr.rect.top() * scale).floor().max(0.0) as u32;
+    let right = (rr.rect.right() * scale).ceil().min(fb.width as f32) as u32;
+    let bottom = (rr.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
+
+    if left >= right || top >= bottom {
+        return;
+    }
+
+    let tl_r = rr.top_left_radius * scale;
+    let tr_r = rr.top_right_radius * scale;
+    let br_r = rr.bottom_right_radius * scale;
+    let bl_r = rr.bottom_left_radius * scale;
+
+    let x0 = rr.rect.left() * scale;
+    let y0 = rr.rect.top() * scale;
+    let x1 = rr.rect.right() * scale;
+    let y1 = rr.rect.bottom() * scale;
+
+    let color = [rr.color.r, rr.color.g, rr.color.b, 255];
+
+    for y in top..bottom {
+        let fy = y as f32 + 0.5;
+        for x in left..right {
+            let fx = x as f32 + 0.5;
+
+            if !is_inside_rounded_rect(fx, fy, x0, y0, x1, y1, tl_r, tr_r, br_r, bl_r) {
+                continue;
+            }
+
+            fb.set_pixel(x, y, color);
+        }
+    }
+}
+
+/// 判断像素 (fx, fy) 是否在圆角矩形内。
+#[allow(clippy::too_many_arguments)]
+fn is_inside_rounded_rect(
+    fx: f32,
+    fy: f32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    tl_r: f32,
+    tr_r: f32,
+    br_r: f32,
+    bl_r: f32,
+) -> bool {
+    if fx < x0 + tl_r && fy < y0 + tl_r {
+        let dx = fx - (x0 + tl_r);
+        let dy = fy - (y0 + tl_r);
+        return dx * dx + dy * dy <= tl_r * tl_r;
+    }
+    if fx > x1 - tr_r && fy < y0 + tr_r {
+        let dx = fx - (x1 - tr_r);
+        let dy = fy - (y0 + tr_r);
+        return dx * dx + dy * dy <= tr_r * tr_r;
+    }
+    if fx > x1 - br_r && fy > y1 - br_r {
+        let dx = fx - (x1 - br_r);
+        let dy = fy - (y1 - br_r);
+        return dx * dx + dy * dy <= br_r * br_r;
+    }
+    if fx < x0 + bl_r && fy > y1 - bl_r {
+        let dx = fx - (x0 + bl_r);
+        let dy = fy - (y1 - bl_r);
+        return dx * dx + dy * dy <= bl_r * bl_r;
+    }
+    true
 }
 
 /// 从 HTML 中提取 `<script>` 标签内容并通过 V8 runtime 执行。
