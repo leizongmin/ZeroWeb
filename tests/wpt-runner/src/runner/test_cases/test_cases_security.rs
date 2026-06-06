@@ -827,5 +827,271 @@ pub fn security_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  HSTS + 混合内容升级管线
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/hsts/upgrade-insecure".into(),
+            description: "HSTS upgrade-insecure-requests CSP 指令".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+            </head><body>
+            <img src="http://example.com/image.png" alt="Should be upgraded">
+            <script src="http://cdn.example.com/lib.js"></script>
+            <p>upgrade-insecure-requests 自动升级 HTTP 为 HTTPS</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP nonce + hash 脚本加载
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/nonce-script".into(),
+            description: "CSP nonce 属性脚本加载".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-abc123'">
+            </head><body>
+            <script nonce="abc123">document.body.innerHTML += '<p id="nonce-ok">Nonce script executed</p>';</script>
+            <script>document.body.innerHTML += '<p>Non-nonce script should not execute</p>';</script>
+            <div>测试 nonce 限制脚本执行</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP img-src + data: URI + blob: URI
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/img-src-data".into(),
+            description: "CSP img-src data: blob: URI 限制".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="img-src 'self' data:">
+            </head><body>
+            <img src="data:image/png;base64,iVBOR" alt="data URI image">
+            <img src="https://example.com/logo.png" alt="self image">
+            <img src="https://evil.com/tracker.png" alt="blocked image">
+            <div>img-src 控制 data: 和 self 图片</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP connect-src + Fetch API
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/connect-src".into(),
+            description: "CSP connect-src 限制 Fetch/XHR".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="connect-src 'self' https://api.example.com">
+            </head><body>
+            <div id="status">connect-src test</div>
+            <script>
+            fetch('/api/data').catch(() => {});
+            fetch('https://api.example.com/v1').catch(() => {});
+            fetch('https://evil.com/exfil').catch(() => {});
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CORS crossorigin 属性组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/cors/crossorigin-attributes".into(),
+            description: "各种 crossorigin 属性值".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <img src="https://cdn.example.com/a.png" crossorigin="anonymous" alt="anonymous">
+            <img src="https://cdn.example.com/b.png" crossorigin="use-credentials" alt="credentials">
+            <img src="https://cdn.example.com/c.png" alt="no-cors">
+            <script src="https://cdn.example.com/lib.js" crossorigin="anonymous"></script>
+            <link rel="stylesheet" href="https://cdn.example.com/style.css" crossorigin="anonymous">
+            <div>测试 crossorigin 属性的各种组合</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  沙箱标志组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/sandbox/flag-combinations".into(),
+            description: "sandbox 多种标志组合".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <iframe sandbox="allow-scripts allow-forms" srcdoc="<form><input type='text'><button>Submit</button></form>"></iframe>
+            <iframe sandbox="allow-scripts allow-same-origin" srcdoc="<p>Same-origin sandbox</p>"></iframe>
+            <iframe sandbox="allow-scripts allow-popups allow-forms allow-modals" srcdoc="<div>Multi-flag</div>"></iframe>
+            <iframe sandbox="allow-top-navigation allow-scripts" srcdoc="<a href='/'>Top nav</a>"></iframe>
+            <div>测试各种 sandbox 标志组合</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  COOP/COEP 跨源隔离
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/coop/coep-coop-headers".into(),
+            description: "COOP/COEP 响应头跨源隔离".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+            <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+            </head><body>
+            <div id="isolated">Cross-origin isolated context</div>
+            <script>
+            // SharedArrayBuffer 仅在跨源隔离上下文可用
+            var hasSharedBuffer = typeof SharedArrayBuffer !== 'undefined';
+            document.getElementById('isolated').textContent += ' SAB:' + hasSharedBuffer;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  混合内容 + 安全上下文
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/mixed-content/security-context".into(),
+            description: "安全上下文判断 + isSecureContext".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="ctx">Security context test</div>
+            <script>
+            var isSecure = window.isSecureContext;
+            document.getElementById('ctx').textContent = 'isSecureContext: ' + isSecure;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Referrer-Policy 策略
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/referrer/no-referrer".into(),
+            description: "Referrer-Policy no-referrer".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta name="referrer" content="no-referrer">
+            </head><body>
+            <a href="https://example.com/page">No referrer link</a>
+            <img src="https://cdn.example.com/img.png" alt="No referrer image">
+            <div>no-referrer 策略不发送 Referer 头</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "security/referrer/strict-origin".into(),
+            description: "Referrer-Policy strict-origin".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta name="referrer" content="strict-origin">
+            </head><body>
+            <a href="https://example.com/page">Strict origin link</a>
+            <a href="http://example.com/insecure">Insecure link</a>
+            <div>strict-origin 仅在同等安全级别时发送源</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  权限 API 检测
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/permissions/api-detection".into(),
+            description: "Permissions API 可用性检测".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="perms">Permissions API test</div>
+            <script>
+            var results = [];
+            results.push('Notification: ' + (typeof Notification !== 'undefined'));
+            results.push('Geolocation: ' + (typeof navigator !== 'undefined' && 'geolocation' in navigator));
+            results.push('Permissions: ' + (typeof navigator !== 'undefined' && 'permissions' in navigator));
+            document.getElementById('perms').textContent = results.join(', ');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  综合：安全仪表盘页面
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/comprehensive/security-dashboard".into(),
+            description: "安全特性综合页面".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+            <meta name="referrer" content="strict-origin-when-cross-origin">
+            <style>
+            .security-card { border: 1px solid #ddd; padding: 12px; margin: 8px 0; border-radius: 4px; }
+            .pass { color: green; } .fail { color: red; } .warn { color: orange; }
+            h1 { font-size: 18px; } h2 { font-size: 14px; }
+            </style>
+            </head><body>
+            <h1>Security Dashboard</h1>
+            <div class="security-card">
+                <h2>CSP Status</h2>
+                <p class="pass">Content-Security-Policy: active</p>
+            </div>
+            <div class="security-card">
+                <h2>Mixed Content</h2>
+                <p class="pass">All resources loaded over secure origins</p>
+            </div>
+            <div class="security-card">
+                <h2>Permissions</h2>
+                <p>Notification: <span class="warn">prompt</span></p>
+                <p>Geolocation: <span class="warn">prompt</span></p>
+            </div>
+            <div class="security-card">
+                <h2>CORS</h2>
+                <p class="pass">Same-origin policy enforced</p>
+            </div>
+            <div class="security-card">
+                <h2>Sandbox</h2>
+                <iframe sandbox="allow-scripts" srcdoc="<p class='pass'>Sandboxed iframe active</p>" width="200" height="50"></iframe>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "dom_has_element:iframe".into(),
+                "render_completes".into(),
+            ],
+        },
     ]
 }

@@ -55,3 +55,6 @@ mod web_api_pipeline;
 
 #[cfg(test)]
 mod multi_process;
+
+#[cfg(test)]
+mod security_pipeline;
