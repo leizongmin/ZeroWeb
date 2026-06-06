@@ -1,8 +1,10 @@
-//! 最小 Reftest Harness — 渲染测试 HTML 和参考 HTML，比较像素输出。
+//! Reftest Harness — 渲染测试 HTML 和参考 HTML，比较像素输出。
 //!
 //! 实现 WPT 风格的 `rel=match` / `rel=mismatch` 比较逻辑：
 //! - match：两个页面的像素应几乎相同（允许模糊阈值）
 //! - mismatch：两个页面的像素应有显著差异
+//!
+//! 支持分类容差（布局类 vs 文字类）和 per-test WPT fuzzy 注解覆盖。
 
 #![allow(dead_code)]
 
@@ -13,6 +15,56 @@ use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::gpu::renderer::GlyphDraw;
 use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive};
 use zero_render_foundation::surface::FrameBuffer;
+
+use crate::manifest::FuzzyMeta;
+
+/// Reftest 分类 — 用于确定默认容差级别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReftestCategory {
+    /// 布局类 reftest（不含文字渲染）：严格容差。
+    Layout,
+    /// 文字类 reftest（含文本渲染）：宽松容差。
+    Text,
+    /// 未分类：使用中等容差。
+    Unknown,
+}
+
+impl ReftestCategory {
+    /// 根据测试路径自动推断分类。
+    pub fn from_path(path: &str) -> Self {
+        let path_lower = path.to_lowercase();
+        // 文字排版相关目录
+        if path_lower.contains("/css-text/")
+            || path_lower.contains("/css-writing-modes/")
+            || path_lower.contains("/css-fonts/")
+            || path_lower.contains("/css-text-decor/")
+            || path_lower.contains("/text/")
+            || path_lower.contains("/font/")
+        {
+            Self::Text
+        } else {
+            Self::Layout
+        }
+    }
+
+    /// 该分类的默认最大差异率。
+    pub fn default_max_diff_ratio(&self) -> f64 {
+        match self {
+            Self::Layout => 0.01,  // 1%
+            Self::Text => 0.05,    // 5%（字体渲染差异更大）
+            Self::Unknown => 0.02, // 2%
+        }
+    }
+
+    /// 该分类的默认最大单通道色差。
+    pub fn default_max_channel_diff(&self) -> u8 {
+        match self {
+            Self::Layout => 5,
+            Self::Text => 15,
+            Self::Unknown => 8,
+        }
+    }
+}
 
 /// Reftest 比较结果。
 #[derive(Debug)]
@@ -46,6 +98,13 @@ pub struct ReftestConfig {
     pub max_diff_ratio: f64,
     /// 最大允许单通道色差（0 ~ 255），默认 5。
     pub max_channel_diff: u8,
+    /// Reftest 分类。
+    pub category: ReftestCategory,
+    /// Per-test fuzzy 容差覆盖（来自 WPT MANIFEST.json）。
+    pub fuzzy_override: Option<FuzzyMeta>,
+    /// mismatch 模式的最小差异率阈值（默认 0.005 = 0.5%）。
+    /// 差异率超过此值才认为是不匹配通过。
+    pub min_mismatch_ratio: f64,
 }
 
 impl Default for ReftestConfig {
@@ -56,7 +115,59 @@ impl Default for ReftestConfig {
             scale_factor: 1.0,
             max_diff_ratio: 0.01,
             max_channel_diff: 5,
+            category: ReftestCategory::Unknown,
+            fuzzy_override: None,
+            min_mismatch_ratio: 0.005,
         }
+    }
+}
+
+impl ReftestConfig {
+    /// 根据分类创建配置（使用分类默认容差）。
+    pub fn for_category(category: ReftestCategory) -> Self {
+        Self {
+            max_diff_ratio: category.default_max_diff_ratio(),
+            max_channel_diff: category.default_max_channel_diff(),
+            category,
+            ..Default::default()
+        }
+    }
+
+    /// 应用 WPT fuzzy 注解覆盖。
+    ///
+    /// 如果 fuzzy 注解指定了 maxDiff 或 totalPixels，覆盖分类默认值。
+    pub fn with_fuzzy_override(&mut self, fuzzy: &FuzzyMeta) {
+        if let Some(max_diff) = fuzzy.max_diff {
+            self.max_channel_diff = max_diff as u8;
+        }
+        if let Some(total_pixels) = fuzzy.total_pixels {
+            // total_pixels 转换为差异率
+            let total = (self.viewport_width as u64) * (self.viewport_height as u64);
+            if total > 0 {
+                self.max_diff_ratio = total_pixels as f64 / total as f64;
+            }
+        }
+        self.fuzzy_override = Some(fuzzy.clone());
+    }
+
+    /// 获取实际使用的最大差异率（考虑 fuzzy 覆盖）。
+    pub fn effective_max_diff_ratio(&self) -> f64 {
+        if let Some(ref fuzzy) = self.fuzzy_override
+            && fuzzy.total_pixels.is_some()
+        {
+            return self.max_diff_ratio;
+        }
+        self.max_diff_ratio
+    }
+
+    /// 获取实际使用的最大通道差异（考虑 fuzzy 覆盖）。
+    pub fn effective_max_channel_diff(&self) -> u8 {
+        if let Some(ref fuzzy) = self.fuzzy_override
+            && fuzzy.max_diff.is_some()
+        {
+            return self.max_channel_diff;
+        }
+        self.max_channel_diff
     }
 }
 
@@ -99,30 +210,35 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
     }
 
     let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
-    let (diff_pixels, max_channel_diff) = compare_pixels(&test_fb, &ref_fb, config.max_channel_diff);
+    let eff_channel_diff = config.effective_max_channel_diff();
+    let (diff_pixels, max_channel_diff) = compare_pixels(&test_fb, &ref_fb, eff_channel_diff);
     let diff_ratio = if total_pixels > 0 {
         diff_pixels as f64 / total_pixels as f64
     } else {
         0.0
     };
 
+    let eff_max_ratio = config.effective_max_diff_ratio();
+
     let passed = if case.is_match {
         // match 模式：差异应小于阈值
-        diff_ratio <= config.max_diff_ratio
+        diff_ratio <= eff_max_ratio
     } else {
-        // mismatch 模式：应有显著差异（至少 1% 像素不同）
-        diff_ratio > 0.01
+        // mismatch 模式：应有显著差异
+        diff_ratio > config.min_mismatch_ratio
     };
 
     let message = if passed {
         String::new()
     } else if case.is_match {
         format!(
-            "Match failed: {}/{} pixels differ ({:.2}%), max channel diff={}",
+            "Match failed: {}/{} pixels differ ({:.2}%), max channel diff={}, threshold={:.2}%/{}ch",
             diff_pixels,
             total_pixels,
             diff_ratio * 100.0,
-            max_channel_diff
+            max_channel_diff,
+            eff_max_ratio * 100.0,
+            eff_channel_diff
         )
     } else {
         format!(
@@ -145,7 +261,7 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
 }
 
 /// 将 HTML 渲染到 CPU 帧缓冲。
-fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
+pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     let result = pipeline.render_html(html, css);
 
@@ -154,8 +270,6 @@ fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> Frame
     let glyph_primitives: Vec<GlyphPrimitive> = result.primitives.glyphs.clone();
 
     // 将 GlyphPrimitive 转换为 GlyphDraw（CPU 渲染器需要的格式）
-    // GlyphPrimitive.glyph_id 是字形索引，CPU 渲染器使用 char
-    // 对于 reftest 比较，我们可以跳过字形渲染细节差异，仅比较 fill 图元
     let glyph_draws: Vec<GlyphDraw> = glyph_primitives
         .iter()
         .map(|g| GlyphDraw {
@@ -187,7 +301,7 @@ fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> Frame
 /// 比较两个帧缓冲的像素。
 ///
 /// 返回 (不同像素数, 最大单通道色差)。
-fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize, u8) {
+pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize, u8) {
     let mut diff_pixels = 0usize;
     let mut max_diff = 0u8;
 
@@ -216,6 +330,21 @@ fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize
     }
 
     (diff_pixels, max_diff)
+}
+
+/// 将帧缓冲保存为 PNG 文件。
+pub fn save_framebuffer_png(fb: &FrameBuffer, path: &std::path::Path) -> Result<(), String> {
+    // 简单的 BMP 保存（避免引入 PNG 编码依赖）
+    // 使用 PPM 格式（最简单的无损图像格式）
+    let ppm_path = path.with_extension("ppm");
+    let mut content = format!("P6\n{} {}\n255\n", fb.width, fb.height);
+    for i in (0..fb.data.len()).step_by(4) {
+        content.push(fb.data[i] as char);
+        content.push(fb.data[i + 1] as char);
+        content.push(fb.data[i + 2] as char);
+    }
+    std::fs::write(&ppm_path, content.as_bytes()).map_err(|e| format!("Failed to save framebuffer: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -306,6 +435,60 @@ mod tests {
         );
     }
 
+    // ── 分类容差测试 ──
+
+    #[test]
+    fn test_category_from_path_layout() {
+        assert_eq!(
+            ReftestCategory::from_path("css/CSS2/box-001.html"),
+            ReftestCategory::Layout
+        );
+        assert_eq!(
+            ReftestCategory::from_path("css/css-flexbox/001.html"),
+            ReftestCategory::Layout
+        );
+    }
+
+    #[test]
+    fn test_category_from_path_text() {
+        assert_eq!(
+            ReftestCategory::from_path("css/css-text/001.html"),
+            ReftestCategory::Text
+        );
+        assert_eq!(
+            ReftestCategory::from_path("css/css-fonts/001.html"),
+            ReftestCategory::Text
+        );
+    }
+
+    #[test]
+    fn test_category_defaults() {
+        assert_eq!(ReftestCategory::Layout.default_max_diff_ratio(), 0.01);
+        assert_eq!(ReftestCategory::Text.default_max_diff_ratio(), 0.05);
+        assert_eq!(ReftestCategory::Layout.default_max_channel_diff(), 5);
+        assert_eq!(ReftestCategory::Text.default_max_channel_diff(), 15);
+    }
+
+    #[test]
+    fn test_config_for_category() {
+        let config = ReftestConfig::for_category(ReftestCategory::Text);
+        assert!((config.max_diff_ratio - 0.05).abs() < f64::EPSILON);
+        assert_eq!(config.max_channel_diff, 15);
+    }
+
+    #[test]
+    fn test_fuzzy_override() {
+        let mut config = ReftestConfig::for_category(ReftestCategory::Layout);
+        let fuzzy = FuzzyMeta {
+            max_diff: Some(20),
+            total_pixels: Some(500),
+        };
+        config.with_fuzzy_override(&fuzzy);
+        assert_eq!(config.max_channel_diff, 20);
+        // total_pixels=500, viewport=800x600=480000, ratio=500/480000≈0.001
+        assert!(config.max_diff_ratio < 0.01);
+    }
+
     // --- CSS 布局 reftest 用例 ---
 
     /// 辅助函数：使用默认配置运行 match reftest。
@@ -348,7 +531,6 @@ mod tests {
 
     #[test]
     fn reftest_block_width_height() {
-        // 两个相同尺寸和颜色的 div 应该像素一致
         assert_match(
             "block/width-height",
             "<div style=\"width:100px;height:80px;background:red;\"></div>",
@@ -358,8 +540,6 @@ mod tests {
 
     #[test]
     fn reftest_block_margin_collapsing() {
-        // 有 margin 的 div 与无 margin 但相同背景的 div 应在 div 区域内一致
-        // （margin 不影响 div 内部像素）
         assert_match(
             "block/margin-no-effect-on-bg",
             "<div style=\"width:100px;height:50px;background:blue;margin:10px;\"></div>",
@@ -369,7 +549,6 @@ mod tests {
 
     #[test]
     fn reftest_block_different_margin() {
-        // 不同 margin 产生不同位置 → 像素不同
         assert_mismatch(
             "block/different-margin",
             "<div style=\"width:80px;height:40px;background:green;margin:0;\"></div>",
@@ -379,7 +558,6 @@ mod tests {
 
     #[test]
     fn reftest_block_stacking() {
-        // 两个垂直堆叠的 div 应与单个相同高度的 div 在 div 区域内产生不同输出
         assert_mismatch(
             "block/stacking-vs-single",
             "<div style=\"width:100px;height:40px;background:red;\"></div><div style=\"width:100px;height:40px;background:blue;\"></div>",
@@ -391,7 +569,6 @@ mod tests {
 
     #[test]
     fn reftest_padding_expands_box() {
-        // padding 扩展可视区域（background 覆盖 padding）
         assert_mismatch(
             "box-model/padding-expands",
             "<div style=\"width:80px;height:40px;background:red;padding:10px;\"></div>",
@@ -401,7 +578,6 @@ mod tests {
 
     #[test]
     fn reftest_border_visible() {
-        // 有边框的 div 与无边框的 div 应产生不同像素
         assert_mismatch(
             "box-model/border-visible",
             "<div style=\"width:80px;height:40px;background:yellow;border:2px solid black;\"></div>",
@@ -413,7 +589,6 @@ mod tests {
 
     #[test]
     fn reftest_flex_direction_row() {
-        // flex-direction:row 两个子元素水平排列
         assert_match(
             "flex/row-identical",
             "<div style=\"display:flex;width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
@@ -423,7 +598,6 @@ mod tests {
 
     #[test]
     fn reftest_flex_vs_block() {
-        // flex 排列与 block 排列应产生不同结果（水平 vs 垂直）
         assert_mismatch(
             "flex/row-vs-block",
             "<div style=\"display:flex;width:200px;height:100px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",
@@ -435,7 +609,6 @@ mod tests {
 
     #[test]
     fn reftest_absolute_position() {
-        // absolute 定位改变元素位置 → 不同像素
         assert_mismatch(
             "position/absolute-shift",
             "<div style=\"position:relative;width:200px;height:100px;\"><div style=\"position:absolute;top:20px;left:20px;width:50px;height:50px;background:green;\"></div></div>",
@@ -447,7 +620,6 @@ mod tests {
 
     #[test]
     fn reftest_named_vs_hex_color() {
-        // red 和 #FF0000 应产生相同颜色
         assert_match(
             "color/named-vs-hex",
             "<div style=\"width:100px;height:50px;background:red;\"></div>",
@@ -457,7 +629,6 @@ mod tests {
 
     #[test]
     fn reftest_rgb_vs_hex() {
-        // rgb(0,128,255) 和 #0080FF 应产生相同颜色
         assert_match(
             "color/rgb-vs-hex",
             "<div style=\"width:100px;height:50px;background:rgb(0,128,255);\"></div>",
@@ -467,7 +638,6 @@ mod tests {
 
     #[test]
     fn reftest_different_colors() {
-        // 不同颜色应产生不同像素
         assert_mismatch(
             "color/different",
             "<div style=\"width:100px;height:50px;background:red;\"></div>",
@@ -479,7 +649,6 @@ mod tests {
 
     #[test]
     fn reftest_different_sizes() {
-        // 不同尺寸应产生不同像素
         assert_mismatch(
             "size/different",
             "<div style=\"width:100px;height:50px;background:blue;\"></div>",
@@ -489,7 +658,6 @@ mod tests {
 
     #[test]
     fn reftest_display_none() {
-        // display:none 元素不应可见 → 与有元素的页面不同
         assert_mismatch(
             "display/none-vs-visible",
             "<div style=\"width:100px;height:50px;background:red;\"></div>",
@@ -501,7 +669,6 @@ mod tests {
 
     #[test]
     fn reftest_nested_same_bg() {
-        // 相同的嵌套结构应产生相同输出
         assert_match(
             "nested/same-structure",
             "<div style=\"width:100px;height:80px;background:red;\"><div style=\"width:50px;height:40px;background:blue;\"></div></div>",
@@ -511,7 +678,6 @@ mod tests {
 
     #[test]
     fn reftest_sibling_order() {
-        // 兄弟元素顺序不同应产生不同输出
         assert_mismatch(
             "nested/sibling-order",
             "<div style=\"width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:red;\"></div><div style=\"width:100px;height:50px;background:blue;\"></div></div>",

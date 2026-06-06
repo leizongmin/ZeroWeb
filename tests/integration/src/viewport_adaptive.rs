@@ -93,14 +93,8 @@ fn test_viewport_flex_wide_layout() {
     let result = wv.load_html(responsive_flex_html(), None);
 
     // 宽视口（800px）应正常渲染
-    assert!(
-        !result.primitives.glyphs.is_empty(),
-        "宽视口应有 glyph 渲染"
-    );
-    assert!(
-        !result.primitives.fills.is_empty(),
-        "宽视口应有 fill 渲染"
-    );
+    assert!(!result.primitives.glyphs.is_empty(), "宽视口应有 glyph 渲染");
+    assert!(!result.primitives.fills.is_empty(), "宽视口应有 fill 渲染");
 }
 
 /// 窄视口下 flex 列布局重排（@media 触发）
@@ -112,14 +106,8 @@ fn test_viewport_flex_narrow_reflow() {
     wv.resize(400, 600);
     let result = wv.render();
 
-    assert!(
-        !result.primitives.glyphs.is_empty(),
-        "窄视口 flex 重排后应有 glyph"
-    );
-    assert!(
-        !result.primitives.fills.is_empty(),
-        "窄视口 flex 重排后应有 fill"
-    );
+    assert!(!result.primitives.glyphs.is_empty(), "窄视口 flex 重排后应有 glyph");
+    assert!(!result.primitives.fills.is_empty(), "窄视口 flex 重排后应有 fill");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -170,10 +158,7 @@ fn test_viewport_ultra_wide() {
 
     wv.resize(3840, 2160);
     let result = wv.render();
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "3840x2160 超宽视口应渲染成功"
-    );
+    assert!(result.timings.total_ms >= 0.0, "3840x2160 超宽视口应渲染成功");
     assert!(!result.primitives.glyphs.is_empty());
 }
 
@@ -185,10 +170,7 @@ fn test_viewport_ultra_narrow() {
 
     wv.resize(50, 600);
     let result = wv.render();
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "50x600 极窄视口应渲染成功"
-    );
+    assert!(result.timings.total_ms >= 0.0, "50x600 极窄视口应渲染成功");
 }
 
 /// 方形视口不 panic
@@ -199,10 +181,7 @@ fn test_viewport_square() {
 
     wv.resize(500, 500);
     let result = wv.render();
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "500x500 方形视口应渲染成功"
-    );
+    assert!(result.timings.total_ms >= 0.0, "500x500 方形视口应渲染成功");
     assert!(!result.primitives.glyphs.is_empty());
 }
 
@@ -214,10 +193,7 @@ fn test_viewport_tall_narrow() {
 
     wv.resize(100, 2000);
     let result = wv.render();
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "100x2000 超高瘦视口应渲染成功"
-    );
+    assert!(result.timings.total_ms >= 0.0, "100x2000 超高瘦视口应渲染成功");
 }
 
 // ── 多步 resize 渲染稳定性测试 ──
@@ -242,15 +218,9 @@ fn test_viewport_multi_step_resize_stability() {
     for (w, h) in sizes {
         wv.resize(w, h);
         let result = wv.render();
-        assert!(
-            result.timings.total_ms >= 0.0,
-            "resize 到 {w}x{h} 应渲染成功"
-        );
+        assert!(result.timings.total_ms >= 0.0, "resize 到 {w}x{h} 应渲染成功");
         // 每种尺寸都应有 glyph
-        assert!(
-            !result.primitives.glyphs.is_empty(),
-            "{w}x{h} 视口应有 glyph 渲染"
-        );
+        assert!(!result.primitives.glyphs.is_empty(), "{w}x{h} 视口应有 glyph 渲染");
     }
 }
 
@@ -271,10 +241,7 @@ fn test_viewport_resize_round_trip() {
     let glyphs_restored = result_restored.primitives.glyphs.len();
 
     // 恢复后 glyph 数量应与初始相同
-    assert_eq!(
-        glyphs_initial, glyphs_restored,
-        "resize 往返后 glyph 数量应一致"
-    );
+    assert_eq!(glyphs_initial, glyphs_restored, "resize 往返后 glyph 数量应一致");
 }
 
 // ── viewport 单位渲染测试 ──
@@ -285,14 +252,8 @@ fn test_viewport_css_units_render() {
     let mut wv = create_webview();
     let result = wv.load_html(viewport_units_html(), None);
 
-    assert!(
-        !result.primitives.glyphs.is_empty(),
-        "viewport 单位页面应有 glyph"
-    );
-    assert!(
-        !result.primitives.fills.is_empty(),
-        "viewport 单位页面应有 fill"
-    );
+    assert!(!result.primitives.glyphs.is_empty(), "viewport 单位页面应有 glyph");
+    assert!(!result.primitives.fills.is_empty(), "viewport 单位页面应有 fill");
 }
 
 /// resize 后 viewport 单位重计算
@@ -324,10 +285,7 @@ fn test_viewport_empty_page_various_sizes() {
             ..Default::default()
         });
         let result = wv.load_html("<html><body></body></html>", None);
-        assert!(
-            result.timings.total_ms >= 0.0,
-            "{w}x{h} 空页面应渲染成功"
-        );
+        assert!(result.timings.total_ms >= 0.0, "{w}x{h} 空页面应渲染成功");
     }
 }
 
@@ -340,10 +298,7 @@ fn test_viewport_resize_then_reload() {
     // resize 后加载新页面
     wv.resize(400, 300);
     let result = wv.load_html("<html><body><p>Second page</p></body></html>", None);
-    assert!(
-        !result.primitives.glyphs.is_empty(),
-        "resize 后重新加载应有 glyph"
-    );
+    assert!(!result.primitives.glyphs.is_empty(), "resize 后重新加载应有 glyph");
 }
 
 /// 紧凑视口下 grid 布局不溢出
@@ -356,8 +311,5 @@ fn test_viewport_grid_compact() {
     };
     let mut wv = WebView::new(config);
     let result = wv.load_html(responsive_grid_html(), None);
-    assert!(
-        result.timings.total_ms >= 0.0,
-        "紧凑视口 grid 布局应渲染成功"
-    );
+    assert!(result.timings.total_ms >= 0.0, "紧凑视口 grid 布局应渲染成功");
 }

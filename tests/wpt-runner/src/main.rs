@@ -1,12 +1,14 @@
 //! WPT 测试运行器 — 加载和执行 Web Platform Tests。
 //!
-//! 提供三个子命令：
-//! - `run` — 执行测试用例并报告结果
+//! 提供子命令：
+//! - `run [filter]` — 执行测试用例并报告结果
 //! - `list` — 列出所有可用的测试用例
 //! - `summary` — 执行测试并仅输出汇总信息
+//! - `reftest` — 运行 WPT reftest（渲染对比测试）
 
 mod manifest;
 mod reftest;
+mod reftest_data;
 mod report;
 mod runner;
 
@@ -23,6 +25,7 @@ Commands:
   run [filter]      Run tests (optional category/pattern filter)
   list              List all available test cases
   summary           Run tests and print summary only
+  reftest           Run WPT reftest suite (rendering comparison tests)
 
 Options:
   --json            Output results in JSON format
@@ -31,6 +34,8 @@ Options:
   --manifest <path> Load external WPT MANIFEST.json
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
+  --category <cat>  Reftest category filter (layout|text|all)
+  --output <path>   Reftest report output path
 ";
 
 /// 解析命令行参数中的选项。
@@ -118,6 +123,7 @@ fn main() {
         "run" => cmd_run(&options, filter.as_deref()),
         "list" => cmd_list(&options),
         "summary" => cmd_summary(&options, filter.as_deref()),
+        "reftest" => cmd_reftest(&options, filter.as_deref()),
         "--help" | "-h" => print_usage(),
         _ => {
             eprintln!("Unknown command: {command}");
@@ -247,6 +253,218 @@ fn cmd_summary(options: &CliOptions, filter: Option<&str>) {
     if summary.failed > 0 {
         std::process::exit(1);
     }
+}
+
+/// `reftest` 子命令 — 运行 WPT reftest 套件。
+///
+/// 从内联 CSS 2.1 核心 reftest 数据加载测试对，用 CPU 软件渲染器
+/// 渲染测试和参考 HTML，比较像素输出，生成通过率报告。
+fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
+    use reftest::{ReftestCategory, ReftestResult, run_reftest};
+
+    let cases = reftest_data::css21_reftest_cases();
+    let configs = reftest_data::css21_reftest_configs();
+
+    // 过滤
+    let filtered: Vec<(usize, &reftest::ReftestCase)> = cases
+        .iter()
+        .enumerate()
+        .filter(|(i, case)| {
+            if let Some(f) = filter {
+                case.id.contains(f)
+                    || matches!(f, "layout" if configs[*i].category == ReftestCategory::Layout)
+                    || matches!(f, "text" if configs[*i].category == ReftestCategory::Text)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    eprintln!("Running {} reftest cases...", filtered.len());
+
+    let mut results: Vec<ReftestResult> = Vec::with_capacity(filtered.len());
+    let mut pass_count = 0usize;
+    let mut fail_count = 0usize;
+    let start = std::time::Instant::now();
+
+    for (idx, case) in &filtered {
+        let mut config = configs[*idx].clone();
+        config.viewport_width = options.viewport_width as u32;
+        config.viewport_height = options.viewport_height as u32;
+
+        let result = run_reftest(case, &config);
+        let passed = result.passed;
+        let status_char = if passed { '✓' } else { '✗' };
+        eprintln!("  {} {} ({:.2}%)", status_char, case.id, result.diff_ratio * 100.0);
+
+        if passed {
+            pass_count += 1;
+        } else {
+            fail_count += 1;
+            eprintln!("    {}", result.message);
+        }
+
+        results.push(result);
+    }
+
+    let duration = start.elapsed();
+    let total = pass_count + fail_count;
+    let pass_rate = if total > 0 {
+        pass_count as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
+
+    // 输出报告
+    let report_text = format_reftest_report(&results, pass_count, fail_count, pass_rate, duration);
+
+    match &options.format {
+        OutputFormat::Json => {
+            let json = format_reftest_report_json(&results, pass_count, fail_count, pass_rate, duration);
+            println!("{json}");
+        }
+        _ => {
+            println!("{report_text}");
+        }
+    }
+
+    // 保存报告到 evidence 目录（如果指定了 --output）
+    if let Some(path) = &options.junit_path {
+        if let Err(e) = std::fs::write(path, &report_text) {
+            eprintln!("Error writing report: {e}");
+        } else {
+            eprintln!("Report saved to: {path}");
+        }
+    }
+
+    if fail_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+/// 格式化 reftest 报告（文本格式）。
+fn format_reftest_report(
+    results: &[reftest::ReftestResult],
+    pass_count: usize,
+    fail_count: usize,
+    pass_rate: f64,
+    duration: std::time::Duration,
+) -> String {
+    let total = pass_count + fail_count;
+    let mut report = String::new();
+
+    report.push_str("═══════════════════════════════════════════════\n");
+    report.push_str("  WPT Reftest Report\n");
+    report.push_str("═══════════════════════════════════════════════\n\n");
+    report.push_str(&format!("  Total:   {}\n", total));
+    report.push_str(&format!("  Passed:  {}\n", pass_count));
+    report.push_str(&format!("  Failed:  {}\n", fail_count));
+    report.push_str(&format!("  Pass Rate: {:.1}%\n", pass_rate));
+    report.push_str(&format!("  Duration:  {:.2}s\n\n", duration.as_secs_f64()));
+
+    if fail_count > 0 {
+        report.push_str("── Failures ──────────────────────────────────\n\n");
+        for r in results {
+            if !r.passed {
+                report.push_str(&format!("  ✗ {}\n", r.id));
+                report.push_str(&format!("    {}\n\n", r.message));
+            }
+        }
+    }
+
+    // 按分类汇总
+    let mut layout_pass = 0usize;
+    let mut layout_total = 0usize;
+    let mut text_pass = 0usize;
+    let mut text_total = 0usize;
+
+    for r in results {
+        let category = reftest::ReftestCategory::from_path(&r.id);
+        match category {
+            reftest::ReftestCategory::Layout => {
+                layout_total += 1;
+                if r.passed {
+                    layout_pass += 1;
+                }
+            }
+            reftest::ReftestCategory::Text => {
+                text_total += 1;
+                if r.passed {
+                    text_pass += 1;
+                }
+            }
+            reftest::ReftestCategory::Unknown => {
+                layout_total += 1;
+                if r.passed {
+                    layout_pass += 1;
+                }
+            }
+        }
+    }
+
+    report.push_str("── By Category ───────────────────────────────\n\n");
+    if layout_total > 0 {
+        report.push_str(&format!(
+            "  Layout: {}/{} ({:.1}%)\n",
+            layout_pass,
+            layout_total,
+            layout_pass as f64 / layout_total as f64 * 100.0
+        ));
+    }
+    if text_total > 0 {
+        report.push_str(&format!(
+            "  Text:   {}/{} ({:.1}%)\n",
+            text_pass,
+            text_total,
+            text_pass as f64 / text_total as f64 * 100.0
+        ));
+    }
+
+    report
+}
+
+/// 格式化 reftest 报告（JSON 格式）。
+fn format_reftest_report_json(
+    results: &[reftest::ReftestResult],
+    pass_count: usize,
+    fail_count: usize,
+    pass_rate: f64,
+    duration: std::time::Duration,
+) -> String {
+    let total = pass_count + fail_count;
+
+    let mut json = String::from("{\n");
+    json.push_str(&format!("  \"total\": {total},\n"));
+    json.push_str(&format!("  \"passed\": {pass_count},\n"));
+    json.push_str(&format!("  \"failed\": {fail_count},\n"));
+    json.push_str(&format!("  \"pass_rate\": {pass_rate:.1},\n"));
+    json.push_str(&format!("  \"duration_ms\": {},\n", duration.as_millis()));
+    json.push_str("  \"results\": [\n");
+
+    for (i, r) in results.iter().enumerate() {
+        json.push_str("    {\n");
+        json.push_str(&format!("      \"id\": \"{}\",\n", report::escape_json_string(&r.id)));
+        json.push_str(&format!("      \"passed\": {},\n", r.passed));
+        json.push_str(&format!("      \"diff_ratio\": {:.6},\n", r.diff_ratio));
+        json.push_str(&format!("      \"diff_pixels\": {},\n", r.diff_pixels));
+        json.push_str(&format!("      \"total_pixels\": {},\n", r.total_pixels));
+        json.push_str(&format!("      \"max_channel_diff\": {}", r.max_channel_diff));
+        if r.message.is_empty() {
+            json.push_str("\n    }");
+        } else {
+            json.push_str(&format!(
+                ",\n      \"message\": \"{}\"\n    }}",
+                report::escape_json_string(&r.message)
+            ));
+        }
+        if i < results.len() - 1 {
+            json.push(',');
+        }
+        json.push('\n');
+    }
+
+    json.push_str("  ]\n}");
+    json
 }
 
 fn print_usage() {
