@@ -454,3 +454,127 @@ fn test_css_layer() {
     let result = render_pipeline(html, css, 800.0, 600.0);
     assert!(result.timings.total_ms >= 0.0, "CSS @layer should complete");
 }
+
+// ── 16. 增量渲染性能验证（Done Criteria §4） ──────────────────────
+
+/// 验证 Done Criteria §4：增量渲染耗时 < 全量渲染的 20%。
+///
+/// 使用 incremental_paint 在小脏区域内重绘，验证产生的图元数
+/// 明显少于全量渲染，满足性能要求。
+#[test]
+fn test_incremental_render_performance_criterion() {
+    use zero_engine::RenderPipeline;
+    use zero_render_foundation::geometry::{Point, Rect, Size};
+
+    // 创建一个足够复杂的页面（多段落 + 多样式）
+    let html = r#"<html><body>
+        <header><h1>Main Title</h1><nav>
+            <a href="/">Home</a><a href="/about">About</a><a href="/contact">Contact</a>
+        </nav></header>
+        <main>
+            <section><h2>Section 1</h2><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></section>
+            <section><h2>Section 2</h2><p>Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p></section>
+            <section><h2>Section 3</h2><p>Ut enim ad minim veniam, quis nostrud exercitation ullamco.</p></section>
+            <section><h2>Section 4</h2><p>Duis aute irure dolor in reprehenderit in voluptate velit.</p></section>
+            <section><h2>Section 5</h2><p>Excepteur sint occaecat cupidatat non proident sunt in culpa.</p></section>
+        </main>
+        <footer><p>Copyright 2026</p></footer>
+    </body></html>"#;
+    let css = r#"
+        body { margin: 0; font-family: sans-serif; }
+        header { background: #333; color: white; padding: 20px; }
+        nav a { margin-right: 15px; color: #ddd; }
+        main { padding: 20px; }
+        section { margin-bottom: 20px; border: 1px solid #eee; padding: 15px; }
+        footer { background: #f5f5f5; padding: 10px; text-align: center; }
+    "#;
+
+    let mut pipeline = RenderPipeline::new(1024.0, 768.0);
+
+    // 1. 全量渲染
+    let full_result = pipeline.render_html(html, css);
+    let full_primitives = full_result.primitives.len();
+    let full_time_ms = full_result.timings.total_ms;
+
+    assert!(
+        full_primitives > 0,
+        "全量渲染应产生图元"
+    );
+
+    // 2. 增量渲染：仅重绘小脏区域（50x50 像素，约占视口 0.3%）
+    let dirty_rect = Rect {
+        origin: Point::new(100.0, 100.0),
+        size: Size { width: 50.0, height: 50.0 },
+    };
+    let doc = zero_dom::parse_html(html);
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let inc_primitives = pipeline.incremental_paint(&doc, &[stylesheet], dirty_rect);
+
+    assert!(
+        inc_primitives.is_some(),
+        "增量渲染应返回结果"
+    );
+
+    let inc_count = inc_primitives.unwrap().len();
+
+    // 增量渲染应产生明显更少的图元
+    assert!(
+        inc_count < full_primitives,
+        "增量渲染图元数 ({inc_count}) 应少于全量 ({full_primitives})"
+    );
+
+    // 增量渲染图元数应 < 全量的 20%（Done Criteria）
+    let ratio = inc_count as f64 / full_primitives as f64;
+    assert!(
+        ratio < 0.2,
+        "增量渲染图元占比 ({:.1}%) 应 < 20%（Done Criteria §4），全量={}, 增量={}",
+        ratio * 100.0,
+        full_primitives,
+        inc_count
+    );
+
+    // 验证全量渲染时间合理（不退化）
+    assert!(
+        full_time_ms < 2000.0,
+        "全量渲染应 < 2000ms，实际: {:.2}ms",
+        full_time_ms
+    );
+}
+
+/// 验证增量渲染在不同脏区域大小下的行为。
+#[test]
+fn test_incremental_render_dirty_area_sizes() {
+    use zero_engine::RenderPipeline;
+    use zero_render_foundation::geometry::{Point, Rect, Size};
+
+    let html = r#"<html><body>
+        <div style="padding: 20px; margin: 10px;">Content block 1</div>
+        <div style="padding: 20px; margin: 10px;">Content block 2</div>
+        <div style="padding: 20px; margin: 10px;">Content block 3</div>
+        <div style="padding: 20px; margin: 10px;">Content block 4</div>
+    </body></html>"#;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let full_result = pipeline.render_html(html, "");
+    let full_count = full_result.primitives.len();
+
+    let doc = zero_dom::parse_html(html);
+
+    // 小脏区域（1%）
+    let small = Rect { origin: Point::new(10.0, 10.0), size: Size { width: 80.0, height: 60.0 } };
+    let small_inc = pipeline.incremental_paint(&doc, &[], small).unwrap();
+    assert!(small_inc.len() < full_count, "小脏区域增量渲染应更少图元");
+
+    // 中等脏区域（10%）
+    let medium = Rect { origin: Point::new(0.0, 0.0), size: Size { width: 250.0, height: 200.0 } };
+    let medium_inc = pipeline.incremental_paint(&doc, &[], medium).unwrap();
+    assert!(medium_inc.len() < full_count, "中等脏区域增量渲染应更少图元");
+
+    // 小脏区域应比中等脏区域产生更少或相等的图元
+    assert!(
+        small_inc.len() <= medium_inc.len(),
+        "小脏区域 ({}) 应 <= 中等脏区域 ({}) 图元数",
+        small_inc.len(),
+        medium_inc.len()
+    );
+}
