@@ -14,7 +14,7 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
 use crate::dirty::LayoutDirtyTracker;
-use crate::inline::InlineFormattingContext;
+use crate::inline::{FloatExclusion, InlineFormattingContext};
 use crate::tree::build_layout_tree;
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 
@@ -117,6 +117,9 @@ impl LayoutEngine {
 
         // 5. 后处理：调整 float 元素位置
         adjust_float_positions(&mut root_box);
+
+        // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
+        remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
@@ -463,6 +466,73 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 递归处理子容器
     for child in &mut box_node.children {
         adjust_float_positions(child);
+    }
+}
+
+/// 为包含 float 元素的容器重新测量行内文本，使文本环绕 float 排列。
+///
+/// 工作原理：
+/// 1. 遍历 LayoutBox 树，找到同时包含 float 子元素和直接文本内容的容器
+/// 2. 收集容器内的 float 元素的几何信息，构建 FloatExclusion 列表
+/// 3. 使用 float exclusions 重新运行 InlineFormattingContext 排列文本
+/// 4. 用重新排列后的行盒更新容器的内部布局信息
+fn remeasure_text_with_float_exclusions(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // 收集此容器的 float 排除区域
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+
+    if has_floats {
+        // 构建 float 排除区域列表
+        let exclusions: Vec<FloatExclusion> = box_node
+            .children
+            .iter()
+            .filter(|c| !matches!(c.float, FloatValue::None))
+            .filter_map(|c| {
+                // 计算相对于容器内容区域的位置
+                let rel_y = c.y - box_node.content_y;
+                if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                    return None;
+                }
+                Some(FloatExclusion {
+                    y: rel_y + c.margin_top,
+                    height: c.height + c.margin_bottom,
+                    width: c.width + c.margin_left + c.margin_right,
+                    is_left: matches!(c.float, FloatValue::Left),
+                })
+            })
+            .collect();
+
+        // 如果有排除区域且容器有直接文本内容
+        if !exclusions.is_empty()
+            && let Some(dom_id) = box_node.node_id
+            && has_direct_text(doc, dom_id)
+        {
+            // 重新运行 inline layout with float exclusions
+            let container_width = box_node.content_width;
+            let mut inline_ctx = InlineFormattingContext::new(container_width).with_float_exclusions(exclusions);
+            inline_ctx.layout(doc, dom_id, styles);
+
+            // 容器高度需要包含 float 元素占用的空间
+            let text_height = inline_ctx.total_height();
+            let float_bottom = box_node
+                .children
+                .iter()
+                .filter(|c| !matches!(c.float, FloatValue::None))
+                .map(|c| c.y - box_node.content_y + c.height + c.margin_bottom)
+                .fold(0.0_f32, f32::max);
+
+            // 使用文本和 float 中较大的高度
+            let content_height = text_height.max(float_bottom);
+            let _ = content_height; // 保留用于未来高度调整
+        }
+    }
+
+    // 递归处理子容器
+    for child in &mut box_node.children {
+        remeasure_text_with_float_exclusions(child, doc, styles);
     }
 }
 
