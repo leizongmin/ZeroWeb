@@ -5,3 +5,4 @@ mod composite;
 mod dirty;
 mod paint;
 mod pipeline;
+mod pipeline_inline;
