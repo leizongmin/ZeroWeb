@@ -19,7 +19,7 @@
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
 | 内联 CSS 2.1 reftest | ✅ 53 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、尺寸、Flexbox、Grid、文本 |
-| JS 执行 | ❌ 未集成 | RenderPipeline::render_html() 不执行 JS（Task #8 待完成） |
+| JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ❌ 未实现 | 截图持久化未实现 |
 | CI 集成 | ❌ 未接入 | Reftest 未集成到 CI 管线 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
@@ -38,7 +38,7 @@
 | GPU 渲染截图 | ❌ | 截图持久化未实现 |
 | Chromium 参考截图 | ✅ | Puppeteer 脚本已创建（capture-chromium-screenshots.mjs） |
 | Viewport 对齐 | ✅ | ReftestConfig 有 viewport 字段 + CLI --width/--height |
-| JS 执行集成 | ❌ | render_html() 不执行 JS |
+| JS 执行集成 | ✅ | V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | 分类容差机制 | ✅ | ReftestCategory (Layout/Text/Unknown) + per-test fuzzy override |
 | 范围外过滤 | ✅ | reftest-skip-list.txt 已创建 |
 | 通过率报告 | ✅ | 文本 + JSON 格式，按分类输出 |
@@ -87,7 +87,7 @@
 4. ❌ GPU 渲染截图（待实现）
 5. ✅ 自动化 Chromium 截图工具（Puppeteer 脚本）
 6. ✅ Viewport 对齐机制
-7. ❌ JS 执行集成（待实现）
+7. ✅ JS 执行集成（V8 sandbox 执行 script 标签中的 JS）
 8. ✅ 分类容差机制
 9. ✅ 范围外 reftest 过滤 (skip list)
 10. ✅ 按目录分类通过率报告（文本 + JSON）
