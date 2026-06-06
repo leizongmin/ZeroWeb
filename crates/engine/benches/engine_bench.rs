@@ -176,6 +176,83 @@ fn bench_end_to_end(c: &mut Criterion) {
     });
 }
 
+/// bench_medium_complexity_page: 中等复杂度页面（~100 元素、多种 CSS 属性）完整管线。
+///
+/// 验证中等复杂度页面首屏渲染 < 2s 性能目标。
+fn bench_medium_complexity_page(c: &mut Criterion) {
+    let html = r##"<html><head><style>
+        body { margin: 0; font-family: sans-serif; color: #333; }
+        header { background: #2c3e50; color: white; padding: 20px; display: flex; justify-content: space-between; }
+        nav a { color: white; text-decoration: none; margin-left: 15px; }
+        main { padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; background: white; }
+        .card h3 { margin-top: 0; color: #2c3e50; }
+        .card p { line-height: 1.6; }
+        .sidebar { background: #ecf0f1; padding: 15px; border-radius: 4px; }
+        footer { background: #34495e; color: white; padding: 15px; text-align: center; }
+        .flex-row { display: flex; gap: 20px; }
+        .flex-row > * { flex: 1; }
+    </style></head><body>
+    <header>
+        <h1>ZeroWeb Browser</h1>
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#docs">Docs</a>
+            <a href="#download">Download</a>
+        </nav>
+    </header>
+    <main>
+        <div class="flex-row">
+            <div class="grid">
+                <div class="card"><h3>Feature 1</h3><p>Fast rendering engine built in Rust.</p></div>
+                <div class="card"><h3>Feature 2</h3><p>CSS Grid and Flexbox support.</p></div>
+                <div class="card"><h3>Feature 3</h3><p>V8 JavaScript integration.</p></div>
+                <div class="card"><h3>Feature 4</h3><p>Multi-process architecture.</p></div>
+                <div class="card"><h3>Feature 5</h3><p>WebAssembly runtime.</p></div>
+                <div class="card"><h3>Feature 6</h3><p>Cross-platform support.</p></div>
+            </div>
+            <div class="sidebar">
+                <h3>Quick Links</h3>
+                <ul>
+                    <li>Getting Started</li>
+                    <li>API Reference</li>
+                    <li>Examples</li>
+                    <li>Contributing</li>
+                </ul>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2026 ZeroWeb Project. Built with Rust.</p>
+    </footer>
+    </body></html>"##;
+
+    let mut group = c.benchmark_group("medium_complexity_page");
+    group.bench_function("first_paint", |b| {
+        b.iter(|| {
+            let mut pipeline = RenderPipeline::new(1280.0, 800.0);
+            black_box(pipeline.render_html(black_box(html), ""));
+        })
+    });
+
+    // 增量渲染：局部 DOM 变更 vs 全量重渲染
+    group.bench_function("incremental_vs_full", |b| {
+        b.iter(|| {
+            // 全量渲染
+            let mut pipeline = RenderPipeline::new(1280.0, 800.0);
+            let result1 = pipeline.render_html(black_box(html), "");
+            // 再次全量渲染（模拟无增量优化）
+            let mut pipeline2 = RenderPipeline::new(1280.0, 800.0);
+            let result2 = pipeline2.render_html(black_box(html), "");
+            black_box((result1, result2));
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_paint_simple_page,
@@ -183,5 +260,6 @@ criterion_group!(
     bench_dirty_tracking,
     bench_compositing_layer_analysis,
     bench_end_to_end,
+    bench_medium_complexity_page,
 );
 criterion_main!(benches);

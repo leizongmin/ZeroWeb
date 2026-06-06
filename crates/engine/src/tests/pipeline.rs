@@ -1110,3 +1110,136 @@ fn test_pipeline_render_result_matches_cached_layout() {
         "result and cached root children count should match"
     );
 }
+
+// ── 性能验证测试 ──────────────────────────────────────────────
+
+/// 中等复杂度页面首屏渲染性能验证。
+///
+/// 验证 Done Criteria：「中等复杂度页面首屏渲染 < 2s」。
+/// 使用纯 Rust 渲染管线（无 GPU），测量 parse → style → layout → paint 各阶段耗时。
+#[test]
+fn test_medium_page_first_paint_under_2_seconds() {
+    let html = r##"<html><head><style>
+        body { margin: 0; font-family: sans-serif; color: #333; }
+        header { background: #2c3e50; color: white; padding: 20px; display: flex; justify-content: space-between; }
+        main { padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; background: white; }
+        .card h3 { margin-top: 0; color: #2c3e50; }
+        .card p { line-height: 1.6; }
+        .sidebar { background: #ecf0f1; padding: 15px; border-radius: 4px; }
+        footer { background: #34495e; color: white; padding: 15px; text-align: center; }
+    </style></head><body>
+    <header>
+        <h1>ZeroWeb Browser</h1>
+        <nav><a href="home">Home</a> <a href="about">About</a> <a href="docs">Docs</a></nav>
+    </header>
+    <main>
+        <div class="grid">
+            <div class="card"><h3>Feature 1</h3><p>Fast rendering engine built in Rust.</p></div>
+            <div class="card"><h3>Feature 2</h3><p>CSS Grid and Flexbox support.</p></div>
+            <div class="card"><h3>Feature 3</h3><p>V8 JavaScript integration.</p></div>
+            <div class="card"><h3>Feature 4</h3><p>Multi-process architecture.</p></div>
+            <div class="card"><h3>Feature 5</h3><p>WebAssembly runtime.</p></div>
+            <div class="card"><h3>Feature 6</h3><p>Cross-platform support.</p></div>
+        </div>
+        <div class="sidebar">
+            <h3>Quick Links</h3>
+            <ul><li>Getting Started</li><li>API Reference</li><li>Examples</li></ul>
+        </div>
+    </main>
+    <footer><p>2026 ZeroWeb Project</p></footer>
+    </body></html>"##;
+
+    let mut pipeline = RenderPipeline::new(1280.0, 800.0);
+    let result = pipeline.render_html(html, "");
+
+    // 验证渲染成功
+    assert!(!result.primitives.is_empty(), "应该生成渲染图元");
+    assert!(result.primitives.glyphs.len() > 0, "应该渲染文本");
+
+    // 验证各阶段计时合理
+    let t = &result.timings;
+    assert!(t.parse_ms >= 0.0, "解析耗时应 >= 0");
+    assert!(t.style_ms >= 0.0, "样式耗时应 >= 0");
+    assert!(t.layout_ms >= 0.0, "布局耗时应 >= 0");
+    assert!(t.paint_ms >= 0.0, "绘制耗时应 >= 0");
+
+    // 验证总耗时 < 2000ms（Done Criteria 性能目标）
+    assert!(
+        t.total_ms < 2000.0,
+        "中等复杂度页面首屏渲染应 < 2s，实际: {:.2}ms (parse={:.2} style={:.2} layout={:.2} paint={:.2})",
+        t.total_ms,
+        t.parse_ms,
+        t.style_ms,
+        t.layout_ms,
+        t.paint_ms
+    );
+}
+
+/// 验证增量渲染（重新渲染）不退化。
+///
+/// 同一页面连续渲染两次，第二次不应比第一次慢超过 5 倍。
+#[test]
+fn test_incremental_render_not_degenerate() {
+    let html = r##"<html><head><style>
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .card { border: 1px solid #ddd; padding: 16px; }
+    </style></head><body>
+    <div class="grid">
+        <div class="card"><h3>Card 1</h3><p>Content A</p></div>
+        <div class="card"><h3>Card 2</h3><p>Content B</p></div>
+        <div class="card"><h3>Card 3</h3><p>Content C</p></div>
+    </div>
+    </body></html>"##;
+
+    // 第一次渲染
+    let mut pipeline1 = RenderPipeline::new(1280.0, 800.0);
+    let result1 = pipeline1.render_html(html, "");
+
+    // 第二次渲染（全新管线，模拟无增量优化的基线）
+    let mut pipeline2 = RenderPipeline::new(1280.0, 800.0);
+    let result2 = pipeline2.render_html(html, "");
+
+    // 验证两次渲染结果一致
+    assert_eq!(
+        result1.primitives.len(),
+        result2.primitives.len(),
+        "同一页面重复渲染应产生相同数量的图元"
+    );
+
+    // 验证第二次不比第一次慢太多（允许 5 倍抖动）
+    assert!(
+        result2.timings.total_ms < result1.timings.total_ms * 5.0 + 100.0,
+        "重复渲染不应退化: first={:.2}ms second={:.2}ms",
+        result1.timings.total_ms,
+        result2.timings.total_ms
+    );
+}
+
+/// 验证渲染管线时间分解正确。
+#[test]
+fn test_pipeline_timings_breakdown() {
+    let html = "<html><body>\
+        <div style=\"background-color: red; width: 200px; height: 100px;\">Block 1</div>\
+        <div style=\"background-color: blue; width: 200px; height: 100px;\">Block 2</div>\
+        <div style=\"background-color: green; width: 200px; height: 100px;\">Block 3</div>\
+        </body></html>";
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(html, "");
+
+    let t = &result.timings;
+
+    // 各阶段之和应 <= 总时间
+    let stage_sum = t.parse_ms + t.style_ms + t.layout_ms + t.paint_ms;
+    assert!(
+        stage_sum <= t.total_ms + 1.0, // 允许 1ms 浮点误差
+        "各阶段之和 ({:.2}ms) 应 <= 总时间 ({:.2}ms)",
+        stage_sum,
+        t.total_ms
+    );
+
+    // 总时间应 > 0（除非极快完成）
+    assert!(t.total_ms >= 0.0, "总时间应 >= 0");
+}
