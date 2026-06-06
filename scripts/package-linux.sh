@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# ZeroBrowser Linux 打包脚本
+#
+# 用法：
+#   ./scripts/package-linux.sh [--appimage|--deb|--all]
+#
+# 生成 .AppImage 和/或 .deb 安装包到 target/packages/ 目录。
+# 需要：cargo, strip, dpkg-deb (仅 deb)
+#
+# 此脚本在无头环境中运行，不需要 GPU 或显示服务器。
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PACKAGE_DIR="$PROJECT_ROOT/target/packages"
+APP_NAME="zero-browser"
+APP_DISPLAY="ZeroBrowser"
+APP_VERSION="$(cd "$PROJECT_ROOT" && cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["packages"][0]["version"])' 2>/dev/null || echo "0.1.0")"
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+
+# ── 参数解析 ──
+BUILD_APPIMAGE=false
+BUILD_DEB=false
+
+if [[ $# -eq 0 ]]; then
+    BUILD_APPIMAGE=true
+    BUILD_DEB=true
+else
+    for arg in "$@"; do
+        case "$arg" in
+            --appimage) BUILD_APPIMAGE=true ;;
+            --deb)      BUILD_DEB=true ;;
+            --all)      BUILD_APPIMAGE=true; BUILD_DEB=true ;;
+            -h|--help)
+                echo "用法: $0 [--appimage|--deb|--all]"
+                echo "  --appimage  仅构建 .AppImage"
+                echo "  --deb       仅构建 .deb"
+                echo "  --all       构建所有（默认）"
+                exit 0
+                ;;
+            *) error "未知参数: $arg" ;;
+        esac
+    done
+fi
+
+mkdir -p "$PACKAGE_DIR"
+
+# ── 编译 release 二进制 ──
+build_binary() {
+    info "编译 release 二进制 zero-browser..."
+    cd "$PROJECT_ROOT"
+    cargo build --release --bin zero-browser
+
+    local binary="$PROJECT_ROOT/target/release/zero-browser"
+    if [[ ! -f "$binary" ]]; then
+        error "编译失败：未找到 $binary"
+    fi
+
+    # strip 减小体积
+    strip --strip-unneeded "$binary" 2>/dev/null || warn "strip 失败（可忽略）"
+    local size
+    size=$(du -h "$binary" | cut -f1)
+    info "二进制大小: $size"
+}
+
+# ── 构建 .AppImage ──
+build_appimage() {
+    info "构建 .AppImage 包..."
+
+    local appdir="$PACKAGE_DIR/ZeroBrowser.AppDir"
+    rm -rf "$appdir"
+    mkdir -p "$appdir/usr/bin"
+    mkdir -p "$appdir/usr/share/applications"
+    mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
+    mkdir -p "$appdir/usr/share/icons/hicolor/scalable/apps"
+
+    # 复制二进制
+    cp "$PROJECT_ROOT/target/release/zero-browser" "$appdir/usr/bin/"
+
+    # 创建 .desktop 文件
+    cat > "$appdir/zero-browser.desktop" << 'EOF'
+[Desktop Entry]
+Name=ZeroBrowser
+Comment=A cross-platform browser built with Rust
+Exec=zero-browser %u
+Icon=zero-browser
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=browser;web;internet;
+StartupNotify=true
+EOF
+    cp "$appdir/zero-browser.desktop" "$appdir/usr/share/applications/"
+
+    # 创建 AppImage 元数据
+    cat > "$appdir/AppRun" << 'RUNEOF'
+#!/bin/bash
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+exec "${HERE}/usr/bin/zero-browser" "$@"
+RUNEOF
+    chmod +x "$appdir/AppRun"
+
+    # 创建图标（SVG 占位符）
+    cat > "$appdir/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" << 'SVGEOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
+  <text x="128" y="160" font-family="sans-serif" font-size="120" font-weight="bold" fill="#4a90d9" text-anchor="middle">Z</text>
+  <circle cx="200" cy="60" r="24" fill="#4caf50"/>
+</svg>
+SVGEOF
+    cp "$appdir/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" "$appdir/zero-browser.svg"
+
+    # 生成 PNG 图标（使用 resvg 或简单占位）
+    if command -v convert &>/dev/null; then
+        convert -background none "$appdir/zero-browser.svg" -resize 256x256 "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" 2>/dev/null || true
+    fi
+
+    # 创建 .DirIcon（256x256 PNG，AppImage 需要）
+    if [[ -f "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" ]]; then
+        cp "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" "$appdir/.DirIcon"
+    else
+        # 创建简单 PNG 占位符
+        python3 -c "
+import struct, zlib
+def create_png(w, h, color):
+    def chunk(t, d):
+        c = t + d
+        return struct.pack('>I', len(d)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+    sig = b'\\x89PNG\\r\\n\\x1a\\n'
+    ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+    raw = b''
+    for y in range(h):
+        raw += b'\\x00' + color * w
+    idat = chunk(b'IDAT', zlib.compress(raw))
+    iend = chunk(b'IEND', b'')
+    return sig + ihdr + idat + iend
+with open('$appdir/.DirIcon', 'wb') as f:
+    f.write(create_png(256, 256, b'\\x1a\\x1a\\x2e'))
+" 2>/dev/null || warn "PNG 图标生成失败"
+    fi
+
+    info "AppDir 已创建: $appdir"
+    info "可使用 appimagetool 手动打包为 .AppImage："
+    info "  appimagetool $appdir ${PACKAGE_DIR}/ZeroBrowser-${APP_VERSION}-x86_64.AppImage"
+
+    # 如果有 appimagetool 则自动打包
+    if command -v appimagetool &>/dev/null; then
+        appimagetool "$appdir" "$PACKAGE_DIR/ZeroBrowser-${APP_VERSION}-x86_64.AppImage"
+        info "✅ .AppImage 已生成: $PACKAGE_DIR/ZeroBrowser-${APP_VERSION}-x86_64.AppImage"
+    else
+        warn "appimagetool 未安装，跳过 .AppImage 打包"
+        warn "安装: wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool && chmod +x /usr/local/bin/appimagetool"
+        info "AppDir 已就绪，可手动打包"
+    fi
+}
+
+# ── 构建 .deb 包 ──
+build_deb() {
+    info "构建 .deb 包..."
+
+    if ! command -v dpkg-deb &>/dev/null; then
+        warn "dpkg-deb 未安装，跳过 .deb 打包"
+        warn "安装: sudo apt install dpkg-dev"
+        return 0
+    fi
+
+    local debroot="$PACKAGE_DIR/zero-browser_${APP_VERSION}_amd64"
+    rm -rf "$debroot"
+    mkdir -p "$debroot/DEBIAN"
+    mkdir -p "$debroot/usr/bin"
+    mkdir -p "$debroot/usr/share/applications"
+    mkdir -p "$debroot/usr/share/icons/hicolor/256x256/apps"
+    mkdir -p "$debroot/usr/share/icons/hicolor/scalable/apps"
+    mkdir -p "$debroot/usr/share/doc/zero-browser"
+
+    # 复制二进制
+    cp "$PROJECT_ROOT/target/release/zero-browser" "$debroot/usr/bin/"
+    chmod 755 "$debroot/usr/bin/zero-browser"
+
+    # control 文件
+    local installed_size
+    installed_size=$(du -sk "$debroot/usr" | cut -f1)
+    cat > "$debroot/DEBIAN/control" << EOF
+Package: zero-browser
+Version: ${APP_VERSION}
+Section: web
+Priority: optional
+Architecture: amd64
+Installed-Size: ${installed_size}
+Maintainer: ZeroWeb Team <zeroweb@example.com>
+Description: ZeroBrowser - A cross-platform browser built with Rust
+ ZeroBrowser is an experimental web browser built from scratch in Rust.
+ It features a custom rendering engine, CSS parser, layout engine,
+ and V8 JavaScript integration.
+Homepage: https://github.com/leizongmin/ZeroWeb
+Depends: libc6 (>= 2.31), libgcc-s1 (>= 4.2)
+EOF
+
+    # .desktop 文件
+    cat > "$debroot/usr/share/applications/zero-browser.desktop" << 'EOF'
+[Desktop Entry]
+Name=ZeroBrowser
+Comment=A cross-platform browser built with Rust
+Exec=/usr/bin/zero-browser %u
+Icon=zero-browser
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=browser;web;internet;
+StartupNotify=true
+EOF
+
+    # 图标
+    cat > "$debroot/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" << 'SVGEOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
+  <text x="128" y="160" font-family="sans-serif" font-size="120" font-weight="bold" fill="#4a90d9" text-anchor="middle">Z</text>
+  <circle cx="200" cy="60" r="24" fill="#4caf50"/>
+</svg>
+SVGEOF
+
+    # copyright 文件
+    cat > "$debroot/usr/share/doc/zero-browser/copyright" << 'EOF'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ZeroBrowser
+Source: https://github.com/leizongmin/ZeroWeb
+
+Files: *
+Copyright: 2026 ZeroWeb Contributors
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+EOF
+
+    # changelog
+    cat > "$debroot/usr/share/doc/zero-browser/changelog.Debian" << EOF
+zero-browser (${APP_VERSION}) unstable; urgency=low
+
+  * Initial package build.
+
+ -- ZeroWeb Team <zeroweb@example.com>  $(date -R)
+
+EOF
+
+    # 构建 .deb
+    dpkg-deb --build "$debroot" "${debroot}.deb"
+    rm -rf "$debroot"
+
+    info "✅ .deb 已生成: ${debroot}.deb"
+    local deb_size
+    deb_size=$(du -h "${debroot}.deb" | cut -f1)
+    info "   大小: $deb_size"
+}
+
+# ── 主流程 ──
+cd "$PROJECT_ROOT"
+info "ZeroBrowser v${APP_VERSION} Linux 打包"
+info "================================"
+
+build_binary
+
+if [[ "$BUILD_APPIMAGE" == true ]]; then
+    build_appimage
+fi
+
+if [[ "$BUILD_DEB" == true ]]; then
+    build_deb
+fi
+
+info ""
+info "================================"
+info "打包完成！产物在 $PACKAGE_DIR/"
+ls -lh "$PACKAGE_DIR/" 2>/dev/null | grep -v "^total\|^d" || true
