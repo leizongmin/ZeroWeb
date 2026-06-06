@@ -1014,6 +1014,7 @@ mod tests {
             "multiprocess",
             "css-layout-subset",
             "accessibility",
+            "platform-input",
         ];
         for t in &tests {
             assert!(

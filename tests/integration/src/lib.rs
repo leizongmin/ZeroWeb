@@ -67,3 +67,6 @@ mod webview_product_smoke;
 
 #[cfg(test)]
 mod product_level_smoke;
+
+#[cfg(test)]
+mod viewport_adaptive;
