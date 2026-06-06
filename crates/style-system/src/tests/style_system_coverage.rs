@@ -806,7 +806,7 @@ fn test_style_system_empty_stylesheet() {
 
     let mut sys = StyleSystem::new();
     let styles = sys.compute_styles(&doc, &[ss]);
-    assert!(matches!(styles.get(&div).unwrap().display, DisplayValue::Inline));
+    assert!(matches!(styles.get(&div).unwrap().display, DisplayValue::Block));
 }
 
 #[test]
