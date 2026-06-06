@@ -417,6 +417,16 @@ impl BrowserApp {
                     draw_hollow_square(fills, cx - size / 2.0, cy - size / 2.0, size, thickness, icon);
                 }
                 2 => {
+                    let close_color = if hovered {
+                        Color {
+                            r: 255,
+                            g: 255,
+                            b: 255,
+                            a: 255,
+                        }
+                    } else {
+                        icon
+                    };
                     crate::ui_icons::render_icon(
                         &mut self.font_loader,
                         glyphs,
@@ -424,7 +434,7 @@ impl BrowserApp {
                         cx,
                         cy,
                         12.0 * s,
-                        icon,
+                        close_color,
                     );
                 }
                 _ => {}
