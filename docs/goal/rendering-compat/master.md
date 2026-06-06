@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M5 — 文字排版能力实现
+**当前活跃里程碑**: M6 — 全量扩展 + 通过率冲刺
 
 ---
 
@@ -14,7 +14,7 @@
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
-| M6 — 全量扩展 | 🔄 进行中 | 535 reftest, 10 目录全部 ≥50, 100.0% pass；待引入 rustybuzz/unicode-bidi |
+| M6 — 全量扩展 | 🔄 进行中 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；待引入 rustybuzz/unicode-bidi |
 
 ## 当前状态概览
 
@@ -29,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 200 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局、Position 边界 case、Table display、Multi-column 布局 |
+| 内联 reftest | ✅ 685 个 | 13 个目录全部 ≥50，覆盖 CSS 2.1、Flexbox、Grid、Position、Display、Box、Float、Table、Multicol、Text、Fonts、Text-decor、Writing-modes |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -91,8 +91,14 @@
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| Text reftest 子集 ≥ 50 | ✅ | 51 个 Text reftest |
-| Text 通过率 | ✅ | 100.0% (51/51) |
+| css-text/ reftest ≥ 50 | ✅ | 51 个 |
+| css-text/ 通过率 | ✅ | 100.0% |
+| css-fonts/ reftest ≥ 50 | ✅ | 50 个 |
+| css-fonts/ 通过率 | ✅ | 100.0% |
+| css-text-decor/ reftest ≥ 50 | ✅ | 50 个 |
+| css-text-decor/ 通过率 | ✅ | 100.0% |
+| css-writing-modes/ reftest ≥ 50 | ✅ | 50 个 |
+| css-writing-modes/ 通过率 | ✅ | 100.0% |
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 
 ### DC-6: Quirks Mode
@@ -154,10 +160,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M6 全目录扩展到 ≥50）
-**总用例**: 535（内联 reftest）
-**运行用例**: 535
-**通过**: 535
+**日期**: 2026-06-07（M6 DC-5 全目录达标）
+**总用例**: 685（内联 reftest）
+**运行用例**: 685
+**通过**: 685
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -168,7 +174,7 @@
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
 | Layout | 484/484 | 100.0% |
-| Text | 51/51 | 100.0% |
+| Text | 201/201 | 100.0% |
 
 ### 按 WPT 目录
 
@@ -179,8 +185,11 @@
 | css-text/ | 51 | 100.0% | ✅ |
 | css-grid/ | 51 | 100.0% | ✅ |
 | css-flexbox/ | 51 | 100.0% | ✅ |
+| css-fonts/ | 50 | 100.0% | ✅ |
 | css-position/ | 50 | 100.0% | ✅ |
 | css-display/ | 50 | 100.0% | ✅ |
+| css-text-decor/ | 50 | 100.0% | ✅ |
+| css-writing-modes/ | 50 | 100.0% | ✅ |
 | css-multicol/ | 50 | 100.0% | ✅ |
 | css-float/ | 50 | 100.0% | ✅ |
 | css-table/ | 50 | 100.0% | ✅ |
@@ -295,4 +304,5 @@
 35. ~~M6 — Flexbox+Grid 扩展到 ≥50~~ ✅ (各 51 个 reftest, 296 总, 100.0% pass)
 36. ~~M6 — 扩展剩余目录到 ≥50~~ ✅ (535 总, 10 个目录全部 ≥50, 100.0% pass)
 37. ~~M6 — 拆分 reftest_data.rs 为目录模块~~ ✅ (reftest_data/ 目录, 每个分类独立文件)
-38. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
+38. ~~M6 — DC-5 文字排版全目录达标~~ ✅ (新增 css-fonts/css-text-decor/css-writing-modes, 685 总, 100.0% pass)
+39. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
