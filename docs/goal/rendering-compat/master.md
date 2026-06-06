@@ -31,7 +31,7 @@
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
 | 内联 reftest | ✅ 685 个 | 13 个目录全部 ≥50，覆盖 CSS 2.1、Flexbox、Grid、Position、Display、Box、Float、Table、Multicol、Text、Fonts、Text-decor、Writing-modes |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
-| GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
+| GPU 渲染截图 | ✅ 已验证 | GpuRenderer headless + read_pixels()；685/685 reftest GPU 模式 100.0% pass |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
 | Quirks Mode | ✅ 完成 | CSS parser + style system + layout engine quirks 全部实现 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
