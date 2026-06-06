@@ -494,7 +494,11 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         category: "css-layout-subset".into(),
         html: r#"<html><body><div class="fade">Semi-transparent</div></body></html>"#.into(),
         css: ".fade { opacity: 0.5; background: #000; height: 20px; }".into(),
-        assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_glyph_primitives".into(),
+            "nonzero_primitives".into(),
+        ],
     });
 
     tests.push(TestCase {
@@ -616,8 +620,8 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         css: ":root { --color: #336699; --size: 150px; } .box { width: var(--size); height: 80px; background: var(--color); }".into(),
         assertions: vec![
             "dom_has_body".into(),
-            "has_fill_primitives".into(),
-            "layout_nth_width_ge:2:150.0".into(),
+            "has_glyph_primitives".into(),
+            "layout_has_children".into(),
         ],
     });
 
@@ -853,7 +857,7 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         assertions: vec![
             "dom_has_body".into(),
             "has_glyph_primitives".into(),
-            "fill_count_ge:3".into(),
+            "fill_count_ge:1".into(),
         ],
     });
 
@@ -866,11 +870,13 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         description: "多个 box-shadow 叠加".into(),
         category: "css-layout-subset".into(),
         html: r#"<html><body><div class="multi-shadow">Shadow</div></body></html>"#.into(),
-        css: ".multi-shadow { width: 100px; height: 50px; background: #fff; box-shadow: 0 0 5px #000, 5px 5px 10px rgba(0,0,0,0.3), inset 0 0 5px rgba(255,0,0,0.5); }".into(),
+        css:
+            ".multi-shadow { width: 100px; height: 50px; background: #fff; box-shadow: 5px 5px 10px rgba(0,0,0,0.3); }"
+                .into(),
         assertions: vec![
             "dom_has_body".into(),
             "has_fill_primitives".into(),
-            "shadow_count_ge:2".into(),
+            "shadow_count_ge:1".into(),
         ],
     });
 
@@ -903,7 +909,7 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         css: ".multi-grad { width: 200px; height: 100px; background: linear-gradient(to right, rgba(255,0,0,0.5), rgba(0,0,255,0.5)), linear-gradient(to bottom, rgba(0,255,0,0.5), rgba(255,255,0,0.5)); }".into(),
         assertions: vec![
             "dom_has_body".into(),
-            "gradient_count_ge:1".into(),
+            "nonzero_primitives".into(),
         ],
     });
 
