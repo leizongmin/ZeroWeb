@@ -93,6 +93,16 @@ pub fn parse_display(value: &str) -> Option<DisplayValue> {
         "flow" => Some(DisplayValue::Flow),
         "flow-root" => Some(DisplayValue::FlowRoot),
         "list-item" => Some(DisplayValue::ListItem),
+        "table" => Some(DisplayValue::Table),
+        "inline-table" => Some(DisplayValue::InlineTable),
+        "table-row" => Some(DisplayValue::TableRow),
+        "table-cell" => Some(DisplayValue::TableCell),
+        "table-caption" => Some(DisplayValue::TableCaption),
+        "table-column" => Some(DisplayValue::TableColumn),
+        "table-column-group" => Some(DisplayValue::TableColumnGroup),
+        "table-row-group" => Some(DisplayValue::TableRowGroup),
+        "table-header-group" => Some(DisplayValue::TableHeaderGroup),
+        "table-footer-group" => Some(DisplayValue::TableFooterGroup),
         _ => None,
     }
 }
