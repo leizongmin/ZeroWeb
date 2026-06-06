@@ -397,11 +397,11 @@ impl InlineFormattingContext {
             let line_bottom = line_y + line_height;
             if excl.y < line_bottom && excl_bottom > line_y {
                 if excl.is_left {
-                    // 左浮动：取最大偏移（多个左浮动取最宽的）
-                    left_offset = left_offset.max(excl.width);
+                    // 左浮动：累加宽度（多个左浮动堆叠）
+                    left_offset += excl.width;
                 } else {
-                    // 右浮动：取最大缩减
-                    right_reduction = right_reduction.max(excl.width);
+                    // 右浮动：累加缩减
+                    right_reduction += excl.width;
                 }
             }
         }
@@ -759,6 +759,13 @@ impl InlineFormattingContext {
             return;
         }
 
+        // 预计算每行的有效内容区域（避免在 iter_mut 中借用 self）
+        let line_areas: Vec<(f32, f32)> = self
+            .lines
+            .iter()
+            .map(|line| self.effective_content_area(line.y, line.height))
+            .collect();
+
         let last_idx = self.lines.len() - 1;
         for (i, line) in self.lines.iter_mut().enumerate() {
             if line.runs.is_empty() {
@@ -767,7 +774,11 @@ impl InlineFormattingContext {
 
             // 计算行内内容的总宽度（最后一个片段的右边界）
             let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
-            let remaining = self.container_width - content_width;
+
+            // 使用预计算的有效可用宽度
+            let (left_offset, avail_width) = line_areas[i];
+            let line_limit = left_offset + avail_width;
+            let remaining = line_limit - content_width;
 
             // 确定本行使用的对齐方式
             // 最后一行：使用 text_align_last（如果设置了），否则 text-align: justify 回退到 Left
@@ -866,6 +877,7 @@ impl InlineFormattingContext {
     /// - `preserve_whitespace` 模式：保留空白字符序列和换行符。
     /// - `keep-all` 模式：CJK 文本不按字符拆分，而是保持为连续的"单词"。
     /// - 默认模式：按空白字符分割，每个单词追加尾部空格。
+    ///   CJK 字符每个单独作为一个"单词"（CSS 规范要求 normal 模式下 CJK 允许任意断行）。
     fn split_into_words(&self, text: &str) -> Vec<String> {
         // word-break: keep-all — CJK 字符不被视为断行点，
         // 将连续的 CJK 文本保持为一个单词（类似拉丁文本的行为）
@@ -889,9 +901,10 @@ impl InlineFormattingContext {
             return result;
         }
 
+        // 默认模式（normal）：CJK 字符每个单独作为"单词"以允许任意断行点。
+        // 非 CJK 字符按空白分割保持原有行为。
         if self.preserve_whitespace {
             // 保留空白字符序列：不折叠空格，保留换行符作为强制换行点
-            // 将文本按换行符分段，每段再按空格序列切分
             let mut result = Vec::new();
             for (i, segment) in text.split('\n').enumerate() {
                 if i > 0 {
@@ -920,6 +933,13 @@ impl InlineFormattingContext {
                         }
                         // 空格也作为独立片段以保留空白
                         result.push(" ".to_string());
+                    } else if is_cjk_character(ch) {
+                        // CJK 字符单独作为一个单词
+                        if !current_word.is_empty() {
+                            result.push(format!("{current_word} "));
+                            current_word.clear();
+                        }
+                        result.push(ch.to_string());
                     } else {
                         current_word.push(ch);
                     }
@@ -933,7 +953,35 @@ impl InlineFormattingContext {
             }
             result
         } else {
-            text.split_whitespace().map(|w| format!("{w} ")).collect()
+            // 标准 normal 模式：按空白分割，CJK 字符每个单独作为"单词"
+            let mut result = Vec::new();
+            for word in text.split_whitespace() {
+                // 检查单词中是否包含 CJK 字符
+                let has_cjk = word.chars().any(is_cjk_character);
+                if has_cjk && self.word_break != WordBreakMode::KeepAll {
+                    // 将单词拆分为：连续非 CJK + 单个 CJK 交替
+                    let mut current_latin = String::new();
+                    for ch in word.chars() {
+                        if is_cjk_character(ch) {
+                            // 先推入累积的拉丁字符
+                            if !current_latin.is_empty() {
+                                result.push(format!("{current_latin} "));
+                                current_latin.clear();
+                            }
+                            // CJK 字符单独作为"单词"（不带尾部空格，不需要词间距）
+                            result.push(ch.to_string());
+                        } else {
+                            current_latin.push(ch);
+                        }
+                    }
+                    if !current_latin.is_empty() {
+                        result.push(format!("{current_latin} "));
+                    }
+                } else {
+                    result.push(format!("{word} "));
+                }
+            }
+            result
         }
     }
 

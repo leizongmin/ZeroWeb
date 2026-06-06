@@ -129,10 +129,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M4 multicol 布局更新）
-**总用例**: 219（内联 reftest）
-**运行用例**: 219
-**通过**: 219
+**日期**: 2026-06-07（M5 文字排版更新）
+**总用例**: 229（内联 reftest）
+**运行用例**: 229
+**通过**: 229
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,7 +142,8 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 209/209 | 100.0% |
+| Layout | 219/219 | 100.0% |
+| Text | 10/10 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
@@ -170,6 +171,7 @@
 - Quirks mode (5): hashless color, numeric color, unitless width, unitless padding, table height as min-height
 - Table 布局 (9): basic-2col, basic-3col, multi-row, with-tbody, auto-width-equal-cols, row-tallest-cell, thead-tbody-tfoot, th-td-mixed, single-column
 - Multi-column 布局 (10): column-count-2, column-count-3, column-width-auto, column-gap, columns-shorthand, balanced-4-children, uneven-heights, with-column-rule, mismatch-column-count, no-columns
+- 文字排版 (10): text-align-justify, text-align-center, text-align-right, text-align-left-vs-right, word-break-break-all, overflow-wrap-break-word, cjk-line-break, white-space-nowrap, text-indent, letter-spacing
 
 ---
 
@@ -183,6 +185,9 @@
 | OpenType shaping | 文字排版质量 | M5 | M5 |
 | BiDi 算法 | RTL 文本 | M5 | M5 |
 | Vertical writing-mode | 竖排文本 | M5 | M5 |
+| CJK normal-mode 换行 | CJK 排版 | ✅ 已完成 | M5 |
+| text-align: justify | 文字排版 | ✅ 已完成 | M5 |
+| Float exclusion 堆叠 | 布局正确性 | ✅ 已完成 | M5 |
 | Quirks mode | CSS 2.1 兼容性 | ✅ 已完成 | M2 |
 | 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
 
@@ -206,6 +211,9 @@
 | 2026-06-07 | 修复 parse_display 缺失 table types 的 bug | color.rs 中有重复的 parse_display（缺 table types），通过 pub use color::* 被实际使用 |
 | 2026-06-07 | Multi-column 通过后处理步骤实现（类似 float/table） | taffy 无原生 multicol 支持，column-count/column-width 容器的子元素在后处理中重新定位到各列 |
 | 2026-06-07 | 多列均衡分配使用 shortest-column-first 策略 | 依次将每个子元素放入当前总高度最小的列，实现视觉均衡 |
+| 2026-06-07 | CJK normal 模式下每个字符单独作为"单词" | CSS 规范要求 CJK 允许任意字符间断行，split_into_words 中 CJK 字符独立为词 |
+| 2026-06-07 | text-align: justify 使用 effective_content_area 计算剩余空间 | 修复了原先用 container_width 忽略 float exclusion 的问题 |
+| 2026-06-07 | Float exclusion 从 max 改为 additive stacking | 多个同侧 float 应累加宽度而非取最大值 |
 
 ---
 
@@ -237,5 +245,9 @@
 24. ~~M4 — Table 布局 reftest~~ ✅ (9 个 reftest, 100.0% pass)
 25. ~~M4 — Multi-column 布局算法~~ ✅ (shortest-column-first 均衡分配 + column-count/column-width/column-gap)
 26. ~~M4 — Multi-column 布局 reftest~~ ✅ (10 个 reftest, 100.0% pass)
-27. **M5 — 文字排版能力实现（OpenType shaping / BiDi / CJK / justify / word-break）**
-28. **M6 — 全量扩展 + 通过率冲刺**
+27. ~~M5 — CJK normal-mode 逐字符换行~~ ✅ (split_into_words 中 CJK 字符单独作为单词)
+28. ~~M5 — text-align: justify 修复~~ ✅ (使用 effective_content_area 计算剩余空间)
+29. ~~M5 — Float exclusion 堆叠修复~~ ✅ (max → additive stacking)
+30. ~~M5 — 文字排版 reftest~~ ✅ (10 个新 reftest, 229 总, 100.0% pass)
+31. **M5 — 文字排版能力实现（OpenType shaping / BiDi / vertical writing-mode）**
+32. **M6 — 全量扩展 + 通过率冲刺**
