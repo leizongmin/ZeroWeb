@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 159 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 179 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -29,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 159 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox（基础+进阶）、Grid（基础+进阶）、文本、盒模型进阶、显示与可见性、Overflow、Margin 折叠、Quirks mode |
+| 内联 CSS 2.1 reftest | ✅ 179 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox（基础+进阶+边界 case）、Grid（基础+进阶+边界 case）、文本、Overflow、Margin 折叠、Quirks mode |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -61,8 +61,8 @@
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| 导入 reftest 子集 ≥ 50 | ✅ | 159 个内联 CSS 2.1 核心 reftest |
-| 通过率 ≥ 95% | ✅ | 100.0% (159/159) |
+| 导入 reftest 子集 ≥ 50 | ✅ | 179 个内联 CSS 2.1 核心 reftest |
+| 通过率 ≥ 95% | ✅ | 100.0% (179/179) |
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 | GPU 模式达标 | ✅ | GpuRenderer headless 可用（GPU fills/glyphs + CPU rounded rects） |
 
@@ -130,9 +130,9 @@
 ## 初始 Reftest 通过率数据
 
 **日期**: 2026-06-07（M3 更新）
-**总用例**: 159（内联 reftest）
-**运行用例**: 159
-**通过**: 159
+**总用例**: 179（内联 reftest）
+**运行用例**: 179
+**通过**: 179
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,7 +142,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 149/149 | 100.0% |
+| Layout | 169/169 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
@@ -156,8 +156,10 @@
 - 尺寸 (5): 固定尺寸, 百分比尺寸, 不同尺寸 mismatch
 - Flexbox 基础 (10): row, column, row-vs-block, grow, wrap, justify, align, gap, nested, basis
 - Flexbox 进阶 (10): grow-proportional, grow-with-base, wrap-multi-line, align-center, justify-space-between, shrink-overflow, column-direction, gap-between-items, order-reorder, basis-0-grow
+- Flexbox 边界 case (10): align-self-flex-end, flex-basis-auto-with-width, nowrap-overflow, justify-flex-end, justify-center, wrap-reverse, shrink-ratio, min-width-constraint, max-width-constraint, nested-flex-wrap
 - Grid 基础 (10): 固定列, fr, 2x2, gap, auto-rows, mixed-fr-px, vs-block, 三列, row/col gap, nested
 - Grid 进阶 (11): fr-unit-proportional, mixed-fr-px-proportional, auto-placement-3x2, gap-rows-columns, nested-grid-in-flex, minmax-column, repeat-auto-fill, grid-in-grid, justify-items-stretch, flex-in-grid-item, shorthand-gap
+- Grid 边界 case (10): auto-rows-minmax, justify-content-center, align-content-center, implicit-rows, place-items-center, grid-auto-columns, named-grid-area-simple, fr-with-percentage, empty-tracks, percentage-track-sizing
 - 定位进阶 (15): absolute-top-left, shift-mismatch, relative-offset, vs-no-position, in-flow, bottom-right, stacking, z-index, overlap-mismatch, multiple-relatives, absolute-in-relative, absolute-right-bottom, relative-offset-no-layout, z-index-stacking-order, absolute-overlaps-static
 - 文本排版 (10): 颜色, align, whitespace, line-height, letter-spacing, word-spacing, text-indent, transform, flex-container, vs-background
 - 盒模型进阶 (10): margin-collapse, box-sizing, border-colors, overflow-hidden, overflow-visible, max-width, min-height, percentage-width, auto-margin-center, negative-margin
@@ -216,8 +218,8 @@
 12. ~~M1 完成~~ ✅
 13. ~~M2 — Quirks Mode 全部可执行项~~ ✅ (CSS parser + style system quirks)
 14. ~~M3 — Flexbox + Grid 基础+进阶 reftest~~ ✅ (21 个新 reftest, 100.0% pass)
-15. **M3 — 添加更多 Flexbox/Grid edge case reftest**（flex-basis auto, align-self, grid-area span 等）
-16. **M3 — 修复发现的 Flexbox/Grid 渲染缺口**
+15. ~~M3 — Flexbox/Grid edge case reftest~~ ✅ (20 个边界 case reftest, 100.0% pass)
+16. **M3 — 修复发现的 Flexbox/Grid 渲染缺口**（当前 179/179 全部通过，无缺口）
 17. **M4 — Float + Table + Multicol 布局算法实现**
 18. **M5 — 文字排版能力实现**
 19. **M6 — 全量扩展 + 通过率冲刺**
