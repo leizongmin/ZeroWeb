@@ -255,7 +255,14 @@ impl StyleSystem {
 
         // 7. Quirks mode 调整
         if quirks_mode == QuirksMode::Quirks {
-            apply_quirks_mode_adjustments(&mut resolved, parent_style);
+            let tag_name = doc.get(element).and_then(|n| {
+                if let NodeKind::Element(elem) = &n.kind {
+                    Some(elem.local_name().to_lowercase())
+                } else {
+                    None
+                }
+            });
+            apply_quirks_mode_adjustments(&mut resolved, parent_style, tag_name.as_deref());
         }
 
         resolved
@@ -355,10 +362,16 @@ fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<Strin
 ///
 /// 在 quirks mode 下，以下行为会改变：
 /// - 百分比高度 quirks：当父元素高度为 auto 时，块级子元素的 `height: <percentage>` 视为 `auto`
-fn apply_quirks_mode_adjustments(style: &mut ComputedStyle, parent_style: Option<&ComputedStyle>) {
-    use zero_css_parser::values::LengthValue;
+/// - 表格高度 quirks：`<table>` 元素的 `height` 视为 `min-height`（height 设为 auto）
+/// - inline 元素宽高 quirks：inline 元素的 `width`/`height` 在 quirks mode 下被保留
+fn apply_quirks_mode_adjustments(
+    style: &mut ComputedStyle,
+    parent_style: Option<&ComputedStyle>,
+    tag_name: Option<&str>,
+) {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
 
-    // 百分比高度 quirks：
+    // 1. 百分比高度 quirks：
     // 在 quirks mode 中，如果父元素（block-level container）的高度不是明确指定的，
     // 则 block-level 子元素的 height: <percentage> 计算为 auto。
     //
@@ -372,6 +385,24 @@ fn apply_quirks_mode_adjustments(style: &mut ComputedStyle, parent_style: Option
             }
         }
     }
+
+    // 2. 表格高度 quirks：
+    // 在 quirks mode 下，<table> 元素的 height 被视为 min-height（CSS 2.1 §17.5.2）。
+    // 实际高度由内容决定，但不会小于指定的 height 值。
+    if let Some(tag) = tag_name
+        && tag == "table"
+        && !matches!(style.height, LengthValue::Auto)
+    {
+        style.min_height = style.height.clone();
+        style.height = LengthValue::Auto;
+    }
+
+    // 3. inline 元素宽高 quirks：
+    // 在 quirks mode 下，inline 元素的 width/height 被保留（CSS 2.1 规定 width/height 不适用于 inline non-replaced 元素）。
+    // 当前的 layout engine 将 inline 映射为 block，所以此 quirks 实际上已经生效。
+    // 这里不做额外处理——inline 元素的 width/height 自然保留。
+    // 当 inline layout 正确实现后，需要在 standards mode 下将 inline 元素的 width/height 重置为 auto。
+    let _ = DisplayValue::Inline; // suppress unused import warning
 }
 
 #[cfg(test)]
@@ -390,7 +421,7 @@ mod quirks_tests {
         let parent_style = ComputedStyle::default();
         // parent height is Auto by default
 
-        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style), None);
 
         assert_eq!(
             child_style.height,
@@ -408,7 +439,7 @@ mod quirks_tests {
         let mut parent_style = ComputedStyle::default();
         parent_style.height = LengthValue::Px(200.0);
 
-        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style), None);
 
         assert_eq!(
             child_style.height,
@@ -425,7 +456,7 @@ mod quirks_tests {
 
         let parent_style = ComputedStyle::default();
 
-        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style), None);
 
         assert_eq!(
             child_style.height,
@@ -440,12 +471,70 @@ mod quirks_tests {
         let mut child_style = ComputedStyle::default();
         child_style.height = LengthValue::Percentage(50.0);
 
-        apply_quirks_mode_adjustments(&mut child_style, None);
+        apply_quirks_mode_adjustments(&mut child_style, None, None);
 
         assert_eq!(
             child_style.height,
             LengthValue::Percentage(50.0),
             "Percentage height should be kept when no parent style"
+        );
+    }
+
+    /// 测试 quirks mode 下 table 元素的 height 转为 min-height
+    #[test]
+    fn test_quirks_mode_table_height_as_min_height() {
+        let mut table_style = ComputedStyle::default();
+        table_style.height = LengthValue::Px(300.0);
+
+        let mut parent_style = ComputedStyle::default();
+        parent_style.height = LengthValue::Px(600.0);
+
+        apply_quirks_mode_adjustments(&mut table_style, Some(&parent_style), Some("table"));
+
+        assert_eq!(
+            table_style.height,
+            LengthValue::Auto,
+            "Table height should be set to auto in quirks mode"
+        );
+        assert_eq!(
+            table_style.min_height,
+            LengthValue::Px(300.0),
+            "Table height value should be moved to min-height in quirks mode"
+        );
+    }
+
+    /// 测试 quirks mode 下非 table 元素的 height 不受影响
+    #[test]
+    fn test_quirks_mode_non_table_height_unaffected() {
+        let mut div_style = ComputedStyle::default();
+        div_style.height = LengthValue::Px(300.0);
+
+        let mut parent_style = ComputedStyle::default();
+        parent_style.height = LengthValue::Px(600.0);
+
+        apply_quirks_mode_adjustments(&mut div_style, Some(&parent_style), Some("div"));
+
+        assert_eq!(
+            div_style.height,
+            LengthValue::Px(300.0),
+            "Non-table element height should not be affected by table quirk"
+        );
+    }
+
+    /// 测试 quirks mode 下 table 元素 auto height 不受影响
+    #[test]
+    fn test_quirks_mode_table_auto_height_unaffected() {
+        let mut table_style = ComputedStyle::default();
+        // height is Auto by default
+
+        let parent_style = ComputedStyle::default();
+
+        apply_quirks_mode_adjustments(&mut table_style, Some(&parent_style), Some("table"));
+
+        assert_eq!(
+            table_style.height,
+            LengthValue::Auto,
+            "Table with auto height should remain auto"
         );
     }
 }
