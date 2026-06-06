@@ -1,0 +1,222 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-release:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: zero-browser-linux-x86_64
+            ext: ''
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: zero-browser-macos-aarch64
+            ext: ''
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: zero-browser-windows-x86_64
+            ext: '.exe'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = "rusty_v8"/{n;s/^version = "//;s/"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zero-web/rusty_v8
+            ~/Library/Caches/zero-web/rusty_v8
+            ~/AppData/Local/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
+
+      - name: Build release
+        run: cargo build --release --bin zero-browser --target ${{ matrix.target }}
+
+      - name: Strip binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: strip target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }}
+
+      - name: Create output directory
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
+
+      - name: Create README for distribution
+        shell: bash
+        run: |
+          cat > dist/README.txt << 'EOF'
+          ZeroBrowser — A cross-platform browser built with Rust
+
+          Usage:
+            ./zero-browser [URL]              Open URL
+            ./zero-browser --headless          Run in headless mode
+            ./zero-browser --remote-debugging-port=9222  Enable remote debugging
+
+          License: MIT
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          retention-days: 30
+
+  package-linux:
+    name: Package Linux .deb
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: zero-browser-linux-x86_64
+          path: dist/
+
+      - name: Make binary executable
+        run: chmod +x dist/zero-browser
+
+      - name: Build .deb package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DEBROOT="zero-browser_${VERSION}_amd64"
+          mkdir -p "$DEBROOT/DEBIAN" "$DEBROOT/usr/bin" "$DEBROOT/usr/share/applications"
+          cp dist/zero-browser "$DEBROOT/usr/bin/"
+          chmod 755 "$DEBROOT/usr/bin/zero-browser"
+
+          SIZE=$(du -sk "$DEBROOT/usr" | cut -f1)
+          cat > "$DEBROOT/DEBIAN/control" << EOF
+          Package: zero-browser
+          Version: ${VERSION}
+          Section: web
+          Priority: optional
+          Architecture: amd64
+          Installed-Size: ${SIZE}
+          Maintainer: ZeroWeb Team <zeroweb@example.com>
+          Description: ZeroBrowser - A cross-platform browser built with Rust
+          Homepage: https://github.com/leizongmin/ZeroWeb
+          Depends: libc6 (>= 2.31)
+          EOF
+
+          cat > "$DEBROOT/usr/share/applications/zero-browser.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=ZeroBrowser
+          Comment=A cross-platform browser built with Rust
+          Exec=/usr/bin/zero-browser %u
+          Icon=zero-browser
+          Type=Application
+          Categories=Network;WebBrowser;
+          DESKTOP
+
+          dpkg-deb --build "$DEBROOT" "dist/zero-browser_${VERSION}_amd64.deb"
+          rm -rf "$DEBROOT"
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-browser-linux-deb
+          path: dist/*.deb
+          retention-days: 30
+
+  package-macos:
+    name: Package macOS .app
+    needs: build-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: zero-browser-macos-aarch64
+          path: dist/
+
+      - name: Build .app bundle
+        run: |
+          chmod +x dist/zero-browser
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="dist/ZeroBrowser.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp dist/zero-browser "$APP/Contents/MacOS/ZeroBrowser"
+
+          cat > "$APP/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>ZeroBrowser</string>
+            <key>CFBundleIdentifier</key><string>com.zeroweb.browser</string>
+            <key>CFBundleName</key><string>ZeroBrowser</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+
+          echo -n "APPL????" > "$APP/Contents/PkgInfo"
+
+      - name: Upload .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-browser-macos-app
+          path: dist/ZeroBrowser.app
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-release, package-linux, package-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List artifacts
+        run: find artifacts/ -type f | head -20
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/zero-browser-linux-x86_64/*
+            artifacts/zero-browser-linux-deb/*
+            artifacts/zero-browser-macos-aarch64/*
+            artifacts/zero-browser-macos-app/**
+            artifacts/zero-browser-windows-x86_64/*
