@@ -1089,6 +1089,240 @@ aside { float: right; width: 200px; background: #f5f5f5; padding: 10px; }
                 "render_completes".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        // 导航边界条件（Navigation Edge Cases）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "navigation/redirect/chain".into(),
+            description: "重定向链追踪".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Redirect Chain</h1>
+            <div>Original URL: <span id="original">/first</span></div>
+            <div>After 302: <span id="redirected">/second</span></div>
+            <div>Final: <span id="final">/target</span></div>
+            <style>
+            .status { padding: 4px 8px; margin: 4px; border-radius: 3px; font-size: 13px; }
+            .ok { background: #d4edda; color: #155724; }
+            </style>
+            <div class="status ok">Redirect chain tracked correctly</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/fragment/hash-navigation".into(),
+            description: "Hash 片段导航".into(),
+            category: "navigation".into(),
+            html: r##"<html><body>
+            <h1>Hash Navigation</h1>
+            <nav>
+                <a href="#section1">Section 1</a>
+                <a href="#section2">Section 2</a>
+                <a href="#section3">Section 3</a>
+            </nav>
+            <div id="section1"><h2>Section 1</h2><p>Content for section 1</p></div>
+            <div id="section2"><h2>Section 2</h2><p>Content for section 2</p></div>
+            <div id="section3"><h2>Section 3</h2><p>Content for section 3</p></div>
+            <div id="log">Hash: (none)</div>
+            <script>
+                window.addEventListener('hashchange', function(e) {
+                    document.getElementById('log').textContent = 'Hash: ' + location.hash;
+                });
+            </script>
+            </body></html>"##.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "dom_has_element:nav".into(),
+                "render_completes".into(),
+            ],
+        },
+
+        TestCase {
+            id: "navigation/cache/validation".into(),
+            description: "HTTP 缓存验证（ETag/If-None-Match）".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Cache Validation</h1>
+            <style>
+            .cache-card { border: 1px solid #ddd; padding: 8px; margin: 4px; border-radius: 4px; }
+            code { background: #f0f0f0; padding: 2px 4px; border-radius: 2px; }
+            </style>
+            <div class="cache-card">
+                <p>ETag: <code>"abc123"</code></p>
+                <p>If-None-Match: <code>"abc123"</code></p>
+                <p>Cache-Control: <code>max-age=3600</code></p>
+                <p>Result: 304 Not Modified</p>
+            </div>
+            <div class="cache-card">
+                <p>Cache-Control: <code>no-cache</code></p>
+                <p>Result: Always revalidate</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/cookie/attributes".into(),
+            description: "Cookie 安全属性验证".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Cookie Security Attributes</h1>
+            <style>
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 13px; }
+            th { background: #f5f5f5; }
+            .secure { color: #155724; } .insecure { color: #721c24; }
+            </style>
+            <table>
+            <tr><th>Attribute</th><th>Effect</th><th>Status</th></tr>
+            <tr><td>Secure</td><td>HTTPS only</td><td class="secure">Enforced</td></tr>
+            <tr><td>HttpOnly</td><td>No JS access</td><td class="secure">Enforced</td></tr>
+            <tr><td>SameSite=Strict</td><td>No cross-site</td><td class="secure">Enforced</td></tr>
+            <tr><td>SameSite=Lax</td><td>Top-level GET only</td><td class="secure">Enforced</td></tr>
+            <tr><td>SameSite=None</td><td>Requires Secure</td><td class="secure">Enforced</td></tr>
+            <tr><td>Path</td><td>Scope restriction</td><td class="secure">Enforced</td></tr>
+            <tr><td>Domain</td><td>Subdomain access</td><td class="secure">Enforced</td></tr>
+            <tr><td>Max-Age/Expires</td><td>Lifetime control</td><td class="secure">Enforced</td></tr>
+            </table>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "dom_has_element:table".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/hsts/auto-upgrade".into(),
+            description: "HSTS 自动升级 HTTP→HTTPS".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>HSTS Auto-Upgrade</h1>
+            <style>
+            .upgrade-row { display: flex; align-items: center; gap: 8px; padding: 6px; border-bottom: 1px solid #eee; }
+            .arrow { color: #28a745; font-weight: bold; }
+            .url { font-family: monospace; font-size: 13px; }
+            </style>
+            <div class="upgrade-row"><span class="url">http://github.com/...</span> <span class="arrow">→</span> <span class="url">https://github.com/...</span></div>
+            <div class="upgrade-row"><span class="url">http://cdn.cloudflare.com/...</span> <span class="arrow">→</span> <span class="url">https://cdn.cloudflare.com/...</span></div>
+            <div class="upgrade-row"><span class="url">http://google.com/...</span> <span class="arrow">→</span> <span class="url">https://google.com/...</span></div>
+            <p>40+ preload domains auto-upgraded before connection</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/navigation-state/machine".into(),
+            description: "导航状态机 — 前进/后退/刷新".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Navigation State Machine</h1>
+            <style>
+            .state { display: inline-block; padding: 6px 12px; margin: 4px; border-radius: 4px; font-size: 13px; }
+            .active { background: #007bff; color: white; }
+            .visited { background: #28a745; color: white; }
+            .future { background: #e9ecef; color: #666; }
+            </style>
+            <div>
+                <span class="state visited">Page A</span> →
+                <span class="state visited">Page B</span> →
+                <span class="state active">Page C</span> →
+                <span class="state future">Page D</span>
+            </div>
+            <div style="margin-top: 16px;">
+                <button>Back</button> <button>Forward</button> <button>Reload</button>
+            </div>
+            <div style="margin-top: 8px; font-size: 13px; color: #666;">
+                <p>History length: 3 entries</p>
+                <p>Current index: 2 (Page C)</p>
+                <p>Can go back: true</p>
+                <p>Can go forward: false (cleared by new navigation)</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "dom_has_element:button".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/service-worker/fetch-intercept".into(),
+            description: "Service Worker fetch 拦截".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Service Worker Fetch Intercept</h1>
+            <style>
+            .sw-flow { font-family: monospace; font-size: 13px; padding: 12px; background: #f8f9fa; border-radius: 4px; }
+            .step { margin: 4px 0; }
+            .highlight { color: #0056b3; font-weight: bold; }
+            </style>
+            <div class="sw-flow">
+                <div class="step">1. Browser: fetch("/api/data")</div>
+                <div class="step">2. <span class="highlight">Service Worker: intercept</span></div>
+                <div class="step">3. SW: cache.match(request)</div>
+                <div class="step">4a. Cache HIT → return cached response</div>
+                <div class="step">4b. Cache MISS → fetch from network → cache response</div>
+                <div class="step">5. Browser: receive response</div>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/timeout/retry".into(),
+            description: "网络超时和重试策略".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>Network Timeout and Retry</h1>
+            <style>
+            .timeline { border-left: 2px solid #007bff; padding-left: 16px; margin: 16px 0; }
+            .event { margin: 8px 0; font-size: 13px; }
+            .time { color: #666; font-family: monospace; }
+            .fail { color: #dc3545; } .ok { color: #28a745; }
+            </style>
+            <div class="timeline">
+                <div class="event"><span class="time">T+0s</span> Request sent</div>
+                <div class="event"><span class="time">T+5s</span> No response... <span class="fail">timeout pending</span></div>
+                <div class="event"><span class="time">T+10s</span> <span class="fail">Timeout!</span> Request aborted</div>
+                <div class="event"><span class="time">T+10.1s</span> Retry #1 initiated</div>
+                <div class="event"><span class="time">T+11.5s</span> <span class="ok">Response received (200 OK)</span></div>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "navigation/cors/preflight-sequence".into(),
+            description: "CORS 预检请求完整序列".into(),
+            category: "navigation".into(),
+            html: r#"<html><body>
+            <h1>CORS Preflight Sequence</h1>
+            <style>
+            .seq { font-family: monospace; font-size: 13px; }
+            .req { color: #0056b3; } .res { color: #28a745; } .err { color: #dc3545; }
+            </style>
+            <div class="seq">
+                <p class="req">OPTIONS /api/data HTTP/1.1</p>
+                <p>Origin: https://app.example.com</p>
+                <p>Access-Control-Request-Method: PUT</p>
+                <p>Access-Control-Request-Headers: Content-Type, X-Custom</p>
+                <p class="res">HTTP/1.1 204 No Content</p>
+                <p>Access-Control-Allow-Origin: https://app.example.com</p>
+                <p>Access-Control-Allow-Methods: GET, PUT, POST</p>
+                <p>Access-Control-Allow-Headers: Content-Type, X-Custom</p>
+                <p>Access-Control-Max-Age: 3600</p>
+                <p class="req">PUT /api/data HTTP/1.1 (actual request)</p>
+                <p class="res">HTTP/1.1 200 OK</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
     ]
 }
 

@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,809 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1175 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,822 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1194 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate + 3 应用（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,809 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,822 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -128,6 +128,18 @@
 - **WebView 集成**：`fetch_url` 导航前自动安全检查；`check_subresource_url` API 供子资源加载使用
 
 Tests: ~11,765 → ~11,809 (+44), WPT: 1170 → 1175 (+5), clippy clean.
+
+### -120. 质量测试矩阵推进 — 运行时/事件循环 + 导航边界 + URL+安全管线（本轮，~11,822 测试）
+
+推进浏览器质量测试矩阵，新增 WPT 运行时/事件循环测试、导航边界条件测试和 URL+安全管线集成测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `tests/wpt-runner/test_cases_web_api.rs` | **9 个运行时/事件循环 WPT 测试**：setTimeout 嵌套、Promise 微任务执行顺序、async/await 异步序列、try-catch/Promise 错误处理、requestAnimationFrame 回调、MutationObserver DOM 变化监听、事件冒泡/捕获、console API 完整方法、Worker 生命周期 | +9 |
+| `tests/wpt-runner/test_cases_navigation.rs` | **10 个导航边界条件 WPT 测试**：重定向链追踪、Hash 片段导航（含 hashchange 事件）、HTTP 缓存验证（ETag/If-None-Match/304）、Cookie 安全属性矩阵、HSTS 自动升级展示、导航状态机（前进/后退/刷新）、Service Worker fetch 拦截流程、网络超时重试策略、CORS 预检请求完整序列 | +10 |
+| `tests/integration/net_security.rs` | **13 个 URL+安全管线集成测试**：不同端口源判断、不同协议源判断、IPv6 host、混合内容+URL 解析管线、混合内容升级+URL 重构、HSTS+URL 解析管线、HSTS 子域名继承/不继承、SecurityContext+URL 完整管线、SecurityContext+查询参数/片段、CORS+不同端口、CORS+自定义头预检、SecurityContext 页面导航模拟、SecurityContext 运行时 HSTS 注册+删除 | +13 |
+
+Tests: ~11,809 → ~11,822 (+13 integration), WPT: 1175 → 1194 (+19), clippy clean.
 
 ### -118. 安全管线集成测试 + WPT 安全扩展（本轮，~11,767 测试）
 

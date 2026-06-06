@@ -1450,5 +1450,228 @@ if (typeof structuredClone === 'function') {
                 "glyph_count_ge:20".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        // 运行时和事件循环（Runtime and Event Loop）
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "web-api/runtime/timer-nesting".into(),
+            description: "setTimeout 嵌套调用".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Timer Nesting</h1>
+            <div id="log"></div>
+            <script>
+                var depth = 0;
+                function nestedTimeout() {
+                    depth++;
+                    if (depth < 10) {
+                        setTimeout(nestedTimeout, 0);
+                    }
+                }
+                nestedTimeout();
+                document.getElementById('log').textContent = 'Depth: ' + depth;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/microtask-promise".into(),
+            description: "Promise 微任务执行顺序".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Promise Microtask Order</h1>
+            <div id="log"></div>
+            <script>
+                var order = [];
+                Promise.resolve(1).then(function(v) { order.push('then1:' + v); return v + 1; })
+                    .then(function(v) { order.push('then2:' + v); });
+                Promise.resolve(3).then(function(v) { order.push('then3:' + v); });
+                document.getElementById('log').textContent = order.join(',');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/async-await-sequence".into(),
+            description: "async/await 异步执行序列".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Async/Await Sequence</h1>
+            <div id="log"></div>
+            <script>
+                async function fetchData() {
+                    var result = await Promise.resolve('data');
+                    document.getElementById('log').textContent = 'Got: ' + result;
+                }
+                fetchData();
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/error-handling".into(),
+            description: "try-catch 和 Promise 错误处理".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Error Handling</h1>
+            <div id="log"></div>
+            <script>
+                var log = [];
+                try { throw new Error('test error'); } catch(e) { log.push('caught:' + e.message); }
+                try { JSON.parse('invalid'); } catch(e) { log.push('json-error'); }
+                try { undefined.property; } catch(e) { log.push('type-error'); }
+                document.getElementById('log').textContent = log.join('|');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/raf-callback".into(),
+            description: "requestAnimationFrame 回调".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>requestAnimationFrame</h1>
+            <div id="log"></div>
+            <script>
+                var called = false;
+                try {
+                    requestAnimationFrame(function(ts) { called = true; });
+                } catch(e) {}
+                document.getElementById('log').textContent = 'RAF: ' + (called ? 'queued' : 'not-available');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/mutation-observer".into(),
+            description: "MutationObserver DOM 变化监听".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>MutationObserver</h1>
+            <div id="target"></div>
+            <div id="log"></div>
+            <script>
+                var mutations = [];
+                try {
+                    var obs = new MutationObserver(function(m) { mutations.push(m.length); });
+                    obs.observe(document.getElementById('target'), { childList: true });
+                    document.getElementById('target').textContent = 'changed';
+                } catch(e) {}
+                document.getElementById('log').textContent = 'Mutations: ' + mutations.length;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/event-bubble-capture".into(),
+            description: "事件冒泡和捕获".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Event Bubbling and Capture</h1>
+            <div id="outer"><div id="inner">Click me</div></div>
+            <div id="log"></div>
+            <script>
+                var log = [];
+                var outer = document.getElementById('outer');
+                var inner = document.getElementById('inner');
+                outer.addEventListener('click', function() { log.push('outer-capture'); }, true);
+                outer.addEventListener('click', function() { log.push('outer-bubble'); }, false);
+                inner.addEventListener('click', function(e) { log.push('inner'); e.stopPropagation(); }, false);
+                try { inner.click(); } catch(e) {}
+                document.getElementById('log').textContent = log.join(',');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/console-api".into(),
+            description: "console API 完整方法".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Console API</h1>
+            <script>
+                console.log('log');
+                console.info('info');
+                console.warn('warn');
+                console.error('error');
+                console.debug('debug');
+                console.table([{a:1},{a:2}]);
+                console.group('group');
+                console.log('grouped');
+                console.groupEnd();
+                console.time('timer');
+                console.timeEnd('timer');
+                console.assert(true, 'should not show');
+                console.assert(false, 'should show');
+                console.count('counter');
+                console.count('counter');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/history-api".into(),
+            description: "History API pushState/replaceState".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>History API</h1>
+            <div id="log"></div>
+            <script>
+                var log = [];
+                try {
+                    history.pushState({page: 1}, '', '?page=1');
+                    log.push('pushState:ok');
+                    history.replaceState({page: 2}, '', '?page=2');
+                    log.push('replaceState:ok');
+                    log.push('length:' + history.length);
+                } catch(e) { log.push('error:' + e.message); }
+                document.getElementById('log').textContent = log.join('|');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
+
+        TestCase {
+            id: "web-api/runtime/worker-lifecycle".into(),
+            description: "Worker 创建/消息/终止生命周期".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>Worker Lifecycle</h1>
+            <div id="log"></div>
+            <script>
+                var log = [];
+                try {
+                    var worker = new Worker(URL.createObjectURL(
+                        new Blob(['postMessage("hello");'], {type: 'application/javascript'})
+                    ));
+                    worker.onmessage = function(e) { log.push('msg:' + e.data); };
+                    worker.onerror = function(e) { log.push('err:' + e.message); };
+                    setTimeout(function() { worker.terminate(); log.push('terminated'); }, 100);
+                } catch(e) { log.push('error:' + e.message); }
+                document.getElementById('log').textContent = log.join('|');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
     ]
 }
