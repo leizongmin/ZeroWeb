@@ -95,6 +95,7 @@ fn test_pipeline_incremental_render_clears_dirty_area() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -152,6 +153,7 @@ fn test_dirty_tracker_after_full_then_three_incremental() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -299,6 +301,7 @@ fn test_dirty_mark_node_large_offset_no_overflow() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -378,6 +381,7 @@ fn test_dirty_mark_node_zero_height_box_no_rect() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -418,6 +422,7 @@ fn test_dirty_mark_node_zero_width_box_no_rect() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };

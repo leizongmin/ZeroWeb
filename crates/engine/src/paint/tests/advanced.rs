@@ -50,6 +50,7 @@ pub(super) fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, heig
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     }
@@ -94,6 +95,7 @@ pub(super) fn make_box_with_border(
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     }

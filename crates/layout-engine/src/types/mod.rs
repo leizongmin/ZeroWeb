@@ -3,6 +3,7 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
+use zero_css_parser::values::FloatValue;
 use zero_dom::NodeId;
 
 /// 溢出处理方式。
@@ -71,6 +72,8 @@ pub struct LayoutBox {
     pub is_fixed: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
+    /// Float 方向（None 表示非浮动元素）。
+    pub float: FloatValue,
     /// 溢出处理。
     pub overflow_x: OverflowClip,
     /// 溢出处理。
@@ -106,6 +109,42 @@ impl LayoutBox {
         let total_width = self.margin_left + self.width + self.margin_right;
         let total_height = self.margin_top + self.height + self.margin_bottom;
         total_width * total_height
+    }
+}
+
+impl Default for LayoutBox {
+    fn default() -> Self {
+        Self {
+            node_id: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            content_x: 0.0,
+            content_y: 0.0,
+            content_width: 0.0,
+            content_height: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            children: Vec::new(),
+            is_absolute: false,
+            is_fixed: false,
+            is_sticky: false,
+            float: FloatValue::None,
+            overflow_x: OverflowClip::Visible,
+            overflow_y: OverflowClip::Visible,
+            z_index: 0,
+        }
     }
 }
 

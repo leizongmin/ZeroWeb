@@ -35,6 +35,7 @@ fn make_dirty_box(w: f32, h: f32) -> zero_layout_engine::LayoutBox {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: zero_layout_engine::types::OverflowClip::Visible,
         overflow_y: zero_layout_engine::types::OverflowClip::Visible,
     }

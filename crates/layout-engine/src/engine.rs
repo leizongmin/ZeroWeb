@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{OverflowValue, PositionValue};
+use zero_css_parser::values::{FloatValue, OverflowValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
@@ -114,6 +114,9 @@ impl LayoutEngine {
 
         // 4. 后处理：将 fixed 元素的坐标调整为视口相对
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
+
+        // 5. 后处理：调整 float 元素位置
+        adjust_float_positions(&mut root_box);
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
@@ -256,6 +259,7 @@ impl LayoutEngine {
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
+        let float = computed.map_or(FloatValue::None, |s| s.float.clone());
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
         let z_index = computed.map_or(0, |s| match s.z_index {
@@ -309,6 +313,7 @@ impl LayoutEngine {
             is_absolute,
             is_fixed,
             is_sticky,
+            float,
             overflow_x,
             overflow_y,
             z_index,
@@ -391,6 +396,73 @@ fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, pare
 
     for child in &mut box_node.children {
         adjust_fixed_to_viewport(child, offset_x, offset_y);
+    }
+}
+
+/// 调整 float 元素的位置。
+///
+/// taffy 将 float 元素当作普通 block 处理（按正常流排列）。
+/// 此后处理步骤将 float 元素重新定位到容器的左侧或右侧，
+/// 并确保同一侧的 float 元素垂直堆叠不重叠。
+///
+/// 限制：当前实现处理同一容器内的 float 元素，不处理跨容器的 float 交互。
+fn adjust_float_positions(box_node: &mut LayoutBox) {
+    use zero_css_parser::values::FloatValue;
+
+    // 容器的内部内容区域（相对于 box_node 的 x/y）
+    let container_x = box_node.content_x;
+    let container_y = box_node.content_y;
+    let container_width = box_node.content_width;
+    let container_height = box_node.content_height;
+
+    // 跟踪左右 float 的当前 Y 偏移和最大底部
+    let mut left_float_y = 0.0f32;
+    let mut left_float_bottom = 0.0f32;
+    let mut right_float_y = 0.0f32;
+    let mut right_float_bottom = 0.0f32;
+
+    for child in &mut box_node.children {
+        // 跳过绝对定位和 fixed 元素
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+
+        match child.float {
+            FloatValue::Left => {
+                // 定位到容器的左侧
+                child.x = container_x;
+                child.y = container_y + left_float_y;
+
+                // 更新左侧 float 的堆叠状态
+                left_float_y = left_float_bottom;
+                left_float_bottom = left_float_bottom + child.margin_top + child.height + child.margin_bottom;
+
+                // 确保不超出容器高度（float 不影响容器高度时跳过）
+                let _ = container_height;
+            }
+            FloatValue::Right => {
+                // 定位到容器的右侧
+                child.x = container_x + container_width - child.width - child.margin_right;
+                child.y = container_y + right_float_y;
+
+                // 更新右侧 float 的堆叠状态
+                right_float_y = right_float_bottom;
+                right_float_bottom = right_float_bottom + child.margin_top + child.height + child.margin_bottom;
+            }
+            FloatValue::InlineStart | FloatValue::InlineEnd => {
+                // inline-start/inline-end 在 LTR 下等同于 left/right
+                // 简化处理：inline-start → left, inline-end → right
+                // 暂不实现，按 None 处理
+            }
+            FloatValue::None => {
+                // 非 float 元素：正常流布局，无需调整
+            }
+        }
+    }
+
+    // 递归处理子容器
+    for child in &mut box_node.children {
+        adjust_float_positions(child);
     }
 }
 

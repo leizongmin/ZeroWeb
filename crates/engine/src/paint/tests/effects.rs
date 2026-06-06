@@ -47,6 +47,7 @@ fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) ->
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     }
@@ -91,6 +92,7 @@ fn make_box_with_border(
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     }
@@ -293,6 +295,7 @@ fn test_paint_in_rect_parent_outside_child_inside_skipped() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -688,6 +691,7 @@ fn test_painter_child_visible_overrides_parent_hidden() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -839,6 +843,7 @@ fn test_paint_in_rect_overflow_hidden_clips_children() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -940,6 +945,7 @@ fn test_paint_in_rect_siblings_independent() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -1008,6 +1014,7 @@ fn test_paint_in_rect_overflow_hidden_clips_child_partially_intersecting() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -1105,6 +1112,7 @@ fn test_paint_text_zero_width_no_panic() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -1180,6 +1188,7 @@ fn test_multiple_overflow_hidden_nested() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -1211,6 +1220,7 @@ fn test_multiple_overflow_hidden_nested() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -1242,6 +1252,7 @@ fn test_multiple_overflow_hidden_nested() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -1308,6 +1319,7 @@ fn test_paint_multiple_overlapping_backgrounds() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -1338,6 +1350,7 @@ fn test_paint_multiple_overlapping_backgrounds() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };

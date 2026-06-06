@@ -37,6 +37,7 @@ fn test_layout_result_zero_viewport() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         },
         viewport_width: 0.0,
         viewport_height: 0.0,
@@ -82,6 +83,7 @@ fn test_layout_box_negative_position() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!((abs_x - (-50.0)).abs() < 0.001);
@@ -128,6 +130,7 @@ fn test_layout_box_mixed_overflow_xy() {
         overflow_x: OverflowClip::Scroll,
         overflow_y: OverflowClip::Hidden,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     assert_eq!(box0.overflow_x, OverflowClip::Scroll);
     assert_eq!(box0.overflow_y, OverflowClip::Hidden);
@@ -163,6 +166,7 @@ fn test_layout_box_mixed_overflow_xy() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Clip,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     assert_eq!(box1.overflow_x, OverflowClip::Visible);
     assert_eq!(box1.overflow_y, OverflowClip::Clip);
@@ -203,6 +207,7 @@ fn test_layout_box_asymmetric_margin_outer_area() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // total_width = 20 + 100 + 15 = 135
     // total_height = 5 + 60 + 10 = 75
@@ -252,6 +257,7 @@ fn test_layout_box_f32_max_dimensions() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let area = box0.outer_area();
     assert!(area.is_infinite(), "f32::MAX 尺寸下 outer_area 应为 inf，实际 {}", area);
@@ -295,6 +301,7 @@ fn test_layout_box_border_only_outer_area() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // total_width = 1 + 10 + 1 = 12, total_height = 1 + 10 + 1 = 12
     // outer_area = 12 * 12 = 144
@@ -341,6 +348,7 @@ fn test_layout_box_clone_deep_copy_children() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let original = LayoutBox {
         node_id: None,
@@ -371,6 +379,7 @@ fn test_layout_box_clone_deep_copy_children() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let cloned = original.clone();
     // 克隆后两者 children 数量相同
@@ -433,6 +442,7 @@ fn test_layout_box_nan_position() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!(abs_x.is_nan(), "NaN x 传入后 absolute_position 应返回 NaN");
@@ -480,6 +490,7 @@ fn test_layout_box_default_values() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // 位置和尺寸均为零
     assert!((box0.x).abs() < 0.001);
@@ -550,6 +561,7 @@ fn test_layout_result_viewport_edge() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         },
         viewport_width: 375.0,
         viewport_height: 667.0,
@@ -595,6 +607,7 @@ fn test_layout_box_with_children_edge() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let parent = LayoutBox {
         node_id: None,
@@ -629,6 +642,7 @@ fn test_layout_box_with_children_edge() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     assert_eq!(parent.children.len(), 3);
     assert!((parent.children[0].x - 0.0).abs() < 0.001);
@@ -679,6 +693,7 @@ fn test_overflow_clip_visible_vs_hidden() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Hidden,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     assert_eq!(box0.overflow_x, OverflowClip::Visible);
     assert_eq!(box0.overflow_y, OverflowClip::Hidden);
@@ -722,6 +737,7 @@ fn test_layout_box_content_area() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // content_x = border_left + padding_left = 5 + 10 = 15
     assert!((box0.content_x - 15.0).abs() < 0.001, "content_x 应为 15");
@@ -782,6 +798,7 @@ fn test_absolute_position_zero() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!((abs_x - 0.0).abs() < 0.001);
@@ -822,6 +839,7 @@ fn test_absolute_position_ignores_border_padding() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!((abs_x - 50.0).abs() < 0.001, "x 应为 50.0");
@@ -860,6 +878,7 @@ fn test_absolute_position_with_parent_basic() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = child.absolute_position_with_parent(100.0, 200.0);
     assert!((abs_x - 130.0).abs() < 0.001, "abs_x 应为 130.0");
@@ -898,6 +917,7 @@ fn test_absolute_position_with_parent_negative() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = child.absolute_position_with_parent(-50.0, -30.0);
     assert!((abs_x - (-40.0)).abs() < 0.001, "abs_x 应为 -40.0");
@@ -936,6 +956,7 @@ fn test_outer_area_zero_size_box() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // total_width = 10 + 0 + 10 = 20, total_height = 10 + 0 + 10 = 20
     let area = box0.outer_area();
@@ -974,6 +995,7 @@ fn test_absolute_position_fixed_element() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!((abs_x - 25.0).abs() < 0.001);

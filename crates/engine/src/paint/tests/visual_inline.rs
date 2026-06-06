@@ -39,6 +39,7 @@ fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, width: f32, heigh
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     }
@@ -82,6 +83,7 @@ fn test_overflow_hidden_clips_deeply_nested_children() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -112,6 +114,7 @@ fn test_overflow_hidden_clips_deeply_nested_children() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -184,6 +187,7 @@ fn test_overflow_hidden_double_nesting_clips() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -214,6 +218,7 @@ fn test_overflow_hidden_double_nesting_clips() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
     };
@@ -297,6 +302,7 @@ fn test_paint_mixed_inline_block() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -425,6 +431,7 @@ fn test_paint_inline_glyph_position_with_offset() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };

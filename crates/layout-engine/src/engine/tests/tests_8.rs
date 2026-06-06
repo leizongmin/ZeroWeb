@@ -71,6 +71,7 @@ fn test_adjust_fixed_to_viewport_nested() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -101,6 +102,7 @@ fn test_adjust_fixed_to_viewport_nested() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
@@ -151,6 +153,7 @@ fn test_adjust_fixed_to_viewport_at_root() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
 
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
@@ -200,6 +203,7 @@ fn test_adjust_fixed_to_viewport_non_fixed_unchanged() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
 
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
@@ -241,6 +245,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let mid = LayoutBox {
         node_id: None,
@@ -271,6 +276,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -301,6 +307,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
@@ -351,6 +358,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let fixed_parent = LayoutBox {
         node_id: None,
@@ -381,6 +389,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -411,6 +420,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);

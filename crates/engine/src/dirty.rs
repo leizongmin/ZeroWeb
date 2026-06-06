@@ -231,6 +231,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -389,6 +390,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -455,6 +457,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -495,6 +498,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
         let box2 = LayoutBox {
@@ -525,6 +529,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -594,6 +599,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -680,6 +686,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -908,6 +915,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -979,6 +987,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
@@ -1074,6 +1083,7 @@ mod tests {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
         };
 
