@@ -148,7 +148,10 @@ fn test_smoke_load_page_with_external_css() {
     let result = wv.load_html(html, Some(css));
 
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(
+        !result.primitives.fills.is_empty() || !result.primitives.rounded_rects.is_empty(),
+        "外部 CSS 应产生填充图元"
+    );
 }
 
 // ── Phase 4: Resize 验证 ──

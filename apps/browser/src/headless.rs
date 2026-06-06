@@ -685,6 +685,7 @@ impl HeadlessServer {
             self.viewport_height as u32,
             1.0,
             &fills,
+            &[],
             &font_loader,
             &mut glyph_cache,
             &glyph_draws,

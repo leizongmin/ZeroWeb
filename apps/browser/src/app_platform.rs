@@ -169,6 +169,7 @@ impl BrowserApp {
             height,
             1.0,
             &fills,
+            &[],
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,

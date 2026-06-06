@@ -1,7 +1,7 @@
 //! 效果绘制 — box-shadow、背景图片、CSS filter、mix-blend-mode、resize 手柄。
 //!
 //! 包含 paint_box_shadow、paint_background_image、apply_filter、apply_blend_mode、
-//! paint_resize_handle、add_rounded_rect_metadata、paint_text_decoration，
+//! paint_resize_handle、paint_text_decoration，
 //! 以及 background-position/size 辅助函数。
 //! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
@@ -22,19 +22,10 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{BorderRadiusSpec, gradient_to_primitive, simple_hash};
+use super::super::helpers::{gradient_to_primitive, simple_hash};
 use super::effects_indicators::clip_tile_to_origin;
 
 impl super::Painter {
-    /// 添加圆角矩形元数据图元。
-    ///
-    /// 在当前渲染架构下，使用额外的 0-尺寸填充图元记录圆角参数。
-    pub(super) fn add_rounded_rect_metadata(&mut self, _x: f32, _y: f32, _w: f32, _h: f32, _radii: &BorderRadiusSpec) {
-        // 圆角信息通过 CornerFill 图元存储。
-        // 在完整实现中会生成圆角裁剪蒙版或扇形填充。
-        // 当前阶段记录圆角存在，待后续渲染后端支持。
-    }
-
     /// 绘制 box-shadow（盒阴影效果）。
     pub(super) fn paint_box_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let shadow = &style.box_shadow;

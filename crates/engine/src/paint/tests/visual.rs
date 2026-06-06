@@ -300,9 +300,10 @@ fn test_painter_background_with_border_radius() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, None);
 
-    // 背景填充仍然生成（圆角标记在内部处理）
-    assert_eq!(painter.primitives().fills.len(), 1);
-    assert_eq!(painter.primitives().fills[0].color, Color::rgb(255, 0, 0));
+    // border-radius 生成 RoundedRectPrimitive
+    assert_eq!(painter.primitives().rounded_rects.len(), 1);
+    assert_eq!(painter.primitives().fills.len(), 0);
+    assert_eq!(painter.primitives().rounded_rects[0].color, Color::rgb(255, 0, 0));
 }
 
 // ── 新增测试：CSS transform ──────────────────────────────
@@ -680,10 +681,10 @@ fn test_paint_page_with_border_radius() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, None);
 
-    // Background fill still generated even with border-radius
-    assert_eq!(painter.primitives().fills.len(), 1);
-    assert_eq!(painter.primitives().fills[0].rect.size.width, 200.0);
-    assert_eq!(painter.primitives().fills[0].rect.size.height, 100.0);
+    // Border-radius generates RoundedRectPrimitive instead of flat FillPrimitive
+    assert_eq!(painter.primitives().rounded_rects.len(), 1);
+    assert_eq!(painter.primitives().rounded_rects[0].rect.size.width, 200.0);
+    assert_eq!(painter.primitives().rounded_rects[0].rect.size.height, 100.0);
 }
 
 /// 测试渲染输出：背景先于前景（parent fill comes before child fill）。

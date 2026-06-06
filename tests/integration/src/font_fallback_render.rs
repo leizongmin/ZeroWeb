@@ -316,6 +316,9 @@ fn test_font_fallback_multilingual_dashboard() {
     );
 
     assert!(!result.primitives.glyphs.is_empty(), "多语言仪表盘应产生 glyph");
-    assert!(!result.primitives.fills.is_empty(), "多语言仪表盘应产生 fill");
+    assert!(
+        !result.primitives.fills.is_empty() || !result.primitives.rounded_rects.is_empty(),
+        "多语言仪表盘应产生 fill"
+    );
     assert!(result.timings.total_ms >= 0.0);
 }

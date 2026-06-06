@@ -445,8 +445,8 @@ fn test_paint_border_radius_nonzero() {
     painter.paint(&layout, &styles, None);
 
     assert!(
-        !painter.primitives().fills.is_empty(),
-        "border-radius 非零时仍应产生 fill"
+        !painter.primitives().rounded_rects.is_empty(),
+        "border-radius 非零时应产生 RoundedRectPrimitive"
     );
 }
 

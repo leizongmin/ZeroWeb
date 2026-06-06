@@ -4,10 +4,10 @@ use crate::color::Color;
 use crate::font::cache::{GlyphCache, GlyphKey};
 use crate::font::loader::FontLoader;
 use crate::gpu::renderer::GlyphDraw;
-use crate::primitive::FillPrimitive;
+use crate::primitive::{FillPrimitive, RoundedRectPrimitive};
 use crate::surface::FrameBuffer;
 
-/// 将填充矩形和 glyph 文本渲染到 CPU 帧缓冲。
+/// 将填充矩形、圆角矩形和 glyph 文本渲染到 CPU 帧缓冲。
 ///
 /// `width` 和 `height` 是逻辑像素尺寸，`scale_factor` 是逻辑像素到物理像素的缩放。
 /// `overlay_glyphs` 在 `overlay_fills` 之后绘制（如右键菜单文字）。
@@ -18,6 +18,7 @@ pub fn render_scene_to_framebuffer(
     height: u32,
     scale_factor: f32,
     fills: &[FillPrimitive],
+    rounded_rects: &[RoundedRectPrimitive],
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     glyphs: &[GlyphDraw],
@@ -32,6 +33,10 @@ pub fn render_scene_to_framebuffer(
 
     for fill in fills {
         fill_rect(&mut fb, fill, scale);
+    }
+
+    for rr in rounded_rects {
+        fill_rounded_rect(&mut fb, rr, scale);
     }
 
     for glyph in glyphs {
@@ -80,6 +85,96 @@ fn fill_rect(fb: &mut FrameBuffer, fill: &FillPrimitive, scale: f32) {
             fb.set_pixel(x, y, [fill.color.r, fill.color.g, fill.color.b, 255]);
         }
     }
+}
+
+/// 光栅化圆角矩形 — 对每个像素判断是否在圆角矩形内。
+///
+/// 算法：对于四个角区域，计算像素到圆心的距离，与半径比较决定是否填充。
+fn fill_rounded_rect(fb: &mut FrameBuffer, rr: &RoundedRectPrimitive, scale: f32) {
+    let left = (rr.rect.left() * scale).floor().max(0.0) as u32;
+    let top = (rr.rect.top() * scale).floor().max(0.0) as u32;
+    let right = (rr.rect.right() * scale).ceil().min(fb.width as f32) as u32;
+    let bottom = (rr.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
+
+    if left >= right || top >= bottom {
+        return;
+    }
+
+    // 缩放后的圆角半径
+    let tl_r = rr.top_left_radius * scale;
+    let tr_r = rr.top_right_radius * scale;
+    let br_r = rr.bottom_right_radius * scale;
+    let bl_r = rr.bottom_left_radius * scale;
+
+    // 圆角矩形区域的边界（缩放后）
+    let x0 = rr.rect.left() * scale;
+    let y0 = rr.rect.top() * scale;
+    let x1 = rr.rect.right() * scale;
+    let y1 = rr.rect.bottom() * scale;
+
+    let color = [rr.color.r, rr.color.g, rr.color.b, 255];
+
+    for y in top..bottom {
+        let fy = y as f32 + 0.5; // 像素中心
+        for x in left..right {
+            let fx = x as f32 + 0.5;
+
+            if !is_inside_rounded_rect(fx, fy, x0, y0, x1, y1, tl_r, tr_r, br_r, bl_r) {
+                continue;
+            }
+
+            fb.set_pixel(x, y, color);
+        }
+    }
+}
+
+/// 判断像素 (fx, fy) 是否在圆角矩形内。
+///
+/// 四个角的圆心坐标计算：
+/// - 左上角圆心: (x0 + tl_r, y0 + tl_r)
+/// - 右上角圆心: (x1 - tr_r, y0 + tr_r)
+/// - 右下角圆心: (x1 - br_r, y1 - br_r)
+/// - 左下角圆心: (x0 + bl_r, y1 - bl_r)
+#[allow(clippy::too_many_arguments)]
+fn is_inside_rounded_rect(
+    fx: f32,
+    fy: f32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    tl_r: f32,
+    tr_r: f32,
+    br_r: f32,
+    bl_r: f32,
+) -> bool {
+    // 如果在所有角区域之外（即在矩形内部），直接返回 true
+    // 左上角区域
+    if fx < x0 + tl_r && fy < y0 + tl_r {
+        let dx = fx - (x0 + tl_r);
+        let dy = fy - (y0 + tl_r);
+        return dx * dx + dy * dy <= tl_r * tl_r;
+    }
+    // 右上角区域
+    if fx > x1 - tr_r && fy < y0 + tr_r {
+        let dx = fx - (x1 - tr_r);
+        let dy = fy - (y0 + tr_r);
+        return dx * dx + dy * dy <= tr_r * tr_r;
+    }
+    // 右下角区域
+    if fx > x1 - br_r && fy > y1 - br_r {
+        let dx = fx - (x1 - br_r);
+        let dy = fy - (y1 - br_r);
+        return dx * dx + dy * dy <= br_r * br_r;
+    }
+    // 左下角区域
+    if fx < x0 + bl_r && fy > y1 - bl_r {
+        let dx = fx - (x0 + bl_r);
+        let dy = fy - (y1 - bl_r);
+        return dx * dx + dy * dy <= bl_r * bl_r;
+    }
+    // 不在任何角区域内 → 在矩形内部
+    true
 }
 
 fn draw_glyph(
@@ -174,7 +269,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 20);
         assert_eq!(fb.height, 16);
@@ -191,7 +286,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -213,7 +308,18 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(16, 16, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
+        let fb = render_scene_to_framebuffer(
+            16,
+            16,
+            1.0,
+            &fills,
+            &[],
+            &font_loader,
+            &mut glyph_cache,
+            &glyphs,
+            &[],
+            &[],
+        );
 
         assert_eq!(fb.width, 16);
         assert_eq!(fb.height, 16);
@@ -239,7 +345,18 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let glyphs = [];
 
-        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
+        let fb = render_scene_to_framebuffer(
+            8,
+            8,
+            1.0,
+            &fills,
+            &[],
+            &font_loader,
+            &mut glyph_cache,
+            &glyphs,
+            &[],
+            &[],
+        );
 
         assert_eq!(fb.width, 8);
         assert_eq!(fb.height, 8);
@@ -260,7 +377,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 0.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 0.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10); // 最小尺寸为1，所以保持10
         assert_eq!(fb.height, 10);
@@ -277,7 +394,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -322,6 +439,7 @@ mod tests {
             16,
             1.0,
             &[],
+            &[],
             &font_loader,
             &mut glyph_cache,
             &[],
@@ -343,7 +461,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, -1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, -1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10); // 负缩放应回退到1.0
         assert_eq!(fb.height, 10);
@@ -370,7 +488,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -395,7 +513,18 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
+        let fb = render_scene_to_framebuffer(
+            10,
+            10,
+            1.0,
+            &fills,
+            &[],
+            &font_loader,
+            &mut glyph_cache,
+            &glyphs,
+            &[],
+            &[],
+        );
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -423,7 +552,18 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
+        let fb = render_scene_to_framebuffer(
+            8,
+            8,
+            1.0,
+            &fills,
+            &[],
+            &font_loader,
+            &mut glyph_cache,
+            &glyphs,
+            &[],
+            &[],
+        );
 
         assert_eq!(fb.width, 8);
         assert_eq!(fb.height, 8);
@@ -481,7 +621,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 最小尺寸
-        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 1);
         assert_eq!(fb.height, 1);
@@ -665,7 +805,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 使用非整数缩放
-        let fb = render_scene_to_framebuffer(10, 10, 1.5, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.5, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 15); // 10 * 1.5 = 15
         assert_eq!(fb.height, 15);
@@ -685,7 +825,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 小尺寸缩放
-        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 1);
         assert_eq!(fb.height, 1);
