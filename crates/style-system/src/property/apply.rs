@@ -47,8 +47,6 @@ pub fn apply_property_value_with_quirks(
     quirks_mode: bool,
 ) -> bool {
     let value = value.trim();
-
-    // 颜色解析函数：quirks mode 使用宽松解析
     let parse_color_fn = if quirks_mode {
         values::parse_color_quirks
     } else {

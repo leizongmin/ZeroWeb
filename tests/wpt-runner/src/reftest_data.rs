@@ -1500,4 +1500,77 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"display:table;width:200px;\"><div style=\"display:table-row;\"><div style=\"display:table-cell;width:100px;height:50px;background:red;\"></div><div style=\"display:table-cell;width:100px;height:50px;background:blue;\"></div></div></div></body></html>",
         is_match: true,
     },
+    // ── Table layout reftests (M4) ──────────────────────────────
+    // 基本 2 列表格（self-match）
+    InlineReftestDef {
+        id: "css-table/basic-2col",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><td style=\"width:100px;height:40px;background:red\"></td><td style=\"width:100px;height:40px;background:blue\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px;height:40px\"><div style=\"display:inline-block;width:100px;height:40px;background:red\"></div><div style=\"display:inline-block;width:100px;height:40px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 基本 3 列表格（self-match）
+    InlineReftestDef {
+        id: "css-table/basic-3col",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:300px\"><tr><td style=\"width:100px;height:30px;background:red\"></td><td style=\"width:100px;height:30px;background:green\"></td><td style=\"width:100px;height:30px;background:blue\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:300px;height:30px\"><div style=\"display:inline-block;width:100px;height:30px;background:red\"></div><div style=\"display:inline-block;width:100px;height:30px;background:green\"></div><div style=\"display:inline-block;width:100px;height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 多行表格（self-match，验证多行不崩溃且渲染一致）
+    InlineReftestDef {
+        id: "css-table/multi-row",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><td style=\"width:100px;height:30px;background:red\"></td><td style=\"width:100px;height:30px;background:blue\"></td></tr><tr><td style=\"width:100px;height:30px;background:green\"></td><td style=\"width:100px;height:30px;background:yellow\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><td style=\"width:100px;height:30px;background:red\"></td><td style=\"width:100px;height:30px;background:blue\"></td></tr><tr><td style=\"width:100px;height:30px;background:green\"></td><td style=\"width:100px;height:30px;background:yellow\"></td></tr></table></body></html>",
+        is_match: true,
+    },
+    // 带 tbody 的表格（self-match）
+    InlineReftestDef {
+        id: "css-table/with-tbody",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tbody><tr><td style=\"width:100px;height:40px;background:red\"></td><td style=\"width:100px;height:40px;background:blue\"></td></tr></tbody></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px;height:40px\"><div style=\"display:inline-block;width:100px;height:40px;background:red\"></div><div style=\"display:inline-block;width:100px;height:40px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 表格自动宽度（self-match）
+    InlineReftestDef {
+        id: "css-table/auto-width-equal-cols",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:300px\"><tr><td style=\"height:30px;background:red\"></td><td style=\"height:30px;background:green\"></td><td style=\"height:30px;background:blue\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><table style=\"width:300px\"><tr><td style=\"height:30px;background:red\"></td><td style=\"height:30px;background:green\"></td><td style=\"height:30px;background:blue\"></td></tr></table></body></html>",
+        is_match: true,
+    },
+    // 表格单元格不同高度（行高取最大值，self-match）
+    InlineReftestDef {
+        id: "css-table/row-tallest-cell",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><td style=\"width:100px;height:20px;background:red\"></td><td style=\"width:100px;height:40px;background:blue\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px;height:40px\"><div style=\"display:inline-block;width:100px;height:40px;background:red\"></div><div style=\"display:inline-block;width:100px;height:40px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // thead/tbody/tfoot 结构（self-match）
+    InlineReftestDef {
+        id: "css-table/thead-tbody-tfoot",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><thead><tr><td style=\"width:100px;height:20px;background:red\"></td><td style=\"width:100px;height:20px;background:red\"></td></tr></thead><tbody><tr><td style=\"width:100px;height:20px;background:green\"></td><td style=\"width:100px;height:20px;background:green\"></td></tr></tbody><tfoot><tr><td style=\"width:100px;height:20px;background:blue\"></td><td style=\"width:100px;height:20px;background:blue\"></td></tr></tfoot></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><thead><tr><td style=\"width:100px;height:20px;background:red\"></td><td style=\"width:100px;height:20px;background:red\"></td></tr></thead><tbody><tr><td style=\"width:100px;height:20px;background:green\"></td><td style=\"width:100px;height:20px;background:green\"></td></tr></tbody><tfoot><tr><td style=\"width:100px;height:20px;background:blue\"></td><td style=\"width:100px;height:20px;background:blue\"></td></tr></tfoot></table></body></html>",
+        is_match: true,
+    },
+    // th 和 td 混合使用（self-match）
+    InlineReftestDef {
+        id: "css-table/th-td-mixed",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><th style=\"width:100px;height:30px;background:red\"></th><th style=\"width:100px;height:30px;background:red\"></th></tr><tr><td style=\"width:100px;height:30px;background:green\"></td><td style=\"width:100px;height:30px;background:green\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><table style=\"width:200px\"><tr><th style=\"width:100px;height:30px;background:red\"></th><th style=\"width:100px;height:30px;background:red\"></th></tr><tr><td style=\"width:100px;height:30px;background:green\"></td><td style=\"width:100px;height:30px;background:green\"></td></tr></table></body></html>",
+        is_match: true,
+    },
+    // 单列表格（self-match）
+    InlineReftestDef {
+        id: "css-table/single-column",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><table style=\"width:100px\"><tr><td style=\"height:30px;background:red\"></td></tr><tr><td style=\"height:30px;background:blue\"></td></tr></table></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:100px\"><div style=\"width:100px;height:30px;background:red\"></div><div style=\"width:100px;height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
 ];

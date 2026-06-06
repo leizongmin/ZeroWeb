@@ -541,4 +541,56 @@ fn remeasure_text_with_float_exclusions(
 }
 
 #[cfg(test)]
+mod table_layout_tests {
+    use super::*;
+    use zero_css_parser::values::DisplayValue;
+    use zero_style_system::StyleSystem;
+
+    #[test]
+    fn test_table_styles_correct() {
+        let html = r#"<html><body><table><tr><td>cell</td></tr></table></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+
+        let root = doc.root();
+        let mut stack = vec![root];
+        let mut found_table = false;
+        while let Some(nid) = stack.pop() {
+            if let Some(style) = styles.get(&nid) {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                        if elem.local_name() == "table" {
+                            found_table = true;
+                            assert_eq!(style.display, DisplayValue::Table, "table should have display:table");
+                        }
+                    }
+                }
+            }
+            if let Some(n) = doc.get(nid) {
+                stack.extend(n.children.iter().copied());
+            }
+        }
+
+        assert!(found_table, "should find <table> element");
+    }
+
+    #[test]
+    fn test_table_layout_runs() {
+        let html = r#"<html><body style="margin:0"><table style="width:200px"><tr><td style="width:100px;height:40px"></td><td style="width:100px;height:40px"></td></tr></table></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // Should not crash, and root should have non-zero size
+        assert!(result.root.width > 0.0);
+        assert!(result.root.height > 0.0);
+    }
+}
+
+#[cfg(test)]
 mod tests;
