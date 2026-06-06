@@ -25,6 +25,7 @@
 //! - `test_cases_css_advanced`: CSS 高级特性测试（Container Queries、Containment、高级背景、视觉效果、Scroll Snap、排版）
 
 mod test_cases_a11y_i18n;
+mod test_cases_accessibility;
 mod test_cases_canvas;
 mod test_cases_core;
 mod test_cases_css_advanced;
@@ -82,5 +83,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_multiprocess::multiprocess_tests());
     tests.extend(test_cases_css_layout_subset::css_layout_subset_tests());
     tests.extend(test_cases_css_advanced::css_advanced_tests());
+    tests.extend(test_cases_accessibility::accessibility_tests());
     tests
 }
