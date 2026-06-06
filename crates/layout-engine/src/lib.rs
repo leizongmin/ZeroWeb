@@ -17,6 +17,7 @@ pub mod converter;
 pub mod dirty;
 pub mod engine;
 pub mod inline;
+pub mod table;
 pub mod tree;
 pub mod types;
 
@@ -24,5 +25,6 @@ pub use converter::*;
 pub use dirty::*;
 pub use engine::*;
 pub use inline::*;
+pub use table::*;
 pub use tree::*;
 pub use types::*;

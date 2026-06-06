@@ -121,6 +121,9 @@ impl LayoutEngine {
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
+        // 7. 后处理：对 display:table 容器执行 table grid 布局
+        crate::table::adjust_table_layout(&mut root_box, doc, styles);
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -208,6 +211,7 @@ impl LayoutEngine {
         // 提取布局结果
         let mut root_box = Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
+        crate::table::adjust_table_layout(&mut root_box, doc, styles);
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 
