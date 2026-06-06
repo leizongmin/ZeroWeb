@@ -9,6 +9,7 @@ license.workspace = true
 wgpu = { workspace = true }
 fontdue = { workspace = true }
 swash = { workspace = true }
+rustybuzz = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 hashbrown = { workspace = true }
 thiserror = { workspace = true }

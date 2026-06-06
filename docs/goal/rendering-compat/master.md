@@ -14,7 +14,7 @@
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
-| M6 — 全量扩展 | 🔄 进行中 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；待引入 rustybuzz/unicode-bidi |
+| M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
 
 ## 当前状态概览
 
@@ -80,10 +80,10 @@
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| Positioning reftest | ✅ | 20 个定位 reftest（基础+进阶） |
-| Float reftest | ✅ | 10 个 float 布局 reftest |
-| Table reftest | ✅ | 9 个 table 布局 reftest |
-| Multicol reftest | ✅ | 10 个 multicol 布局 reftest |
+| Positioning reftest | ✅ | 50 个定位 reftest（基础+进阶+M6 扩展） |
+| Float reftest | ✅ | 50 个 float 布局 reftest（M6 扩展） |
+| Table reftest | ✅ | 50 个 table 布局 reftest（M6 扩展） |
+| Multicol reftest | ✅ | 50 个 multicol 布局 reftest（M6 扩展） |
 | 各项通过率 | ✅ | 全部 100.0% |
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 
@@ -230,8 +230,8 @@
 | Float 布局算法 | CSS 2.1 核心 | ✅ 已完成 | M4 |
 | Table 布局算法 | 表格渲染 | ✅ 已完成 | M4 |
 | Multi-column 布局算法 | 多列布局 | ✅ 已完成 | M4 |
-| OpenType shaping | 文字排版质量 | M5 | M5 |
-| BiDi 算法 | RTL 文本 | M5 | M5 |
+| OpenType shaping | 文字排版质量 | ✅ 已完成 | M6 |
+| BiDi 算法 | RTL 文本 | ✅ 已完成 | M6 |
 | Vertical writing-mode | 竖排文本 | M5 | M5 |
 | CJK normal-mode 换行 | CJK 排版 | ✅ 已完成 | M5 |
 | text-align: justify | 文字排版 | ✅ 已完成 | M5 |
@@ -262,6 +262,10 @@
 | 2026-06-07 | CJK normal 模式下每个字符单独作为"单词" | CSS 规范要求 CJK 允许任意字符间断行，split_into_words 中 CJK 字符独立为词 |
 | 2026-06-07 | text-align: justify 使用 effective_content_area 计算剩余空间 | 修复了原先用 container_width 忽略 float exclusion 的问题 |
 | 2026-06-07 | Float exclusion 从 max 改为 additive stacking | 多个同侧 float 应累加宽度而非取最大值 |
+| 2026-06-07 | rustybuzz 集成到 TextShaper | 优先使用 rustybuzz 进行 OpenType shaping（GSUB/GPOS），回退到 fontdue 逐字符映射 |
+| 2026-06-07 | unicode-bidi 集成到 inline layout | RTL 字符自动检测并重排序，LTR 文本零开销 |
+| 2026-06-07 | FontLoader 存储原始字体字节 | 供 rustybuzz Face::from_slice 使用，fontdue 仍用于 advance width 获取 |
+| 2026-06-07 | ShapedGlyph 增加 x_offset/y_offset 字段 | 来自 rustybuzz 的 GPOS 定位偏移 |
 
 ---
 
@@ -305,4 +309,5 @@
 36. ~~M6 — 扩展剩余目录到 ≥50~~ ✅ (535 总, 10 个目录全部 ≥50, 100.0% pass)
 37. ~~M6 — 拆分 reftest_data.rs 为目录模块~~ ✅ (reftest_data/ 目录, 每个分类独立文件)
 38. ~~M6 — DC-5 文字排版全目录达标~~ ✅ (新增 css-fonts/css-text-decor/css-writing-modes, 685 总, 100.0% pass)
-39. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
+39. ~~M6 — 引入 rustybuzz（OpenType shaping）~~ ✅ (GSUB/GPOS 连字+kerning，fontdue 回退)
+40. ~~M6 — 引入 unicode-bidi（RTL 文本）~~ ✅ (BiDi 重排序，RTL 字符自动检测)

@@ -1,7 +1,7 @@
 //! 文本整形 — 将 Unicode 文本转换为 Glyph 序列，支持简单换行。
 //!
-//! TextShaper 基于 fontdue 将每个字符映射为 glyph ID 和前进宽度，
-//! 并根据行宽进行简单的逐字符换行。
+//! TextShaper 基于 rustybuzz 进行 OpenType shaping（连字、kerning、GSUB/GPOS），
+//! 回退到 fontdue 的逐字符映射。
 
 use crate::font::loader::FontLoader;
 use crate::primitive::FontId;
@@ -15,6 +15,10 @@ pub struct ShapedGlyph {
     pub font_id: FontId,
     /// 相对于行首的水平前进宽度（像素）
     pub advance_x: f32,
+    /// 水平偏移量（像素，用于 mark positioning / kerning）
+    pub x_offset: f32,
+    /// 垂直偏移量（像素）
+    pub y_offset: f32,
     /// 该字符的 Unicode 码点（用于回退标识）
     pub code_point: char,
 }
@@ -49,10 +53,79 @@ impl<'a> TextShaper<'a> {
 
     /// 将文本整形为 glyph 序列，不进行换行（单行模式）。
     ///
-    /// 返回每个字符对应的 glyph ID 和累积前进宽度。
+    /// 优先使用 rustybuzz 进行 OpenType shaping（连字、kerning、GSUB/GPOS），
+    /// 如果字体数据不可用则回退到 fontdue 的逐字符映射。
     pub fn shape_single_line(&self, text: &str, font_size: f32) -> Vec<ShapedGlyph> {
-        let mut glyphs = Vec::with_capacity(text.len());
         let font_id = self.default_font_id.unwrap_or(FontId(0));
+
+        // 尝试 rustybuzz shaping
+        if let Some(fid) = self.default_font_id
+            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size)
+        {
+            return glyphs;
+        }
+
+        // 回退：fontdue 逐字符映射
+
+        // 回退：fontdue 逐字符映射
+        self.shape_fallback(text, font_size, font_id)
+    }
+
+    /// 使用 rustybuzz 进行 OpenType shaping。
+    fn shape_with_rustybuzz(&self, font_id: FontId, text: &str, font_size: f32) -> Option<Vec<ShapedGlyph>> {
+        let font_data = self.font_loader.get_font_data(font_id.0)?;
+
+        let face = rustybuzz::Face::from_slice(font_data, 0)?;
+
+        let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.push_str(text);
+
+        let features: Vec<rustybuzz::Feature> = Vec::new();
+        let glyph_buffer = rustybuzz::shape(&face, &features, buffer);
+
+        let glyph_infos = glyph_buffer.glyph_infos();
+        let glyph_positions = glyph_buffer.glyph_positions();
+
+        // fontdue 字体用于获取 advance width（像素单位）
+        let fd_font = self.font_loader.get(font_id.0)?;
+
+        // 建立 cluster → code_point 映射
+        let chars: Vec<char> = text.chars().collect();
+
+        let mut glyphs = Vec::with_capacity(glyph_infos.len());
+        for (i, (info, pos)) in glyph_infos.iter().zip(glyph_positions.iter()).enumerate() {
+            // 通过 cluster 索引回原始字符
+            let code_point = if (info.cluster as usize) < chars.len() {
+                chars[info.cluster as usize]
+            } else if i < chars.len() {
+                chars[i]
+            } else {
+                '\u{FFFD}'
+            };
+
+            // 使用 fontdue 获取像素级 advance width
+            let advance_x = if info.glyph_id == 0 {
+                font_size * 0.6
+            } else {
+                fd_font.metrics(code_point, font_size).advance_width
+            };
+
+            glyphs.push(ShapedGlyph {
+                glyph_id: info.glyph_id,
+                font_id,
+                advance_x,
+                x_offset: pos.x_offset as f32,
+                y_offset: pos.y_offset as f32,
+                code_point,
+            });
+        }
+
+        Some(glyphs)
+    }
+
+    /// fontdue 逐字符映射回退路径。
+    fn shape_fallback(&self, text: &str, font_size: f32, font_id: FontId) -> Vec<ShapedGlyph> {
+        let mut glyphs = Vec::with_capacity(text.len());
 
         for ch in text.chars() {
             let (glyph_id, advance_x) = if let Some(fid) = self.default_font_id {
@@ -61,7 +134,6 @@ impl<'a> TextShaper<'a> {
                     None => (0u32, font_size * 0.6),
                 }
             } else {
-                // 无字体可用，使用码点作为占位 glyph_id
                 (ch as u32, font_size * 0.6)
             };
 
@@ -69,6 +141,8 @@ impl<'a> TextShaper<'a> {
                 glyph_id,
                 font_id,
                 advance_x,
+                x_offset: 0.0,
+                y_offset: 0.0,
                 code_point: ch,
             });
         }

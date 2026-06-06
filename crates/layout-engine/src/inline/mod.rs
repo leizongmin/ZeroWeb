@@ -548,8 +548,10 @@ impl InlineFormattingContext {
         for item in items {
             match item {
                 InlineItem::Text(run) => {
+                    // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
+                    let visual_text = bidi_reorder(&run.text);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
-                    let words = self.split_into_words(&run.text);
+                    let words = self.split_into_words(&visual_text);
 
                     for (word_idx, word) in words.iter().enumerate() {
                         // 基础宽度 + letter-spacing（每个字符追加）
@@ -994,6 +996,52 @@ impl InlineFormattingContext {
     pub fn all_fragments(&self) -> Vec<&TextFragment> {
         self.lines.iter().flat_map(|line| line.runs.iter()).collect()
     }
+}
+
+/// 对文本进行 BiDi 重排序，返回视觉顺序的字符串。
+///
+/// 使用 unicode-bidi 库分析文本的嵌入层级，对 RTL 段落进行重排序。
+/// 如果文本不需要重排序（纯 LTR），返回原始文本。
+fn bidi_reorder(text: &str) -> String {
+    use unicode_bidi::BidiInfo;
+
+    // 快速检查：如果文本为空或全是 ASCII，不需要 BiDi 处理
+    if text.is_empty() || text.is_ascii() {
+        return text.to_string();
+    }
+
+    // 检查是否包含 RTL 字符
+    let has_rtl = text.chars().any(|ch| {
+        let cp = ch as u32;
+        // Hebrew: 0x0590–0x05FF, Arabic: 0x0600–0x06FF, Syriac: 0x0700–0x074F
+        // Arabic Extended: 0x08A0–0x08FF, Arabic Presentation Forms: 0xFB50–0xFDFF, 0xFE70–0xFEFF
+        (0x0590..=0x05FF).contains(&cp)
+            || (0x0600..=0x06FF).contains(&cp)
+            || (0x0700..=0x074F).contains(&cp)
+            || (0x08A0..=0x08FF).contains(&cp)
+            || (0xFB50..=0xFDFF).contains(&cp)
+            || (0xFE70..=0xFEFF).contains(&cp)
+    });
+
+    if !has_rtl {
+        return text.to_string();
+    }
+
+    // 运行 BiDi 算法
+    let bidi_info = BidiInfo::new(text, None);
+    if bidi_info.levels.is_empty() {
+        return text.to_string();
+    }
+
+    // 查找段落信息
+    let para = unicode_bidi::ParagraphInfo {
+        range: 0..text.len(),
+        level: unicode_bidi::Level::ltr(),
+    };
+
+    // 对整个文本段落进行重排序
+    let reordered = bidi_info.reorder_line(&para, 0..text.len());
+    reordered.into_owned()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
