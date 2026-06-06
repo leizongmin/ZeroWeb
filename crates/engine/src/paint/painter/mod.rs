@@ -5,6 +5,7 @@
 
 mod border;
 mod effects;
+mod effects_indicators;
 mod text;
 
 use std::collections::{HashMap, HashSet};
