@@ -606,3 +606,130 @@ fn test_performance_python_org() {
         result.timings.paint_ms
     );
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Tier 6: 扩展兼容性测试（10 个新站点）
+// 覆盖类别：标准文档、开发工具、API 服务、技术博客、教育站点
+// ═══════════════════════════════════════════════════════════════
+
+/// RFC 编辑器 — 标准文档站
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_rfc_editor() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.rfc-editor.org").expect("rfc-editor.org 应可访问");
+    assert_valid_render(&result, "rfc-editor.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "rfc-editor.org");
+    assert!(
+        html.to_lowercase().contains("rfc"),
+        "应包含 RFC 相关内容"
+    );
+}
+
+/// Unicode 联盟 — 国际化标准站
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_unicode_org() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://home.unicode.org").expect("unicode.org 应可访问");
+    assert_valid_render(&result, "unicode.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "unicode.org");
+}
+
+/// Reqres.in — API 测试服务
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_reqres_in() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://reqres.in").expect("reqres.in 应可访问");
+    assert_valid_render(&result, "reqres.in");
+    let html = wv.html_content();
+    assert_valid_html(&html, "reqres.in");
+    assert!(
+        html.to_lowercase().contains("api"),
+        "应包含 API 相关内容"
+    );
+}
+
+/// Postman Echo — API 测试工具
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_postman_echo() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://postman-echo.com").expect("postman-echo.com 应可访问");
+    assert_valid_render(&result, "postman-echo.com");
+    let html = wv.html_content();
+    assert_valid_html(&html, "postman-echo.com");
+}
+
+/// OWASP — 安全标准文档
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_owasp() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://owasp.org").expect("owasp.org 应可访问");
+    assert_valid_render(&result, "owasp.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "owasp.org");
+    assert!(
+        html.to_lowercase().contains("security") || html.to_lowercase().contains("owasp"),
+        "应包含安全相关内容"
+    );
+}
+
+/// OpenSSL — 加密库官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_openssl() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.openssl.org").expect("openssl.org 应可访问");
+    assert_valid_render(&result, "openssl.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "openssl.org");
+}
+
+/// Chromium 项目 — 浏览器引擎文档
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_chromium() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.chromium.org").expect("chromium.org 应可访问");
+    assert_valid_render(&result, "chromium.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "chromium.org");
+}
+
+/// Deno — JS/TS 运行时官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_deno() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://deno.land").expect("deno.land 应可访问");
+    assert_valid_render(&result, "deno.land");
+    let html = wv.html_content();
+    assert_valid_html(&html, "deno.land");
+}
+
+/// Bun — JS 运行时官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_bun() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://bun.sh").expect("bun.sh 应可访问");
+    assert_valid_render(&result, "bun.sh");
+    let html = wv.html_content();
+    assert_valid_html(&html, "bun.sh");
+}
+
+/// CSS WG — CSS 工作组规范
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_csswg() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://csswg.org").expect("csswg.org 应可访问");
+    assert_valid_render(&result, "csswg.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "csswg.org");
+}
