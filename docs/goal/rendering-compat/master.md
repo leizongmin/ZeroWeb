@@ -1,16 +1,27 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M2 — CSS 2.1 渲染修复 + Quirks Mode（进行中）
+**当前活跃里程碑**: M3 — Flexbox + Grid 渲染修复（进行中）
 
 ---
+
+## 里程碑完成状态
+
+| 里程碑 | 状态 | 说明 |
+|--------|------|------|
+| M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
+| M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
+| M3 — Flexbox + Grid | 🔄 进行中 | 159 个 reftest, 100.0% pass rate；需导入更多 edge case reftest |
+| M4 — Float + Table + Multicol | ❌ 未开始 | |
+| M5 — 文字排版 | ❌ 未开始 | |
+| M6 — 全量扩展 | ❌ 未开始 | |
 
 ## 当前状态概览
 
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 138 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 159 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -18,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 138 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、盒模型进阶、显示与可见性、边框样式、Overflow、Margin 折叠、定位进阶、Quirks mode |
+| 内联 CSS 2.1 reftest | ✅ 159 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox（基础+进阶）、Grid（基础+进阶）、文本、盒模型进阶、显示与可见性、Overflow、Margin 折叠、Quirks mode |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -50,8 +61,8 @@
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| 导入 reftest 子集 ≥ 50 | ✅ | 138 个内联 CSS 2.1 核心 reftest |
-| 通过率 ≥ 95% | ✅ | 100.0% (138/138) |
+| 导入 reftest 子集 ≥ 50 | ✅ | 159 个内联 CSS 2.1 核心 reftest |
+| 通过率 ≥ 95% | ✅ | 100.0% (159/159) |
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 | GPU 模式达标 | ✅ | GpuRenderer headless 可用（GPU fills/glyphs + CPU rounded rects） |
 
@@ -108,7 +119,7 @@
 |------|------|------|
 | Manifest 解析 | `tests/wpt-runner/src/manifest.rs` | reftest 条目、fuzzy 元数据、HTML 链接提取 |
 | Reftest 引擎 | `tests/wpt-runner/src/reftest.rs` | 分类容差、fuzzy 覆盖、match/mismatch 比较 |
-| Reftest 数据 | `tests/wpt-runner/src/reftest_data.rs` | 115 个 CSS 2.1 核心内联 reftest |
+| Reftest 数据 | `tests/wpt-runner/src/reftest_data.rs` | 159 个 CSS 2.1 核心 + Flexbox/Grid 内联 reftest |
 | Reftest CLI | `tests/wpt-runner/src/main.rs` | `reftest` 子命令 + 文本/JSON 报告 |
 | Skip List | `tests/wpt-runner/reftest-skip-list.txt` | SVG/Canvas/WebGL/动画过滤规则 |
 | Chromium 工具 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` | Puppeteer headless 截图 |
@@ -118,10 +129,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M2 更新）
-**总用例**: 138（内联 reftest）
-**运行用例**: 138
-**通过**: 138
+**日期**: 2026-06-07（M3 更新）
+**总用例**: 159（内联 reftest）
+**运行用例**: 159
+**通过**: 159
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -131,7 +142,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 128/128 | 100.0% |
+| Layout | 149/149 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
@@ -143,8 +154,10 @@
 - 定位基础 (5): absolute, relative, 不同定位 mismatch, bottom/right
 - 显示基础 (5): display:none, display:block, visibility, 显示隐藏 mismatch
 - 尺寸 (5): 固定尺寸, 百分比尺寸, 不同尺寸 mismatch
-- Flexbox (10): row, column, row-vs-block, grow, wrap, justify, align, gap, nested, basis
-- Grid (10): 固定列, fr, 2x2, gap, auto-rows, mixed-fr-px, vs-block, 三列, row/col gap, nested
+- Flexbox 基础 (10): row, column, row-vs-block, grow, wrap, justify, align, gap, nested, basis
+- Flexbox 进阶 (10): grow-proportional, grow-with-base, wrap-multi-line, align-center, justify-space-between, shrink-overflow, column-direction, gap-between-items, order-reorder, basis-0-grow
+- Grid 基础 (10): 固定列, fr, 2x2, gap, auto-rows, mixed-fr-px, vs-block, 三列, row/col gap, nested
+- Grid 进阶 (11): fr-unit-proportional, mixed-fr-px-proportional, auto-placement-3x2, gap-rows-columns, nested-grid-in-flex, minmax-column, repeat-auto-fill, grid-in-grid, justify-items-stretch, flex-in-grid-item, shorthand-gap
 - 定位进阶 (15): absolute-top-left, shift-mismatch, relative-offset, vs-no-position, in-flow, bottom-right, stacking, z-index, overlap-mismatch, multiple-relatives, absolute-in-relative, absolute-right-bottom, relative-offset-no-layout, z-index-stacking-order, absolute-overlaps-static
 - 文本排版 (10): 颜色, align, whitespace, line-height, letter-spacing, word-spacing, text-indent, transform, flex-container, vs-background
 - 盒模型进阶 (10): margin-collapse, box-sizing, border-colors, overflow-hidden, overflow-visible, max-width, min-height, percentage-width, auto-margin-center, negative-margin
@@ -166,7 +179,7 @@
 | OpenType shaping | 文字排版质量 | M5 | M5 |
 | BiDi 算法 | RTL 文本 | M5 | M5 |
 | Vertical writing-mode | 竖排文本 | M5 | M5 |
-| Quirks mode | CSS 2.1 兼容性 | M2 | M2 |
+| Quirks mode | CSS 2.1 兼容性 | ✅ 已完成 | M2 |
 | 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
 
 ---
@@ -189,23 +202,22 @@
 
 ## 下一步
 
-1. ~~验证 cargo test 全绿~~ ✅ 已完成
-2. ~~扩展 manifest.rs 添加 fuzzy 元数据解析~~ ✅ 已完成
-3. ~~扩展 ReftestConfig 添加分类容差和 per-test fuzzy 注解~~ ✅ 已完成
-4. ~~创建 reftest skip list 和过滤机制~~ ✅ 已完成
-5. ~~创建 Chromium 截图脚本~~ ✅ 已完成
-6. ~~实现 reftest runner CLI~~ ✅ 已完成
-7. ~~导入 CSS 2.1 核心 ≥ 50 个 reftest~~ ✅ 已完成 (115→138 个)
-8. ~~运行初始 reftest 基线测试~~ ✅ 已完成 (100.0%)
-9. ~~实现 JS 执行集成~~ ✅ 已完成（V8 sandbox 执行 script 标签）
-10. ~~实现 GPU 截图~~ ✅ 已完成（headless GpuRenderer + CPU 圆角叠加）
-11. ~~CI 集成~~ ✅ 已完成（GitHub Actions reftest job）
-12. ~~导入更多 reftest 扩展覆盖~~ ✅ 已完成（138 个，覆盖边框/Overflow/Margin/Position/Quirks）
-13. ~~M1 完成 → 标记 M1 为完成~~ ✅ M1 完成
-14. ~~M2 — Quirks Mode pipeline wiring~~ ✅ QuirksMode 已接入 StyleSystem
-15. ~~M2 — CSS parser quirks mode~~ ✅ 已完成（quirky colors + unitless lengths）
-16. ~~M2 — 添加更多发现渲染 bug 的 reftest~~ ✅ 已完成（138 个 reftest, 100.0% pass rate）
-17. ~~M2 — Style system quirks~~ ✅ 已完成（table height quirk, percentage-height quirk, inline width/height 注释）
-18. **M2 — Layout engine quirks**（低优先级，大部分依赖 M4 的 table/float layout）
-19. **M3 — Flexbox + Grid 渲染修复**（需要导入 Flexbox/Grid reftest 子集）
-20. **M4 — Float + Table + Multicol 布局算法实现**
+1. ~~验证 cargo test 全绿~~ ✅
+2. ~~扩展 manifest.rs 添加 fuzzy 元数据解析~~ ✅
+3. ~~扩展 ReftestConfig 添加分类容差和 per-test fuzzy 注解~~ ✅
+4. ~~创建 reftest skip list 和过滤机制~~ ✅
+5. ~~创建 Chromium 截图脚本~~ ✅
+6. ~~实现 reftest runner CLI~~ ✅
+7. ~~导入 CSS 2.1 核心 ≥ 50 个 reftest~~ ✅ (159 个)
+8. ~~运行初始 reftest 基线测试~~ ✅ (100.0%)
+9. ~~实现 JS 执行集成~~ ✅
+10. ~~实现 GPU 截图~~ ✅
+11. ~~CI 集成~~ ✅
+12. ~~M1 完成~~ ✅
+13. ~~M2 — Quirks Mode 全部可执行项~~ ✅ (CSS parser + style system quirks)
+14. ~~M3 — Flexbox + Grid 基础+进阶 reftest~~ ✅ (21 个新 reftest, 100.0% pass)
+15. **M3 — 添加更多 Flexbox/Grid edge case reftest**（flex-basis auto, align-self, grid-area span 等）
+16. **M3 — 修复发现的 Flexbox/Grid 渲染缺口**
+17. **M4 — Float + Table + Multicol 布局算法实现**
+18. **M5 — 文字排版能力实现**
+19. **M6 — 全量扩展 + 通过率冲刺**
