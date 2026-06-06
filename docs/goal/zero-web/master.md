@@ -110,14 +110,16 @@
 
 ## 最近完成的改进
 
-### -121. Top 20 真实网站兼容性测试（本轮，~11,822 测试 + 24 个 ignore 测试）
+### -121. Top 20 真实网站兼容性测试 + HTTP 客户端修复（本轮，~11,822 测试 + 24 个 ignore 测试）
 
-实现 Done Criteria §1 和 §2 的关键缺口：创建 24 个真实网站兼容性集成测试，验证浏览器引擎能实际加载和渲染真实网页内容。
+实现 Done Criteria §1 和 §2 的关键缺口：创建 24 个真实网站兼容性集成测试，修复两个 HTTP 客户端兼容性问题，验证浏览器引擎能实际加载和渲染真实网页内容。
 
 | 模块 | 新增内容 | 新增测试 |
 |--------|------|----------|
 | `tests/integration/src/real_website_compat.rs` | **20 个真实网站兼容性测试**：每个测试通过 WebView::fetch_url() 从真实网站获取 HTML，经过完整渲染管线（fetch → parse → style → layout → paint），验证渲染图元非空、HTML 结构有效、站点特定内容存在 | +20 (ignored) |
 | `tests/integration/src/real_website_compat.rs` | **4 个综合兼容性测试**：多站点顺序加载、多视口响应式渲染、页面结构完整性验证、首屏性能验证（< 2s） | +4 (ignored) |
+| `crates/net/src/client.rs` | **User-Agent 头**：HttpClient 默认发送 "ZeroWeb/1.0" User-Agent，修复 iana.org/crates.io 等站点的 403 拒绝 | — |
+| `crates/net/Cargo.toml` + `client.rs` | **HTTP 内容解压**：启用 gzip/brotli/deflate 自动解压，修复 python.org 等站点压缩响应导致的 'invalid utf-8' 错误 | — |
 
 **Top 20 真实网站清单（20/20 通过）**：
 
@@ -2343,7 +2345,7 @@ Total: 6219 → 6378 tests (+159)
 7. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
 8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1194 用例（100% 通过率）
 9. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
-10. **HTTP User-Agent 修复**（低优先级）— 部分网站（iana.org/crates.io）要求标准 User-Agent 头，当前 net crate 未发送
+10. ~~**HTTP User-Agent 修复**~~ ✅ HttpClient 默认发送 "ZeroWeb/1.0" User-Agent + 启用 gzip/brotli/deflate 解压
 
 ## 浏览器质量测试体系推进计划
 
