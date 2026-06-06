@@ -34,6 +34,42 @@ use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
+/// 返回 HTML 元素的 UA 默认 display 值。
+///
+/// 根据 HTML 规范，不同元素有不同的默认 display 类型。
+/// 未列出的元素默认为 CSS 初始值 `inline`。
+pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
+    Some(match tag {
+        // 块级元素
+        "html" | "address" | "blockquote" | "body" | "dd" | "div" | "dl" | "dt" | "fieldset" | "figcaption"
+        | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "header" | "hr" | "legend"
+        | "li" | "main" | "nav" | "ol" | "p" | "pre" | "section" | "summary" | "ul" => DisplayValue::Block,
+
+        // 表格元素
+        "table" => DisplayValue::Table,
+        "thead" => DisplayValue::TableHeaderGroup,
+        "tbody" => DisplayValue::TableRowGroup,
+        "tfoot" => DisplayValue::TableFooterGroup,
+        "tr" => DisplayValue::TableRow,
+        "td" | "th" => DisplayValue::TableCell,
+        "caption" => DisplayValue::TableCaption,
+        "col" => DisplayValue::TableColumn,
+        "colgroup" => DisplayValue::TableColumnGroup,
+
+        // 内联块级元素
+        "img" | "video" | "audio" | "canvas" | "iframe" | "embed" | "object" | "input" | "button" | "select"
+        | "textarea" => DisplayValue::InlineBlock,
+
+        // display:none
+        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noscript" | "template" | "dialog" => {
+            DisplayValue::None
+        }
+
+        // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
+        _ => return None,
+    })
+}
+
 /// 样式系统，负责为文档中的元素计算样式。
 ///
 /// 整合选择器匹配、级联、继承和计算值生成。
@@ -213,8 +249,43 @@ impl StyleSystem {
             }
         }
 
+        // 1.7. 注入 UA 默认声明（最低优先级，可被作者样式覆盖）
+        let tag_name = doc.get(element).and_then(|n| {
+            if let NodeKind::Element(elem) = &n.kind {
+                Some(elem.local_name().to_lowercase())
+            } else {
+                None
+            }
+        });
+        let mut ua_declarations: Vec<CascadedDeclaration> = Vec::new();
+        if let Some(ref tag) = tag_name
+            && let Some(display) = ua_default_display(tag)
+        {
+            let display_str = match display {
+                DisplayValue::Block => "block",
+                DisplayValue::Table => "table",
+                DisplayValue::InlineTable => "inline-table",
+                DisplayValue::TableRow => "table-row",
+                DisplayValue::TableCell => "table-cell",
+                DisplayValue::TableCaption => "table-caption",
+                DisplayValue::TableColumn => "table-column",
+                DisplayValue::TableColumnGroup => "table-column-group",
+                DisplayValue::TableRowGroup => "table-row-group",
+                DisplayValue::TableHeaderGroup => "table-header-group",
+                DisplayValue::TableFooterGroup => "table-footer-group",
+                DisplayValue::InlineBlock => "inline-block",
+                DisplayValue::None => "none",
+                _ => "inline",
+            };
+            ua_declarations.push(CascadedDeclaration {
+                property: "display".to_string(),
+                value: display_str.to_string(),
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+            });
+        }
+
         // 2. 构建 CascadedDeclaration 列表
-        let mut declarations = Vec::new();
+        let mut declarations = ua_declarations;
         for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
         {
             declarations.push(CascadedDeclaration {
@@ -253,15 +324,8 @@ impl StyleSystem {
             parent_fs,
         );
 
-        // 7. Quirks mode 调整
+        // 7. Quirks mode 调整（复用步骤 1.7 已提取的 tag_name）
         if quirks_mode == QuirksMode::Quirks {
-            let tag_name = doc.get(element).and_then(|n| {
-                if let NodeKind::Element(elem) = &n.kind {
-                    Some(elem.local_name().to_lowercase())
-                } else {
-                    None
-                }
-            });
             apply_quirks_mode_adjustments(&mut resolved, parent_style, tag_name.as_deref());
         }
 

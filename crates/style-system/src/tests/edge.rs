@@ -346,8 +346,8 @@ fn test_computed_default_display() {
     let stylesheets = vec![];
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    // div 的默认 display 为 Inline（样式系统不区分 HTML 元素语义默认值）
-    assert_eq!(div_style.display, DisplayValue::Inline);
+    // div 的 UA 默认 display 为 Block（HTML 元素语义默认值）
+    assert_eq!(div_style.display, DisplayValue::Block);
 }
 
 /// 测试简写 margin: 10px 展开后四个边均为 10px。
