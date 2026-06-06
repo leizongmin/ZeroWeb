@@ -721,5 +721,294 @@ pub fn css_layout_subset_tests() -> Vec<TestCase> {
         assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
     });
 
+    // ═══════════════════════════════════════════════════════════════
+    // 11. 高级 Flexbox/Grid 组合
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "css-subset/advanced/nested-flex".into(),
+        description: "嵌套 Flexbox（flex > flex）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="outer">
+            <div class="left"><div class="inner"><div>A</div><div>B</div></div></div>
+            <div class="right">C</div>
+        </div></body></html>"#.into(),
+        css: ".outer { display: flex; width: 400px; } .left { flex: 2; } .right { flex: 1; background: #eee; } .inner { display: flex; gap: 8px; } .inner > div { flex: 1; background: #ccc; height: 30px; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "has_glyph_primitives".into(),
+            "layout_box_count_ge:8".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/advanced/flex-in-grid".into(),
+        description: "Flexbox 嵌套在 Grid 中".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="grid">
+            <div class="cell"><div class="flex"><span>A</span><span>B</span></div></div>
+            <div class="cell"><div class="flex"><span>C</span><span>D</span></div></div>
+        </div></body></html>"#.into(),
+        css: ".grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .cell { background: #eee; padding: 5px; } .flex { display: flex; justify-content: space-between; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/advanced/absolute-in-flex".into(),
+        description: "Flex 容器内的绝对定位元素".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="flex">
+            <div class="rel"><div class="abs">Floating</div>Normal</div>
+            <div>Other</div>
+        </div></body></html>"#.into(),
+        css: ".flex { display: flex; position: relative; } .rel { position: relative; width: 100px; } .abs { position: absolute; top: 0; right: 0; background: #ccc; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/advanced/grid-overlay".into(),
+        description: "Grid 层叠效果（同位置多项）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="grid">
+            <div class="back">Background</div>
+            <div class="front">Foreground</div>
+        </div></body></html>"#.into(),
+        css: ".grid { display: grid; position: relative; width: 200px; height: 100px; } .back { grid-column: 1; grid-row: 1; background: #eee; } .front { grid-column: 1; grid-row: 1; background: rgba(200,200,200,0.5); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "fill_count_ge:2".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/advanced/flex-order".into(),
+        description: "flex-order 重排视觉顺序".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="flex">
+            <div class="last">C</div>
+            <div class="first">A</div>
+            <div class="mid">B</div>
+        </div></body></html>"#.into(),
+        css: ".flex { display: flex; } .first { order: -1; background: #cfc; } .mid { background: #fcc; } .last { order: 1; background: #ccf; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 12. CSS 文本高级
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "css-subset/text/vertical-writing".into(),
+        description: "writing-mode: vertical-rl 垂直文本".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="vertical">Vertical Text</div></body></html>"#.into(),
+        css: ".vertical { writing-mode: vertical-rl; height: 200px; }".into(),
+        assertions: vec!["dom_has_body".into(), "has_glyph_primitives".into()],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/text/overflow-ellipsis".into(),
+        description: "text-overflow: ellipsis 溢出省略".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="ellipsis">This is a very long text that should be truncated with an ellipsis</div></body></html>"#.into(),
+        css: ".ellipsis { width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/text/multiline-ellipsis-clamp".into(),
+        description: "多行截断（line-clamp 近似）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><p class="clamp">This is a long paragraph of text that spans multiple lines and should be truncated after a certain number of lines to maintain a clean layout.</p></body></html>"#.into(),
+        css: ".clamp { width: 200px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/text/decoration-complex".into(),
+        description: "text-decoration 组合（underline + overline + line-through）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="deco">Decorated</div></body></html>"#.into(),
+        css: ".deco { text-decoration: underline overline line-through; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_glyph_primitives".into(),
+            "fill_count_ge:3".into(),
+        ],
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 13. CSS 高级视觉效果
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "css-subset/visual/multiple-shadows".into(),
+        description: "多个 box-shadow 叠加".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="multi-shadow">Shadow</div></body></html>"#.into(),
+        css: ".multi-shadow { width: 100px; height: 50px; background: #fff; box-shadow: 0 0 5px #000, 5px 5px 10px rgba(0,0,0,0.3), inset 0 0 5px rgba(255,0,0,0.5); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "shadow_count_ge:2".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/visual/filter-blur".into(),
+        description: "filter: blur() 模糊效果".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="blur">Blurred</div></body></html>"#.into(),
+        css: ".blur { width: 100px; height: 50px; background: #ccc; filter: blur(2px); }".into(),
+        assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/visual/filter-combo".into(),
+        description: "filter 组合（brightness + contrast + saturate）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="filtered">Enhanced</div></body></html>"#.into(),
+        css: ".filtered { width: 100px; height: 50px; background: #ccc; filter: brightness(1.2) contrast(1.1) saturate(1.3); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/visual/multi-gradient".into(),
+        description: "多层渐变叠加".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="multi-grad">Multi</div></body></html>"#.into(),
+        css: ".multi-grad { width: 200px; height: 100px; background: linear-gradient(to right, rgba(255,0,0,0.5), rgba(0,0,255,0.5)), linear-gradient(to bottom, rgba(0,255,0,0.5), rgba(255,255,0,0.5)); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "gradient_count_ge:1".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/visual/outline".into(),
+        description: "outline 轮廓线".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="outlined">Outlined</div></body></html>"#.into(),
+        css:
+            ".outlined { width: 100px; height: 50px; background: #eee; outline: 3px solid #f00; outline-offset: 5px; }"
+                .into(),
+        assertions: vec!["dom_has_body".into(), "has_fill_primitives".into()],
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 14. CSS 变量高级
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "css-subset/variables/calc-with-var".into(),
+        description: "calc() 与 var() 组合".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="box">Calc + Var</div></body></html>"#.into(),
+        css: ":root { --gap: 20px; --base: 100px; } .box { width: calc(var(--base) + var(--gap) * 2); height: var(--base); background: #eee; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "layout_nth_width_ge:2:100.0".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/variables/theme-toggle".into(),
+        description: "CSS 变量主题系统".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body>
+            <div class="card"><h2>Title</h2><p>Content</p></div>
+        </body></html>"#.into(),
+        css: ":root { --bg: #fff; --text: #333; --accent: #0066cc; --border: #ddd; } .card { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 16px; } h2 { color: var(--accent); }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 15. 边界条件布局
+    // ═══════════════════════════════════════════════════════════════
+
+    tests.push(TestCase {
+        id: "css-subset/edge/zero-height".into(),
+        description: "零高度容器不崩溃".into(),
+        category: "css-layout-subset".into(),
+        html:
+            r#"<html><body><div class="zero">Content in zero height</div><div class="normal">Next</div></body></html>"#
+                .into(),
+        css: ".zero { height: 0; overflow: hidden; } .normal { height: 20px; background: #eee; }".into(),
+        assertions: vec!["dom_has_body".into(), "layout_has_children".into(), "no_panic".into()],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/edge/negative-margin".into(),
+        description: "负 margin 重叠效果".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="a">A</div><div class="b">B</div></body></html>"#.into(),
+        css: ".a { height: 40px; background: #eee; margin-bottom: -10px; } .b { height: 40px; background: #ccc; }"
+            .into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "has_fill_primitives".into(),
+            "layout_child_count_ge:2".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/edge/deep-nesting".into(),
+        description: "深层嵌套布局（10 层）".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="l1"><div class="l2"><div class="l3"><div class="l4"><div class="l5"><div class="l6"><div class="l7"><div class="l8"><div class="l9"><div class="l10">Deep</div></div></div></div></div></div></div></div></div></div></body></html>"#.into(),
+        css: ".l1 { width: 400px; } div > div { padding: 10px; } .l10 { background: #eee; }".into(),
+        assertions: vec![
+            "dom_has_body".into(),
+            "layout_depth_ge:5".into(),
+            "has_glyph_primitives".into(),
+        ],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/edge/large-content".into(),
+        description: "大量文本内容渲染".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div class="container"></div></body></html>"#.into(),
+        css: ".container { width: 300px; }".into(),
+        assertions: vec!["dom_has_body".into(), "layout_has_children".into(), "no_panic".into()],
+    });
+
+    tests.push(TestCase {
+        id: "css-subset/edge/empty-elements".into(),
+        description: "空元素布局不崩溃".into(),
+        category: "css-layout-subset".into(),
+        html: r#"<html><body><div></div><div class="h">H</div><div></div></body></html>"#.into(),
+        css: ".h { height: 20px; background: #eee; }".into(),
+        assertions: vec!["dom_has_body".into(), "layout_has_children".into(), "no_panic".into()],
+    });
+
     tests
 }
