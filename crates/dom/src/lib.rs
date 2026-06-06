@@ -24,6 +24,7 @@
 mod attributes;
 mod document;
 mod event;
+mod focus;
 mod mutation;
 mod node;
 mod parser;
@@ -33,6 +34,7 @@ mod serializer;
 
 pub use document::*;
 pub use event::*;
+pub use focus::FocusManager;
 pub use mutation::*;
 pub use node::ShadowRootMode;
 pub use node::SlotAssignment;
