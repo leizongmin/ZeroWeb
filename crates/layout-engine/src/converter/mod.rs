@@ -116,6 +116,17 @@ fn convert_display(value: &DisplayValue) -> taffy::style::Display {
         DisplayValue::Grid => taffy::style::Display::Grid,
         DisplayValue::InlineGrid => taffy::style::Display::Grid,
         DisplayValue::None => taffy::style::Display::None,
+        // table 相关类型：taffy 无原生 table 支持，映射为 Block 作为后备
+        DisplayValue::Table
+        | DisplayValue::InlineTable
+        | DisplayValue::TableRow
+        | DisplayValue::TableCell
+        | DisplayValue::TableCaption
+        | DisplayValue::TableColumn
+        | DisplayValue::TableColumnGroup
+        | DisplayValue::TableRowGroup
+        | DisplayValue::TableHeaderGroup
+        | DisplayValue::TableFooterGroup => taffy::style::Display::Block,
         // inline, inline-block, flow, flow-root, list-item, contents 都映射为 Block
         DisplayValue::Inline
         | DisplayValue::InlineBlock

@@ -80,6 +80,26 @@ pub enum DisplayValue {
     FlowRoot,
     /// list-item。
     ListItem,
+    /// table。
+    Table,
+    /// inline-table。
+    InlineTable,
+    /// table-row。
+    TableRow,
+    /// table-cell。
+    TableCell,
+    /// table-caption。
+    TableCaption,
+    /// table-column。
+    TableColumn,
+    /// table-column-group。
+    TableColumnGroup,
+    /// table-row-group。
+    TableRowGroup,
+    /// table-header-group。
+    TableHeaderGroup,
+    /// table-footer-group。
+    TableFooterGroup,
 }
 
 /// CSS float 值。

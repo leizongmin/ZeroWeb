@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M3 — Flexbox + Grid 渲染修复（进行中）
+**当前活跃里程碑**: M4 — Float + Table + Multicol 布局算法实现（进行中）
 
 ---
 
@@ -11,8 +11,8 @@
 |--------|------|------|
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
-| M3 — Flexbox + Grid | 🔄 进行中 | 159 个 reftest, 100.0% pass rate；需导入更多 edge case reftest |
-| M4 — Float + Table + Multicol | ❌ 未开始 | |
+| M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
+| M4 — Float + Table + Multicol | 🔄 进行中 | 准备中：添加 table display types、float 布局算法 |
 | M5 — 文字排版 | ❌ 未开始 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
