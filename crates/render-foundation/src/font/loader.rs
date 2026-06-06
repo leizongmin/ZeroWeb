@@ -7,6 +7,8 @@ use hashbrown::HashMap;
 pub struct FontLoader {
     /// 已加载的字体（fontdue 实例）
     fonts: HashMap<u32, fontdue::Font>,
+    /// 字体原始字节数据（供 rustybuzz 使用）
+    font_data: HashMap<u32, Vec<u8>>,
     /// 下一个字体 ID
     next_id: u32,
     /// 字体族到 ID 的映射
@@ -22,6 +24,7 @@ impl FontLoader {
     pub fn new() -> Self {
         Self {
             fonts: HashMap::new(),
+            font_data: HashMap::new(),
             next_id: 0,
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
@@ -69,12 +72,18 @@ impl FontLoader {
         }
 
         self.fonts.insert(id, font);
+        self.font_data.insert(id, data.to_vec());
         Ok(id)
     }
 
     /// 根据 ID 获取字体
     pub fn get(&self, id: u32) -> Option<&fontdue::Font> {
         self.fonts.get(&id)
+    }
+
+    /// 获取字体原始字节数据（供 rustybuzz 等 shaping 引擎使用）。
+    pub fn get_font_data(&self, id: u32) -> Option<&[u8]> {
+        self.font_data.get(&id).map(|v| v.as_slice())
     }
 
     /// 根据字体描述查找最佳匹配字体 ID

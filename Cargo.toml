@@ -62,6 +62,10 @@ swash = "0.2"
 softbuffer = "0.4"
 resvg = "0.44"
 
+# 文字排版
+rustybuzz = "0.20"
+unicode-bidi = "0.3"
+
 # 窗口与平台
 winit = "0.30"
 arboard = "3"
