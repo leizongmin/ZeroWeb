@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,824 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1194 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,835 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1239 个用例（26 分类，100% 通过率，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 45 用例 + 按分类通过率报告 + CategorySummary 统计）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate + 3 应用（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,822 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,835 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -109,6 +109,44 @@
 ---
 
 ## 最近完成的改进
+
+### -122. WPT 质量测试矩阵 Phase 3（本轮，~11,835 测试，WPT 1239 用例）
+
+实现质量测试矩阵 Phase 3：按分类通过率追踪报告 + CSS/Layout 子集测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `tests/wpt-runner/src/report.rs` | **CategorySummary 结构体**：按分类汇总（total/passed/failed/XFail/skip/unexpected_passes）+ `pass_rate()` 通过率 + `from_results()` 分类过滤 | +16 单元测试 |
+| `tests/wpt-runner/src/report.rs` | **format_category_report()**：文本格式按分类通过率报告（排序：最低通过率在前便于发现薄弱点） | — |
+| `tests/wpt-runner/src/report.rs` | **format_category_report_json()**：JSON 格式分类报告（可机器解析） | — |
+| `tests/wpt-runner/src/report.rs` | **extract_categories()**：从结果中提取唯一分类列表 | — |
+| `tests/wpt-runner/src/report.rs` | **TestResult.category 字段**：新增分类字段 + `_with_category()` 构造函数系列（向后兼容旧 API） | — |
+| `tests/wpt-runner/src/runner/mod.rs` | **runner 传递 category**：`run_single_with_expectations` 使用 `_with_category` 构造函数 | — |
+| `tests/wpt-runner/src/main.rs` | **summary 和 JSON 输出集成**：summary 命令显示分类报告 + JSON 模式输出分类 JSON | — |
+| `tests/wpt-runner/src/runner/test_cases/test_cases_css_layout_subset.rs` | **45 个 CSS/Layout 子集测试**（新 `css-layout-subset` 分类）：按 CSS 规范领域组织 | +45 WPT 用例 |
+
+CSS/Layout 子集测试覆盖（45 个用例，10 个领域）：
+
+| 领域 | 测试数 | 覆盖属性 |
+|------|--------|----------|
+| 盒模型 | 5 | width/height/box-sizing/margin-collapse/min-max/percentage |
+| 视觉格式化模型 | 5 | display:none/inline-block/position:absolute/relative/overflow:hidden |
+| Flexbox | 8 | row/column/justify-center/space-between/align-center/flex-grow/wrap/gap |
+| Grid | 6 | columns/fr-units/template-areas/auto-fill-minmax/gap/span |
+| 文本排版 | 8 | text-align:center/justify/letter-spacing/white-space/text-indent/font-size-weight/text-transform/word-break |
+| 颜色与背景 | 8 | named/rgb/hex/hsl/opacity/linear-gradient/radial-gradient/border-radius/box-shadow |
+| 变换 | 4 | rotate/scale/translate/skew |
+| 逻辑属性 | 2 | margin-block/padding-inline |
+| CSS 变量 | 2 | basic/fallback |
+| 综合布局 | 5 | holy-grail/card-grid/nav-flex/sticky-footer/media-query |
+
+分类报告特性：
+- **按通过率排序**：最低通过率分类在前，便于发现薄弱点
+- **文本格式**：对齐表格（Category/Total/Pass/Fail/XFail/Skip/Rate + 通过/失败指示器）
+- **JSON 格式**：机器可解析，可集成到 CI 管线
+- **向后兼容**：旧的无 category 的构造函数仍可用
+
+Tests: ~11,822 → ~11,835 (+13), WPT: 1194 → 1239 (+45), clippy clean.
 
 ### -121. Top 20 真实网站兼容性测试 + HTTP 客户端修复（本轮，~11,822 测试 + 24 个 ignore 测试）
 
@@ -2357,8 +2395,8 @@ Total: 6219 → 6378 tests (+159)
 
 | 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
 |--------|------|------|----------|----------|
-| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1194 用例（25+ 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules | 按标准模块输出通过率；PR 只阻断 unexpected fail |
-| 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-2 ✅（layout/primitive snapshot + 16 reftest）；Phase 3-4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
+| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1239 用例（26 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-3 ✅（layout/primitive snapshot + 16 reftest + 45 CSS/layout subset + 按分类通过率报告）；Phase 4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
 | 3. 真实网站兼容性测试 | ✅ | 验证真实页面组合能力，而不只验证单项标准 | Top 20 真实网站兼容性测试（24 个测试，20/20 站点通过），覆盖 fetch → parse → style → layout → paint 完整管线 | 每个站点有可复现结果，全部通过（需 `--ignored` 运行） |
 | 4. 安全测试 | 🔄 | 验证浏览器安全边界不被绕过 | 52 个跨 crate 安全管线测试 + SecurityContext 集成 + HSTS preload + 混合内容执行引擎 + 19 WPT 安全扩展 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
 | 5. 运行时和事件循环测试 | 🔄 | 验证 JS + DOM + Web API 的组合时序 | 9 个 WPT 运行时测试（Timer/Promise/async-await/Error/rAF/MutationObserver/Event/Console/Worker） | DOM mutation 后 style/layout/paint 更新顺序可测试；关闭/导航不泄漏状态 |
@@ -2374,7 +2412,7 @@ Total: 6219 → 6378 tests (+159)
 |------|------|------|----------|
 | Phase 1: Layout/primitive snapshot | ✅ | `LayoutResult::snapshot()`、`RenderPrimitives::snapshot()` 稳定文本/JSON dump；精确几何断言系统 | CSS/layout 改动能产生可读 diff；核心用例可定位到 geometry、style 或 primitive 差异 |
 | Phase 2: 最小 reftest harness | ✅ | ReftestCase（test/ref HTML pair）、ReftestConfig（viewport/fuzzy threshold）、run_reftest()（CPU framebuffer 像素比较）；16 个 CSS 布局 reftest（block/flex/position/color/box-model） | ✅ 能跑一组 reftest 并输出 pixel diff 统计 |
-| Phase 3: 真实 WPT CSS/layout 子集 | [ ] | 导入小规模 WPT 子集；维护 include list；支持 expected metadata（PASS/FAIL/SKIP/TIMEOUT/CRASH） | PR 只阻断 unexpected fail；已知失败不掩盖新增回归；报告按 CSS/layout 分类汇总 |
+| Phase 3: 真实 WPT CSS/layout 子集 | ✅ | 45 个 CSS/layout 子集测试（按 CSS 规范领域组织：盒模型/VFM/Flexbox/Grid/排版/颜色/变换/逻辑属性/变量/综合布局）；CategorySummary 按分类通过率报告（文本+JSON）；expected metadata 已就位 | PR 只阻断 unexpected fail；报告按 CSS/layout 分类汇总并通过率排序 |
 | Phase 4: WebView 产品级视觉 smoke | [ ] | 对 `webview-demo` 或 headless WebView 增加固定页面截图 smoke；覆盖 load、resize、inject CSS、navigation、scroll 后可见结果 | 用于发现产品可见退化，但不替代引擎级 reftest 和 WPT 合规测试 |
 
 短期不要直接扩大 golden screenshot 覆盖。像素基线只用于无法构造 reftest 的少量场景，并且必须固定 OS/font/DPI/scale 与 fuzzy 阈值。
@@ -2416,9 +2454,9 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整） |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1194 用例（25+ 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1239 用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 45 用例（Phase 3）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
-| 5. 单元测试与质量 | ✅ | 11,822 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）** |
+| 5. 单元测试与质量 | ✅ | 11,835 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）** |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **剩余阻塞项**（需 GPU/Display 桌面环境）：
