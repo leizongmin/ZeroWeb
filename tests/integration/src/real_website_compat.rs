@@ -731,3 +731,124 @@ fn test_site_csswg() {
     let html = wv.html_content();
     assert_valid_html(&html, "csswg.org");
 }
+
+// ── Tier 7 扩展站点（+10）──
+// 覆盖更多类别：标准组织、开发工具、CDN、学术、安全、运行时
+
+/// TC39 — ECMAScript 标准委员会
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_tc39() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://tc39.es").expect("tc39.es 应可访问");
+    assert_valid_render(&result, "tc39.es");
+    let html = wv.html_content();
+    assert_valid_html(&html, "tc39.es");
+}
+
+/// WebAssembly 规范官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_webassembly_org() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://webassembly.org")
+        .expect("webassembly.org 应可访问");
+    assert_valid_render(&result, "webassembly.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "webassembly.org");
+}
+
+/// jsDelivr — 开源 CDN
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_jsdelivr() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.jsdelivr.com").expect("jsdelivr.com 应可访问");
+    assert_valid_render(&result, "jsdelivr.com");
+    let html = wv.html_content();
+    assert_valid_html(&html, "jsdelivr.com");
+}
+
+/// npm — Node.js 包管理器
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_npmjs() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.npmjs.com").expect("npmjs.com 应可访问");
+    assert_valid_render(&result, "npmjs.com");
+    let html = wv.html_content();
+    assert_valid_html(&html, "npmjs.com");
+}
+
+/// arXiv — 学术预印本
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_arxiv() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://arxiv.org").expect("arxiv.org 应可访问");
+    assert_valid_render(&result, "arxiv.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "arxiv.org");
+}
+
+/// OWASP — 开源安全社区（Tier 7）
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_owasp_home() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://owasp.org/www-project-top-ten/")
+        .expect("owasp.org top-ten 应可访问");
+    assert_valid_render(&result, "owasp.org/top-ten");
+    let html = wv.html_content();
+    assert_valid_html(&html, "owasp.org/top-ten");
+}
+
+/// Replit — 在线开发平台
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_replit() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://replit.com").expect("replit.com 应可访问");
+    assert_valid_render(&result, "replit.com");
+    let html = wv.html_content();
+    assert_valid_html(&html, "replit.com");
+}
+
+/// Can I Use — 浏览器特性兼容性查询（Tier 7）
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_caniuse_flexbox() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://caniuse.com/flexbox")
+        .expect("caniuse.com/flexbox 应可访问");
+    assert_valid_render(&result, "caniuse.com/flexbox");
+    let html = wv.html_content();
+    assert_valid_html(&html, "caniuse.com/flexbox");
+}
+
+/// HTML Standard — WHATWG HTML 规范
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_html_spec() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://html.spec.whatwg.org")
+        .expect("html.spec.whatwg.org 应可访问");
+    assert_valid_render(&result, "html.spec.whatwg.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "html.spec.whatwg.org");
+}
+
+/// Zig 语言官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_ziglang() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://ziglang.org").expect("ziglang.org 应可访问");
+    assert_valid_render(&result, "ziglang.org");
+    let html = wv.html_content();
+    assert_valid_html(&html, "ziglang.org");
+}
