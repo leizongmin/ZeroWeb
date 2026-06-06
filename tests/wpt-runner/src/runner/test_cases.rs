@@ -68,6 +68,7 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_geometry::geometry_tests());
     tests.extend(test_cases_web_api::web_api_tests());
     tests.extend(test_cases_security::security_tests());
+    tests.extend(test_cases_navigation::runtime_tests());
     tests.extend(test_cases_a11y_i18n::a11y_i18n_tests());
     tests.extend(test_cases_interactive::interactive_tests());
     tests.extend(test_cases_typography::typography_tests());

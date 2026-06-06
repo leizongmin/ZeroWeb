@@ -995,6 +995,7 @@ mod tests {
             "geometry",
             "web-api",
             "security",
+            "runtime",
             "a11y-i18n",
             "interactive",
             "typography",

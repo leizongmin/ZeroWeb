@@ -1091,3 +1091,311 @@ aside { float: right; width: 200px; background: #f5f5f5; padding: 10px; }
         },
     ]
 }
+
+/// 返回运行时和事件循环测试用例。
+pub fn runtime_tests() -> Vec<TestCase> {
+    vec![
+        // ═══════════════════════════════════════════════════════════════
+        //  定时器
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/timer/setTimeout".into(),
+            description: "setTimeout 基本用法".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            setTimeout(function() {
+                document.getElementById('result').textContent = 'timeout fired';
+            }, 0);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "runtime/timer/setInterval".into(),
+            description: "setInterval 重复回调".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="counter">0</div>
+            <script>
+            var count = 0;
+            var id = setInterval(function() {
+                count++;
+                document.getElementById('counter').textContent = count;
+                if (count >= 3) clearInterval(id);
+            }, 10);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "runtime/timer/nested-timeout".into(),
+            description: "嵌套 setTimeout 调用".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            setTimeout(function() {
+                setTimeout(function() {
+                    setTimeout(function() {
+                        document.getElementById('result').textContent = 'nested done';
+                    }, 0);
+                }, 0);
+            }, 0);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Promise / microtask
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/promise/basic-resolve".into(),
+            description: "Promise resolve 基本用法".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            Promise.resolve(42).then(function(val) {
+                document.getElementById('result').textContent = 'resolved: ' + val;
+            });
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "runtime/promise/async-await".into(),
+            description: "async/await 语法".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            async function fetchData() {
+                var val = await Promise.resolve('hello');
+                document.getElementById('result').textContent = 'got: ' + val;
+            }
+            fetchData();
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "runtime/promise/microtask-order".into(),
+            description: "microtask 执行顺序".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            var order = [];
+            Promise.resolve().then(() => order.push('micro1'));
+            Promise.resolve().then(() => order.push('micro2'));
+            setTimeout(() => { order.push('timeout'); }, 0);
+            setTimeout(() => {
+                document.getElementById('result').textContent = order.join(',');
+            }, 10);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  MutationObserver
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/mutation-observer/basic".into(),
+            description: "MutationObserver 观察子节点变化".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="target">initial</div>
+            <div id="log"></div>
+            <script>
+            var observer = new MutationObserver(function(mutations) {
+                var log = document.getElementById('log');
+                log.textContent = 'mutations: ' + mutations.length;
+            });
+            observer.observe(document.getElementById('target'), { childList: true, characterData: true, subtree: true });
+            document.getElementById('target').textContent = 'changed';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  事件冒泡/捕获
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/events/bubble-capture".into(),
+            description: "事件冒泡和捕获阶段".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="parent"><button id="child">Click</button></div>
+            <div id="log"></div>
+            <script>
+            var log = [];
+            document.getElementById('parent').addEventListener('click', function() {
+                log.push('parent-bubble');
+            }, false);
+            document.getElementById('parent').addEventListener('click', function() {
+                log.push('parent-capture');
+            }, true);
+            document.getElementById('child').addEventListener('click', function(e) {
+                log.push('child');
+            });
+            document.getElementById('child').click();
+            setTimeout(function() {
+                document.getElementById('log').textContent = log.join(',');
+            }, 0);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CustomEvent
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/events/custom-event".into(),
+            description: "CustomEvent 创建和分发".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            document.addEventListener('my-event', function(e) {
+                document.getElementById('result').textContent = 'detail: ' + e.detail;
+            });
+            var event = new CustomEvent('my-event', { detail: 'hello' });
+            document.dispatchEvent(event);
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  requestAnimationFrame
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/raf/basic".into(),
+            description: "requestAnimationFrame 回调".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            requestAnimationFrame(function(timestamp) {
+                document.getElementById('result').textContent = 'raf: ' + (timestamp >= 0);
+            });
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  导航状态管理
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/navigation/history-api".into(),
+            description: "History API pushState/replaceState".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            history.pushState({ page: 1 }, '', '/page1');
+            history.pushState({ page: 2 }, '', '/page2');
+            history.replaceState({ page: 2 }, '', '/page2v2');
+            document.getElementById('result').textContent = 'length: ' + history.length;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  console API
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/console/all-methods".into(),
+            description: "console 所有方法不崩溃".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">ok</div>
+            <script>
+            console.log('log');
+            console.warn('warn');
+            console.error('error');
+            console.info('info');
+            console.debug('debug');
+            console.table([{a:1},{a:2}]);
+            console.group('group');
+            console.log('grouped');
+            console.groupEnd();
+            console.time('timer');
+            console.timeEnd('timer');
+            console.assert(1 === 1, 'assertion ok');
+            console.clear();
+            console.count('counter');
+            console.count('counter');
+            console.dir({key: 'value'});
+            console.trace();
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  错误处理
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "runtime/error/try-catch".into(),
+            description: "try-catch 错误恢复".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            try {
+                JSON.parse('invalid json {{{');
+            } catch(e) {
+                document.getElementById('result').textContent = 'caught: ' + (e instanceof SyntaxError);
+            }
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "runtime/error/promise-rejection".into(),
+            description: "Promise rejection 处理".into(),
+            category: "runtime".into(),
+            html: r#"<html><body>
+            <div id="result">waiting</div>
+            <script>
+            Promise.reject(new Error('test rejection')).catch(function(e) {
+                document.getElementById('result').textContent = 'caught: ' + e.message;
+            });
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+    ]
+}

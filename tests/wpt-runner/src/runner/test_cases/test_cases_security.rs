@@ -650,5 +650,182 @@ pub fn security_tests() -> Vec<TestCase> {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "render_completes".into()],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP 扩展指令（script-src-attr/style-src-attr/unsafe-eval 等）
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── CSP script-src-attr + style-src-attr ──
+        TestCase {
+            id: "security/csp/script-src-attr".into(),
+            description: "CSP script-src-attr 控制内联事件处理器".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src-attr 'none'; script-src 'unsafe-inline'">
+            </head><body>
+            <button onclick="alert('blocked')">Click me</button>
+            <p>script-src-attr 'none' 阻止内联事件处理器，但 script-src 允许 script 元素</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "security/csp/style-src-attr".into(),
+            description: "CSP style-src-attr 控制内联样式属性".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="style-src-attr 'none'; style-src 'unsafe-inline'">
+            </head><body>
+            <div style="color: red">style 属性被阻止</div>
+            <style>.ok { color: green; }</style>
+            <p class="ok">style 元素正常</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── CSP unsafe-eval + wasm-unsafe-eval ──
+        TestCase {
+            id: "security/csp/unsafe-eval".into(),
+            description: "CSP unsafe-eval 允许 eval()".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval'">
+            </head><body>
+            <div id="result">unsafe-eval test</div>
+            <script>eval("document.getElementById('result').textContent = 'eval allowed';")</script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "security/csp/wasm-unsafe-eval".into(),
+            description: "CSP wasm-unsafe-eval 单独允许 WASM".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'">
+            </head><body>
+            <div id="result">wasm-unsafe-eval test</div>
+            <p>wasm-unsafe-eval 允许 WASM 编译但阻止 eval()</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── CSP strict-dynamic ──
+        TestCase {
+            id: "security/csp/strict-dynamic".into(),
+            description: "CSP strict-dynamic 信任传播".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'strict-dynamic' 'nonce-test123'">
+            </head><body>
+            <script nonce="test123">document.body.innerHTML += '<p>Dynamic script loaded</p>';</script>
+            <p>strict-dynamic 允许通过 nonce 信任的脚本动态加载更多脚本</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ── CSP report-sample ──
+        TestCase {
+            id: "security/csp/report-sample".into(),
+            description: "CSP report-sample 请求违规样本".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src 'report-sample' 'self'">
+            </head><body>
+            <div>report-sample 请求在违规报告中包含代码样本</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CORS 边界测试
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/cors/cross-origin-img".into(),
+            description: "跨源图片加载（CORS 无凭证）".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <img src="https://other-origin.example.com/image.png" crossorigin="anonymous" alt="CORS image">
+            <img src="https://other-origin.example.com/logo.svg" crossorigin="use-credentials" alt="Credentials">
+            <p>crossorigin 属性控制 CORS 行为</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+        TestCase {
+            id: "security/cors/cross-origin-fetch".into(),
+            description: "跨源 Fetch 请求（预检）".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <div id="status">CORS fetch test</div>
+            <script>
+            fetch('https://api.example.com/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Custom': 'value' },
+                body: '{}'
+            }).catch(() => {});
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Trusted Types 基础
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/trusted-types/basic".into(),
+            description: "Trusted Types CSP 指令".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">
+            </head><body>
+            <div>Trusted Types 阻止危险的 DOM 注入模式</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP Report-Only 模式
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/report-only".into(),
+            description: "CSP Report-Only 仅报告不阻止".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy-Report-Only" content="script-src 'none'">
+            </head><body>
+            <script>document.body.innerHTML += '<p>Script executed (report-only)</p>';</script>
+            <p>Report-Only 模式不阻止脚本执行</p>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSP 多策略组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/csp/multiple-policies".into(),
+            description: "多个 CSP 头独立检查".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="script-src https://a.com">
+            <meta http-equiv="Content-Security-Policy" content="script-src https://b.com">
+            </head><body>
+            <div>多个 CSP 策略独立检查，资源必须通过所有策略</div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+        },
     ]
 }
