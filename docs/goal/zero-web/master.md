@@ -110,6 +110,29 @@
 
 ## 最近完成的改进
 
+### -129. CI 发布工作流 + 真实网站兼容性扩展至 45 站点（本轮，~11,937 测试）
+
+**CI 发布工作流（.github/workflows/release.yml）**：
+
+| 功能 | 说明 |
+|------|------|
+| 多平台构建 | Linux x86_64 + macOS aarch64 + Windows x86_64 |
+| Linux 打包 | .deb 包（dpkg-deb + .desktop 文件） |
+| macOS 打包 | .app bundle（Info.plist + PkgInfo） |
+| Release 创建 | tag push 自动创建 GitHub Release + 上传所有产物 |
+
+**真实网站兼容性扩展（35→45 站点，Tier 6）**：
+
+| 类别 | 站点 | 验证内容 |
+|------|------|----------|
+| 标准文档 | rfc-editor.org, csswg.org | RFC/CSS 标准文档渲染 |
+| 国际化 | home.unicode.org | Unicode 标准站 |
+| API 服务 | reqres.in, postman-echo.com | API 测试工具页面 |
+| 安全标准 | owasp.org, openssl.org | 安全文档和加密库 |
+| 浏览器/运行时 | chromium.org, deno.land, bun.sh | 浏览器和运行时官网 |
+
+Tests: 11,937（不变）, real_website_compat: 35→45 (ignored), clippy clean.
+
 ### -128. 可访问性基础 + 跨平台打包脚本 + WPT 扩展（本轮，~11,937 测试，1317 WPT 用例）
 
 完成 M14 三项推进工作：
