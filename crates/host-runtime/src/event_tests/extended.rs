@@ -737,10 +737,13 @@ fn test_scroll_delta_both_types() {
     // 测试像素滚动
     let pixel_scroll = AppEvent::MouseWheel {
         delta: MouseScrollDelta::PixelDelta(10.0, -5.0),
+        x: 0.0,
+        y: 0.0,
     };
     match pixel_scroll {
         AppEvent::MouseWheel {
             delta: MouseScrollDelta::PixelDelta(x, y),
+            ..
         } => {
             assert!((x - 10.0).abs() < f64::EPSILON);
             assert!((y - (-5.0)).abs() < f64::EPSILON);
@@ -751,10 +754,13 @@ fn test_scroll_delta_both_types() {
     // 测试行滚动
     let line_scroll = AppEvent::MouseWheel {
         delta: MouseScrollDelta::LineDelta(2.0, -1.0),
+        x: 0.0,
+        y: 0.0,
     };
     match line_scroll {
         AppEvent::MouseWheel {
             delta: MouseScrollDelta::LineDelta(x, y),
+            ..
         } => {
             assert!((x - 2.0f32).abs() < f32::EPSILON);
             assert!((y - (-1.0f32)).abs() < f32::EPSILON);
@@ -920,9 +926,13 @@ fn test_app_event_more_debug_formats() {
         AppEvent::MouseInput {
             button: MouseButton::Middle,
             pressed: true,
+            x: 0.0,
+            y: 0.0,
         },
         AppEvent::MouseWheel {
             delta: MouseScrollDelta::LineDelta(1.0, 0.0),
+            x: 0.0,
+            y: 0.0,
         },
         AppEvent::Touch(TouchEvent {
             id: 0,

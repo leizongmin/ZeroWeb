@@ -3,30 +3,26 @@
 
 impl BrowserApp {
     /// 处理鼠标滚轮滚动
-    pub fn handle_scroll(&mut self, delta: zero_host_runtime::event::MouseScrollDelta) {
+    pub fn handle_scroll(
+        &mut self,
+        delta: zero_host_runtime::event::MouseScrollDelta,
+        at_x: f64,
+        at_y: f64,
+    ) {
         // 上下文菜单打开时不滚动
         if self.context_menu.visible {
             return;
         }
+
+        self.mouse_pos = (at_x, at_y);
 
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
             None => return,
         };
 
-        let s = self.scale_factor;
-        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
-        let content_bottom = content_y + content_h;
-        let mouse_x = self.mouse_pos.0 as f32;
-        let mouse_y = self.mouse_pos.1 as f32;
-
-        // 仅在 WebView 内容区响应滚轮；mouse_pos 初始为 (0,0)，未移动过时不拦截
-        if mouse_y > 0.0
-            && (mouse_y < content_y
-                || mouse_y >= content_bottom
-                || mouse_x < content_x
-                || mouse_x >= content_x + content_w)
-        {
+        // 仅在 WebView 内容区响应滚轮
+        if !self.point_in_page_content(at_x, at_y) {
             return;
         }
 
@@ -36,11 +32,88 @@ impl BrowserApp {
             zero_host_runtime::event::MouseScrollDelta::LineDelta(_, y) => -(y * 40.0),
         };
 
+        self.apply_page_scroll_delta(tab_id, delta_y);
+    }
+
+    /// 处理触摸板/触摸屏平移手势（winit `PanGesture`）
+    pub fn handle_pan_gesture(&mut self, delta_x: f32, delta_y: f32, x: f64, y: f64) {
+        let _ = delta_x;
+        if self.context_menu.visible {
+            return;
+        }
+
+        self.mouse_pos = (x, y);
+        if !self.point_in_page_content(x, y) {
+            return;
+        }
+
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+
+        // 与 PixelDelta 滚轮保持同一符号约定
+        self.apply_page_scroll_delta(tab_id, -(delta_y));
+    }
+
+    /// 处理触摸屏单指拖拽滚动
+    pub fn handle_touch(&mut self, touch: &zero_host_runtime::event::TouchEvent) {
+        use zero_host_runtime::event::TouchPhase;
+
+        self.mouse_pos = (touch.x, touch.y);
+
+        if self.context_menu.visible {
+            return;
+        }
+
+        match touch.phase {
+            TouchPhase::Started => {
+                if self.point_in_page_content(touch.x, touch.y) {
+                    self.touch_scroll = Some((touch.id, touch.y));
+                }
+            }
+            TouchPhase::Moved => {
+                let Some((id, last_y)) = self.touch_scroll else {
+                    return;
+                };
+                if id != touch.id {
+                    return;
+                }
+                let delta_y = (last_y - touch.y) as f32;
+                if delta_y != 0.0 {
+                    if let Some(tab_id) = self.shell.active_tab_id() {
+                        self.apply_page_scroll_delta(tab_id, delta_y);
+                    }
+                }
+                if let Some(state) = &mut self.touch_scroll {
+                    state.1 = touch.y;
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                if self.touch_scroll.is_some_and(|(id, _)| id == touch.id) {
+                    self.touch_scroll = None;
+                }
+            }
+        }
+    }
+
+    /// 触摸/滚轮坐标是否落在 WebView 内容区（物理像素）
+    fn point_in_page_content(&self, x: f64, y: f64) -> bool {
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
+        let xf = x as f32;
+        let yf = y as f32;
+        xf >= content_x && xf < content_x + content_w && yf >= content_y && yf < content_y + content_h
+    }
+
+    /// 按物理像素增量更新当前标签页滚动偏移
+    fn apply_page_scroll_delta(&mut self, tab_id: zero_browser_shell::TabId, delta_y: f32) {
+        if delta_y == 0.0 {
+            return;
+        }
+
         self.ensure_webview(tab_id);
 
+        let s = self.scale_factor;
         let content_h = self.content_physical_size().1 as f32;
-
-        // 文档高度：优先布局树，回退到图元包围盒
         let page_height_logical = self
             .webviews
             .get(&tab_id)
@@ -56,6 +129,52 @@ impl BrowserApp {
         *offset = (*offset + delta_y).clamp(0.0, max_scroll);
 
         self.needs_redraw = true;
+    }
+
+    /// 垂直位移超过阈值后，将页面区指针拖拽从选区切换为滚动（物理像素）
+    fn content_scroll_drag_threshold(&self) -> f64 {
+        8.0 * self.scale_factor as f64
+    }
+
+    fn update_content_pointer_drag(&mut self, x: f64, y: f64) {
+        if self.context_menu.visible || self.content_pointer_drag.is_none() {
+            return;
+        }
+
+        let threshold = self.content_scroll_drag_threshold();
+        let mut start_scrolling = false;
+        let mut scroll_delta = 0.0f32;
+        let mut clear_selection_for: Option<zero_browser_shell::TabId> = None;
+
+        if let Some(drag) = self.content_pointer_drag.as_mut() {
+            if !drag.scrolling {
+                let dy = (y - drag.start_y).abs();
+                let dx = (x - drag.start_x).abs();
+                if dy >= threshold && dy >= dx {
+                    drag.scrolling = true;
+                    start_scrolling = true;
+                    clear_selection_for = self.shell.active_tab_id();
+                }
+            }
+
+            if drag.scrolling {
+                scroll_delta = (drag.last_y - y) as f32;
+                drag.last_y = y;
+            }
+        }
+
+        if start_scrolling {
+            self.page_selection_drag = false;
+            if let Some(tab_id) = clear_selection_for {
+                self.page_selection.remove(&tab_id);
+            }
+        }
+
+        if scroll_delta != 0.0 {
+            if let Some(tab_id) = self.shell.active_tab_id() {
+                self.apply_page_scroll_delta(tab_id, scroll_delta);
+            }
+        }
     }
 
     /// 处理键盘输入
@@ -471,8 +590,13 @@ impl BrowserApp {
             self.update_tab_bar_drag(x, y);
         }
 
+        if self.left_button_down {
+            self.update_content_pointer_drag(x, y);
+        }
+
         if self.page_selection_drag
             && self.left_button_down
+            && self.content_pointer_drag.as_ref().is_none_or(|d| !d.scrolling)
             && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
             && let Some(glyphs) = self.page_glyphs(tab_id)
             && let Some(idx) = hit_test_glyph(&glyphs, doc_x, doc_y)
@@ -492,8 +616,17 @@ impl BrowserApp {
                 self.left_button_down = true;
             } else {
                 self.left_button_down = false;
+                let was_scroll_drag = self
+                    .content_pointer_drag
+                    .as_ref()
+                    .is_some_and(|d| d.scrolling);
+                self.content_pointer_drag = None;
                 self.tab_bar_drag_press = None;
                 self.address_bar_drag = false;
+                if was_scroll_drag {
+                    self.page_selection_drag = false;
+                    return;
+                }
                 if self.page_selection_drag {
                     self.page_selection_drag = false;
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
@@ -694,6 +827,12 @@ impl BrowserApp {
                 && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
                 && let Some(glyphs) = self.page_glyphs(tab_id)
             {
+                self.content_pointer_drag = Some(ContentPointerDrag {
+                    start_x: x,
+                    start_y: y,
+                    last_y: y,
+                    scrolling: false,
+                });
                 let idx = hit_test_glyph(&glyphs, doc_x, doc_y).unwrap_or(0);
                 if self.shift_pressed {
                     if let Some(sel) = self.page_selection.get_mut(&tab_id) {

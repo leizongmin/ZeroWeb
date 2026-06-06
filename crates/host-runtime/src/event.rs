@@ -113,11 +113,30 @@ pub enum AppEvent {
         button: MouseButton,
         /// 是否按下（true = 按下, false = 释放）
         pressed: bool,
+        /// 最近一次指针位置 X（物理像素；触摸按下时常无前置 CursorMoved）
+        x: f64,
+        /// 最近一次指针位置 Y（物理像素）
+        y: f64,
     },
     /// 鼠标滚轮滚动
     MouseWheel {
         /// 滚动增量
         delta: MouseScrollDelta,
+        /// 指针位置 X（物理像素）
+        x: f64,
+        /// 指针位置 Y（物理像素）
+        y: f64,
+    },
+    /// 触摸板/触摸屏平移手势（winit `PanGesture`）
+    PanGesture {
+        /// 水平平移增量（物理像素）
+        delta_x: f32,
+        /// 垂直平移增量（物理像素）
+        delta_y: f32,
+        /// 手势时指针位置 X（物理像素）
+        x: f64,
+        /// 手势时指针位置 Y（物理像素）
+        y: f64,
     },
     /// 触摸事件
     Touch(TouchEvent),

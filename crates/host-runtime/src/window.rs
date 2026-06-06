@@ -11,6 +11,23 @@ use crate::event::{
 use crate::{HostError, HostResult};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, Default)]
+struct PointerTracker {
+    x: f64,
+    y: f64,
+}
+
+impl PointerTracker {
+    fn set(&mut self, x: f64, y: f64) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fn coords(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UnixBackendPreference {
     X11,
@@ -209,6 +226,7 @@ pub(crate) struct BasicApp<'a, F> {
     window_attrs: Option<winit::window::WindowAttributes>,
     window: Option<Arc<winit::window::Window>>,
     on_event: &'a mut F,
+    pointer: PointerTracker,
 }
 
 impl<'a, F: FnMut(AppEvent)> BasicApp<'a, F> {
@@ -218,6 +236,7 @@ impl<'a, F: FnMut(AppEvent)> BasicApp<'a, F> {
             window_attrs: Some(window_attrs),
             window: None,
             on_event,
+            pointer: PointerTracker::default(),
         }
     }
 }
@@ -258,23 +277,40 @@ impl<F: FnMut(AppEvent)> BasicApp<'_, F> {
                 (self.on_event)(convert_keyboard_input(device_id, event, is_synthetic));
             }
             winit::event::WindowEvent::CursorMoved { position, .. } => {
+                self.pointer.set(position.x, position.y);
                 (self.on_event)(AppEvent::MouseMoved {
                     x: position.x,
                     y: position.y,
                 });
             }
             winit::event::WindowEvent::MouseInput { state, button, .. } => {
+                let (x, y) = self.pointer.coords();
                 (self.on_event)(AppEvent::MouseInput {
                     button: convert_mouse_button(button),
                     pressed: state == winit::event::ElementState::Pressed,
+                    x,
+                    y,
                 });
             }
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
+                let (x, y) = self.pointer.coords();
                 (self.on_event)(AppEvent::MouseWheel {
                     delta: convert_scroll_delta(delta),
+                    x,
+                    y,
+                });
+            }
+            winit::event::WindowEvent::PanGesture { delta, .. } => {
+                let (x, y) = self.pointer.coords();
+                (self.on_event)(AppEvent::PanGesture {
+                    delta_x: delta.x,
+                    delta_y: delta.y,
+                    x,
+                    y,
                 });
             }
             winit::event::WindowEvent::Touch(touch) => {
+                self.pointer.set(touch.location.x, touch.location.y);
                 (self.on_event)(AppEvent::Touch(TouchEvent {
                     id: touch.id,
                     phase: convert_touch_phase(touch.phase),
@@ -322,6 +358,7 @@ pub(crate) struct GpuApp<'a, F> {
     window_attrs: Option<winit::window::WindowAttributes>,
     window: Option<Arc<winit::window::Window>>,
     on_event: &'a mut F,
+    pointer: PointerTracker,
 }
 
 impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
@@ -331,6 +368,7 @@ impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
             window_attrs: Some(window_attrs),
             window: None,
             on_event,
+            pointer: PointerTracker::default(),
         }
     }
 }
@@ -379,6 +417,7 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
                 (self.on_event)(convert_keyboard_input(device_id, event, is_synthetic), win_ref);
             }
             winit::event::WindowEvent::CursorMoved { position, .. } => {
+                self.pointer.set(position.x, position.y);
                 (self.on_event)(
                     AppEvent::MouseMoved {
                         x: position.x,
@@ -388,23 +427,42 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
                 );
             }
             winit::event::WindowEvent::MouseInput { state, button, .. } => {
+                let (x, y) = self.pointer.coords();
                 (self.on_event)(
                     AppEvent::MouseInput {
                         button: convert_mouse_button(button),
                         pressed: state == winit::event::ElementState::Pressed,
+                        x,
+                        y,
                     },
                     win_ref,
                 );
             }
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
+                let (x, y) = self.pointer.coords();
                 (self.on_event)(
                     AppEvent::MouseWheel {
                         delta: convert_scroll_delta(delta),
+                        x,
+                        y,
+                    },
+                    win_ref,
+                );
+            }
+            winit::event::WindowEvent::PanGesture { delta, .. } => {
+                let (x, y) = self.pointer.coords();
+                (self.on_event)(
+                    AppEvent::PanGesture {
+                        delta_x: delta.x,
+                        delta_y: delta.y,
+                        x,
+                        y,
                     },
                     win_ref,
                 );
             }
             winit::event::WindowEvent::Touch(touch) => {
+                self.pointer.set(touch.location.x, touch.location.y);
                 (self.on_event)(
                     AppEvent::Touch(TouchEvent {
                         id: touch.id,
