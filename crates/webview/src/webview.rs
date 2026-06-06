@@ -1081,7 +1081,7 @@ impl WebView {
 ///
 /// WASM 桥接使用 base64 在 JS 和 Rust 之间传递内存数据。
 #[allow(dead_code)]
-fn base64_encode(data: &[u8]) -> String {
+pub(crate) fn base64_encode(data: &[u8]) -> String {
     const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(data.len() * 4 / 3 + 4);
     for chunk in data.chunks(3) {
@@ -1107,7 +1107,7 @@ fn base64_encode(data: &[u8]) -> String {
 /// 将 base64 字符串解码为字节。
 ///
 /// WASM 桥接使用 base64 在 JS 和 Rust 之间传递 WASM 字节码。
-fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let input = input.trim();
