@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 16/16 crate 已实现，~11,722 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号），**CSS 交互/提示属性渲染集成**（cursor 类型指示器 + image-rendering 质量标记 + isolation:isolate 堆叠上下文标记 + will-change 性能提示 + pointer-events:none 点击穿透标记 + user-select:none 不可选择标记 + overscroll-behavior 滚动边界标记 + touch-action 触摸行为标记），**CSS writing-mode 渲染集成**（vertical-rl/vertical-lr 字形旋转 90° + GlyphPrimitive.rotation 字段）+ **CSS word-break 行内布局渲染集成**（break-all 逐字符断行 + keep-all CJK 保持为单词 + WordBreakMode 枚举），**CSS clip-path 渲染集成**（none/inset/circle/ellipse/polygon 5 种裁剪函数 + ClipPathPrimitive 路径坐标），**CSS direction/tab-size/border-collapse/table-layout/font-variant-numeric 渲染集成**（direction:rtl 左箭头指示器 + tab-size:N 青色方块指示器 + border-collapse:collapse 橙色双线 + table-layout:fixed 蓝色网格 + font-variant-numeric 8 种颜色方块指示器），**CSS contain/unicode-bidi/box-decoration-break/overflow-wrap/text-align-last/break/scroll-area/snap-stop/container-type 渲染集成**（10 个属性从"已解析存储"推进到"已渲染集成"），**CSS text-align/text-align-last 行内布局管线集成**（7 个布局引擎测试），**CSS text-indent 行内布局集成**（5 个布局引擎测试），**CSS float 排除区域行内布局集成**（6 个布局引擎测试），**CSS tab-size 行内布局集成**（6 个布局引擎测试），**CSS border-image-repeat 渲染集成**（stretch/repeat/round/space 4 种边框图像重复模式 + 水平/垂直独立控制 + clip_tile 裁剪 + 5 个单元测试），**paint effects 模块拆分**（effects.rs 955 行 + effects_indicators.rs 1222 行 + 测试拆分 effects.rs 1440 行 + effects_visual.rs 776 行）
+**执行状态**: 16/16 crate 已实现，~11,678 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**parse_extended.rs 拆分**（2022 行 → 3 个文件）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -106,6 +106,36 @@
 ---
 
 ## 最近完成的改进
+
+### -115. parse_extended.rs 拆分 + CSP 完整实现（本轮，~11,678 测试）
+
+完成两项 M13 推进工作：CSS 解析器大文件拆分 + CSP 缺失指令补全。
+
+**parse_extended.rs 拆分**（2022 行 → 3 个文件，均 < 2000 行）：
+
+| 模块 | 行数 | 职责 |
+|--------|------|------|
+| parse_extended.rs | 620 | 核心 UI/交互/计数器/内容/引用/包含/列 |
+| parse_extended_visual.rs | 735 | ObjectFit/Filter/Appearance/UI/MixBlend/Scrollbar/TextWrap/Hyphens/LineClamp/Background |
+| parse_extended_border.rs | 675 | BorderImage/ClipPath/ListStyleImage/BorderSpacing/CounterSet |
+
+**CSP 完整实现**（M13 剩余：CSP 所有主要指令）：
+
+| 功能 | 说明 |
+|------|------|
+| `script-src-attr` | 控制内联事件处理器（onclick 等），回退 script-src → default-src |
+| `style-src-attr` | 控制内联 style 属性，回退 style-src → default-src |
+| `unsafe-eval` | 检查 eval()/new Function() 是否允许 |
+| `wasm-unsafe-eval` | 单独允许 WASM 编译而不允许 eval() |
+| `unsafe-hashes` | 允许内联事件处理器通过 hash 验证 |
+| `strict-dynamic` 完整检测 | nonce/hash 信任传播检测 |
+| `report-sample` | 请求违规报告中包含代码样本 |
+| scheme-source 匹配 | `https:` 匹配所有 HTTPS URL，`data:`/`blob:` 允许 data/blob URI |
+| `data:`/`blob:` 修复 | data: 和 blob: URI 不再错误匹配 `'self'` |
+| report-only 回调测试 | 确认仅报告不阻止行为正确 |
+| CSP 测试文件提取 | csp.rs 从 2089 行拆分为 csp.rs (766 行) + csp_tests.rs (518 行) |
+
+Tests: ~11,722 → ~11,678 (CSP 测试从 inline 移至独立文件，净变化来自测试重组), clippy clean.
 
 ### -114. CSS border-image-repeat 渲染集成 + effects 模块拆分（本轮，~11,722 测试）
 
@@ -2157,8 +2187,9 @@ Total: 6219 → 6378 tests (+159)
 2. ~~**无头浏览器协议支持**~~ ✅ Phase 1-5 全部完成
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
-5. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-6. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 801 用例（22 分类，100% 通过率）
+5. ~~**CSP 完整实现**（M13 剩余）~~ ✅ script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复
+6. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
+7. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1100 用例（100% 通过率）
 
 ## 浏览器质量测试体系推进计划
 

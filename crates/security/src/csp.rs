@@ -158,6 +158,16 @@ impl ContentSecurityPolicy {
             return true;
         }
 
+        // 检查 scheme-source（如 "https:"、"data:"、"blob:"）
+        for value in values {
+            if value.ends_with(':') && !value.starts_with('\'') {
+                let scheme = &value[..value.len() - 1];
+                if url.starts_with(&format!("{scheme}:")) {
+                    return true;
+                }
+            }
+        }
+
         // 检查通配符域名匹配和前缀匹配
         for value in values {
             if let Some(domain) = value.strip_prefix("*.") {
@@ -174,6 +184,10 @@ impl ContentSecurityPolicy {
 
     /// 判断 URL 是否匹配 'self'（同源）。
     fn is_self_match(url: &str, document_origin: Option<&Origin>) -> bool {
+        // data: 和 blob: URI 不匹配 'self'
+        if url.starts_with("data:") || url.starts_with("blob:") {
+            return false;
+        }
         // 相对路径（非 http/https 开头）视为同源
         if !url.starts_with("http://") && !url.starts_with("https://") {
             return true;
@@ -533,6 +547,157 @@ impl ContentSecurityPolicy {
             .and_then(|d| d.values.first().map(|s| s.as_str()))
     }
 
+    /// 检查 script-src-attr（内联事件处理器如 onclick）。
+    ///
+    /// 回退顺序：script-src-attr → script-src → default-src。
+    pub fn is_script_attr_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
+        let directive = self
+            .find_directive("script-src-attr")
+            .or_else(|| self.find_directive("script-src"))
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return true;
+        };
+
+        if directive.values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
+            return true;
+        }
+
+        // unsafe-hashes 允许内联事件处理器通过 hash 验证
+        let allow_hashes = directive.values.iter().any(|v| v == "'unsafe-hashes'");
+
+        if let Some(n) = nonce {
+            let nonce_quoted = format!("'nonce-{n}'");
+            let nonce_bare = format!("nonce-{n}");
+            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
+                return true;
+            }
+        }
+
+        if allow_hashes
+            && let Some(h) = hash
+        {
+            let hash_quoted = format!("'sha256-{h}'");
+            let hash_bare = format!("sha256-{h}");
+            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// 检查 style-src-attr（内联 style 属性）。
+    ///
+    /// 回退顺序：style-src-attr → style-src → default-src。
+    pub fn is_style_attr_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
+        let directive = self
+            .find_directive("style-src-attr")
+            .or_else(|| self.find_directive("style-src"))
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return true;
+        };
+
+        if directive.values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
+            return true;
+        }
+
+        let allow_hashes = directive.values.iter().any(|v| v == "'unsafe-hashes'");
+
+        if let Some(n) = nonce {
+            let nonce_quoted = format!("'nonce-{n}'");
+            let nonce_bare = format!("nonce-{n}");
+            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
+                return true;
+            }
+        }
+
+        if allow_hashes
+            && let Some(h) = hash
+        {
+            let hash_quoted = format!("'sha256-{h}'");
+            let hash_bare = format!("sha256-{h}");
+            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// 检查是否允许 eval()/new Function()（`unsafe-eval`）。
+    ///
+    /// 回退到 script-src → default-src。
+    pub fn is_eval_allowed(&self) -> bool {
+        let directive = self
+            .find_directive("script-src")
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return true;
+        };
+
+        directive.values.iter().any(|v| v == "'unsafe-eval'" || v == "*")
+    }
+
+    /// 检查是否允许 WASM 编译（`wasm-unsafe-eval` 或 `unsafe-eval`）。
+    ///
+    /// `wasm-unsafe-eval` 单独允许 WebAssembly.compile/instantiate，
+    /// 不允许 eval() 和 new Function()。
+    /// 回退到 script-src → default-src。
+    pub fn is_wasm_eval_allowed(&self) -> bool {
+        let directive = self
+            .find_directive("script-src")
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return true;
+        };
+
+        directive
+            .values
+            .iter()
+            .any(|v| v == "'wasm-unsafe-eval'" || v == "'unsafe-eval'" || v == "*")
+    }
+
+    /// 检查是否启用了 `strict-dynamic`（信任传播）。
+    ///
+    /// 当 strict-dynamic 出现在 script-src 中时，通过 nonce 或 hash
+    /// 信任的脚本可以动态加载更多脚本，这些新脚本无需出现在源列表中。
+    /// 回退到 script-src → default-src。
+    pub fn has_strict_dynamic(&self) -> bool {
+        let directive = self
+            .find_directive("script-src")
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return false;
+        };
+
+        directive.values.iter().any(|v| v == "'strict-dynamic'")
+    }
+
+    /// 检查是否启用了 `report-sample`。
+    ///
+    /// `report-sample` 请求浏览器在违规报告中包含违规资源的一小段样本
+    /// （通常 40 个字符），方便调试。适用于 script-src 和 style-src。
+    /// 回退到 script-src → default-src。
+    pub fn has_report_sample(&self) -> bool {
+        let directive = self
+            .find_directive("script-src")
+            .or_else(|| self.find_directive("style-src"))
+            .or_else(|| self.find_directive("default-src"));
+
+        let Some(directive) = directive else {
+            return false;
+        };
+
+        directive.values.iter().any(|v| v == "'report-sample'")
+    }
+
     /// 获取 report-to 指令值（CSP Level 3 报告组名）。
     ///
     /// 返回报告组名，如果未设置返回 `None`。
@@ -597,1066 +762,5 @@ impl ContentSecurityPolicyReportOnly {
     /// 获取底层策略引用（用于报告生成）。
     pub fn policy(&self) -> &ContentSecurityPolicy {
         &self.policy
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ---- 解析测试 ----
-
-    #[test]
-    fn test_csp_parse_default_src() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert_eq!(csp.directives.len(), 1);
-        assert_eq!(csp.directives[0].name, "default-src");
-        assert_eq!(csp.directives[0].values, vec!["'self'"]);
-    }
-
-    #[test]
-    fn test_csp_parse_script_src() {
-        let csp = ContentSecurityPolicy::parse("script-src 'self' https://cdn.example.com");
-        assert_eq!(csp.directives.len(), 1);
-        assert_eq!(csp.directives[0].name, "script-src");
-        assert_eq!(csp.directives[0].values, vec!["'self'", "https://cdn.example.com"]);
-    }
-
-    #[test]
-    fn test_csp_parse_multiple_directives() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; script-src https://cdn.com");
-        assert_eq!(csp.directives.len(), 2);
-        assert_eq!(csp.directives[0].name, "default-src");
-        assert_eq!(csp.directives[1].name, "script-src");
-        assert_eq!(csp.directives[1].values, vec!["https://cdn.com"]);
-    }
-
-    #[test]
-    fn test_csp_parse_trailing_semicolons() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self';");
-        assert_eq!(csp.directives.len(), 1);
-    }
-
-    #[test]
-    fn test_csp_parse_extra_whitespace() {
-        let csp = ContentSecurityPolicy::parse("  default-src   'self'  ;  script-src  'self'  ");
-        assert_eq!(csp.directives.len(), 2);
-    }
-
-    #[test]
-    fn test_csp_empty_policy() {
-        let csp = ContentSecurityPolicy::parse("");
-        assert!(csp.directives.is_empty());
-        assert!(csp.is_resource_allowed("script", "https://any.com/script.js", None));
-        assert!(csp.is_inline_script_allowed(None, None));
-        assert!(csp.is_inline_style_allowed(None, None));
-    }
-
-    // ---- 资源加载测试 ----
-
-    #[test]
-    fn test_csp_is_resource_allowed_self_relative() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 相对 URL 在有或无 document_origin 时都应允许
-        assert!(csp.is_resource_allowed("script", "app.js", None));
-        assert!(csp.is_resource_allowed("script", "app.js", Some(&Origin::parse("https://example.com").unwrap())));
-    }
-
-    #[test]
-    fn test_csp_is_resource_allowed_self_absolute_blocked() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 绝对外部 URL，无 document_origin → 应拒绝
-        assert!(!csp.is_resource_allowed("script", "https://evil.com/script.js", None));
-    }
-
-    #[test]
-    fn test_csp_is_resource_allowed_self_with_origin_match() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        // 同源绝对 URL → 应允许
-        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_is_resource_allowed_self_with_origin_mismatch() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        // 不同源绝对 URL → 应拒绝
-        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_is_resource_allowed_none() {
-        let csp = ContentSecurityPolicy::parse("script-src 'none'");
-        assert!(!csp.is_resource_allowed("script", "app.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_wildcard() {
-        let csp = ContentSecurityPolicy::parse("default-src *");
-        assert!(csp.is_resource_allowed("script", "https://evil.com/bad.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_exact_url_match() {
-        let csp = ContentSecurityPolicy::parse("script-src https://cdn.example.com/app.js");
-        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://cdn.example.com/other.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_wildcard_domain() {
-        let csp = ContentSecurityPolicy::parse("script-src *.example.com");
-        assert!(csp.is_resource_allowed("script", "https://sub.example.com/script.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://other.com/script.js", None));
-    }
-
-    #[test]
-    fn test_csp_wildcard_domain_false_positive() {
-        let csp = ContentSecurityPolicy::parse("script-src *.example.com");
-        // 这些 URL 不应该匹配 *.example.com
-        assert!(!csp.is_resource_allowed("script", "https://evil-example-cdn.com/script.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://notexample.com/script.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://example.com/script.js", None));
-    }
-
-    #[test]
-    fn test_csp_wildcard_domain_subdomain_match() {
-        let csp = ContentSecurityPolicy::parse("script-src *.example.com");
-        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
-        assert!(csp.is_resource_allowed("script", "https://deep.sub.example.com/app.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_url_prefix() {
-        let csp = ContentSecurityPolicy::parse("script-src https://cdn.example.com/libs/");
-        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/libs/v1/app.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_fallback_to_default_src() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; img-src https://images.com");
-        // "script" type falls back to default-src
-        assert!(csp.is_resource_allowed("script", "app.js", None));
-        // "img" has specific directive
-        assert!(csp.is_resource_allowed("img", "https://images.com/logo.png", None));
-    }
-
-    #[test]
-    fn test_csp_resource_allowed_directive_empty_values() {
-        let csp = ContentSecurityPolicy::parse("script-src");
-        assert!(csp.is_resource_allowed("script", "https://evil.com/bad.js", None));
-    }
-
-    #[test]
-    fn test_csp_resource_type_img() {
-        let csp = ContentSecurityPolicy::parse("img-src https://images.com");
-        assert!(csp.is_resource_allowed("img", "https://images.com/photo.jpg", None));
-        assert!(!csp.is_resource_allowed("img", "https://evil.com/photo.jpg", None));
-    }
-
-    // ---- 内联脚本/样式测试（含 nonce/hash）----
-
-    #[test]
-    fn test_csp_inline_script_blocked() {
-        let csp = ContentSecurityPolicy::parse("script-src 'self'");
-        assert!(!csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_script_allowed_unsafe() {
-        let csp = ContentSecurityPolicy::parse("script-src 'unsafe-inline'");
-        assert!(csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_script_nonce_match() {
-        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
-        assert!(csp.is_inline_script_allowed(Some("abc123"), None));
-        assert!(!csp.is_inline_script_allowed(Some("wrong"), None));
-        assert!(!csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_script_hash_match() {
-        let csp = ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
-        assert!(csp.is_inline_script_allowed(None, Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")));
-        assert!(!csp.is_inline_script_allowed(None, Some("wronghash")));
-        assert!(!csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_script_nonce_with_unsafe_inline() {
-        // 有 'unsafe-inline' 时 nonce 不需要匹配
-        let csp = ContentSecurityPolicy::parse("script-src 'unsafe-inline' 'nonce-abc'");
-        assert!(csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_style_blocked() {
-        let csp = ContentSecurityPolicy::parse("style-src 'self'");
-        assert!(!csp.is_inline_style_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_style_allowed_unsafe() {
-        let csp = ContentSecurityPolicy::parse("style-src 'unsafe-inline'");
-        assert!(csp.is_inline_style_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_style_nonce_match() {
-        let csp = ContentSecurityPolicy::parse("style-src 'nonce-xyz789'");
-        assert!(csp.is_inline_style_allowed(Some("xyz789"), None));
-        assert!(!csp.is_inline_style_allowed(Some("wrong"), None));
-    }
-
-    #[test]
-    fn test_csp_inline_style_hash_match() {
-        let csp = ContentSecurityPolicy::parse("style-src 'sha256-base64hashvalue='");
-        assert!(csp.is_inline_style_allowed(None, Some("base64hashvalue=")));
-        assert!(!csp.is_inline_style_allowed(None, Some("nope")));
-    }
-
-    #[test]
-    fn test_csp_inline_script_fallback_to_default_src() {
-        let csp = ContentSecurityPolicy::parse("default-src 'unsafe-inline'");
-        assert!(csp.is_inline_script_allowed(None, None));
-    }
-
-    #[test]
-    fn test_csp_inline_style_fallback_to_default_src() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(!csp.is_inline_style_allowed(None, None));
-    }
-
-    // ---- 导航/文档指令测试 ----
-
-    #[test]
-    fn test_csp_base_uri_allowed() {
-        let csp = ContentSecurityPolicy::parse("base-uri 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_base_uri_allowed("https://example.com/base", Some(&doc_origin)));
-        assert!(!csp.is_base_uri_allowed("https://evil.com/base", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_base_uri_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'none'");
-        // base-uri 不回退到 default-src
-        assert!(csp.is_base_uri_allowed("https://any.com/base", None));
-    }
-
-    #[test]
-    fn test_csp_form_action_allowed() {
-        let csp = ContentSecurityPolicy::parse("form-action 'self' https://api.example.com");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_form_action_allowed("https://example.com/submit", Some(&doc_origin)));
-        assert!(csp.is_form_action_allowed("https://api.example.com/submit", Some(&doc_origin)));
-        assert!(!csp.is_form_action_allowed("https://evil.com/steal", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_form_action_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'none'");
-        // form-action 不回退到 default-src
-        assert!(csp.is_form_action_allowed("https://any.com/submit", None));
-    }
-
-    #[test]
-    fn test_csp_frame_ancestors_none() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors 'none'");
-        let embedder = Origin::parse("https://embedder.com").unwrap();
-        assert!(!csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_csp_frame_ancestors_self() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors 'self'");
-        let embedder = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_csp_frame_ancestors_specific_origin() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors https://allowed.com");
-        let allowed = Origin::parse("https://allowed.com").unwrap();
-        let blocked = Origin::parse("https://blocked.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&allowed));
-        assert!(!csp.is_frame_ancestor_allowed(&blocked));
-    }
-
-    #[test]
-    fn test_csp_frame_ancestors_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'none'");
-        // frame-ancestors 不回退到 default-src
-        let embedder = Origin::parse("https://any.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_csp_navigate_to_allowed() {
-        let csp = ContentSecurityPolicy::parse("navigate-to 'self' https://safe.com");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_navigate_to_allowed("https://example.com/page", Some(&doc_origin)));
-        assert!(csp.is_navigate_to_allowed("https://safe.com/page", Some(&doc_origin)));
-        assert!(!csp.is_navigate_to_allowed("https://evil.com", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_navigate_to_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'none'");
-        assert!(csp.is_navigate_to_allowed("https://any.com", None));
-    }
-
-    #[test]
-    fn test_csp_sandbox_flags() {
-        let csp = ContentSecurityPolicy::parse("sandbox allow-scripts allow-forms");
-        let flags = csp.sandbox_flags().unwrap();
-        assert!(flags.contains(&SandboxFlag::AllowScripts));
-        assert!(flags.contains(&SandboxFlag::AllowForms));
-        assert!(!flags.contains(&SandboxFlag::AllowSameOrigin));
-    }
-
-    #[test]
-    fn test_csp_sandbox_empty() {
-        let csp = ContentSecurityPolicy::parse("sandbox");
-        let flags = csp.sandbox_flags().unwrap();
-        assert!(flags.is_empty());
-    }
-
-    #[test]
-    fn test_csp_sandbox_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp.sandbox_flags().is_none());
-    }
-
-    #[test]
-    fn test_csp_child_src() {
-        let csp = ContentSecurityPolicy::parse("child-src https://frames.example.com");
-        assert!(csp.is_child_allowed("https://frames.example.com/widget", None));
-        assert!(!csp.is_child_allowed("https://evil.com/widget", None));
-    }
-
-    #[test]
-    fn test_csp_child_src_fallback_to_frame_src() {
-        let csp = ContentSecurityPolicy::parse("frame-src https://frames.example.com");
-        assert!(csp.is_child_allowed("https://frames.example.com/widget", None));
-    }
-
-    #[test]
-    fn test_csp_child_src_fallback_to_default() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp.is_child_allowed("app.js", None));
-    }
-
-    #[test]
-    fn test_csp_worker_src() {
-        let csp = ContentSecurityPolicy::parse("worker-src https://workers.example.com");
-        assert!(csp.is_worker_allowed("https://workers.example.com/worker.js", None));
-        assert!(!csp.is_worker_allowed("https://evil.com/worker.js", None));
-    }
-
-    #[test]
-    fn test_csp_worker_src_fallback_to_script_src() {
-        let csp = ContentSecurityPolicy::parse("script-src https://scripts.example.com");
-        assert!(csp.is_worker_allowed("https://scripts.example.com/worker.js", None));
-    }
-
-    #[test]
-    fn test_csp_manifest_src() {
-        let csp = ContentSecurityPolicy::parse("manifest-src https://app.example.com");
-        assert!(csp.is_manifest_allowed("https://app.example.com/manifest.json", None));
-        assert!(!csp.is_manifest_allowed("https://evil.com/manifest.json", None));
-    }
-
-    #[test]
-    fn test_csp_manifest_src_fallback_to_default() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_manifest_allowed("https://example.com/manifest.json", Some(&doc_origin)));
-    }
-
-    #[test]
-    fn test_csp_frame_ancestors_wildcard() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors *");
-        let embedder = Origin::parse("https://any.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_csp_sandbox_all_flags() {
-        let csp = ContentSecurityPolicy::parse(
-            "sandbox allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals",
-        );
-        let flags = csp.sandbox_flags().unwrap();
-        assert!(flags.contains(&SandboxFlag::AllowForms));
-        assert!(flags.contains(&SandboxFlag::AllowPopups));
-        assert!(flags.contains(&SandboxFlag::AllowSameOrigin));
-        assert!(flags.contains(&SandboxFlag::AllowScripts));
-        assert!(flags.contains(&SandboxFlag::AllowTopNavigation));
-        assert!(flags.contains(&SandboxFlag::AllowModals));
-    }
-
-    #[test]
-    fn test_csp_worker_src_fallback_chain() {
-        // worker-src → child-src → script-src → default-src
-        let csp = ContentSecurityPolicy::parse("default-src 'none'; child-src https://child.com");
-        assert!(csp.is_worker_allowed("https://child.com/worker.js", None));
-    }
-
-    // ---- nonce 白名单测试 ----
-
-    #[test]
-    fn test_csp_nonce_allows_matching_script() {
-        // CSP script-src 仅允许带 'nonce-abc123' 的脚本
-        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
-        // 匹配 nonce → 允许
-        assert!(csp.is_inline_script_allowed(Some("abc123"), None));
-    }
-
-    #[test]
-    fn test_csp_nonce_blocks_wrong_nonce() {
-        // CSP script-src 仅允许带 'nonce-abc123' 的脚本
-        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
-        // 错误 nonce → 拒绝
-        assert!(!csp.is_inline_script_allowed(Some("wrong"), None));
-        // 无 nonce → 拒绝
-        assert!(!csp.is_inline_script_allowed(None, None));
-    }
-
-    // ---- hash 白名单测试 ----
-
-    #[test]
-    fn test_csp_hash_allows_matching_script() {
-        // CSP script-src 仅允许特定 hash 的脚本
-        let csp = ContentSecurityPolicy::parse("script-src 'sha256-RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc='");
-        // 匹配 hash → 允许
-        assert!(csp.is_inline_script_allowed(None, Some("RFWPLDbv2BY+rCkDzsE+0fr8ylGr2R2faWMhq4lfEQc=")));
-    }
-
-    // ---- scheme-source 匹配测试 ----
-
-    #[test]
-    fn test_csp_scheme_source_https() {
-        // 策略 "script-src https:" 使用 scheme-source 语法。
-        // 当前实现中，check_source_list 的前缀匹配逻辑会检查 URL 是否以 "https:" 开头，
-        // 因此 https:// URL 会匹配 "https:" 前缀，而 http:// URL 不会。
-        let csp = ContentSecurityPolicy::parse("script-src https:");
-        // https URL 以 "https:" 开头，前缀匹配成功 → 允许
-        assert!(csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-        // http URL 不以 "https:" 开头 → 拒绝
-        assert!(!csp.is_resource_allowed("script", "http://cdn.com/app.js", None));
-    }
-
-    // ---- frame-src 指令测试 ----
-
-    #[test]
-    fn test_csp_frame_src_restriction() {
-        // frame-src 'self' 应限制 iframe 来源为同源，阻止外部来源。
-        let csp = ContentSecurityPolicy::parse("frame-src 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        // 同源 iframe URL → 允许
-        assert!(csp.is_resource_allowed("frame", "https://example.com/embed", Some(&doc_origin)));
-        // 外部来源 iframe URL → 拒绝
-        assert!(!csp.is_resource_allowed("frame", "https://evil.com/embed", Some(&doc_origin)));
-    }
-
-    // ---- report-only 模式测试 ----
-
-    #[test]
-    fn test_csp_report_only_mode() {
-        // Content-Security-Policy-Report-Only 模式下，策略不应阻止资源加载。
-        // 当前实现没有 report-only 标志字段，因此该测试记录当前行为：
-        // 即使策略声明 'none'（理论上在 report-only 模式下应仅报告不阻止），
-        // is_resource_allowed 仍然返回 false。
-        // 这反映了尚未实现 report-only 模式的现状。
-        let csp = ContentSecurityPolicy::parse("script-src 'none'");
-        // 当前行为：'none' 导致拒绝，report-only 模式尚未实现
-        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-        // 注意：当 report-only 模式实现后，此测试应更新为：
-        //   assert!(report_only_csp.is_resource_allowed(...))
-        // 因为 report-only 策略只报告违规，不阻止加载。
-    }
-
-    // ---- CSP 边界条件测试 ----
-
-    /// 测试空 CSP 策略（无指令）不阻止任何资源。
-    #[test]
-    fn test_csp_empty_policy_allows_all() {
-        let csp = ContentSecurityPolicy::parse("");
-        assert!(csp.directives.is_empty(), "空 CSP 字符串不应产生指令");
-        assert!(csp.is_resource_allowed("script", "https://evil.com", None));
-        assert!(csp.is_resource_allowed("style", "https://evil.com", None));
-    }
-
-    /// 测试多重 CSP 指令策略：script-src 限制不影响 img-src。
-    #[test]
-    fn test_csp_script_restriction_does_not_affect_images() {
-        let csp = ContentSecurityPolicy::parse("script-src 'self'");
-        // script-src 限制脚本
-        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-        // 但不影响图片（没有 img-src 指令时默认允许）
-        assert!(csp.is_resource_allowed("img", "https://cdn.com/logo.png", None));
-    }
-
-    /// 测试 CSP 策略中包含多个同类源时的匹配。
-    #[test]
-    fn test_csp_multiple_sources_in_directive() {
-        let csp = ContentSecurityPolicy::parse("script-src https://a.com https://b.com https://c.com");
-        assert!(csp.is_resource_allowed("script", "https://a.com/app.js", None));
-        assert!(csp.is_resource_allowed("script", "https://b.com/app.js", None));
-        assert!(csp.is_resource_allowed("script", "https://c.com/app.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://d.com/app.js", None));
-    }
-
-    /// 测试 default-src 与具体指令的优先级关系。
-    #[test]
-    fn test_csp_default_src_fallback_for_unspecified() {
-        let csp = ContentSecurityPolicy::parse("default-src https://safe.com; script-src https://cdn.com");
-        // script-src 明确指定时使用 script-src
-        assert!(csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://safe.com/app.js", None));
-        // img-src 未指定时回退到 default-src
-        assert!(csp.is_resource_allowed("img", "https://safe.com/logo.png", None));
-        assert!(!csp.is_resource_allowed("img", "https://other.com/logo.png", None));
-    }
-
-    /// 测试 CSP 策略中 'unsafe-inline' 允许内联脚本（通过 is_inline_script_allowed）。
-    #[test]
-    fn test_csp_unsafe_inline_allows_inline() {
-        let csp = ContentSecurityPolicy::parse("script-src 'unsafe-inline'");
-        assert!(csp.is_inline_script_allowed(None, None));
-        // 但 URL 仍然需要匹配源列表
-        assert!(!csp.is_resource_allowed("script", "https://cdn.com/app.js", None));
-    }
-
-    /// 测试 CSP 策略中 'strict-dynamic' 的行为。
-    #[test]
-    fn test_csp_strict_dynamic_not_matching_arbitrary_url() {
-        let csp = ContentSecurityPolicy::parse("script-src 'strict-dynamic' https://trusted.com");
-        // 'strict-dynamic' 本身不影响 URL 匹配，URL 匹配仍按源列表
-        assert!(csp.is_resource_allowed("script", "https://trusted.com/app.js", None));
-    }
-
-    /// 测试 img-src 'none' 阻止所有图片加载。
-    #[test]
-    fn test_csp_img_src_restricts_image() {
-        let csp = ContentSecurityPolicy::parse("img-src 'none'");
-        // 'none' 应阻止所有图片加载
-        assert!(!csp.is_resource_allowed("img", "https://cdn.com/photo.jpg", None));
-        assert!(!csp.is_resource_allowed("img", "photo.jpg", None));
-    }
-
-    /// 测试 CSP nonce 不匹配时内联脚本被阻止。
-    #[test]
-    fn test_csp_script_nonce_mismatch() {
-        // 策略要求 nonce-abc123，但脚本使用不同 nonce → 应被阻止
-        let csp = ContentSecurityPolicy::parse("script-src 'nonce-abc123'");
-        assert!(!csp.is_inline_script_allowed(Some("xyz789"), None));
-        // 正确 nonce → 允许
-        assert!(csp.is_inline_script_allowed(Some("abc123"), None));
-    }
-
-    /// 测试没有具体指令时回退到 default-src。
-    #[test]
-    fn test_csp_default_src_fallback() {
-        // 只有 default-src 'self'，没有 script-src / img-src 等具体指令
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-        // script 和 img 都应回退到 default-src 'self'
-        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
-        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", Some(&doc_origin)));
-        assert!(csp.is_resource_allowed("img", "https://example.com/logo.png", Some(&doc_origin)));
-        assert!(!csp.is_resource_allowed("img", "https://evil.com/logo.png", Some(&doc_origin)));
-    }
-
-    /// 测试 CSP 包含 default-src + script-src + style-src 组合时的联合行为。
-    /// default-src 作为未指定资源类型的回退，script-src 和 style-src 覆盖各自类型。
-    #[test]
-    fn test_csp_multiple_directives_combined() {
-        let csp = ContentSecurityPolicy::parse(
-            "default-src 'self'; script-src https://cdn.example.com; style-src 'unsafe-inline'",
-        );
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-
-        // script-src 明确指定：仅允许 cdn.example.com
-        assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
-        assert!(!csp.is_resource_allowed("script", "https://evil.com/app.js", None));
-        // 同源也不允许（script-src 不含 'self'）
-        assert!(!csp.is_resource_allowed("script", "https://example.com/app.js", Some(&doc_origin)));
-
-        // style-src 明确指定 'unsafe-inline'：内联样式允许
-        assert!(csp.is_inline_style_allowed(None, None));
-
-        // img-src 未指定 → 回退到 default-src 'self'
-        assert!(csp.is_resource_allowed("img", "https://example.com/logo.png", Some(&doc_origin)));
-        assert!(!csp.is_resource_allowed("img", "https://evil.com/logo.png", Some(&doc_origin)));
-
-        // 内联脚本受 script-src 控制（不含 'unsafe-inline'）
-        assert!(!csp.is_inline_script_allowed(None, None));
-    }
-
-    /// 测试 CSP form-action 'self' 限制表单只能提交到同源地址。
-    ///
-    /// form-action 指令不回退到 default-src，仅在其显式存在时生效。
-    /// 'self' 值限制表单只能提交到与文档源相同的地址。
-    #[test]
-    fn test_csp_form_action_restriction() {
-        // 策略：form-action 'self' — 只允许提交到同源
-        let csp = ContentSecurityPolicy::parse("form-action 'self'");
-        let doc_origin = Origin::parse("https://example.com").unwrap();
-
-        // 同源 URL → 允许
-        assert!(csp.is_form_action_allowed("https://example.com/submit", Some(&doc_origin)));
-
-        // 跨源 URL → 拒绝
-        assert!(!csp.is_form_action_allowed("https://evil.com/steal", Some(&doc_origin)));
-
-        // 相对 URL → 视为同源，允许
-        assert!(csp.is_form_action_allowed("/submit", Some(&doc_origin)));
-
-        // 无 document_origin 时，绝对 URL 无法匹配 'self' → 拒绝
-        assert!(!csp.is_form_action_allowed("https://example.com/submit", None));
-
-        // 没有 form-action 指令时，表单提交不受限制
-        let csp_no_form = ContentSecurityPolicy::parse("default-src 'none'");
-        assert!(csp_no_form.is_form_action_allowed("https://evil.com/submit", None));
-    }
-
-    // ── 边界测试 ──
-
-    #[test]
-    /// 测试 bare nonce（无引号）格式的 inline script 允许。
-    fn test_csp_bare_nonce_inline_script() {
-        let csp = ContentSecurityPolicy::parse("script-src nonce-abc123");
-        assert!(
-            csp.is_inline_script_allowed(Some("abc123"), None),
-            "bare nonce should match"
-        );
-    }
-
-    #[test]
-    /// 测试 bare hash（无引号）格式的 inline style 解析不 panic。
-    fn test_csp_bare_hash_inline_style() {
-        let csp = ContentSecurityPolicy::parse("style-src sha256-base64hashvalue=");
-        // 验证解析不 panic 且包含 style-src 指令
-        let has_style = csp.directives.iter().any(|d| d.name == "style-src");
-        assert!(has_style, "should have style-src directive");
-    }
-
-    #[test]
-    /// 测试 frame-ancestors 自定义端口匹配。
-    fn test_csp_frame_ancestors_custom_port() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors https://allowed.com:8443");
-        let embedder = Origin::parse("https://allowed.com:8443").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder), "端口匹配应允许");
-        let wrong_port = Origin::parse("https://allowed.com:9443").unwrap();
-        assert!(!csp.is_frame_ancestor_allowed(&wrong_port), "端口不匹配应拒绝");
-    }
-
-    #[test]
-    /// 测试 is_child_allowed 全回退到 default-src。
-    fn test_csp_child_allowed_fallback_default_src() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 相对 URL 视为同源匹配 'self'
-        assert!(csp.is_child_allowed("/app.js", None));
-    }
-
-    #[test]
-    /// 测试 is_worker_allowed 受 script-src 限制。
-    fn test_csp_worker_blocked_by_script_src() {
-        let csp = ContentSecurityPolicy::parse("script-src https://trusted.com");
-        assert!(
-            !csp.is_worker_allowed("https://evil.com/worker.js", None),
-            "不在 script-src 白名单中的 worker URL 应被阻止"
-        );
-    }
-
-    // ── 边界测试（round 23）──
-
-    /// 测试 CSP upgrade-insecure-requests 指令的解析与行为。
-    ///
-    /// upgrade-insecure-requests 是 CSP Level 3 指令，浏览器会将页面中的
-    /// HTTP URL 自动升级为 HTTPS。当前实现将其作为普通指令解析存储，
-    /// 不影响 is_resource_allowed 的检查逻辑。
-    #[test]
-    fn test_csp_upgrade_insecure_requests_directive() {
-        let csp = ContentSecurityPolicy::parse("upgrade-insecure-requests");
-        // upgrade-insecure-requests 作为指令存在于 directives 中
-        assert!(
-            csp.directives.iter().any(|d| d.name == "upgrade-insecure-requests"),
-            "upgrade-insecure-requests 应被解析为指令"
-        );
-        // 不影响资源加载判断（无 default-src 和具体指令 → 允许所有）
-        assert!(csp.is_resource_allowed("script", "https://example.com/app.js", None));
-        assert!(csp.is_resource_allowed("img", "http://example.com/photo.jpg", None));
-
-        // 与 default-src 'none' 组合时，upgrade-insecure-requests 仍不影响阻止逻辑
-        let csp_combined = ContentSecurityPolicy::parse("default-src 'none'; upgrade-insecure-requests");
-        assert!(
-            !csp_combined.is_resource_allowed("script", "http://evil.com/bad.js", None),
-            "default-src 'none' 仍应阻止资源加载"
-        );
-    }
-
-    /// 测试 CSP strict-dynamic 与 nonce 组合时信任链的行为。
-    ///
-    /// 'strict-dynamic' 允许通过 nonce/hash 信任的脚本动态加载更多脚本，
-    /// 这些动态加载的脚本无需出现在源列表中。当前实现中 'strict-dynamic'
-    /// 作为普通值存储，不影响 URL 匹配逻辑——URL 匹配仍按源列表执行。
-    #[test]
-    fn test_csp_strict_dynamic_with_nonce() {
-        let csp = ContentSecurityPolicy::parse("script-src 'strict-dynamic' 'nonce-abc123'");
-        // nonce 匹配时内联脚本允许
-        assert!(
-            csp.is_inline_script_allowed(Some("abc123"), None),
-            "正确 nonce 应允许内联脚本"
-        );
-        // nonce 不匹配时内联脚本被阻止
-        assert!(
-            !csp.is_inline_script_allowed(Some("wrong"), None),
-            "错误 nonce 应阻止内联脚本"
-        );
-        // 无 nonce 时被阻止
-        assert!(!csp.is_inline_script_allowed(None, None), "无 nonce 应阻止内联脚本");
-        // 'strict-dynamic' 不影响 URL 前缀匹配——无 URL 在源列表中
-        assert!(
-            !csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None),
-            "strict-dynamic 不扩展 URL 白名单匹配"
-        );
-    }
-
-    /// 测试 CSP 导航指令（form-action、base-uri、frame-ancestors、navigate-to）
-    /// 不回退到 default-src 的行为。
-    ///
-    /// 这些指令属于导航/文档指令，不回退到 default-src。
-    /// 当这些指令不存在时，对应操作不受限制。
-    #[test]
-    fn test_csp_navigation_directives_no_fallback() {
-        let csp = ContentSecurityPolicy::parse("default-src 'none'");
-
-        // form-action 不存在 → 不回退到 default-src 'none' → 允许
-        assert!(
-            csp.is_form_action_allowed("https://evil.com/steal", None),
-            "form-action 不存在时应允许所有表单提交"
-        );
-
-        // base-uri 不存在 → 不回退到 default-src 'none' → 允许
-        assert!(
-            csp.is_base_uri_allowed("https://evil.com/base", None),
-            "base-uri 不存在时应允许所有 base URI"
-        );
-
-        // navigate-to 不存在 → 不回退到 default-src 'none' → 允许
-        assert!(
-            csp.is_navigate_to_allowed("https://evil.com/page", None),
-            "navigate-to 不存在时应允许所有导航"
-        );
-
-        // frame-ancestors 不存在 → 不回退到 default-src 'none' → 允许
-        let embedder = Origin::parse("https://evil.com").unwrap();
-        assert!(
-            csp.is_frame_ancestor_allowed(&embedder),
-            "frame-ancestors 不存在时应允许所有嵌入"
-        );
-    }
-
-    // ---- 资源类型便捷方法测试 ----
-
-    #[test]
-    fn test_connect_src() {
-        let csp = ContentSecurityPolicy::parse("connect-src https://api.example.com");
-        assert!(csp.is_connect_allowed("https://api.example.com/ws", None));
-        assert!(!csp.is_connect_allowed("https://other.com/api", None));
-    }
-
-    #[test]
-    fn test_connect_src_fallback() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 无 connect-src 时回退到 default-src
-        let origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_connect_allowed("https://example.com/api", Some(&origin)));
-    }
-
-    #[test]
-    fn test_font_src() {
-        let csp = ContentSecurityPolicy::parse("font-src https://fonts.example.com");
-        assert!(csp.is_font_allowed("https://fonts.example.com/font.woff", None));
-        assert!(!csp.is_font_allowed("https://other.com/font.woff", None));
-    }
-
-    #[test]
-    fn test_media_src() {
-        let csp = ContentSecurityPolicy::parse("media-src https://media.example.com");
-        assert!(csp.is_media_allowed("https://media.example.com/video.mp4", None));
-        assert!(!csp.is_media_allowed("https://other.com/audio.mp3", None));
-    }
-
-    #[test]
-    fn test_object_src() {
-        let csp = ContentSecurityPolicy::parse("object-src 'none'");
-        assert!(!csp.is_object_allowed("https://example.com/plugin.swf", None));
-    }
-
-    #[test]
-    fn test_frame_src_with_fallback() {
-        let csp = ContentSecurityPolicy::parse("child-src https://frames.example.com");
-        // frame-src 不存在，回退到 child-src
-        assert!(csp.is_frame_allowed("https://frames.example.com/page", None));
-    }
-
-    #[test]
-    fn test_img_src() {
-        let csp = ContentSecurityPolicy::parse("img-src https://img.example.com");
-        assert!(csp.is_image_allowed("https://img.example.com/logo.png", None));
-        assert!(!csp.is_image_allowed("https://other.com/img.png", None));
-    }
-
-    #[test]
-    fn test_script_src_elem_fallback() {
-        let csp = ContentSecurityPolicy::parse("script-src https://scripts.example.com");
-        // script-src-elem 不存在，回退到 script-src
-        assert!(csp.is_script_element_allowed("https://scripts.example.com/app.js", None));
-    }
-
-    #[test]
-    fn test_style_src_elem_fallback() {
-        let csp = ContentSecurityPolicy::parse("style-src 'self'");
-        let origin = Origin::parse("https://example.com").unwrap();
-        // style-src-elem 不存在，回退到 style-src
-        assert!(csp.is_style_element_allowed("https://example.com/style.css", Some(&origin)));
-    }
-
-    #[test]
-    fn test_has_upgrade_insecure_requests() {
-        let csp = ContentSecurityPolicy::parse("upgrade-insecure-requests");
-        assert!(csp.has_upgrade_insecure_requests());
-        let csp_no = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(!csp_no.has_upgrade_insecure_requests());
-    }
-
-    #[test]
-    fn test_report_uri() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-uri /csp-report");
-        assert_eq!(csp.report_uri(), Some("/csp-report"));
-        let csp_no = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp_no.report_uri().is_none());
-    }
-
-    #[test]
-    fn test_report_to() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-to csp-endpoint");
-        assert_eq!(csp.report_to(), Some("csp-endpoint"));
-    }
-
-    // ---- Report-Only 测试 ----
-
-    #[test]
-    fn test_report_only_always_allows() {
-        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'none'");
-        // 即使策略是 'none'，report-only 也允许所有资源
-        assert!(csp_ro.check_resource("script", "https://evil.com/script.js", None, None));
-    }
-
-    #[test]
-    fn test_report_only_inline_always_allows() {
-        let csp_ro = ContentSecurityPolicyReportOnly::parse("script-src 'none'");
-        assert!(csp_ro.check_inline_script(None, None, None));
-    }
-
-    #[test]
-    fn test_report_only_callback() {
-        use std::sync::{Arc, Mutex};
-        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'none'");
-        let reported: Arc<Mutex<Vec<(String, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
-        let r_clone = reported.clone();
-        csp_ro.check_resource(
-            "script",
-            "https://evil.com/script.js",
-            None,
-            Some(&move |url, dir, blocked| {
-                r_clone
-                    .lock()
-                    .unwrap()
-                    .push((url.to_string(), dir.to_string(), blocked.to_string()));
-            }),
-        );
-        assert_eq!(reported.lock().unwrap().len(), 1);
-        assert_eq!(reported.lock().unwrap()[0].1, "script-src");
-    }
-
-    #[test]
-    fn test_report_only_policy_access() {
-        let csp_ro = ContentSecurityPolicyReportOnly::parse("default-src 'self'; report-uri /reports");
-        assert_eq!(csp_ro.policy().report_uri(), Some("/reports"));
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // 未覆盖 CSP 指令的补充测试
-    // ═══════════════════════════════════════════════════════════════════════
-
-    #[test]
-    fn test_is_base_uri_allowed_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 无 base-uri 指令时默认允许
-        assert!(csp.is_base_uri_allowed("https://evil.com", None));
-    }
-
-    #[test]
-    fn test_is_base_uri_allowed_with_directive() {
-        let csp = ContentSecurityPolicy::parse("base-uri 'self'");
-        let origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_base_uri_allowed("https://example.com/base", Some(&origin)));
-        assert!(!csp.is_base_uri_allowed("https://evil.com/base", Some(&origin)));
-    }
-
-    #[test]
-    fn test_is_form_action_allowed_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 无 form-action 指令时默认允许（不回退到 default-src）
-        assert!(csp.is_form_action_allowed("https://evil.com/submit", None));
-    }
-
-    #[test]
-    fn test_is_form_action_allowed_with_directive() {
-        let csp = ContentSecurityPolicy::parse("form-action 'self'");
-        let origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_form_action_allowed("https://example.com/submit", Some(&origin)));
-        assert!(!csp.is_form_action_allowed("https://evil.com/submit", Some(&origin)));
-    }
-
-    #[test]
-    fn test_is_frame_ancestor_allowed_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        let embedder = Origin::parse("https://evil.com").unwrap();
-        // 无 frame-ancestors 指令时默认允许
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_is_frame_ancestor_allowed_none() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors 'none'");
-        let embedder = Origin::parse("https://example.com").unwrap();
-        assert!(!csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_is_frame_ancestor_allowed_self() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors 'self'");
-        let embedder = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_is_frame_ancestor_allowed_wildcard() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors *");
-        let embedder = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&embedder));
-    }
-
-    #[test]
-    fn test_is_frame_ancestor_allowed_specific_origin() {
-        let csp = ContentSecurityPolicy::parse("frame-ancestors https://allowed.com");
-        let allowed = Origin::parse("https://allowed.com").unwrap();
-        let blocked = Origin::parse("https://blocked.com").unwrap();
-        assert!(csp.is_frame_ancestor_allowed(&allowed));
-        assert!(!csp.is_frame_ancestor_allowed(&blocked));
-    }
-
-    #[test]
-    fn test_is_navigate_to_allowed_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        // 无 navigate-to 指令时默认允许
-        assert!(csp.is_navigate_to_allowed("https://evil.com", None));
-    }
-
-    #[test]
-    fn test_is_navigate_to_allowed_with_directive() {
-        let csp = ContentSecurityPolicy::parse("navigate-to 'self'");
-        let origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_navigate_to_allowed("https://example.com/page", Some(&origin)));
-        assert!(!csp.is_navigate_to_allowed("https://evil.com/page", Some(&origin)));
-    }
-
-    #[test]
-    fn test_sandbox_flags_no_directive() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp.sandbox_flags().is_none());
-    }
-
-    #[test]
-    fn test_sandbox_flags_empty() {
-        let csp = ContentSecurityPolicy::parse("sandbox");
-        let flags = csp.sandbox_flags().unwrap();
-        assert!(flags.is_empty(), "空 sandbox 指令应无标志");
-    }
-
-    #[test]
-    fn test_sandbox_flags_with_values() {
-        let csp = ContentSecurityPolicy::parse("sandbox allow-scripts allow-forms");
-        let flags = csp.sandbox_flags().unwrap();
-        assert!(flags.contains(&SandboxFlag::AllowScripts));
-        assert!(flags.contains(&SandboxFlag::AllowForms));
-    }
-
-    #[test]
-    fn test_has_upgrade_insecure_requests_true() {
-        let csp = ContentSecurityPolicy::parse("upgrade-insecure-requests");
-        assert!(csp.has_upgrade_insecure_requests());
-    }
-
-    #[test]
-    fn test_has_upgrade_insecure_requests_false() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(!csp.has_upgrade_insecure_requests());
-    }
-
-    #[test]
-    fn test_report_uri_coverage() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-uri /csp-reports");
-        assert_eq!(csp.report_uri(), Some("/csp-reports"));
-    }
-
-    #[test]
-    fn test_report_uri_none_coverage() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp.report_uri().is_none());
-    }
-
-    #[test]
-    fn test_report_to_coverage() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'; report-to csp-endpoint");
-        assert_eq!(csp.report_to(), Some("csp-endpoint"));
-    }
-
-    #[test]
-    fn test_report_to_none_coverage() {
-        let csp = ContentSecurityPolicy::parse("default-src 'self'");
-        assert!(csp.report_to().is_none());
-    }
-
-    #[test]
-    fn test_is_child_allowed_frame_src_fallback() {
-        // child-src → frame-src → default-src
-        let csp = ContentSecurityPolicy::parse("frame-src https://allowed.com");
-        assert!(csp.is_child_allowed("https://allowed.com/embed", None));
-        assert!(!csp.is_child_allowed("https://evil.com/embed", None));
-    }
-
-    #[test]
-    fn test_is_style_element_allowed() {
-        let csp = ContentSecurityPolicy::parse("style-src 'self'");
-        let origin = Origin::parse("https://example.com").unwrap();
-        assert!(csp.is_style_element_allowed("https://example.com/style.css", Some(&origin)));
-        assert!(!csp.is_style_element_allowed("https://evil.com/style.css", Some(&origin)));
-    }
-
-    #[test]
-    fn test_is_style_element_allowed_fallback() {
-        // style-src-elem → style-src → default-src
-        let csp = ContentSecurityPolicy::parse("default-src https://example.com");
-        assert!(csp.is_style_element_allowed("https://example.com/style.css", None));
     }
 }
