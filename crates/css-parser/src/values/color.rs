@@ -43,6 +43,37 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
     parse_named_color(value)
 }
 
+/// Quirks mode 颜色解析。
+///
+/// 先尝试标准 `parse_color`，如果失败，则尝试 quirks mode 特有的解析规则：
+/// - 不带 `#` 前缀的十六进制字符串（如 `"FF0000"` → 红色）
+/// - 纯数字字符串（如 `"0"` → 黑色，`"16711680"` → 红色）
+///
+/// 这是浏览器在 quirks mode 下对颜色属性值的宽容行为。
+pub fn parse_color_quirks(value: &str) -> Option<ColorValue> {
+    let value = value.trim();
+
+    // 先尝试标准解析
+    if let Some(c) = parse_color(value) {
+        return Some(c);
+    }
+
+    // Quirks: 尝试作为不带 # 的十六进制解析（3位或6位）
+    if (value.len() == 3 || value.len() == 6) && value.chars().all(|c| c.is_ascii_hexdigit()) {
+        return parse_hex_color(&format!("#{}", value));
+    }
+
+    // Quirks: 尝试作为纯数字解析（转为 24-bit RGB）
+    if let Ok(num) = value.parse::<u32>() {
+        let r = ((num >> 16) & 0xFF) as u8;
+        let g = ((num >> 8) & 0xFF) as u8;
+        let b = (num & 0xFF) as u8;
+        return Some(ColorValue::Rgba(r, g, b, 255));
+    }
+
+    None
+}
+
 /// 解析十六进制颜色。
 fn parse_hex_color(value: &str) -> Option<ColorValue> {
     let hex = &value[1..]; // 去掉 #

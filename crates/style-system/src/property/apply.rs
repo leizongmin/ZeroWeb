@@ -16,11 +16,29 @@ pub(crate) fn parse_length_or_math(value: &str) -> Option<LengthValue> {
     values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
-/// 将属性字符串值设置到 ComputedStyle 的对应字段。
+/// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
 ///
 /// 返回 true 表示成功设置。
 pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
+    apply_property_value_with_quirks(style, property, value, false)
+}
+
+/// 将属性字符串值设置到 ComputedStyle 的对应字段。
+///
+/// 返回 true 表示成功设置。
+///
+/// 当 `quirks_mode` 为 true 时，颜色解析使用 quirks mode 宽容规则
+/// （如接受不带 # 的十六进制、纯数字颜色值）。
+pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &str, value: &str, quirks_mode: bool) -> bool {
     let value = value.trim();
+
+    // 颜色解析函数：quirks mode 使用宽松解析
+    let parse_color_fn = if quirks_mode {
+        values::parse_color_quirks
+    } else {
+        values::parse_color
+    };
+
     match property {
         "display" => {
             if let Some(v) = values::parse_display(value) {
@@ -190,25 +208,25 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "border-top-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.border_top_color = v;
                 return true;
             }
         }
         "border-right-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.border_right_color = v;
                 return true;
             }
         }
         "border-bottom-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.border_bottom_color = v;
                 return true;
             }
         }
         "border-left-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.border_left_color = v;
                 return true;
             }
@@ -275,7 +293,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "outline-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.outline_color = v;
                 return true;
             }
@@ -287,13 +305,13 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.color = v;
                 return true;
             }
         }
         "background-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.background_color = v;
                 return true;
             }
@@ -357,7 +375,7 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
             }
         }
         "text-decoration-color" => {
-            if let Some(v) = values::parse_color(value) {
+            if let Some(v) = parse_color_fn(value) {
                 style.text_decoration_color = v;
                 return true;
             }
