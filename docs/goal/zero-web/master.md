@@ -2620,12 +2620,12 @@ Total: 6219 → 6378 tests (+159)
 
 | Done Criteria | 状态 | 说明 |
 |---------------|------|------|
-| 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整） |
+| 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整）。**45+ 真实网站兼容性测试就位** |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
 | 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1317 用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
-| 5. 单元测试与质量 | ✅ | 11,937 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1317 WPT 用例（22 分类，100% 通过率）** |
-| 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
+| 5. 单元测试与质量 | ✅ | 11,937 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**45 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1317 WPT 用例（22 分类，100% 通过率）** |
+| 6. 工程化 | ✅ | CI（3 平台）、CI 发布工作流（Linux/macOS/Windows 自动打包）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、scripts/package-linux.sh、scripts/package-macos.sh、scripts/package-windows.ps1、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **剩余阻塞项**（需 GPU/Display 桌面环境）：
 1. GPU 加速合成正常工作验证
@@ -2645,6 +2645,8 @@ Total: 6219 → 6378 tests (+159)
 12. ~~产品层 smoke 测试~~ ✅ 31 个 BrowserShell+WebView 产品级 API 测试（标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单）
 13. ~~可访问性基础~~ ✅ FocusManager（Tab 导航 + tabindex 排序 + 13 单元测试）+ 19 个 ARIA WPT 测试
 14. ~~跨平台打包脚本~~ ✅ Linux AppImage/deb + macOS .app + Windows .zip
+15. ~~CI 发布工作流~~ ✅ GitHub Actions 多平台构建 + .deb + .app + Release 自动创建
+16. ~~真实网站兼容性矩阵扩展~~ ✅ 35→45 站点（+10：rfc-editor/unicode/reqres/postman/owasp/openssl/chromium/deno/bun/csswg）
 
 ---
 
