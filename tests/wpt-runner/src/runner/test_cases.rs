@@ -35,6 +35,7 @@ mod test_cases_geometry;
 mod test_cases_html_layout;
 mod test_cases_interactive;
 mod test_cases_js_dom;
+mod test_cases_multiprocess;
 mod test_cases_navigation;
 mod test_cases_render;
 mod test_cases_render_extended;
@@ -74,5 +75,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_typography::typography_tests());
     tests.extend(test_cases_render::render_rendance_tests());
     tests.extend(test_cases_render_extended::render_extended_tests());
+    tests.extend(test_cases_multiprocess::multiprocess_tests());
     tests
 }

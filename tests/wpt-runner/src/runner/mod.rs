@@ -1003,6 +1003,7 @@ mod tests {
             "js-dom",
             "es-modules",
             "html-layout",
+            "multiprocess",
         ];
         for t in &tests {
             assert!(
