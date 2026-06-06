@@ -12,7 +12,7 @@
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
-| M4 — Float + Table + Multicol | 🔄 进行中 | 准备中：添加 table display types、float 布局算法 |
+| M4 — Float + Table + Multicol | 🔄 进行中 | table display types 已添加；基础 float 布局已实现；189 个 reftest, 100.0% |
 | M5 — 文字排版 | ❌ 未开始 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 179 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 189 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -29,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 179 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox（基础+进阶+边界 case）、Grid（基础+进阶+边界 case）、文本、Overflow、Margin 折叠、Quirks mode |
+| 内联 CSS 2.1 reftest | ✅ 189 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局 |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -129,10 +129,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M3 更新）
-**总用例**: 179（内联 reftest）
-**运行用例**: 179
-**通过**: 179
+**日期**: 2026-06-07（M4 更新）
+**总用例**: 189（内联 reftest）
+**运行用例**: 189
+**通过**: 189
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -219,7 +219,14 @@
 13. ~~M2 — Quirks Mode 全部可执行项~~ ✅ (CSS parser + style system quirks)
 14. ~~M3 — Flexbox + Grid 基础+进阶 reftest~~ ✅ (21 个新 reftest, 100.0% pass)
 15. ~~M3 — Flexbox/Grid edge case reftest~~ ✅ (20 个边界 case reftest, 100.0% pass)
-16. **M3 — 修复发现的 Flexbox/Grid 渲染缺口**（当前 179/179 全部通过，无缺口）
-17. **M4 — Float + Table + Multicol 布局算法实现**
+16. ~~M3 — Flexbox/Grid 渲染缺口修复~~ ✅ (无缺口，全部通过)
+17. ~~M4 — Table display types 添加~~ ✅ (10 个 table display variant)
+18. ~~M4 — 基础 float 布局实现~~ ✅ (float left/right 定位 + 垂直堆叠)
+19. ~~M4 — Float 布局 reftest~~ ✅ (10 个 reftest, 100.0% pass)
+20. **M4 — Float exclusion zone 连接**（将 inline float exclusion 基础设施接入实际布局）
+21. **M4 — Table 布局算法实现**（需要实现 CSS table layout）
+22. **M4 — Multi-column 布局算法**
+23. **M5 — 文字排版能力实现**
+24. **M6 — 全量扩展 + 通过率冲刺**
 18. **M5 — 文字排版能力实现**
 19. **M6 — 全量扩展 + 通过率冲刺**
