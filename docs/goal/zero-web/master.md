@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,893 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1266 个用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,894 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1298 个用例（21 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -109,6 +109,22 @@
 ---
 
 ## 最近完成的改进
+
+### -124. CSS 高级特性 WPT 测试扩展（本轮，~11,894 测试，1298 WPT 用例）
+
+新增 32 个 CSS 高级特性 WPT 测试用例，覆盖 Container Queries、CSS Containment、高级 Background 属性、高级视觉效果、Scroll Snap、高级排版等规范领域：
+
+| 领域 | 测试数 | 覆盖内容 |
+|------|--------|----------|
+| Container Queries | 5 | container-type:inline-size/size、container-name 命名容器、嵌套容器、响应式卡片布局 |
+| CSS Containment | 5 | contain:layout/strict/content/inline-size、content-visibility:auto |
+| 高级 Background | 5 | 多层渐变叠加、background-position 多值组合、background-size cover/contain、background-clip:text、background-attachment:fixed、background-origin:content-box |
+| 高级视觉效果 | 5 | filter 多函数组合、filter drop-shadow、clip-path 组合（inset/circle/polygon）、isolation+mix-blend-mode、opacity+transform+filter 三合一 |
+| Scroll Snap | 2 | scroll-snap 完整容器（x mandatory）、scroll-snap-stop:always |
+| 高级排版 | 4 | text-wrap:balance、line-clamp 多行截断、text-shadow 多重阴影、scrollbar-width+scrollbar-color |
+| 综合布局 | 4 | Container Queries+Grid 仪表盘、Containment+overflow+filter 综合页面、will-change 性能提示、appearance 表单控件、writing-mode+direction 双向布局 |
+
+Tests: ~11,893 → ~11,894, WPT: 1266 → 1298 (+32), clippy clean.
 
 ### -123. WebView 产品级视觉 smoke Phase 4 + 产品层 smoke 测试（本轮，~11,893 测试）
 
@@ -2440,7 +2456,7 @@ Total: 6219 → 6378 tests (+159)
 
 | 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
 |--------|------|------|----------|----------|
-| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1239 用例（26 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1298 用例（21 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset/CSS Advanced | 按标准模块输出通过率；PR 只阻断 unexpected fail |
 | 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-3 ✅（layout/primitive snapshot + 16 reftest + 45 CSS/layout subset + 按分类通过率报告）；Phase 4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
 | 3. 真实网站兼容性测试 | ✅ | 验证真实页面组合能力，而不只验证单项标准 | Top 20 真实网站兼容性测试（24 个测试，20/20 站点通过），覆盖 fetch → parse → style → layout → paint 完整管线 | 每个站点有可复现结果，全部通过（需 `--ignored` 运行） |
 | 4. 安全测试 | 🔄 | 验证浏览器安全边界不被绕过 | 52 个跨 crate 安全管线测试 + SecurityContext 集成 + HSTS preload + 混合内容执行引擎 + 19 WPT 安全扩展 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
