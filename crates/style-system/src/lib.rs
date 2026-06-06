@@ -234,7 +234,7 @@ impl StyleSystem {
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
 
         // 5. 计算继承样式
-        let style = inheritance::compute_inherited_style(parent_style, &resolved_cascaded);
+        let style = inheritance::compute_inherited_style_with_quirks(parent_style, &resolved_cascaded, quirks_mode);
 
         // 6. 解析计算值（相对单位转换）
         // 提取父元素的计算 font-size，用于子元素 font-size 的 em 解析

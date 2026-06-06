@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value, inherit_property};
+use zero_dom::QuirksMode;
+
+use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value_with_quirks, inherit_property};
 
 /// 为元素计算继承样式。
 ///
@@ -13,6 +15,7 @@ use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, appl
 ///
 /// - `parent_style` — 父元素的计算样式（根元素为 None）
 /// - `cascaded` — 级联后的属性值映射
+/// - `quirks_mode` — 文档 quirks mode 状态
 ///
 /// # 返回值
 ///
@@ -20,6 +23,15 @@ use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, appl
 pub fn compute_inherited_style(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
+) -> ComputedStyle {
+    compute_inherited_style_with_quirks(parent_style, cascaded, QuirksMode::NoQuirks)
+}
+
+/// 为元素计算继承样式（支持 quirks mode）。
+pub fn compute_inherited_style_with_quirks(
+    parent_style: Option<&ComputedStyle>,
+    cascaded: &HashMap<String, String>,
+    quirks_mode: QuirksMode,
 ) -> ComputedStyle {
     let mut style = ComputedStyle::default();
 
@@ -77,7 +89,7 @@ pub fn compute_inherited_style(
                 }
             }
             KeywordResolution::Concrete(v) => {
-                apply_property_value(&mut style, property, &v);
+                apply_property_value_with_quirks(&mut style, property, &v, quirks_mode == QuirksMode::Quirks);
             }
         }
     }
