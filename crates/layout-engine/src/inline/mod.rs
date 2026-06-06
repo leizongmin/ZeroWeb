@@ -293,11 +293,16 @@ pub struct InlineFormattingContext {
     pub word_break: WordBreakMode,
     /// 首行文本缩进（CSS text-indent，px）。仅影响第一行的起始 x 坐标。
     pub text_indent: f32,
+    /// CSS tab-size（px）— 制表符展开宽度。默认 8 个空格宽度。
+    pub tab_size: f32,
     /// 浮动排除区域 — 浮动元素占据的空间，文本需环绕排列。
     pub float_exclusions: Vec<FloatExclusion>,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
 }
+
+/// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
+const DEFAULT_TAB_SIZE: f32 = 8.0;
 
 impl InlineFormattingContext {
     /// 创建新的行内格式化上下文。
@@ -311,6 +316,7 @@ impl InlineFormattingContext {
             preserve_whitespace: false,
             word_break: WordBreakMode::default(),
             text_indent: 0.0,
+            tab_size: DEFAULT_TAB_SIZE,
             float_exclusions: Vec::new(),
             lines: Vec::new(),
         }
@@ -365,6 +371,14 @@ impl InlineFormattingContext {
     /// 文本在排列时会自动避开这些区域，实现文本环绕浮动元素的效果。
     pub fn with_float_exclusions(mut self, exclusions: Vec<FloatExclusion>) -> Self {
         self.float_exclusions = exclusions;
+        self
+    }
+
+    /// 设置 CSS tab-size（制表符展开宽度，px）。
+    ///
+    /// 制表符 `\t` 在 pre/pre-wrap 模式下会展开为此宽度的空格。
+    pub fn with_tab_size(mut self, tab_size: f32) -> Self {
+        self.tab_size = tab_size;
         self
     }
 
@@ -891,9 +905,18 @@ impl InlineFormattingContext {
                     continue;
                 }
                 // 在保留空白模式下，按连续空格切分，保留空格作为独立"单词"
+                // 制表符展开为 tab_size 个空格
                 let mut current_word = String::new();
                 for ch in segment.chars() {
-                    if ch == ' ' || ch == '\t' {
+                    if ch == '\t' {
+                        // 制表符展开为 tab_size 个空格
+                        if !current_word.is_empty() {
+                            result.push(format!("{current_word} "));
+                            current_word.clear();
+                        }
+                        let tab_spaces = " ".repeat(self.tab_size.max(1.0) as usize);
+                        result.push(tab_spaces);
+                    } else if ch == ' ' {
                         if !current_word.is_empty() {
                             result.push(format!("{current_word} "));
                             current_word.clear();

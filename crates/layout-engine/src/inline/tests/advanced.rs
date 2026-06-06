@@ -1852,3 +1852,149 @@ fn test_effective_content_area() {
         avail2
     );
 }
+
+// ── CSS tab-size 行内布局测试 ──────────────────────────────────────────
+
+/// 测试默认 tab-size（8 个空格宽度）。
+#[test]
+fn test_tab_size_default() {
+    let ctx = InlineFormattingContext::new(800.0);
+    assert!(
+        (ctx.tab_size - 8.0).abs() < 0.01,
+        "默认 tab-size 应为 8.0，实际 {}",
+        ctx.tab_size
+    );
+}
+
+/// 测试 preserve_whitespace 模式下制表符展开为空格。
+#[test]
+fn test_tab_expansion_in_preserve_mode() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(4.0);
+    let runs = vec![TextRun::simple(
+        "A\tB".to_string(),
+        NodeId::default(),
+        16.0,
+        20.0,
+        VA::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+
+    assert!(!ctx.lines.is_empty());
+    // 制表符应展开为 4 个空格，作为独立片段
+    // 总行应有 3 个片段：A + 4个空格 + B
+    assert!(
+        ctx.lines[0].runs.len() >= 2,
+        "制表符展开后应至少 2 个片段，实际 {}",
+        ctx.lines[0].runs.len()
+    );
+}
+
+/// 测试自定义 tab-size 值影响制表符展开宽度。
+#[test]
+fn test_tab_size_custom_width() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(2.0);
+    let runs = vec![TextRun::simple(
+        "A\tB".to_string(),
+        NodeId::default(),
+        16.0,
+        20.0,
+        VA::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+
+    assert!(!ctx.lines.is_empty());
+    // 查找空格片段（assert that tab expanded to 2 spaces, not 8）
+    let space_fragments: Vec<_> = ctx.lines[0].runs.iter()
+        .filter(|r| r.text.trim().is_empty())
+        .collect();
+    assert!(!space_fragments.is_empty(), "应有空格片段");
+
+    // 2 个空格 * font_size * 0.25 + letter_spacing(0) ≈ 2 * 4 = 8px 宽
+    let space_width = space_fragments[0].width;
+    assert!(
+        space_width < 20.0,
+        "tab-size=2 时空格片段宽度应较小（<20px），实际 {}",
+        space_width
+    );
+}
+
+/// 测试非 preserve_whitespace 模式下制表符被折叠为普通空白。
+#[test]
+fn test_tab_collapsed_in_normal_mode() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(false) // 默认模式
+        .with_tab_size(4.0);
+    let runs = vec![TextRun::simple(
+        "A\tB".to_string(),
+        NodeId::default(),
+        16.0,
+        20.0,
+        VA::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+
+    assert!(!ctx.lines.is_empty());
+    // 在非 preserve 模式下，split_whitespace 将制表符视为普通空白
+    // "A\tB" 应被视为两个单词 "A" 和 "B"，各带尾部空格
+    assert!(
+        ctx.lines[0].runs.len() == 2,
+        "非 preserve 模式下 'A\\tB' 应为 2 个单词片段，实际 {}",
+        ctx.lines[0].runs.len()
+    );
+}
+
+/// 测试多个连续制表符展开。
+#[test]
+fn test_multiple_tabs_expansion() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(4.0);
+    let runs = vec![TextRun::simple(
+        "A\t\tB".to_string(),
+        NodeId::default(),
+        16.0,
+        20.0,
+        VA::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+
+    assert!(!ctx.lines.is_empty());
+    // 两个制表符各展开为 4 个空格
+    // 应该有：A + spaces(4) + spaces(4) + B = 4 片段
+    assert!(
+        ctx.lines[0].runs.len() >= 3,
+        "两个制表符展开后应至少 3 个片段，实际 {}",
+        ctx.lines[0].runs.len()
+    );
+}
+
+/// 测试 tab-size = 0 时制表符仍产生至少一个空格。
+#[test]
+fn test_tab_size_zero_fallback() {
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(0.0);
+    let runs = vec![TextRun::simple(
+        "A\tB".to_string(),
+        NodeId::default(),
+        16.0,
+        20.0,
+        VA::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+
+    // tab-size=0 时 max(1) 确保至少 1 个空格
+    assert!(
+        !ctx.lines.is_empty(),
+        "tab-size=0 时不应崩溃"
+    );
+    assert!(
+        ctx.lines[0].runs.len() >= 2,
+        "tab-size=0 时制表符应至少展开为 1 个空格，实际 {} 个片段",
+        ctx.lines[0].runs.len()
+    );
+}
