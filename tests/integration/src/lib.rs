@@ -70,3 +70,6 @@ mod product_level_smoke;
 
 #[cfg(test)]
 mod viewport_adaptive;
+
+#[cfg(test)]
+mod font_fallback_render;
