@@ -78,6 +78,46 @@ jobs:
       - name: Build release
         run: cargo build --release --workspace
 
+  reftest:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Run reftest suite (CPU rendering)
+        run: cargo run --bin zero-wpt-runner -- reftest --format json
+
+      - name: Upload reftest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reftest-report
+          path: docs/goal/rendering-compat/evidence/
+
   benchmarks:
     runs-on: ubuntu-latest
     needs: build-and-test
