@@ -102,7 +102,7 @@
 |------|------|------|
 | Manifest 解析 | `tests/wpt-runner/src/manifest.rs` | reftest 条目、fuzzy 元数据、HTML 链接提取 |
 | Reftest 引擎 | `tests/wpt-runner/src/reftest.rs` | 分类容差、fuzzy 覆盖、match/mismatch 比较 |
-| Reftest 数据 | `tests/wpt-runner/src/reftest_data.rs` | 53 个 CSS 2.1 核心内联 reftest |
+| Reftest 数据 | `tests/wpt-runner/src/reftest_data.rs` | 115 个 CSS 2.1 核心内联 reftest |
 | Reftest CLI | `tests/wpt-runner/src/main.rs` | `reftest` 子命令 + 文本/JSON 报告 |
 | Skip List | `tests/wpt-runner/reftest-skip-list.txt` | SVG/Canvas/WebGL/动画过滤规则 |
 | Chromium 工具 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` | Puppeteer headless 截图 |
@@ -158,10 +158,7 @@
 | BiDi 算法 | RTL 文本 | M5 | M5 |
 | Vertical writing-mode | 竖排文本 | M5 | M5 |
 | Quirks mode | CSS 2.1 兼容性 | M2 | M2 |
-| JS 执行集成 | reftest 覆盖范围 | M1 | M1 剩余 |
-| GPU 截图 | DC-1 要求 | M1 | M1 剩余 |
-| 上游 WPT 真实 reftest 导入 | 覆盖范围 | M1/M6 | M1/M6 |
-| CI 集成 | 自动化验证 | M1 | M1 剩余 |
+| 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
 
 ---
 
