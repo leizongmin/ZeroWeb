@@ -1573,4 +1573,86 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"width:100px\"><div style=\"width:100px;height:30px;background:red\"></div><div style=\"width:100px;height:30px;background:blue\"></div></div></body></html>",
         is_match: true,
     },
+    // ── Multi-column 布局 reftest ──
+
+    // column-count:2 基础（self-match）
+    InlineReftestDef {
+        id: "css-multicol/column-count-2",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // column-count:3 三列（self-match）
+    InlineReftestDef {
+        id: "css-multicol/column-count-3",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:3;width:300px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:green\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:3;width:300px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:green\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // column-width 自动计算列数（self-match）
+    InlineReftestDef {
+        id: "css-multicol/column-width-auto",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-width:100px;width:300px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:green\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-width:100px;width:300px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:green\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // column-gap 列间距（self-match）
+    InlineReftestDef {
+        id: "css-multicol/column-gap",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;column-gap:20px;width:220px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;column-gap:20px;width:220px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // columns 简写属性（self-match）
+    InlineReftestDef {
+        id: "css-multicol/columns-shorthand",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"columns:2;width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"columns:2;width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 均衡分配：4 个子元素到 2 列（self-match，验证不 crash）
+    InlineReftestDef {
+        id: "css-multicol/balanced-4-children",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:20px;background:red\"></div><div style=\"height:20px;background:green\"></div><div style=\"height:20px;background:blue\"></div><div style=\"height:20px;background:yellow\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:20px;background:red\"></div><div style=\"height:20px;background:green\"></div><div style=\"height:20px;background:blue\"></div><div style=\"height:20px;background:yellow\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 不均衡子元素高度（self-match）
+    InlineReftestDef {
+        id: "css-multicol/uneven-heights",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:60px;background:red\"></div><div style=\"height:20px;background:green\"></div><div style=\"height:20px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:60px;background:red\"></div><div style=\"height:20px;background:green\"></div><div style=\"height:20px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // 多列 + column-rule（self-match，column-rule-solid 不 crash）
+    InlineReftestDef {
+        id: "css-multicol/with-column-rule",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;column-gap:20px;column-rule:2px solid black;width:220px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;column-gap:20px;column-rule:2px solid black;width:220px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
+    // column-count mismatch（不同列数应产生不同渲染）
+    InlineReftestDef {
+        id: "css-multicol/mismatch-column-count",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"column-count:2;width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div><div style=\"height:30px;background:green\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"column-count:3;width:300px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div><div style=\"height:30px;background:green\"></div></div></body></html>",
+        is_match: false,
+    },
+    // 无 column-count / column-width 时为单列（self-match）
+    InlineReftestDef {
+        id: "css-multicol/no-columns",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
+        is_match: true,
+    },
 ];

@@ -124,6 +124,9 @@ impl LayoutEngine {
         // 7. 后处理：对 display:table 容器执行 table grid 布局
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
 
+        // 8. 后处理：对 column-count/column-width 容器执行多列布局
+        crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -212,6 +215,7 @@ impl LayoutEngine {
         let mut root_box = Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
+        crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 
