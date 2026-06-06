@@ -180,6 +180,7 @@ fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> Frame
         &mut glyph_cache,
         &glyph_draws,
         &[],
+        &[],
     )
 }
 

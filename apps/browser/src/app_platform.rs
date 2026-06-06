@@ -164,9 +164,6 @@ impl BrowserApp {
         }
 
         let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
-        // CPU 路径暂不支持 overlay_glyphs，合并到 glyphs 末尾保证渲染正确
-        let mut all_glyphs: Vec<_> = glyphs;
-        all_glyphs.extend(overlay_glyphs);
         let fb = render_scene_to_framebuffer(
             width,
             height,
@@ -174,8 +171,9 @@ impl BrowserApp {
             &fills,
             &self.font_loader,
             &mut self.glyph_cache,
-            &all_glyphs,
+            &glyphs,
             &overlay_fills,
+            &overlay_glyphs,
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }

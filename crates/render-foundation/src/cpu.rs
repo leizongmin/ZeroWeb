@@ -10,6 +10,7 @@ use crate::surface::FrameBuffer;
 /// 将填充矩形和 glyph 文本渲染到 CPU 帧缓冲。
 ///
 /// `width` 和 `height` 是逻辑像素尺寸，`scale_factor` 是逻辑像素到物理像素的缩放。
+/// `overlay_glyphs` 在 `overlay_fills` 之后绘制（如右键菜单文字）。
 /// 返回的 [`FrameBuffer`] 尺寸为物理像素。
 #[allow(clippy::too_many_arguments)]
 pub fn render_scene_to_framebuffer(
@@ -21,6 +22,7 @@ pub fn render_scene_to_framebuffer(
     glyph_cache: &mut GlyphCache,
     glyphs: &[GlyphDraw],
     overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
 ) -> FrameBuffer {
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
@@ -38,6 +40,10 @@ pub fn render_scene_to_framebuffer(
 
     for fill in overlay_fills {
         fill_rect(&mut fb, fill, scale);
+    }
+
+    for glyph in overlay_glyphs {
+        draw_glyph(&mut fb, glyph, scale, font_loader, glyph_cache);
     }
 
     fb
@@ -168,7 +174,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 20);
         assert_eq!(fb.height, 16);
@@ -185,7 +191,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -207,7 +213,7 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(16, 16, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[]);
+        let fb = render_scene_to_framebuffer(16, 16, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
 
         assert_eq!(fb.width, 16);
         assert_eq!(fb.height, 16);
@@ -233,7 +239,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
         let glyphs = [];
 
-        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[]);
+        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
 
         assert_eq!(fb.width, 8);
         assert_eq!(fb.height, 8);
@@ -254,7 +260,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 0.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 0.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10); // 最小尺寸为1，所以保持10
         assert_eq!(fb.height, 10);
@@ -271,12 +277,61 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
         assert_eq!(fb.get_pixel(0, 0), [0, 0, 0, 255]); // 填充整个帧缓冲
         assert_eq!(fb.get_pixel(9, 9), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn overlay_glyphs_drawn_above_overlay_fills() {
+        use crate::font::GlyphBitmap;
+
+        let overlay_fills = vec![FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+            color: Color::WHITE,
+        }];
+        let mut font_loader = FontLoader::new();
+        font_loader.register_bitmap_glyph(
+            1,
+            'X' as u32,
+            8.0,
+            GlyphBitmap {
+                data: vec![255, 255, 255, 255],
+                width: 2,
+                height: 2,
+                x_offset: 0,
+                y_offset: 0,
+                advance: 2.0,
+            },
+        );
+        let overlay_glyphs = vec![GlyphDraw {
+            ch: 'X',
+            x: 4.0,
+            baseline_y: 12.0,
+            color: Color::BLACK,
+            font_id: 1,
+            font_size: 8.0,
+        }];
+        let mut glyph_cache = GlyphCache::new(64);
+
+        let fb = render_scene_to_framebuffer(
+            16,
+            16,
+            1.0,
+            &[],
+            &font_loader,
+            &mut glyph_cache,
+            &[],
+            &overlay_fills,
+            &overlay_glyphs,
+        );
+
+        // overlay fill 先画白底，overlay glyph 后画黑字；(4,10) 为 2×2 位图左上角
+        assert_ne!(fb.get_pixel(4, 10), [255, 255, 255, 255]);
+        assert_eq!(fb.get_pixel(4, 10)[0], 0);
     }
 
     #[test]
@@ -288,7 +343,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, -1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, -1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10); // 负缩放应回退到1.0
         assert_eq!(fb.height, 10);
@@ -315,7 +370,7 @@ mod tests {
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -340,7 +395,7 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
 
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -368,7 +423,7 @@ mod tests {
             font_size: 8.0,
         }];
 
-        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[]);
+        let fb = render_scene_to_framebuffer(8, 8, 1.0, &fills, &font_loader, &mut glyph_cache, &glyphs, &[], &[]);
 
         assert_eq!(fb.width, 8);
         assert_eq!(fb.height, 8);
@@ -426,7 +481,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 最小尺寸
-        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 1);
         assert_eq!(fb.height, 1);
@@ -610,7 +665,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 使用非整数缩放
-        let fb = render_scene_to_framebuffer(10, 10, 1.5, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(10, 10, 1.5, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 15); // 10 * 1.5 = 15
         assert_eq!(fb.height, 15);
@@ -630,7 +685,7 @@ mod tests {
         let mut glyph_cache = GlyphCache::new(64);
 
         // 小尺寸缩放
-        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[]);
+        let fb = render_scene_to_framebuffer(1, 1, 1.0, &fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
 
         assert_eq!(fb.width, 1);
         assert_eq!(fb.height, 1);
