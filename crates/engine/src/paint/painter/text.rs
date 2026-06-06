@@ -13,7 +13,7 @@ use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, 
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
     ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TextAlignLastValue, TextAlignValue, TextOverflowValue,
-    WhiteSpaceValue,
+    TabSizeValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -629,6 +629,18 @@ impl super::Painter {
                 _ => 0.0,
             };
 
+            // CSS tab-size — 制表符展开宽度
+            // Number(n) 表示 n 个空格宽度，Length 表示具体像素值
+            let tab_size_px: f32 = match &style.tab_size {
+                TabSizeValue::Number(n) => {
+                    // 空格宽度约 font_size * 0.25，乘以空格数
+                    *n as f32 * font_size * 0.25
+                }
+                TabSizeValue::Length(LengthValue::Px(v)) => *v as f32,
+                TabSizeValue::Length(LengthValue::Em(v)) => *v as f32 * font_size,
+                _ => font_size * 0.25 * 8.0, // 默认 8 个空格宽度
+            };
+
             // 收集浮动子元素的排除区域
             let float_exclusions = styles
                 .map(|s| self.collect_float_exclusions_with_styles(box_node, s))
@@ -642,7 +654,8 @@ impl super::Painter {
                 .with_preserve_whitespace(preserve_whitespace)
                 .with_word_break(word_break_mode)
                 .with_text_indent(text_indent_px)
-                .with_float_exclusions(float_exclusions);
+                .with_float_exclusions(float_exclusions)
+                .with_tab_size(tab_size_px);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
