@@ -5,6 +5,48 @@ use super::helpers::*;
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
+/// 使用 parse_html 解析的 HTML table 元素应有正确的 UA 默认 display 值。
+fn test_parsed_table_display() {
+    let html = r#"<html><body><table><tr><td>cell</td></tr></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+
+    // Find the table element NodeId
+    let root = doc.root();
+    let mut stack = vec![root];
+    let mut table_id = None;
+    while let Some(nid) = stack.pop() {
+        if let Some(n) = doc.get(nid) {
+            if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                if elem.local_name() == "table" {
+                    table_id = Some(nid);
+                }
+            }
+            stack.extend(n.children.iter().copied());
+        }
+    }
+    let table_id = table_id.expect("should find table element");
+
+    // Compute style for table element directly
+    let style = sys.compute_element_style(&doc, table_id, &[], None);
+    assert_eq!(
+        style.display,
+        zero_css_parser::values::DisplayValue::Table,
+        "table should have display:table via compute_element_style"
+    );
+
+    // Also verify via batch compute_styles
+    let styles = sys.compute_styles(&doc, &[]);
+    let batch_style = styles.get(&table_id).expect("table should have batch style");
+    assert_eq!(
+        batch_style.display,
+        zero_css_parser::values::DisplayValue::Table,
+        "table should have display:table via compute_styles"
+    );
+}
+
+#[test]
 /// scroll-snap-type: none 产生默认值（strictness=None, axis=Both）。
 fn test_scroll_snap_type_none() {
     let (doc, _html, _body, div, _p) = make_test_dom();
