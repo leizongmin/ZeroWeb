@@ -12,6 +12,7 @@ url = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
+tungstenite = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

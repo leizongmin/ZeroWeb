@@ -2,7 +2,7 @@
 //!
 //! 网络栈 — 基于 reqwest 的 HTTP/HTTPS 请求封装。
 //!
-//! 提供 URL 解析、HTTP 客户端、导航历史和 Cookie 管理功能。
+//! 提供 URL 解析、HTTP 客户端、导航历史、Cookie 管理和 WebSocket 客户端功能。
 
 #![warn(missing_docs)]
 
@@ -12,6 +12,7 @@ pub mod http_cache;
 pub mod navigation;
 pub mod request;
 pub mod url_parser;
+pub mod websocket;
 
 pub use client::*;
 pub use cookie::{Cookie, CookieStore, RequestContext, SameSite, parse_expires_date, same_site_allows};
@@ -19,79 +20,9 @@ pub use http_cache::{CachedResponse, HttpCache};
 pub use navigation::*;
 pub use request::*;
 pub use url_parser::*;
+pub use websocket::{WebSocket, WebSocketError, WebSocketMessage, WebSocketState};
 
 use thiserror::Error;
-
-/// WebSocket 连接状态。
-#[derive(Debug, Clone, PartialEq)]
-pub enum WebSocketState {
-    /// 正在连接。
-    Connecting,
-    /// 已连接。
-    Open,
-    /// 正在关闭。
-    Closing,
-    /// 已关闭。
-    Closed,
-}
-
-/// WebSocket 连接（基础桩实现）。
-///
-/// 当前仅提供状态管理和消息队列，不含实际网络传输。
-pub struct WebSocket {
-    url: String,
-    state: WebSocketState,
-    messages: Vec<String>,
-}
-
-impl WebSocket {
-    /// 创建新的 WebSocket 实例，初始状态为 Connecting。
-    pub fn new(url: &str) -> Self {
-        Self {
-            url: url.to_string(),
-            state: WebSocketState::Connecting,
-            messages: Vec::new(),
-        }
-    }
-
-    /// 建立连接，将状态变为 Open。
-    pub fn connect(&mut self) {
-        self.state = WebSocketState::Open;
-    }
-
-    /// 发送消息。仅在 Open 状态下成功，否则返回错误。
-    pub fn send(&mut self, message: &str) -> Result<(), String> {
-        if self.state != WebSocketState::Open {
-            return Err("WebSocket is not open".to_string());
-        }
-        self.messages.push(message.to_string());
-        Ok(())
-    }
-
-    /// 接收下一条消息，若无消息则返回 None。
-    pub fn receive(&mut self) -> Option<String> {
-        if self.messages.is_empty() {
-            None
-        } else {
-            Some(self.messages.remove(0))
-        }
-    }
-
-    /// 关闭连接，将状态变为 Closed。
-    pub fn close(&mut self) {
-        self.state = WebSocketState::Closed;
-    }
-
-    /// 返回当前连接状态。
-    pub fn state(&self) -> &WebSocketState {
-        &self.state
-    }
-
-    /// 返回连接的 URL。
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-}
 
 /// 网络错误类型。
 #[derive(Error, Debug)]
@@ -196,28 +127,19 @@ mod tests {
         assert_eq!(ws.url(), "ws://example.com/socket");
     }
 
-    /// 测试 WebSocket connect() 将状态变为 Open。
+    /// 测试 WebSocket 连接到不可达服务器返回错误。
     #[test]
-    fn test_websocket_connect_open() {
-        let mut ws = super::WebSocket::new("ws://example.com/socket");
-        ws.connect();
-        assert_eq!(ws.state(), &super::WebSocketState::Open);
-    }
-
-    /// 测试 WebSocket 发送和接收消息。
-    #[test]
-    fn test_websocket_send_receive() {
-        let mut ws = super::WebSocket::new("ws://example.com/socket");
-        ws.connect();
-        ws.send("hello").unwrap();
-        assert_eq!(ws.receive(), Some("hello".to_string()));
+    fn test_websocket_connect_refused() {
+        let mut ws = super::WebSocket::new("ws://127.0.0.1:1/socket");
+        let result = ws.connect();
+        assert!(result.is_err(), "不可达服务器应返回连接错误");
     }
 
     /// 测试 WebSocket 在 Closed 状态下发送返回错误。
     #[test]
     fn test_websocket_send_when_closed() {
         let mut ws = super::WebSocket::new("ws://example.com/socket");
-        ws.close();
+        ws.close().unwrap();
         let result = ws.send("hello");
         assert!(result.is_err());
     }
@@ -226,7 +148,7 @@ mod tests {
     #[test]
     fn test_websocket_close_state() {
         let mut ws = super::WebSocket::new("ws://example.com/socket");
-        ws.close();
+        ws.close().unwrap();
         assert_eq!(ws.state(), &super::WebSocketState::Closed);
     }
 
@@ -285,20 +207,16 @@ mod tests {
         assert_eq!(ws.state(), &super::WebSocketState::Connecting);
         let result = ws.send("hello");
         assert!(result.is_err(), "Connecting 状态下发送应返回错误");
-        assert!(result.unwrap_err().contains("not open"));
     }
 
-    /// 测试 WebSocket 连接后关闭再发送消息应返回错误。
+    /// 测试 WebSocket 关闭后发送消息应返回错误。
     #[test]
     fn test_websocket_close_then_send() {
         let mut ws = super::WebSocket::new("ws://example.com/socket");
-        ws.connect();
-        assert_eq!(ws.state(), &super::WebSocketState::Open);
-        ws.close();
+        ws.close().unwrap();
         assert_eq!(ws.state(), &super::WebSocketState::Closed);
         let result = ws.send("hello");
         assert!(result.is_err(), "Closed 状态下发送应返回错误");
-        assert!(result.unwrap_err().contains("not open"));
     }
 
     /// 测试相对路径 URL 的解析：将 "../page.html" 解析到 base URL 上。
@@ -430,12 +348,12 @@ mod tests {
         assert_eq!(resolved.as_str(), "http://other.com/");
     }
 
-    /// 测试 WebSocket 在空消息队列上调用 receive() 返回 None。
+    /// 测试 WebSocket 在 Connecting 状态下 receive() 返回错误。
     #[test]
-    fn test_websocket_receive_empty() {
+    fn test_websocket_receive_not_connected() {
         let mut ws = WebSocket::new("ws://example.com/socket");
-        assert_eq!(ws.receive(), None, "空队列上 receive 应返回 None");
-        // 状态不受影响
+        // Connecting 状态下 receive 应返回错误（未打开）
+        assert!(ws.receive().is_err(), "Connecting 状态下 receive 应返回错误");
         assert_eq!(ws.state(), &WebSocketState::Connecting);
     }
 
@@ -533,19 +451,16 @@ mod tests {
         assert!(!r199.is_server_error(), "199 不应是 server_error");
     }
 
-    /// 测试 WebSocket 多条消息的 FIFO（先进先出）出队顺序。
-    /// 连续发送三条消息后依次 receive，验证返回顺序与发送顺序一致。
+    /// 测试 WebSocket 未连接时连续调用 send() 多次均返回错误。
+    /// 验证多次错误调用不会导致状态异常或 panic。
     #[test]
-    fn test_websocket_message_fifo_order() {
+    fn test_websocket_multiple_send_errors_no_panic() {
         let mut ws = WebSocket::new("ws://example.com/socket");
-        ws.connect();
-        ws.send("first").unwrap();
-        ws.send("second").unwrap();
-        ws.send("third").unwrap();
-        assert_eq!(ws.receive(), Some("first".to_string()), "第一条应为 first");
-        assert_eq!(ws.receive(), Some("second".to_string()), "第二条应为 second");
-        assert_eq!(ws.receive(), Some("third".to_string()), "第三条应为 third");
-        assert_eq!(ws.receive(), None, "队列清空后应返回 None");
+        for i in 0..5 {
+            let result = ws.send(&format!("msg{i}"));
+            assert!(result.is_err(), "未连接时第 {i} 次发送应返回错误");
+        }
+        assert_eq!(ws.state(), &WebSocketState::Connecting, "多次错误后状态应保持 Connecting");
     }
 
     /// 测试 NavigationHistory 中 replace_current 后在索引 0 的边界状态。
@@ -695,24 +610,14 @@ mod tests {
         assert!(nav.go_forward_n(0).is_some(), "go_forward_n(0) 应返回当前条目");
     }
 
-    /// 测试 WebSocket 在 Open 状态下发送空字符串消息不会 panic，
-    /// 且 receive() 能正确返回该空字符串。
-    /// 空字符串虽不常见但在协议层面是合法的消息内容。
+    /// 测试 WebSocket 在 Connecting 状态下发送空字符串消息返回错误。
+    /// 空字符串虽不常见但在协议层面是合法的消息内容，
+    /// 但未连接时发送任何内容都应返回 NotOpen 错误。
     #[test]
-    fn test_websocket_send_empty_string_message() {
+    fn test_websocket_send_empty_string_when_not_connected() {
         let mut ws = WebSocket::new("ws://example.com/socket");
-        ws.connect();
-        assert_eq!(ws.state(), &WebSocketState::Open);
-
-        // 发送空字符串应成功
-        ws.send("").unwrap();
-
-        // 接收应返回空字符串（非 None）
-        let msg = ws.receive();
-        assert_eq!(msg, Some(String::new()), "应收到空字符串消息");
-
-        // 队列为空后 receive 返回 None
-        assert_eq!(ws.receive(), None);
+        let result = ws.send("");
+        assert!(result.is_err(), "未连接时发送空字符串应返回错误");
     }
 
     /// 测试 HttpResponse::text() 对空 body（零字节）返回 Ok("")，
@@ -772,27 +677,21 @@ mod tests {
         );
     }
 
-    /// 测试 WebSocket 在 connect → close → connect → close 交替操作后状态正确。
-    /// 验证多次状态切换不会产生无效状态或 panic。
+    /// 测试 WebSocket 多次交替关闭不会产生无效状态或 panic。
+    /// 验证重复 close() 调用保持 Closed 状态不变。
     #[test]
-    fn test_websocket_alternating_connect_close() {
+    fn test_websocket_alternating_close_no_panic() {
         let mut ws = WebSocket::new("ws://example.com/socket");
 
-        // 第一次连接和关闭
-        ws.connect();
-        assert_eq!(ws.state(), &WebSocketState::Open);
-        ws.close();
+        // 第一次关闭
+        ws.close().unwrap();
         assert_eq!(ws.state(), &WebSocketState::Closed);
 
-        // 第二次连接（从 Closed 重新连接）
-        ws.connect();
-        assert_eq!(ws.state(), &WebSocketState::Open, "重新连接后应为 Open");
-        ws.send("after-reconnect").unwrap();
-        assert_eq!(ws.receive(), Some("after-reconnect".to_string()));
-
-        // 第二次关闭
-        ws.close();
+        // 第二次关闭（幂等）
+        ws.close().unwrap();
         assert_eq!(ws.state(), &WebSocketState::Closed);
+
+        // Closed 后 send 应返回错误
         assert!(ws.send("should-fail").is_err(), "关闭后发送应返回错误");
     }
 
@@ -842,15 +741,15 @@ mod tests {
 
     // ── 第四批边界条件补充测试（5 个） ──
 
-    /// 测试 WebSocket 在 Connecting 状态下 receive() 不会 panic。
-    /// 消息队列为空时 receive 返回 None，且状态保持 Connecting 不变。
+    /// 测试 WebSocket 在 Connecting 状态下 receive() 返回错误而非 panic。
     /// 虽然未 connect 就 receive 是非典型用法，但 API 不应因此崩溃。
     #[test]
-    fn test_websocket_receive_in_connecting_state_is_safe() {
+    fn test_websocket_receive_in_connecting_state_returns_error() {
         let mut ws = WebSocket::new("ws://example.com/socket");
         assert_eq!(ws.state(), &WebSocketState::Connecting);
-        // 在 Connecting 状态下 receive 不应 panic，队列为空返回 None
-        assert_eq!(ws.receive(), None, "Connecting 状态空队列应返回 None");
+        // Connecting 状态下 receive 应返回错误
+        let result = ws.receive();
+        assert!(result.is_err(), "Connecting 状态下 receive 应返回错误");
         // 状态不受影响
         assert_eq!(ws.state(), &WebSocketState::Connecting);
     }
@@ -971,24 +870,13 @@ mod tests {
         assert!(!cookie.http_only, "未知属性 'c' 不应被误认为 httponly");
     }
 
-    /// 测试 WebSocket 队列的空→非空→空→非空循环复用。
-    /// 验证在队列清空后重新填充仍可正常工作，且不会残留旧消息。
+    /// 测试 WebSocket 在 Connecting 状态下 send_binary 返回错误。
+    /// 二进制消息与文本消息一样需要 Open 状态。
     #[test]
-    fn test_websocket_queue_drain_refill_cycle() {
+    fn test_websocket_send_binary_when_not_connected() {
         let mut ws = WebSocket::new("ws://example.com/socket");
-        ws.connect();
-
-        // 第一轮：发送两条，接收两条
-        ws.send("msg1").unwrap();
-        ws.send("msg2").unwrap();
-        assert_eq!(ws.receive(), Some("msg1".to_string()));
-        assert_eq!(ws.receive(), Some("msg2".to_string()));
-        assert_eq!(ws.receive(), None, "第一轮队列应已清空");
-
-        // 第二轮：发送新消息，不应有旧消息残留
-        ws.send("msg3").unwrap();
-        assert_eq!(ws.receive(), Some("msg3".to_string()), "第二轮应只包含新消息");
-        assert_eq!(ws.receive(), None, "第二轮队列应已清空");
+        let result = ws.send_binary(b"hello");
+        assert!(result.is_err(), "未连接时发送二进制消息应返回错误");
     }
 
     /// 测试 HttpResponse 在状态码为 0（非标准值）时所有分类方法均返回 false 且不 panic。
