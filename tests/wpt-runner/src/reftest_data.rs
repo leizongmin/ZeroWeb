@@ -1655,4 +1655,86 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px\"><div style=\"height:30px;background:red\"></div><div style=\"height:30px;background:blue\"></div></div></body></html>",
         is_match: true,
     },
+    // ── M5 文字排版 reftest ──
+
+    // text-align: justify（self-match）
+    InlineReftestDef {
+        id: "css-text/text-align-justify",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"text-align:justify;width:200px;font-size:16px\">The quick brown fox jumps over the lazy dog.</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"text-align:justify;width:200px;font-size:16px\">The quick brown fox jumps over the lazy dog.</div></body></html>",
+        is_match: true,
+    },
+    // text-align: center（self-match）
+    InlineReftestDef {
+        id: "css-text/text-align-center",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"text-align:center;width:200px;font-size:16px\">Hello World</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"text-align:center;width:200px;font-size:16px\">Hello World</div></body></html>",
+        is_match: true,
+    },
+    // text-align: right（self-match）
+    InlineReftestDef {
+        id: "css-text/text-align-right",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"text-align:right;width:200px;font-size:16px\">Hello World</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"text-align:right;width:200px;font-size:16px\">Hello World</div></body></html>",
+        is_match: true,
+    },
+    // text-align left vs right mismatch（block 子元素固定宽度，不同位置）
+    InlineReftestDef {
+        id: "css-text/text-align-left-vs-right",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"width:200px;height:40px;background:blue\"><div style=\"width:100px;height:30px;background:red\"></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:200px;height:40px;background:blue\"><div style=\"width:100px;height:30px;background:red;margin-left:100px\"></div></div></body></html>",
+        is_match: false,
+    },
+    // word-break: break-all 长单词断行（self-match）
+    InlineReftestDef {
+        id: "css-text/word-break-break-all",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"word-break:break-all;width:60px;font-size:16px\">abcdefghijklmnopqrstuvwxyz</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"word-break:break-all;width:60px;font-size:16px\">abcdefghijklmnopqrstuvwxyz</div></body></html>",
+        is_match: true,
+    },
+    // overflow-wrap: break-word（self-match）
+    InlineReftestDef {
+        id: "css-text/overflow-wrap-break-word",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"overflow-wrap:break-word;width:60px;font-size:16px\">supercalifragilisticexpialidocious</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"overflow-wrap:break-word;width:60px;font-size:16px\">supercalifragilisticexpialidocious</div></body></html>",
+        is_match: true,
+    },
+    // CJK 自动换行（self-match）
+    InlineReftestDef {
+        id: "css-text/cjk-line-break",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"width:80px;font-size:16px\">这是一段中日韩文字测试内容</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"width:80px;font-size:16px\">这是一段中日韩文字测试内容</div></body></html>",
+        is_match: true,
+    },
+    // white-space: nowrap 不换行（self-match）
+    InlineReftestDef {
+        id: "css-text/white-space-nowrap",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"white-space:nowrap;width:60px;font-size:16px\">This text should not wrap</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"white-space:nowrap;width:60px;font-size:16px\">This text should not wrap</div></body></html>",
+        is_match: true,
+    },
+    // text-indent 首行缩进（self-match）
+    InlineReftestDef {
+        id: "css-text/text-indent",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"text-indent:32px;width:200px;font-size:16px\">First line indented. Second line not indented.</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"text-indent:32px;width:200px;font-size:16px\">First line indented. Second line not indented.</div></body></html>",
+        is_match: true,
+    },
+    // letter-spacing 字间距（self-match）
+    InlineReftestDef {
+        id: "css-text/letter-spacing",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"letter-spacing:4px;width:200px;font-size:16px\">Spaced out text</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"letter-spacing:4px;width:200px;font-size:16px\">Spaced out text</div></body></html>",
+        is_match: true,
+    },
 ];
