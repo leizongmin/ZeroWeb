@@ -617,14 +617,13 @@ fn test_performance_python_org() {
 #[ignore = "需要网络连接"]
 fn test_site_rfc_editor() {
     let mut wv = test_webview();
-    let result = wv.fetch_url("https://www.rfc-editor.org").expect("rfc-editor.org 应可访问");
+    let result = wv
+        .fetch_url("https://www.rfc-editor.org")
+        .expect("rfc-editor.org 应可访问");
     assert_valid_render(&result, "rfc-editor.org");
     let html = wv.html_content();
     assert_valid_html(&html, "rfc-editor.org");
-    assert!(
-        html.to_lowercase().contains("rfc"),
-        "应包含 RFC 相关内容"
-    );
+    assert!(html.to_lowercase().contains("rfc"), "应包含 RFC 相关内容");
 }
 
 /// Unicode 联盟 — 国际化标准站
@@ -647,10 +646,7 @@ fn test_site_reqres_in() {
     assert_valid_render(&result, "reqres.in");
     let html = wv.html_content();
     assert_valid_html(&html, "reqres.in");
-    assert!(
-        html.to_lowercase().contains("api"),
-        "应包含 API 相关内容"
-    );
+    assert!(html.to_lowercase().contains("api"), "应包含 API 相关内容");
 }
 
 /// Postman Echo — API 测试工具
@@ -658,7 +654,9 @@ fn test_site_reqres_in() {
 #[ignore = "需要网络连接"]
 fn test_site_postman_echo() {
     let mut wv = test_webview();
-    let result = wv.fetch_url("https://postman-echo.com").expect("postman-echo.com 应可访问");
+    let result = wv
+        .fetch_url("https://postman-echo.com")
+        .expect("postman-echo.com 应可访问");
     assert_valid_render(&result, "postman-echo.com");
     let html = wv.html_content();
     assert_valid_html(&html, "postman-echo.com");

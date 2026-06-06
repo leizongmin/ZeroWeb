@@ -108,11 +108,10 @@ impl WebSocket {
             return Ok(());
         }
 
-        let parsed_url = Url::parse(&self.url)
-            .map_err(|e| WebSocketError::InvalidUrl(e.to_string()))?;
+        let parsed_url = Url::parse(&self.url).map_err(|e| WebSocketError::InvalidUrl(e.to_string()))?;
 
-        let (socket, _response) = tungstenite::connect(parsed_url.as_str())
-            .map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+        let (socket, _response) =
+            tungstenite::connect(parsed_url.as_str()).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
 
         self.inner = Some(socket);
         self.state = WebSocketState::Open;
@@ -126,10 +125,7 @@ impl WebSocket {
         if self.state != WebSocketState::Open {
             return Err(WebSocketError::NotOpen);
         }
-        let ws = self
-            .inner
-            .as_mut()
-            .ok_or(WebSocketError::NotOpen)?;
+        let ws = self.inner.as_mut().ok_or(WebSocketError::NotOpen)?;
         ws.send(Message::Text(message.into()))
             .map_err(|e| WebSocketError::SendFailed(e.to_string()))?;
         Ok(())
@@ -140,10 +136,7 @@ impl WebSocket {
         if self.state != WebSocketState::Open {
             return Err(WebSocketError::NotOpen);
         }
-        let ws = self
-            .inner
-            .as_mut()
-            .ok_or(WebSocketError::NotOpen)?;
+        let ws = self.inner.as_mut().ok_or(WebSocketError::NotOpen)?;
         ws.send(Message::Binary(data.to_vec().into()))
             .map_err(|e| WebSocketError::SendFailed(e.to_string()))?;
         Ok(())
@@ -157,38 +150,26 @@ impl WebSocket {
         if self.state != WebSocketState::Open {
             return Err(WebSocketError::NotOpen);
         }
-        let ws = self
-            .inner
-            .as_mut()
-            .ok_or(WebSocketError::NotOpen)?;
+        let ws = self.inner.as_mut().ok_or(WebSocketError::NotOpen)?;
 
         // 使用 read_message 获取下一条消息
         match ws.read() {
-            Ok(msg) => {
-                match msg {
-                    Message::Text(text) => Ok(Some(WebSocketMessage::Text(text.to_string()))),
-                    Message::Binary(data) => Ok(Some(WebSocketMessage::Binary(data.to_vec()))),
-                    Message::Close(close_frame) => {
-                        let (code, reason) = close_frame
-                            .map(|cf| {
-                                (
-                                    Some(cf.code.into()),
-                                    Some(cf.reason.to_string()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        self.state = WebSocketState::Closed;
-                        self.inner = None;
-                        Ok(Some(WebSocketMessage::Close(code, reason)))
-                    }
-                    Message::Ping(data) => Ok(Some(WebSocketMessage::Ping(data.to_vec()))),
-                    Message::Pong(data) => Ok(Some(WebSocketMessage::Pong(data.to_vec()))),
-                    _ => Ok(None),
+            Ok(msg) => match msg {
+                Message::Text(text) => Ok(Some(WebSocketMessage::Text(text.to_string()))),
+                Message::Binary(data) => Ok(Some(WebSocketMessage::Binary(data.to_vec()))),
+                Message::Close(close_frame) => {
+                    let (code, reason) = close_frame
+                        .map(|cf| (Some(cf.code.into()), Some(cf.reason.to_string())))
+                        .unwrap_or((None, None));
+                    self.state = WebSocketState::Closed;
+                    self.inner = None;
+                    Ok(Some(WebSocketMessage::Close(code, reason)))
                 }
-            }
-            Err(tungstenite::Error::Io(e))
-                if e.kind() == std::io::ErrorKind::WouldBlock =>
-            {
+                Message::Ping(data) => Ok(Some(WebSocketMessage::Ping(data.to_vec()))),
+                Message::Pong(data) => Ok(Some(WebSocketMessage::Pong(data.to_vec()))),
+                _ => Ok(None),
+            },
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // 非阻塞模式：暂无消息
                 Ok(None)
             }
@@ -353,8 +334,7 @@ mod tests {
         // 连接应失败（端口 1 通常没有服务监听）
         assert!(result.is_err());
         // 连接失败后状态应保持 Connecting 或 Closed
-        assert!(ws.state() == &WebSocketState::Connecting
-            || ws.state() == &WebSocketState::Closed);
+        assert!(ws.state() == &WebSocketState::Connecting || ws.state() == &WebSocketState::Closed);
     }
 
     #[test]

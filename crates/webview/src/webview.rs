@@ -522,12 +522,15 @@ impl WebView {
         &mut self.sw_registry
     }
 
-    /// 处理 JS 端 WebAssembly.instantiate() 的桥接请求。
+    /// 处理 JS 端 WebAssembly 桥接请求。
     ///
-    /// 当 JS polyfill 检测到 WebAssembly.instantiate() 调用时，
-    /// 输出 `__WASM_BRIDGE__:` 前缀的 JSON 命令。
-    /// 此方法解析命令，通过 wasm-sandbox 编译执行，并将结果注入回 JS 环境。
+    /// 支持 `__WASM_BRIDGE__:`（实例化）和 `__WASM_COMPILE__:`（编译）两种桥接命令。
+    /// 实例化时自动执行 `_start`/`_initialize` 导出函数，
+    /// 读取 WASM 内存状态，并将可调用的导出函数注入回 JS 环境。
     fn process_wasm_bridge(&mut self, script_output: &str) -> Result<String, WebViewError> {
+        // 先处理挂起的 WASM 导出调用队列
+        self.process_wasm_calls()?;
+
         // 探测 JS 端是否有挂起的 WASM 桥接请求
         let probe_script = r#"
             (function() {
@@ -542,12 +545,29 @@ impl WebView {
 
         let probe_result = self.execute_script(probe_script).unwrap_or_default();
 
-        if !probe_result.starts_with("__WASM_BRIDGE__:") {
-            // 无 WASM 桥接请求，返回原始输出
+        if probe_result.is_empty() {
             return Ok(script_output.to_string());
         }
 
-        let json_str = &probe_result["__WASM_BRIDGE__:".len()..];
+        // 处理实例化桥接命令
+        if let Some(json_str) = probe_result.strip_prefix("__WASM_BRIDGE__:") {
+            return self.handle_wasm_instantiate_bridge(json_str, script_output);
+        }
+
+        // 处理编译桥接命令
+        if let Some(json_str) = probe_result.strip_prefix("__WASM_COMPILE__:") {
+            return self.handle_wasm_compile_bridge(json_str, script_output);
+        }
+
+        // 未知桥接前缀，忽略
+        Ok(script_output.to_string())
+    }
+
+    /// 处理 WASM 实例化桥接命令。
+    ///
+    /// 编译 WASM 字节码，创建实例，自动执行 _start/_initialize，
+    /// 读取内存状态，注入可调用的导出函数回 JS。
+    fn handle_wasm_instantiate_bridge(&mut self, json_str: &str, script_output: &str) -> Result<String, WebViewError> {
         let parsed: serde_json::Value = match serde_json::from_str(json_str) {
             Ok(v) => v,
             Err(e) => {
@@ -565,7 +585,6 @@ impl WebView {
             }
         };
 
-        // 解码 base64
         let wasm_bytes = match base64_decode(b64_bytes) {
             Ok(b) => b,
             Err(e) => {
@@ -580,12 +599,162 @@ impl WebView {
             instance_id
         );
 
-        // 通过 wasm-sandbox 编译和实例化
+        // 通过 wasm-sandbox 编译
         let sandbox = zero_wasm_sandbox::WasmSandbox::new();
         let module = match sandbox.compile(&wasm_bytes) {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("WASM bridge: compile error: {e}");
+                // 注入编译错误到 JS
+                let err_script = format!(
+                    "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
+                     globalThis.__wasm_errors__[{instance_id}] = 'compile: {e}'"
+                );
+                let _ = self.execute_script(&err_script);
+                return Ok(script_output.to_string());
+            }
+        };
+
+        let export_names = module.exports();
+
+        // 实例化
+        let mut instance = match module.instantiate(&sandbox) {
+            Ok(i) => i,
+            Err(e) => {
+                tracing::warn!("WASM bridge: instantiate error: {e}");
+                let err_script = format!(
+                    "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
+                     globalThis.__wasm_errors__[{instance_id}] = 'instantiate: {e}'"
+                );
+                let _ = self.execute_script(&err_script);
+                return Ok(script_output.to_string());
+            }
+        };
+
+        // 自动执行 WASM 初始化函数（_start 或 _initialize）
+        if instance.has_func("_start") {
+            if let Err(e) = instance.call("_start", &[]) {
+                tracing::debug!("WASM bridge: _start error (may be expected): {e}");
+            }
+        } else if instance.has_func("_initialize") && instance.call("_initialize", &[]).is_err() {
+            tracing::debug!("WASM bridge: _initialize error (may be expected)");
+        }
+
+        // 读取 WASM 内存状态（如果有 memory 导出）
+        let memory_bytes = instance.read_memory("memory", 0, 256).unwrap_or_default();
+        let memory_len = if export_names.iter().any(|n| n == "memory") {
+            // WASM 内存以页（65536 字节）为单位
+            let pages = 1.max(memory_bytes.len() / 65536 + 1);
+            pages * 65536
+        } else {
+            65536
+        };
+
+        // 缓存 WASM 实例
+        self.wasm_instances.insert(instance_id, instance);
+
+        // 构建可调用的导出函数
+        let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
+
+        // 生成每个导出函数的 JS 可调用包装
+        let mut export_fn_scripts = Vec::new();
+        for export_name in &export_names {
+            // 跳过特殊导出
+            if export_name == "memory" || export_name == "_start" || export_name == "_initialize" {
+                continue;
+            }
+            let name = export_name.as_str();
+            let escaped_name = name.replace('\'', "\\'");
+            export_fn_scripts.push(format!(
+                r#"'{escaped_name}': function() {{
+                    var callId = WebAssembly._nextCallId++;
+                    var args = Array.prototype.slice.call(arguments);
+                    var numArgs = args.map(function(a) {{
+                        if (typeof a === 'number') return a|0;
+                        return 0;
+                    }});
+                    WebAssembly._callQueue.push({{instanceId: {instance_id}, name: '{escaped_name}', args: numArgs, callId: callId}});
+                    // 检查是否有缓存结果
+                    if (WebAssembly._callResults[callId] !== undefined) {{
+                        var r = WebAssembly._callResults[callId];
+                        delete WebAssembly._callResults[callId];
+                        return r;
+                    }}
+                    return 0;
+                }}"#
+            ));
+        }
+        let export_fns = export_fn_scripts.join(",\n");
+
+        // 注入完整的实例对象到 JS 环境
+        let inject_script = format!(
+            r#"
+            (function() {{
+                if (!globalThis.__wasm_results__) globalThis.__wasm_results__ = {{}};
+                var exports = {{
+                    memory: {{
+                        buffer: new ArrayBuffer({memory_len}),
+                        grow: function(delta) {{ return Math.floor({memory_len} / 65536) + delta; }},
+                        byteLength: {memory_len}
+                    }},
+                    __wasm_export_names__: {exports_json},
+                    __host_backed__: true,
+                    {export_fns}
+                }};
+                // 如果有内存数据，写入 buffer
+                // （注意：JS 侧通过 DataView 写入 base64 解码后的字节）
+                globalThis.__wasm_results__[{instance_id}] = {{
+                    _id: {instance_id},
+                    _hostBacked: true,
+                    exports: exports
+                }};
+                // 同时更新 _instances 中的 stub
+                if (typeof WebAssembly !== 'undefined' && WebAssembly._instances[{instance_id}]) {{
+                    WebAssembly._instances[{instance_id}].stub = globalThis.__wasm_results__[{instance_id}];
+                }}
+            }})();
+            "#,
+        );
+        let _ = self.execute_script(&inject_script);
+
+        tracing::debug!(
+            "WASM bridge: instance {} created, {} exports: {:?}",
+            instance_id,
+            export_names.len(),
+            export_names
+        );
+
+        Ok(script_output.to_string())
+    }
+
+    /// 处理 WASM 编译桥接命令。
+    ///
+    /// 仅编译 WASM 字节码为模块（不实例化），缓存模块信息供后续 instantiate 使用。
+    fn handle_wasm_compile_bridge(&mut self, json_str: &str, script_output: &str) -> Result<String, WebViewError> {
+        let parsed: serde_json::Value = match serde_json::from_str(json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("WASM compile bridge: invalid JSON: {e}");
+                return Ok(script_output.to_string());
+            }
+        };
+
+        let module_id = parsed["id"].as_u64().unwrap_or(0);
+        let b64_bytes = match parsed["bytes"].as_str() {
+            Some(b) => b,
+            None => return Ok(script_output.to_string()),
+        };
+
+        let wasm_bytes = match base64_decode(b64_bytes) {
+            Ok(b) => b,
+            Err(_) => return Ok(script_output.to_string()),
+        };
+
+        let sandbox = zero_wasm_sandbox::WasmSandbox::new();
+        let module = match sandbox.compile(&wasm_bytes) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!("WASM compile bridge: compile error: {e}");
                 return Ok(script_output.to_string());
             }
         };
@@ -593,34 +762,99 @@ impl WebView {
         let export_names = module.exports();
         let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
 
-        let instance = match module.instantiate(&sandbox) {
-            Ok(i) => i,
-            Err(e) => {
-                tracing::warn!("WASM bridge: instantiate error: {e}");
-                return Ok(script_output.to_string());
-            }
-        };
-
-        // 缓存 WASM 实例
-        self.wasm_instances.insert(instance_id, instance);
-
-        // 注入结果回 JS 环境：设置 __wasm_results__
+        // 不需要实例化，仅注入编译结果
         let inject_script = format!(
             r#"
-            if (!globalThis.__wasm_results__) globalThis.__wasm_results__ = {{}};
-            globalThis.__wasm_results__[{instance_id}] = {{
-                _id: {instance_id},
-                _hostBacked: true,
-                exports: {{
-                  memory: {{ buffer: new ArrayBuffer(65536), grow: function() {{ return 1; }}, byteLength: 65536 }},
-                  __wasm_export_names__: {exports_json}
-                }}
+            if (!globalThis.__wasm_compiled__) globalThis.__wasm_compiled__ = {{}};
+            globalThis.__wasm_compiled__[{module_id}] = {{
+                _id: {module_id},
+                _bytes: globalThis.WebAssembly._modules[{module_id}],
+                _compiled: true,
+                exports: function() {{ return {exports_json}; }}
             }};
             "#,
         );
         let _ = self.execute_script(&inject_script);
 
         Ok(script_output.to_string())
+    }
+
+    /// 处理 JS 端挂起的 WASM 导出函数调用队列。
+    ///
+    /// JS 侧每次调用导出函数时，将参数存入 `WebAssembly._callQueue`。
+    /// 此方法读取队列，通过 wasm-sandbox 执行调用，将结果注入回 JS。
+    fn process_wasm_calls(&mut self) -> Result<(), WebViewError> {
+        // 探测调用队列
+        let probe_script = r#"
+            (function() {
+                if (typeof WebAssembly === 'undefined' || !WebAssembly._callQueue || WebAssembly._callQueue.length === 0) {
+                    return '[]';
+                }
+                var queue = WebAssembly._callQueue.slice();
+                WebAssembly._callQueue = [];
+                return JSON.stringify(queue);
+            })()
+        "#;
+
+        let queue_json = self.execute_script(probe_script).unwrap_or_else(|_| "[]".to_string());
+
+        let calls: Vec<serde_json::Value> = match serde_json::from_str(&queue_json) {
+            Ok(v) => v,
+            Err(_) => return Ok(()),
+        };
+
+        if calls.is_empty() {
+            return Ok(());
+        }
+
+        tracing::debug!("WASM bridge: processing {} pending export calls", calls.len());
+
+        // 执行每个调用并收集结果
+        let mut results_script = String::from(
+            "if (typeof WebAssembly !== 'undefined') WebAssembly._callResults = WebAssembly._callResults || {};\n",
+        );
+
+        for call in &calls {
+            let instance_id = call["instanceId"].as_u64().unwrap_or(0);
+            let name = call["name"].as_str().unwrap_or("");
+            let call_id = call["callId"].as_u64().unwrap_or(0);
+            let args_array = call["args"].as_array();
+
+            // 构造 WASM 参数
+            let wasm_args: Vec<zero_wasm_sandbox::WasmValue> = args_array
+                .map(|arr| {
+                    arr.iter()
+                        .map(|v| zero_wasm_sandbox::WasmValue::I32(v.as_i64().unwrap_or(0) as i32))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // 执行调用
+            if let Some(instance) = self.wasm_instances.get_mut(&instance_id) {
+                match instance.call(name, &wasm_args) {
+                    Ok(results) => {
+                        let result_val = if results.is_empty() {
+                            "null".to_string()
+                        } else {
+                            // 取第一个返回值
+                            results[0].to_string()
+                        };
+                        results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = {result_val};\n"));
+                    }
+                    Err(e) => {
+                        tracing::debug!("WASM call error for {name}: {e}");
+                        results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = null;\n"));
+                    }
+                }
+            } else {
+                results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = null;\n"));
+            }
+        }
+
+        // 注入结果回 JS
+        let _ = self.execute_script(&results_script);
+
+        Ok(())
     }
 
     /// 调用已实例化的 WASM 模块的导出函数。
@@ -841,6 +1075,33 @@ impl WebView {
     pub fn check_subresource_url(&mut self, url: &str, resource_type: &str) -> ResourceCheckResult {
         self.security_context.check_resource_url(url, resource_type)
     }
+}
+
+/// 将字节编码为 base64 字符串。
+///
+/// WASM 桥接使用 base64 在 JS 和 Rust 之间传递内存数据。
+#[allow(dead_code)]
+fn base64_encode(data: &[u8]) -> String {
+    const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity(data.len() * 4 / 3 + 4);
+    for chunk in data.chunks(3) {
+        let a = chunk[0];
+        let b = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let c = if chunk.len() > 2 { chunk[2] } else { 0 };
+        result.push(B64[(a >> 2) as usize] as char);
+        result.push(B64[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+        result.push(if chunk.len() > 1 {
+            B64[(((b & 0xF) << 2) | (c >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        result.push(if chunk.len() > 2 {
+            B64[(c & 0x3F) as usize] as char
+        } else {
+            '='
+        });
+    }
+    result
 }
 
 /// 将 base64 字符串解码为字节。

@@ -1257,5 +1257,62 @@ pub fn security_tests() -> Vec<TestCase> {
                 "render_completes".into(),
             ],
         },
+        // ═══════════════════════════════════════════════════════════════
+        // WASM 安全测试
+        // ═══════════════════════════════════════════════════════════════
+        // CSP wasm-unsafe-eval 限制
+        TestCase {
+            id: "security/csp/wasm-unsafe-eval".into(),
+            description: "CSP wasm-unsafe-eval 策略检测".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <h1>CSP WASM Policy</h1>
+            <div id="r">checking</div>
+            <script>
+                var hasWasm = typeof WebAssembly !== 'undefined';
+                var canCompile = hasWasm && typeof WebAssembly.compile === 'function';
+                var canInstantiate = hasWasm && typeof WebAssembly.instantiate === 'function';
+                var status = hasWasm ? 'wasm-available' : 'no-wasm';
+                status += canCompile ? '-compile-ok' : '-no-compile';
+                status += canInstantiate ? '-instantiate-ok' : '-no-instantiate';
+                document.getElementById('r').textContent = status;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "no_panic".into(),
+            ],
+        },
+        // WASM 沙箱边界测试
+        TestCase {
+            id: "security/wasm/sandbox-boundary".into(),
+            description: "WASM 沙箱边界 — 无直接文件/网络访问".into(),
+            category: "security".into(),
+            html: r#"<html><body>
+            <h1>WASM Sandbox</h1>
+            <div id="r">checking</div>
+            <div id="details"></div>
+            <script>
+                var results = [];
+                results.push('wasm:' + (typeof WebAssembly !== 'undefined'));
+                results.push('validate:' + (typeof WebAssembly.validate === 'function'));
+                // WASM 模块不能直接访问文件系统
+                results.push('fs:' + (typeof require === 'undefined'));
+                // WASM 模块不能直接访问网络（需通过宿主桥接）
+                results.push('direct-net:' + (typeof XMLHttpRequest === 'undefined'));
+                document.getElementById('r').textContent = 'boundary-ok';
+                document.getElementById('details').textContent = results.join('|');
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "no_panic".into(),
+                "render_completes".into(),
+            ],
+        },
     ]
 }

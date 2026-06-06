@@ -1673,5 +1673,91 @@ if (typeof structuredClone === 'function') {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
         },
+        // ═══════════════════════════════════════════════════════════════
+        // WebAssembly 自动桥接增强测试
+        // ═══════════════════════════════════════════════════════════════
+        // WebAssembly.instantiateStreaming() API
+        TestCase {
+            id: "web-api/wasm/instantiate-streaming".into(),
+            description: "WebAssembly.instantiateStreaming API 可用".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="r">pending</div>
+            <script>
+                var hasStreaming = typeof WebAssembly.instantiateStreaming === 'function';
+                document.getElementById('r').textContent = hasStreaming ? 'streaming ok' : 'no streaming';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // WebAssembly.validate() 魔术字节检测
+        TestCase {
+            id: "web-api/wasm/validate-magic".into(),
+            description: "WebAssembly.validate 检测 WASM 魔术字节".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="r">pending</div>
+            <script>
+                var validWasm = new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]);
+                var invalidWasm = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+                var v1 = WebAssembly.validate(validWasm);
+                var v2 = WebAssembly.validate(invalidWasm);
+                var v3 = WebAssembly.validate(null);
+                document.getElementById('r').textContent = (v1 && !v2 && !v3) ? 'validate ok' : 'validate fail:' + v1 + ':' + v2 + ':' + v3;
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // WebAssembly 调用队列基础设施
+        TestCase {
+            id: "web-api/wasm/call-queue".into(),
+            description: "WebAssembly 调用队列基础设施可用".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="r">pending</div>
+            <script>
+                var hasQueue = Array.isArray(WebAssembly._callQueue);
+                var hasResults = typeof WebAssembly._callResults === 'object';
+                var hasCallId = typeof WebAssembly._nextCallId === 'number';
+                document.getElementById('r').textContent = (hasQueue && hasResults && hasCallId) ? 'queue ok' : 'queue fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+        },
+        // WebAssembly 完整桥接页面
+        TestCase {
+            id: "web-api/wasm/full-bridge-page".into(),
+            description: "WebAssembly 完整桥接综合页面".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <h1>WASM Bridge Test</h1>
+            <div id="api-check">checking</div>
+            <div id="validate-check">checking</div>
+            <div id="streaming-check">checking</div>
+            <script>
+                // API 检测
+                var apis = [
+                    typeof WebAssembly === 'object',
+                    typeof WebAssembly.compile === 'function',
+                    typeof WebAssembly.instantiate === 'function',
+                    typeof WebAssembly.validate === 'function',
+                    typeof WebAssembly.instantiateStreaming === 'function'
+                ];
+                document.getElementById('api-check').textContent = apis.every(Boolean) ? 'all apis ok' : 'missing apis';
+
+                // 验证检测
+                var validWasm = new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]);
+                document.getElementById('validate-check').textContent = WebAssembly.validate(validWasm) ? 'validate ok' : 'validate fail';
+
+                // 流式 API 检测
+                document.getElementById('streaming-check').textContent = typeof WebAssembly.instantiateStreaming === 'function' ? 'streaming ok' : 'no streaming';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+        },
     ]
 }

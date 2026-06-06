@@ -460,7 +460,11 @@ mod tests {
             let result = ws.send(&format!("msg{i}"));
             assert!(result.is_err(), "未连接时第 {i} 次发送应返回错误");
         }
-        assert_eq!(ws.state(), &WebSocketState::Connecting, "多次错误后状态应保持 Connecting");
+        assert_eq!(
+            ws.state(),
+            &WebSocketState::Connecting,
+            "多次错误后状态应保持 Connecting"
+        );
     }
 
     /// 测试 NavigationHistory 中 replace_current 后在索引 0 的边界状态。

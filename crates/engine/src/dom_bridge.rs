@@ -1208,14 +1208,18 @@ pub fn generate_dom_api_polyfill() -> String {
     timeOrigin: Date.now()
   };
 
-  // ── WebAssembly API Stub with Host Bridge ──
-  // Provides the WebAssembly JavaScript API surface.
-  // When instantiate() is called, emits a special JSON command for the host
-  // to compile and execute via the real WASM runtime (zero-wasm-sandbox).
+  // ── WebAssembly API with Host Auto-Bridge ──
+  // Full WebAssembly JavaScript API surface with automatic bridge to the
+  // host WASM runtime (zero-wasm-sandbox / wasmi or wasmtime).
   //
-  // Bridge protocol:
-  //   JS outputs: __WASM_BRIDGE__:{"id":N,"bytes":"base64..."}
-  //   Host responds by executing the WASM and setting globalThis.__wasm_results__
+  // Bridge protocol (instantiation):
+  //   JS emits: __WASM_BRIDGE__:{"id":N,"bytes":"base64...","importKeys":[...]}
+  //   Host compiles, instantiates, executes _start/_initialize, injects results.
+  //
+  // Bridge protocol (export calls):
+  //   JS queues calls in WebAssembly._callQueue
+  //   Host reads queue, executes via wasm-sandbox, injects results into
+  //   __wasm_call_results__ for the JS side to consume on next tick.
 
   // Minimal base64 encoder for WASM bytes
   var __wasm_b64__ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -1230,28 +1234,43 @@ pub fn generate_dom_api_polyfill() -> String {
     return r;
   }
 
+  // 从 ArrayBuffer/TypedArray 提取字节
+  function __wasmToBytes(bufferSource) {
+    if (bufferSource instanceof ArrayBuffer) return new Uint8Array(bufferSource);
+    if (bufferSource instanceof Uint8Array) return bufferSource;
+    if (ArrayBuffer.isView(bufferSource)) return new Uint8Array(bufferSource.buffer, bufferSource.byteOffset, bufferSource.byteLength);
+    return null;
+  }
+
   globalThis.WebAssembly = {
     _modules: {},
     _instances: {},
     _nextId: 1,
     _pendingBridge: null,
+    // 导出函数调用队列 — 每次调用存储 {instanceId, name, args, callId}
+    _callQueue: [],
+    _nextCallId: 1,
+    // 调用结果缓存 — host 执行后注入 {callId: result}
+    _callResults: {},
 
     compile: function(bufferSource) {
+      var bytes = __wasmToBytes(bufferSource);
+      if (!bytes) return Promise.reject(new TypeError('WebAssembly.compile(): Argument 0 must be a buffer source'));
       var id = this._nextId++;
-      var bytes;
-      if (bufferSource instanceof ArrayBuffer) {
-        bytes = new Uint8Array(bufferSource);
-      } else if (bufferSource instanceof Uint8Array) {
-        bytes = bufferSource;
-      } else if (ArrayBuffer.isView(bufferSource)) {
-        bytes = new Uint8Array(bufferSource.buffer, bufferSource.byteOffset, bufferSource.byteLength);
-      } else {
-        return Promise.reject(new TypeError('WebAssembly.compile(): Argument 0 must be a buffer source'));
-      }
       this._modules[id] = bytes;
+      // 发送编译桥接命令
+      var b64 = __wasmToBase64(bytes);
+      this._pendingBridge = '__WASM_COMPILE__:' + JSON.stringify({id: id, bytes: b64});
+      // 如果 host 已经预编译并注入了结果，直接返回
+      if (globalThis.__wasm_compiled__ && globalThis.__wasm_compiled__[id]) {
+        var compiled = globalThis.__wasm_compiled__[id];
+        delete globalThis.__wasm_compiled__[id];
+        return Promise.resolve(compiled);
+      }
       return Promise.resolve({
         _id: id,
         _bytes: bytes,
+        _compiled: true,
         exports: function() { return []; }
       });
     },
@@ -1259,46 +1278,72 @@ pub fn generate_dom_api_polyfill() -> String {
     instantiate: function(bufferSourceOrModule, importObject) {
       var self = this;
       var bytes;
-      if (bufferSourceOrModule && bufferSourceOrModule._id !== undefined) {
-        // Second form: instantiate(Module, imports)
+      if (bufferSourceOrModule && bufferSourceOrModule._id !== undefined && bufferSourceOrModule._compiled) {
+        // 第二种形式: instantiate(Module, imports)
         bytes = bufferSourceOrModule._bytes;
       } else {
-        // First form: instantiate(bufferSource, imports)
-        if (bufferSourceOrModule instanceof ArrayBuffer) {
-          bytes = new Uint8Array(bufferSourceOrModule);
-        } else if (bufferSourceOrModule instanceof Uint8Array) {
-          bytes = bufferSourceOrModule;
-        } else if (ArrayBuffer.isView(bufferSourceOrModule)) {
-          bytes = new Uint8Array(bufferSourceOrModule.buffer, bufferSourceOrModule.byteOffset, bufferSourceOrModule.byteLength);
-        } else {
-          return Promise.reject(new TypeError('WebAssembly.instantiate(): Argument 0 must be a buffer source or Module'));
-        }
+        bytes = __wasmToBytes(bufferSourceOrModule);
+        if (!bytes) return Promise.reject(new TypeError('WebAssembly.instantiate(): Argument 0 must be a buffer source or Module'));
       }
       var moduleId = self._nextId++;
       self._modules[moduleId] = bytes;
       var instanceId = self._nextId++;
 
-      // Emit bridge command for host to compile and execute
-      var b64 = __wasmToBase64(bytes);
-      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, bytes: b64});
+      // 收集 importObject 的键名传给 host
+      var importKeys = [];
+      if (importObject) {
+        try {
+          var moduleKeys = Object.keys(importObject);
+          for (var mi = 0; mi < moduleKeys.length; mi++) {
+            var modName = moduleKeys[mi];
+            var modVal = importObject[modName];
+            if (modVal && typeof modVal === 'object') {
+              var fnKeys = Object.keys(modVal);
+              for (var fi = 0; fi < fnKeys.length; fi++) {
+                importKeys.push(modName + '.' + fnKeys[fi]);
+              }
+            }
+          }
+        } catch(e) {}
+      }
 
-      // Check if host has already resolved this instance
+      // 发送实例化桥接命令
+      var b64 = __wasmToBase64(bytes);
+      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, bytes: b64, importKeys: importKeys});
+
+      // 如果 host 已经预解析了此实例（第二次 instantiate 同一模块），直接返回缓存
       if (globalThis.__wasm_results__ && globalThis.__wasm_results__[instanceId]) {
         var resolved = globalThis.__wasm_results__[instanceId];
         delete globalThis.__wasm_results__[instanceId];
         return Promise.resolve({
-          module: { _id: moduleId, _bytes: bytes },
+          module: { _id: moduleId, _bytes: bytes, _compiled: true },
           instance: resolved
         });
       }
 
-      // Return stub instance — host will resolve in follow-up
+      // 创建带有可调用导出的桩实例
       var stub = self._createInstance(instanceId, bytes, importObject);
       self._instances[instanceId] = { moduleId: moduleId, imports: importObject || {}, stub: stub };
       return Promise.resolve({
-        module: { _id: moduleId, _bytes: bytes },
+        module: { _id: moduleId, _bytes: bytes, _compiled: true },
         instance: stub
       });
+    },
+
+    // WebAssembly.instantiateStreaming() — 从 Response 流式编译
+    instantiateStreaming: function(source, importObject) {
+      var self = this;
+      // 在无头环境中 Response 可能不可用，回退到 ArrayBuffer 路径
+      if (source && typeof source.arrayBuffer === 'function') {
+        return source.arrayBuffer().then(function(buffer) {
+          return self.instantiate(new Uint8Array(buffer), importObject);
+        });
+      }
+      // 如果 source 已经是 ArrayBuffer/Uint8Array，直接使用
+      if (source instanceof ArrayBuffer || source instanceof Uint8Array) {
+        return self.instantiate(source, importObject);
+      }
+      return Promise.reject(new TypeError('WebAssembly.instantiateStreaming(): source must be a Response or buffer source'));
     },
 
     _createInstance: function(instanceId, bytes, importObject) {
@@ -1311,16 +1356,19 @@ pub fn generate_dom_api_polyfill() -> String {
             grow: function(delta) { return 1; },
             byteLength: 65536
           },
-          __wasm_export_names__: []
+          __wasm_export_names__: [],
+          // 占位：host 注入后会被真实可调用函数替换
+          __host_backed__: false
         }
       };
     },
 
     validate: function(bufferSource) {
       if (!bufferSource) return false;
-      if (bufferSource instanceof ArrayBuffer) return bufferSource.byteLength > 0;
-      if (bufferSource.byteLength !== undefined) return bufferSource.byteLength > 0;
-      return true;
+      var bytes = __wasmToBytes(bufferSource);
+      if (!bytes || bytes.length < 8) return false;
+      // WASM 魔术字节: 0x00 0x61 0x73 0x6D (即 \0asm)
+      return bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6D;
     }
   };
 
