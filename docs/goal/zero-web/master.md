@@ -2600,7 +2600,7 @@ container query 评估改进，以及跨 crate 集成测试和错误恢复测试
 | M10 WebView API | ✅ (webview + integration tests) |
 | M11 浏览器应用 | ✅ 功能完成：Ctrl+快捷键（L/T/W/R/F/D/+/-/0/,）、鼠标滚动、右键菜单、书签栏、查找栏、缩放、自动补全、下载进度条、设置页面（zero://settings）、5 模块架构（均 <2000 行） |
 | M12 高级 Web 能力 | ✅ 基本完成：Service Worker 集成（注册/安装/激活/注销/fetch 拦截 + navigator.serviceWorker polyfill）、WebAssembly JS API polyfill + WebView.execute_wasm() 真实执行、PerformanceObserver + performance API、QuickJS feature gate、Cache API、WPT runner（85 内建测试） |
-| M13 性能优化 + 安全加固 | 🔧 进行中：✅ CSP 完整实现 ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ 增量布局计算 ✅ GPU Glyph Atlas ✅ 权限模型 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context ✅ **渲染管线优化（填充批处理 batch_fills + 视口剔除 cull_invisible + draw call 统计 RenderStats + Rect::intersects）** ✅ **TransformPrimitive 渲染（仿射变换矩阵 + transform-origin）** ✅ **CSS 计数器渲染（counter-reset/increment/set 跟踪 + 列表标记集成）** |
+| M13 性能优化 + 安全加固 | ✅ CSP 完整实现 ✅ Mixed Content 阻止 ✅ HSTS 支持 ✅ 增量布局计算 ✅ GPU Glyph Atlas ✅ 权限模型 ✅ 资源预加载 ✅ 站点隔离 ✅ V8 持久化 Context ✅ 渲染管线优化（填充批处理 + 视口剔除 + draw call 统计） ✅ TransformPrimitive 渲染 ✅ CSS 计数器渲染 |
 
 ---
 
@@ -2658,14 +2658,14 @@ Total: 6219 → 6378 tests (+159)
 
 | 测试层 | 状态 | 目标 | 后续动作 | 验收标准 |
 |--------|------|------|----------|----------|
-| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1323 用例（22 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset/CSS Advanced | 按标准模块输出通过率；PR 只阻断 unexpected fail |
+| 1. 标准合规测试 | 🔄 | 验证 HTML、DOM、CSSOM、CSS、Fetch、Storage、Workers、Modules、WASM、Security 等 Web 标准行为 | WPT 1341 用例（23 分类，100% 通过率），覆盖 HTML/DOM/CSS/JS/Canvas/Storage/Security/Navigation/Workers/ES Modules/CSS Layout Subset/CSS Advanced/Platform Input/Accessibility/A11y-I18n | 按标准模块输出通过率；PR 只阻断 unexpected fail |
 | 2. 渲染正确性测试 | 🔄 | 验证 CSS 排版、layout geometry、paint order 和最终视觉等价 | Phase 1-3 ✅（layout/primitive snapshot + 16 reftest + 45 CSS/layout subset + 按分类通过率报告）；Phase 4 待推进 | 核心 CSS/layout 改动可被 snapshot 或 reftest 捕获 |
 | 3. 真实网站兼容性测试 | ✅ | 验证真实页面组合能力，而不只验证单项标准 | Top 20 真实网站兼容性测试（24 个测试，20/20 站点通过），覆盖 fetch → parse → style → layout → paint 完整管线 | 每个站点有可复现结果，全部通过（需 `--ignored` 运行） |
 | 4. 安全测试 | 🔄 | 验证浏览器安全边界不被绕过 | 52 个跨 crate 安全管线测试 + SecurityContext 集成 + HSTS preload + 混合内容执行引擎 + 19 WPT 安全扩展 | 安全边界测试进入 CI；fuzz/sanitizer 夜间报告无新增高危问题 |
 | 5. 运行时和事件循环测试 | 🔄 | 验证 JS + DOM + Web API 的组合时序 | 9 个 WPT 运行时测试（Timer/Promise/async-await/Error/rAF/MutationObserver/Event/Console/Worker） | DOM mutation 后 style/layout/paint 更新顺序可测试；关闭/导航不泄漏状态 |
 | 6. 网络和导航测试 | 🔄 | 验证导航状态机、资源加载和历史行为 | 10 个 WPT 导航测试（Redirect/Hash/Cache/Cookie/HSTS/StateMachine/SW/Timeout/CORS）+ 13 个 URL+安全管线集成测试 | 导航和网络异常路径可复现；历史和资源状态稳定 |
 | 7. 性能测试 | 🔄 | 从 crate benchmark 上升到页面级性能预算 | 16/16 crate 有 criterion 基准（78+ 个）；中等复杂度页面首屏 < 2s 验证通过；增量布局验证 | 页面级性能报告可比较；关键预算有阈值和趋势 |
-| 8. 平台和输入测试 | 🔄 | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 18 个 WPT 平台输入测试（键盘/鼠标/触摸/滚动/视口响应式/HiDPI/IME/CJK 输入/焦点管理）+ 15 个视口自适应集成测试（响应式重排/极端视口/resize 往复/CSS viewport 单位） | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
+| 8. 平台和输入测试 | 🔄 | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 18 个 WPT 平台输入测试（键盘/鼠标/触摸/滚动/视口响应式/HiDPI/IME/CJK 输入/焦点管理）+ 15 个视口自适应集成测试（响应式重排/极端视口/resize 往复/CSS viewport 单位）+ 19 个字体回退国际化渲染管线集成测试（CJK/RTL/emoji/多语言混合/竖排文本） | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
 | 9. 产品层测试 | 🔄 | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 31 个 BrowserShell+WebView 产品级 smoke 测试（标签页生命周期/地址栏自动补全/书签CRUD+导航/历史记录搜索+清除/下载管理/设置/缩放控制/查找功能/会话保存恢复/上下文菜单） | 产品级 smoke 可在发布前阻断明显退化 |
 | 10. 无头协议和自动化控制面 | ✅ | 支持外部自动化工具驱动 ZeroWeb，用协议统一真实站点、截图、性能和产品 smoke | Phase 1-5 全部完成（WebSocket 服务器 + JSON 消息路由 + CDP 命令 + 自动化测试 + 安全加固） | 外部客户端可连接、建上下文、导航、执行脚本、截图并收集网络/日志事件 |
 
@@ -2717,7 +2717,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整）。**45+ 真实网站兼容性测试就位** |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1323 用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**WASM 自动桥接完整实现**（instantiate/compile/instantiateStreaming + validate + _start 自动执行 + 导出调用队列）。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1341 用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**WASM 自动桥接完整实现**（instantiate/compile/instantiateStreaming + validate + _start 自动执行 + 导出调用队列）。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
 | 5. 单元测试与质量 | ✅ | 12,001 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**45 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1341 WPT 用例（23 分类，100% 通过率）** |
 | 6. 工程化 | ✅ | CI（3 平台）、CI 发布工作流（Linux/macOS/Windows 自动打包）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、scripts/package-linux.sh、scripts/package-macos.sh、scripts/package-windows.ps1、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
