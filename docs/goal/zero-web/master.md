@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 16/16 crate 已实现，~11,678 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**parse_extended.rs 拆分**（2022 行 → 3 个文件）
+**执行状态**: 16/16 crate 已实现，~11,678 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1125 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**parse_extended.rs 拆分**（2022 行 → 3 个文件）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -106,6 +106,40 @@
 ---
 
 ## 最近完成的改进
+
+### -116. WPT 测试扩展 — 安全扩展 + 运行时/事件循环（本轮，~11,678 测试，1125 WPT 用例）
+
+扩展 WPT 测试套件，新增 25 个测试用例覆盖 CSP 扩展指令和运行时/事件循环：
+
+**安全策略扩展**（+11 测试）：
+
+| 测试类别 | 测试 ID | 覆盖场景 |
+|----------|---------|----------|
+| CSP script-src-attr | security/csp/script-src-attr | 内联事件处理器控制 |
+| CSP style-src-attr | security/csp/style-src-attr | 内联样式属性控制 |
+| CSP unsafe-eval | security/csp/unsafe-eval | eval() 允许检查 |
+| CSP wasm-unsafe-eval | security/csp/wasm-unsafe-eval | WASM 编译单独允许 |
+| CSP strict-dynamic | security/csp/strict-dynamic | nonce 信任传播 |
+| CSP report-sample | security/csp/report-sample | 违规报告样本请求 |
+| CORS 跨源 | security/cors/cross-origin-img, cross-origin-fetch | CORS 图片和 Fetch |
+| Trusted Types | security/trusted-types/basic | DOM XSS 防护 |
+| CSP Report-Only | security/csp/report-only | 仅报告不阻止 |
+| CSP 多策略 | security/csp/multiple-policies | 多策略独立检查 |
+
+**运行时/事件循环**（+14 测试，新 `runtime` 分类）：
+
+| 测试类别 | 测试数 | 覆盖场景 |
+|----------|--------|----------|
+| 定时器 | 3 | setTimeout、setInterval、嵌套 timeout |
+| Promise/microtask | 3 | resolve、async/await、microtask 执行顺序 |
+| MutationObserver | 1 | 子节点变化观察 |
+| 事件冒泡/捕获 | 2 | 冒泡/捕获阶段、CustomEvent |
+| requestAnimationFrame | 1 | rAF 回调 |
+| 导航状态 | 1 | History API pushState/replaceState |
+| console API | 1 | 全部 console 方法不崩溃 |
+| 错误处理 | 2 | try-catch、Promise rejection |
+
+WPT: 1100 → 1125 用例（+25, 23 个分类, 100% 通过率）, clippy clean.
 
 ### -115. parse_extended.rs 拆分 + CSP 完整实现（本轮，~11,678 测试）
 

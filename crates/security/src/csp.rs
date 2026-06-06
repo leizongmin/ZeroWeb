@@ -575,9 +575,7 @@ impl ContentSecurityPolicy {
             }
         }
 
-        if allow_hashes
-            && let Some(h) = hash
-        {
+        if allow_hashes && let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
             if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
@@ -615,9 +613,7 @@ impl ContentSecurityPolicy {
             }
         }
 
-        if allow_hashes
-            && let Some(h) = hash
-        {
+        if allow_hashes && let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
             if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
