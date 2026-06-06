@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-06
-**当前活跃里程碑**: M1 — WPT Reftest 基础设施搭建（已完成 ✅）
+**当前活跃里程碑**: M2 — CSS 2.1 渲染修复 + Quirks Mode（进行中）
 
 ---
 
@@ -60,7 +60,12 @@
 
 ### DC-6: Quirks Mode
 
-- 全部 ❌ — 计划在 M2 实现
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| CSS parser quirks | ❌ | 待实现：quirky color values、unitless lengths |
+| Style system quirks | ⚠️ | 部分实现：percentage-height quirk 已实现 |
+| Layout engine quirks | ❌ | 待实现 |
+| DOM → style 链路传递 | ✅ | Document::quirks_mode() 已接入 StyleSystem |
 
 ### DC-7: 测试与质量
 
@@ -171,6 +176,7 @@
 | 2026-06-06 | 使用内联 reftest 替代上游导入 | 避免网络依赖，53 个 CSS 2.1 核心 reftest 覆盖主要布局场景 |
 | 2026-06-06 | mismatch 阈值设为 0.5% | 800×600 视口下，50×50 小元素差异约 0.52%，1% 阈值会漏检 |
 | 2026-06-06 | 文字类 reftest 使用宽松容差 (5%/15ch) | fontdue vs Skia 字体渲染像素差异大 |
+| 2026-06-06 | QuirksMode 在 StyleSystem 内部传递（不暴露为公开参数） | 保持公共 API 简洁，doc.quirks_mode() 在 compute_styles 入口处提取 |
 
 ---
 
@@ -188,5 +194,8 @@
 10. ~~实现 GPU 截图~~ ✅ 已完成（headless GpuRenderer + CPU 圆角叠加）
 11. ~~CI 集成~~ ✅ 已完成（GitHub Actions reftest job）
 12. ~~导入更多 reftest 扩展覆盖~~ ✅ 已完成（115 个，覆盖 Flexbox/Grid/Position/Text/Box/Display）
-13. **M1 完成 → 标记 M1 为完成**
-14. **M2 — CSS 2.1 渲染修复 + Quirks Mode**
+13. ~~M1 完成 → 标记 M1 为完成~~ ✅ M1 完成
+14. ~~M2 — Quirks Mode pipeline wiring~~ ✅ QuirksMode 已接入 StyleSystem
+15. **M2 — CSS parser quirks mode**（quirky colors, unitless lengths）
+16. **M2 — 添加更多发现渲染 bug 的 reftest**（测试等效 CSS 特性）
+17. **M2 — 修复发现的 CSS 2.1 渲染缺口**
