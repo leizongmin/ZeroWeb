@@ -41,6 +41,10 @@ impl ReftestCategory {
             || path_lower.contains("/css-text-decor/")
             || path_lower.contains("/text/")
             || path_lower.contains("/font/")
+            || path_lower.starts_with("css-text/")
+            || path_lower.starts_with("css-writing-modes/")
+            || path_lower.starts_with("css-fonts/")
+            || path_lower.starts_with("css-text-decor/")
         {
             Self::Text
         } else {
