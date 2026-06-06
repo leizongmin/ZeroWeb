@@ -13,6 +13,7 @@ zero-net = { workspace = true }
 zero-script-sandbox = { workspace = true }
 zero-storage = { workspace = true }
 zero-wasm-sandbox = { workspace = true }
+zero-security = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }

@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,767 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1170 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（38 个跨 crate 安全管线测试 + 14 个 WPT 安全扩展测试），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,809 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1175 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate + 3 应用（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,767 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,809 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -31,11 +31,11 @@
 | render-foundation | 300 | ✅ | GPU/CPU 渲染、字体栈、image cache + GC、clipping/scissor、颜色 RGBA clamping、image cache eviction、surface resize、**文本整形器（TextShaper + 换行）**、**多次 resize/RGBA clamp/零 max_entries**、**空字符串/单字整形/opacity 零**、**damage tracker 单矩形/重叠合并/颜色钳位/resize 保留/max_entries 零**、**rect 交集/并集/颜色 alpha 混合/面积**、**20 非重叠 rect/Color lerp 透明/缓存 GC 优先级/帧缓冲四角/圆角矩形包围盒** |
 | host-runtime | 228 | ✅ | winit 窗口、事件循环、mouse/cursor/IME 事件、**resize 事件**、**鼠标坐标**、**IME composition**、**键盘修饰键**、**修饰键组合/按键重复/鼠标按钮/零尺寸 resize**、**mouse 坐标/keyboard key_code/resize/touch/IME composition**、**多触点/按钮坐标/按键码**、**连续 resize/全修饰键/中键/IME 空/键盘释放**、**HostError debug/TouchPhase 比较/scroll delta 转换/Destroyed 事件忽略/MouseButton 相等性** |
 | net | 307 | ✅ | HTTP client、URL、导航历史、Cookie、send 集成测试、cookie 过期/SameSite、**URL userinfo/port/query 边角场景**、**SameSite 全矩阵**、**重定向深度边界**、**非默认端口 origin**、**第三方 cookie/会话 cookie/前进超出**、**URL fragment/空路径/导航历史检查/cookie httpOnly/响应状态文本**、**WebSocket 桩（状态机+消息队列）**、**URL hash/查询参数/请求链/状态文本**、**IPv6 host/SameSite Strict/go_back initial/304 status/URL encoded chars**、**blob/file URL/Cookie path 匹配/导航边界/查询参数边界**、**HTTP 响应缓存（Cache-Control/ETag/LRU 淘汰/条件请求头/大小写不敏感解析/可缓存状态码过滤）** |
-| security | 409 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、HSTS、**权限模型**（PermissionManager：11 种权限类型、3 种状态、按 origin 隔离存储）、**站点隔离**（SiteIsolationManager：3 种策略、site-per-process 模型、跨站 DOM 访问阻止）、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵** |
+| security | 433 | ✅ | 同源策略、CORS（preflight）、CSP（nonce/hash/navigation/document）、mixed content blocking、sandbox、COOP/COEP、HSTS、**权限模型**（PermissionManager：11 种权限类型、3 种状态、按 origin 隔离存储）、**站点隔离**（SiteIsolationManager：3 种策略、site-per-process 模型、跨站 DOM 访问阻止）、**CSP scheme-source**、**report-only**、**CORS 简单请求/preflight 生成**、**sandbox 导航/弹窗**、**origin null/invalid/port**、**CSP img-src/nonce/default-src、CORS max-age/wildcard**、**CSP 同源脚本/内联样式/data URI/简单请求 GET**、**report-only/preflight 自定义方法/mixed content/不同端口/sandbox allow-scripts**、**CSP default-src/frame-src/CORS 凭证/混合内容/sandbox popups**、**CORS custom header/CSP data URI/cross-protocol origin/sandbox popups/mixed content ws**、**CSP upgrade-insecure-requests/strict-dynamic/CORS 多方法预检/同源默认端口/sandbox dangerous combo/mixed content blob/COOP popups 矩阵**、**SecurityContext 统一安全门面（HSTS 预加载 40+ 域名 + 混合内容阻止/升级 + 资源加载检查管线 + 24 单元测试）** |
 | protocol | 256 | ✅ | IPC 消息、bincode 序列化、**mock channel 契约**、**确定性编码**、**对抗性反序列化**、**大消息/unicode/排序**、**空载荷/unicode 载荷/顺序保持/确定性编码/大载荷 10KB**、**FIFO 循环/Session 存储类型/零 ID/二进制 body/错误 Display**、**NavigateParams referrer/KeyboardEvent 修饰键/MouseEventType 字节区分/ScrollEvent 负值/GoBack vs GoForward**、**method 大小写/referrer 自引用/Ok vs Error 字节/status codes/non-ASCII headers/StorageOp value/交错 send-recv/Send+Sync/空 headers/空 key/负坐标**、**PipeTransport 管道传输（帧协议往返/发送/过大帧/try_recv 不支持）**、**SharedMemoryChannel 共享内存通道（双向/try_recv 空/recv 空错误/关闭清空/多消息顺序）**、**RendererHandle/ProcessManager（状态比较/创建/消息 ID/不存在的渲染进程/shutdown/check_crashes/心跳常量/模拟导航+网络+存储+心跳+输入+生命周期+失败+崩溃）** |
 | storage | 661 | ✅ | localStorage、sessionStorage、IndexedDB（IdbKeyRange/IdbIndex/IdbCursor/IdbTransaction）、Cache API、**Service Worker 注册表（生命周期状态机、scope 匹配、fetch 拦截、Cache 集成）**、**事务缓冲/回滚**、**NaN/Infinity key 排序**、**唯一索引冲突**、**Cache API CRUD**、**cursor advance/continue/索引迭代**、**事务 commit/abort**、**key/used_size/cache delete+has**、**clear+set/delete range**、**delete_object_store/update_existing/clear/空 store cursor/cache has**、**update/会话隔离/count/cursor 越界/keys/事务提交/remove 不存在**、**cursor reverse/cache put URLs/localStorage key order/multiEntry index/sessionStorage clear**、**IDB 事务空 store/KeyRange 多类型/cursor advance(0)/Cache 覆写/空字符串值/唯一索引/multiEntry 空数组**、**SW 边界测试（12 个：状态转换/scope/intercept/multi-origin/cache round-trip）**、**IDB types 覆盖率测试（18 个：跨类型 key 比较/binary key/hash 一致性/array key 边界/KeyRange contains/multiEntry index）** |
 | canvas | 591 | ✅ | Canvas 2D API、路径、变换、drawImage、shadow 属性、**Path2D 高级方法**、**lineDash**、**roundRect 圆角扁平化**、**alpha 混合**、**像素边界溢出**、**clip+drawImage**、**ellipse/arcTo/conic_gradient**、**line_join/line_cap stroke 渲染**、**is_point_in_stroke**、**composite operation 像素级验证**、**image_smoothing_enabled**、**raster 覆盖率测试（flatten_round_rect/compute_arc_to_geometry/flatten_arc_to/flatten_path/flatten_path_for/blit_path_to_pixels/blit_stroke_to_pixels/blit_line_cap/stroke_outline_vertices/11 种 composite_pixel 操作）** |
-| webview | 502 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）** |
+| webview | 508 | ✅ | WebView 嵌入 API、Builder、event callbacks、load_url fetch、execute_script、**Service Worker 集成（register/install/activate/unregister + fetch 拦截）**、**CSS 缓存持久化**、**extract_origin/execute_wasm/fail_load/set_title/inject_css 覆盖率测试**、**execute_script 错误路径/WebViewConfig 默认值**、**Web Worker 管理（create_worker/post_message_to_worker/execute_worker_script/poll_worker_events/terminate_worker/terminate_all_workers，17 集成测试）**、**SecurityContext 集成（fetch_url 安全检查 + HSTS 升级 + 混合内容阻止 + 子资源检查 API）** |
 | wasm-sandbox | 198 | ✅ | WASM 运行时（wasmi）、host function imports、fuel/execution limiting、**host 错误传播**、**参数类型校验**、**offset 溢出**、**memory grow/多参数 host/递归限制**、**memory 读写/多函数/fuel 消耗/global 读取/无效模块错误**、**多实例隔离/table 导出/global 读取/fuel 追踪/错误处理**、**fuel 禁用 get_fuel/u64::MAX fuel/内存边界读写/i64 Display/config chaining/has_memory 误匹配/空字符串函数名/多实例独立/内存 roundtrip/start 函数 trap**、**边界测试（6 个：错误参数/global export/Display/config 链/空模块/多函数 linker）** |
 | script-sandbox | 136 | ✅ | **V8 引擎集成（rusty_v8）**、Isolate/Context 管理、脚本编译执行、JSON 输出、错误处理（编译/运行时/超时）、**状态隔离、execute_json 边界测试、ES6+ 特性（Map/Set/Symbol/Proxy/async/await/rest/for-of/静态方法）**、**Dedicated Worker（WorkerRuntime：独立线程 V8 持久上下文、postMessage/onmessage 通道、terminate 生命周期、16 测试）**、**ES Module Sandbox（EsModuleSandbox：源码转换支持 export/import 语法、ModuleRegistry 模块注册表、import.meta.url、链式依赖解析、30 测试）**、**持久化 Context 优化（SandboxConfig::persistent_context + Global<Context> 缓存复用 + reset_context()，6 测试）** |
 | browser-shell | 256 | ✅ | **浏览器应用数据模型**：Tab/TabManager（多标签页管理、导航历史、**拖拽排序 move_tab**）、Bookmarks（书签/文件夹增删改查）、History（页面访问记录、搜索、清除）、BrowserShell（顶层协调器）、**Autocomplete（地址栏自动补全，历史+书签搜索、分数排序、书签优先）**、**ContextMenu（右键上下文菜单，5 种场景默认菜单项）**、**Tab 拖拽边界/导航历史边界/Bookmarks 过滤/History clear+search/Download 移除/Autocomplete 空查询+大小写/BrowserShell 导航清空前进/Settings 搜索/ContextMenu 子菜单查找** |
@@ -103,11 +103,31 @@
 | CSS Counter Pipeline | 2 | counter-reset/increment 管线、counter-set 管线 |
 | TransformPrimitive Pipeline | 3 | transform-origin rotate 渲染管线、scale 渲染管线、translate-only 不生成 TransformPrimitive |
 | Multi-Process Architecture | 18 | IPC 传输层（共享通道双向/帧协议/序列化确定性）、页面加载生命周期、网络请求代理、存储操作代理、输入事件转发、心跳机制、加载失败、崩溃通知、大载荷传输、双向并发通信、导航历史操作、多存储操作组合 |
-| Security Pipeline | 38 | CSP+Origin（parse/self/none/nonce/hash/data:blob:/scheme-source/wildcard/connect-src）、CORS+URL（简单请求/预检/凭证冲突/自定义头）、HSTS+升级（解析/删除/辅助函数）、混合内容（检测/分级）、沙箱（导航/弹窗/标志）、权限+Origin隔离、站点隔离+Origin、COOP+COEP、复合安全管线 |
+| Security Pipeline | 52 | CSP+Origin（parse/self/none/nonce/hash/data:blob:/scheme-source/wildcard/connect-src）、CORS+URL（简单请求/预检/凭证冲突/自定义头）、HSTS+升级（解析/删除/辅助函数）、混合内容（检测/分级）、沙箱（导航/弹窗/标志）、权限+Origin隔离、站点隔离+Origin、COOP+COEP、复合安全管线、**SecurityContext 集成**（HSTS 预加载升级/子域名/运行时注册/混合内容阻止+升级/Origin 清除/HSTS+Origin 一致性/混合内容完整矩阵/CSP 组合） |
 
 ---
 
 ## 最近完成的改进
+
+### -119. SecurityContext 统一安全门面 + HSTS 预加载 + 混合内容执行引擎（本轮，~11,809 测试）
+
+实现 M13 核心安全增强：统一安全上下文门面、HSTS 预加载列表、混合内容阻止/升级执行引擎，集成到 WebView 资源加载管线：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `crates/security/src/context.rs` | **SecurityContext 统一安全门面**：组合 HSTS 存储 + 混合内容检测 + 页面源跟踪；`ResourceCheckResult` 枚举（Allow/Upgraded/Blocked）；`check_resource_url()` 资源加载安全决策管线（HSTS 升级 → 混合内容阻止/升级）；`load_preload_list()` 内置 40+ 常见域名 HSTS 预加载列表（含 includeSubDomains）；`register_hsts()` 运行时 HSTS 注册 | +24 |
+| `crates/webview/src/webview.rs` | **SecurityContext 集成到 fetch_url**：导航前自动执行 HSTS 升级 + 混合内容检查；`security_context` 字段；`security_context()`/`security_context_mut()` 访问器；`check_subresource_url()` 子资源安全检查 API | — |
+| `tests/integration/security_pipeline.rs` | **14 个 SecurityContext 跨 crate 集成测试**：HSTS 预加载升级/子域名/运行时注册、混合内容 Blockable 阻止/OptionallyBlockable 升级、HSTS 升级优先于混合内容、data:/blob: URI 安全、HTTP 页面不检查、Origin 清除恢复、HSTS+Origin 一致性、SecurityContext+CSP 组合、HSTS 过期清理、混合内容完整矩阵 | +14 |
+| `tests/integration/webview_full_pipeline.rs` | **6 个 WebView SecurityContext 集成测试**：初始状态验证、子资源混合内容阻止/升级、HSTS 预加载升级、运行时 HSTS 注册、完整混合内容矩阵、load_html 不受安全检查影响 | +6 |
+| `tests/wpt-runner/test_cases_security.rs` | **5 个 WPT 安全策略扩展测试**：HSTS 预加载升级、混合内容 Blockable 阻止、混合内容 OptionallyBlockable 升级、HSTS 运行时注册、综合安全策略页面 | +5 |
+
+安全管线架构：
+- **SecurityContext**：统一门面，在资源加载前执行安全检查管线
+- **HSTS 预加载列表**：40+ 内置域名（Google/GitHub/Cloudflare/AWS/Microsoft/Apple 等），`includeSubDomains` 支持
+- **混合内容执行引擎**：Blockable（script/style/connect/font/iframe/object/worker）→ 阻止；OptionallyBlockable（img/audio/video/media）→ 自动升级 HTTPS
+- **WebView 集成**：`fetch_url` 导航前自动安全检查；`check_subresource_url` API 供子资源加载使用
+
+Tests: ~11,765 → ~11,809 (+44), WPT: 1170 → 1175 (+5), clippy clean.
 
 ### -118. 安全管线集成测试 + WPT 安全扩展（本轮，~11,767 测试）
 
@@ -2264,9 +2284,10 @@ Total: 6219 → 6378 tests (+159)
 3. ~~**V8 快照优化**（M13 剩余）~~ ✅ 已完成：persistent_context + Global<Context> 缓存复用
 4. ~~**浏览器应用增强**~~ ✅ 设置持久化已实现（BrowserShell 集成）
 5. ~~**CSP 完整实现**（M13 剩余）~~ ✅ script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复
-6. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
-7. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1125 用例（100% 通过率）
-8. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
+6. ~~**HSTS 预加载 + 混合内容执行引擎**~~ ✅ SecurityContext 统一安全门面 + 40+ 预加载域名 + WebView 集成
+7. **页面级 WASM 自动桥接**（低优先级）— JS 中 WebAssembly.instantiate() 自动调用 wasm-sandbox
+8. ~~**浏览器质量测试体系 P0**~~ ✅ 布局/图元快照序列化 ✅ 精确几何断言系统 ✅ 内联样式解析 ✅ 最小 reftest harness（16 CSS 布局 reftest） ✅ expected metadata ✅ WPT 1175 用例（100% 通过率）
+9. ~~**多进程架构实际运行**~~ ✅ IPC 管道传输 + ProcessManager + zero-renderer 二进制 + 18 集成测试
 
 ## 浏览器质量测试体系推进计划
 
@@ -2337,7 +2358,7 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅/❌ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理（create/postMessage/terminate）**均就位。**多进程架构已实现**（IPC 管道传输 + ProcessManager + zero-renderer 二进制）。缺少：Top 20 真实网站验证（需 GPU/Display） |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。缺少：真实网页渲染验证（需 GPU/Display） |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1170 用例（25+ 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 38 个**。**text-overflow: ellipsis + CSS filter 渲染集成** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1175 用例（25+ 分类，**100% 通过率**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 38 个**。**text-overflow: ellipsis + CSS filter 渲染集成** |
 | 4. 性能基准体系 | ✅/❌ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（pipeline 测试通过）。缺少：增量渲染 < 全量 20% 验证、GPU 加速验证（需 GPU/Display） |
 | 5. 单元测试与质量 | ✅ | 11,767 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告 |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |

@@ -8,9 +8,9 @@ use zero_net::url_parser::parse_url;
 #[cfg(test)]
 use zero_security::{
     CoepPolicy, ContentSecurityPolicy, CorsPolicy, HstsDirective, HstsStore, IframeSandbox, IframeSandboxFlag,
-    IsolationPolicy, MixedContentStatus, Origin, PermissionManager, PermissionName, PermissionState, Site,
-    SiteIsolationManager, check_cors, check_mixed_content, check_sandbox_navigation, check_sandbox_popup,
-    is_cross_origin_isolated, is_mixed_content, upgrade_to_https,
+    IsolationPolicy, MixedContentStatus, Origin, PermissionManager, PermissionName, PermissionState,
+    ResourceCheckResult, SecurityContext, Site, SiteIsolationManager, check_cors, check_mixed_content,
+    check_sandbox_navigation, check_sandbox_popup, is_cross_origin_isolated, is_mixed_content, upgrade_to_https,
 };
 
 // ───────────────────── CSP + Origin 管线 ─────────────────────
@@ -707,4 +707,274 @@ fn test_permission_revoke_all_for_origin() {
     mgr.revoke_all_for_origin(&origin);
     assert!(mgr.is_empty());
     assert_eq!(mgr.query(&origin, PermissionName::Camera), PermissionState::Prompt);
+}
+
+// ───────────────────── SecurityContext 集成管线 ─────────────────────
+
+/// SecurityContext：HSTS 预加载列表加载验证
+#[test]
+fn test_security_context_preload_list_loaded() {
+    let ctx = SecurityContext::new();
+    // 预加载列表应包含 40+ 条目
+    assert!(ctx.hsts_count() >= 30, "预加载列表应至少包含 30 个域名");
+}
+
+/// SecurityContext：HSTS 预加载域名自动升级
+#[test]
+fn test_security_context_hsts_preload_upgrade() {
+    let mut ctx = SecurityContext::new();
+    // github.com 在预加载列表中
+    let result = ctx.check_resource_url("http://github.com/user/repo", "document");
+    assert!(
+        matches!(result, ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")),
+        "预加载域名 HTTP 应被升级为 HTTPS"
+    );
+}
+
+/// SecurityContext：HSTS 预加载子域名升级（includeSubDomains）
+#[test]
+fn test_security_context_hsts_subdomain_upgrade() {
+    let mut ctx = SecurityContext::new();
+    // cloudflare.com 预加载且 includeSubDomains=true
+    let result = ctx.check_resource_url("http://cdn.cloudflare.com/resource.js", "script");
+    assert!(
+        matches!(result, ResourceCheckResult::Upgraded(ref url) if url.contains("https://")),
+        "子域名 HTTP 应被升级为 HTTPS"
+    );
+}
+
+/// SecurityContext：运行时 HSTS 注册 + 升级
+#[test]
+fn test_security_context_runtime_hsts_registration() {
+    let mut ctx = SecurityContext::new();
+    // 自定义域名不在预加载列表中
+    let result1 = ctx.check_resource_url("http://custom-site.com/page", "document");
+    assert_eq!(result1, ResourceCheckResult::Allow, "未注册域名应允许");
+
+    // 从响应头注册 HSTS
+    assert!(ctx.register_hsts("custom-site.com", "max-age=31536000; includeSubDomains"));
+
+    // 注册后应被升级
+    let result2 = ctx.check_resource_url("http://custom-site.com/page", "document");
+    assert!(
+        matches!(result2, ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")),
+        "注册后 HTTP 应被升级"
+    );
+
+    // 子域名也应被升级
+    let result3 = ctx.check_resource_url("http://sub.custom-site.com/page", "document");
+    assert!(
+        matches!(result3, ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")),
+        "includeSubDomains 子域名应被升级"
+    );
+}
+
+/// SecurityContext：混合内容阻止 — Blockable 类型
+#[test]
+fn test_security_context_mixed_content_blockable() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://secure.example.com");
+
+    // script 应被阻止
+    let r1 = ctx.check_resource_url("http://evil.com/steal.js", "script");
+    assert!(matches!(r1, ResourceCheckResult::Blocked(_)), "script 应被阻止");
+
+    // style 应被阻止
+    let r2 = ctx.check_resource_url("http://evil.com/style.css", "style");
+    assert!(matches!(r2, ResourceCheckResult::Blocked(_)), "style 应被阻止");
+
+    // connect (XHR/fetch) 应被阻止
+    let r3 = ctx.check_resource_url("http://evil.com/api/data", "connect");
+    assert!(matches!(r3, ResourceCheckResult::Blocked(_)), "connect 应被阻止");
+
+    // font 应被阻止
+    let r4 = ctx.check_resource_url("http://evil.com/font.woff2", "font");
+    assert!(matches!(r4, ResourceCheckResult::Blocked(_)), "font 应被阻止");
+
+    // iframe 应被阻止
+    let r5 = ctx.check_resource_url("http://evil.com/embed", "iframe");
+    assert!(matches!(r5, ResourceCheckResult::Blocked(_)), "iframe 应被阻止");
+}
+
+/// SecurityContext：混合内容自动升级 — OptionallyBlockable 类型
+#[test]
+fn test_security_context_mixed_content_upgradeable() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://secure.example.com");
+
+    // img 应被升级
+    let r1 = ctx.check_resource_url("http://cdn.com/photo.jpg", "img");
+    assert_eq!(
+        r1,
+        ResourceCheckResult::Upgraded("https://cdn.com/photo.jpg".to_string())
+    );
+
+    // audio 应被升级
+    let r2 = ctx.check_resource_url("http://cdn.com/audio.mp3", "audio");
+    assert_eq!(
+        r2,
+        ResourceCheckResult::Upgraded("https://cdn.com/audio.mp3".to_string())
+    );
+
+    // video 应被升级
+    let r3 = ctx.check_resource_url("http://cdn.com/video.mp4", "video");
+    assert_eq!(
+        r3,
+        ResourceCheckResult::Upgraded("https://cdn.com/video.mp4".to_string())
+    );
+}
+
+/// SecurityContext：HSTS 升级优先于混合内容检查
+#[test]
+fn test_security_context_hsts_upgrade_before_mixed_content() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://secure.example.com");
+
+    // github.com 在 HSTS 预加载列表中，HTTP script 先被 HSTS 升级
+    let result = ctx.check_resource_url("http://github.com/analytics.js", "script");
+    // HSTS 升级为 HTTPS → 不再是混合内容 → 应为 Upgraded
+    assert!(
+        matches!(result, ResourceCheckResult::Upgraded(ref url) if url == "https://github.com/analytics.js"),
+        "HSTS 升级后应不再是混合内容"
+    );
+}
+
+/// SecurityContext：data: 和 blob: URI 不被阻止
+#[test]
+fn test_security_context_safe_uri_schemes() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://secure.example.com");
+
+    // data: URI 安全
+    let r1 = ctx.check_resource_url("data:text/html,<h1>Hi</h1>", "script");
+    assert_eq!(r1, ResourceCheckResult::Allow);
+
+    // blob: URI 安全
+    let r2 = ctx.check_resource_url("blob:https://example.com/abc-123", "script");
+    assert_eq!(r2, ResourceCheckResult::Allow);
+
+    // 相对 URL 安全
+    let r3 = ctx.check_resource_url("scripts/app.js", "script");
+    assert_eq!(r3, ResourceCheckResult::Allow);
+}
+
+/// SecurityContext：HTTP 页面不检查混合内容
+#[test]
+fn test_security_context_http_page_no_mixed_content_check() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("http://insecure.example.com");
+
+    // HTTP 页面加载 HTTP 资源 — 全部允许
+    let r1 = ctx.check_resource_url("http://evil.com/script.js", "script");
+    assert_eq!(r1, ResourceCheckResult::Allow);
+
+    let r2 = ctx.check_resource_url("http://evil.com/style.css", "style");
+    assert_eq!(r2, ResourceCheckResult::Allow);
+}
+
+/// SecurityContext：页面源清除后不再阻止
+#[test]
+fn test_security_context_clear_origin_removes_blocking() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://secure.example.com");
+
+    let r1 = ctx.check_resource_url("http://evil.com/script.js", "script");
+    assert!(matches!(r1, ResourceCheckResult::Blocked(_)));
+
+    ctx.clear_page_origin();
+
+    let r2 = ctx.check_resource_url("http://evil.com/script.js", "script");
+    assert_eq!(r2, ResourceCheckResult::Allow);
+}
+
+/// SecurityContext + HSTS + Origin 一致性管线
+#[test]
+fn test_security_context_hsts_origin_consistency() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://example.com");
+
+    // 1. 预加载域名 HSTS 升级
+    let r1 = ctx.check_resource_url("http://google.com/search?q=test", "connect");
+    assert!(matches!(r1, ResourceCheckResult::Upgraded(_)));
+
+    // 2. HTTPS 资源允许
+    let r2 = ctx.check_resource_url("https://cdn.com/lib.js", "script");
+    assert_eq!(r2, ResourceCheckResult::Allow);
+
+    // 3. 非 HSTS HTTP + Blockable 类型 → 阻止
+    let r3 = ctx.check_resource_url("http://unknown.com/script.js", "script");
+    assert!(matches!(r3, ResourceCheckResult::Blocked(_)));
+
+    // 4. 非 HSTS HTTP + OptionallyBlockable → 升级
+    let r4 = ctx.check_resource_url("http://unknown.com/photo.jpg", "img");
+    assert!(matches!(r4, ResourceCheckResult::Upgraded(_)));
+}
+
+/// SecurityContext + CSP 组合管线
+#[test]
+fn test_security_context_with_csp() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://example.com");
+
+    // CSP 策略限制 script-src
+    let csp = ContentSecurityPolicy::parse("default-src 'self'; script-src 'self' https://trusted.com");
+
+    // SecurityContext 检查通过（HTTPS URL）+ CSP 检查通过（同源）
+    let url = "https://example.com/app.js";
+    let sec_result = ctx.check_resource_url(url, "script");
+    assert_eq!(sec_result, ResourceCheckResult::Allow);
+    let origin = Origin::parse("https://example.com").unwrap();
+    assert!(csp.is_resource_allowed("script", url, Some(&origin)));
+
+    // SecurityContext 允许 + CSP 拒绝（跨域脚本）
+    let cross_url = "https://evil.com/steal.js";
+    let sec_result2 = ctx.check_resource_url(cross_url, "script");
+    assert_eq!(sec_result2, ResourceCheckResult::Allow);
+    assert!(!csp.is_resource_allowed("script", cross_url, Some(&origin)));
+
+    // SecurityContext 阻止（混合内容）+ CSP 不需要检查
+    let http_url = "http://evil.com/steal.js";
+    let sec_result3 = ctx.check_resource_url(http_url, "script");
+    assert!(matches!(sec_result3, ResourceCheckResult::Blocked(_)));
+}
+
+/// SecurityContext：HSTS 过期清理管线
+#[test]
+fn test_security_context_hsts_cleanup() {
+    let mut ctx = SecurityContext::new();
+    // 注册一个自定义域名
+    ctx.register_hsts("test.com", "max-age=31536000");
+    let count_before = ctx.hsts_count();
+
+    // 清理：预加载策略不过期，自定义策略刚注册也不过期
+    let cleaned = ctx.cleanup_hsts();
+    assert_eq!(cleaned, 0, "未过期策略不应被清理");
+    assert_eq!(ctx.hsts_count(), count_before);
+}
+
+/// SecurityContext：多资源类型混合内容完整矩阵
+#[test]
+fn test_security_context_mixed_content_full_matrix() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://bank.com");
+
+    // Blockable 类型全部被阻止
+    for resource_type in &[
+        "script", "style", "connect", "font", "iframe", "object", "xhr", "fetch", "worker",
+    ] {
+        let result = ctx.check_resource_url("http://attacker.com/resource", resource_type);
+        assert!(
+            matches!(result, ResourceCheckResult::Blocked(_)),
+            "类型 '{resource_type}' 在 HTTPS 页面上加载 HTTP 资源应被阻止"
+        );
+    }
+
+    // OptionallyBlockable 类型全部被升级
+    for resource_type in &["img", "audio", "video", "media"] {
+        let result = ctx.check_resource_url("http://cdn.com/resource", resource_type);
+        assert!(
+            matches!(result, ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")),
+            "类型 '{resource_type}' 在 HTTPS 页面上加载 HTTP 资源应被升级"
+        );
+    }
 }
