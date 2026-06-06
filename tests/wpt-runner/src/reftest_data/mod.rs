@@ -8,11 +8,14 @@ mod css_box;
 mod css_display;
 mod css_flexbox;
 mod css_float;
+mod css_fonts;
 mod css_grid;
 mod css_multicol;
 mod css_position;
 mod css_table;
 mod css_text;
+mod css_text_decor;
+mod css_writing_modes;
 
 use crate::manifest::ReftestReference;
 use crate::reftest::{ReftestCase, ReftestCategory, ReftestConfig};
@@ -81,5 +84,8 @@ fn all_reftests() -> Vec<&'static InlineReftestDef> {
     all.extend(css_float::reftests().iter());
     all.extend(css_table::reftests().iter());
     all.extend(css_text::reftests().iter());
+    all.extend(css_fonts::reftests().iter());
+    all.extend(css_text_decor::reftests().iter());
+    all.extend(css_writing_modes::reftests().iter());
     all
 }
