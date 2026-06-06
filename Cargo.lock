@@ -5866,6 +5866,7 @@ dependencies = [
  "zero-net",
  "zero-render-foundation",
  "zero-script-sandbox",
+ "zero-security",
  "zero-storage",
  "zero-wasm-sandbox",
 ]

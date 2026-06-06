@@ -8,7 +8,9 @@ use zero_engine::{PipelineTimings, PrefersColorSchemeValue, RenderPipeline};
 use zero_net::{HttpCache, HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
+use zero_security::{ResourceCheckResult, SecurityContext};
 use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
+use zero_wasm_sandbox::WasmInstance;
 
 use crate::WebViewError;
 
@@ -100,11 +102,13 @@ pub struct WebView {
     /// Worker ID 生成器。
     next_worker_id: u64,
     /// WASM 实例缓存 — JS 端 WebAssembly.instantiate() 自动桥接到 wasm-sandbox。
-    wasm_instances: HashMap<u64, zero_wasm_sandbox::WasmInstance>,
+    wasm_instances: HashMap<u64, WasmInstance>,
     /// HTTP 响应缓存。
     http_cache: HttpCache,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
+    /// 安全上下文（HSTS + 混合内容 + CSP）。
+    security_context: SecurityContext,
 }
 
 impl WebView {
@@ -137,6 +141,7 @@ impl WebView {
             wasm_instances: HashMap::new(),
             http_cache: HttpCache::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
+            security_context: SecurityContext::new(),
         }
     }
 
@@ -210,23 +215,41 @@ impl WebView {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
         }
 
+        // 更新安全上下文的页面源
+        self.security_context.set_page_origin(url);
+
+        // 安全检查：HSTS 升级 + 混合内容阻止
+        let effective_url = match self.security_context.check_resource_url(url, "document") {
+            ResourceCheckResult::Allow => url.to_string(),
+            ResourceCheckResult::Upgraded(https_url) => {
+                tracing::info!("Security upgrade: {url} → {https_url}");
+                self.current_url = Some(https_url.clone());
+                https_url
+            }
+            ResourceCheckResult::Blocked(reason) => {
+                self.loading = false;
+                self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), reason.clone()));
+                return Err(WebViewError::Navigation(reason));
+            }
+        };
+
         // 尝试 Service Worker 拦截
-        if let Some(origin) = Self::extract_origin(url) {
-            let request = CacheRequest::new(url);
+        if let Some(origin) = Self::extract_origin(&effective_url) {
+            let request = CacheRequest::new(&effective_url);
             match self.sw_registry.intercept_fetch(&request, &origin) {
                 FetchInterceptResult::Cached(response) | FetchInterceptResult::Responded(response) => {
-                    tracing::info!("Service Worker intercepted fetch for {url}");
+                    tracing::info!("Service Worker intercepted fetch for {effective_url}");
                     let html = String::from_utf8(response.body).map_err(|e| {
                         self.loading = false;
                         self.emit_event(&WebViewEvent::LoadFailed(
-                            url.to_string(),
+                            effective_url.to_string(),
                             format!("SW response body is not valid UTF-8: {e}"),
                         ));
                         WebViewError::Navigation(format!("SW response body is not valid UTF-8: {e}"))
                     })?;
                     let render_result = self.load_html(&html, None);
                     self.loading = false;
-                    self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
+                    self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                     return Ok(render_result);
                 }
                 _ => {
@@ -236,55 +259,55 @@ impl WebView {
         }
 
         // 检查 HTTP 缓存
-        if let Some(cached) = self.http_cache.get(url) {
-            tracing::info!("HTTP cache hit for {url}");
+        if let Some(cached) = self.http_cache.get(&effective_url) {
+            tracing::info!("HTTP cache hit for {effective_url}");
             let html = String::from_utf8(cached.body).map_err(|e| {
                 self.loading = false;
                 self.emit_event(&WebViewEvent::LoadFailed(
-                    url.to_string(),
+                    effective_url.to_string(),
                     format!("Cached response body is not valid UTF-8: {e}"),
                 ));
                 WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
             })?;
             let render_result = self.load_html(&html, None);
             self.loading = false;
-            self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
+            self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
             return Ok(render_result);
         }
 
         // 发起 HTTP 请求
-        match self.http_client.get(url) {
+        match self.http_client.get(&effective_url) {
             Ok(response) => {
                 // 尝试将响应存入 HTTP 缓存
-                let _ = self.http_cache.put(url, &response);
+                let _ = self.http_cache.put(&effective_url, &response);
 
                 let html = response.text().map_err(|e| {
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadFailed(
-                        url.to_string(),
+                        effective_url.to_string(),
                         format!("Failed to decode response body: {e}"),
                     ));
                     WebViewError::Navigation(format!("Failed to decode response body: {e}"))
                 })?;
 
-                tracing::info!("Fetched {} bytes from {url}", html.len());
+                tracing::info!("Fetched {} bytes from {effective_url}", html.len());
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, None);
                 self.loading = false;
-                self.emit_event(&WebViewEvent::LoadEnd(url.to_string()));
+                self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                 Ok(render_result)
             }
             Err(NetError::Timeout) => {
                 self.loading = false;
-                let msg = format!("Request to {url} timed out");
-                self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), msg.clone()));
+                let msg = format!("Request to {effective_url} timed out");
+                self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(e) => {
                 self.loading = false;
-                let msg = format!("Failed to fetch {url}: {e}");
-                self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), msg.clone()));
+                let msg = format!("Failed to fetch {effective_url}: {e}");
+                self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
         }
@@ -798,6 +821,25 @@ impl WebView {
     /// 返回 HTTP 缓存总字节数。
     pub fn http_cache_bytes(&self) -> usize {
         self.http_cache.total_bytes()
+    }
+
+    /// 获取安全上下文（只读）。
+    ///
+    /// 安全上下文包含 HSTS 存储和混合内容策略。
+    pub fn security_context(&self) -> &SecurityContext {
+        &self.security_context
+    }
+
+    /// 获取安全上下文（可变）。
+    pub fn security_context_mut(&mut self) -> &mut SecurityContext {
+        &mut self.security_context
+    }
+
+    /// 检查子资源 URL 是否可以安全加载。
+    ///
+    /// 执行 HSTS 升级 + 混合内容检测。用于页面内的 CSS/JS/图片等子资源加载。
+    pub fn check_subresource_url(&mut self, url: &str, resource_type: &str) -> ResourceCheckResult {
+        self.security_context.check_resource_url(url, resource_type)
     }
 }
 

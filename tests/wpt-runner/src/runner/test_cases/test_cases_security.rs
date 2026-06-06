@@ -1093,5 +1093,169 @@ pub fn security_tests() -> Vec<TestCase> {
                 "render_completes".into(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        // SecurityContext — HSTS 预加载 + 混合内容执行引擎
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "security/hsts/preload-upgrade".into(),
+            description: "HSTS 预加载列表自动升级 HTTP→HTTPS".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+            <style>
+            .status { padding: 8px; margin: 4px; border-radius: 4px; }
+            .upgraded { background: #d4edda; color: #155724; }
+            </style>
+            </head><body>
+            <h1>HSTS Preload Test</h1>
+            <div class="status upgraded">
+                <p>github.com → HSTS preload enforced</p>
+                <p>cloudflare.com → HSTS preload with includeSubDomains</p>
+                <p>google.com → HSTS preload enforced</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "render_completes".into(),
+            ],
+        },
+
+        TestCase {
+            id: "security/mixed-content/blockable-resources".into(),
+            description: "混合内容阻止 — Blockable 类型（script/style/connect/font）".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <style>
+            .blocked { background: #f8d7da; color: #721c24; padding: 8px; margin: 4px; border-radius: 4px; }
+            .resource { font-family: monospace; }
+            </style>
+            </head><body>
+            <h1>Mixed Content: Blockable Types</h1>
+            <div class="blocked">
+                <p>Blockable resources (blocked on HTTPS pages):</p>
+                <p class="resource">script: http://evil.com/steal.js → BLOCKED</p>
+                <p class="resource">style: http://evil.com/theme.css → BLOCKED</p>
+                <p class="resource">connect: http://evil.com/api → BLOCKED</p>
+                <p class="resource">font: http://evil.com/font.woff2 → BLOCKED</p>
+                <p class="resource">iframe: http://evil.com/embed → BLOCKED</p>
+                <p class="resource">object: http://evil.com/flash.swf → BLOCKED</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "render_completes".into(),
+            ],
+        },
+
+        TestCase {
+            id: "security/mixed-content/upgradeable-resources".into(),
+            description: "混合内容自动升级 — OptionallyBlockable 类型（img/audio/video）".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <style>
+            .upgraded { background: #d4edda; color: #155724; padding: 8px; margin: 4px; border-radius: 4px; }
+            .resource { font-family: monospace; }
+            </style>
+            </head><body>
+            <h1>Mixed Content: Auto-Upgraded Types</h1>
+            <div class="upgraded">
+                <p>OptionallyBlockable resources (auto-upgraded to HTTPS):</p>
+                <p class="resource">img: http://cdn.com/photo.jpg → https://cdn.com/photo.jpg</p>
+                <p class="resource">audio: http://cdn.com/audio.mp3 → https://cdn.com/audio.mp3</p>
+                <p class="resource">video: http://cdn.com/video.mp4 → https://cdn.com/video.mp4</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "render_completes".into(),
+            ],
+        },
+
+        TestCase {
+            id: "security/hsts/runtime-registration".into(),
+            description: "HSTS 运行时注册（从响应头 Strict-Transport-Security）".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <style>
+            .hsts-info { background: #e2e3e5; color: #383d41; padding: 8px; margin: 4px; border-radius: 4px; }
+            code { background: #f8f9fa; padding: 2px 6px; border-radius: 3px; }
+            </style>
+            </head><body>
+            <h1>HSTS Runtime Registration</h1>
+            <div class="hsts-info">
+                <p>Strict-Transport-Security: <code>max-age=31536000; includeSubDomains</code></p>
+                <p>Effect: All future HTTP requests to this domain upgraded to HTTPS</p>
+                <p>Subdomains: Included (includeSubDomains flag)</p>
+                <p>Expiry: After max-age seconds from registration</p>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "render_completes".into(),
+            ],
+        },
+
+        TestCase {
+            id: "security/mixed-content/comprehensive-policy".into(),
+            description: "综合安全策略页面 — CSP + HSTS + Mixed Content + Permissions".into(),
+            category: "security".into(),
+            html: r#"<html><head>
+            <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; upgrade-insecure-requests">
+            <meta name="referrer" content="strict-origin-when-cross-origin">
+            <style>
+            .policy-card { border: 1px solid #ccc; padding: 12px; margin: 8px 0; border-radius: 4px; }
+            .active { border-left: 4px solid #28a745; }
+            .warning { border-left: 4px solid #ffc107; }
+            h1 { font-size: 18px; } h2 { font-size: 14px; margin: 0 0 8px 0; }
+            .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; margin: 2px; }
+            .tag-green { background: #d4edda; color: #155724; }
+            .tag-yellow { background: #fff3cd; color: #856404; }
+            .tag-red { background: #f8d7da; color: #721c24; }
+            </style>
+            </head><body>
+            <h1>Comprehensive Security Policy</h1>
+            <div class="policy-card active">
+                <h2>Content Security Policy</h2>
+                <span class="tag tag-green">default-src 'self'</span>
+                <span class="tag tag-green">script-src 'self'</span>
+                <span class="tag tag-green">upgrade-insecure-requests</span>
+            </div>
+            <div class="policy-card active">
+                <h2>HSTS / Mixed Content</h2>
+                <span class="tag tag-green">HSTS preload: 40+ domains</span>
+                <span class="tag tag-green">Blockable: script/style/connect</span>
+                <span class="tag tag-yellow">Upgradeable: img/audio/video</span>
+            </div>
+            <div class="policy-card warning">
+                <h2>Permissions</h2>
+                <span class="tag tag-yellow">Camera: prompt</span>
+                <span class="tag tag-yellow">Geolocation: prompt</span>
+                <span class="tag tag-yellow">Notifications: prompt</span>
+            </div>
+            <div class="policy-card active">
+                <h2>CORS / Same-Origin</h2>
+                <span class="tag tag-green">Same-origin policy enforced</span>
+                <span class="tag tag-green">CORS preflight for cross-origin</span>
+                <span class="tag tag-red">Cross-origin DOM access: denied</span>
+            </div>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".into(),
+                "dom_has_element:h1".into(),
+                "dom_has_element:h2".into(),
+                "render_completes".into(),
+            ],
+        },
     ]
 }

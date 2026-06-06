@@ -117,3 +117,99 @@ fn test_webview_http_cache_clear_multiple() {
     }
     assert_eq!(wv.http_cache_len(), 0);
 }
+
+// ── SecurityContext 集成测试 ──
+
+/// WebView 安全上下文：初始状态有 HSTS 预加载列表。
+#[test]
+fn test_webview_security_context_initial_state() {
+    let wv = WebView::new(WebViewConfig::default());
+    // 安全上下文应已初始化，包含 HSTS 预加载列表
+    let ctx = wv.security_context();
+    assert!(ctx.hsts_count() > 0, "预加载列表应已加载");
+    assert!(ctx.page_origin().is_none(), "初始无页面源");
+}
+
+/// WebView 安全上下文：子资源混合内容阻止。
+#[test]
+fn test_webview_check_subresource_blocks_mixed_content() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // 模拟 HTTPS 页面
+    wv.security_context_mut().set_page_origin("https://secure.example.com");
+
+    // script → 阻止
+    let result = wv.check_subresource_url("http://evil.com/steal.js", "script");
+    assert!(matches!(result, zero_security::ResourceCheckResult::Blocked(_)));
+
+    // img → 升级
+    let result = wv.check_subresource_url("http://cdn.com/photo.jpg", "img");
+    assert!(matches!(result, zero_security::ResourceCheckResult::Upgraded(_)));
+}
+
+/// WebView 安全上下文：HSTS 预加载升级子资源。
+#[test]
+fn test_webview_check_subresource_hsts_upgrade() {
+    let mut wv = WebView::new(WebViewConfig::default());
+
+    // github.com 在 HSTS 预加载列表中
+    let result = wv.check_subresource_url("http://github.com/file.js", "script");
+    assert!(matches!(result, zero_security::ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")));
+}
+
+/// WebView 安全上下文：运行时注册 HSTS。
+#[test]
+fn test_webview_register_hsts_from_response_header() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let count_before = wv.security_context().hsts_count();
+
+    // 模拟从 HTTPS 响应头注册 HSTS
+    assert!(
+        wv.security_context_mut()
+            .register_hsts("custom-secure.com", "max-age=31536000; includeSubDomains")
+    );
+
+    let count_after = wv.security_context().hsts_count();
+    assert_eq!(count_after, count_before + 1);
+
+    // 注册后 HTTP URL 应被升级
+    let result = wv.check_subresource_url("http://custom-secure.com/page", "document");
+    assert!(matches!(result, zero_security::ResourceCheckResult::Upgraded(_)));
+}
+
+/// WebView 安全上下文：完整混合内容矩阵。
+#[test]
+fn test_webview_mixed_content_full_matrix() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.security_context_mut().set_page_origin("https://secure.bank.com");
+
+    // Blockable 类型
+    for rt in &["script", "style", "connect", "font", "iframe", "object", "worker"] {
+        let result = wv.check_subresource_url("http://attacker.com/res", rt);
+        assert!(
+            matches!(result, zero_security::ResourceCheckResult::Blocked(_)),
+            "类型 '{rt}' 应被阻止"
+        );
+    }
+
+    // OptionallyBlockable 类型
+    for rt in &["img", "audio", "video", "media"] {
+        let result = wv.check_subresource_url("http://cdn.com/res", rt);
+        assert!(
+            matches!(result, zero_security::ResourceCheckResult::Upgraded(ref url) if url.starts_with("https://")),
+            "类型 '{rt}' 应被升级"
+        );
+    }
+}
+
+/// WebView load_html 不受安全上下文影响。
+#[test]
+fn test_webview_load_html_ignores_security_context() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.security_context_mut().set_page_origin("https://secure.example.com");
+
+    // 直接 load_html 不走 fetch_url，不受混合内容检查
+    let html = r#"<html><body><h1>Direct HTML</h1></body></html>"#;
+    let result = wv.load_html(html, None);
+    assert!(result.timings.total_ms >= 0.0);
+    assert!(wv.last_render().is_some());
+}
