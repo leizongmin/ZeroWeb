@@ -2694,6 +2694,8 @@ Total: 6219 → 6378 tests (+159)
 15. ~~CI 发布工作流~~ ✅ GitHub Actions 多平台构建 + .deb + .app + Release 自动创建
 16. ~~真实网站兼容性矩阵扩展~~ ✅ 35→45 站点（+10：rfc-editor/unicode/reqres/postman-owasp/openssl/chromium/deno/bun/csswg）
 17. ~~WASM 自动桥接完整实现~~ ✅ WebAssembly.instantiate/compile/instantiateStreaming + 魔术字节验证 + _start 自动执行 + 导出函数调用队列 + 内存状态注入 + 6 WPT 测试
+18. ~~WebView 单元测试覆盖提升~~ ✅ +20 WASM 桥接单元测试（base64/execute_wasm/call_wasm_export/_start/bridge integration）
+19. ~~真实网站兼容性扩展至 55+~~ ✅ 45→55+ 站点（+10：tc39/webassembly/jsdelivr/npm/arxiv/owasp-top-ten/replit/caniuse/html-spec/ziglang）
 
 ---
 
