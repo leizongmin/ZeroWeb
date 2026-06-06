@@ -12,7 +12,7 @@
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
-| M4 — Float + Table + Multicol | 🔄 进行中 | table display types + float 布局已实现；200 个 reftest, 100.0% |
+| M4 — Float + Table + Multicol | 🔄 进行中 | float 布局 + table UA 默认样式 + table 布局算法 + parse_display 修复；209 个 reftest, 100.0% |
 | M5 — 文字排版 | ❌ 未开始 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 200 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 209 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -129,10 +129,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M4 更新）
-**总用例**: 200（内联 reftest）
-**运行用例**: 200
-**通过**: 200
+**日期**: 2026-06-07（M4 table 布局更新）
+**总用例**: 209（内联 reftest）
+**运行用例**: 209
+**通过**: 209
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,7 +142,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 190/190 | 100.0% |
+| Layout | 199/199 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
@@ -168,6 +168,7 @@
 - Overflow (5): hidden clips, visible no-clip, hidden vs visible mismatch, nested overflow, overflow with margin child
 - Margin 折叠 (5): sibling collapse, parent-child collapse, BFC no-collapse, auto center, body reset
 - Quirks mode (5): hashless color, numeric color, unitless width, unitless padding, table height as min-height
+- Table 布局 (9): basic-2col, basic-3col, multi-row, with-tbody, auto-width-equal-cols, row-tallest-cell, thead-tbody-tfoot, th-td-mixed, single-column
 
 ---
 
@@ -199,6 +200,9 @@
 | 2026-06-07 | quirks mode 颜色/长度解析通过函数指针分发 | parse_color_fn/parse_length_fn 模式避免重复 match 分支 |
 | 2026-06-07 | apply_quirks_mode_adjustments 接受 tag_name 参数 | 需要按元素标签（如 table）应用不同的 quirks 规则 |
 | 2026-06-07 | inline 元素 width/height quirks 暂不实现 | layout engine 将 inline 映射为 block，实际已生效；待 inline layout 正确实现后补充 |
+| 2026-06-07 | UA 默认 display 值通过级联注入（Origin::UserAgent） | 最低优先级，可被作者样式覆盖；避免修改 ComputedStyle::default() |
+| 2026-06-07 | Table 布局通过后处理步骤实现（类似 float） | taffy 无原生 table 支持，所有 table display types 映射为 Block 后重新定位 |
+| 2026-06-07 | 修复 parse_display 缺失 table types 的 bug | color.rs 中有重复的 parse_display（缺 table types），通过 pub use color::* 被实际使用 |
 
 ---
 
@@ -223,10 +227,11 @@
 17. ~~M4 — Table display types 添加~~ ✅ (10 个 table display variant)
 18. ~~M4 — 基础 float 布局实现~~ ✅ (float left/right 定位 + 垂直堆叠)
 19. ~~M4 — Float 布局 reftest~~ ✅ (10 个 reftest, 100.0% pass)
-20. **M4 — Float exclusion zone 连接**（将 inline float exclusion 基础设施接入实际布局）
-21. **M4 — Table 布局算法实现**（需要实现 CSS table layout）
-22. **M4 — Multi-column 布局算法**
-23. **M5 — 文字排版能力实现**
-24. **M6 — 全量扩展 + 通过率冲刺**
-18. **M5 — 文字排版能力实现**
-19. **M6 — 全量扩展 + 通过率冲刺**
+20. ~~M4 — Float exclusion zone 连接~~ ✅ (remeasure_text_with_float_exclusions)
+21. ~~M4 — UA 默认 display 值~~ ✅ (ua_default_display 为 HTML 元素注入正确的 display type)
+22. ~~M4 — parse_display 修复~~ ✅ (color.rs 中补全 11 个 table display types)
+23. ~~M4 — Table 布局算法实现~~ ✅ (table grid 构建 + auto layout + colspan + border-spacing)
+24. ~~M4 — Table 布局 reftest~~ ✅ (9 个 reftest, 100.0% pass)
+25. **M4 — Multi-column 布局算法**
+26. **M5 — 文字排版能力实现**
+27. **M6 — 全量扩展 + 通过率冲刺**
