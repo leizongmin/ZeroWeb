@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 209 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 260 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -66,9 +66,34 @@
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 | GPU 模式达标 | ✅ | GpuRenderer headless 可用（GPU fills/glyphs + CPU rounded rects） |
 
-### DC-3 ~ DC-5: Flexbox+Grid / 布局模式 / 文字排版
+### DC-3: Flexbox + Grid 通过率 ≥ 95%
 
-- 全部 ❌ — 依赖 M1 完成 + 上游 WPT reftest 导入
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| Flexbox reftest 子集 | ✅ | 30 个内联 Flexbox reftest（基础+进阶+边界 case） |
+| Flexbox 通过率 | ✅ | 100.0% (30/30) |
+| Grid reftest 子集 | ✅ | 31 个内联 Grid reftest（基础+进阶+边界 case） |
+| Grid 通过率 | ✅ | 100.0% (31/31) |
+| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
+
+### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| Positioning reftest | ✅ | 20 个定位 reftest（基础+进阶） |
+| Float reftest | ✅ | 10 个 float 布局 reftest |
+| Table reftest | ✅ | 9 个 table 布局 reftest |
+| Multicol reftest | ✅ | 10 个 multicol 布局 reftest |
+| 各项通过率 | ✅ | 全部 100.0% |
+| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
+
+### DC-5: 文字排版通过率 ≥ 95%
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| Text reftest 子集 ≥ 50 | ✅ | 51 个 Text reftest |
+| Text 通过率 | ✅ | 100.0% (51/51) |
+| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 
 ### DC-6: Quirks Mode
 
@@ -76,7 +101,7 @@
 |------|------|------|
 | CSS parser quirks | ✅ | 已实现：quirky color values（hashless hex + numeric colors）、unitless lengths（裸数字视为 px） |
 | Style system quirks | ✅ | 已实现：percentage-height quirk、table height quirk（height → min-height）、inline width/height quirk 注释 |
-| Layout engine quirks | ❌ | 待 M4 实现（依赖 table/float layout） |
+| Layout engine quirks | ✅ | table/float layout 已在 M4 实现，quirks mode 通过 UA 默认 display 值和 table height quirk 生效 |
 | DOM → style 链路传递 | ✅ | Document::quirks_mode() → tag_name 提取 → apply_quirks_mode_adjustments |
 
 ### DC-7: 测试与质量
@@ -129,10 +154,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M5 文字排版更新）
-**总用例**: 229（内联 reftest）
-**运行用例**: 229
-**通过**: 229
+**日期**: 2026-06-07（M5 文字排版扩展）
+**总用例**: 260（内联 reftest）
+**运行用例**: 260
+**通过**: 260
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,9 +167,8 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 219/219 | 100.0% |
-| Text | 10/10 | 100.0% |
-| Text | 10/10 | 100.0% |
+| Layout | 209/209 | 100.0% |
+| Text | 51/51 | 100.0% |
 
 ### 覆盖范围
 
@@ -171,7 +195,7 @@
 - Quirks mode (5): hashless color, numeric color, unitless width, unitless padding, table height as min-height
 - Table 布局 (9): basic-2col, basic-3col, multi-row, with-tbody, auto-width-equal-cols, row-tallest-cell, thead-tbody-tfoot, th-td-mixed, single-column
 - Multi-column 布局 (10): column-count-2, column-count-3, column-width-auto, column-gap, columns-shorthand, balanced-4-children, uneven-heights, with-column-rule, mismatch-column-count, no-columns
-- 文字排版 (10): text-align-justify, text-align-center, text-align-right, text-align-left-vs-right, word-break-break-all, overflow-wrap-break-word, cjk-line-break, white-space-nowrap, text-indent, letter-spacing
+- 文字排版 (51): text-align (justify/center/right/multiline), word-spacing (normal/large), text-decoration (underline/overline/line-through/dashed), text-transform (uppercase/lowercase/capitalize/none), white-space (pre/pre-wrap/pre-line/nowrap), line-height (double/tight/mismatch), font-size (large/mismatch), text-color (green), text-indent (50px/percent), letter-spacing (4px/2px), word-break (break-all/keep-all), overflow-wrap (break-word/long-url), CJK (line-break/mixed-wrap), tab-size, text-in-flex, text-in-grid, vertical-align (top/middle), 颜色/align/whitespace/line-height/letter-spacing/word-spacing/text-indent/transform/flex-container/vs-background (15 个 css21 基础)
 
 ---
 
@@ -249,5 +273,8 @@
 28. ~~M5 — text-align: justify 修复~~ ✅ (使用 effective_content_area 计算剩余空间)
 29. ~~M5 — Float exclusion 堆叠修复~~ ✅ (max → additive stacking)
 30. ~~M5 — 文字排版 reftest~~ ✅ (10 个新 reftest, 229 总, 100.0% pass)
-31. **M5 — 文字排版能力实现（OpenType shaping / BiDi / vertical writing-mode）**
-32. **M6 — 全量扩展 + 通过率冲刺**
+31. ~~M5 — 文字排版扩展 reftest~~ ✅ (51 个 Text reftest, 260 总, 100.0% pass)
+32. ~~修复 ReftestCategory::from_path 路径匹配~~ ✅ (添加 starts_with 模式)
+33. ~~更新 DC-3~DC-6 完成状态~~ ✅ (DC-3~DC-5 全部达标, DC-6 完成)
+34. **M5 — 文字排版能力实现（OpenType shaping / BiDi / vertical writing-mode）**
+35. **M6 — 全量扩展 + 通过率冲刺**
