@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 16/16 crate 已实现，~11,717 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号），**CSS 交互/提示属性渲染集成**（cursor 类型指示器 + image-rendering 质量标记 + isolation:isolate 堆叠上下文标记 + will-change 性能提示 + pointer-events:none 点击穿透标记 + user-select:none 不可选择标记 + overscroll-behavior 滚动边界标记 + touch-action 触摸行为标记），**CSS writing-mode 渲染集成**（vertical-rl/vertical-lr 字形旋转 90° + GlyphPrimitive.rotation 字段）+ **CSS word-break 行内布局渲染集成**（break-all 逐字符断行 + keep-all CJK 保持为单词 + WordBreakMode 枚举），**CSS clip-path 渲染集成**（none/inset/circle/ellipse/polygon 5 种裁剪函数 + ClipPathPrimitive 路径坐标），**CSS direction/tab-size/border-collapse/table-layout/font-variant-numeric 渲染集成**（direction:rtl 左箭头指示器 + tab-size:N 青色方块指示器 + border-collapse:collapse 橙色双线 + table-layout:fixed 蓝色网格 + font-variant-numeric 8 种颜色方块指示器），**CSS contain/unicode-bidi/box-decoration-break/overflow-wrap/text-align-last/break/scroll-area/snap-stop/container-type 渲染集成**（10 个属性从"已解析存储"推进到"已渲染集成"，包含 contain 6 种值 + unicode-bidi 5 种值 + break/page-break 断点指示器 + scroll-margin/padding 吸附区域 + container-type/name 容器查询标记），**CSS text-align/text-align-last 行内布局管线集成**（text-align 从 ComputedStyle 传递到 InlineFormattingContext + text-align-last 末行独立对齐 + justify 最后一行回退到左对齐标准行为 + 7 个布局引擎测试），**CSS text-indent 行内布局集成**（text-indent 从 ComputedStyle 传递到 InlineFormattingContext + 首行缩进在布局级别处理 + 支持正/负/零值 + 5 个布局引擎测试），**CSS float 排除区域行内布局集成**（FloatExclusion 类型 + effective_content_area 浮动偏移计算 + break_items_into_lines 文本环绕浮动元素 + painter 收集浮动子元素位置 + 6 个布局引擎测试），**CSS tab-size 行内布局集成**（tab_size 字段 + 制表符展开为指定空格数 + painter 从 ComputedStyle 读取 Number/Length + 6 个布局引擎测试）
+**执行状态**: 16/16 crate 已实现，~11,722 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（77 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1100 个用例（100% 通过率），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现（BrowserShell 集成），Glyph 缓存 LRU 淘汰策略，增量布局计算，HTTP 响应缓存（Cache-Control/ETag/LRU）集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），letter-spacing + word-spacing 行内布局集成，text-overflow: ellipsis 渲染，CSS filter 渲染集成，background-position/size/clip/origin 渲染集成，border-image 9-region 渲染集成，column-rule 渲染集成 + list-style-image 渲染集成 + empty-cells:hide 渲染集成，CSS mix-blend-mode 渲染集成（16 种混合模式 BlendModePrimitive）+ CSS resize 渲染集成（手柄指示器），CSS 动画运行时（AnimationClock + 关键帧插值 + 管线集成）+ CSS Transition 执行引擎（TransitionClock + 管线集成 + 22 测试），**TransformPrimitive 渲染集成**（2D 仿射变换矩阵 + transform-origin 支持 rotate/scale/skew）+ **CSS 计数器渲染**（counter-reset/increment/set 跟踪 + 列表标记计数器集成），**background-repeat 渲染集成**（6 种模式 repeat/repeat-x/repeat-y/no-repeat/space/round + tile 裁剪），**white-space 行内布局集成**（normal/nowrap/pre/pre-wrap/pre-line/break-spaces 换行与空白保留行为），**CSS `content` 属性渲染集成**（String + Counter 计数器值格式化 decimal/lower-alpha/upper-alpha/lower-roman/upper-roman）+ **CSS `object-fit` 渲染集成**（fill/contain/cover/none/scale-down 5 种图片适配模式），**`text-decoration-color` + `text-decoration-style` 完整渲染集成**（solid/dotted/dashed/double/wavy 5 种装饰样式 + 自定义颜色 + CurrentColor 回退），**CSS UI 控件属性渲染集成**（accent-color 指示器 + caret-color 光标 + scrollbar-width/auto/thin/none + appearance checkbox/radio/button/textfield），**CSS 未渲染属性集成**（quotes 引号标记 + scrollbar-gutter 稳定空间 + background-attachment:fixed 指示器 + hyphens:auto 连字符 + text-wrap:nowrap 换行控制 + line-clamp 行数限制省略号），**CSS 交互/提示属性渲染集成**（cursor 类型指示器 + image-rendering 质量标记 + isolation:isolate 堆叠上下文标记 + will-change 性能提示 + pointer-events:none 点击穿透标记 + user-select:none 不可选择标记 + overscroll-behavior 滚动边界标记 + touch-action 触摸行为标记），**CSS writing-mode 渲染集成**（vertical-rl/vertical-lr 字形旋转 90° + GlyphPrimitive.rotation 字段）+ **CSS word-break 行内布局渲染集成**（break-all 逐字符断行 + keep-all CJK 保持为单词 + WordBreakMode 枚举），**CSS clip-path 渲染集成**（none/inset/circle/ellipse/polygon 5 种裁剪函数 + ClipPathPrimitive 路径坐标），**CSS direction/tab-size/border-collapse/table-layout/font-variant-numeric 渲染集成**（direction:rtl 左箭头指示器 + tab-size:N 青色方块指示器 + border-collapse:collapse 橙色双线 + table-layout:fixed 蓝色网格 + font-variant-numeric 8 种颜色方块指示器），**CSS contain/unicode-bidi/box-decoration-break/overflow-wrap/text-align-last/break/scroll-area/snap-stop/container-type 渲染集成**（10 个属性从"已解析存储"推进到"已渲染集成"），**CSS text-align/text-align-last 行内布局管线集成**（7 个布局引擎测试），**CSS text-indent 行内布局集成**（5 个布局引擎测试），**CSS float 排除区域行内布局集成**（6 个布局引擎测试），**CSS tab-size 行内布局集成**（6 个布局引擎测试），**CSS border-image-repeat 渲染集成**（stretch/repeat/round/space 4 种边框图像重复模式 + 水平/垂直独立控制 + clip_tile 裁剪 + 5 个单元测试），**paint effects 模块拆分**（effects.rs 955 行 + effects_indicators.rs 1222 行 + 测试拆分 effects.rs 1440 行 + effects_visual.rs 776 行）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -106,6 +106,38 @@
 ---
 
 ## 最近完成的改进
+
+### -114. CSS border-image-repeat 渲染集成 + effects 模块拆分（本轮，~11,722 测试）
+
+将 CSS border-image-repeat 从"仅 stretch"推进到完整 4 种模式渲染，并拆分 paint effects 模块：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| engine/paint/painter/border | **border-image-repeat 渲染**：paint_border_image_edge_h/_v 辅助方法 + clip_tile 裁剪工具函数；支持 stretch（拉伸覆盖）/repeat（自然大小重复+裁剪）/round（整数 tile 覆盖）/space（均匀分布+间距）4 种模式；水平/垂直方向独立控制 | +5 |
+| engine/paint/painter | **effects 模块拆分**：effects.rs（955 行，核心效果：box-shadow/background-image/filter/mix-blend-mode/resize/text-decoration/background-repeat）+ effects_indicators.rs（1222 行，CSS 属性指示器渲染） | — |
+| engine/paint/tests | **测试模块拆分**：effects.rs（1440 行）+ effects_visual.rs（776 行）+ border_image_repeat.rs（280 行，新增） | — |
+
+渲染特性：
+- **stretch**：单个 tile 拉伸覆盖整条边（默认，原有行为）
+- **repeat**：以自然 tile 大小从中心重复，超出边缘裁剪
+- **round**：拉伸 tile 使整数个刚好覆盖边缘
+- **space**：均匀分布 tile，不足 2 个退化为 stretch
+- **clip_tile**：通用 tile 裁剪函数，用于 repeat 模式
+
+Tests: ~11,717 → ~11,722 (+5), clippy clean.
+
+### -113. paint effects 模块拆分（本轮，~11,717 测试）
+
+将 paint/painter/effects.rs（原 ~1900+ 行）按职责拆分为两个模块：
+
+| 模块 | 行数 | 职责 |
+|--------|------|------|
+| effects.rs | 955 | 核心效果：box-shadow、background-image、CSS filter、mix-blend-mode、resize handle、text-decoration、background-repeat |
+| effects_indicators.rs | 1222 | CSS 属性指示器：cursor、image-rendering、isolation、will-change、pointer-events、user-select、overscroll-behavior、touch-action、clip-path、direction、tab-size、border-collapse、table-layout、font-variant-numeric、contain、unicode-bidi、box-decoration-break、overflow-wrap、text-align-last、break、scroll-area、snap-stop、container-type、scroll-snap、perspective、backface-visibility、transform-style、border-spacing、caption-side |
+
+同步拆分测试文件为 effects.rs + effects_visual.rs。
+
+Tests: ~11,717（不变），clippy clean.
 
 ### -112. CSS tab-size 行内布局集成（本轮，~11,717 测试）
 
