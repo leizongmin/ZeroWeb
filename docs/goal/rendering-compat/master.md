@@ -14,7 +14,7 @@
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
-| M6 — 全量扩展 | 🔄 进行中 | |
+| M6 — 全量扩展 | 🔄 进行中 | 535 reftest, 10 目录全部 ≥50, 100.0% pass；待引入 rustybuzz/unicode-bidi |
 
 ## 当前状态概览
 
@@ -154,10 +154,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M6 扩展 Flexbox+Grid reftest）
-**总用例**: 296（内联 reftest）
-**运行用例**: 296
-**通过**: 296
+**日期**: 2026-06-07（M6 全目录扩展到 ≥50）
+**总用例**: 535（内联 reftest）
+**运行用例**: 535
+**通过**: 535
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -167,7 +167,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 245/245 | 100.0% |
+| Layout | 484/484 | 100.0% |
 | Text | 51/51 | 100.0% |
 
 ### 按 WPT 目录
@@ -175,15 +175,15 @@
 | 目录 | 数量 | 通过率 | ≥50 达标 |
 |------|------|--------|----------|
 | css21/ | 78 | 100.0% | ✅ |
+| css-box/ | 54 | 100.0% | ✅ |
 | css-text/ | 51 | 100.0% | ✅ |
 | css-grid/ | 51 | 100.0% | ✅ |
 | css-flexbox/ | 51 | 100.0% | ✅ |
-| css-position/ | 13 | 100.0% | ❌ (需 37) |
-| css-display/ | 12 | 100.0% | ❌ (需 38) |
-| css-box/ | 11 | 100.0% | ❌ (需 39) |
-| css-multicol/ | 10 | 100.0% | ❌ (需 40) |
-| css-float/ | 10 | 100.0% | ❌ (需 40) |
-| css-table/ | 9 | 100.0% | ❌ (需 41) |
+| css-position/ | 50 | 100.0% | ✅ |
+| css-display/ | 50 | 100.0% | ✅ |
+| css-multicol/ | 50 | 100.0% | ✅ |
+| css-float/ | 50 | 100.0% | ✅ |
+| css-table/ | 50 | 100.0% | ✅ |
 
 ### 覆盖范围
 
@@ -293,5 +293,6 @@
 33. ~~更新 DC-3~DC-6 完成状态~~ ✅ (DC-3~DC-5 全部达标, DC-6 完成)
 34. ~~M5 完成~~ ✅ (CJK 换行 + justify + float 堆叠 + 51 Text reftest)
 35. ~~M6 — Flexbox+Grid 扩展到 ≥50~~ ✅ (各 51 个 reftest, 296 总, 100.0% pass)
-36. **M6 — 扩展剩余目录到 ≥50（position/display/box/multicol/float/table）**
-37. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
+36. ~~M6 — 扩展剩余目录到 ≥50~~ ✅ (535 总, 10 个目录全部 ≥50, 100.0% pass)
+37. ~~M6 — 拆分 reftest_data.rs 为目录模块~~ ✅ (reftest_data/ 目录, 每个分类独立文件)
+38. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
