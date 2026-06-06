@@ -1321,12 +1321,7 @@ fn main() {
             AppEvent::MouseWheel { delta, x, y } => {
                 app.handle_scroll(delta, x, y);
             }
-            AppEvent::PanGesture {
-                delta_x,
-                delta_y,
-                x,
-                y,
-            } => {
+            AppEvent::PanGesture { delta_x, delta_y, x, y } => {
                 app.handle_pan_gesture(delta_x, delta_y, x, y);
             }
             AppEvent::Touch(touch) => {

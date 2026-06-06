@@ -79,10 +79,8 @@ impl BrowserApp {
                     return;
                 }
                 let delta_y = (last_y - touch.y) as f32;
-                if delta_y != 0.0 {
-                    if let Some(tab_id) = self.shell.active_tab_id() {
-                        self.apply_page_scroll_delta(tab_id, delta_y);
-                    }
+                if delta_y != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
+                    self.apply_page_scroll_delta(tab_id, delta_y);
                 }
                 if let Some(state) = &mut self.touch_scroll {
                     state.1 = touch.y;
@@ -170,10 +168,8 @@ impl BrowserApp {
             }
         }
 
-        if scroll_delta != 0.0 {
-            if let Some(tab_id) = self.shell.active_tab_id() {
-                self.apply_page_scroll_delta(tab_id, scroll_delta);
-            }
+        if scroll_delta != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
+            self.apply_page_scroll_delta(tab_id, scroll_delta);
         }
     }
 
