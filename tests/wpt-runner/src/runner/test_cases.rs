@@ -23,6 +23,7 @@
 //! - `test_cases_render`: 渲染管线高级合规性测试（多属性组合、z-index、响应式布局、综合页面）
 //! - `test_cases_render_extended`: 渲染扩展测试（text-decoration-style/color、3D 变换、组合渲染）
 //! - `test_cases_css_advanced`: CSS 高级特性测试（Container Queries、Containment、高级背景、视觉效果、Scroll Snap、排版）
+//! - `test_cases_platform_input`: 平台和输入测试（输入事件、视口调整、HiDPI、滚动容器、IME/CJK 输入、触摸布局、焦点管理）
 
 mod test_cases_a11y_i18n;
 mod test_cases_accessibility;
@@ -41,6 +42,7 @@ mod test_cases_interactive;
 mod test_cases_js_dom;
 mod test_cases_multiprocess;
 mod test_cases_navigation;
+mod test_cases_platform_input;
 mod test_cases_render;
 mod test_cases_render_detail;
 mod test_cases_render_extended;
@@ -84,5 +86,6 @@ pub fn builtin_tests() -> Vec<TestCase> {
     tests.extend(test_cases_css_layout_subset::css_layout_subset_tests());
     tests.extend(test_cases_css_advanced::css_advanced_tests());
     tests.extend(test_cases_accessibility::accessibility_tests());
+    tests.extend(test_cases_platform_input::platform_input_tests());
     tests
 }
