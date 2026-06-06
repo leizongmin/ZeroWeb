@@ -12,7 +12,7 @@
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
-| M4 — Float + Table + Multicol | 🔄 进行中 | table display types 已添加；基础 float 布局已实现；189 个 reftest, 100.0% |
+| M4 — Float + Table + Multicol | 🔄 进行中 | table display types + float 布局已实现；200 个 reftest, 100.0% |
 | M5 — 文字排版 | ❌ 未开始 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
@@ -21,7 +21,7 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 189 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 200 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -29,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 189 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局 |
+| 内联 CSS 2.1 reftest | ✅ 200 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局、Position 边界 case、Table display |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -130,9 +130,9 @@
 ## 初始 Reftest 通过率数据
 
 **日期**: 2026-06-07（M4 更新）
-**总用例**: 189（内联 reftest）
-**运行用例**: 189
-**通过**: 189
+**总用例**: 200（内联 reftest）
+**运行用例**: 200
+**通过**: 200
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,7 +142,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 169/169 | 100.0% |
+| Layout | 190/190 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
