@@ -16,6 +16,17 @@ pub(crate) fn parse_length_or_math(value: &str) -> Option<LengthValue> {
     values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
 }
 
+/// 尝试解析 CSS 长度值（quirks mode）。
+///
+/// 与 `parse_length_or_math` 类似，但标准解析失败时尝试将裸数字视为 px。
+pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
+    if let Some(v) = values::parse_length_quirks(value) {
+        return Some(v);
+    }
+    // 尝试解析 calc/min/max/clamp 数学表达式
+    values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr)))
+}
+
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
 ///
 /// 返回 true 表示成功设置。
@@ -28,8 +39,13 @@ pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &s
 /// 返回 true 表示成功设置。
 ///
 /// 当 `quirks_mode` 为 true 时，颜色解析使用 quirks mode 宽容规则
-/// （如接受不带 # 的十六进制、纯数字颜色值）。
-pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &str, value: &str, quirks_mode: bool) -> bool {
+/// （如接受不带 # 的十六进制、纯数字颜色值），长度解析接受裸数字视为 px。
+pub fn apply_property_value_with_quirks(
+    style: &mut ComputedStyle,
+    property: &str,
+    value: &str,
+    quirks_mode: bool,
+) -> bool {
     let value = value.trim();
 
     // 颜色解析函数：quirks mode 使用宽松解析
@@ -37,6 +53,13 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
         values::parse_color_quirks
     } else {
         values::parse_color
+    };
+
+    // 长度解析函数：quirks mode 将裸数字视为 px
+    let parse_length_fn = if quirks_mode {
+        parse_length_or_math_quirks
+    } else {
+        parse_length_or_math
     };
 
     match property {
@@ -86,25 +109,25 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.width = v;
                 return true;
             }
         }
         "height" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.height = v;
                 return true;
             }
         }
         "min-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.min_width = v;
                 return true;
             }
         }
         "min-height" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.min_height = v;
                 return true;
             }
@@ -114,7 +137,7 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
                 style.max_width = LengthValue::Px(f64::INFINITY);
                 return true;
             }
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.max_width = v;
                 return true;
             }
@@ -124,55 +147,55 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
                 style.max_height = LengthValue::Px(f64::INFINITY);
                 return true;
             }
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.max_height = v;
                 return true;
             }
         }
         "margin-top" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.margin_top = v;
                 return true;
             }
         }
         "margin-right" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.margin_right = v;
                 return true;
             }
         }
         "margin-bottom" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.margin_bottom = v;
                 return true;
             }
         }
         "margin-left" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.margin_left = v;
                 return true;
             }
         }
         "padding-top" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.padding_top = v;
                 return true;
             }
         }
         "padding-right" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.padding_right = v;
                 return true;
             }
         }
         "padding-bottom" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.padding_bottom = v;
                 return true;
             }
         }
         "padding-left" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.padding_left = v;
                 return true;
             }
@@ -184,25 +207,25 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "border-top-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_top_width = v;
                 return true;
             }
         }
         "border-right-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_right_width = v;
                 return true;
             }
         }
         "border-bottom-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_bottom_width = v;
                 return true;
             }
         }
         "border-left-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_left_width = v;
                 return true;
             }
@@ -256,32 +279,32 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "border-top-left-radius" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_top_left_radius = v;
                 return true;
             }
         }
         "border-top-right-radius" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_top_right_radius = v;
                 return true;
             }
         }
         "border-bottom-right-radius" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_bottom_right_radius = v;
                 return true;
             }
         }
         "border-bottom-left-radius" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.border_bottom_left_radius = v;
                 return true;
             }
         }
         // ── Outline 属性 ──
         "outline-width" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.outline_width = v;
                 return true;
             }
@@ -299,7 +322,7 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "outline-offset" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.outline_offset = v;
                 return true;
             }
@@ -333,7 +356,7 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             return true;
         }
         "font-size" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.font_size = v;
                 return true;
             }
@@ -399,13 +422,13 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "letter-spacing" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.letter_spacing = v;
                 return true;
             }
         }
         "word-spacing" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.word_spacing = v;
                 return true;
             }
@@ -429,7 +452,7 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "text-indent" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.text_indent = v;
                 return true;
             }
@@ -535,13 +558,13 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "gap" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.gap = v;
                 return true;
             }
         }
         "column-gap" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.column_gap = v;
                 return true;
             }
@@ -553,25 +576,25 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "top" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.top = v;
                 return true;
             }
         }
         "right" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.right = v;
                 return true;
             }
         }
         "bottom" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.bottom = v;
                 return true;
             }
         }
         "left" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.left = v;
                 return true;
             }
@@ -706,7 +729,7 @@ pub fn apply_property_value_with_quirks(style: &mut ComputedStyle, property: &st
             }
         }
         "row-gap" => {
-            if let Some(v) = parse_length_or_math(value) {
+            if let Some(v) = parse_length_fn(value) {
                 style.row_gap = v;
                 return true;
             }
