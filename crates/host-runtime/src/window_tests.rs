@@ -232,14 +232,14 @@ fn test_basic_app_mouse_input_press_release() {
     });
     assert_eq!(received.len(), 2);
     match &received[0] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Left);
             assert!(*pressed);
         }
         _ => panic!("Expected MouseInput"),
     }
     match &received[1] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Right);
             assert!(!pressed);
         }
@@ -271,14 +271,18 @@ fn test_basic_app_mouse_input_all_buttons() {
         &received[0],
         AppEvent::MouseInput {
             button: MouseButton::Left,
-            pressed: true
+            pressed: true,
+            x: 0.0,
+            y: 0.0,
         }
     ));
     assert!(matches!(
         &received[5],
         AppEvent::MouseInput {
             button: MouseButton::Other(8),
-            pressed: true
+            pressed: true,
+            x: 0.0,
+            y: 0.0,
         }
     ));
 }
@@ -295,7 +299,7 @@ fn test_basic_app_mouse_wheel_line() {
     });
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(*delta, MouseScrollDelta::LineDelta(3.0, -1.0));
         }
         _ => panic!("Expected MouseWheel"),
@@ -314,7 +318,7 @@ fn test_basic_app_mouse_wheel_pixel() {
     });
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(*delta, MouseScrollDelta::PixelDelta(10.0, -5.0));
         }
         _ => panic!("Expected MouseWheel"),
@@ -560,7 +564,7 @@ fn test_gpu_app_mouse_input_dispatch() {
     );
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Middle);
             assert!(*pressed);
         }
@@ -585,7 +589,7 @@ fn test_gpu_app_mouse_wheel_dispatch() {
     );
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(*delta, MouseScrollDelta::PixelDelta(5.0, -3.0));
         }
         _ => panic!("Expected MouseWheel"),
@@ -869,14 +873,14 @@ fn test_basic_app_mouse_input_back_forward_buttons() {
     });
     assert_eq!(received.len(), 2);
     match &received[0] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Back);
             assert!(*pressed);
         }
         _ => panic!("Expected MouseInput"),
     }
     match &received[1] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Forward);
             assert!(!pressed);
         }
@@ -896,7 +900,7 @@ fn test_basic_app_mouse_input_other_button() {
     });
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Other(9));
             assert!(*pressed);
         }
@@ -916,7 +920,7 @@ fn test_basic_app_mouse_wheel_negative_pixel() {
     });
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(*delta, MouseScrollDelta::PixelDelta(-100.0, -200.0));
         }
         _ => panic!("Expected MouseWheel"),
@@ -1128,7 +1132,7 @@ fn test_gpu_app_mouse_wheel_line_dispatch() {
     );
     assert_eq!(received.len(), 1);
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(*delta, MouseScrollDelta::LineDelta(-2.0, 5.0));
         }
         _ => panic!("Expected MouseWheel"),
@@ -1366,7 +1370,7 @@ fn test_basic_app_mouse_wheel_pixel_extreme_delta() {
 
     assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(
                 *delta,
                 MouseScrollDelta::PixelDelta(f64::MAX, f64::MIN),
@@ -1473,7 +1477,7 @@ fn test_gpu_app_mouse_wheel_zero_line_delta() {
 
     assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(
                 *delta,
                 MouseScrollDelta::LineDelta(0.0, 0.0),
@@ -1621,7 +1625,7 @@ fn test_gpu_app_mouse_wheel_pixel_delta_asymmetric_extreme() {
 
     assert_eq!(received.len(), 1, "应收到 1 个 MouseWheel 事件");
     match &received[0] {
-        AppEvent::MouseWheel { delta } => {
+        AppEvent::MouseWheel { delta, .. } => {
             assert_eq!(
                 *delta,
                 MouseScrollDelta::PixelDelta(0.0, f64::MAX),
@@ -1691,14 +1695,14 @@ fn test_gpu_app_mouse_input_other_max_button() {
 
     assert_eq!(received.len(), 2, "应收到 2 个 MouseInput 事件");
     match &received[0] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(*button, MouseButton::Other(u16::MAX), "按钮应为 Other(u16::MAX)");
             assert!(*pressed, "应为按下状态");
         }
         _ => panic!("第 1 个事件应为 MouseInput"),
     }
     match &received[1] {
-        AppEvent::MouseInput { button, pressed } => {
+        AppEvent::MouseInput { button, pressed, .. } => {
             assert_eq!(
                 *button,
                 MouseButton::Other(u16::MAX),

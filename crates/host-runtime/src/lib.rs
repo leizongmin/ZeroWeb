@@ -116,8 +116,10 @@ mod tests {
         let press = AppEvent::MouseInput {
             button: MouseButton::Left,
             pressed: true,
+            x: 0.0,
+            y: 0.0,
         };
-        if let AppEvent::MouseInput { button, pressed } = press {
+        if let AppEvent::MouseInput { button, pressed, .. } = press {
             assert_eq!(button, MouseButton::Left, "按钮应为左键");
             assert!(pressed, "应为按下状态");
         } else {
@@ -128,8 +130,10 @@ mod tests {
         let release = AppEvent::MouseInput {
             button: MouseButton::Left,
             pressed: false,
+            x: 0.0,
+            y: 0.0,
         };
-        if let AppEvent::MouseInput { button, pressed } = release {
+        if let AppEvent::MouseInput { button, pressed, .. } = release {
             assert_eq!(button, MouseButton::Left);
             assert!(!pressed, "应为释放状态");
         } else {
@@ -584,14 +588,14 @@ mod tests {
         assert_eq!(received.len(), 2, "应收到 2 个 MouseInput 事件");
 
         match &received[0] {
-            AppEvent::MouseInput { button, pressed } => {
+            AppEvent::MouseInput { button, pressed, .. } => {
                 assert_eq!(*button, MouseButton::Middle, "按下事件的按钮应为 Middle");
                 assert!(*pressed, "按下事件 pressed 应为 true");
             }
             _ => panic!("第 1 个事件应为 MouseInput"),
         }
         match &received[1] {
-            AppEvent::MouseInput { button, pressed } => {
+            AppEvent::MouseInput { button, pressed, .. } => {
                 assert_eq!(*button, MouseButton::Middle, "释放事件的按钮应为 Middle");
                 assert!(!pressed, "释放事件 pressed 应为 false");
             }

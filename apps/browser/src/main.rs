@@ -733,13 +733,15 @@ mod tests {
         app.load_webview_html(tab_id, tall_html, None);
         app.sync_webview_viewport();
 
-        let (_, content_y, _, _) = app.page_content_rect();
-        app.mouse_pos = (640.0, content_y as f64 + 100.0);
+        let (_, content_y, content_w, _) = app.page_content_rect();
+        let x = (content_w * 0.5) as f64;
+        let y = content_y as f64 + 100.0;
+        app.mouse_pos = (x, y);
 
         let (fills_at_zero, _, _, _) = app.build_scene_for_test(1280, 900);
 
         // Linux/WSL 滚轮向下通常为负 LineDelta
-        app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0));
+        app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0), x, y);
 
         assert!(
             app.scroll_offset_for_tab(tab_id) > 0.0,
@@ -756,6 +758,77 @@ mod tests {
             "scrolled page fills must not paint above content area (content_top={content_top})"
         );
         let _ = fills_at_zero;
+    }
+
+    /// 触摸屏在内容区拖拽应更新 scroll_offset。
+    #[test]
+    fn handle_touch_drag_updates_offset_for_tall_page() {
+        use zero_host_runtime::event::{TouchEvent, TouchPhase};
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 2400px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+        app.load_webview_html(tab_id, tall_html, None);
+        app.sync_webview_viewport();
+
+        let (_, content_y, content_w, _) = app.page_content_rect();
+        let touch_x = content_w as f64 * 0.5;
+        let start_y = content_y as f64 + 120.0;
+
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Started,
+            x: touch_x,
+            y: start_y,
+        });
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Moved,
+            x: touch_x,
+            y: start_y - 80.0,
+        });
+
+        assert!(
+            app.scroll_offset_for_tab(tab_id) > 0.0,
+            "touch drag up should increase scroll offset on tall page"
+        );
+    }
+
+    /// 鼠标左键拖拽（RDP/远程桌面触摸模拟）应更新 scroll_offset。
+    #[test]
+    fn handle_mouse_drag_scroll_updates_offset_for_tall_page() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 2400px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+        app.load_webview_html(tab_id, tall_html, None);
+        app.sync_webview_viewport();
+
+        let (content_x, content_y, content_w, _) = app.page_content_rect();
+        let x = (content_x + content_w * 0.5) as f64;
+        let y = content_y as f64 + 120.0;
+
+        app.handle_mouse_click(x, y, true, "Left");
+        app.handle_mouse_move(x, y - 80.0);
+        app.handle_mouse_click(x, y - 80.0, false, "Left");
+
+        assert!(
+            app.scroll_offset_for_tab(tab_id) > 0.0,
+            "mouse drag up in content area should scroll tall page (RDP touch path)"
+        );
     }
 
     /// WebView 视口与页面框布局应落在窗口内，且缩放后高度不超过内容区。
@@ -1235,17 +1308,29 @@ fn main() {
             AppEvent::MouseMoved { x, y } => {
                 app.handle_mouse_move(x, y);
             }
-            AppEvent::MouseInput { button, pressed } => {
+            AppEvent::MouseInput { button, pressed, x, y } => {
                 let btn_str = match button {
                     zero_host_runtime::event::MouseButton::Left => "Left",
                     zero_host_runtime::event::MouseButton::Right => "Right",
                     zero_host_runtime::event::MouseButton::Middle => "Middle",
                     _ => "Other",
                 };
-                app.handle_mouse_click(app.mouse_pos.0, app.mouse_pos.1, pressed, btn_str);
+                app.handle_mouse_move(x, y);
+                app.handle_mouse_click(x, y, pressed, btn_str);
             }
-            AppEvent::MouseWheel { delta } => {
-                app.handle_scroll(delta);
+            AppEvent::MouseWheel { delta, x, y } => {
+                app.handle_scroll(delta, x, y);
+            }
+            AppEvent::PanGesture {
+                delta_x,
+                delta_y,
+                x,
+                y,
+            } => {
+                app.handle_pan_gesture(delta_x, delta_y, x, y);
+            }
+            AppEvent::Touch(touch) => {
+                app.handle_touch(&touch);
             }
             AppEvent::Ime(event) => {
                 app.handle_ime(event);

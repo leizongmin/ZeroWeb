@@ -24,6 +24,14 @@ use crate::text_input::TextInput;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
+/// 页面内容区指针拖拽（鼠标左键；RDP/远程桌面触摸常模拟为此路径）
+struct ContentPointerDrag {
+    start_x: f64,
+    start_y: f64,
+    last_y: f64,
+    scrolling: bool,
+}
+
 /// 标签页 URL 加载状态（先绘制 loading，再发起请求）。
 enum TabFetchState {
     None,
@@ -185,6 +193,10 @@ pub struct BrowserApp {
     tab_fetch: TabFetchState,
     /// 鼠标悬停链接时在浮动状态栏中显示的 URL
     hovered_link_url: Option<String>,
+    /// 单指触摸滚动：`(touch_id, last_y 物理像素)`
+    touch_scroll: Option<(u64, f64)>,
+    /// 鼠标左键在页面内容区的拖拽（远程桌面触摸模拟）
+    content_pointer_drag: Option<ContentPointerDrag>,
 }
 
 impl BrowserApp {
@@ -243,6 +255,8 @@ impl BrowserApp {
             color_scheme_window_synced: false,
             tab_fetch: TabFetchState::None,
             hovered_link_url: None,
+            touch_scroll: None,
+            content_pointer_drag: None,
         }
     }
 

@@ -208,8 +208,10 @@ fn test_app_event_mouse_input() {
     let e = AppEvent::MouseInput {
         button: MouseButton::Left,
         pressed: true,
+        x: 0.0,
+        y: 0.0,
     };
-    if let AppEvent::MouseInput { button, pressed } = e {
+    if let AppEvent::MouseInput { button, pressed, .. } = e {
         assert_eq!(button, MouseButton::Left);
         assert!(pressed);
     } else {
@@ -221,8 +223,10 @@ fn test_app_event_mouse_input() {
 fn test_app_event_mouse_wheel() {
     let e = AppEvent::MouseWheel {
         delta: MouseScrollDelta::LineDelta(1.0, 0.0),
+        x: 0.0,
+        y: 0.0,
     };
-    if let AppEvent::MouseWheel { delta } = &e {
+    if let AppEvent::MouseWheel { delta, .. } = &e {
         assert_eq!(*delta, MouseScrollDelta::LineDelta(1.0, 0.0));
     } else {
         panic!("Expected MouseWheel");
@@ -364,7 +368,9 @@ fn test_app_event_new_variants_debug() {
             "{:?}",
             AppEvent::MouseInput {
                 button: MouseButton::Left,
-                pressed: true
+                pressed: true,
+                x: 0.0,
+                y: 0.0,
             }
         )
         .is_empty()
@@ -373,7 +379,9 @@ fn test_app_event_new_variants_debug() {
         !format!(
             "{:?}",
             AppEvent::MouseWheel {
-                delta: MouseScrollDelta::LineDelta(1.0, 0.0)
+                delta: MouseScrollDelta::LineDelta(1.0, 0.0),
+                x: 0.0,
+                y: 0.0,
             }
         )
         .is_empty()
@@ -555,8 +563,10 @@ fn test_app_event_mouse_input_right_released() {
     let e = AppEvent::MouseInput {
         button: MouseButton::Right,
         pressed: false,
+        x: 0.0,
+        y: 0.0,
     };
-    if let AppEvent::MouseInput { button, pressed } = e {
+    if let AppEvent::MouseInput { button, pressed, .. } = e {
         assert_eq!(button, MouseButton::Right);
         assert!(!pressed);
     } else {
@@ -569,8 +579,10 @@ fn test_app_event_mouse_input_middle_pressed() {
     let e = AppEvent::MouseInput {
         button: MouseButton::Middle,
         pressed: true,
+        x: 0.0,
+        y: 0.0,
     };
-    if let AppEvent::MouseInput { button, pressed } = e {
+    if let AppEvent::MouseInput { button, pressed, .. } = e {
         assert_eq!(button, MouseButton::Middle);
         assert!(pressed);
     } else {
@@ -583,10 +595,14 @@ fn test_app_event_mouse_input_back_forward() {
     let back = AppEvent::MouseInput {
         button: MouseButton::Back,
         pressed: true,
+        x: 0.0,
+        y: 0.0,
     };
     let fwd = AppEvent::MouseInput {
         button: MouseButton::Forward,
         pressed: true,
+        x: 0.0,
+        y: 0.0,
     };
     if let AppEvent::MouseInput { button, .. } = &back {
         assert_eq!(*button, MouseButton::Back);
@@ -604,8 +620,10 @@ fn test_app_event_mouse_input_back_forward() {
 fn test_app_event_mouse_wheel_pixel_delta_large() {
     let e = AppEvent::MouseWheel {
         delta: MouseScrollDelta::PixelDelta(100000.0, -99999.0),
+        x: 0.0,
+        y: 0.0,
     };
-    if let AppEvent::MouseWheel { delta } = &e {
+    if let AppEvent::MouseWheel { delta, .. } = &e {
         assert_eq!(*delta, MouseScrollDelta::PixelDelta(100000.0, -99999.0));
     } else {
         panic!("Expected MouseWheel");
@@ -915,8 +933,10 @@ fn test_mouse_event_button_values() {
         let press_event = AppEvent::MouseInput {
             button: expected_btn,
             pressed: true,
+            x: 0.0,
+            y: 0.0,
         };
-        if let AppEvent::MouseInput { button, pressed } = press_event {
+        if let AppEvent::MouseInput { button, pressed, .. } = press_event {
             assert_eq!(button, expected_btn, "按钮值不匹配: 期望 {expected_btn:?}");
             assert!(pressed);
         } else {
@@ -926,8 +946,10 @@ fn test_mouse_event_button_values() {
         let release_event = AppEvent::MouseInput {
             button: expected_btn,
             pressed: false,
+            x: 0.0,
+            y: 0.0,
         };
-        if let AppEvent::MouseInput { button, pressed } = release_event {
+        if let AppEvent::MouseInput { button, pressed, .. } = release_event {
             assert_eq!(button, expected_btn, "释放事件按钮值不匹配: 期望 {expected_btn:?}");
             assert!(!pressed);
         } else {
