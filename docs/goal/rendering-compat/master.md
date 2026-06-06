@@ -13,15 +13,15 @@
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
-| M5 — 文字排版 | 🔄 进行中 | |
-| M6 — 全量扩展 | ❌ 未开始 | |
+| M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
+| M6 — 全量扩展 | 🔄 进行中 | |
 
 ## 当前状态概览
 
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
-| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 260 个内联 reftest |
+| WPT Runner | ⚠️ smoke 级 | 1,341 个手写 TestCase + 296 个内联 reftest |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
 | CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
@@ -70,10 +70,10 @@
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| Flexbox reftest 子集 | ✅ | 30 个内联 Flexbox reftest（基础+进阶+边界 case） |
-| Flexbox 通过率 | ✅ | 100.0% (30/30) |
-| Grid reftest 子集 | ✅ | 31 个内联 Grid reftest（基础+进阶+边界 case） |
-| Grid 通过率 | ✅ | 100.0% (31/31) |
+| Flexbox reftest 子集 | ✅ | 51 个内联 Flexbox reftest（基础+进阶+边界+M6 扩展） |
+| Flexbox 通过率 | ✅ | 100.0% (51/51) |
+| Grid reftest 子集 | ✅ | 51 个内联 Grid reftest（基础+进阶+边界+M6 扩展） |
+| Grid 通过率 | ✅ | 100.0% (51/51) |
 | CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
 
 ### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%
@@ -154,10 +154,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M5 文字排版扩展）
-**总用例**: 260（内联 reftest）
-**运行用例**: 260
-**通过**: 260
+**日期**: 2026-06-07（M6 扩展 Flexbox+Grid reftest）
+**总用例**: 296（内联 reftest）
+**运行用例**: 296
+**通过**: 296
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -167,8 +167,23 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 209/209 | 100.0% |
+| Layout | 245/245 | 100.0% |
 | Text | 51/51 | 100.0% |
+
+### 按 WPT 目录
+
+| 目录 | 数量 | 通过率 | ≥50 达标 |
+|------|------|--------|----------|
+| css21/ | 78 | 100.0% | ✅ |
+| css-text/ | 51 | 100.0% | ✅ |
+| css-grid/ | 51 | 100.0% | ✅ |
+| css-flexbox/ | 51 | 100.0% | ✅ |
+| css-position/ | 13 | 100.0% | ❌ (需 37) |
+| css-display/ | 12 | 100.0% | ❌ (需 38) |
+| css-box/ | 11 | 100.0% | ❌ (需 39) |
+| css-multicol/ | 10 | 100.0% | ❌ (需 40) |
+| css-float/ | 10 | 100.0% | ❌ (需 40) |
+| css-table/ | 9 | 100.0% | ❌ (需 41) |
 
 ### 覆盖范围
 
@@ -276,5 +291,7 @@
 31. ~~M5 — 文字排版扩展 reftest~~ ✅ (51 个 Text reftest, 260 总, 100.0% pass)
 32. ~~修复 ReftestCategory::from_path 路径匹配~~ ✅ (添加 starts_with 模式)
 33. ~~更新 DC-3~DC-6 完成状态~~ ✅ (DC-3~DC-5 全部达标, DC-6 完成)
-34. **M5 — 文字排版能力实现（OpenType shaping / BiDi / vertical writing-mode）**
-35. **M6 — 全量扩展 + 通过率冲刺**
+34. ~~M5 完成~~ ✅ (CJK 换行 + justify + float 堆叠 + 51 Text reftest)
+35. ~~M6 — Flexbox+Grid 扩展到 ≥50~~ ✅ (各 51 个 reftest, 296 总, 100.0% pass)
+36. **M6 — 扩展剩余目录到 ≥50（position/display/box/multicol/float/table）**
+37. **M6 — 引入 rustybuzz/unicode-bidi（OpenType shaping + BiDi）**
