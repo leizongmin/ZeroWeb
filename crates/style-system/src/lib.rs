@@ -32,7 +32,7 @@ pub use shorthand::*;
 use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
-use zero_dom::{Document, NodeId, NodeKind};
+use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
 /// 样式系统，负责为文档中的元素计算样式。
 ///
@@ -85,9 +85,12 @@ impl StyleSystem {
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = HashMap::new();
 
+        // 读取文档 quirks mode
+        let quirks_mode = doc.quirks_mode();
+
         // 从文档根开始 DFS
         let root = doc.root();
-        self.compute_styles_recursive(doc, root, stylesheets, None, &mut styles);
+        self.compute_styles_recursive(doc, root, stylesheets, None, &mut styles, quirks_mode);
 
         styles
     }
@@ -100,6 +103,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
         styles: &mut HashMap<NodeId, ComputedStyle>,
+        quirks_mode: QuirksMode,
     ) {
         let node_data = match doc.get(node) {
             Some(n) => n,
@@ -111,7 +115,7 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style);
+            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style, quirks_mode);
             styles.insert(node, computed);
         }
 
@@ -129,7 +133,7 @@ impl StyleSystem {
         let parent_ref = current_style.as_ref().or(parent_style);
 
         for child in children {
-            self.compute_styles_recursive(doc, child, stylesheets, parent_ref, styles);
+            self.compute_styles_recursive(doc, child, stylesheets, parent_ref, styles, quirks_mode);
         }
     }
 
@@ -143,7 +147,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
-        self.compute_element_style_internal(doc, element, stylesheets, parent_style)
+        self.compute_element_style_internal(doc, element, stylesheets, parent_style, doc.quirks_mode())
     }
 
     /// 内部实现：计算单个元素的样式。
@@ -153,6 +157,7 @@ impl StyleSystem {
         element: NodeId,
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
+        quirks_mode: QuirksMode,
     ) -> ComputedStyle {
         // 0. 构建媒体查询上下文
         let media_ctx = match (self.viewport_width, self.viewport_height) {
@@ -240,13 +245,20 @@ impl StyleSystem {
                 _ => computed::ROOT_FONT_SIZE,
             }
         });
-        computed::resolve_computed_style(
+        let mut resolved = computed::resolve_computed_style(
             &style,
             &self.custom_properties,
             self.viewport_width,
             self.viewport_height,
             parent_fs,
-        )
+        );
+
+        // 7. Quirks mode 调整
+        if quirks_mode == QuirksMode::Quirks {
+            apply_quirks_mode_adjustments(&mut resolved, parent_style);
+        }
+
+        resolved
     }
 }
 
@@ -337,6 +349,105 @@ fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<Strin
     }
 
     props
+}
+
+/// 应用 quirks mode 样式调整。
+///
+/// 在 quirks mode 下，以下行为会改变：
+/// - 百分比高度 quirks：当父元素高度为 auto 时，块级子元素的 `height: <percentage>` 视为 `auto`
+fn apply_quirks_mode_adjustments(style: &mut ComputedStyle, parent_style: Option<&ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+
+    // 百分比高度 quirks：
+    // 在 quirks mode 中，如果父元素（block-level container）的高度不是明确指定的，
+    // 则 block-level 子元素的 height: <percentage> 计算为 auto。
+    //
+    // 判断条件：父元素存在且父元素的 height 是 auto（而非明确指定值）
+    if let Some(parent) = parent_style {
+        let parent_height_is_auto = matches!(&parent.height, LengthValue::Auto);
+        if parent_height_is_auto {
+            // 如果当前元素 height 是百分比值，则回退为 auto
+            if let LengthValue::Percentage(_) = &style.height {
+                style.height = LengthValue::Auto;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod quirks_tests {
+    use super::*;
+    use zero_css_parser::values::LengthValue;
+
+    /// 测试 quirks mode 下百分比高度回退为 auto
+    ///
+    /// 当父元素 height 为 auto 时，子元素的 height: <percentage> 应回退为 auto。
+    #[test]
+    fn test_quirks_mode_percentage_height_fallback() {
+        let mut child_style = ComputedStyle::default();
+        child_style.height = LengthValue::Percentage(50.0);
+
+        let parent_style = ComputedStyle::default();
+        // parent height is Auto by default
+
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+
+        assert_eq!(
+            child_style.height,
+            LengthValue::Auto,
+            "Quirks mode should convert percentage height to auto when parent height is auto"
+        );
+    }
+
+    /// 测试 quirks mode 下父元素有明确高度时百分比高度不变
+    #[test]
+    fn test_quirks_mode_percentage_height_kept_with_explicit_parent() {
+        let mut child_style = ComputedStyle::default();
+        child_style.height = LengthValue::Percentage(50.0);
+
+        let mut parent_style = ComputedStyle::default();
+        parent_style.height = LengthValue::Px(200.0);
+
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+
+        assert_eq!(
+            child_style.height,
+            LengthValue::Percentage(50.0),
+            "Percentage height should be kept when parent has explicit height"
+        );
+    }
+
+    /// 测试 quirks mode 下非百分比高度不受影响
+    #[test]
+    fn test_quirks_mode_px_height_unaffected() {
+        let mut child_style = ComputedStyle::default();
+        child_style.height = LengthValue::Px(100.0);
+
+        let parent_style = ComputedStyle::default();
+
+        apply_quirks_mode_adjustments(&mut child_style, Some(&parent_style));
+
+        assert_eq!(
+            child_style.height,
+            LengthValue::Px(100.0),
+            "Px height should not be affected by quirks mode"
+        );
+    }
+
+    /// 测试 quirks mode 下无父元素时百分比高度不变
+    #[test]
+    fn test_quirks_mode_percentage_height_no_parent() {
+        let mut child_style = ComputedStyle::default();
+        child_style.height = LengthValue::Percentage(50.0);
+
+        apply_quirks_mode_adjustments(&mut child_style, None);
+
+        assert_eq!(
+            child_style.height,
+            LengthValue::Percentage(50.0),
+            "Percentage height should be kept when no parent style"
+        );
+    }
 }
 
 #[cfg(test)]
