@@ -466,17 +466,11 @@ fn test_csp_script_src_blocks_data_uri() {
         "default-src 'none' 应阻止内联脚本"
     );
 
-    // 当前实现行为记录：script-src 'self' 不会阻止 data: URI，
-    // 因为 is_self_match 将非 http/https 开头的 URL 视为相对路径（同源）。
-    // 根据 CSP 规范，data: URI 不应匹配 'self'，这是需要改进的地方。
+    // script-src 'self' 不允许 data: URI（符合 CSP 规范：data: 不匹配 'self'）。
     let csp_self = ContentSecurityPolicy::parse("script-src 'self'");
     let doc_origin = Origin::parse("https://example.com").unwrap();
     let data_allowed = csp_self.is_resource_allowed("script", "data:text/javascript,alert(1)", Some(&doc_origin));
-    // 记录当前行为：data: URI 通过 'self' 检查（is_self_match 的相对路径逻辑）
-    assert!(
-        data_allowed,
-        "当前实现：data: URI 被 is_self_match 视为相对路径，通过 'self' 检查"
-    );
+    assert!(!data_allowed, "data: URI 不应匹配 'self'（CSP 规范）");
 }
 
 /// 测试同源策略对 http 与 https 不同协议的严格区分。
