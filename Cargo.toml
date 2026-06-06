@@ -27,6 +27,7 @@ members = [
 
     # 应用入口
     "apps/browser",
+    "apps/renderer",
     "apps/webview-demo",
 
     # 测试基础设施

@@ -1,0 +1,25 @@
+[package]
+name = "zero-renderer"
+description = "ZeroWeb 渲染进程 — 独立进程处理页面渲染和 JS 执行"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zero-renderer"
+path = "src/main.rs"
+
+[dependencies]
+zero-protocol = { workspace = true }
+zero-engine = { workspace = true }
+zero-dom = { workspace = true }
+zero-css-parser = { workspace = true }
+zero-style-system = { workspace = true }
+zero-layout-engine = { workspace = true }
+zero-net = { workspace = true }
+zero-storage = { workspace = true }
+zero-script-sandbox = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
