@@ -261,7 +261,14 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
 }
 
 /// 将 HTML 渲染到 CPU 帧缓冲。
+///
+/// 如果 HTML 中包含 `<script>` 标签，会先通过 V8 runtime 执行其中的 JS 代码，
+/// 然后再进行渲染。当前实现中 JS 执行不修改 DOM（适用于大多数 WPT reftest
+/// 中 JS 仅用于设置/断言的场景）。
 pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
+    // 提取并执行 <script> 标签中的 JS 代码
+    execute_scripts(html);
+
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     let result = pipeline.render_html(html, css);
 
@@ -296,6 +303,86 @@ pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> F
         &[],
         &[],
     )
+}
+
+/// 从 HTML 中提取 `<script>` 标签内容并通过 V8 runtime 执行。
+///
+/// 当前实现为"执行但不修改 DOM"模式：
+/// - JS 代码在独立的 V8 sandbox 中执行
+/// - 不提供 DOM API（document, window 等）
+/// - JS 执行结果不影响后续渲染
+///
+/// 这适用于大多数 WPT CSS reftest 场景，其中 JS 仅用于：
+/// - 设置 CSS 变量或类名（已通过 HTML 内联处理）
+/// - 断言测试条件（不影响渲染输出）
+/// - 动态生成内容（少数场景，后续版本支持）
+fn execute_scripts(html: &str) {
+    let scripts = extract_script_content(html);
+    if scripts.is_empty() {
+        return;
+    }
+
+    // 合并所有 <script> 内容
+    let combined_js: String = scripts.join(";\n");
+    if combined_js.trim().is_empty() {
+        return;
+    }
+
+    // 使用 V8 sandbox 执行 JS
+    use zero_script_sandbox::{SandboxConfig, V8Sandbox};
+
+    let config = SandboxConfig {
+        timeout_ms: 5000, // 5 秒超时
+        ..Default::default()
+    };
+
+    if let Ok(mut sandbox) = V8Sandbox::with_config(config)
+        && let Err(e) = sandbox.execute(&combined_js)
+    {
+        // JS 执行失败不阻塞渲染（reftest 仍可运行）
+        eprintln!("  [reftest JS] Script execution warning: {e}");
+    }
+}
+
+/// 从 HTML 字符串中提取所有 `<script>` 标签的内容。
+fn extract_script_content(html: &str) -> Vec<String> {
+    let mut scripts = Vec::new();
+    let mut pos = 0;
+
+    while pos < html.len() {
+        // 查找 <script 标签
+        let Some(script_start) = html[pos..].find("<script") else {
+            break;
+        };
+        let abs_start = pos + script_start;
+
+        // 跳过 <script> 或 <script type="...">
+        let Some(tag_end) = html[abs_start..].find('>') else {
+            break;
+        };
+        let content_start = abs_start + tag_end + 1;
+
+        // 检查是否是外部脚本（src=），跳过外部脚本
+        let tag_content = &html[abs_start..abs_start + tag_end];
+        if tag_content.contains("src=") {
+            pos = content_start;
+            continue;
+        }
+
+        // 查找 </script>
+        let Some(close_tag) = html[content_start..].find("</script>") else {
+            break;
+        };
+        let script_content = html[content_start..content_start + close_tag].to_string();
+
+        if !script_content.trim().is_empty() {
+            scripts.push(script_content);
+        }
+
+        pos = content_start + close_tag + "</script>".len();
+    }
+
+    scripts
 }
 
 /// 比较两个帧缓冲的像素。
