@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,894 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1298 个用例（21 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,896 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1298 个用例（21 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -109,6 +109,30 @@
 ---
 
 ## 最近完成的改进
+
+### -125. 扩展真实网站兼容性测试 + Clippy 修复（本轮，~11,896 测试）
+
+扩展真实网站兼容性测试从 Top 20 到 Top 35+，修复 pre-existing clippy 警告：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `tests/integration/src/real_website_compat.rs` | **15 个扩展网站兼容性测试**（Tier 5）：en.wikipedia.org、developer.mozilla.org、news.ycombinator.com、httpbin.org 首页、httpstat.us、json.org、go.dev、swapi.dev、catfact.ninja、api.github.com、web.dev、httpwg.org、spec.whatwg.org、caniuse.com、schema.org | +15 (ignored) |
+| `apps/browser/src/app_input.rs` | **修复 2 个 pre-existing clippy 警告**（collapsible if statements） | — |
+
+扩展网站清单（15 个，覆盖 5 类）：
+
+| 类别 | 站点 | 验证内容 |
+|------|------|----------|
+| 大型百科 | en.wikipedia.org | 维基百科首页渲染 |
+| 开发文档 | developer.mozilla.org | MDN 文档渲染 |
+| 技术社区 | news.ycombinator.com | Hacker News 文本为主页面 |
+| HTTP 测试 | httpbin.org、httpstat.us | HTTP 服务端点渲染 |
+| JSON 规范 | json.org | 静态技术文档页面 |
+| 编程语言 | go.dev | Go 语言官网 |
+| API 服务 | swapi.dev、catfact.ninja、api.github.com | API 端点和 JSON 渲染 |
+| Web 规范 | web.dev、httpwg.org、spec.whatwg.org、caniuse.com、schema.org | Web 标准相关站点 |
+
+Tests: ~11,894 → ~11,896, real_website_compat: 24 → 39 (ignored), clippy clean.
 
 ### -124. CSS 高级特性 WPT 测试扩展（本轮，~11,894 测试，1298 WPT 用例）
 

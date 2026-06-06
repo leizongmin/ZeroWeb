@@ -9,6 +9,10 @@
 //! - Tier 2（文本为主）: lite.cnn.com, lobste.rs, curl.se, ietf.org, datatracker.ietf.org
 //! - Tier 3（技术站）: rust-lang.org, python.org, nodejs.org, docs.rs, jsonplaceholder.typicode.com
 //! - Tier 4（主流复杂）: github.com, stackoverflow.com, cloudflare.com, w3schools.com, pkg.go.dev
+//!
+//! 扩展站点（Tier 5）：
+//! - en.wikipedia.org, developer.mozilla.org, news.ycombinator.com, httpbin.org,
+//!   httpstat.us, json.org, regex101.com, golang.org, swapi.dev, catfact.ninja
 
 use zero_webview::{WebView, WebViewBuilder, WebViewConfig};
 
@@ -341,6 +345,173 @@ fn test_site_pkg_go_dev() {
     assert_valid_render(&result, "pkg.go.dev");
     assert_valid_html(wv.html_content(), "pkg.go.dev");
     assert_html_contains(wv.html_content(), "go", "pkg.go.dev");
+}
+
+// ════════════════════════════════════════════════════════════════
+// Tier 5: 扩展站点（更多真实网站覆盖）
+// ════════════════════════════════════════════════════════════════
+
+/// #21 en.wikipedia.org — 维基百科英文首页
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_wikipedia_org() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://en.wikipedia.org/wiki/Main_Page")
+        .expect("en.wikipedia.org 应可访问");
+    assert_valid_render(&result, "en.wikipedia.org");
+    assert_valid_html(wv.html_content(), "en.wikipedia.org");
+    assert_html_contains(wv.html_content(), "wikipedia", "en.wikipedia.org");
+}
+
+/// #22 developer.mozilla.org — MDN Web 文档首页
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_mdn() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://developer.mozilla.org")
+        .expect("developer.mozilla.org 应可访问");
+    assert_valid_render(&result, "developer.mozilla.org");
+    assert_valid_html(wv.html_content(), "developer.mozilla.org");
+    assert_html_contains(wv.html_content(), "mdn", "developer.mozilla.org");
+}
+
+/// #23 news.ycombinator.com — Hacker News 首页
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_hacker_news() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://news.ycombinator.com")
+        .expect("news.ycombinator.com 应可访问");
+    assert_valid_render(&result, "news.ycombinator.com");
+    assert_valid_html(wv.html_content(), "news.ycombinator.com");
+    assert_html_contains(wv.html_content(), "hacker", "news.ycombinator.com");
+}
+
+/// #24 httpbin.org — HTTP 请求测试服务首页
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_httpbin_home() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://httpbin.org").expect("httpbin.org 应可访问");
+    assert_valid_render(&result, "httpbin.org");
+    assert_valid_html(wv.html_content(), "httpbin.org");
+    assert_html_contains(wv.html_content(), "http", "httpbin.org");
+}
+
+/// #25 httpstat.us — HTTP 状态码测试服务
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_httpstatus() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://httpstat.us/200").expect("httpstat.us 应可访问");
+    // 200 状态码返回简单内容
+    assert_valid_render(&result, "httpstat.us");
+}
+
+/// #26 json.org — JSON 格式介绍页面
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_json_org() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://www.json.org").expect("json.org 应可访问");
+    assert_valid_render(&result, "json.org");
+    assert_valid_html(wv.html_content(), "json.org");
+    assert_html_contains(wv.html_content(), "json", "json.org");
+}
+
+/// #27 go.dev — Go 编程语言官网
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_go_dev() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://go.dev").expect("go.dev 应可访问");
+    assert_valid_render(&result, "go.dev");
+    assert_valid_html(wv.html_content(), "go.dev");
+}
+
+/// #28 swapi.dev — Star Wars API 测试服务
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_swapi_dev() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://swapi.dev").expect("swapi.dev 应可访问");
+    assert_valid_render(&result, "swapi.dev");
+    assert_valid_html(wv.html_content(), "swapi.dev");
+}
+
+/// #29 catfact.ninja — 猫趣事实 API 首页
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_catfact_ninja() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://catfact.ninja").expect("catfact.ninja 应可访问");
+    assert_valid_render(&result, "catfact.ninja");
+}
+
+/// #30 api.github.com — GitHub 公共 API（JSON 端点）
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_github_api() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://api.github.com").expect("api.github.com 应可访问");
+    // API 返回 JSON，渲染管线应能处理
+    assert_valid_render(&result, "api.github.com");
+}
+
+/// #31 web.dev — Google Web 开发资源站
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_web_dev() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://web.dev").expect("web.dev 应可访问");
+    assert_valid_render(&result, "web.dev");
+    assert_valid_html(wv.html_content(), "web.dev");
+}
+
+/// #32 httpwg.org — HTTP 工作组
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_httpwg() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://httpwg.org").expect("httpwg.org 应可访问");
+    assert_valid_render(&result, "httpwg.org");
+    assert_valid_html(wv.html_content(), "httpwg.org");
+}
+
+/// #33 spec.whatwg.org — WHATWG 规范页面
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_whatwg_spec() {
+    let mut wv = test_webview();
+    let result = wv
+        .fetch_url("https://spec.whatwg.org")
+        .expect("spec.whatwg.org 应可访问");
+    assert_valid_render(&result, "spec.whatwg.org");
+    assert_valid_html(wv.html_content(), "spec.whatwg.org");
+}
+
+/// #34 caniuse.com — 浏览器兼容性查询站
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_caniuse() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://caniuse.com").expect("caniuse.com 应可访问");
+    assert_valid_render(&result, "caniuse.com");
+    assert_valid_html(wv.html_content(), "caniuse.com");
+}
+
+/// #35 schema.org — 结构化数据规范站
+#[test]
+#[ignore = "需要网络连接"]
+fn test_site_schema_org() {
+    let mut wv = test_webview();
+    let result = wv.fetch_url("https://schema.org").expect("schema.org 应可访问");
+    assert_valid_render(&result, "schema.org");
+    assert_valid_html(wv.html_content(), "schema.org");
+    assert_html_contains(wv.html_content(), "schema", "schema.org");
 }
 
 // ════════════════════════════════════════════════════════════════
