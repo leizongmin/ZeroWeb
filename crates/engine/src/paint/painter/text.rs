@@ -6,14 +6,16 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width};
+use zero_layout_engine::{
+    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width,
+};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TextAlignLastValue, TextAlignValue, TextOverflowValue,
-    TabSizeValue, WhiteSpaceValue,
+    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue, TextAlignValue,
+    TextOverflowValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -147,14 +149,8 @@ impl super::Painter {
             if let Some(node_id) = child.node_id
                 && let Some(child_style) = styles.get(&node_id)
             {
-                let is_left = matches!(
-                    child_style.float,
-                    FloatValue::Left | FloatValue::InlineStart
-                );
-                let is_right = matches!(
-                    child_style.float,
-                    FloatValue::Right | FloatValue::InlineEnd
-                );
+                let is_left = matches!(child_style.float, FloatValue::Left | FloatValue::InlineStart);
+                let is_right = matches!(child_style.float, FloatValue::Right | FloatValue::InlineEnd);
 
                 if is_left || is_right {
                     // 浮动子元素相对于容器内容区域的位置

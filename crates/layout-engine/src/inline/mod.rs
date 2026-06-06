@@ -567,8 +567,7 @@ impl InlineFormattingContext {
                         } else {
                             run.line_height.max(default_line_height)
                         };
-                        let (left_offset, avail_width) =
-                            self.effective_content_area(current_y, est_height);
+                        let (left_offset, avail_width) = self.effective_content_area(current_y, est_height);
 
                         // 调整 current_x 到浮动排除区域之后（仅在行首且无 text-indent 时）
                         if current_line.runs.is_empty() && self.text_indent >= 0.0 && current_x < left_offset {
@@ -594,10 +593,8 @@ impl InlineFormattingContext {
                         }
 
                         // 计算当前有效宽度（可能在换行后更新）
-                        let (_, avail_w) = self.effective_content_area(
-                            current_y,
-                            current_line.height.max(run.line_height),
-                        );
+                        let (_, avail_w) =
+                            self.effective_content_area(current_y, current_line.height.max(run.line_height));
 
                         // overflow-wrap: break-word / anywhere 或 word-break: break-all
                         let need_char_break = !self.no_wrap
@@ -612,10 +609,8 @@ impl InlineFormattingContext {
                             for (ci, ch) in chars.iter().enumerate() {
                                 let ch_width = estimate_char_width(*ch, run.font_size) + run.letter_spacing;
 
-                                let (_, avail) = self.effective_content_area(
-                                    current_y,
-                                    current_line.height.max(fragment_height),
-                                );
+                                let (_, avail) =
+                                    self.effective_content_area(current_y, current_line.height.max(fragment_height));
                                 let line_limit = current_line.runs.first().map_or(partial_x, |r| r.x) + avail;
 
                                 if partial_x + ch_width > line_limit && ci > 0 {
@@ -674,8 +669,7 @@ impl InlineFormattingContext {
                     } else {
                         box_height.max(default_line_height)
                     };
-                    let (left_offset, avail_width) =
-                        self.effective_content_area(current_y, est_height);
+                    let (left_offset, avail_width) = self.effective_content_area(current_y, est_height);
 
                     // 调整 current_x 到浮动排除区域之后
                     if current_line.runs.is_empty() && current_x < left_offset {
@@ -683,7 +677,10 @@ impl InlineFormattingContext {
                     }
 
                     // 检查当前行是否放得下（当行非空时）
-                    if !self.no_wrap && current_x + box_width > left_offset + avail_width && !current_line.runs.is_empty() {
+                    if !self.no_wrap
+                        && current_x + box_width > left_offset + avail_width
+                        && !current_line.runs.is_empty()
+                    {
                         // 当前行放不下，开始新行
                         self.lines.push(current_line);
                         current_y += est_height;

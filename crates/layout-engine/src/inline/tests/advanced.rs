@@ -1671,13 +1671,12 @@ fn test_float_exclusion_none() {
 /// 测试左浮动排除区域 — 文本向右偏移。
 #[test]
 fn test_float_exclusion_left_float() {
-    let mut ctx = InlineFormattingContext::new(200.0)
-        .with_float_exclusions(vec![FloatExclusion {
-            y: 0.0,
-            height: 100.0,
-            width: 80.0,
-            is_left: true,
-        }]);
+    let mut ctx = InlineFormattingContext::new(200.0).with_float_exclusions(vec![FloatExclusion {
+        y: 0.0,
+        height: 100.0,
+        width: 80.0,
+        is_left: true,
+    }]);
     let runs = vec![TextRun::simple(
         "Hello World".to_string(),
         NodeId::default(),
@@ -1701,13 +1700,12 @@ fn test_float_exclusion_left_float() {
 #[test]
 fn test_float_exclusion_right_float() {
     // 容器 200px，右浮动占 80px，可用宽度 120px
-    let mut ctx = InlineFormattingContext::new(200.0)
-        .with_float_exclusions(vec![FloatExclusion {
-            y: 0.0,
-            height: 100.0,
-            width: 80.0,
-            is_left: false,
-        }]);
+    let mut ctx = InlineFormattingContext::new(200.0).with_float_exclusions(vec![FloatExclusion {
+        y: 0.0,
+        height: 100.0,
+        width: 80.0,
+        is_left: false,
+    }]);
     // 使用一个会换行的长文本
     let runs = vec![TextRun::simple(
         "AAAAAA BBBBBB CCCCCC DDDDDD EEEEEE FFFFFF".to_string(),
@@ -1721,32 +1719,27 @@ fn test_float_exclusion_right_float() {
     assert!(!ctx.lines.is_empty());
     // 首片段 x 应该从 0.0 开始（右浮动不偏移左侧）
     let first_x = ctx.lines[0].runs[0].x;
-    assert!(
-        first_x.abs() < 0.01,
-        "右浮动排除时首片段 x 应为 0，实际 {}",
-        first_x
-    );
+    assert!(first_x.abs() < 0.01, "右浮动排除时首片段 x 应为 0，实际 {}", first_x);
 }
 
 /// 测试左右浮动同时存在 — 文本排列在中间缝隙中。
 #[test]
 fn test_float_exclusion_both_sides() {
     // 容器 200px，左浮动 60px，右浮动 60px，可用 80px
-    let mut ctx = InlineFormattingContext::new(200.0)
-        .with_float_exclusions(vec![
-            FloatExclusion {
-                y: 0.0,
-                height: 100.0,
-                width: 60.0,
-                is_left: true,
-            },
-            FloatExclusion {
-                y: 0.0,
-                height: 100.0,
-                width: 60.0,
-                is_left: false,
-            },
-        ]);
+    let mut ctx = InlineFormattingContext::new(200.0).with_float_exclusions(vec![
+        FloatExclusion {
+            y: 0.0,
+            height: 100.0,
+            width: 60.0,
+            is_left: true,
+        },
+        FloatExclusion {
+            y: 0.0,
+            height: 100.0,
+            width: 60.0,
+            is_left: false,
+        },
+    ]);
     let runs = vec![TextRun::simple(
         "AAAAAA BBBBBB CCCCCC DDDDDD EEEEEE FFFFFF".to_string(),
         NodeId::default(),
@@ -1770,13 +1763,12 @@ fn test_float_exclusion_both_sides() {
 #[test]
 fn test_float_exclusion_only_affects_overlapping_lines() {
     // 浮动区域在 y=0 到 y=20，高度 20px
-    let mut ctx = InlineFormattingContext::new(200.0)
-        .with_float_exclusions(vec![FloatExclusion {
-            y: 0.0,
-            height: 20.0,
-            width: 80.0,
-            is_left: true,
-        }]);
+    let mut ctx = InlineFormattingContext::new(200.0).with_float_exclusions(vec![FloatExclusion {
+        y: 0.0,
+        height: 20.0,
+        width: 80.0,
+        is_left: true,
+    }]);
     // 使用足够多的文本产生多行（每行约 20px 高）
     let runs = vec![TextRun::simple(
         "AAAAAA BBBBBB CCCCCC DDDDDD EEEEEE FFFFFF GGGGGG HHHHHH IIIIII".to_string(),
@@ -1814,38 +1806,29 @@ fn test_float_exclusion_only_affects_overlapping_lines() {
 /// 测试 effective_content_area 辅助函数。
 #[test]
 fn test_effective_content_area() {
-    let ctx = InlineFormattingContext::new(300.0)
-        .with_float_exclusions(vec![
-            FloatExclusion {
-                y: 0.0,
-                height: 50.0,
-                width: 100.0,
-                is_left: true,
-            },
-            FloatExclusion {
-                y: 0.0,
-                height: 50.0,
-                width: 80.0,
-                is_left: false,
-            },
-        ]);
+    let ctx = InlineFormattingContext::new(300.0).with_float_exclusions(vec![
+        FloatExclusion {
+            y: 0.0,
+            height: 50.0,
+            width: 100.0,
+            is_left: true,
+        },
+        FloatExclusion {
+            y: 0.0,
+            height: 50.0,
+            width: 80.0,
+            is_left: false,
+        },
+    ]);
 
     // y 范围重叠
     let (left, avail) = ctx.effective_content_area(10.0, 20.0);
     assert!((left - 100.0).abs() < 0.01, "左偏移应为 100，实际 {}", left);
-    assert!(
-        (avail - 120.0).abs() < 0.01,
-        "可用宽度应为 120，实际 {}",
-        avail
-    );
+    assert!((avail - 120.0).abs() < 0.01, "可用宽度应为 120，实际 {}", avail);
 
     // y 范围不重叠
     let (left2, avail2) = ctx.effective_content_area(60.0, 20.0);
-    assert!(
-        left2.abs() < 0.01,
-        "不重叠时左偏移应为 0，实际 {}",
-        left2
-    );
+    assert!(left2.abs() < 0.01, "不重叠时左偏移应为 0，实际 {}", left2);
     assert!(
         (avail2 - 300.0).abs() < 0.01,
         "不重叠时可用宽度应为 300，实际 {}",
@@ -1908,9 +1891,7 @@ fn test_tab_size_custom_width() {
 
     assert!(!ctx.lines.is_empty());
     // 查找空格片段（assert that tab expanded to 2 spaces, not 8）
-    let space_fragments: Vec<_> = ctx.lines[0].runs.iter()
-        .filter(|r| r.text.trim().is_empty())
-        .collect();
+    let space_fragments: Vec<_> = ctx.lines[0].runs.iter().filter(|r| r.text.trim().is_empty()).collect();
     assert!(!space_fragments.is_empty(), "应有空格片段");
 
     // 2 个空格 * font_size * 0.25 + letter_spacing(0) ≈ 2 * 4 = 8px 宽
@@ -1988,10 +1969,7 @@ fn test_tab_size_zero_fallback() {
     ctx.break_into_lines(runs);
 
     // tab-size=0 时 max(1) 确保至少 1 个空格
-    assert!(
-        !ctx.lines.is_empty(),
-        "tab-size=0 时不应崩溃"
-    );
+    assert!(!ctx.lines.is_empty(), "tab-size=0 时不应崩溃");
     assert!(
         ctx.lines[0].runs.len() >= 2,
         "tab-size=0 时制表符应至少展开为 1 个空格，实际 {} 个片段",
