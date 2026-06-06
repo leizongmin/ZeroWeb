@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M4 — Float + Table + Multicol 布局算法实现（进行中）
+**当前活跃里程碑**: M5 — 文字排版能力实现
 
 ---
 
@@ -12,8 +12,8 @@
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
-| M4 — Float + Table + Multicol | 🔄 进行中 | float + table + multicol 布局已完成，position: fixed/sticky 待完善；219 个 reftest, 100.0% |
-| M5 — 文字排版 | ❌ 未开始 | |
+| M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
+| M5 — 文字排版 | 🔄 进行中 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
 ## 当前状态概览
@@ -237,6 +237,5 @@
 24. ~~M4 — Table 布局 reftest~~ ✅ (9 个 reftest, 100.0% pass)
 25. ~~M4 — Multi-column 布局算法~~ ✅ (shortest-column-first 均衡分配 + column-count/column-width/column-gap)
 26. ~~M4 — Multi-column 布局 reftest~~ ✅ (10 个 reftest, 100.0% pass)
-27. **M4 — position: fixed/sticky 精确实现**（剩余 M4 项）
-28. **M5 — 文字排版能力实现**
-29. **M6 — 全量扩展 + 通过率冲刺**
+27. **M5 — 文字排版能力实现（OpenType shaping / BiDi / CJK / justify / word-break）**
+28. **M6 — 全量扩展 + 通过率冲刺**
