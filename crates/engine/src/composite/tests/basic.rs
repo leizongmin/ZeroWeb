@@ -52,6 +52,7 @@ fn test_compositing_layer_opacity_promotion() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -103,6 +104,7 @@ fn test_compositing_layer_fixed_position_promotion() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -152,6 +154,7 @@ fn test_compositing_layer_no_promotion_normal() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -203,6 +206,7 @@ fn test_compositing_layer_multiple_promotions() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -262,6 +266,7 @@ fn test_compositing_layer_layout_fixed_flag() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -310,6 +315,7 @@ fn test_compositing_layer_opacity_one_not_promoted() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -359,6 +365,7 @@ fn test_compositing_layer_promoted_geometry() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -412,6 +419,7 @@ fn test_compositing_layer_root_contains_unpromoted() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -475,6 +483,7 @@ fn test_z_index_promotion() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -530,6 +539,7 @@ fn test_z_index_sorting_order() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -598,6 +608,7 @@ fn test_negative_z_index_ordering() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -656,6 +667,7 @@ fn test_z_index_auto_not_promoted() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -716,6 +728,7 @@ fn test_nested_stacking_context_inner_z_index() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -774,6 +787,7 @@ fn test_z_index_auto_vs_zero() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -833,6 +847,7 @@ fn test_multiple_negative_z_index_sorting() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -893,6 +908,7 @@ fn test_opacity_and_z_index_single_layer() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -961,6 +977,7 @@ fn test_z_index_higher_renders_on_top() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -1030,6 +1047,7 @@ fn test_z_index_compositing_full_sorting_order() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -1118,6 +1136,7 @@ fn test_overlapping_elements_stacking_order() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 

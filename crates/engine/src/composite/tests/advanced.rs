@@ -41,6 +41,7 @@ fn test_compositing_reason_opacity_only() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -97,6 +98,7 @@ fn test_compositing_reason_z_index_only() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -153,6 +155,7 @@ fn test_negative_z_index_layer_assignment() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -220,6 +223,7 @@ fn test_layer_priority_sorting_stability() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -279,6 +283,7 @@ fn test_triple_compositing_reason_single_layer() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -334,6 +339,7 @@ fn test_root_layer_bounding_box_with_unpromoted_children() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -386,6 +392,7 @@ fn test_opacity_zero_promoted() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -444,6 +451,7 @@ fn test_z_index_max_sorting() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -509,6 +517,7 @@ fn test_z_index_min_sorting() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -573,6 +582,7 @@ fn test_root_layer_size_when_all_promoted() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -640,6 +650,7 @@ fn test_promoted_parent_with_non_promoted_child() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -710,6 +721,7 @@ fn test_promoted_parent_with_promoted_child() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -790,6 +802,7 @@ fn test_composite_many_layers() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -875,6 +888,7 @@ fn test_root_layer_encompasses_grandchildren() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
     let root_box = LayoutBox {
@@ -905,6 +919,7 @@ fn test_root_layer_encompasses_grandchildren() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
     };
 
@@ -983,6 +998,7 @@ fn test_compositing_layer_position_absolute_with_z_index() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
@@ -1034,6 +1050,7 @@ fn test_compositing_layer_absolute_auto_z_index_not_promoted() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };

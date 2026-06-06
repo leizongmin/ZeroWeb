@@ -32,6 +32,7 @@ fn make_box_at(x: f32, y: f32, w: f32, h: f32) -> LayoutBox {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     }
 }
 
@@ -65,6 +66,7 @@ fn make_box_with_margins(ml: f32, mr: f32, mt: f32, mb: f32) -> LayoutBox {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     }
 }
 
@@ -370,6 +372,7 @@ fn test_border_padding_margin_combination() {
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Scroll,
         z_index: 5,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // outer area = (10+100+10) * (10+80+10) = 120 * 100 = 12000
     assert_eq!(b.outer_area(), 12000.0);
@@ -413,6 +416,7 @@ fn test_layout_result_snapshot_basic() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
@@ -461,6 +465,7 @@ fn test_layout_result_snapshot_with_box_model() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
@@ -526,6 +531,7 @@ fn test_layout_result_snapshot_flags() {
                 overflow_x: OverflowClip::Visible,
                 overflow_y: OverflowClip::Visible,
                 z_index: 5,
+                float: zero_css_parser::values::FloatValue::None,
             }],
             is_absolute: false,
             is_fixed: false,
@@ -533,6 +539,7 @@ fn test_layout_result_snapshot_flags() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
@@ -598,6 +605,7 @@ fn test_nth_box_basic() {
                 overflow_x: OverflowClip::Visible,
                 overflow_y: OverflowClip::Visible,
                 z_index: 0,
+                float: zero_css_parser::values::FloatValue::None,
             },
             LayoutBox {
                 node_id: None,
@@ -628,6 +636,7 @@ fn test_nth_box_basic() {
                 overflow_x: OverflowClip::Visible,
                 overflow_y: OverflowClip::Visible,
                 z_index: 0,
+                float: zero_css_parser::values::FloatValue::None,
             },
         ],
         is_absolute: false,
@@ -636,6 +645,7 @@ fn test_nth_box_basic() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // Index 0 = root
     let (_x0, _y0, w0, h0) = root.nth_box(0).unwrap();
@@ -706,6 +716,7 @@ fn test_count_boxes() {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            float: zero_css_parser::values::FloatValue::None,
         }],
         is_absolute: false,
         is_fixed: false,
@@ -713,6 +724,7 @@ fn test_count_boxes() {
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
     };
     // root(1) + child(1) = 2
     assert_eq!(root.count_boxes(), 2);

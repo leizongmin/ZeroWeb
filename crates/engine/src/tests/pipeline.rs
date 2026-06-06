@@ -415,6 +415,7 @@ fn test_pipeline_recompute_then_multiple_incremental() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: zero_layout_engine::types::OverflowClip::Visible,
         overflow_y: zero_layout_engine::types::OverflowClip::Visible,
     };
@@ -454,6 +455,7 @@ fn test_pipeline_recompute_then_multiple_incremental() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: zero_layout_engine::types::OverflowClip::Visible,
         overflow_y: zero_layout_engine::types::OverflowClip::Visible,
     };
@@ -618,6 +620,7 @@ fn test_pipeline_viewport_dimensions_preserved() {
         is_fixed: false,
         is_sticky: false,
         z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
     };
