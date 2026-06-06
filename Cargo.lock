@@ -5781,6 +5781,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-renderer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "zero-css-parser",
+ "zero-dom",
+ "zero-engine",
+ "zero-layout-engine",
+ "zero-net",
+ "zero-protocol",
+ "zero-script-sandbox",
+ "zero-storage",
+ "zero-style-system",
+]
+
+[[package]]
 name = "zero-script-sandbox"
 version = "0.1.0"
 dependencies = [

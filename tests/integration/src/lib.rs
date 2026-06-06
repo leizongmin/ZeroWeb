@@ -52,3 +52,6 @@ mod headless_protocol;
 
 #[cfg(test)]
 mod web_api_pipeline;
+
+#[cfg(test)]
+mod multi_process;
