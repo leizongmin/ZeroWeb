@@ -10,6 +10,7 @@ mod css_remaining;
 mod css_table_3d;
 mod css_unpainted;
 mod effects;
+mod effects_visual;
 mod helpers;
 mod interaction_indicators;
 mod ui_indicators;
