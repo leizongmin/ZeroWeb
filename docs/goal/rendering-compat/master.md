@@ -12,7 +12,7 @@
 | M1 — WPT Reftest 基础设施 | ✅ 完成 | 14/14 标准全部达成 |
 | M2 — CSS 2.1 + Quirks Mode | ✅ 完成 | CSS parser + style system quirks 已实现；layout engine quirks 推迟到 M4 |
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
-| M4 — Float + Table + Multicol | 🔄 进行中 | float 布局 + table UA 默认样式 + table 布局算法 + parse_display 修复；209 个 reftest, 100.0% |
+| M4 — Float + Table + Multicol | 🔄 进行中 | float + table + multicol 布局已完成，position: fixed/sticky 待完善；219 个 reftest, 100.0% |
 | M5 — 文字排版 | ❌ 未开始 | |
 | M6 — 全量扩展 | ❌ 未开始 | |
 
@@ -29,7 +29,7 @@
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
 | WPT 导入脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/import-wpt-reftests.sh` |
-| 内联 CSS 2.1 reftest | ✅ 200 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局、Position 边界 case、Table display |
+| 内联 CSS 2.1 reftest | ✅ 200 个 | 覆盖颜色、背景、边框、盒模型、定位、显示、Flexbox、Grid、文本、Overflow、Margin 折叠、Quirks mode、Float 布局、Position 边界 case、Table display、Multi-column 布局 |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 可用 | GpuRenderer::new_headless() + read_pixels() + CPU 圆角叠加 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
@@ -129,10 +129,10 @@
 
 ## 初始 Reftest 通过率数据
 
-**日期**: 2026-06-07（M4 table 布局更新）
-**总用例**: 209（内联 reftest）
-**运行用例**: 209
-**通过**: 209
+**日期**: 2026-06-07（M4 multicol 布局更新）
+**总用例**: 219（内联 reftest）
+**运行用例**: 219
+**通过**: 219
 **失败**: 0
 **通过率**: 100.0%
 **渲染模式**: CPU 软件渲染
@@ -142,7 +142,7 @@
 
 | 分类 | 通过/总数 | 通过率 |
 |------|-----------|--------|
-| Layout | 199/199 | 100.0% |
+| Layout | 209/209 | 100.0% |
 | Text | 10/10 | 100.0% |
 
 ### 覆盖范围
@@ -169,6 +169,7 @@
 - Margin 折叠 (5): sibling collapse, parent-child collapse, BFC no-collapse, auto center, body reset
 - Quirks mode (5): hashless color, numeric color, unitless width, unitless padding, table height as min-height
 - Table 布局 (9): basic-2col, basic-3col, multi-row, with-tbody, auto-width-equal-cols, row-tallest-cell, thead-tbody-tfoot, th-td-mixed, single-column
+- Multi-column 布局 (10): column-count-2, column-count-3, column-width-auto, column-gap, columns-shorthand, balanced-4-children, uneven-heights, with-column-rule, mismatch-column-count, no-columns
 
 ---
 
@@ -176,9 +177,9 @@
 
 | 缺口 | 影响范围 | 优先级 | 里程碑 |
 |------|----------|--------|--------|
-| Float 布局算法 | CSS 2.1 核心 | M4 | M4 |
-| Table 布局算法 | 表格渲染 | M4 | M4 |
-| Multi-column 布局算法 | 多列布局 | M4 | M4 |
+| Float 布局算法 | CSS 2.1 核心 | ✅ 已完成 | M4 |
+| Table 布局算法 | 表格渲染 | ✅ 已完成 | M4 |
+| Multi-column 布局算法 | 多列布局 | ✅ 已完成 | M4 |
 | OpenType shaping | 文字排版质量 | M5 | M5 |
 | BiDi 算法 | RTL 文本 | M5 | M5 |
 | Vertical writing-mode | 竖排文本 | M5 | M5 |
@@ -203,6 +204,8 @@
 | 2026-06-07 | UA 默认 display 值通过级联注入（Origin::UserAgent） | 最低优先级，可被作者样式覆盖；避免修改 ComputedStyle::default() |
 | 2026-06-07 | Table 布局通过后处理步骤实现（类似 float） | taffy 无原生 table 支持，所有 table display types 映射为 Block 后重新定位 |
 | 2026-06-07 | 修复 parse_display 缺失 table types 的 bug | color.rs 中有重复的 parse_display（缺 table types），通过 pub use color::* 被实际使用 |
+| 2026-06-07 | Multi-column 通过后处理步骤实现（类似 float/table） | taffy 无原生 multicol 支持，column-count/column-width 容器的子元素在后处理中重新定位到各列 |
+| 2026-06-07 | 多列均衡分配使用 shortest-column-first 策略 | 依次将每个子元素放入当前总高度最小的列，实现视觉均衡 |
 
 ---
 
@@ -232,6 +235,8 @@
 22. ~~M4 — parse_display 修复~~ ✅ (color.rs 中补全 11 个 table display types)
 23. ~~M4 — Table 布局算法实现~~ ✅ (table grid 构建 + auto layout + colspan + border-spacing)
 24. ~~M4 — Table 布局 reftest~~ ✅ (9 个 reftest, 100.0% pass)
-25. **M4 — Multi-column 布局算法**
-26. **M5 — 文字排版能力实现**
-27. **M6 — 全量扩展 + 通过率冲刺**
+25. ~~M4 — Multi-column 布局算法~~ ✅ (shortest-column-first 均衡分配 + column-count/column-width/column-gap)
+26. ~~M4 — Multi-column 布局 reftest~~ ✅ (10 个 reftest, 100.0% pass)
+27. **M4 — position: fixed/sticky 精确实现**（剩余 M4 项）
+28. **M5 — 文字排版能力实现**
+29. **M6 — 全量扩展 + 通过率冲刺**
