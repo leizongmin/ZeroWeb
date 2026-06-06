@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,835 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1266 个用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,893 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1266 个用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20 真实网站兼容性测试**（20/20 站点通过 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -14,7 +14,7 @@
 |----|------|
 | 仓库代码 | ✅ Cargo workspace + 16 crate + 3 应用（全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~11,835 个测试全绿 |
+| 测试状态 | ✅ `cargo test --workspace` ~11,893 个测试全绿 |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（77 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -109,6 +109,51 @@
 ---
 
 ## 最近完成的改进
+
+### -123. WebView 产品级视觉 smoke Phase 4 + 产品层 smoke 测试（本轮，~11,893 测试）
+
+推进质量测试矩阵 Phase 4 和产品层 smoke 测试，新增 58 个集成测试：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `tests/integration/src/webview_product_smoke.rs` | **27 个 WebView 产品级视觉 smoke 测试**：固定多段落页面加载验证（glyph+fill+圆角）、链接命中测试、表单渲染、极简页面、外部 CSS、视口 resize 重渲染（多尺寸+极小视口）、CSS 注入变化检测、多页面导航状态、complete_load/fail_load 流程、脚本 DOM 修改、复杂脚本执行、错误恢复、Builder 模式、事件回调注册/移除、prefers-color-scheme、WASM 执行、综合产品场景、连续页面加载、渲染管线耗时分解、缓存操作、extract_origin、html_content 追踪 | +27 |
+| `tests/integration/src/product_level_smoke.rs` | **31 个产品层 smoke 测试**：标签页生命周期（创建/切换/关闭/导航历史）、地址栏自动补全（历史+大小写+空查询）、书签 CRUD+导航、历史记录+搜索+清除、下载管理生命周期、设置默认值+自定义、缩放控制（放大/缩小/重置/精确设置）、查找功能（生命周期+匹配导航）、会话保存/恢复、BrowserShell+WebView 协调（导航+脚本+渲染一致性）、上下文菜单（5 种类型）、事件回调集成、多标签页浏览场景、空状态边界、刷新+页面错误处理 | +31 |
+
+Phase 4 WebView smoke 测试覆盖（27 个用例，9 个领域）：
+
+| 领域 | 测试数 | 覆盖内容 |
+|------|--------|----------|
+| 固定页面加载 | 6 | 多段落页面、链接页面、表单页面、极简页面、空页面、外部CSS |
+| 视口 Resize | 3 | 窄视口重渲染、连续多尺寸、极小视口(1x1) |
+| CSS 注入 | 2 | 注入后 fill 变化、多规则注入 |
+| 导航 | 3 | 多页面状态、complete_load 流程、fail_load 恢复 |
+| 脚本执行 | 3 | DOM 修改、复杂脚本、错误恢复 |
+| 事件/回调 | 2 | 事件回调注册/移除、prefers-color-scheme |
+| WASM | 1 | 空 WASM 模块执行 |
+| 综合场景 | 4 | 完整产品场景、连续页面加载、渲染耗时分解、缓存操作 |
+| 工具方法 | 3 | Builder 模式、extract_origin、html_content |
+
+产品层 smoke 测试覆盖（31 个用例，16 个领域）：
+
+| 领域 | 测试数 | 覆盖内容 |
+|------|--------|----------|
+| 标签页管理 | 3 | 生命周期、切换激活、独立导航历史 |
+| 地址栏自动补全 | 3 | 历史搜索、空查询、大小写不敏感 |
+| 书签 | 3 | CRUD、文件夹、当前页添加 |
+| 历史记录 | 3 | 记录、搜索、清除 |
+| 下载管理 | 1 | 完整生命周期 |
+| 设置 | 2 | 默认值、自定义 |
+| 缩放 | 1 | 完整控制 |
+| 查找 | 1 | 生命周期+匹配导航 |
+| 会话 | 2 | 保存恢复、空会话 |
+| Shell+WebView 协调 | 3 | 导航协调、脚本执行、渲染一致性 |
+| 上下文菜单 | 2 | 页面菜单、全部类型 |
+| 事件集成 | 1 | WebView 事件回调+Shell 集成 |
+| 多标签页场景 | 1 | 完整浏览场景 |
+| 边界条件 | 3 | 空状态、非空状态、关闭全部 |
+| 刷新/错误 | 2 | 刷新操作、页面错误处理 |
+
+Tests: ~11,835 → ~11,893 (+58), clippy clean.
 
 ### -122. WPT 质量测试矩阵 Phase 3（本轮，~11,835 测试，WPT 1239 用例）
 
@@ -2403,7 +2448,7 @@ Total: 6219 → 6378 tests (+159)
 | 6. 网络和导航测试 | 🔄 | 验证导航状态机、资源加载和历史行为 | 10 个 WPT 导航测试（Redirect/Hash/Cache/Cookie/HSTS/StateMachine/SW/Timeout/CORS）+ 13 个 URL+安全管线集成测试 | 导航和网络异常路径可复现；历史和资源状态稳定 |
 | 7. 性能测试 | 🔄 | 从 crate benchmark 上升到页面级性能预算 | 16/16 crate 有 criterion 基准（78+ 个）；中等复杂度页面首屏 < 2s 验证通过；增量布局验证 | 页面级性能报告可比较；关键预算有阈值和趋势 |
 | 8. 平台和输入测试 | [ ] | 验证跨平台、字体、DPI、输入和 GPU/CPU fallback | 建 Windows/macOS/Linux/Android 矩阵；覆盖 HiDPI、resize、IME、快捷键、鼠标、触摸、滚轮、CJK、emoji、RTL、字体 fallback | 平台差异进入 expected/skip 管理；关键输入路径跨平台通过 |
-| 9. 产品层测试 | [ ] | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 覆盖标签页、地址栏、书签、历史、下载、设置、查找、缩放、session restore、WebView API contract、demo/app smoke | 产品级 smoke 可在发布前阻断明显退化 |
+| 9. 产品层测试 | 🔄 | 验证 ZeroBrowser 和 ZeroWebView 作为产品/API 可用 | 31 个 BrowserShell+WebView 产品级 smoke 测试（标签页生命周期/地址栏自动补全/书签CRUD+导航/历史记录搜索+清除/下载管理/设置/缩放控制/查找功能/会话保存恢复/上下文菜单） | 产品级 smoke 可在发布前阻断明显退化 |
 | 10. 无头协议和自动化控制面 | ✅ | 支持外部自动化工具驱动 ZeroWeb，用协议统一真实站点、截图、性能和产品 smoke | Phase 1-5 全部完成（WebSocket 服务器 + JSON 消息路由 + CDP 命令 + 自动化测试 + 安全加固） | 外部客户端可连接、建上下文、导航、执行脚本、截图并收集网络/日志事件 |
 
 ### WebView 渲染合规测试阶段
@@ -2413,7 +2458,7 @@ Total: 6219 → 6378 tests (+159)
 | Phase 1: Layout/primitive snapshot | ✅ | `LayoutResult::snapshot()`、`RenderPrimitives::snapshot()` 稳定文本/JSON dump；精确几何断言系统 | CSS/layout 改动能产生可读 diff；核心用例可定位到 geometry、style 或 primitive 差异 |
 | Phase 2: 最小 reftest harness | ✅ | ReftestCase（test/ref HTML pair）、ReftestConfig（viewport/fuzzy threshold）、run_reftest()（CPU framebuffer 像素比较）；16 个 CSS 布局 reftest（block/flex/position/color/box-model） | ✅ 能跑一组 reftest 并输出 pixel diff 统计 |
 | Phase 3: 真实 WPT CSS/layout 子集 | ✅ | 45 个 CSS/layout 子集测试（按 CSS 规范领域组织：盒模型/VFM/Flexbox/Grid/排版/颜色/变换/逻辑属性/变量/综合布局）；CategorySummary 按分类通过率报告（文本+JSON）；expected metadata 已就位 | PR 只阻断 unexpected fail；报告按 CSS/layout 分类汇总并通过率排序 |
-| Phase 4: WebView 产品级视觉 smoke | [ ] | 对 `webview-demo` 或 headless WebView 增加固定页面截图 smoke；覆盖 load、resize、inject CSS、navigation、scroll 后可见结果 | 用于发现产品可见退化，但不替代引擎级 reftest 和 WPT 合规测试 |
+| Phase 4: WebView 产品级视觉 smoke | ✅ | 27 个 headless WebView smoke 测试（固定页面加载验证、视口 resize 重渲染、CSS 注入变化检测、多页面导航状态、脚本执行 DOM 修改、事件回调、prefers-color-scheme、WASM 执行、综合生命周期、渲染管线耗时分解） | 用于发现产品可见退化，但不替代引擎级 reftest 和 WPT 合规测试 |
 
 短期不要直接扩大 golden screenshot 覆盖。像素基线只用于无法构造 reftest 的少量场景，并且必须固定 OS/font/DPI/scale 与 fuzzy 阈值。
 
@@ -2456,7 +2501,7 @@ Total: 6219 → 6378 tests (+159)
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
 | 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1266 用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
-| 5. 单元测试与质量 | ✅ | 11,835 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）** |
+| 5. 单元测试与质量 | ✅ | 11,893 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试** |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **剩余阻塞项**（需 GPU/Display 桌面环境）：
@@ -2473,6 +2518,8 @@ Total: 6219 → 6378 tests (+159)
 8. ~~无头浏览器协议 Phase 1-5~~ ✅ 全部完成
 9. ~~WPT 按分类通过率追踪~~ ✅ CategorySummary + 文本/JSON 报告
 10. ~~质量测试矩阵 Phase 3~~ ✅ 74 个 CSS/Layout 子集测试（15 个 CSS 规范领域）
+11. ~~WebView 产品级视觉 smoke Phase 4~~ ✅ 27 个 headless smoke 测试（load/resize/CSS注入/导航/脚本/事件/缓存）
+12. ~~产品层 smoke 测试~~ ✅ 31 个 BrowserShell+WebView 产品级 API 测试（标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单）
 
 ---
 

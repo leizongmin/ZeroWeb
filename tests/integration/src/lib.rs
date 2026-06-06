@@ -61,3 +61,9 @@ mod security_pipeline;
 
 #[cfg(test)]
 mod real_website_compat;
+
+#[cfg(test)]
+mod webview_product_smoke;
+
+#[cfg(test)]
+mod product_level_smoke;
