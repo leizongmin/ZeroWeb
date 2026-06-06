@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-06-06
-**执行状态**: 17 个 crate + 3 个应用已实现，~11,896 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1298 个用例（21 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，21 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局）
+**执行状态**: 17 个 crate + 3 个应用已实现，~11,937 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + WASM 自动桥接），WPT 测试套件 1317 个用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**CSS 渲染合规测试扩展**（渐变组合/flex+gap/grid 响应式/sticky footer/多层阴影/transform+opacity/表单布局），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**WPT 质量测试矩阵 Phase 3**（CSS/Layout 子集 74 用例 + 按分类通过率报告 + CategorySummary 统计，22 分类全部 100% 通过），**WebView 产品级视觉 smoke 测试 Phase 4**（27 个 headless smoke 测试覆盖 load/resize/CSS注入/导航/脚本/事件/缓存），**产品层 smoke 测试**（31 个 BrowserShell+WebView 产品级 API 测试覆盖标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单），**CSS 高级特性 WPT 测试**（32 用例覆盖 Container Queries、CSS Containment、高级背景属性、视觉效果、Scroll Snap、高级排版、综合布局），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip）
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -109,6 +109,46 @@
 ---
 
 ## 最近完成的改进
+
+### -128. 可访问性基础 + 跨平台打包脚本 + WPT 扩展（本轮，~11,937 测试，1317 WPT 用例）
+
+完成 M14 三项推进工作：
+
+**可访问性基础（zero-dom）**：
+
+| 模块 | 新增内容 | 新增测试 |
+|--------|------|----------|
+| `crates/dom/src/focus.rs` | **FocusManager**：Tab/Shift+Tab 键盘导航、tabindex 属性解析和排序（正值优先升序→文档顺序）、可聚焦元素扫描（a/button/input/select/textarea/summary）、disabled 元素排除、tabindex=-1 程序化聚焦支持、blur/focus_first/focus_last API | +13 |
+
+**WPT 可访问性测试（新 `accessibility` 分类，19 用例）**：
+
+| 领域 | 测试数 | 覆盖内容 |
+|------|--------|----------|
+| ARIA 角色 | 1 | role 属性在 DOM 中保留 |
+| ARIA 地标 | 1 | banner/navigation/main/complementary/contentinfo 完整页面结构 |
+| ARIA 状态 | 1 | aria-expanded/aria-selected/aria-checked 渲染 |
+| ARIA live region | 1 | aria-live polite/assertive、role=alert/log |
+| 表单可访问性 | 1 | label for 关联、aria-required、aria-describedby、fieldset/legend |
+| 表格可访问性 | 1 | scope col/row、caption、thead/tfoot |
+| 跳过导航 | 1 | .skip-link 跳过导航模式 |
+| tabindex 焦点 | 1 | tabindex 顺序、tabindex=0、tabindex=-1 排除 |
+| 模态焦点捕获 | 1 | aria-modal 对话框 + autofocus |
+| 高对比度 | 1 | 最大对比度颜色方案 |
+| 大字体布局 | 1 | font-size 24px 下布局正确 |
+| ARIA 小部件 | 3 | tree（展开/折叠）、toolbar（按钮组）、tabs（tablist/tab/tabpanel） |
+| ARIA 进度/计量 | 1 | progressbar + meter 角色 |
+| SR-only 文本 | 1 | 视觉隐藏屏幕阅读器可读文本 |
+| 综合页面 | 3 | 可访问仪表盘、登录表单、图片 alt+figure |
+
+**跨平台打包脚本（M14）**：
+
+| 脚本 | 平台 | 产物 |
+|------|------|------|
+| `scripts/package-linux.sh` | Linux | .AppImage（AppDir + appimagetool）+ .deb（dpkg-deb） |
+| `scripts/package-macos.sh` | macOS | .app bundle（Info.plist + PkgInfo）+ 可选 .dmg |
+| `scripts/package-windows.ps1` | Windows | .zip（含 README.txt）+ 可选 NSIS installer |
+
+Tests: ~11,896 → ~11,937 (+41), WPT: 1298 → 1317 (+19, 22 分类, 100% 通过率), clippy clean.
 
 ### -127. WebSocket 真实实现 + pipeline.rs 拆分（本轮，~11,896 测试）
 
@@ -2559,9 +2599,9 @@ Total: 6219 → 6378 tests (+159)
 |---------------|------|------|
 | 1. WebView 可嵌入 | ✅ | lib crate 可引入、load_url/execute_script/V8 集成、Builder API、事件回调、**Web Worker 管理**均就位。**多进程架构已实现**。**Top 20 真实网站全部验证通过**（20/20 站点 fetch → render 管线完整） |
 | 2. 浏览器日常可用 | ✅/❌ | 多标签页/地址栏/前进后退/收藏夹/历史/下载/查找/缩放/右键菜单/设置均就位。**真实网页渲染已验证**（20 个真实网站通过完整管线）。缺少：GPU/Display 环境下的真实窗口渲染验证 |
-| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1266 用例（26 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）** |
+| 3. Web 标准兼容性 | ✅ 大部分 | HTML/CSS/JS/DOM/Canvas/Network/Security/WebSocket/Storage 均已实现。WPT 1317 用例（22 分类，**100% 通过率**，**按分类通过率追踪就位**）。**Web Workers + ES Modules 已实现**。**安全管线集成测试 52 个**。**CSS/Layout 子集 74 用例（Phase 3，15 个 CSS 规范领域）**。**可访问性基础测试 19 个（ARIA/焦点/表单/地标）** |
 | 4. 性能基准体系 | ✅ | 78+ 个 criterion 基准覆盖所有 crate。**中等复杂度页面首屏 < 2s 已验证**（真实网站 python.org 渲染测试通过）。**增量渲染验证通过**（incremental_paint 图元 < 全量 20%）。GPU 加速验证待 GPU/Display 环境 |
-| 5. 单元测试与质量 | ✅ | 11,893 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试** |
+| 5. 单元测试与质量 | ✅ | 11,937 测试全绿，95.46% 行覆盖率（函数 96.94%），clippy 零警告，**24 个真实网站兼容性测试（ignored）**，**58 个产品级 smoke 测试**，**1317 WPT 用例（22 分类，100% 通过率）** |
 | 6. 工程化 | ✅ | CI（3 平台）、scripts/run-benchmarks.sh、scripts/check-coverage.sh、18 个 crate 全部有 README（含 2 个 app crate）、WebView demo 可编译、API 文档（cargo doc） |
 
 **剩余阻塞项**（需 GPU/Display 桌面环境）：
@@ -2580,6 +2620,8 @@ Total: 6219 → 6378 tests (+159)
 10. ~~质量测试矩阵 Phase 3~~ ✅ 74 个 CSS/Layout 子集测试（15 个 CSS 规范领域）
 11. ~~WebView 产品级视觉 smoke Phase 4~~ ✅ 27 个 headless smoke 测试（load/resize/CSS注入/导航/脚本/事件/缓存）
 12. ~~产品层 smoke 测试~~ ✅ 31 个 BrowserShell+WebView 产品级 API 测试（标签页/书签/历史/下载/设置/缩放/查找/会话/上下文菜单）
+13. ~~可访问性基础~~ ✅ FocusManager（Tab 导航 + tabindex 排序 + 13 单元测试）+ 19 个 ARIA WPT 测试
+14. ~~跨平台打包脚本~~ ✅ Linux AppImage/deb + macOS .app + Windows .zip
 
 ---
 
