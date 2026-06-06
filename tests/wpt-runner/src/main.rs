@@ -50,6 +50,8 @@ struct CliOptions {
     viewport_width: f32,
     /// 视口高度。
     viewport_height: f32,
+    /// 使用 GPU 渲染模式。
+    use_gpu: bool,
 }
 
 /// 输出格式。
@@ -77,6 +79,7 @@ fn main() {
         manifest_path: None,
         viewport_width: 800.0,
         viewport_height: 600.0,
+        use_gpu: false,
     };
 
     // 解析选项参数
@@ -110,6 +113,7 @@ fn main() {
                     options.viewport_height = args[i].parse().unwrap_or(600.0);
                 }
             }
+            "--gpu" => options.use_gpu = true,
             _ => {
                 if filter.is_none() {
                     filter = Some(args[i].clone());
@@ -260,7 +264,7 @@ fn cmd_summary(options: &CliOptions, filter: Option<&str>) {
 /// 从内联 CSS 2.1 核心 reftest 数据加载测试对，用 CPU 软件渲染器
 /// 渲染测试和参考 HTML，比较像素输出，生成通过率报告。
 fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
-    use reftest::{ReftestCategory, ReftestResult, run_reftest};
+    use reftest::{ReftestCategory, ReftestResult, run_reftest, run_reftest_gpu};
 
     let cases = reftest_data::css21_reftest_cases();
     let configs = reftest_data::css21_reftest_configs();
@@ -292,7 +296,11 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
 
-        let result = run_reftest(case, &config);
+        let result = if options.use_gpu {
+            run_reftest_gpu(case, &config)
+        } else {
+            run_reftest(case, &config)
+        };
         let passed = result.passed;
         let status_char = if passed { '✓' } else { '✗' };
         eprintln!("  {} {} ({:.2}%)", status_char, case.id, result.diff_ratio * 100.0);

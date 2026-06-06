@@ -265,6 +265,77 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
     }
 }
 
+/// 使用 GPU 无头渲染运行 reftest（回退到 CPU 如果 GPU 不可用）。
+pub fn run_reftest_gpu(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult {
+    // 渲染测试页面和参考页面
+    let test_fb = render_to_framebuffer_gpu(&case.test_html, &case.css, config);
+    let ref_fb = render_to_framebuffer_gpu(&case.ref_html, &case.css, config);
+
+    // 尺寸必须一致
+    if test_fb.width != ref_fb.width || test_fb.height != ref_fb.height {
+        return ReftestResult {
+            id: case.id.clone(),
+            passed: false,
+            diff_pixels: 0,
+            total_pixels: 0,
+            diff_ratio: 0.0,
+            max_channel_diff: 0,
+            message: format!(
+                "Size mismatch: test={}x{} ref={}x{}",
+                test_fb.width, test_fb.height, ref_fb.width, ref_fb.height
+            ),
+        };
+    }
+
+    let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
+    let eff_channel_diff = config.effective_max_channel_diff();
+    let (diff_pixels, max_channel_diff) = compare_pixels(&test_fb, &ref_fb, eff_channel_diff);
+    let diff_ratio = if total_pixels > 0 {
+        diff_pixels as f64 / total_pixels as f64
+    } else {
+        0.0
+    };
+
+    let eff_max_ratio = config.effective_max_diff_ratio();
+
+    let passed = if case.is_match {
+        diff_ratio <= eff_max_ratio
+    } else {
+        diff_ratio > config.min_mismatch_ratio
+    };
+
+    let message = if passed {
+        String::new()
+    } else if case.is_match {
+        format!(
+            "Match failed: {}/{} pixels differ ({:.2}%), max channel diff={}, threshold={:.2}%/{}ch",
+            diff_pixels,
+            total_pixels,
+            diff_ratio * 100.0,
+            max_channel_diff,
+            eff_max_ratio * 100.0,
+            eff_channel_diff
+        )
+    } else {
+        format!(
+            "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > 1%",
+            diff_pixels,
+            total_pixels,
+            diff_ratio * 100.0
+        )
+    };
+
+    ReftestResult {
+        id: case.id.clone(),
+        passed,
+        diff_pixels,
+        total_pixels,
+        diff_ratio,
+        max_channel_diff,
+        message,
+    }
+}
+
 /// 将 HTML 渲染到 CPU 帧缓冲。
 ///
 /// 如果 HTML 中包含 `<script>` 标签，会先通过 V8 runtime 执行其中的 JS 代码，
