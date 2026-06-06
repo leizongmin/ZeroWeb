@@ -1855,5 +1855,251 @@ pub fn render_rendance_tests() -> Vec<TestCase> {
                 "glyph_count_ge:1".to_string(),
             ],
         },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS background-position + background-size + 渐变组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/gradient-background-combo".to_string(),
+            description: "Linear gradient with background-position and size".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .gradient-box {
+    width: 200px; height: 100px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-size: 100% 100%;
+    border-radius: 8px;
+    margin: 10px;
+  }
+  .striped-box {
+    width: 200px; height: 100px;
+    background: repeating-linear-gradient(45deg, #606dbc, #606dbc 10px, #465298 10px, #465298 20px);
+    margin: 10px;
+  }
+</style>
+<div class="gradient-box">Gradient</div>
+<div class="striped-box">Stripes</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS flexbox + gap + align 组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/flex-gap-align-center".to_string(),
+            description: "Flexbox with gap and align-items center".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .flex-row {
+    display: flex; gap: 16px; align-items: center;
+    padding: 12px; background: #f5f5f5;
+  }
+  .card {
+    width: 80px; height: 80px; background: #4a90d9;
+    border-radius: 8px; color: white;
+    display: flex; align-items: center; justify-content: center;
+  }
+</style>
+<div class="flex-row">
+  <div class="card">A</div>
+  <div class="card">B</div>
+  <div class="card">C</div>
+  <div class="card">D</div>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS Grid 响应式卡片布局
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/grid-responsive-cards".to_string(),
+            description: "CSS Grid auto-fill responsive card layout".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px; padding: 16px;
+  }
+  .grid-item {
+    background: white; border: 1px solid #ddd;
+    border-radius: 8px; padding: 12px;
+  }
+  .grid-item h3 { margin: 0 0 8px 0; font-size: 14px; }
+  .grid-item p { margin: 0; font-size: 12px; color: #666; }
+</style>
+<div class="grid-container">
+  <div class="grid-item"><h3>Card 1</h3><p>Description for card 1</p></div>
+  <div class="grid-item"><h3>Card 2</h3><p>Description for card 2</p></div>
+  <div class="grid-item"><h3>Card 3</h3><p>Description for card 3</p></div>
+  <div class="grid-item"><h3>Card 4</h3><p>Description for card 4</p></div>
+  <div class="grid-item"><h3>Card 5</h3><p>Description for card 5</p></div>
+  <div class="grid-item"><h3>Card 6</h3><p>Description for card 6</p></div>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:6".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS sticky footer 布局
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/sticky-footer".to_string(),
+            description: "CSS sticky footer layout with flexbox".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body style="margin:0; min-height:100vh; display:flex; flex-direction:column;">
+<style>
+  header { background: #333; color: white; padding: 16px; }
+  main { flex: 1; padding: 16px; }
+  footer { background: #f5f5f5; padding: 12px; text-align: center; border-top: 1px solid #ddd; }
+</style>
+<header><h1>Site Header</h1></header>
+<main><p>Main content area. The footer sticks to the bottom.</p></main>
+<footer><p>Footer content</p></footer>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 多层 box-shadow + border-radius
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/multi-box-shadow".to_string(),
+            description: "Multiple box-shadows with border-radius".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .shadow-card {
+    width: 200px; height: 120px;
+    background: white;
+    border-radius: 12px;
+    box-shadow:
+      0 1px 3px rgba(0,0,0,0.12),
+      0 4px 8px rgba(0,0,0,0.08),
+      0 12px 24px rgba(0,0,0,0.06);
+    margin: 40px auto;
+    padding: 20px;
+  }
+  .inner-shadow {
+    width: 200px; height: 120px;
+    background: #f0f0f0;
+    border-radius: 12px;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.15);
+    margin: 40px auto;
+    padding: 20px;
+  }
+</style>
+<div class="shadow-card">Multi-layer shadow</div>
+<div class="inner-shadow">Inner shadow</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS transform + opacity 组合
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/transform-opacity-card".to_string(),
+            description: "Transform scale + opacity combined".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .card-container { padding: 40px; }
+  .card {
+    width: 200px; height: 150px;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    border-radius: 10px;
+    transform: scale(0.9) rotate(-2deg);
+    opacity: 0.85;
+    color: white;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  .card:hover { transform: scale(1) rotate(0deg); opacity: 1; }
+</style>
+<div class="card-container">
+  <div class="card"><h2>Transformed</h2><p>Scale + rotate + opacity</p></div>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+            ],
+        },
+
+        // ═══════════════════════════════════════════════════════════════
+        //  CSS 简单表单布局
+        // ═══════════════════════════════════════════════════════════════
+
+        TestCase {
+            id: "render/form-login".to_string(),
+            description: "Login form layout with CSS".to_string(),
+            category: "css".to_string(),
+            html: r#"<html><body>
+<style>
+  .login-form { max-width: 320px; margin: 40px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; margin-bottom: 4px; font-size: 14px; color: #333; }
+  .form-group input {
+    width: 100%; padding: 8px 12px; border: 1px solid #ccc;
+    border-radius: 4px; font-size: 14px; box-sizing: border-box;
+  }
+  .btn { width: 100%; padding: 10px; background: #4a90d9; color: white; border: none; border-radius: 4px; font-size: 14px; }
+</style>
+<div class="login-form">
+  <h2>Login</h2>
+  <div class="form-group"><label>Username</label><input type="text"></div>
+  <div class="form-group"><label>Password</label><input type="password"></div>
+  <button class="btn">Sign In</button>
+</div>
+</body></html>"#.to_string(),
+            css: String::new(),
+            assertions: vec![
+                "dom_has_body".to_string(),
+                "render_completes".to_string(),
+                "nonzero_primitives".to_string(),
+                "glyph_count_ge:5".to_string(),
+            ],
+        },
     ]
 }
