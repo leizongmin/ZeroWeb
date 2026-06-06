@@ -1008,6 +1008,26 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     }
 }
 
+/// Quirks mode 长度解析。
+///
+/// 先尝试标准 `parse_length`，如果失败，则尝试将裸数字解析为 px 值。
+/// 这是浏览器在 quirks mode 下对长度属性值的宽容行为（如 `width: 100` 等同于 `width: 100px`）。
+pub fn parse_length_quirks(value: &str) -> Option<LengthValue> {
+    let value = value.trim();
+
+    // 先尝试标准解析
+    if let Some(v) = parse_length(value) {
+        return Some(v);
+    }
+
+    // Quirks: 裸数字视为 px
+    if let Ok(num) = value.parse::<f64>() {
+        return Some(LengthValue::Px(num));
+    }
+
+    None
+}
+
 /// 从字符串末尾找到单位部分的起始索引。
 ///
 /// 从右向左扫描：跳过 '%'（如果有），然后跳过连续的字母字符，

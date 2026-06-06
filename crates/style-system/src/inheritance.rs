@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use zero_dom::QuirksMode;
 
-use crate::property::{ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value_with_quirks, inherit_property};
+use crate::property::{
+    ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value_with_quirks, inherit_property,
+};
 
 /// 为元素计算继承样式。
 ///

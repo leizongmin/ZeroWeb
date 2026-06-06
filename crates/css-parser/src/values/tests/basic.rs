@@ -1370,3 +1370,29 @@ fn test_parse_tab_size_length() {
 fn test_parse_tab_size_case_insensitive() {
     assert_eq!(parse_tab_size("  4  "), Some(TabSizeValue::Number(4)));
 }
+
+// ── parse_length_quirks ──────────────────────────────────────────────
+
+#[test]
+fn test_parse_length_quirks_standard_still_works() {
+    // 标准格式在 quirks mode 下仍然正常解析
+    assert_eq!(parse_length_quirks("10px"), Some(LengthValue::Px(10.0)));
+    assert_eq!(parse_length_quirks("1.5em"), Some(LengthValue::Em(1.5)));
+    assert_eq!(parse_length_quirks("auto"), Some(LengthValue::Auto));
+    assert_eq!(parse_length_quirks("0"), Some(LengthValue::Px(0.0)));
+}
+
+#[test]
+fn test_parse_length_quirks_unitless_number() {
+    // 裸数字在 quirks mode 下视为 px
+    assert_eq!(parse_length_quirks("100"), Some(LengthValue::Px(100.0)));
+    assert_eq!(parse_length_quirks("50"), Some(LengthValue::Px(50.0)));
+    assert_eq!(parse_length_quirks("0"), Some(LengthValue::Px(0.0)));
+}
+
+#[test]
+fn test_parse_length_quirks_invalid_still_none() {
+    assert_eq!(parse_length_quirks("abc"), None);
+    assert_eq!(parse_length_quirks(""), None);
+    assert_eq!(parse_length_quirks("10abc"), None);
+}

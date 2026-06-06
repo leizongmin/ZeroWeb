@@ -1059,4 +1059,40 @@ mod tests {
     fn test_parse_spacing_px() {
         assert_eq!(parse_spacing("5px"), Some(LengthValue::Px(5.0)));
     }
+
+    // ── parse_color_quirks ──────────────────────────────────────────────
+
+    #[test]
+    fn test_quirks_color_standard_still_works() {
+        // 标准格式在 quirks mode 下仍然正常解析
+        assert!(parse_color_quirks("red").is_some());
+        assert!(parse_color_quirks("#FF0000").is_some());
+        assert!(parse_color_quirks("rgb(255, 0, 0)").is_some());
+    }
+
+    #[test]
+    fn test_quirks_color_hashless_hex() {
+        // 不带 # 的十六进制
+        let c = parse_color_quirks("FF0000").unwrap();
+        assert_eq!(c, ColorValue::Rgba(255, 0, 0, 255));
+
+        let c = parse_color_quirks("f00").unwrap();
+        assert_eq!(c, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_quirks_color_numeric() {
+        // 纯数字 → 24-bit RGB
+        let c = parse_color_quirks("0").unwrap();
+        assert_eq!(c, ColorValue::Rgba(0, 0, 0, 255));
+
+        let c = parse_color_quirks("16711680").unwrap(); // 0xFF0000
+        assert_eq!(c, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_quirks_color_invalid_still_none() {
+        assert!(parse_color_quirks("not-a-color").is_none());
+        assert!(parse_color_quirks("").is_none());
+    }
 }
