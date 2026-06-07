@@ -36,7 +36,11 @@ struct TableCell {
 #[derive(Debug, Clone)]
 struct TableRow {
     /// 在 table LayoutBox children 中的索引。
+    /// 当行是直接子 table-row 时，这是 table_box.children 中的索引。
     child_index: usize,
+    /// 行所在的行组（tbody/thead/tfoot）在 table LayoutBox children 中的索引。
+    /// None 表示行是 table 的直接 table-row 子元素。
+    row_group_index: Option<usize>,
     /// 行内的单元格列表。
     cells: Vec<TableCell>,
 }
@@ -181,7 +185,10 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                 let row = build_row(*child_idx, child, doc);
                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                 if !row.cells.is_empty() {
-                    rows.push(row);
+                    rows.push(TableRow {
+                        row_group_index: None,
+                        ..row
+                    });
                 }
             }
             Some(d) if is_row_group(d) => {
@@ -193,7 +200,10 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                         let row = build_row(rg_child_idx, rg_child, doc);
                         max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                         if !row.cells.is_empty() {
-                            rows.push(row);
+                            rows.push(TableRow {
+                                row_group_index: Some(*child_idx),
+                                ..row
+                            });
                         }
                     }
                 }
@@ -210,6 +220,7 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                 max_cols = max_cols.max(colspan);
                 rows.push(TableRow {
                     child_index: *child_idx, // 匿名行直接引用 cell 的索引
+                    row_group_index: None,
                     cells: vec![cell],
                 });
             }
@@ -245,6 +256,7 @@ fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) ->
 
     TableRow {
         child_index: child_idx,
+        row_group_index: None, // 由调用方设置
         cells,
     }
 }
@@ -310,8 +322,21 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid) -> Vec<f32> {
 }
 
 /// 获取行盒 — 处理直接 table-row 和 row-group 内的行两种情况。
+///
+/// 当 `row.row_group_index` 为 Some 时，行在 row-group 的 children[row.child_index] 中。
+/// 当为 None 时，行是 table 的直接 children[row.child_index]。
 fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Option<&'a LayoutBox> {
-    table_box.children.get(row.child_index)
+    match row.row_group_index {
+        Some(rg_idx) => {
+            // 行在 row-group 内：table_box.children[rg_idx].children[row.child_index]
+            let row_group = table_box.children.get(rg_idx)?;
+            row_group.children.get(row.child_index)
+        }
+        None => {
+            // 直接 table-row：table_box.children[row.child_index]
+            table_box.children.get(row.child_index)
+        }
+    }
 }
 
 /// 获取单元格盒。
@@ -324,7 +349,17 @@ fn position_cells(table_box: &mut LayoutBox, grid: &TableGrid, col_widths: &[f32
     let mut row_y = 0.0f32;
 
     for row in &grid.rows {
-        let Some(row_box) = table_box.children.get_mut(row.child_index) else {
+        // 根据行是否在 row-group 内，定位到正确的行盒
+        let row_box = match row.row_group_index {
+            Some(rg_idx) => {
+                let Some(row_group) = table_box.children.get_mut(rg_idx) else {
+                    continue;
+                };
+                row_group.children.get_mut(row.child_index)
+            }
+            None => table_box.children.get_mut(row.child_index),
+        };
+        let Some(row_box) = row_box else {
             continue;
         };
 

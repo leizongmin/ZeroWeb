@@ -42,6 +42,8 @@ pub struct RenderPipeline {
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
     skip_indicators: bool,
+    /// 图像固有尺寸缓存（image_key hash → (width, height)）。
+    image_sizes: HashMap<u64, (f32, f32)>,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -95,6 +97,7 @@ impl RenderPipeline {
             cached_layout: None,
             cached_doc: None,
             skip_indicators: false,
+            image_sizes: HashMap::new(),
         }
     }
 
@@ -104,6 +107,14 @@ impl RenderPipeline {
     /// 会干扰像素级对比。
     pub fn set_skip_indicators(&mut self, skip: bool) {
         self.skip_indicators = skip;
+    }
+
+    /// 设置图像固有尺寸缓存。
+    ///
+    /// 用于 background-image 的 background-size: auto 计算。
+    /// 键为图像 URL 的 hash 值，值为 (width, height) 像素尺寸。
+    pub fn set_image_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
+        self.image_sizes = sizes;
     }
 
     /// 设置用户颜色方案偏好。
@@ -189,6 +200,7 @@ impl RenderPipeline {
         let paint_start = Instant::now();
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
@@ -263,6 +275,7 @@ impl RenderPipeline {
         let paint_start = Instant::now();
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元
@@ -394,6 +407,7 @@ impl RenderPipeline {
         // 仅绘制脏区域内的节点
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }

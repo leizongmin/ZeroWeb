@@ -76,7 +76,15 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         align_content: convert_align_content(&style.align_content),
         justify_content: convert_alignment_to_justify_content(&style.justify_content),
         gap: taffy::geometry::Size {
-            width: convert_length_to_lp(&style.gap),
+            // column-gap 长写属性优先；若未设置（0px），回退到 gap 简写
+            width: {
+                let col = convert_length_to_lp(&style.column_gap);
+                if col == taffy::style::LengthPercentage::Length(0.0) {
+                    convert_length_to_lp(&style.gap)
+                } else {
+                    col
+                }
+            },
             height: convert_length_to_lp(&style.row_gap),
         },
         grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
