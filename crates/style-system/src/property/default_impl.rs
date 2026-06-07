@@ -263,7 +263,7 @@ impl Default for ComputedStyle {
             line_clamp: LineClampComputedValue::None,
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
-            background_image: BackgroundImageComputedValue::None,
+            background_image: vec![],
             background_position: BackgroundPositionComputedValue::Percent(0.0),
             background_repeat: BackgroundRepeatComputedValue::Repeat,
             background_size: BackgroundSizeComputedValue::Auto,

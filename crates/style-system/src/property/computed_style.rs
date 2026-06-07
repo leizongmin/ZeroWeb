@@ -438,8 +438,8 @@ pub struct ComputedStyle {
     pub line_clamp: LineClampComputedValue,
 
     // ── Background Image / Position / Repeat / Size / Attachment ──
-    /// background-image 属性。
-    pub background_image: BackgroundImageComputedValue,
+    /// background-image 属性（支持多图层，CSS 规范渲染顺序为逆序）。
+    pub background_image: Vec<BackgroundImageComputedValue>,
     /// background-position 属性。
     pub background_position: BackgroundPositionComputedValue,
     /// background-repeat 属性。
