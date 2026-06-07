@@ -227,6 +227,149 @@ pub fn clip_glyphs(glyphs: &mut [zero_render_foundation::primitive::GlyphPrimiti
     }
 }
 
+/// 对快照之后新增的所有图元应用多边形裁剪（用于 clip-path: circle/ellipse/polygon）。
+///
+/// 使用凸多边形的扫描线裁剪：将每个填充矩形与多边形求交，
+/// 结果为多个子矩形。简化处理：使用包围盒裁剪 + 丢弃完全在多边形外的图元。
+pub fn clip_all_primitives_to_polygon(
+    primitives: &mut RenderPrimitives,
+    from: &PrimitiveCounts,
+    polygon: &[(f32, f32)],
+) {
+    if polygon.len() < 3 {
+        return;
+    }
+
+    // 计算多边形包围盒
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    for &(x, y) in polygon {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    let bbox = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+
+    // 第一步：用包围盒裁剪所有图元
+    clip_all_primitives_to_rect(primitives, from, &bbox);
+
+    // 第二步：对 fills 进行精确多边形裁剪
+    // 将每个 fill 矩形与多边形求交，生成多个子矩形
+    let mut new_fills = Vec::new();
+    let fills_to_clip: Vec<_> = primitives.fills.drain(from.fills..).collect();
+    for fill in fills_to_clip {
+        let clipped = clip_fill_to_polygon(&fill, polygon);
+        new_fills.extend(clipped);
+    }
+    primitives.fills.extend(new_fills);
+
+    // 对 glyphs 进行精确裁剪（丢弃中心不在多边形内的字形）
+    for g in primitives.glyphs.iter_mut().skip(from.glyphs) {
+        if g.glyph_id == 0 {
+            continue;
+        }
+        let cx = g.x + g.font_size / 2.0;
+        let cy = g.y + g.font_size / 2.0;
+        if !point_in_polygon(cx, cy, polygon) {
+            g.glyph_id = 0;
+            g.font_size = 0.0;
+        }
+    }
+}
+
+/// 将填充矩形裁剪到多边形内部。
+///
+/// 使用扫描线方法：对矩形的每行像素，计算与多边形边的交点，
+/// 生成裁剪后的子矩形片段。
+fn clip_fill_to_polygon(
+    fill: &zero_render_foundation::primitive::FillPrimitive,
+    polygon: &[(f32, f32)],
+) -> Vec<zero_render_foundation::primitive::FillPrimitive> {
+    use zero_render_foundation::primitive::FillPrimitive;
+
+    let r = &fill.rect;
+    if r.size.width <= 0.0 || r.size.height <= 0.0 {
+        return vec![];
+    }
+
+    // 简化：使用逐行扫描线（步长为像素高度）
+    // 对每一行，找到多边形在该行的覆盖区间
+    let step = 1.0_f32.max(r.size.height / 20.0); // 最少 20 步
+    let mut result = Vec::new();
+    let mut y = r.top();
+    while y < r.bottom() {
+        let y_end = (y + step).min(r.bottom());
+        // 找到该行与多边形的所有交点
+        let mut intersections = Vec::new();
+        let n = polygon.len();
+        for i in 0..n {
+            let (x1, y1) = polygon[i];
+            let (x2, y2) = polygon[(i + 1) % n];
+            if (y1 < y && y2 >= y) || (y2 < y && y1 >= y) {
+                let t = (y - y1) / (y2 - y1);
+                let ix = x1 + t * (x2 - x1);
+                intersections.push(ix);
+            }
+        }
+        intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        // 成对取交点生成区间
+        let mut idx = 0;
+        while idx + 1 < intersections.len() {
+            let left = intersections[idx].max(r.left());
+            let right = intersections[idx + 1].min(r.right());
+            if right > left {
+                result.push(FillPrimitive {
+                    rect: Rect::new(left, y, right - left, y_end - y),
+                    color: fill.color,
+                });
+            }
+            idx += 2;
+        }
+        y = y_end;
+    }
+    result
+}
+
+/// 判断点是否在多边形内部（射线法）。
+fn point_in_polygon(px: f32, py: f32, polygon: &[(f32, f32)]) -> bool {
+    let n = polygon.len();
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = polygon[i];
+        let (xj, yj) = polygon[j];
+        if ((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// 将圆形近似为多边形（用于 clip-path: circle()）。
+pub fn circle_to_polygon(cx: f32, cy: f32, r: f32, segments: usize) -> Vec<(f32, f32)> {
+    let mut points = Vec::with_capacity(segments);
+    for i in 0..segments {
+        let angle = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
+        points.push((cx + r * angle.cos(), cy + r * angle.sin()));
+    }
+    points
+}
+
+/// 将椭圆近似为多边形（用于 clip-path: ellipse()）。
+pub fn ellipse_to_polygon(cx: f32, cy: f32, rx: f32, ry: f32, segments: usize) -> Vec<(f32, f32)> {
+    let mut points = Vec::with_capacity(segments);
+    for i in 0..segments {
+        let angle = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
+        points.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
+    }
+    points
+}
+
 /// 渲染图元数量快照（用于 opacity 应用范围判断）。
 pub struct PrimitiveCounts {
     /// 填充图元数量。
