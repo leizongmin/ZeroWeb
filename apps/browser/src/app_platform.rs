@@ -125,7 +125,7 @@ impl BrowserApp {
         }
     }
 
-    /// GPU 渲染一帧
+    /// GPU 渲染一帧（使用全量 13 种图元管线）
     pub fn render_frame(&mut self, width: u32, height: u32, present: bool) {
         if !present || !self.window_focused {
             return;
@@ -137,13 +137,23 @@ impl BrowserApp {
                 return;
             }
             let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
-            renderer.render_scene_ext(
-                &fills,
+
+            // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
+            let webview_extras = self.get_webview_extra_primitives();
+
+            // 合并 chrome fills + webview 图元
+            let mut scene_primitives = webview_extras;
+            scene_primitives.fills = [fills, scene_primitives.fills].concat();
+
+            // 使用全量 GPU 渲染管线
+            renderer.render_full_scene_gpu(
+                &scene_primitives,
                 &self.font_loader,
                 &mut self.glyph_cache,
-                &glyphs,
+                None, // image_cache: 暂不使用
                 &overlay_fills,
-                &overlay_glyphs,
+                &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
+                1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
             );
         }
         self.gpu_renderer = gpu;
