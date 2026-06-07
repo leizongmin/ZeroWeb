@@ -10,8 +10,14 @@ use crate::font::cache::GlyphCache;
 use crate::font::loader::FontLoader;
 use crate::geometry::Rect;
 use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
-use crate::gpu::pipeline::{create_atlas_bind_group_layout, create_render_pipeline, create_uniform_bind_group_layout};
-use crate::primitive::FillPrimitive;
+use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh};
+use crate::gpu::pipeline::{
+    FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX, create_atlas_bind_group_layout,
+    create_blur_pipeline, create_gradient_pipeline, create_image_pipeline, create_render_pipeline,
+    create_rounded_rect_pipeline, create_texture_bind_group_layout, create_uniform_bind_group_layout,
+};
+use crate::image_cache::ImageCache;
+use crate::primitive::{FillPrimitive, GradientKind, RenderPrimitives};
 
 /// GPU 渲染器创建互斥锁 — 防止并发 wgpu 实例初始化导致 SIGSEGV
 ///
@@ -44,13 +50,29 @@ pub struct GpuRenderer {
     device: Arc<wgpu::Device>,
     /// wgpu 队列
     queue: Arc<wgpu::Queue>,
-    /// 渲染管线
+    /// Fill+Glyph 渲染管线
     pipeline: wgpu::RenderPipeline,
+    /// RoundedRect 渲染管线
+    rounded_rect_pipeline: wgpu::RenderPipeline,
+    /// Gradient 渲染管线
+    gradient_pipeline: wgpu::RenderPipeline,
+    /// Image 渲染管线
+    image_pipeline: wgpu::RenderPipeline,
+    /// Blur 后处理管线
+    #[allow(dead_code)]
+    blur_pipeline: wgpu::RenderPipeline,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
     #[allow(dead_code)]
     atlas_bgl: wgpu::BindGroupLayout,
+    /// Gradient 纹理绑定组布局
+    gradient_bgl: wgpu::BindGroupLayout,
+    /// Image 纹理绑定组布局
+    image_bgl: wgpu::BindGroupLayout,
+    /// Blur 源纹理绑定组布局
+    #[allow(dead_code)]
+    blur_bgl: wgpu::BindGroupLayout,
     /// Glyph Atlas（CPU 侧放置追踪）
     atlas: GlyphAtlas,
     /// Atlas 纹理
@@ -164,7 +186,16 @@ impl GpuRenderer {
     ) -> Result<Self, String> {
         let uniform_bgl = create_uniform_bind_group_layout(&device);
         let atlas_bgl = create_atlas_bind_group_layout(&device);
+        let gradient_bgl = create_texture_bind_group_layout(&device, "Gradient BGL");
+        let image_bgl = create_texture_bind_group_layout(&device, "Image BGL");
+        let blur_bgl = create_texture_bind_group_layout(&device, "Blur BGL");
+
         let pipeline = create_render_pipeline(&device, format, &uniform_bgl, &atlas_bgl);
+        let rounded_rect_pipeline = create_rounded_rect_pipeline(&device, format, &uniform_bgl);
+        let gradient_pipeline = create_gradient_pipeline(&device, format, &uniform_bgl, &gradient_bgl);
+        let image_pipeline = create_image_pipeline(&device, format, &uniform_bgl, &image_bgl);
+        let blur_pipeline = create_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
+
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
             create_atlas_resources(&device, &atlas_bgl);
@@ -180,8 +211,15 @@ impl GpuRenderer {
             device,
             queue,
             pipeline,
+            rounded_rect_pipeline,
+            gradient_pipeline,
+            image_pipeline,
+            blur_pipeline,
             uniform_bgl,
             atlas_bgl,
+            gradient_bgl,
+            image_bgl,
+            blur_bgl,
             atlas,
             atlas_texture,
             atlas_bind_group,
@@ -581,6 +619,622 @@ impl GpuRenderer {
         self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
     }
 
+    /// 渲染全部 13 种图元类型到当前表面（GPU 全量渲染）
+    ///
+    /// 遵循 CSS painting order：shadows → backgrounds → borders → content → overlay → post-processing
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_full_scene_gpu(
+        &mut self,
+        primitives: &RenderPrimitives,
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        image_cache: Option<&mut ImageCache>,
+        overlay_fills: &[FillPrimitive],
+        overlay_glyphs: &[GlyphDraw],
+        scale_factor: f32,
+    ) {
+        let scale = normalize_scale_factor(scale_factor);
+        let (width, height) = self.surface_size;
+
+        if self.present_suspended {
+            return;
+        }
+
+        // ── Phase 1: 收集所有顶点数据（不持有 GPU 资源借用） ──
+
+        // 1. Shadows
+        let shadow_verts = self.collect_shadow_vertices(&primitives.shadows, scale);
+        // 2. Fills
+        let fill_verts = self.collect_fill_vertices(&primitives.fills, scale);
+        // 3. RoundedRects
+        let rr_verts = self.collect_rounded_rect_vertices(&primitives.rounded_rects, scale);
+        // 4. Gradients（预创建纹理和绑定组）
+        let grad_resources = self.prepare_gradient_resources(&primitives.gradients, scale);
+        // 5. Images（预创建纹理和绑定组）
+        let img_resources = self.prepare_image_resources(&primitives.images, image_cache, scale);
+        // 6-8. Strokes + PathFills + PathStrokes
+        let stroke_verts = self.collect_stroke_vertices(&primitives.strokes, scale);
+        let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
+        let path_stroke_verts = self.collect_path_stroke_vertices(&primitives.path_strokes, scale);
+        // 9. Glyphs
+        let glyph_verts =
+            self.collect_glyph_vertices_from_primitives(&primitives.glyphs, font_loader, glyph_cache, scale);
+        // 10. Overlay fills
+        let overlay_fill_verts = self.collect_fill_vertices(overlay_fills, scale);
+        // 11. Overlay glyphs
+        let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
+
+        // ── Phase 2: 提交 GPU 命令 ──
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+
+        // Uniform
+        let uniform_data: [f32; 4] = [width as f32, height as f32, 0.0, 0.0];
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&uniform_data),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Uniform BG"),
+            layout: &self.uniform_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // 获取渲染目标
+        let view = match self.get_render_target_view(&device, &queue) {
+            Some(v) => v,
+            None => return,
+        };
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Full Scene Encoder"),
+        });
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Full Scene Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // 1. Shadows
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &shadow_verts, "Shadow");
+            // 2. Fills
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &fill_verts, "Fill");
+            // 3. RoundedRects
+            self.draw_rounded_rect_pass(&mut pass, &uniform_bg, &device, &rr_verts);
+            // 4. Gradients
+            self.draw_gradient_pass(&mut pass, &uniform_bg, &device, &grad_resources);
+            // 5. Images
+            self.draw_image_pass(&mut pass, &uniform_bg, &device, &img_resources);
+            // 6-8. Strokes + PathFills + PathStrokes
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &stroke_verts, "Stroke");
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &path_fill_verts, "PathFill");
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &path_stroke_verts, "PathStroke");
+            // 9. Glyphs
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &glyph_verts, "Glyph");
+            // 10. Overlay fills
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
+            // 11. Overlay glyphs
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// 内部：在 render pass 中使用 fill pipeline 绘制顶点
+    fn draw_fill_pass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        uniform_bg: &wgpu::BindGroup,
+        device: &wgpu::Device,
+        vertices: &[f32],
+        label: &str,
+    ) {
+        if vertices.is_empty() {
+            return;
+        }
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, uniform_bg, &[]);
+        pass.set_bind_group(1, &self.atlas_bind_group, &[]);
+        pass.set_vertex_buffer(0, vb.slice(..));
+        pass.draw(0..(vertices.len() as u32 / FILL_FLOATS_PER_VERTEX as u32), 0..1);
+    }
+
+    /// 内部：在 render pass 中绘制圆角矩形
+    fn draw_rounded_rect_pass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        uniform_bg: &wgpu::BindGroup,
+        device: &wgpu::Device,
+        vertices: &[f32],
+    ) {
+        if vertices.is_empty() {
+            return;
+        }
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("RoundedRect VB"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        pass.set_pipeline(&self.rounded_rect_pipeline);
+        pass.set_bind_group(0, uniform_bg, &[]);
+        pass.set_vertex_buffer(0, vb.slice(..));
+        pass.draw(0..(vertices.len() as u32 / ROUNDED_RECT_FLOATS_PER_VERTEX as u32), 0..1);
+    }
+
+    /// 内部：在 render pass 中绘制渐变
+    fn draw_gradient_pass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        uniform_bg: &wgpu::BindGroup,
+        device: &wgpu::Device,
+        resources: &[(wgpu::BindGroup, Vec<f32>)],
+    ) {
+        pass.set_pipeline(&self.gradient_pipeline);
+        pass.set_bind_group(0, uniform_bg, &[]);
+        for (bg, verts) in resources {
+            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Gradient VB"),
+                contents: bytemuck::cast_slice(verts),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            pass.set_bind_group(1, bg, &[]);
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.draw(0..6, 0..1);
+        }
+    }
+
+    /// 内部：在 render pass 中绘制图片
+    fn draw_image_pass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        uniform_bg: &wgpu::BindGroup,
+        device: &wgpu::Device,
+        resources: &[(wgpu::BindGroup, Vec<f32>)],
+    ) {
+        pass.set_pipeline(&self.image_pipeline);
+        pass.set_bind_group(0, uniform_bg, &[]);
+        for (bg, verts) in resources {
+            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Image VB"),
+                contents: bytemuck::cast_slice(verts),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            pass.set_bind_group(1, bg, &[]);
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.draw(0..6, 0..1);
+        }
+    }
+
+    // ── 顶点收集方法（纯数据操作，无 GPU 借用冲突） ──
+
+    fn collect_shadow_vertices(&self, shadows: &[crate::primitive::ShadowPrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for shadow in shadows {
+            let sr = &shadow.rect;
+            let spread = shadow.spread_radius * scale;
+            let ox = shadow.offset_x * scale;
+            let oy = shadow.offset_y * scale;
+            let l = sr.left() * scale - spread + ox;
+            let t = sr.top() * scale - spread + oy;
+            let r = sr.right() * scale + spread + ox;
+            let b = sr.bottom() * scale + spread + oy;
+            let c = Color::rgba(shadow.color.r, shadow.color.g, shadow.color.b, shadow.color.a);
+            push_fill_quad(&mut verts, l, t, r, b, c);
+        }
+        verts
+    }
+
+    fn collect_fill_vertices(&self, fills: &[FillPrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for fill in fills {
+            let r = &fill.rect;
+            push_fill_quad(
+                &mut verts,
+                r.left() * scale,
+                r.top() * scale,
+                r.right() * scale,
+                r.bottom() * scale,
+                fill.color,
+            );
+        }
+        verts
+    }
+
+    fn collect_rounded_rect_vertices(&self, rects: &[crate::primitive::RoundedRectPrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for rr in rects {
+            let r = &rr.rect;
+            let l = r.left() * scale;
+            let t = r.top() * scale;
+            let right = r.right() * scale;
+            let b = r.bottom() * scale;
+            let (cr, cg, cb) = color_to_f32(rr.color);
+            let tl = rr.top_left_radius * scale;
+            let tr = rr.top_right_radius * scale;
+            let br = rr.bottom_right_radius * scale;
+            let bl = rr.bottom_left_radius * scale;
+            let uv = (-1.0f32, -1.0f32);
+            let make_v =
+                |x: f32, y: f32| -> [f32; 15] { [x, y, uv.0, uv.1, cr, cg, cb, l, t, right, b, tl, tr, br, bl] };
+            let v0 = make_v(l, t);
+            let v1 = make_v(right, t);
+            let v2 = make_v(l, b);
+            let v3 = make_v(right, t);
+            let v4 = make_v(right, b);
+            let v5 = make_v(l, b);
+            for v in [&v0, &v1, &v2, &v3, &v4, &v5] {
+                verts.extend_from_slice(v);
+            }
+        }
+        verts
+    }
+
+    fn prepare_gradient_resources(
+        &self,
+        gradients: &[crate::primitive::GradientPrimitive],
+        scale: f32,
+    ) -> Vec<(wgpu::BindGroup, Vec<f32>)> {
+        let mut resources = Vec::new();
+        for grad in gradients {
+            let tex_data = gradient_stops_to_texture(&grad.stops);
+            let grad_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Gradient Texture"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &grad_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &tex_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256 * 4),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: 256,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let grad_view = grad_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let grad_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("Gradient Sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+            let grad_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Gradient BG"),
+                layout: &self.gradient_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&grad_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&grad_sampler),
+                    },
+                ],
+            });
+
+            let r = &grad.rect;
+            let l = r.left() * scale;
+            let t = r.top() * scale;
+            let right = r.right() * scale;
+            let b = r.bottom() * scale;
+            let (gt, p0, p1, p2, p3) = match &grad.kind {
+                GradientKind::Linear { x0, y0, x1, y1 } => (0.0f32, *x0 * scale, *y0 * scale, *x1 * scale, *y1 * scale),
+                GradientKind::Radial {
+                    cx,
+                    cy,
+                    inner_radius,
+                    outer_radius,
+                } => (
+                    1.0f32,
+                    *cx * scale,
+                    *cy * scale,
+                    *inner_radius * scale,
+                    *outer_radius * scale,
+                ),
+                GradientKind::Conic { cx, cy, start_angle } => (2.0f32, *cx * scale, *cy * scale, *start_angle, 0.0),
+            };
+            let make_gv =
+                |x: f32, y: f32| -> [f32; GRADIENT_FLOATS_PER_VERTEX] { [x, y, x, y, gt, p0, p1, p2, p3, 0.0] };
+            let verts: Vec<f32> = [
+                make_gv(l, t),
+                make_gv(right, t),
+                make_gv(l, b),
+                make_gv(right, t),
+                make_gv(right, b),
+                make_gv(l, b),
+            ]
+            .concat();
+            resources.push((grad_bg, verts));
+        }
+        resources
+    }
+
+    fn prepare_image_resources(
+        &self,
+        images: &[crate::primitive::ImagePrimitive],
+        image_cache: Option<&mut ImageCache>,
+        scale: f32,
+    ) -> Vec<(wgpu::BindGroup, Vec<f32>)> {
+        let ic = match image_cache {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+        let mut resources = Vec::new();
+        for img in images {
+            let image_data = match ic.get(&img.image_key) {
+                Some(d) => d,
+                None => continue,
+            };
+            let (iw, ih) = (image_data.width, image_data.height);
+            if iw == 0 || ih == 0 {
+                continue;
+            }
+
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Image Texture"),
+                size: wgpu::Extent3d {
+                    width: iw,
+                    height: ih,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &image_data.pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(iw * 4),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: iw,
+                    height: ih,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("Image Sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Image BG"),
+                layout: &self.image_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+            let r = &img.rect;
+            let l = r.left() * scale;
+            let t = r.top() * scale;
+            let right = r.right() * scale;
+            let b = r.bottom() * scale;
+            let verts: Vec<f32> = vec![
+                l, t, 0.0, 0.0, 1.0, 1.0, 1.0, right, t, 1.0, 0.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0, right,
+                t, 1.0, 0.0, 1.0, 1.0, 1.0, right, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0,
+            ];
+            resources.push((bg, verts));
+        }
+        resources
+    }
+
+    fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for stroke in strokes {
+            push_stroke_mesh(&mut verts, stroke, scale);
+        }
+        verts
+    }
+
+    fn collect_path_fill_vertices(&self, paths: &[crate::primitive::PathFillPrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for pf in paths {
+            push_path_fill_mesh(&mut verts, pf, scale);
+        }
+        verts
+    }
+
+    fn collect_path_stroke_vertices(&self, paths: &[crate::primitive::PathStrokePrimitive], scale: f32) -> Vec<f32> {
+        let mut verts = Vec::new();
+        for ps in paths {
+            push_path_stroke_mesh(&mut verts, ps, scale);
+        }
+        verts
+    }
+
+    fn collect_glyph_vertices_from_primitives(
+        &mut self,
+        glyphs: &[crate::primitive::GlyphPrimitive],
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        scale: f32,
+    ) -> Vec<f32> {
+        let mut vertices: Vec<f32> = Vec::new();
+        for gp in glyphs {
+            let physical_font_size = gp.font_size * scale;
+            let font_id = gp.font_id.0;
+            let ch = match char::from_u32(gp.glyph_id) {
+                Some(c) if c != '\0' => c,
+                _ => continue,
+            };
+            let (resolved_id, bitmap) = match font_loader.rasterize_glyph_with_fallback(font_id, ch, physical_font_size)
+            {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let cache_key = crate::font::cache::GlyphKey::new(resolved_id, ch as u32, physical_font_size);
+            let cached = match glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let atlas_key = GlyphAtlasKey::new(resolved_id, ch as u32, physical_font_size);
+            let placement = match self.upload_glyph_to_atlas(
+                atlas_key,
+                &cached.data,
+                cached.width as u32,
+                cached.height as u32,
+                cached.x_offset,
+                cached.y_offset,
+                cached.advance,
+            ) {
+                Some(p) => p,
+                None => continue,
+            };
+            let (u0, v0, u1, v1) = placement.uv();
+            let (gx, gy) = glyph_top_left(
+                gp.x * scale,
+                gp.y * scale,
+                placement.x_offset,
+                placement.y_offset,
+                placement.height as u16,
+            );
+            let (gx, gy) = (gx.round(), gy.round());
+            let (gw, gh) = (placement.width as f32, placement.height as f32);
+            let (r, g, b) = color_to_f32(gp.color);
+            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+        }
+        vertices
+    }
+
+    fn collect_overlay_glyphs_data(
+        &mut self,
+        overlay_glyphs: &[GlyphDraw],
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        scale: f32,
+    ) -> Vec<f32> {
+        let mut vertices: Vec<f32> = Vec::new();
+        for gd in overlay_glyphs {
+            let physical_font_size = gd.font_size * scale;
+            let (resolved_id, bitmap) =
+                match font_loader.rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+            let cache_key = crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+            let cached = match glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let atlas_key = GlyphAtlasKey::new(resolved_id, gd.ch as u32, physical_font_size);
+            let placement = match self.upload_glyph_to_atlas(
+                atlas_key,
+                &cached.data,
+                cached.width as u32,
+                cached.height as u32,
+                cached.x_offset,
+                cached.y_offset,
+                cached.advance,
+            ) {
+                Some(p) => p,
+                None => continue,
+            };
+            let (u0, v0, u1, v1) = placement.uv();
+            let (gx, gy) = glyph_top_left(
+                gd.x * scale,
+                gd.baseline_y * scale,
+                placement.x_offset,
+                placement.y_offset,
+                placement.height as u16,
+            );
+            let (gx, gy) = (gx.round(), gy.round());
+            let (gw, gh) = (placement.width as f32, placement.height as f32);
+            let (r, g, b) = color_to_f32(gd.color);
+            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+        }
+        vertices
+    }
+
+    /// 获取渲染目标 view（使用外部提供的 device/queue）
+    #[allow(clippy::too_many_arguments)]
+    fn get_render_target_view(&self, _device: &wgpu::Device, _queue: &wgpu::Queue) -> Option<wgpu::TextureView> {
+        match (&self.surface, &self.headless_texture) {
+            (Some(surface), _) => {
+                let output = surface.get_current_texture().ok()?;
+                Some(output.texture.create_view(&wgpu::TextureViewDescriptor::default()))
+            }
+            (None, Some(tex)) => Some(tex.create_view(&wgpu::TextureViewDescriptor::default())),
+            _ => None,
+        }
+    }
+
     /// 使用顶点数据执行渲染
     fn render_vertices(&mut self, vertices: &[f32], clip_rect: Option<Rect>) {
         if self.present_suspended {
@@ -914,24 +1568,49 @@ fn create_atlas_resources(
     (texture, view, sampler, bind_group)
 }
 
-/// 推入一个填充矩形的 6 个顶点（2 个三角形）
-fn push_fill_quad(vertices: &mut Vec<f32>, left: f32, top: f32, right: f32, bottom: f32, color: Color) {
-    let (r, g, b) = color_to_f32(color);
-    let (u, v) = (-1.0f32, -1.0f32);
+/// 将渐变色标转换为 256×1 RGBA 纹理数据
+fn gradient_stops_to_texture(stops: &[crate::primitive::GradientStop]) -> Vec<u8> {
+    let mut tex = vec![0u8; 256 * 4];
+    if stops.is_empty() {
+        return tex;
+    }
 
-    // 三角形 1: 左上 → 右上 → 左下
-    vertices.extend_from_slice(&[left, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[right, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b]);
-    // 三角形 2: 右上 → 右下 → 左下
-    vertices.extend_from_slice(&[right, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[right, bottom, u, v, r, g, b]);
-    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b]);
-}
-
-/// Color → (f32, f32, f32) 归一化到 [0, 1]
-fn color_to_f32(color: Color) -> (f32, f32, f32) {
-    (color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0)
+    for i in 0..256u32 {
+        let t = i as f32 / 255.0;
+        // 找到 t 所在的两个色标之间
+        let color = if stops.len() == 1 {
+            stops[0].color
+        } else {
+            let mut c = stops[0].color;
+            for j in 0..stops.len() - 1 {
+                if t >= stops[j].offset && t <= stops[j + 1].offset {
+                    let range = stops[j + 1].offset - stops[j].offset;
+                    let local_t = if range > 0.0 {
+                        (t - stops[j].offset) / range
+                    } else {
+                        0.0
+                    };
+                    let local_t = local_t.clamp(0.0, 1.0);
+                    let s0 = stops[j].color;
+                    let s1 = stops[j + 1].color;
+                    c = Color::rgba(
+                        (s0.r as f32 + (s1.r as f32 - s0.r as f32) * local_t) as u8,
+                        (s0.g as f32 + (s1.g as f32 - s0.g as f32) * local_t) as u8,
+                        (s0.b as f32 + (s1.b as f32 - s0.b as f32) * local_t) as u8,
+                        (s0.a as f32 + (s1.a as f32 - s0.a as f32) * local_t) as u8,
+                    );
+                    break;
+                }
+            }
+            c
+        };
+        let idx = i as usize * 4;
+        tex[idx] = color.r;
+        tex[idx + 1] = color.g;
+        tex[idx + 2] = color.b;
+        tex[idx + 3] = color.a;
+    }
+    tex
 }
 
 fn normalize_scale_factor(scale_factor: f32) -> f32 {
