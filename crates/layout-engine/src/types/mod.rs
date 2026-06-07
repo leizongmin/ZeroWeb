@@ -98,6 +98,8 @@ pub struct LayoutBox {
     /// CSS 规范中 clear 属性仅适用于块级元素。
     /// 此标志在构建布局树时根据 computed display 值设置。
     pub is_block_level: bool,
+    /// 是否为 position: relative（后处理步骤需保留 relative 偏移）。
+    pub is_relative: bool,
 }
 
 impl LayoutBox {
@@ -165,6 +167,7 @@ impl Default for LayoutBox {
             scroll_y: 0.0,
             is_flow_root: false,
             is_block_level: false,
+            is_relative: false,
         }
     }
 }

@@ -127,6 +127,24 @@ fn get_border_spacing(style: &ComputedStyle) -> (f32, f32) {
     (style.border_spacing.horizontal, style.border_spacing.vertical)
 }
 
+/// 从 ComputedStyle 中读取 position: relative 的 inset 偏移量。
+///
+/// `horizontal` 为 true 时读取 left，否则读取 top。
+fn resolve_length_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, horizontal: bool) -> f32 {
+    use zero_css_parser::values::LengthValue;
+    let Some(node_id) = box_node.node_id else {
+        return 0.0;
+    };
+    let Some(style) = styles.get(&node_id) else {
+        return 0.0;
+    };
+    let value = if horizontal { &style.left } else { &style.top };
+    match value {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    }
+}
+
 /// 对单个 table 容器执行布局。
 ///
 /// 算法步骤：
@@ -153,7 +171,7 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     let col_widths = compute_column_widths(table_box, &grid);
 
     // 3. 定位单元格
-    position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y);
+    position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
 }
 
 /// 从 table 容器的子元素中构建 grid 结构。
@@ -345,7 +363,14 @@ fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a Layo
 }
 
 /// 根据 grid 结构和列宽定位每个单元格。
-fn position_cells(table_box: &mut LayoutBox, grid: &TableGrid, col_widths: &[f32], spacing_x: f32, spacing_y: f32) {
+fn position_cells(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    col_widths: &[f32],
+    spacing_x: f32,
+    spacing_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     let mut row_y = 0.0f32;
 
     for row in &grid.rows {
@@ -375,8 +400,16 @@ fn position_cells(table_box: &mut LayoutBox, grid: &TableGrid, col_widths: &[f32
         }
 
         // 设置行盒的位置和尺寸
-        row_box.x = table_box.content_x;
-        row_box.y = table_box.content_y + row_y;
+        // 对于 position: relative 的行，保留 taffy 计算的 inset 偏移
+        let (rel_dx, rel_dy) = if row_box.is_relative {
+            let dx = resolve_length_inset(row_box, styles, true);
+            let dy = resolve_length_inset(row_box, styles, false);
+            (dx, dy)
+        } else {
+            (0.0, 0.0)
+        };
+        row_box.x = table_box.content_x + rel_dx;
+        row_box.y = table_box.content_y + row_y + rel_dy;
         row_box.width = table_box.content_width;
         row_box.height = row_height;
 
