@@ -493,8 +493,7 @@ mod tests {
     // ═══════════════════════════════════════════════════════════════════
 
     #[test]
-    /// inherit 关键字对非继承属性：由于 inherit_property 不覆盖不可继承属性，
-    /// inherit 对 margin-top 等非继承属性回退到初始值
+    /// inherit 关键字对所有属性（包括非继承属性）都从父元素复制计算值
     fn test_explicit_inherit_on_non_inherited_property() {
         let mut parent = ComputedStyle::default();
         parent.margin_top = LengthValue::Px(42.0);
@@ -503,8 +502,8 @@ mod tests {
         cascaded.insert("margin-top".to_string(), "inherit".to_string());
 
         let style = compute_inherited_style(Some(&parent), &cascaded);
-        // margin-top 不在 inherit_property 的匹配列表中，所以保持初始值
-        assert_eq!(style.margin_top, LengthValue::Px(0.0));
+        // margin-top 虽非继承属性，但 inherit 关键字显式要求从父元素复制
+        assert_eq!(style.margin_top, LengthValue::Px(42.0));
     }
 
     #[test]

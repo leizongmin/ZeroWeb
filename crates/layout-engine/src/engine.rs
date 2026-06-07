@@ -279,6 +279,11 @@ impl LayoutEngine {
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
         let is_flow_root = computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot));
+        // CSS 2.1 §9.2.2: clear 属性仅适用于块级元素。
+        // 块级元素 = display 为 block, list-item, table 的元素，
+        // 以及 flex/grid 容器。table 内部元素（row-group, row, cell 等）
+        // 不是块级元素，clear 不应生效。
+        // 浮动的 inline/inline-block 元素自动变为块级。
         let is_block_level = computed.is_some_and(|s| {
             matches!(
                 s.display,
@@ -291,11 +296,6 @@ impl LayoutEngine {
                     | DisplayValue::FlowRoot
                     | DisplayValue::Table
                     | DisplayValue::InlineTable
-                    | DisplayValue::TableRow
-                    | DisplayValue::TableCell
-                    | DisplayValue::TableRowGroup
-                    | DisplayValue::TableHeaderGroup
-                    | DisplayValue::TableFooterGroup
                     | DisplayValue::TableCaption
             ) || !matches!(s.float, FloatValue::None)
                 && matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock)
