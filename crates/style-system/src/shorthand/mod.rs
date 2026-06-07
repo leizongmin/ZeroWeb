@@ -401,8 +401,20 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
 ///
 /// 将 `border` 展开为 12 个长属性（4 边 × width/style/color）。
 fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
-    let parsed = parse_border_shorthand(value);
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // CSS-wide keywords: 展开为所有子属性
+    if value == "inherit" || value == "initial" || value == "unset" {
+        let mut result = Vec::with_capacity(12);
+        for side in &["top", "right", "bottom", "left"] {
+            result.push(mk(&format!("border-{side}-width"), value));
+            result.push(mk(&format!("border-{side}-style"), value));
+            result.push(mk(&format!("border-{side}-color"), value));
+        }
+        return result;
+    }
+
+    let parsed = parse_border_shorthand(value);
 
     let mut result = Vec::with_capacity(12);
     for side in &["top", "right", "bottom", "left"] {
@@ -422,8 +434,14 @@ fn expand_border_side(
     important: bool,
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
-    let parsed = parse_border_shorthand(value);
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // CSS-wide keywords: 展开为所有子属性
+    if value == "inherit" || value == "initial" || value == "unset" {
+        return vec![mk(width_prop, value), mk(style_prop, value), mk(color_prop, value)];
+    }
+
+    let parsed = parse_border_shorthand(value);
     vec![
         mk(width_prop, &parsed.width),
         mk(style_prop, &parsed.style),

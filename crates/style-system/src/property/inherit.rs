@@ -135,6 +135,119 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.border_spacing = parent.border_spacing.clone();
             true
         }
+        // ── 非继承属性（CSS `inherit` 关键字显式要求从父元素复制） ──
+        "background-color" => {
+            child.background_color = parent.background_color.clone();
+            true
+        }
+        "background-image" => {
+            child.background_image = parent.background_image.clone();
+            true
+        }
+        "background-position" => {
+            child.background_position = parent.background_position.clone();
+            true
+        }
+        "background-repeat" => {
+            child.background_repeat = parent.background_repeat.clone();
+            true
+        }
+        "background-size" => {
+            child.background_size = parent.background_size.clone();
+            true
+        }
+        "background-attachment" => {
+            child.background_attachment = parent.background_attachment.clone();
+            true
+        }
+        "background-clip" => {
+            child.background_clip = parent.background_clip.clone();
+            true
+        }
+        "background-origin" => {
+            child.background_origin = parent.background_origin.clone();
+            true
+        }
+        "border-top-width" => {
+            child.border_top_width = parent.border_top_width.clone();
+            true
+        }
+        "border-right-width" => {
+            child.border_right_width = parent.border_right_width.clone();
+            true
+        }
+        "border-bottom-width" => {
+            child.border_bottom_width = parent.border_bottom_width.clone();
+            true
+        }
+        "border-left-width" => {
+            child.border_left_width = parent.border_left_width.clone();
+            true
+        }
+        "border-top-style" => {
+            child.border_top_style = parent.border_top_style.clone();
+            true
+        }
+        "border-right-style" => {
+            child.border_right_style = parent.border_right_style.clone();
+            true
+        }
+        "border-bottom-style" => {
+            child.border_bottom_style = parent.border_bottom_style.clone();
+            true
+        }
+        "border-left-style" => {
+            child.border_left_style = parent.border_left_style.clone();
+            true
+        }
+        "border-top-color" => {
+            child.border_top_color = parent.border_top_color.clone();
+            true
+        }
+        "border-right-color" => {
+            child.border_right_color = parent.border_right_color.clone();
+            true
+        }
+        "border-bottom-color" => {
+            child.border_bottom_color = parent.border_bottom_color.clone();
+            true
+        }
+        "border-left-color" => {
+            child.border_left_color = parent.border_left_color.clone();
+            true
+        }
+        "margin-top" => {
+            child.margin_top = parent.margin_top.clone();
+            true
+        }
+        "margin-right" => {
+            child.margin_right = parent.margin_right.clone();
+            true
+        }
+        "margin-bottom" => {
+            child.margin_bottom = parent.margin_bottom.clone();
+            true
+        }
+        "margin-left" => {
+            child.margin_left = parent.margin_left.clone();
+            true
+        }
+        "padding-top" => {
+            child.padding_top = parent.padding_top.clone();
+            true
+        }
+        "padding-right" => {
+            child.padding_right = parent.padding_right.clone();
+            true
+        }
+        "padding-bottom" => {
+            child.padding_bottom = parent.padding_bottom.clone();
+            true
+        }
+        "padding-left" => {
+            child.padding_left = parent.padding_left.clone();
+            true
+        }
         _ => false,
     }
 }

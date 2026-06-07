@@ -37,6 +37,12 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 continue;
             }
 
+            // 跳过参考文件：以 -ref.html/-ref.xht 结尾的文件是参考页面，不应作为测试用例运行
+            let file_stem = relative.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if file_stem.ends_with("-ref") || file_stem.ends_with("-reference") || file_stem.contains("-notref") {
+                continue;
+            }
+
             // 读取测试 HTML
             let test_html = match std::fs::read_to_string(&test_path) {
                 Ok(html) => html,
