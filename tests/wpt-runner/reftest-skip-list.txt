@@ -69,6 +69,7 @@ css/css-tables/abspos-container-change-dynamic-001.html
 css/css-tables/insert-after-col.html
 css/css-tables/toggle-row-display-property-001.html
 css/css-writing-modes/dynamic-offset-rtl-001.html
+css/css-position/position-fixed-scroll-nested-fixed.html
 
 # ── 依赖外部资源（图片、字体等） ──
 # 暂不跳过，在导入时按需处理
