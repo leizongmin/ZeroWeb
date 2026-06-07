@@ -24,7 +24,9 @@ use zero_style_system::{
 };
 
 use super::color::color_value_to_render;
-use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, clip_fills, clip_glyphs};
+use super::helpers::{
+    PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, clip_fills, clip_glyphs, ellipse_to_polygon,
+};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -299,22 +301,101 @@ impl Painter {
         // clip-path: inset() — 实际裁剪（对元素及其所有子元素的图元应用矩形裁剪）
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
-            && let ClipPathComputedValue::Inset {
-                top,
-                right,
-                bottom,
-                left,
-                ..
-            } = &style.clip_path
         {
-            let w = box_node.width;
-            let h = box_node.height;
-            let t = super::helpers::length_to_f32(top);
-            let r = super::helpers::length_to_f32(right);
-            let b = super::helpers::length_to_f32(bottom);
-            let l = super::helpers::length_to_f32(left);
-            let clip_rect = Rect::new(abs_x + l, abs_y + t, w - l - r, h - t - b);
-            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);
+            match &style.clip_path {
+                ClipPathComputedValue::Inset {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                    ..
+                } => {
+                    let w = box_node.width;
+                    let h = box_node.height;
+                    let t = super::helpers::length_to_f32(top);
+                    let r = super::helpers::length_to_f32(right);
+                    let b = super::helpers::length_to_f32(bottom);
+                    let l = super::helpers::length_to_f32(left);
+                    let clip_rect = Rect::new(abs_x + l, abs_y + t, w - l - r, h - t - b);
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);
+                }
+                ClipPathComputedValue::Circle { radius, position } => {
+                    let w = box_node.width;
+                    let h = box_node.height;
+                    let r = match radius {
+                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
+                        zero_style_system::ClipPathRadius::ClosestSide => {
+                            let cx = position
+                                .as_ref()
+                                .map(|(x, _)| super::helpers::length_to_f32(x))
+                                .unwrap_or(w / 2.0);
+                            let cy = position
+                                .as_ref()
+                                .map(|(_, y)| super::helpers::length_to_f32(y))
+                                .unwrap_or(h / 2.0);
+                            cx.min(w - cx).min(cy.min(h - cy))
+                        }
+                        zero_style_system::ClipPathRadius::FarthestSide => {
+                            let cx = position
+                                .as_ref()
+                                .map(|(x, _)| super::helpers::length_to_f32(x))
+                                .unwrap_or(w / 2.0);
+                            let cy = position
+                                .as_ref()
+                                .map(|(_, y)| super::helpers::length_to_f32(y))
+                                .unwrap_or(h / 2.0);
+                            cx.max(w - cx).max(cy.max(h - cy))
+                        }
+                    };
+                    let cx = position
+                        .as_ref()
+                        .map(|(x, _)| super::helpers::length_to_f32(x))
+                        .unwrap_or(w / 2.0);
+                    let cy = position
+                        .as_ref()
+                        .map(|(_, y)| super::helpers::length_to_f32(y))
+                        .unwrap_or(h / 2.0);
+                    let polygon = circle_to_polygon(abs_x + cx, abs_y + cy, r, 24);
+                    super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
+                }
+                ClipPathComputedValue::Ellipse { rx, ry, position } => {
+                    let w = box_node.width;
+                    let h = box_node.height;
+                    let rx_v = match rx {
+                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
+                        _ => w / 2.0,
+                    };
+                    let ry_v = match ry {
+                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
+                        _ => h / 2.0,
+                    };
+                    let cx = position
+                        .as_ref()
+                        .map(|(x, _)| super::helpers::length_to_f32(x))
+                        .unwrap_or(w / 2.0);
+                    let cy = position
+                        .as_ref()
+                        .map(|(_, y)| super::helpers::length_to_f32(y))
+                        .unwrap_or(h / 2.0);
+                    let polygon = ellipse_to_polygon(abs_x + cx, abs_y + cy, rx_v, ry_v, 24);
+                    super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
+                }
+                ClipPathComputedValue::Polygon { points, .. } => {
+                    let polygon: Vec<(f32, f32)> = points
+                        .iter()
+                        .map(|(x, y)| {
+                            (
+                                abs_x + super::helpers::length_to_f32(x),
+                                abs_y + super::helpers::length_to_f32(y),
+                            )
+                        })
+                        .collect();
+                    if polygon.len() >= 3 {
+                        super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
+                    }
+                }
+                _ => {}
+            }
         }
 
         // CSS filter — 对元素及其子元素产生的图元应用滤镜效果
