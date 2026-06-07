@@ -76,6 +76,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                     ref_html,
                     is_match: reference.is_match(),
                     category: ReftestCategory::from_path(&relative_str),
+                    base_dir: test_path.parent().map(|p| p.to_path_buf()),
                 });
             }
         }
@@ -104,6 +105,8 @@ pub struct FileReftestCase {
     pub is_match: bool,
     /// 分类。
     pub category: ReftestCategory,
+    /// 测试文件所在目录（用于解析相对图片路径）。
+    pub base_dir: Option<PathBuf>,
 }
 
 impl FileReftestCase {

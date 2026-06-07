@@ -365,7 +365,7 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
 
 /// `reftest-upstream` 子命令 — 运行从 wpt-data/ 加载的真实上游 WPT reftest。
 fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
-    use reftest::{ReftestResult, run_reftest, run_reftest_gpu};
+    use reftest::{ReftestResult, run_reftest_gpu_with_base, run_reftest_with_base};
 
     let wpt_data_dir = match &options.wpt_data {
         Some(dir) => std::path::PathBuf::from(dir),
@@ -411,11 +411,12 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
     for case in &filtered {
         let reftest_case = case.to_reftest_case();
         let config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
+        let base_dir = case.base_dir.as_deref();
 
         let result = if options.use_gpu {
-            run_reftest_gpu(&reftest_case, &config)
+            run_reftest_gpu_with_base(&reftest_case, &config, base_dir)
         } else {
-            run_reftest(&reftest_case, &config)
+            run_reftest_with_base(&reftest_case, &config, base_dir)
         };
 
         let status_char = if result.passed { '✓' } else { '✗' };
