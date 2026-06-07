@@ -224,20 +224,22 @@ fn test_paint_linear_gradient_to_bottom() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -267,20 +269,22 @@ fn test_paint_linear_gradient_to_right() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToRight,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToRight,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -308,20 +312,22 @@ fn test_paint_linear_gradient_angle() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::Angle(90.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::Angle(90.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -344,24 +350,26 @@ fn test_paint_linear_gradient_color_stops() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 255, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 255, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -383,20 +391,22 @@ fn test_paint_linear_gradient_with_position() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: Some(LengthValue::Percentage(25.0)),
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: Some(LengthValue::Percentage(25.0)),
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -417,23 +427,25 @@ fn test_paint_radial_gradient_basic() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Radial(RadialGradient {
-        shape: RadialShape::Circle,
-        size: RadialSize::FarthestCorner,
-        position_x: LengthValue::Px(100.0),
-        position_y: LengthValue::Px(100.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 255, 255, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 0, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
+        RadialGradient {
+            shape: RadialShape::Circle,
+            size: RadialSize::FarthestCorner,
+            position_x: LengthValue::Px(100.0),
+            position_y: LengthValue::Px(100.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 255, 255, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 0, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -470,23 +482,25 @@ fn test_paint_radial_gradient_closest_side() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Radial(RadialGradient {
-        shape: RadialShape::Circle,
-        size: RadialSize::ClosestSide,
-        position_x: LengthValue::Px(100.0),
-        position_y: LengthValue::Px(100.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
+        RadialGradient {
+            shape: RadialShape::Circle,
+            size: RadialSize::ClosestSide,
+            position_x: LengthValue::Px(100.0),
+            position_y: LengthValue::Px(100.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -516,23 +530,25 @@ fn test_paint_radial_gradient_custom_position() {
     // cx = rect.left() + 50 = 10 + 50 = 60
     // length_to_f32(Px(75)) / 100.0 * h = 75/100*100 = 75
     // cy = rect.top() + 75 = 20 + 75 = 95
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Radial(RadialGradient {
-        shape: RadialShape::Circle,
-        size: RadialSize::FarthestCorner,
-        position_x: LengthValue::Px(25.0),
-        position_y: LengthValue::Px(75.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
+        RadialGradient {
+            shape: RadialShape::Circle,
+            size: RadialSize::FarthestCorner,
+            position_x: LengthValue::Px(25.0),
+            position_y: LengthValue::Px(75.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -555,22 +571,24 @@ fn test_paint_conic_gradient_no_primitive() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Conic(ConicGradient {
-        from_angle: 0.0,
-        position_x: LengthValue::Percentage(50.0),
-        position_y: LengthValue::Percentage(50.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Conic(
+        ConicGradient {
+            from_angle: 0.0,
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -593,20 +611,22 @@ fn test_paint_gradient_with_background_color() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -627,7 +647,7 @@ fn test_paint_gradient_none_no_output() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::None;
+    style.background_image = vec![BackgroundImageComputedValue::None];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -649,20 +669,22 @@ fn test_paint_linear_gradient_to_top_left() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToTopLeft,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToTopLeft,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -690,20 +712,22 @@ fn test_paint_linear_gradient_to_bottom_right() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottomRight,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottomRight,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -731,23 +755,25 @@ fn test_paint_radial_gradient_length_size() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Radial(RadialGradient {
-        shape: RadialShape::Circle,
-        size: RadialSize::Length(LengthValue::Px(50.0)),
-        position_x: LengthValue::Percentage(50.0),
-        position_y: LengthValue::Percentage(50.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
+        RadialGradient {
+            shape: RadialShape::Circle,
+            size: RadialSize::Length(LengthValue::Px(50.0)),
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -769,14 +795,16 @@ fn test_paint_linear_gradient_single_stop() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![GradientColorStop {
-            color: ColorValue::Rgba(255, 0, 0, 255),
-            position: None,
-        }],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![GradientColorStop {
+                color: ColorValue::Rgba(255, 0, 0, 255),
+                position: None,
+            }],
+            repeating: false,
+        },
+    ))];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 

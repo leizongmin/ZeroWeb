@@ -1335,20 +1335,22 @@ fn test_gradient_with_position_and_size() {
     let (mut painter, nid, layout, _) = setup_bg_test();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToRight,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToRight,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.background_size = BackgroundSizeComputedValue::Percent(50.0);
     style.background_position = BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Left),

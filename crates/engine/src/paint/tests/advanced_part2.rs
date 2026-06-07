@@ -175,20 +175,22 @@ fn test_paint_opacity_affects_gradient() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::ToBottom,
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: None,
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: None,
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.opacity = 0.3;
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
