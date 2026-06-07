@@ -284,6 +284,64 @@ impl StyleSystem {
             });
         }
 
+        // UA 默认样式
+        if let Some(ref tag) = tag_name {
+            match tag.as_str() {
+                // body margin: 8px（浏览器默认值）
+                "body" => {
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "margin".to_string(),
+                        value: "8px".to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+                    });
+                }
+                // h1-h6 默认 margin 和 font-weight/font-size
+                "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "margin".to_string(),
+                        value: match tag.as_str() {
+                            "h1" => "0.67em 0",
+                            "h2" => "0.83em 0",
+                            "h3" => "1em 0",
+                            "h4" => "1.33em 0",
+                            "h5" => "1.67em 0",
+                            "h6" => "2.33em 0",
+                            _ => "1em 0",
+                        }
+                        .to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+                    });
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "font-weight".to_string(),
+                        value: "bold".to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 1, false),
+                    });
+                }
+                // p 默认 margin
+                "p" => {
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "margin".to_string(),
+                        value: "1em 0".to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+                    });
+                }
+                // ul/ol 默认 padding-left 和 margin
+                "ul" | "ol" => {
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "margin".to_string(),
+                        value: "1em 0".to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+                    });
+                    ua_declarations.push(CascadedDeclaration {
+                        property: "padding-left".to_string(),
+                        value: "40px".to_string(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 1, false),
+                    });
+                }
+                _ => {}
+            }
+        }
+
         // 2. 构建 CascadedDeclaration 列表
         let mut declarations = ua_declarations;
         for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
