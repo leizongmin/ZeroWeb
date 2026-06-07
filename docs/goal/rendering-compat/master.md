@@ -15,7 +15,7 @@
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
-| M7 — 渲染器图元覆盖 | 🔧 进行中 | CPU 渲染器：全部 13 种图元 ✅；浏览器消费：全部 13 种图元 ✅；GPU 渲染器：仅 fills + glyphs ❌ |
+| M7 — 渲染器图元覆盖 | 🔧 进行中 | CPU 渲染器：全部 13 种图元 ✅；浏览器消费：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅（render_full_scene_gpu 已实现，单元测试待补充） |
 
 ## 当前状态概览
 
@@ -147,18 +147,18 @@
 | 条目 | 状态 | 说明 |
 |------|------|------|
 | FillPrimitive | ✅ | GPU 填充（原有） |
-| GlyphPrimitive | ✅ | GPU 文字渲染（原有） |
-| RoundedRectPrimitive | ❌ | 需扩展 WGSL shader |
-| GradientPrimitive | ❌ | 需渐变 shader |
-| ShadowPrimitive | ❌ | 需阴影 pass |
-| ImagePrimitive | ❌ | 需纹理上传和采样 |
-| StrokePrimitive | ❌ | 需顶点生成 |
-| PathFillPrimitive | ❌ | 需 GPU 多边形填充 |
-| PathStrokePrimitive | ❌ | 需 GPU 多边形描边 |
-| TransformPrimitive | ❌ | 需顶点坐标变换 |
-| ClipPrimitive | ❌ | 需 scissor/stencil |
-| FilterPrimitive | ❌ | 需 post-processing pass |
-| BlendModePrimitive | ❌ | 需 blend equation |
+| GlyphPrimitive | ✅ | GPU 文字渲染（原有，atlas） |
+| RoundedRectPrimitive | ✅ | GPU 片段着色器（WGSL corner discard） |
+| GradientPrimitive | ✅ | GPU 渐变 shader（线性/径向/锥形 + 1D 渐变纹理） |
+| ShadowPrimitive | ✅ | 半透明填充矩形（简化，不做 GPU blur） |
+| ImagePrimitive | ✅ | GPU 纹理上传 + 采样（RGBA→texture→shader） |
+| StrokePrimitive | ✅ | CPU 侧顶点生成 + GPU fill pipeline（solid/dashed/dotted） |
+| PathFillPrimitive | ✅ | CPU 侧扇形三角化 + GPU fill pipeline |
+| PathStrokePrimitive | ✅ | CPU 侧分解为粗线段 + GPU fill pipeline |
+| TransformPrimitive | ⚠️ | 简化处理（GPU 渲染器暂不做逐图元变换） |
+| ClipPrimitive | ⚠️ | 简化处理（scissor rect 仅支持全局裁剪） |
+| FilterPrimitive | ⚠️ | 简化处理（GPU 渲染器暂不做逐图元后处理） |
+| BlendModePrimitive | ⚠️ | 简化处理（CPU 渲染器也是 stub） |
 
 ### DC-10: 浏览器图元消费
 
@@ -298,7 +298,7 @@
 | 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
 | CPU 渲染器图元覆盖 | 视觉输出 | ✅ 已完成 | M7 |
 | 浏览器图元消费 | 视觉输出 | ✅ 已完成 | M7 |
-| GPU 渲染器图元覆盖 | GPU 视觉输出 | 🔧 进行中 | M7 |
+| GPU 渲染器图元覆盖 | GPU 视觉输出 | ✅ 管线已实现 | M7 |
 
 ---
 
@@ -333,6 +333,7 @@
 | 2026-06-07 | 阴影使用 box-blur 近似 | 三次 box-blur 近似高斯模糊，性能与质量平衡 |
 | 2026-06-07 | 路径填充使用扫描线算法 | 逐行扫描多边形边界，奇偶规则填充 |
 | 2026-06-07 | CPU 后处理：Transform/Clip/Filter/BlendMode 作为后处理步骤 | 像素级后处理，不依赖 GPU；GPU 渲染器需独立实现 |
+| 2026-06-07 | GPU 渲染器多管线架构 | 5 条独立 wgpu 渲染管线：Fill+Glyph、RoundedRect、Gradient、Image、Blur。每种管线有独立 WGSL shader 和绑定组布局。Mesh-based 图元（stroke/path）通过 CPU 侧顶点生成复用 fill pipeline。Phase-separated 架构避免借用冲突。 |
 
 ---
 
@@ -381,4 +382,7 @@
 41. ~~M7 — CPU 渲染器全量图元~~ ✅ (render_full_scene() 支持全部 13 种图元)
 42. ~~M7 — 浏览器图元消费~~ ✅ (transform_webview_primitives() 处理全部 13 种 + render_cpu() 使用 render_full_scene())
 43. ~~M7 — 验证~~ ✅ (cargo test 7800+ 全绿, clippy 零警告)
-44. M7 — GPU 渲染器全量图元 ❌ (当前仅 fills + glyphs，需扩展 11 种)
+44. ~~M7 — GPU 渲染器全量图元管线~~ ✅ (5 个 WGSL shader + 4 条管线 + mesh 生成 + render_full_scene_gpu())
+45. M7 — GPU 渲染器单元测试（为每种新图元类型添加 GPU 验证测试）
+46. M7 — 浏览器 GPU 路径集成（更新 app_platform.rs 调用 render_full_scene_gpu）
+47. M8 — 布局正确性（Margin 折叠 + BFC + Float + Replaced Elements）
