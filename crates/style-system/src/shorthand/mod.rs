@@ -1206,21 +1206,40 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
 
 /// 展开 background 简写。
 ///
-/// 简化实现：仅解析 background-color 部分。
-/// 如果值是颜色关键字或颜色值，则作为 background-color。
-/// 如果包含 `url(`，则提取为 background-image。
+/// CSS 规范要求 `background` 简写必须展开为所有子属性。
+/// 此实现解析每个 token 并分类到对应的子属性：
+/// - 颜色值 → background-color
+/// - url() / 渐变 → background-image
+/// - repeat-x/repeat-y/repeat/no-repeat → background-repeat
+/// - scroll/fixed/local → background-attachment
+/// - 位置关键字/长度/百分比 → background-position
+/// - border-box/padding-box/content-box → background-origin / background-clip
 fn expand_background(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
-
-    // 如果包含 url()，提取为 background-image
-    if let Some(url_part) = parts.iter().find(|p| p.starts_with("url(")) {
-        return vec![mk("background-image", url_part)];
+    // CSS-wide keywords: 展开为所有子属性
+    if value == "inherit" || value == "initial" || value == "unset" {
+        let subprops = [
+            "background-color",
+            "background-image",
+            "background-repeat",
+            "background-position",
+            "background-size",
+            "background-attachment",
+            "background-clip",
+            "background-origin",
+        ];
+        return subprops.iter().map(|p| mk(p, value)).collect();
     }
 
-    // 如果包含渐变函数，整体作为 background-image
+    let mut bg_color = String::new();
+    let mut bg_image = String::new();
+    let mut bg_repeat = String::new();
+    let mut bg_attachment = String::new();
+    let mut bg_position = String::new();
+
+    // 渐变函数检查（优先于 var() 检查，因为渐变可能包含 var() 引用）
     let gradient_funcs = [
         "linear-gradient(",
         "repeating-linear-gradient(",
@@ -1231,12 +1250,175 @@ fn expand_background(value: &str, important: bool, specificity: (u32, u32, u32))
     ];
     for func in &gradient_funcs {
         if value.contains(func) {
-            return vec![mk("background-image", value)];
+            bg_image = value.to_string();
+            return vec![
+                mk("background-color", "transparent"),
+                mk("background-image", &bg_image),
+                mk("background-repeat", "repeat"),
+                mk("background-position", "0% 0%"),
+                mk("background-attachment", "scroll"),
+                mk("background-clip", "border-box"),
+                mk("background-origin", "padding-box"),
+                mk("background-size", "auto"),
+            ];
         }
     }
 
-    // 否则作为 background-color
-    vec![mk("background-color", value)]
+    // 如果包含 var() 或颜色函数 rgb()/rgba()/hsl()/hsla()，整体作为 background-color
+    // 这些值包含逗号和空格，不能通过简单的 split_whitespace 解析
+    if value.contains("var(")
+        || value.contains("rgb(")
+        || value.contains("rgba(")
+        || value.contains("hsl(")
+        || value.contains("hsla(")
+    {
+        bg_color = value.to_string();
+        return vec![
+            mk("background-color", &bg_color),
+            mk("background-image", "none"),
+            mk("background-repeat", "repeat"),
+            mk("background-position", "0% 0%"),
+            mk("background-attachment", "scroll"),
+            mk("background-clip", "border-box"),
+            mk("background-origin", "padding-box"),
+            mk("background-size", "auto"),
+        ];
+    }
+
+    // 如果包含 url()，提取 url() 部分作为 image，剩余 tokens 继续解析
+    if value.contains("url(") {
+        if let Some(start) = value.find("url(") {
+            let mut depth = 0u32;
+            let mut found_open = false;
+            let mut end = start;
+            for (i, c) in value[start..].char_indices() {
+                if c == '(' {
+                    depth += 1;
+                    found_open = true;
+                }
+                if c == ')' && depth > 0 {
+                    depth -= 1;
+                }
+                if found_open && depth == 0 {
+                    end = start + i + 1;
+                    break;
+                }
+            }
+            bg_image = value[start..end].to_string();
+        }
+        // 解析剩余部分（url() 之外的 tokens）
+        let remaining = value.replace(&bg_image, "");
+        for token in remaining.split_whitespace() {
+            if token.is_empty() {
+                continue;
+            }
+            classify_bg_token_owned(
+                token,
+                &mut bg_color,
+                &mut bg_repeat,
+                &mut bg_attachment,
+                &mut bg_position,
+            );
+        }
+    } else {
+        // 没有 url()，逐 token 解析
+        for token in value.split_whitespace() {
+            classify_bg_token_owned(
+                token,
+                &mut bg_color,
+                &mut bg_repeat,
+                &mut bg_attachment,
+                &mut bg_position,
+            );
+        }
+    }
+
+    vec![
+        mk(
+            "background-color",
+            if bg_color.is_empty() { "transparent" } else { &bg_color },
+        ),
+        mk("background-image", if bg_image.is_empty() { "none" } else { &bg_image }),
+        mk(
+            "background-repeat",
+            if bg_repeat.is_empty() { "repeat" } else { &bg_repeat },
+        ),
+        mk(
+            "background-position",
+            if bg_position.is_empty() { "0% 0%" } else { &bg_position },
+        ),
+        mk(
+            "background-attachment",
+            if bg_attachment.is_empty() {
+                "scroll"
+            } else {
+                &bg_attachment
+            },
+        ),
+        mk("background-clip", "border-box"),
+        mk("background-origin", "padding-box"),
+        mk("background-size", "auto"),
+    ]
+}
+
+/// 将 background 简写中的 token 分类到对应的子属性（owned String 版本）。
+fn classify_bg_token_owned(
+    token: &str,
+    bg_color: &mut String,
+    bg_repeat: &mut String,
+    bg_attachment: &mut String,
+    bg_position: &mut String,
+) {
+    // repeat 值
+    match token {
+        "repeat-x" | "repeat-y" | "repeat" | "no-repeat" | "space" | "round" => {
+            *bg_repeat = token.to_string();
+            return;
+        }
+        _ => {}
+    }
+
+    // attachment 值
+    match token {
+        "scroll" | "fixed" | "local" => {
+            *bg_attachment = token.to_string();
+            return;
+        }
+        _ => {}
+    }
+
+    // position 关键字
+    match token {
+        "top" | "center" | "bottom" | "left" | "right" => {
+            if bg_position.is_empty() {
+                *bg_position = token.to_string();
+            } else {
+                bg_position.push(' ');
+                bg_position.push_str(token);
+            }
+            return;
+        }
+        _ => {}
+    }
+
+    // 如果 token 看起来像长度/百分比，归为 position
+    if token.ends_with("px") || token.ends_with('%') || token.ends_with("em") || token.ends_with("rem") {
+        if bg_position.is_empty() {
+            *bg_position = token.to_string();
+        }
+        return;
+    }
+
+    // box 值（origin/clip）— 简化处理，跳过
+    match token {
+        "border-box" | "padding-box" | "content-box" => {
+            return;
+        }
+        _ => {}
+    }
+
+    // 默认：作为 background-color（颜色值）
+    *bg_color = token.to_string();
 }
 
 /// 展开 font 简写。

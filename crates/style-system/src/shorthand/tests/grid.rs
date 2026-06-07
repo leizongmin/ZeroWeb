@@ -532,21 +532,25 @@ fn test_overscroll_behavior_two_values() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// background 简写展开：颜色值 → background-color
+/// background 简写展开：颜色值 → 展开为所有子属性，颜色设为 background-color
 fn test_shorthand_background_color() {
     let result = expand_one("background", "red", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
+    assert_eq!(result.len(), 8);
     assert_eq!(result[0].0, "background-color");
     assert_eq!(result[0].1, "red");
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "none");
 }
 
 #[test]
-/// background 简写展开：url() 值 → background-image
+/// background 简写展开：url() 值 → 展开为所有子属性，image 设为 background-image
 fn test_shorthand_background_image() {
     let result = expand_one("background", "url(img/bg.png)", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "url(img/bg.png)");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "background-color");
+    assert_eq!(result[0].1, "transparent");
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "url(img/bg.png)");
 }
 
 #[test]

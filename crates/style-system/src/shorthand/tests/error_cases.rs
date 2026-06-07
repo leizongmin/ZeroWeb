@@ -392,18 +392,20 @@ fn test_border_style_and_color() {
 /// background 渐变函数
 fn test_background_gradient_linear() {
     let result = expand_one("background", "linear-gradient(to right, red, blue)", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "linear-gradient(to right, red, blue)");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "background-color");
+    assert_eq!(result[0].1, "transparent");
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "linear-gradient(to right, red, blue)");
 }
 
 #[test]
 /// background 渐变函数带前缀
 fn test_background_gradient_radial() {
     let result = expand_one("background", "radial-gradient(circle, #fff, #000)", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "radial-gradient(circle, #fff, #000)");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "radial-gradient(circle, #fff, #000)");
 }
 
 #[test]
@@ -415,27 +417,31 @@ fn test_background_gradient_repeating() {
         false,
         (0, 0, 1),
     );
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "repeating-linear-gradient(90deg, red, blue 10px)");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "repeating-linear-gradient(90deg, red, blue 10px)");
 }
 
 #[test]
-/// background 颜色值加 url
+/// background 颜色值加 url — 展开为所有子属性
 fn test_background_color_and_url() {
     let result = expand_one("background", "red url(img.png)", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "url(img.png)");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "background-color");
+    assert_eq!(result[0].1, "red");
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "url(img.png)");
 }
 
 #[test]
 /// background 仅 url
 fn test_background_url_only() {
     let result = expand_one("background", "url('data:image/png;base64,...')", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "background-image");
-    assert_eq!(result[0].1, "url('data:image/png;base64,...')");
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "background-color");
+    assert_eq!(result[0].1, "transparent");
+    assert_eq!(result[1].0, "background-image");
+    assert_eq!(result[1].1, "url('data:image/png;base64,...')");
 }
 
 // ═══════════════════════════════════════════════════════════════════
