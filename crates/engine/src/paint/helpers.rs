@@ -260,6 +260,92 @@ impl PrimitiveCounts {
     }
 }
 
+/// 对快照之后新增的所有图元应用矩形裁剪（用于 clip-path: inset()）。
+///
+/// 与 clip_fills/clip_glyphs 类似，但处理全部图元类型。
+pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, clip_rect: &Rect) {
+    clip_fills(&mut primitives.fills, from.fills, clip_rect);
+    clip_glyphs(&mut primitives.glyphs, from.glyphs, clip_rect);
+    // 裁剪圆角矩形
+    for rr in primitives.rounded_rects.iter_mut().skip(from.rounded_rects) {
+        let r = &mut rr.rect;
+        let left = r.left().max(clip_rect.left());
+        let top = r.top().max(clip_rect.top());
+        let right = r.right().min(clip_rect.right());
+        let bottom = r.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            r.size.width = 0.0;
+            r.size.height = 0.0;
+        } else {
+            r.origin.x = left;
+            r.origin.y = top;
+            r.size.width = right - left;
+            r.size.height = bottom - top;
+        }
+    }
+    // 裁剪渐变
+    for grad in primitives.gradients.iter_mut().skip(from.gradients) {
+        let r = &mut grad.rect;
+        let left = r.left().max(clip_rect.left());
+        let top = r.top().max(clip_rect.top());
+        let right = r.right().min(clip_rect.right());
+        let bottom = r.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            r.size.width = 0.0;
+            r.size.height = 0.0;
+        } else {
+            r.origin.x = left;
+            r.origin.y = top;
+            r.size.width = right - left;
+            r.size.height = bottom - top;
+        }
+    }
+    // 裁剪阴影（简化：矩形范围）
+    for shadow in primitives.shadows.iter_mut().skip(from.shadows) {
+        let r = &mut shadow.rect;
+        let left = r.left().max(clip_rect.left());
+        let top = r.top().max(clip_rect.top());
+        let right = r.right().min(clip_rect.right());
+        let bottom = r.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            r.size.width = 0.0;
+            r.size.height = 0.0;
+        } else {
+            r.origin.x = left;
+            r.origin.y = top;
+            r.size.width = right - left;
+            r.size.height = bottom - top;
+        }
+    }
+    // 裁剪图片
+    for img in primitives.images.iter_mut().skip(from.images) {
+        let r = &mut img.rect;
+        let left = r.left().max(clip_rect.left());
+        let top = r.top().max(clip_rect.top());
+        let right = r.right().min(clip_rect.right());
+        let bottom = r.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            r.size.width = 0.0;
+            r.size.height = 0.0;
+        } else {
+            r.origin.x = left;
+            r.origin.y = top;
+            r.size.width = right - left;
+            r.size.height = bottom - top;
+        }
+    }
+    // 裁剪描边线段：线段两端都在裁剪区域外时标记为不可见
+    for stroke in primitives.strokes.iter_mut().skip(from.strokes) {
+        let p1_outside = stroke.x1 < clip_rect.left() && stroke.x1 > clip_rect.right()
+            || stroke.y1 < clip_rect.top() && stroke.y1 > clip_rect.bottom();
+        let p2_outside = stroke.x2 < clip_rect.left() && stroke.x2 > clip_rect.right()
+            || stroke.y2 < clip_rect.top() && stroke.y2 > clip_rect.bottom();
+        if p1_outside && p2_outside {
+            stroke.width = 0.0;
+        }
+    }
+}
+
 /// 对快照之后新增的所有图元应用 opacity（alpha 衰减）。
 pub fn apply_opacity_to_new_primitives(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, opacity: f32) {
     for fill in primitives.fills.iter_mut().skip(from.fills) {

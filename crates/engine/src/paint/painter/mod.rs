@@ -18,9 +18,9 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
-    CaretColorComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, QuotesComputedValue,
-    ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue, WillChangeValue,
+    CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue,
+    ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue,
+    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue, WillChangeValue,
 };
 
 use super::color::color_value_to_render;
@@ -232,8 +232,14 @@ impl Painter {
                 // 3. Outline 绘制（位于 border 外侧）
                 self.paint_outline(box_node, abs_x, abs_y, style);
 
-                // 3b. clip-path 视觉指示器
-                self.paint_clip_path(box_node, abs_x, abs_y, style);
+                // 3b. clip-path 视觉指示器（仅用于未实现的非矩形形状）
+                // 注意：inset() 已在下方应用实际裁剪，此处仅绘制其他形状的指示线
+                if !matches!(
+                    style.clip_path,
+                    ClipPathComputedValue::None | ClipPathComputedValue::Inset { .. }
+                ) {
+                    self.paint_clip_path(box_node, abs_x, abs_y, style);
+                }
             }
 
             // 列表标记和文本始终绘制（不受 empty-cells 影响）
@@ -288,6 +294,27 @@ impl Painter {
             );
             clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
             clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+        }
+
+        // clip-path: inset() — 实际裁剪（对元素及其所有子元素的图元应用矩形裁剪）
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && let ClipPathComputedValue::Inset {
+                top,
+                right,
+                bottom,
+                left,
+                ..
+            } = &style.clip_path
+        {
+            let w = box_node.width;
+            let h = box_node.height;
+            let t = super::helpers::length_to_f32(top);
+            let r = super::helpers::length_to_f32(right);
+            let b = super::helpers::length_to_f32(bottom);
+            let l = super::helpers::length_to_f32(left);
+            let clip_rect = Rect::new(abs_x + l, abs_y + t, w - l - r, h - t - b);
+            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);
         }
 
         // CSS filter — 对元素及其子元素产生的图元应用滤镜效果
