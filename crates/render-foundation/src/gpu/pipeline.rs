@@ -225,26 +225,29 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var t: f32;
+    let is_repeating = in.param3 < -0.5;
     if (in.grad_type < 0.5) {
-        // 线性渐变: param0=x0, param1=y0, param2=x1, param3=y1
+        // 线性渐变: param0=x0, param1=y0, param2=x1, param3=packed(repeating,y1)
         let dx = in.world_pos.x - in.param0;
         let dy = in.world_pos.y - in.param1;
         let lx = in.param2 - in.param0;
-        let ly = in.param3 - in.param1;
+        let ly = abs(in.param3) - in.param1;
         let len2 = lx * lx + ly * ly;
         if (len2 > 0.0) {
-            t = clamp((dx * lx + dy * ly) / len2, 0.0, 1.0);
+            t = (dx * lx + dy * ly) / len2;
         } else {
             t = 0.0;
         }
     } else if (in.grad_type < 1.5) {
-        // 径向渐变: param0=cx, param1=cy, param2=inner_r, param3=outer_r
+        // 径向渐变: param0=cx, param1=cy, param2=inner_r, param3=packed(repeating,outer_r)
         let dx = in.world_pos.x - in.param0;
         let dy = in.world_pos.y - in.param1;
         let dist = sqrt(dx * dx + dy * dy);
-        let range = in.param3 - in.param2;
+        let inner_r = in.param2;
+        let outer_r = abs(in.param3);
+        let range = outer_r - inner_r;
         if (range > 0.0) {
-            t = clamp((dist - in.param2) / range, 0.0, 1.0);
+            t = (dist - inner_r) / range;
         } else {
             t = 0.0;
         }
@@ -254,6 +257,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let dy = in.world_pos.y - in.param1;
         let angle = atan2(dy, dx);
         t = fract((angle - in.param2) / 6.283185307179586);
+    }
+    if (!is_repeating) {
+        t = clamp(t, 0.0, 1.0);
+    } else {
+        t = fract(t);
     }
     return textureSample(grad_texture, grad_sampler, vec2f(t, 0.5));
 }

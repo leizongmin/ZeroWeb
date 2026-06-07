@@ -1141,4 +1141,6 @@ fn test_gradient_to_primitive_linear_repeating() {
     });
     let result = gradient_to_primitive(&gradient, &rect);
     assert!(result.is_some());
+    let prim = result.unwrap();
+    assert!(prim.repeating, "repeating flag should be true");
 }

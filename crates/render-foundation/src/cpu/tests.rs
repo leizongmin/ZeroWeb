@@ -100,6 +100,7 @@ fn gradient_linear_red_to_blue() {
                 color: Color::BLUE,
             },
         ],
+        repeating: false,
     });
 
     let font_loader = FontLoader::new();
@@ -164,6 +165,7 @@ fn gradient_radial_center_to_edge() {
                 color: Color::BLACK,
             },
         ],
+        repeating: false,
     });
 
     let font_loader = FontLoader::new();
@@ -177,6 +179,120 @@ fn gradient_radial_center_to_edge() {
     // 角落应该是黑色（距离远）
     let corner = fb.get_pixel(0, 0);
     assert!(corner[0] < 100, "corner should be dark, got {:?}", corner);
+}
+
+/// 重复线性渐变 — repeating-linear-gradient(red 0px, blue 25px) 在 100px 宽矩形中应重复 4 次。
+#[test]
+fn gradient_linear_repeating() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.gradients.push(GradientPrimitive {
+        rect: Rect::new(0.0, 0.0, 100.0, 10.0),
+        kind: GradientKind::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 25.0, // 渐变周期 25px，在 100px 中重复 4 次
+            y1: 0.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::RED,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLUE,
+            },
+        ],
+        repeating: true,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        100,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
+
+    // x=0 第一周期起点应为红色
+    let p_start = fb.get_pixel(1, 5);
+    assert!(p_start[0] > 200, "first period start should be red, got {:?}", p_start);
+
+    // x=12 第一周期中间应为紫色（红→蓝 50%）
+    let p1 = fb.get_pixel(12, 5);
+    assert!(
+        p1[0] > 80 && p1[2] > 80,
+        "first period mid should be purple, got {:?}",
+        p1
+    );
+
+    // x=25 第二周期起点应回到红色（fract(25/25)=0）
+    let p2 = fb.get_pixel(26, 5);
+    assert!(p2[0] > 100, "second period start should be red-ish, got {:?}", p2);
+
+    // x=50 第三周期起点应为红色
+    let p3 = fb.get_pixel(51, 5);
+    assert!(p3[0] > 100, "third period start should be red-ish, got {:?}", p3);
+
+    // x=75 第四周期起点应为红色
+    let p4 = fb.get_pixel(76, 5);
+    assert!(p4[0] > 100, "fourth period start should be red-ish, got {:?}", p4);
+}
+
+/// 重复径向渐变 — repeating-radial-gradient 应在距中心不同距离处重复色标。
+#[test]
+fn gradient_radial_repeating() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.gradients.push(GradientPrimitive {
+        rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+        kind: GradientKind::Radial {
+            cx: 20.0,
+            cy: 20.0,
+            inner_radius: 0.0,
+            outer_radius: 10.0, // 每 10px 重复一次
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::WHITE,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLACK,
+            },
+        ],
+        repeating: true,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(40, 40, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+
+    // 中心应该是白色（t ≈ 0）
+    let center = fb.get_pixel(20, 20);
+    assert!(center[0] > 200, "center should be white, got {:?}", center);
+
+    // 距中心 5px 处（t ≈ 0.5 第一周期）应为灰色
+    let mid1 = fb.get_pixel(25, 20);
+    assert!(
+        mid1[0] > 50 && mid1[0] < 200,
+        "first period mid should be gray-ish, got {:?}",
+        mid1
+    );
+
+    // 距中心 12px 处（t ≈ 0.2 第二周期）应偏白
+    let second_period = fb.get_pixel(32, 20);
+    assert!(
+        second_period[0] > 80,
+        "second period should be lighter, got {:?}",
+        second_period
+    );
 }
 
 #[test]
@@ -631,6 +747,7 @@ fn full_scene_renders_multiple_primitives() {
                 color: Color::BLUE,
             },
         ],
+        repeating: false,
     });
 
     // 线段

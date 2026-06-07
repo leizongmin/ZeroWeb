@@ -173,6 +173,8 @@ pub struct GradientPrimitive {
     pub kind: GradientKind,
     /// 色标列表
     pub stops: Vec<GradientStop>,
+    /// 是否为重复渐变（repeating-*-gradient）
+    pub repeating: bool,
 }
 
 /// 阴影图元

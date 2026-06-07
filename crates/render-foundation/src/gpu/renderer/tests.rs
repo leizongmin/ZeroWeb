@@ -678,6 +678,7 @@ fn test_gpu_full_scene_gradient() {
                 color: Color::BLUE,
             },
         ],
+        repeating: false,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
