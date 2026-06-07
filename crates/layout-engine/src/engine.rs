@@ -121,10 +121,13 @@ impl LayoutEngine {
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
-        // 7. 后处理：对 display:table 容器执行 table grid 布局
+        // 7. 后处理：CSS margin 折叠 — taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）
+        // 不需要额外后处理
+
+        // 8. 后处理：对 display:table 容器执行 table grid 布局
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
 
-        // 8. 后处理：对 column-count/column-width 容器执行多列布局
+        // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
         // 缓存 taffy 状态用于后续增量计算
@@ -214,6 +217,7 @@ impl LayoutEngine {
         // 提取布局结果
         let mut root_box = Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
+        // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
