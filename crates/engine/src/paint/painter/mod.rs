@@ -113,7 +113,8 @@ impl Painter {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
 
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
-                && box_node.children.is_empty();
+                && box_node.children.is_empty()
+                && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
             if !hidden && !skip_empty_cell {
                 self.paint_box_shadow(box_node, abs_x, abs_y, style);
@@ -210,7 +211,8 @@ impl Painter {
 
             // empty-cells:hide — 空表格单元格不绘制背景和边框
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
-                && box_node.children.is_empty();
+                && box_node.children.is_empty()
+                && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
             if !hidden && !skip_empty_cell {
                 // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）

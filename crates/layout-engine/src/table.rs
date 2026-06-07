@@ -172,6 +172,60 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
 
     // 3. 定位单元格
     position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+
+    // 4. 抑制行组和行的 border/padding/margin
+    // CSS 2.1 规范：在 separated border model 中，
+    // table-row-group / table-row 的 border、padding、margin 无视觉效果
+    suppress_row_group_row_box_model(table_box, styles);
+}
+
+/// 抑制行组（tbody/thead/tfoot）和行（tr）的 border/padding/margin。
+///
+/// CSS 2.1 Section 17.5.3 和 17.5.4：
+/// 在 separated border model 中，table-row-group 和 table-row 的
+/// border、padding 和 margin 无视觉效果。
+/// 在 collapsed border model 中，只有 border 有意义（用于冲突解决），
+/// padding 和 margin 仍然无效。
+fn suppress_row_group_row_box_model(table_box: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    for child in &mut table_box.children {
+        let display = get_display(child, styles);
+        match display {
+            Some(DisplayValue::TableRowGroup)
+            | Some(DisplayValue::TableHeaderGroup)
+            | Some(DisplayValue::TableFooterGroup) => {
+                // 行组：border/padding/margin 全部归零
+                zero_box_model(child);
+                // 递归处理行组内的行
+                for row in &mut child.children {
+                    let row_display = get_display(row, styles);
+                    if row_display == Some(DisplayValue::TableRow) {
+                        zero_box_model(row);
+                    }
+                }
+            }
+            Some(DisplayValue::TableRow) => {
+                // 直接子行：border/padding/margin 归零
+                zero_box_model(child);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 将 LayoutBox 的 border/padding/margin 全部设为 0。
+fn zero_box_model(box_node: &mut LayoutBox) {
+    box_node.border_top = 0.0;
+    box_node.border_right = 0.0;
+    box_node.border_bottom = 0.0;
+    box_node.border_left = 0.0;
+    box_node.padding_top = 0.0;
+    box_node.padding_right = 0.0;
+    box_node.padding_bottom = 0.0;
+    box_node.padding_left = 0.0;
+    box_node.margin_top = 0.0;
+    box_node.margin_right = 0.0;
+    box_node.margin_bottom = 0.0;
+    box_node.margin_left = 0.0;
 }
 
 /// 从 table 容器的子元素中构建 grid 结构。
