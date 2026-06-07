@@ -306,3 +306,82 @@ fn test_multiple_floats_with_clear() {
     // 普通块在 clear 元素之后
     assert!(be.y >= ce.y, "block 应在 clear 元素之后: be.y={}, ce.y={}", be.y, ce.y);
 }
+
+/// 测试 <img> 元素的固有尺寸：有 width/height HTML 属性时应正确布局。
+#[test]
+fn test_img_intrinsic_sizing_with_attributes() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    // 设置 HTML 属性
+    {
+        let elem = doc.get_mut(img).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "200");
+            e.set_attribute("height", "100");
+        }
+    }
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    // 不设置 CSS width/height — 使用 HTML 属性的固有尺寸
+    let mut img_style = ComputedStyle::default();
+    img_style.display = DisplayValue::Block;
+    styles.insert(img, img_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+
+    // img 应使用 HTML 属性的固有尺寸 200x100
+    assert!(
+        (img_box.width - 200.0).abs() < 1.0,
+        "img width should be ~200 (from HTML attribute), got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 100.0).abs() < 1.0,
+        "img height should be ~100 (from HTML attribute), got {}",
+        img_box.height
+    );
+}
+
+/// 测试 <img> 元素有 CSS 尺寸时覆盖 HTML 属性。
+#[test]
+fn test_img_css_overrides_html_attributes() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    {
+        let elem = doc.get_mut(img).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "200");
+            e.set_attribute("height", "100");
+        }
+    }
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    // CSS 尺寸应覆盖 HTML 属性
+    let mut img_style = ComputedStyle::default();
+    img_style.display = DisplayValue::Block;
+    img_style.width = LengthValue::Px(300.0);
+    img_style.height = LengthValue::Px(150.0);
+    styles.insert(img, img_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+
+    // CSS 尺寸应覆盖 HTML 属性
+    assert!(
+        (img_box.width - 300.0).abs() < 1.0,
+        "img width should be ~300 (from CSS), got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 150.0).abs() < 1.0,
+        "img height should be ~150 (from CSS), got {}",
+        img_box.height
+    );
+}
