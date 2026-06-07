@@ -78,17 +78,22 @@ fn matches_selector_recursive(
             false
         }
         Some(Combinator::NextSibling) => {
-            // 相邻兄弟组合器：只检查前一个兄弟
-            if let Some(prev) = doc.previous_sibling(current)
-                && is_element(doc, prev)
-                && matches_compound(doc, prev, prev_compound)
-            {
-                return matches_selector_recursive(doc, prev, parts, part_idx - 1);
+            // 相邻兄弟组合器：检查前一个元素兄弟（跳过文本节点）
+            let mut sibling = doc.previous_sibling(current);
+            while let Some(sib) = sibling {
+                if is_element(doc, sib) {
+                    if matches_compound(doc, sib, prev_compound) {
+                        return matches_selector_recursive(doc, sib, parts, part_idx - 1);
+                    }
+                    // 找到了元素兄弟但不匹配，+ 组合器要求紧邻的前一个元素兄弟
+                    return false;
+                }
+                sibling = doc.previous_sibling(sib);
             }
             false
         }
         Some(Combinator::SubsequentSibling) => {
-            // 通用兄弟组合器：检查所有前面的兄弟
+            // 通用兄弟组合器：检查所有前面的元素兄弟（跳过文本节点）
             let mut sibling = doc.previous_sibling(current);
             while let Some(sibling_id) = sibling {
                 if is_element(doc, sibling_id)
@@ -551,15 +556,21 @@ fn matches_has_selector_chain(
             false
         }
         Some(Combinator::NextSibling) => {
-            if let Some(prev) = doc.previous_sibling(candidate)
-                && is_element(doc, prev)
-                && matches_compound(doc, prev, prev_compound)
-            {
-                return matches_has_selector_chain(doc, prev, parts, part_idx - 1);
+            // 相邻兄弟组合器：检查前一个元素兄弟（跳过文本节点）
+            let mut sibling = doc.previous_sibling(candidate);
+            while let Some(sib) = sibling {
+                if is_element(doc, sib) {
+                    if matches_compound(doc, sib, prev_compound) {
+                        return matches_has_selector_chain(doc, sib, parts, part_idx - 1);
+                    }
+                    return false;
+                }
+                sibling = doc.previous_sibling(sib);
             }
             false
         }
         Some(Combinator::SubsequentSibling) => {
+            // 通用兄弟组合器：检查所有前面的元素兄弟（跳过文本节点）
             let mut sibling = doc.previous_sibling(candidate);
             while let Some(sibling_id) = sibling {
                 if is_element(doc, sibling_id)
