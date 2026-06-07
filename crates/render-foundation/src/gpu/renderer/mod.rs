@@ -962,19 +962,22 @@ impl GpuRenderer {
             let right = r.right() * scale;
             let b = r.bottom() * scale;
             let (gt, p0, p1, p2, p3) = match &grad.kind {
-                GradientKind::Linear { x0, y0, x1, y1 } => (0.0f32, *x0 * scale, *y0 * scale, *x1 * scale, *y1 * scale),
+                GradientKind::Linear { x0, y0, x1, y1 } => {
+                    let y1_scaled = *y1 * scale;
+                    // 用负值编码 repeating 标志
+                    let p3 = if grad.repeating { -y1_scaled } else { y1_scaled };
+                    (0.0f32, *x0 * scale, *y0 * scale, *x1 * scale, p3)
+                }
                 GradientKind::Radial {
                     cx,
                     cy,
                     inner_radius,
                     outer_radius,
-                } => (
-                    1.0f32,
-                    *cx * scale,
-                    *cy * scale,
-                    *inner_radius * scale,
-                    *outer_radius * scale,
-                ),
+                } => {
+                    let outer_scaled = *outer_radius * scale;
+                    let p3 = if grad.repeating { -outer_scaled } else { outer_scaled };
+                    (1.0f32, *cx * scale, *cy * scale, *inner_radius * scale, p3)
+                }
                 GradientKind::Conic { cx, cy, start_angle } => (2.0f32, *cx * scale, *cy * scale, *start_angle, 0.0),
             };
             let make_gv =

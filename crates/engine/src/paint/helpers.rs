@@ -384,6 +384,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
                 rect: *rect,
                 kind,
                 stops,
+                repeating: lg.repeating,
             })
         }
         GradientValue::Radial(rg) => {
@@ -424,6 +425,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
                     outer_radius: outer.max(0.01),
                 },
                 stops,
+                repeating: rg.repeating,
             })
         }
         GradientValue::Conic(cg) => {
@@ -435,6 +437,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
                 rect: *rect,
                 kind: GradientKind::Conic { cx, cy, start_angle },
                 stops,
+                repeating: cg.repeating,
             })
         }
     }

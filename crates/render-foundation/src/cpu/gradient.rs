@@ -24,7 +24,18 @@ pub fn render_gradient(fb: &mut FrameBuffer, gradient: &GradientPrimitive, scale
             let fx = x as f32 + 0.5;
             let fy = y as f32 + 0.5;
 
-            let t = compute_gradient_t(fx, fy, gradient, scale);
+            let mut t = compute_gradient_t(fx, fy, gradient, scale);
+            if gradient.repeating {
+                // 重复渐变：将 t 映射到 [0, 1) 区间循环
+                // 使用最后一个色标的 offset 作为重复周期
+                let period = gradient.stops.last().map(|s| s.offset).unwrap_or(1.0).max(0.001);
+                t %= period;
+                if t < 0.0 {
+                    t += period;
+                }
+                // 归一化到 [0, 1] 供色标采样
+                t /= period;
+            }
             let color = sample_gradient_color(t, &gradient.stops);
             let [r, g, b, _] = blend_with_fb(fb, x, y, color);
             fb.set_pixel(x, y, [r, g, b, 255]);
