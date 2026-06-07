@@ -17,7 +17,7 @@
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
-| M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅(已有实现)；text-shadow ✅(已有实现)；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅(修复仅裁剪fills/glyphs的问题)；剩余：scroll-snap（需滚动容器）、滚动容器（需宿主层集成） |
+| M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
 
 ## 当前状态概览
 
@@ -344,6 +344,7 @@
 | 2026-06-07 | clip-path inset 实际裁剪 | 新增 clip_all_primitives_to_rect() 对全部图元类型（fills/rounded_rects/gradients/shadows/images/glyphs/strokes）应用矩形裁剪，替代原来的虚线指示器。 |
 | 2026-06-07 | CSS mask 渐变蒙版 | mask-image 复用 BackgroundImageValue 类型解析，渐变蒙版通过 clip_all_primitives_to_rect 裁剪到渐变边界 + 平均 alpha 衰减实现。URL 蒙版暂不支持（需图像加载基础设施）。 |
 | 2026-06-07 | overflow 全图元裁剪修复 | paint_node/paint_node_in_rect 中 overflow:hidden/scroll/clip 原来仅裁剪 fills+glyphs，渐变/阴影/图片/线段等图元溢出容器边界不被裁剪。改为使用 PrimitiveCounts + clip_all_primitives_to_rect 裁剪全部 13 种图元类型。 |
+| 2026-06-07 | 滚动容器 paint 偏移 | LayoutBox 新增 scroll_x/scroll_y 字段。paint_node 中当 overflow == Scroll 时，子元素坐标减去 scroll 偏移量。overflow:Hidden 不应用滚动偏移（非滚动容器）。3 个单元测试验证。 |
 
 ---
 
@@ -407,5 +408,6 @@
 56. ~~M9 — backdrop-filter~~ ✅ (复用 FilterComputedValue + 在元素绘制前应用滤镜)
 57. ~~M9 — CSS mask~~ ✅ (mask-image 解析 + mask-mode 解析 + 渐变蒙版裁剪 + alpha 衰减 + 3 个单元测试)
 58. ~~M9 — overflow 全图元裁剪~~ ✅ (修复 overflow:hidden/scroll/clip 仅裁剪 fills+glyphs 的问题，改用 clip_all_primitives_to_rect 裁剪全部 13 种图元)
-59. M9 — scroll-snap（已解析存储，需滚动容器行为实现）
-60. M9 — 滚动容器（需宿主层集成：嵌套滚动容器识别、逐元素滚动偏移、输入路由）
+59. ~~M9 — 滚动容器 paint 偏移~~ ✅ (LayoutBox scroll_x/scroll_y 字段 + paint 时 overflow:Scroll 子元素坐标偏移 + 3 个单元测试)
+60. M9 — scroll-snap 行为（已解析存储，需宿主层输入路由实现吸附逻辑）
+61. M9 — 滚动输入路由（需浏览器 app 集成：嵌套滚动容器识别、逐元素 scroll 事件分发）
