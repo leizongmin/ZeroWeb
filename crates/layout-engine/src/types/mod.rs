@@ -93,6 +93,11 @@ pub struct LayoutBox {
     pub scroll_y: f32,
     /// 是否为 display: flow-root 元素（建立 BFC）。
     pub is_flow_root: bool,
+    /// 是否为块级元素（用于 float/clear 后处理判断）。
+    ///
+    /// CSS 规范中 clear 属性仅适用于块级元素。
+    /// 此标志在构建布局树时根据 computed display 值设置。
+    pub is_block_level: bool,
 }
 
 impl LayoutBox {
@@ -159,6 +164,7 @@ impl Default for LayoutBox {
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root: false,
+            is_block_level: false,
         }
     }
 }
