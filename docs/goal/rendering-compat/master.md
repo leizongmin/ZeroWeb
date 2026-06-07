@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M6 — 全量扩展 + 通过率冲刺
+**当前活跃里程碑**: M7 — 渲染器图元覆盖 + 浏览器图元消费
 
 ---
 
@@ -15,6 +15,7 @@
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
+| M7 — 渲染器图元覆盖 | 🔧 进行中 | CPU 渲染器：全部 13 种图元 ✅；浏览器消费：全部 13 种图元 ✅；GPU 渲染器：仅 fills + glyphs ❌ |
 
 ## 当前状态概览
 
@@ -24,7 +25,7 @@
 | WPT Runner | ✅ reftest 级 | 1,341 个手写 TestCase + 685 个内联 reftest（13 目录 ≥50） |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
-| CPU 软件渲染 | ✅ 可用 | FillPrimitive + GlyphDraw |
+| CPU 软件渲染 | ✅ 全量图元 | render_full_scene() 支持全部 13 种图元（fills, rounded_rects, gradients, shadows, images, strokes, path_fills, path_strokes, glyphs, clips, transforms, filters, blend_modes） |
 | Reftest CLI | ✅ 可用 | `cargo run --bin zero-wpt-runner -- reftest` |
 | Skip List | ✅ 已创建 | `tests/wpt-runner/reftest-skip-list.txt` |
 | Chromium 截图脚本 | ✅ 已创建 | `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs` |
@@ -32,6 +33,7 @@
 | 内联 reftest | ✅ 685 个 | 13 个目录全部 ≥50，覆盖 CSS 2.1、Flexbox、Grid、Position、Display、Box、Float、Table、Multicol、Text、Fonts、Text-decor、Writing-modes |
 | JS 执行 | ✅ 已集成 | reftest harness 通过 V8 sandbox 在渲染前执行 JS（不修改 DOM） |
 | GPU 渲染截图 | ✅ 已验证 | GpuRenderer headless + read_pixels()；685/685 reftest GPU 模式 100.0% pass |
+| GPU 渲染器图元 | ⚠️ 部分 | 仅 fills + glyphs（11 种图元待扩展） |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
 | Quirks Mode | ✅ 完成 | CSS parser + style system + layout engine quirks 全部实现 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
@@ -120,6 +122,62 @@
 | cargo clippy 零警告 | ✅ | `cargo clippy -- -D warnings` 通过 |
 | Reftest 报告持久化 | ✅ | evidence/reftest-report-2026-06-06.json/txt |
 | 历史记录可追溯 | ✅ | 首份报告已持久化 |
+
+### DC-8: CPU 渲染器图元覆盖（全部 13 种）
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| FillPrimitive | ✅ | 填充矩形（原有） |
+| RoundedRectPrimitive | ✅ | 圆角矩形（原有） |
+| GlyphPrimitive | ✅ | 文字渲染（原有） |
+| GradientPrimitive | ✅ | 线性/径向/锥形渐变，逐像素插值 |
+| ShadowPrimitive | ✅ | box-blur 近似阴影，含 blur_radius/spread_radius |
+| ImagePrimitive | ✅ | RGBA 像素数据合成到 framebuffer |
+| StrokePrimitive | ✅ | solid/dashed/dotted 线段 + LineCap |
+| PathFillPrimitive | ✅ | 多边形扫描线填充 |
+| PathStrokePrimitive | ✅ | 多边形描边 |
+| TransformPrimitive | ✅ | 仿射变换后处理 |
+| ClipPrimitive | ✅ | 矩形裁剪（像素级 discard） |
+| FilterPrimitive | ✅ | blur + opacity |
+| BlendModePrimitive | ✅ | normal/multiply/screen |
+| render_full_scene() 入口 | ✅ | 新函数，CSS painting order 渲染全部 13 种图元 |
+
+### DC-9: GPU 渲染器图元覆盖
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| FillPrimitive | ✅ | GPU 填充（原有） |
+| GlyphPrimitive | ✅ | GPU 文字渲染（原有） |
+| RoundedRectPrimitive | ❌ | 需扩展 WGSL shader |
+| GradientPrimitive | ❌ | 需渐变 shader |
+| ShadowPrimitive | ❌ | 需阴影 pass |
+| ImagePrimitive | ❌ | 需纹理上传和采样 |
+| StrokePrimitive | ❌ | 需顶点生成 |
+| PathFillPrimitive | ❌ | 需 GPU 多边形填充 |
+| PathStrokePrimitive | ❌ | 需 GPU 多边形描边 |
+| TransformPrimitive | ❌ | 需顶点坐标变换 |
+| ClipPrimitive | ❌ | 需 scissor/stencil |
+| FilterPrimitive | ❌ | 需 post-processing pass |
+| BlendModePrimitive | ❌ | 需 blend equation |
+
+### DC-10: 浏览器图元消费
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| transform_webview_primitives() 全 13 种 | ✅ | 新函数处理所有 RenderPrimitives 字段 |
+| render_cpu() 使用 render_full_scene() | ✅ | 完整图元渲染替代旧版 3 种入口 |
+| scale_factor 应用 | ✅ | 所有图元类型正确缩放 |
+| offset 应用 | ✅ | 所有图元类型正确偏移 |
+| clip_y 视口裁剪 | ✅ | fills + glyphs 应用 clip_y 裁剪 |
+| CSS painting order | ✅ | shadows → backgrounds → borders → content → overlay → filters → blend_modes |
+
+### DC-11: M7 验证
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| cargo test 全绿 | ✅ | 7800+ 测试全部通过 |
+| cargo clippy 零警告 | ✅ | `cargo clippy -- -D warnings` 通过 |
+| 新增图元单元测试 | ✅ | 渐变/阴影/图片/线段/路径填充/路径描边/变换/裁剪/滤镜/混合模式各有独立测试 |
 
 ---
 
@@ -238,6 +296,9 @@
 | Float exclusion 堆叠 | 布局正确性 | ✅ 已完成 | M5 |
 | Quirks mode | CSS 2.1 兼容性 | ✅ 已完成 | M2 |
 | 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
+| CPU 渲染器图元覆盖 | 视觉输出 | ✅ 已完成 | M7 |
+| 浏览器图元消费 | 视觉输出 | ✅ 已完成 | M7 |
+| GPU 渲染器图元覆盖 | GPU 视觉输出 | 🔧 进行中 | M7 |
 
 ---
 
@@ -266,6 +327,12 @@
 | 2026-06-07 | unicode-bidi 集成到 inline layout | RTL 字符自动检测并重排序，LTR 文本零开销 |
 | 2026-06-07 | FontLoader 存储原始字体字节 | 供 rustybuzz Face::from_slice 使用，fontdue 仍用于 advance width 获取 |
 | 2026-06-07 | ShapedGlyph 增加 x_offset/y_offset 字段 | 来自 rustybuzz 的 GPOS 定位偏移 |
+| 2026-06-07 | 新增 render_full_scene() 替代 render_scene_to_framebuffer() | 旧函数仅支持 fills + rounded_rects + glyphs，新函数支持全部 13 种图元 |
+| 2026-06-07 | 新增 transform_webview_primitives() 替代 inline 坐标变换 | 旧方式仅处理 fills + glyphs，新函数处理全部 13 种 RenderPrimitives 字段 |
+| 2026-06-07 | 渐变使用逐像素插值 | 线性/径向/锥形渐变均在 CPU 上逐像素计算，无 GPU 依赖 |
+| 2026-06-07 | 阴影使用 box-blur 近似 | 三次 box-blur 近似高斯模糊，性能与质量平衡 |
+| 2026-06-07 | 路径填充使用扫描线算法 | 逐行扫描多边形边界，奇偶规则填充 |
+| 2026-06-07 | CPU 后处理：Transform/Clip/Filter/BlendMode 作为后处理步骤 | 像素级后处理，不依赖 GPU；GPU 渲染器需独立实现 |
 
 ---
 
@@ -311,3 +378,7 @@
 38. ~~M6 — DC-5 文字排版全目录达标~~ ✅ (新增 css-fonts/css-text-decor/css-writing-modes, 685 总, 100.0% pass)
 39. ~~M6 — 引入 rustybuzz（OpenType shaping）~~ ✅ (GSUB/GPOS 连字+kerning，fontdue 回退)
 40. ~~M6 — 引入 unicode-bidi（RTL 文本）~~ ✅ (BiDi 重排序，RTL 字符自动检测)
+41. ~~M7 — CPU 渲染器全量图元~~ ✅ (render_full_scene() 支持全部 13 种图元)
+42. ~~M7 — 浏览器图元消费~~ ✅ (transform_webview_primitives() 处理全部 13 种 + render_cpu() 使用 render_full_scene())
+43. ~~M7 — 验证~~ ✅ (cargo test 7800+ 全绿, clippy 零警告)
+44. M7 — GPU 渲染器全量图元 ❌ (当前仅 fills + glyphs，需扩展 11 种)
