@@ -751,7 +751,7 @@ fn test_linear_gradient_render_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Linear(lin) => {
                 assert_eq!(
@@ -794,7 +794,7 @@ fn test_radial_gradient_render_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Radial(rad) => {
                 assert_eq!(rad.shape, zero_css_parser::values::RadialShape::Circle);
@@ -833,7 +833,7 @@ fn test_gradient_via_background_shorthand_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Linear(lin) => {
                 assert_eq!(
@@ -874,7 +874,7 @@ fn test_conic_gradient_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Conic(conic) => {
                 assert_eq!(conic.stops.len(), 3, "应有 3 个色标");
@@ -912,7 +912,7 @@ fn test_repeating_linear_gradient_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Linear(lin) => {
                 assert!(lin.repeating, "repeating-linear-gradient 的 repeating 应为 true");
@@ -959,7 +959,7 @@ fn test_gradient_not_inherited_pipeline() {
     let parent_style = styles.get(&parent).expect("parent 应有计算样式");
     assert!(
         matches!(
-            &parent_style.background_image,
+            &parent_style.background_image[0],
             zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
         ),
         "parent 的 background_image 应为 Gradient 变体"
@@ -969,8 +969,8 @@ fn test_gradient_not_inherited_pipeline() {
     let child_style = styles.get(&child).expect("child 应有计算样式");
     assert_eq!(
         child_style.background_image,
-        zero_style_system::property::BackgroundImageComputedValue::None,
-        "child 不应继承 parent 的 background-image，应为 None"
+        Vec::<zero_style_system::property::BackgroundImageComputedValue>::new(),
+        "child 不应继承 parent 的 background-image，应为空 Vec"
     );
 }
 

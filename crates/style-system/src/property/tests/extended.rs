@@ -1397,7 +1397,8 @@ fn test_line_clamp_initial_value() {
 fn test_apply_property_background_image_none() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-image", "none"));
-    assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    // "none" generates vec![None], representing an explicit no-image layer
+    assert_eq!(style.background_image, vec![BackgroundImageComputedValue::None]);
 }
 
 #[test]
@@ -1406,7 +1407,7 @@ fn test_apply_property_background_image_url() {
     assert!(apply_property_value(&mut style, "background-image", "url(bg.png)"));
     assert_eq!(
         style.background_image,
-        BackgroundImageComputedValue::Url("bg.png".to_string())
+        vec![BackgroundImageComputedValue::Url("bg.png".to_string())]
     );
 }
 
@@ -1416,7 +1417,7 @@ fn test_apply_property_background_image_url_quoted() {
     assert!(apply_property_value(&mut style, "background-image", "url(\"bg.png\")"));
     assert_eq!(
         style.background_image,
-        BackgroundImageComputedValue::Url("bg.png".to_string())
+        vec![BackgroundImageComputedValue::Url("bg.png".to_string())]
     );
 }
 
@@ -1441,9 +1442,9 @@ fn test_background_image_in_known_properties() {
 fn test_background_image_initial_value() {
     assert!(PropertyRegistry::initial_value("background-image").is_some());
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+    style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
     assert!(apply_initial_value(&mut style, "background-image"));
-    assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    assert!(style.background_image.is_empty());
 }
 
 // ── background-position 属性测试 ──
