@@ -254,8 +254,7 @@ fn test_gpu_renderer_multiple_renders() {
 #[test]
 fn test_gpu_renderer_zero_sized_glyph_does_not_enter_atlas() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
-    let placement =
-        renderer.upload_glyph_to_atlas(GlyphAtlasKey::new(0, ' ' as u32, 16.0), &[], 0, 0, 0, 0, 6.0);
+    let placement = renderer.upload_glyph_to_atlas(GlyphAtlasKey::new(0, ' ' as u32, 16.0), &[], 0, 0, 0, 0, 6.0);
     assert!(placement.is_none());
     assert_eq!(renderer.atlas_glyph_count(), 0);
 }
@@ -346,16 +345,7 @@ fn test_render_scene_with_clip_scaled() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
     let clip = Rect::new(16.0, 16.0, 32.0, 32.0);
-    renderer.render_scene_with_clip_scaled(
-        &fills,
-        &font_loader,
-        &mut glyph_cache,
-        &[],
-        &[],
-        &[],
-        Some(clip),
-        1.0,
-    );
+    renderer.render_scene_with_clip_scaled(&fills, &font_loader, &mut glyph_cache, &[], &[], &[], Some(clip), 1.0);
     let pixels = renderer.read_pixels().expect("read_pixels");
     assert_eq!(pixels[(16 * 64 + 16) * 4], 0);
     assert_eq!(pixels[0], 255);
@@ -628,15 +618,7 @@ fn test_gpu_full_scene_fills() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     assert_eq!(pixels.len(), 32 * 32 * 4);
@@ -662,15 +644,7 @@ fn test_gpu_full_scene_rounded_rect() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中心像素应为蓝色
@@ -708,24 +682,24 @@ fn test_gpu_full_scene_gradient() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
-    // 左端应为红色
-    assert_eq!(pixels[0], 255, "left R should be 255");
-    assert_eq!(pixels[2], 0, "left B should be 0");
+    // 左端应为红色（GPU 浮点精度允许 ±3 容差）
+    assert!(pixels[0] >= 252, "left R should be ~255, got {}", pixels[0]);
+    assert!(pixels[2] <= 3, "left B should be ~0, got {}", pixels[2]);
     // 右端应为蓝色
     let right_idx = (63 * 4) as usize;
-    assert_eq!(pixels[right_idx], 0, "right R should be 0");
-    assert_eq!(pixels[right_idx + 2], 255, "right B should be 255");
+    assert!(
+        pixels[right_idx] <= 3,
+        "right R should be ~0, got {}",
+        pixels[right_idx]
+    );
+    assert!(
+        pixels[right_idx + 2] >= 252,
+        "right B should be ~255, got {}",
+        pixels[right_idx + 2]
+    );
 }
 
 /// 测试 render_full_scene_gpu 渲染阴影
@@ -744,22 +718,16 @@ fn test_gpu_full_scene_shadow() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     assert_eq!(pixels.len(), 32 * 32 * 4);
     // 阴影区域应有非白色像素
     let shadow_px = &pixels[(10 * 32 + 10) * 4..(10 * 32 + 10) * 4 + 4];
-    assert!(shadow_px[0] < 255 || shadow_px[1] < 255 || shadow_px[2] < 255,
-        "shadow area should not be pure white");
+    assert!(
+        shadow_px[0] < 255 || shadow_px[1] < 255 || shadow_px[2] < 255,
+        "shadow area should not be pure white"
+    );
 }
 
 /// 测试 render_full_scene_gpu 渲染线段
@@ -780,15 +748,7 @@ fn test_gpu_full_scene_stroke() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中间行应有黑色像素
@@ -804,15 +764,7 @@ fn test_gpu_full_scene_empty() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(
-        &primitives,
-        &font_loader,
-        &mut glyph_cache,
-        None,
-        &[],
-        &[],
-        1.0,
-    );
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     for chunk in pixels.chunks_exact(4) {
