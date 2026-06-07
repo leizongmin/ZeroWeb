@@ -13,16 +13,23 @@
 
 ## Mission
 
-以 **WPT reftest 通过率 95%+** 为核心验证指标，确保 ZeroWeb 的页面渲染效果在核心 CSS 领域与 Chromium（Chrome/Edge）一致。覆盖范围：
+以 **上游 WPT 真实 reftest 通过率 95%+** 为核心验证指标，确保 ZeroWeb 的页面渲染效果在核心 CSS 领域与 Chromium（Chrome/Edge）一致。
 
-1. **CSS 2.1 核心**（`css/css2/`, `css/CSS2/`）— 渲染兼容性的基石
-2. **Flexbox + Grid**（`css/css-flexbox/`, `css/css-grid/`）— 现代布局引擎必备
-3. **Positioning + Float + Table + Multicol**（`css/css-position/`, `css/css-float/`, `css/css-tables/`, `css/css-multicol/`）— 传统布局模式完整覆盖
-4. **文字排版全套**（`css/css-text/`, `css/css-writing-modes/`, `css/css-fonts/`, `css/css-text-decor/`）— 文本渲染正确性
+**关键约束**：所有验证必须基于从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest**，不允许使用手写 inline reftest 替代或充数。通过率统计的分母是上游 WPT 目录中**所有**属于范围内、不在 skip list 中的 reftest case，不允许人为缩小导入范围。
 
-执行方式：**交替推进** — 每轮执行同时扩展 WPT reftest 基础设施覆盖范围和修复发现的渲染缺口，直到目标通过率达标。
+覆盖范围：
 
-运行环境：**CPU 软件渲染 + GPU 渲染都必须通过** reftest 验证。
+1. **渲染器图元覆盖** — CPU 渲染器和 GPU 渲染器必须支持所有 13 种 `RenderPrimitives` 图元类型，浏览器必须正确消费所有图元
+2. **CSS 2.1 核心**（`css/css2/`, `css/CSS2/`）— 渲染兼容性的基石
+3. **Flexbox + Grid**（`css/css-flexbox/`, `css/css-grid/`）— 现代布局引擎必备
+4. **Positioning + Float + Table + Multicol**（`css/css-position/`, `css/css-float/`, `css/css-tables/`, `css/css-multicol/`）— 传统布局模式完整覆盖
+5. **文字排版全套**（`css/css-text/`, `css/css-writing-modes/`, `css/css-fonts/`, `css/css-text-decor/`）— 文本渲染正确性
+6. **布局正确性** — Margin 折叠、BFC、Float 布局、滚动容器等核心 CSS 2.1 布局行为
+7. **高级视觉效果** — text-shadow、多背景图层、clip-path、backdrop-filter 等
+
+执行方式：**交替推进** — 每轮执行同时扩展上游 WPT 真实 reftest 导入范围和修复发现的渲染缺口，直到目标通过率达标。
+
+运行环境：**CPU 软件渲染 + GPU 渲染都必须通过** 上游 WPT 真实 reftest 验证。
 
 参考基准：**Chromium（Chrome/Edge）** 的渲染输出作为 reftest 的参考截图来源。
 
@@ -52,6 +59,26 @@
 | Reftest 验证 | CPU 软件渲染模式 + GPU 渲染模式的截图对比 | 两种模式都需通过 |
 | 范围外 reftest 过滤 | 导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL 等），维护 skip list | 防止范围外 case 膨胀分母 |
 | 渲染缺口修复 | 任何导致 reftest 失败的渲染错误 | 由 reftest 结果驱动 |
+| 渲染器图元覆盖 | CPU 渲染器和 GPU 渲染器必须能够渲染所有 `RenderPrimitives` 类型：fills、rounded_rects、gradients、shadows、images、strokes、path_fills、path_strokes、transforms、clips、filters、blend_modes、glyphs | 当前 CPU 渲染器仅支持 fills + rounded_rects + glyphs；GPU 渲染器仅支持 fills + glyphs。**这是渲染效果差的最大根因** |
+| 浏览器图元消费 | `append_webview_primitives()` 必须将所有 `RenderPrimitives` 类型传递到渲染器，不能静默丢弃 | 当前仅消费 fills + glyphs，其余 11 种图元类型全部丢弃 |
+| 渐变渲染 | 线性渐变、径向渐变、锥形渐变、重复渐变的 CPU + GPU 渲染 | `GradientPrimitive` 已定义但两个渲染器均未实现渲染 |
+| 阴影渲染 | `box-shadow` 的高斯模糊阴影渲染（offset + blur + spread + color） | `ShadowPrimitive` 已定义但两个渲染器均未实现渲染 |
+| 图片渲染 | 背景图片（`background-image`）、`<img>` 元素、`list-style-image` 的图片解码和渲染 | `ImagePrimitive` 已定义但两个渲染器均未实现渲染 |
+| 线段/路径渲染 | `StrokePrimitive`（线段）、`PathFillPrimitive`（路径填充）、`PathStrokePrimitive`（路径描边）的渲染 | 用于虚线/点线边框、装饰线、clip-path 等；已定义但渲染器未实现 |
+| 变换渲染 | CSS 2D transform（translate、rotate、scale、skew、matrix）的正确应用 | `TransformPrimitive` 已定义但渲染器未实现；3D transform 降级为 2D |
+| 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` 已定义但渲染器未实现；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
+| 滤镜渲染 | CSS filter（blur、brightness、contrast、grayscale、hue-rotate、invert、opacity、saturate、sepia、drop-shadow） | `FilterPrimitive` 已定义但渲染器未实现 |
+| 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` 已定义但渲染器未实现 |
+| Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | 当前完全未实现，导致块级元素间距与主流浏览器不一致 |
+| BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 当前未实现 BFC 概念，浮动隔离和 margin 折叠无法正确工作 |
+| 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | 当前替换元素无固有尺寸，`object-fit` 在 paint 阶段处理但无实际图片数据 |
+| 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
+| text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
+| 多背景图层 | `background-image` 多层叠加渲染 | paint 阶段仅渲染第一个背景图层 |
+| clip-path | CSS clip-path（circle、ellipse、polygon、inset） | 仅生成指示器，无实际裁剪实现 |
+| backdrop-filter | 元素背后内容的滤镜效果 | 完全未实现 |
+| CSS mask | CSS 遮罩效果 | 完全未实现 |
+| 重复渐变 | `repeating-linear-gradient`、`repeating-radial-gradient` | paint 阶段未实现 |
 
 ### 不在范围内（明确排除）
 
@@ -76,28 +103,37 @@
 - **已有可复用基础设施**（M1 必须**扩展**而非重写）：
   - `tests/wpt-runner/src/reftest.rs`：像素对比引擎（`ReftestConfig`：`max_diff_ratio`, `max_channel_diff`）、`run_reftest()`、`compare_pixels()`、16 个内建 reftest case
   - `tests/wpt-runner/src/manifest.rs`：WPT MANIFEST.json 解析器、`filter_by_type()`、`filter_by_path_prefix()`
-  - `crates/render-foundation/src/cpu.rs`：`render_scene_to_framebuffer()` — CPU 软件渲染截图
+  - `crates/render-foundation/src/cpu.rs`：`render_scene_to_framebuffer()` — CPU 软件渲染截图（⚠️ 仅支持 fills + rounded_rects + glyphs）
+  - `crates/render-foundation/src/gpu/`：GPU 渲染器 + WGSL shaders（⚠️ 仅支持 fills + glyphs）
+  - `crates/render-foundation/src/primitive/mod.rs`：13 种图元类型定义（✅ 完整，Paint 系统已能全部生成）
+  - `crates/engine/src/paint/`：Paint 系统（✅ 完整，能生成所有 13 种图元类型）
   - `crates/script-sandbox/`：V8 runtime — 用于 reftest harness 中执行 JS
   - `tests/wpt-runner/src/runner/mod.rs`：`TestExpectations` 机制 — 可扩展为 reftest skip list
+- **渲染器扩展约束**（M7 必须遵循）：
+  - CPU 渲染器：基于现有 `render_scene_to_framebuffer()` 函数扩展，不重写架构
+  - GPU 渲染器：基于现有 wgpu + WGSL pipeline 扩展，不更换图形后端
+  - 优先 CPU 渲染器实现（更简单、更易调试），然后映射到 GPU 渲染器
+  - 每个新增图元渲染能力必须有对应单元测试
 
 ### 渐进覆盖策略
 
-WPT reftest 数以万计，不可能一次导入全部。按以下优先级分批导入：
+上游 WPT reftest 数以万计，按以下优先级分批导入。**最终目标**是导入每个上游 WPT 目录中**全部**范围内 reftest。分母 = 上游该目录全部 reftest − skip list 中范围外 reftest。不允许以「80% 已足够」为理由跳过任何范围内 reftest。
 
-**Phase 1 — 基础设施 + CSS 2.1 核心抽样**：
+**Phase 1 — 基础设施 + CSS 2.1 核心导入**：
 - 建立 WPT reftest 导入/运行/对比/报告基础设施
-- 导入 CSS 2.1 核心子集（~200 个 reftest），建立初始基线
+- 从上游 WPT 仓库自动 fetch 并导入 `css/css2/` + `css/CSS2/` 的**全部**范围内 reftest（从 `MANIFEST.json` 自动提取，不手动挑选）
+- 建立初始基线（记录初始通过率，不要求达标但必须可测量）
 - 修复发现的 CSS 2.1 渲染缺口
 
 **Phase 2 — 布局模式全覆盖**：
-- 导入 Flexbox + Grid reftest 子集
-- 导入 Positioning + Float + Table + Multicol reftest 子集
+- 从上游 WPT 导入 `css/css-flexbox/` + `css/css-grid/` 的全部范围内 reftest
+- 从上游 WPT 导入 `css/css-position/` + `css/css-float/` + `css/css-tables/` + `css/css-multicol/` 的全部范围内 reftest
 - 修复所有布局模式渲染缺口
 
 **Phase 3 — 文字排版 + 全量扩展**：
-- 导入文字排版全套 reftest
-- 扩大各领域 reftest 覆盖到目标范围
-- 达到 95%+ 总通过率
+- 从上游 WPT 导入 `css/css-text/` + `css/css-writing-modes/` + `css/css-fonts/` + `css/css-text-decor/` 的全部范围内 reftest
+- 确保每个目录导入了上游该目录**全部**范围内 reftest（从 `MANIFEST.json` 自动提取，排除 skip list 中的范围外 case）
+- 达到各领域上游真实 WPT reftest 通过率 ≥ 95%
 
 ---
 
@@ -115,41 +151,51 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 - [ ] **Viewport 对齐**：ZeroWeb 截图和 Chromium 截图在相同 viewport 尺寸下捕获（默认 800×600，可配置）
 - [ ] **JS 执行支持**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JavaScript
 - [ ] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值：
-  - 布局类（不含文字渲染）：严格容差（max_diff_ratio ≤ 1%, max_channel_diff ≤ 5）
-  - 文字类：宽松容差（具体数值由首轮 reftest 实测校准）
+  - 布局类（不含文字渲染）：严格容差（max_diff_ratio ≤ 0.1%, max_channel_diff ≤ 2）
+  - 文字类：宽松容差（max_diff_ratio ≤ 0.5%, max_channel_diff ≤ 5）
   - 优先使用 WPT fuzzy 注解的 per-test 容差，无注解时使用分类默认值
-- [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件（如 `tests/wpt-runner/reftest-skip-list.txt`）
+  - **容差锁定**：以上数值为硬性上限，不允许通过「实测校准」等理由放宽容差。如果文字类 reftest 因字体渲染差异导致大面积失败，应在 master.md 中记录具体原因，通过修复渲染来降低失败率，而非放宽容差
+  - **禁止**设置过宽松的默认容差来掩盖真实渲染差距
+- [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件（如 `tests/wpt-runner/reftest-skip-list.txt`）。**Skip list 约束**：仅允许跳过明确不在范围内的 reftest（SVG、Canvas、WebGL、动画帧级验证等）。**不允许**跳过范围内但已知的困难 case 或预期会失败的 case。Skip list 中每一项必须有注释说明跳过原因和对应的范围外分类
 - [ ] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
 - [ ] Reftest 运行可通过单一命令执行（如 `cargo run --bin wpt-reftest`）
 - [ ] CI 管线中集成 reftest 运行（至少 CPU 模式）
 
-### DC-2: CSS 2.1 核心通过率 ≥ 95%
+### DC-2: CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）
 
-- [ ] `css/css2/` 和 `css/CSS2/` 目录下导入的 reftest 子集中，通过率 ≥ 95%
+- [ ] 从上游 WPT 仓库 `css/css2/` 和 `css/CSS2/` 目录导入**全部**范围内 reftest（排除 skip list 中的范围外 case）
+- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
 - [ ] 覆盖：盒模型、margin 折叠、BFC、inline formatting、颜色、背景、边框、基础定位
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
+- [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-### DC-3: Flexbox + Grid 通过率 ≥ 95%
+### DC-3: Flexbox + Grid 通过率 ≥ 95%（基于上游真实 WPT reftest）
 
-- [ ] `css/css-flexbox/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-grid/` 导入的 reftest 子集中，通过率 ≥ 95%
+- [ ] 从上游 WPT 仓库 `css/css-flexbox/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-grid/` 导入**全部**范围内 reftest
+- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
+- [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%
+### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%（基于上游真实 WPT reftest）
 
-- [ ] `css/css-position/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-float/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-tables/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-multicol/` 导入的 reftest 子集中，通过率 ≥ 95%
+- [ ] 从上游 WPT 仓库 `css/css-position/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-float/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-tables/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-multicol/` 导入**全部**范围内 reftest
+- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
+- [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-### DC-5: 文字排版通过率 ≥ 95%
+### DC-5: 文字排版通过率 ≥ 95%（基于上游真实 WPT reftest）
 
-- [ ] `css/css-text/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-writing-modes/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-fonts/` 导入的 reftest 子集中，通过率 ≥ 95%
-- [ ] `css/css-text-decor/` 导入的 reftest 子集中，通过率 ≥ 95%
+- [ ] 从上游 WPT 仓库 `css/css-text/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-writing-modes/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-fonts/` 导入**全部**范围内 reftest
+- [ ] 从上游 WPT 仓库 `css/css-text-decor/` 导入**全部**范围内 reftest
+- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
+- [ ] **不允许**用 inline 手写 reftest 替代或充数
 
 ### DC-6: Quirks Mode 完整实现
 
@@ -167,15 +213,89 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 - [ ] Reftest 通过率报告持久化到 `docs/goal/rendering-compat/evidence/` 目录
 - [ ] 每轮执行的 reftest 通过率变化可追溯（有历史记录）
 
+### DC-8: CPU 渲染器图元覆盖 100%
+
+以下全部 13 种图元类型都必须能在 CPU 渲染器中正确渲染，不允许跳过任何一种：
+
+- [ ] `FillPrimitive` — 纯色矩形（✅ 已有）
+- [ ] `RoundedRectPrimitive` — 圆角矩形（✅ 已有）
+- [ ] `GradientPrimitive` — 线性/径向/锥形渐变渲染
+- [ ] `ShadowPrimitive` — 高斯模糊阴影渲染
+- [ ] `ImagePrimitive` — 图片解码和渲染（RGBA → framebuffer 合成）
+- [ ] `StrokePrimitive` — 线段渲染（实线/虚线/点线，支持 LineCap）
+- [ ] `PathFillPrimitive` — 路径填充（任意多边形）
+- [ ] `PathStrokePrimitive` — 路径描边
+- [ ] `TransformPrimitive` — 2D 仿射变换应用到后续图元
+- [ ] `ClipPrimitive` — 矩形裁剪区域
+- [ ] `FilterPrimitive` — CSS 滤镜（至少 blur、brightness、contrast、opacity）
+- [ ] `BlendModePrimitive` — 混合模式合成
+- [ ] `GlyphPrimitive` — 文字渲染（✅ 已有）
+
+### DC-9: GPU 渲染器图元覆盖 100%
+
+以下全部 13 种图元类型都必须能在 GPU 渲染器中正确渲染，不允许跳过任何一种。GPU 渲染必须使用真实的 GPU 渲染管线（wgpu + WGSL shaders），不允许将 GPU 渲染实现为对 CPU 渲染器的 passthrough 调用：
+
+- [ ] `FillPrimitive` — 纯色矩形（✅ 已有）
+- [ ] `RoundedRectPrimitive` — 圆角矩形（GPU 当前未实现，需扩展 WGSL shader）
+- [ ] `GradientPrimitive` — 渐变渲染（WGSL shader 或 GPU compute）
+- [ ] `ShadowPrimitive` — 阴影渲染（高斯模糊 pass 或近似算法）
+- [ ] `ImagePrimitive` — 图片纹理采样渲染
+- [ ] `StrokePrimitive` — 线段渲染
+- [ ] `PathFillPrimitive` — 路径填充
+- [ ] `PathStrokePrimitive` — 路径描边
+- [ ] `TransformPrimitive` — 2D 变换（顶点变换）
+- [ ] `ClipPrimitive` — 裁剪（scissor rect 或 stencil buffer）
+- [ ] `FilterPrimitive` — CSS 滤镜（post-processing pass）
+- [ ] `BlendModePrimitive` — 混合模式（blend equation 或 shader）
+- [ ] `GlyphPrimitive` — 文字渲染（✅ 已有，glyph atlas）
+
+### DC-10: 浏览器图元消费完整性
+
+- [ ] `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段（fills、rounded_rects、path_fills、path_strokes、strokes、gradients、shadows、images、glyphs、filters、blend_modes、transforms、clips）
+- [ ] 所有图元类型正确应用 `scale_factor` 和 `offset`
+- [ ] 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）
+- [ ] 图元渲染顺序遵循 CSS painting order（background → borders → content → outline）
+
+### DC-11: 布局正确性
+
+- [ ] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）
+- [ ] **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠
+- [ ] **Float 布局** — 完整的 float 定位（float: left/right）、clear（clear: left/right/both）、float containment（BFC 包含浮动）
+- [ ] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）
+- [ ] **Position: sticky** — 滚动时正确固定在指定偏移范围内
+- [ ] **Overflow: scroll/auto** — 可滚动容器功能，scroll 偏移正确应用到子元素布局
+- [ ] **替换元素** — `<img>` 的固有尺寸（intrinsic size）正确计算，`object-fit`（fill/contain/cover/none/scale-down）正确应用
+- [ ] **百分比高度** — containing block 有明确高度时百分比高度正确解析；无明确高度时 height: auto
+- [ ] **Auto margin 居中** — `margin: auto` 在 block/flex/grid 中正确居中
+- [ ] **min/max-width/height** — 约束正确应用到最终尺寸
+
+### DC-12: 高级视觉效果
+
+- [ ] **text-shadow** — 文字阴影渲染（offset + blur + color）
+- [ ] **多背景图层** — `background-image` 多层叠加渲染
+- [ ] **重复渐变** — `repeating-linear-gradient` / `repeating-radial-gradient`
+- [ ] **border-image** — 边框图片渲染（slice + repeat + width）
+- [ ] **clip-path** — CSS clip-path 基础形状（circle、ellipse、polygon、inset）
+- [ ] **backdrop-filter** — 元素背后内容的滤镜效果
+- [ ] **CSS mask** — 基础遮罩效果（至少 image mask）
+- [ ] **scroll-snap** — 滚动吸附行为
+- [ ] **打印媒体查询** — `@media print` 基础支持（可选，降低优先级）
+
 ### 通过率统计口径
 
-- **统计对象**：仅指从上游 WPT 导入的真实 reftest case，**不含**现有 1,341 个手写 `TestCase`
-- **现有 1,341 个手写 TestCase**：保留为 smoke test 套件，继续全绿运行，但不计入本目标的 reftest 通过率统计
-- **分母**：每个 WPT 目录下**已导入并注册**的 reftest case 数量（不是上游全部 reftest 数量），排除 skip list 中的范围外 case
+- **统计对象**：从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest case**，**不含**现有 1,341 个手写 `TestCase`，也**不含** 685 个手写 inline reftest
+- **现有 1,341 个手写 TestCase + 685 个 inline reftest**：保留为 smoke test 套件，继续全绿运行，但**不计入**本目标的 reftest 通过率统计
+- **分母**：上游 WPT 每个目录下**全部**范围内 reftest case（即上游该目录中所有不属于 skip list 的 reftest），**不是**人为挑选的子集。必须从上游 WPT 的 `MANIFEST.json` 自动提取 reftest 列表，不允许手动筛选
 - **分子**：运行后判定为 PASS 的 case 数量
 - **通过率** = 分子 / 分母 × 100%
-- **要求**：分母必须 ≥ 每个目录 50 个 reftest case（确保统计有意义），否则需扩大导入范围
-- **禁止**：不允许通过缩小导入范围来人为提高通过率
+- **失败 case 约束**：通过率 ≥ 95% 的情况下，仍需对所有失败 case 进行根因分析并记录到 evidence。不允许有「未分析的失败」。失败的根因分类为：CSS parser 错误、样式计算错误、布局算法错误、渲染器错误、JS 执行错误、范围外误入、已知 fontdue/Skia 字体差异（仅文字类）。根因为渲染错误的必须有修复计划
+- **要求**：每个 WPT 目录的分母 = 上游该目录全部 reftest − skip list 中范围外 reftest。分母不允许人为缩减——不允许跳过已知会失败的 case，不允许只挑选简单 case
+- **最低分母要求**：每个目录范围内 reftest 必须 ≥ 50 个（如果上游该目录范围内 reftest 不足 50 个，则导入全部）
+- **禁止**：
+  - 不允许通过缩小导入范围来人为提高通过率
+  - 不允许用 inline 手写 reftest 替代上游真实 reftest 来充数
+  - 不允许只导入预期会通过的简单 case 而跳过已知的困难 case
+  - 不允许通过放宽容差来掩盖真实的渲染差距
 
 ---
 
@@ -187,77 +307,131 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 | 领域 | 状态 | 详情 |
 |------|------|------|
-| 渲染管线 | ✅ 全链路贯通 | HTML → CSS → Style → Layout → Paint → Composite 完整可用 |
+| 渲染管线（Parse → Layout → Paint） | ✅ 全链路贯通 | HTML → CSS → Style → Layout → Paint 生成完整 `RenderPrimitives` |
 | CSS 属性解析 | ✅ 100+ 属性 | box model、flexbox、grid、border、background、transform、animation、transition 等 |
 | Flexbox/Grid 布局 | ✅ 基于 taffy | 所有子属性均已接入 |
 | Block/Inline 布局 | ✅ 基础可用 | Block via taffy, Inline via 自建 InlineFormattingContext |
-| 文字渲染 | ⚠️ 基础可用 | fontdue 加载 + glyph 映射，CJK fallback chain，text-align/word-break/white-space 等 |
-| WPT runner | ⚠️ smoke 级 | 1,341 个手写 TestCase，证明"不 panic + 有 primitives"，不证明渲染正确 |
-| Reftest harness | ⚠️ 最小可用 | 16 个内建 reftest case，pixel-level 对比基础设施已有，未接入 CI |
-| CPU 软件渲染 | ✅ 可用 | `render-foundation/src/cpu/` |
-| GPU 渲染 | ✅ 可用 | `render-foundation/src/gpu/`，wgpu + WGSL shaders |
+| Table 布局 | ✅ 已实现 | 表格网格构建、auto table layout、colspan、border-spacing、匿名表格盒 |
+| Multi-column 布局 | ✅ 已实现 | column-count/column-width、column-gap、shortest-column-first 分布策略 |
+| Quirks mode | ✅ 已实现 | CSS parser + style system + layout engine 三层 quirks mode 调整 |
+| 文字排版 | ✅ 已集成 | rustybuzz OpenType shaping + unicode-bidi BiDi 算法 + CJK line-breaking |
+| Paint 系统 | ✅ 13 种图元 | 填充、圆角矩形、路径、线段、渐变、阴影、图片、文字、滤镜、混合模式、变换、裁剪 |
+| CPU 软件渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + RoundedRectPrimitive + GlyphPrimitive |
+| GPU 渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + GlyphPrimitive |
+| 浏览器图元消费 | ❌ 严重不足 | `append_webview_primitives()` 仅消费 fills + glyphs，丢弃其余 11 种图元 |
+| Margin 折叠 | ❌ 未实现 | 块级元素间距与主流浏览器不一致 |
+| BFC | ❌ 未实现 | 浮动隔离和 margin 折叠无法正确工作 |
+| 滚动容器 | ⚠️ 简化处理 | 无真正滚动容器，浏览器层手动偏移 |
 
 ### 已知关键缺口
 
-| 缺口 | 影响范围 | 当前状态 |
-|------|----------|----------|
-| Float 布局 | CSS 2.1 核心功能 | 仅有 inline context 的 float exclusion zone，无原生 float layout 算法 |
-| Table 布局 | 表格渲染 | 属性已存储，无专用 table layout 算法 |
-| Multi-column | 多列布局 | 属性已存储，无列布局算法 |
-| OpenType shaping | 文字排版质量 | fontdue 仅做简单 character-to-glyph，无 liga/kern/features |
-| BiDi 算法 | RTL 文本 | 属性已存储（direction, unicode-bidi），无实现 |
-| Vertical writing-mode | 竖排文本 | 属性已存储，无实现 |
-| Quirks mode | CSS 2.1 兼容性 | DOM parser 存储了 quirks mode 但 CSS parser / style system / layout engine 完全忽略它；很多 CSS 2.1 reftest 会触发 quirks mode |
-| WPT reftest 导入 | 验证基础设施 | 无真实 WPT 上游测试导入能力 |
-| Chromium 参考截图 | 验证基准 | 无自动化 headless Chromium 截图工具链（需构建 Puppeteer/Playwright 方案） |
-| 字体像素差异 | reftest 对比可行性 | fontdue vs Skia 字体渲染结果像素级不同，现有容差（1%/5ch）对文字类 reftest 太严格 |
-| WPT fuzzy 注解 | reftest 对比精度 | 上游 reftest 自带 fuzzy() 容差声明，现有代码不解析也不应用 |
-| Viewport 对齐 | reftest 对比正确性 | ZeroWeb 和 Chromium 截图必须在相同 viewport 下捕获，当前无强制机制 |
-| JS 执行 | reftest 覆盖范围 | 很多 WPT CSS reftest 依赖 JS 动态设置条件，但 `RenderPipeline::render_html()` 不执行 JS |
-| 范围外 reftest 过滤 | 导入范围控制 | 无 skip list / expectation file 机制，导入时可能包含 SVG/Canvas/WebGL 等 range 外 case |
-| 视觉回归系统 | 持续验证 | 无 golden image 系统 |
-| `#[ignore]` 测试 | 测试完整性 | 60 个测试标记 `#[ignore]`，因本地网络不稳定，保留 `#[ignore]` |
+| 缺口 | 影响范围 | 严重性 | 当前状态 |
+|------|----------|--------|----------|
+| **渲染器图元覆盖** | **所有视觉输出** | **P0-致命** | Paint 生成 13 种图元，CPU 渲染器仅处理 3 种（fills、rounded_rects、glyphs），GPU 渲染器仅处理 2 种（fills、glyphs）。渐变、阴影、图片、线段、路径、变换、裁剪、滤镜、混合模式全部无法渲染 |
+| **浏览器图元消费** | **所有视觉输出** | **P0-致命** | `append_webview_primitives()` 仅传递 fills 和 glyphs 到渲染器，`rounded_rects`、`gradients`、`shadows`、`images`、`strokes`、`path_fills`、`path_strokes`、`transforms`、`clips`、`filters`、`blend_modes` 全部静默丢弃 |
+| **Margin 折叠** | CSS 2.1 布局正确性 | P1-严重 | 完全未实现，导致块级元素间距与主流浏览器明显不一致 |
+| **BFC** | 布局隔离 | P1-严重 | 无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠 |
+| **替换元素** | 图片/媒体渲染 | P1-严重 | `<img>` 无固有尺寸计算，图片无法正确显示 |
+| **滚动容器** | 页面滚动 | P1-严重 | overflow: scroll/auto 无真正滚动，长页面无法正确浏览 |
+| Float 布局 | CSS 2.1 核心功能 | P2-中等 | 仅有 inline context 的 float exclusion zone，clear 和 float containment 不完整 |
+| Position: fixed | 视口定位 | P2-中等 | 错误映射为 absolute，非 viewport 相对定位 |
+| Position: sticky | 滚动吸附 | P2-中等 | 需 host layer 动态调整，未完整实现 |
+| text-shadow | 文字效果 | P2-中等 | paint 阶段未生成 text-shadow 图元 |
+| 多背景图层 | 视觉丰富度 | P2-中等 | 仅渲染第一个背景图层 |
+| 重复渐变 | 视觉丰富度 | P3-低 | `repeating-linear-gradient` 未实现 |
+| clip-path | CSS 裁剪 | P3-低 | 仅生成指示器，无实际裁剪 |
+| backdrop-filter | 模糊背景 | P3-低 | 完全未实现 |
+| CSS mask | 遮罩效果 | P3-低 | 完全未实现 |
+| 3D transform | 3D 效果 | P3-低 | 仅 2D 支持，3D 函数忽略 |
+| 真实 WPT reftest | 验证有效性 | P1-严重 | 当前 685 个 inline reftest 均为手写简单场景，未使用上游 WPT 真实 reftest；容差过宽松（1%-5%），无法发现真实渲染差距。**本目标要求必须基于上游真实 WPT reftest 验证** |
 
 ### 测试基线
 
 - 总测试数：~12,001，全绿
 - Coverage：95.46% line, 96.94% function, 94.88% region
-- **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。
+- Inline reftest：685 个，100% 通过（⚠️ 手写简单场景，容差过宽松，**不计入本目标通过率统计**。本目标的通过率必须基于上游真实 WPT reftest）
+- **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。更关键的是，当前渲染器仅支持 3/13 种图元类型，即使 reftest 通过也无法反映真实的渲染质量。
 
 ---
 
 ## Single Active Milestone
 
-**当前活跃里程碑**：M1 — WPT Reftest 基础设施搭建
+**当前活跃里程碑**：M7 — 渲染器图元覆盖 + 浏览器图元消费（Critical Path）
 
-### M1 目标
+### M7 目标
 
-建立能够导入、运行、对比和报告 WPT reftest 的完整基础设施。
+消除渲染管线中最大的视觉输出缺口：让 CPU 渲染器、GPU 渲染器和浏览器 `append_webview_primitives()` 能够处理所有 13 种 `RenderPrimitives` 图元类型。完成此里程碑后，页面将从「只有色块和文字」升级到「接近主流浏览器的视觉输出」。
 
-### M1 完成标准
+### M7 背景事实
 
-1. [ ] 可以 fetch 上游 WPT 仓库（或指定目录子集）
-2. [ ] **扩展** `tests/wpt-runner/src/manifest.rs`：解析 WPT MANIFEST.json 中 reftest 条目的 `fuzzy()` 元数据（maxDiff、maxPixel）
-3. [ ] 可以用 ZeroWeb 的 CPU 软件渲染器对 reftest HTML 文件截图（**复用** `render_scene_to_framebuffer`）
-4. [ ] 可以用 ZeroWeb 的 GPU 渲染器对 reftest HTML 文件截图
-5. [ ] **自动化 headless Chromium 截图工具**：通过 Puppeteer/Playwright 脚本自动在 headless Chromium 中渲染 reftest HTML 并截图，输出到指定目录
-6. [ ] **Viewport 对齐机制**：ZeroWeb 和 Chromium 截图在相同 viewport 下捕获（默认 800×600），配置可传递
-7. [ ] **JS 执行集成**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JS
-8. [ ] **分类容差机制**：在**扩展** `tests/wpt-runner/src/reftest.rs` 的 `ReftestConfig` 基础上，支持分类容差（布局类 vs 文字类）和 per-test WPT fuzzy 注解
-9. [ ] **范围外 reftest 过滤**：维护 `tests/wpt-runner/reftest-skip-list.txt`，导入时自动过滤 SVG/Canvas/WebGL 等范围外 case
-10. [ ] 按目录分类的通过率报告输出（文本 + JSON）
-11. [ ] 单一命令运行全部已导入 reftest（如 `cargo run --bin wpt-reftest`）
-12. [ ] 导入 CSS 2.1 核心子集 ≥ 50 个 reftest case 并建立初始基线
-13. [ ] 记录初始通过率（不要求达标，但必须可测量）
-14. [ ] **确认 `#[ignore]` 标记状态**：`tests/integration/src/real_website_compat.rs` 中的真实网站测试因本地网络不稳定保留 `#[ignore]`；确认其余所有测试零 `#[ignore]`
+当前渲染管线存在一个严重的「断桥」：
+1. **Paint 系统**（`crates/engine/src/paint/`）已能生成 13 种图元类型 ✅
+2. **CPU 渲染器**仅渲染其中 3 种（fills、rounded_rects、glyphs）❌
+3. **GPU 渲染器**仅渲染其中 2 种（fills、glyphs）❌
+4. **浏览器 `append_webview_primitives()`** 仅传递 2 种到渲染器 ❌
 
-### M1 影响范围
+这意味着渐变、阴影、图片、线段（边框虚线/点线）、路径、变换、裁剪、滤镜、混合模式全部在渲染阶段被静默丢弃。
 
-- **主要修改**：`tests/wpt-runner/`（升级现有 WPT runner，**扩展而非重写** `reftest.rs` 和 `manifest.rs`）
-- **新增文件**：Chromium 截图工具脚本（如 `tests/wpt-runner/scripts/capture-chromium-screenshots.mjs`）、reftest skip list 文件
-- **可能修改**：`crates/render-foundation/src/surface.rs`（截图功能）、`crates/render-foundation/src/cpu/`（CPU 渲染截图输出）、`crates/engine/src/pipeline.rs`（JS 执行集成）
-- **确认状态**：`tests/integration/src/real_website_compat.rs`（保留 60 个 `#[ignore]` 标记，因本地网络不稳定）
-- **不允许修改**：`crates/css-parser/`、`crates/style-system/`、`crates/layout-engine/`（M1 只建基础设施，不改渲染逻辑；`crates/engine/` 仅允许 JS 执行集成改动）
+### M7 完成标准
+
+1. [ ] **CPU 渲染器**（`crates/render-foundation/src/cpu/`）实现以下图元渲染：
+   - `GradientPrimitive` — 线性/径向/锥形渐变（逐像素插值或分段近似）
+   - `ShadowPrimitive` — 高斯模糊阴影（box-blur 近似或高斯核卷积）
+   - `ImagePrimitive` — RGBA 像素数据合成到 framebuffer
+   - `StrokePrimitive` — 线段渲染（支持 solid/dashed/dotted + LineCap）
+   - `PathFillPrimitive` — 多边形扫描线填充
+   - `PathStrokePrimitive` — 多边形描边
+   - `TransformPrimitive` — 仿射变换应用到后续图元坐标
+   - `ClipPrimitive` — 矩形裁剪（像素级 discard）
+   - `FilterPrimitive` — 至少 blur（box-blur 近似）和 opacity
+   - `BlendModePrimitive` — 至少 normal、multiply、screen
+2. [ ] **GPU 渲染器**（`crates/render-foundation/src/gpu/`）实现以下图元渲染：
+   - `RoundedRectPrimitive` — 扩展 WGSL shader 支持圆角
+   - `GradientPrimitive` — 渐变 shader（1D texture lookup 或 shader 内插值）
+   - `ShadowPrimitive` — 阴影 pass（模糊 texture 或近似）
+   - `ImagePrimitive` — 图片纹理上传和采样
+   - `StrokePrimitive` — 线段顶点生成
+   - `TransformPrimitive` — 顶点坐标变换
+   - `ClipPrimitive` — scissor rect 或 stencil buffer
+   - `FilterPrimitive` — post-processing pass（至少 blur）
+   - `BlendModePrimitive` — blend equation 配置
+3. [ ] **浏览器图元消费**（`apps/browser/src/app_render.rs`）：
+   - `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段
+   - 所有图元类型正确应用 `scale_factor` 和 `offset`
+   - 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）
+   - 图元渲染顺序遵循 CSS painting order
+4. [ ] **验证**：修改后 `cargo test` 全绿，`cargo clippy` 零警告
+5. [ ] **视觉验证**：为以下每种新增图元类型编写独立的单元测试，生成已知输入图元 → 渲染到 framebuffer → 断言关键像素值正确（不允许仅凭「看起来对了」声称通过）：
+   - 渐变：输入 `GradientPrimitive { kind: Linear, stops: [red→blue] }` → 断言矩形左端像素为红色、右端为蓝色
+   - 阴影：输入 `ShadowPrimitive { blur_radius: 10, color: black }` → 断言阴影区域的 alpha 渐变存在
+   - 图片：输入 `ImagePrimitive { RGBA 数据 }` → 断言输出像素与输入一致
+   - 线段：输入 `StrokePrimitive { style: Dashed }` → 断言输出包含间断的线段像素
+   - 变换：输入 `TransformPrimitive { rotate: 90° }` + 子图元 → 断言子图元坐标被正确旋转
+   - 裁剪：输入 `ClipPrimitive` + 超出裁剪区域的子图元 → 断言超出部分不渲染
+   - 滤镜：输入 `FilterPrimitive { blur }` → 断言输出被模糊
+   - 混合模式：输入 `BlendModePrimitive { multiply }` → 断言混合计算正确
+
+### M7 影响范围
+
+- **主要修改**：
+  - `crates/render-foundation/src/cpu.rs`（CPU 渲染器扩展）
+  - `crates/render-foundation/src/gpu/renderer.rs`（GPU 渲染器扩展）
+  - `crates/render-foundation/src/gpu/pipeline.rs`（WGSL shader 扩展）
+  - `apps/browser/src/app_render.rs`（`append_webview_primitives()` 扩展）
+- **可能修改**：
+  - `crates/render-foundation/src/primitive/mod.rs`（如需调整图元定义）
+  - `crates/render-foundation/src/gpu/`（新增 shader 文件、纹理管理）
+- **不修改**：
+  - `crates/css-parser/`、`crates/style-system/`、`crates/layout-engine/`（M7 不改解析/布局逻辑）
+  - `crates/engine/src/paint/`（Paint 系统已能正确生成所有图元）
+
+### M7 技术约束
+
+- CPU 渲染器保持逐像素/逐行扫描的方式，不引入 GPU 依赖
+- GPU 渲染器基于现有 wgpu + WGSL 架构扩展，不更换图形后端
+- GPU 渲染必须是独立的 GPU 渲染管线（wgpu + WGSL shaders），**不允许**将 GPU 渲染实现为对 CPU 渲染器的 passthrough 调用。每种图元类型在 GPU 渲染器中必须有对应的 GPU 端实现（vertex shader / fragment shader / compute shader）
+- 优先 CPU 渲染器实现（更简单、更易调试），然后映射到 GPU 渲染器
+- 每个图元类型的实现必须有对应单元测试（输入图元 → 输出像素 → 验证）
 
 ---
 
@@ -265,7 +439,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 ### M2 — CSS 2.1 核心渲染修复 + Quirks Mode
 
-**目标**：修复 CSS 2.1 reftest 发现的渲染错误，实现完整 quirks mode，达到 CSS 2.1 核心通过率 ≥ 95%。
+**目标**：修复 CSS 2.1 reftest 发现的渲染错误，实现完整 quirks mode，达到 CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
 - 盒模型计算精度
@@ -286,7 +460,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 ### M3 — Flexbox + Grid 渲染修复
 
-**目标**：修复 Flexbox 和 Grid reftest 发现的渲染错误，达到各自通过率 ≥ 95%。
+**目标**：修复 Flexbox 和 Grid reftest 发现的渲染错误，达到各自通过率 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
 - Flexbox 所有子属性的正确布局
@@ -298,7 +472,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 ### M4 — Float + Table + Multicol 布局算法实现
 
-**目标**：实现缺失的布局算法（Float、Table、Multi-column），达到各自 reftest 通过率 ≥ 95%。
+**目标**：实现缺失的布局算法（Float、Table、Multi-column），达到各自 reftest 通过率 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
 - 完整 float 布局算法
@@ -310,7 +484,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 ### M5 — 文字排版能力实现
 
-**目标**：实现完整的文字排版能力，达到文字排版 reftest 通过率 ≥ 95%。
+**目标**：实现完整的文字排版能力，达到文字排版 reftest 通过率 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
 - OpenType shaping（ligatures、kerning、features）— 可能引入 `rustybuzz`
@@ -323,7 +497,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 
 **依赖**：M1 完成（M2/M3/M4 可并行）
 
-### M6 — 全量扩展 + 通过率冲刺
+### M6 — 全量扩展 + 通过率冲刺（已声称完成）
 
 **目标**：扩大各领域 reftest 覆盖范围，达到总体 95%+ 通过率。
 
@@ -334,6 +508,92 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 - 回归测试确保已通过的 case 不退化
 
 **依赖**：M2-M5 完成
+
+**状态**：⚠️ 已声称完成（685/685 inline reftest 100% 通过），但审计发现这些 reftest 均为手写简单场景，**不是上游 WPT 真实 reftest**，未覆盖渲染器实际输出能力缺口。真实渲染效果仍然与主流浏览器差距巨大。后续 M7-M11 里程碑旨在解决这些根本问题。**本目标的通过率标准必须基于上游真实 WPT reftest，685 个 inline reftest 不计入通过率统计。**
+
+### M7 — 渲染器图元覆盖 + 浏览器图元消费（Critical Path）
+
+**目标**：消除渲染管线最大的视觉输出缺口 — 让 CPU/GPU 渲染器和浏览器 `append_webview_primitives()` 能处理所有 13 种 `RenderPrimitives` 图元类型。
+
+**范围**：
+- CPU 渲染器（`crates/render-foundation/src/cpu/`）：新增 GradientPrimitive、ShadowPrimitive、ImagePrimitive、StrokePrimitive、PathFillPrimitive、PathStrokePrimitive、TransformPrimitive、ClipPrimitive、FilterPrimitive、BlendModePrimitive 渲染能力
+- GPU 渲染器（`crates/render-foundation/src/gpu/`）：扩展 WGSL shader + 顶点格式，新增 RoundedRectPrimitive、GradientPrimitive、ShadowPrimitive、ImagePrimitive、StrokePrimitive、TransformPrimitive、ClipPrimitive、FilterPrimitive、BlendModePrimitive 渲染能力
+- 浏览器（`apps/browser/src/app_render.rs`）：`append_webview_primitives()` 处理所有 13 个 `RenderPrimitives` 字段
+- 图元渲染顺序遵循 CSS painting order（background → borders → content → outline）
+
+**背景事实**：Paint 系统已能生成 13 种图元，但 CPU 渲染器仅渲染 3 种、GPU 渲染器仅渲染 2 种、浏览器仅传递 2 种。渐变、阴影、图片、边框虚线、路径、变换、裁剪、滤镜、混合模式全部在渲染阶段静默丢弃。
+
+**依赖**：无（可与 M2-M6 并行，但建议优先完成，因为这是视觉输出最大的瓶颈）
+
+**⚠️ 关键要求**：M7 的验证不能仅依赖手写 inline reftest。M7 完成标准中的图元渲染验证必须通过以下方式之一：（1）单元测试直接验证 framebuffer 像素输出（推荐），或（2）从上游 WPT 导入至少 20 个涉及渐变/阴影/图片/边框的真实 reftest 来验证。不允许仅凭手写 inline reftest 声称 M7 完成。
+
+### M8 — 布局正确性（Margin 折叠 + BFC + Float + Replaced Elements）
+
+**目标**：实现 CSS 2.1 核心布局算法，使块级布局结果与主流浏览器一致。
+
+**范围**：
+- **Margin 折叠算法** — 相邻块级元素 margin-top/margin-bottom 折叠（正取最大、负取最负、正负抵消）；父子 margin 折叠
+- **BFC（Block Formatting Context）** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC；BFC 包含浮动、隔离 margin 折叠
+- **Float 布局完善** — 完整的 float 定位、clear（clear: left/right/both）、float containment
+- **Position: fixed** — 相对 viewport 定位（修复当前错误映射为 absolute 的问题）
+- **Position: sticky** — 滚动时正确固定在指定偏移范围内
+- **替换元素** — `<img>` 固有尺寸（intrinsic size）计算，`object-fit` 正确应用
+- **百分比高度** — containing block 有明确高度时百分比高度正确解析
+- **Auto margin 居中** — `margin: auto` 在 block 中正确水平居中
+- **min/max-width/height** — 约束正确应用到最终尺寸
+
+**依赖**：M7 完成（需要渲染器能正确渲染才能验证布局结果）
+
+### M9 — 滚动容器 + 高级视觉效果
+
+**目标**：实现滚动容器功能和高级 CSS 视觉效果。
+
+**范围**：
+- **滚动容器** — `overflow: scroll/auto` 创建可滚动容器；scroll 偏移正确应用到子元素；scrollbar UI（至少 native scrollbar）
+- **text-shadow** — 文字阴影渲染（offset + blur + color）
+- **多背景图层** — `background-image` 多层叠加渲染
+- **重复渐变** — `repeating-linear-gradient` / `repeating-radial-gradient`
+- **border-image** — 边框图片渲染（slice + repeat + width）
+- **clip-path** — CSS clip-path 基础形状（circle、ellipse、polygon、inset）
+- **backdrop-filter** — 元素背后内容的滤镜效果
+- **CSS mask** — 基础遮罩效果（至少 image mask）
+- **scroll-snap** — 滚动吸附行为
+
+**依赖**：M7 完成（需要渲染器支持所有基础图元）
+
+### M10 — 上游 WPT 真实 Reftest 导入与验证
+
+**目标**：从上游 WPT 仓库导入**全部**范围内真实 reftest，建立可信的渲染正确性验证基线。所有后续通过率统计必须基于这些上游真实 reftest。
+
+**范围**：
+- **上游 WPT 真实 reftest 导入** — 从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）自动 fetch 并导入以下目录的**全部**范围内 reftest（从 `MANIFEST.json` 自动提取 reftest 列表，排除 skip list 中的范围外 case，不允许手动筛选或挑拣）：
+  - `css/css2/`、`css/CSS2/`
+  - `css/css-flexbox/`、`css/css-grid/`
+  - `css/css-position/`、`css/css-float/`、`css/css-tables/`、`css/css-multicol/`
+  - `css/css-text/`、`css/css-writing-modes/`、`css/css-fonts/`、`css/css-text-decor/`
+- **导入完整性要求** — 每个目录必须导入上游该目录**全部**范围内 reftest（从 `MANIFEST.json` 自动提取 reftest 列表，排除 skip list 中的范围外 case）。不允许人为缩减导入范围
+- **容差收紧** — 布局类 reftest 容差 ≤ 0.1%；文字类 reftest 容差 ≤ 0.5%；优先使用 WPT fuzzy 注解
+- **Chromium 参考截图自动化** — Puppeteer/Playwright 自动截图工具链，为每个上游 reftest 生成 Chromium 参考截图
+- **CI 集成** — GitHub Actions 中运行上游真实 WPT reftest
+- **通过率基线** — 记录上游真实 reftest 初始通过率，不要求达标但必须可测量
+- **失败分析机制** — 每个失败 case 自动分类（CSS parser 错误？样式计算错误？布局错误？渲染器错误？）
+- **685 个 inline reftest 处理** — 保留为 smoke test，不计入本目标的通过率统计
+
+**依赖**：M7 完成（渲染器必须支持所有图元类型后，真实 WPT reftest 的结果才有意义）。**建议 M10 基础设施搭建（fetch + 导入 + Chromium 截图工具链）与 M7 并行进行**，这样 M7 完成后可以立即运行真实 WPT reftest 来验证
+
+### M11 — 全量冲刺 + 上游真实 WPT Reftest 通过率达标
+
+**目标**：修复所有剩余渲染缺口，达到上游真实 WPT reftest 各领域通过率 ≥ 95%。所有通过率统计的分母必须是上游 WPT 目录中全部范围内 reftest。
+
+**范围**：
+- 修复 M10 发现的所有上游真实 WPT reftest 失败 case
+- 确保每个上游 WPT 目录导入了全部范围内 reftest（不允许人为缩减）
+- CPU + GPU 双模式验证
+- 回归测试确保已通过的 case 不退化
+- 性能优化（如渲染器批处理、GPU draw call 合并）
+- **不允许**通过缩小导入范围、放宽容差、跳过困难 case 来人为提高通过率
+
+**依赖**：M8-M10 完成
 
 ---
 
@@ -358,7 +618,7 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 | 现有测试 | `cargo test` 零失败 | 立即修复，不允许带着红灯继续 |
 | 格式化 | `cargo fmt` 无变更 | 提交前格式化 |
 | 新增代码测试覆盖 | 每个渲染修复必须有对应单元测试 | 不允许只改代码不加测试 |
-| Reftest 通过率 | 按 Done Criteria 中各领域 ≥ 95% | 继续修复直到达标 |
+| Reftest 通过率 | 按 Done Criteria 中各领域 ≥ 95%（基于上游真实 WPT reftest） | 继续修复直到达标 |
 
 ### Coverage 要求
 
@@ -367,7 +627,8 @@ WPT reftest 数以万计，不可能一次导入全部。按以下优先级分�
 - 其余所有测试零 `#[ignore]`：除真实网站测试外，不允许引入新的 `#[ignore]` / skip 标记。如果某个测试需要外部资源（网络、文件），应在测试中做超时和错误处理，而不是跳过
 - 新增功能、行为变化、兼容性扩展和回归修复必须同步补单元测试
 - Coverage 作为长期主线任务的一部分持续扩大
-- 不允许通过缩小统计范围来伪造达标
+- **通过率验证必须基于上游真实 WPT reftest** — 不允许用 inline 手写 reftest 替代上游真实 reftest 来充数
+- 不允许通过缩小统计范围、缩小导入范围、放宽容差、跳过困难 case 来伪造达标
 - 如果缺少 coverage 测量手段，视为要继续推进的工作内容，不视为终止条件
 
 ### 证据持久化
@@ -389,9 +650,33 @@ evidence/
 
 ## Latest Evidence
 
-**尚未启动**。本目标文档刚创建，无执行证据。
+**重要状态说明**：
 
-执行代理首轮必须完成的工作见下方"首轮进入检查清单"。
+1. M1-M6 里程碑声称全部完成，685 个 inline reftest 100% 通过。但实际渲染效果与主流浏览器差距巨大。
+2. **本目标的通过率标准已变更为必须基于上游真实 WPT reftest**。685 个 inline 手写 reftest 不计入通过率统计。M1-M6 中基于 inline reftest 的「100% 通过率」不满足本目标的 Done Criteria。
+3. 尚未从上游 WPT 仓库导入任何真实 reftest，因此当前上游真实 WPT reftest 通过率为**未知**。
+
+审计发现根本原因：
+
+### 审计发现（2026-06-07）
+
+| 问题 | 严重性 | 详情 |
+|------|--------|------|
+| 渲染器图元覆盖不足 | **P0-致命** | Paint 生成 13 种图元，CPU 渲染器仅渲染 3 种（fills、rounded_rects、glyphs），GPU 渲染器仅渲染 2 种（fills、glyphs） |
+| 浏览器图元消费不完整 | **P0-致命** | `append_webview_primitives()` 仅传递 fills 和 glyphs，其余 11 种图元静默丢弃 |
+| Margin 折叠未实现 | P1-严重 | 块级元素间距与主流浏览器不一致 |
+| BFC 未实现 | P1-严重 | 浮动隔离和 margin 折叠无法正确工作 |
+| 验证体系无效 | P1-严重 | 685 个 inline reftest 均为手写简单场景，容差过宽松（1%-5%），未使用上游 WPT 真实 reftest，无法发现真实渲染差距 |
+
+### 已添加的修复里程碑
+
+- **M7** — 渲染器图元覆盖 + 浏览器图元消费（Critical Path）
+- **M8** — 布局正确性（Margin 折叠 + BFC + Float + Replaced Elements）
+- **M9** — 滚动容器 + 高级视觉效果
+- **M10** — 上游 WPT 真实 Reftest 导入与验证
+- **M11** — 全量冲刺 + 上游真实 WPT Reftest 通过率达标
+
+执行代理应从 M7 开始执行。
 
 ---
 
@@ -442,15 +727,17 @@ evidence/
 执行代理在首次进入时**必须**完成以下操作，这些不是可选的，也不是可以推迟的工作：
 
 - [ ] 探索当前仓库渲染管线事实（CSS parser 能力、style system 能力、layout engine 能力、render foundation 能力）
+- [ ] **审计渲染器图元覆盖**：确认 CPU 渲染器和 GPU 渲染器实际支持哪些图元类型
+- [ ] **审计浏览器图元消费**：确认 `append_webview_primitives()` 实际传递哪些图元类型
 - [ ] 检查现有 WPT runner 和 reftest harness 的具体实现状态
 - [ ] 确认现有测试基线（运行 `cargo test` 确保全绿）
 - [ ] **确认 `#[ignore]` 标记状态**：`tests/integration/src/real_website_compat.rs` 中的真实网站测试因本地网络不稳定保留 `#[ignore]`（这是已知的、合理的例外）。确认仓库其余部分零 `#[ignore]`
-- [ ] 创建 `docs/goal/rendering-compat/master.md`，包含完整的当前状态评估和 M1 计划
+- [ ] 创建或更新 `docs/goal/rendering-compat/master.md`，包含完整的当前状态评估和 M7 计划
 - [ ] 创建 `docs/goal/rendering-compat/archive/` 目录
-- [ ] 创建 `docs/goal/rendering-compat/evidence/` 目录
-- [ ] 选定并启动第一个活跃里程碑（M1 — WPT Reftest 基础设施搭建）
+- [ ] 创建 `docs/goel/rendering-compat/evidence/` 目录
+- [ ] 选定并启动第一个活跃里程碑（M7 — 渲染器图元覆盖 + 浏览器图元消费）
 
-**关键要求**：完成 master.md 和目录初始化后，执行代理**必须**在同一轮内继续启动 M1，直接推进核心基础设施能力。**不允许**把"文档框架已建立"当作里程碑完成或收工理由。
+**关键要求**：完成 master.md 和目录初始化后，执行代理**必须**在同一轮内继续启动 M7，直接推进渲染器图元覆盖能力。**不允许**把"文档框架已建立"当作里程碑完成或收工理由。
 
 ### 文档治理原则
 
@@ -477,18 +764,32 @@ evidence/
 
 **同时满足以下所有条件时才允许输出 DONE**：
 
-1. ✅ Done Criteria DC-1 到 DC-7 全部满足
-2. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%
-3. ✅ CPU 软件渲染 + GPU 渲染双模式均达标
-4. ✅ `cargo build` + `cargo test` + `cargo clippy` 全通过
-5. ✅ 有结构化的 reftest 通过率报告作为自动化证据
-6. ✅ master.md 内部自洽，archive 已建立，进度已归档
-7. ✅ 渲染能力本身达到可验证的 production-ready 质量
+1. ✅ Done Criteria DC-1 到 DC-12 全部满足
+2. ✅ CPU 渲染器 + GPU 渲染器均支持全部 13 种 `RenderPrimitives` 图元类型
+3. ✅ 浏览器 `append_webview_primitives()` 正确消费并渲染所有图元类型
+4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%（基于真实上游 WPT reftest）
+5. ✅ Margin 折叠、BFC、Float 布局、滚动容器等核心布局行为与 Chromium 一致
+6. ✅ CPU 软件渲染 + GPU 渲染双模式均达标
+7. ✅ `cargo build` + `cargo test` + `cargo clippy` 全通过
+8. ✅ 有结构化的 reftest 通过率报告作为自动化证据（包含真实 WPT reftest 结果）
+9. ✅ master.md 内部自洽，archive 已建立，进度已归档
+10. ✅ 渲染能力本身达到可验证的 production-ready 质量 — 满足以下所有客观标准：
+    - 加载至少 5 个主流网站（如 github.com、wikipedia.org、twitter.com 等），为每个网站截图
+    - 截图必须通过上游 WPT reftest 的同等级像素对比（max_diff_ratio ≤ 1%，因为真实网站涉及文字渲染）
+    - 截图证据持久化到 `docs/goal/rendering-compat/evidence/` 目录，包含 ZeroWeb 截图和 Chromium 参考截图
+    - 不允许仅凭「看起来对了」声称通过，必须有自动化像素对比数据作为证据
 
 ### 禁止输出 DONE 的情况
 
 即使以下情况中部分条件看起来"还行"，也**不允许**输出 DONE：
 
+- ❌ CPU 或 GPU 渲染器不支持全部 13 种图元类型（渐变、阴影、图片、线段等缺失）
+- ❌ GPU 渲染器是 CPU 渲染器的 passthrough 封装（必须使用独立的 GPU 渲染管线：wgpu + WGSL shaders）
+- ❌ `append_webview_primitives()` 丢弃任何图元类型
+- ❌ Margin 折叠未实现或未验证
+- ❌ BFC 未实现或未验证
+- ❌ 只通过了手写 inline reftest，未使用上游 WPT 真实 reftest
+- ❌ reftest 容差过宽松（布局类 > 0.5%，文字类 > 2%）
 - ❌ master.md 缺失、必填章节缺失、archive/evidence 为空且无有效里程碑
 - ❌ 无 reftest 证据，或 reftest 存在未分析的失败项
 - ❌ 无实际代码/测试进度（仅有文档和计划）
@@ -497,6 +798,7 @@ evidence/
 - ❌ 所有 master.md 章节都填了、archive 建了、计划列了，但没有真实 reftest 运行结果和渲染修复
 - ❌ 测试全绿、reftest 通过率达标、文档完整，但目标渲染能力本身未达到可验证的 production-ready 质量
 - ❌ 只验证了 CPU 渲染或 GPU 渲染其中一种模式
+- ❌ 无法加载和正确渲染至少 5 个主流网站的页面
 
 ### BLOCK 策略
 
@@ -526,9 +828,9 @@ evidence/
 
 每轮执行的工作模式：
 
-1. **扩展基础设施**：导入更多 WPT reftest case，扩大覆盖范围
-2. **运行 reftest**：获取当前通过率，分析失败 case
-3. **修复渲染缺口**：针对失败 case 修复 CSS parser / style system / layout engine / render foundation
+1. **扩展基础设施**：从上游 WPT 仓库导入更多真实 reftest case，扩大覆盖范围
+2. **运行上游真实 reftest**：获取当前通过率，分析失败 case
+3. **修复渲染缺口**：针对上游真实 reftest 失败 case 修复渲染器 / CSS parser / style system / layout engine
 4. **补充测试**：为每个修复添加单元测试
 5. **验证回归**：确保修复不破坏已有通过的 case
 6. **更新文档**：更新 master.md 状态和 evidence
@@ -540,7 +842,7 @@ M1 及后续 milestone **必须优先扩展现有模块**，禁止重写已有�
 - 像素对比引擎：扩展 `tests/wpt-runner/src/reftest.rs` 的 `ReftestConfig` 和 `compare_pixels()`，添加分类容差和 WPT fuzzy 注解支持
 - WPT MANIFEST 解析：扩展 `tests/wpt-runner/src/manifest.rs`，添加 fuzzy 元数据解析
 - CPU 截图：复用 `render_scene_to_framebuffer()`
-- Smoke test 套件：保留现有 1,341 个手写 TestCase 继续运行，不删除、不替换
+- Smoke test 套件：保留现有 1,341 个手写 TestCase 和 685 个 inline reftest 继续运行，不删除、不替换。但这些**不计入**本目标的通过率统计，本目标的通过率必须基于上游真实 WPT reftest
 - JS runtime：复用 `crates/script-sandbox/` 的 V8 runtime
 
 ### `#[ignore]` 管理要求
