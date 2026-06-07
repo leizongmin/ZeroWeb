@@ -931,14 +931,19 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "background-image" => {
-            if let Some(v) = values::parse_background_image(value) {
-                style.background_image = match v {
-                    zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
-                    zero_css_parser::values::BackgroundImageValue::Url(url) => BackgroundImageComputedValue::Url(url),
-                    zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
-                        BackgroundImageComputedValue::Gradient(g)
-                    }
-                };
+            if let Some(layers) = values::parse_background_image_layers(value) {
+                style.background_image = layers
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
+                        zero_css_parser::values::BackgroundImageValue::Url(url) => {
+                            BackgroundImageComputedValue::Url(url)
+                        }
+                        zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
+                            BackgroundImageComputedValue::Gradient(g)
+                        }
+                    })
+                    .collect();
                 return true;
             }
         }

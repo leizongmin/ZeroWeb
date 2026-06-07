@@ -48,8 +48,9 @@ impl super::Painter {
         });
     }
 
-    /// 绘制背景图片 / 渐变。
+    /// 绘制背景图片 / 渐变（支持多图层）。
     ///
+    /// CSS 规范要求多图层按逆序渲染（最后一层在最底部）。
     /// 支持 background-repeat 渲染：根据 repeat 模式生成平铺的 ImagePrimitive。
     pub(super) fn paint_background_image(
         &mut self,
@@ -60,6 +61,10 @@ impl super::Painter {
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
+
+        if style.background_image.is_empty() {
+            return;
+        }
 
         // 计算 background-origin 定位区域
         let (origin_x, origin_y, origin_w, origin_h) = match style.background_origin {
@@ -88,46 +93,48 @@ impl super::Painter {
         let positioned_x = origin_x + offset_x;
         let positioned_y = origin_y + offset_y;
 
-        match &style.background_image {
-            BackgroundImageComputedValue::None => {}
-            BackgroundImageComputedValue::Url(url) => {
-                let key = simple_hash(url);
-                let repeat = &style.background_repeat;
+        // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）
+        for layer in style.background_image.iter().rev() {
+            match layer {
+                BackgroundImageComputedValue::None => {}
+                BackgroundImageComputedValue::Url(url) => {
+                    let key = simple_hash(url);
+                    let repeat = &style.background_repeat;
 
-                // 根据重复模式计算平铺参数
-                let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
-                    repeat,
-                    origin_x,
-                    origin_y,
-                    origin_w,
-                    origin_h,
-                    positioned_x,
-                    positioned_y,
-                    sized_w,
-                    sized_h,
-                );
+                    let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
+                        repeat,
+                        origin_x,
+                        origin_y,
+                        origin_w,
+                        origin_h,
+                        positioned_x,
+                        positioned_y,
+                        sized_w,
+                        sized_h,
+                    );
 
-                let mut y = repeat_y.0;
-                while y < repeat_y.1 {
-                    let mut x = repeat_x.0;
-                    while x < repeat_x.1 {
-                        // 裁剪到 origin 区域
-                        let clipped = clip_tile_to_origin(x, y, tile_w, tile_h, origin_x, origin_y, origin_w, origin_h);
-                        if let Some((cx, cy, cw, ch)) = clipped {
-                            self.primitives.add_image(ImagePrimitive {
-                                rect: Rect::new(cx, cy, cw, ch),
-                                image_key: ImageKey::new(key),
-                            });
+                    let mut y = repeat_y.0;
+                    while y < repeat_y.1 {
+                        let mut x = repeat_x.0;
+                        while x < repeat_x.1 {
+                            let clipped =
+                                clip_tile_to_origin(x, y, tile_w, tile_h, origin_x, origin_y, origin_w, origin_h);
+                            if let Some((cx, cy, cw, ch)) = clipped {
+                                self.primitives.add_image(ImagePrimitive {
+                                    rect: Rect::new(cx, cy, cw, ch),
+                                    image_key: ImageKey::new(key),
+                                });
+                            }
+                            x += tile_w;
                         }
-                        x += tile_w;
+                        y += tile_h;
                     }
-                    y += tile_h;
                 }
-            }
-            BackgroundImageComputedValue::Gradient(gradient) => {
-                let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
-                if let Some(prim) = gradient_to_primitive(gradient, &rect) {
-                    self.primitives.add_gradient(prim);
+                BackgroundImageComputedValue::Gradient(gradient) => {
+                    let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
+                    if let Some(prim) = gradient_to_primitive(gradient, &rect) {
+                        self.primitives.add_gradient(prim);
+                    }
                 }
             }
         }

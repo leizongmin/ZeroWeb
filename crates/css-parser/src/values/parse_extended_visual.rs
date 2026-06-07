@@ -515,6 +515,55 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     None
 }
 
+/// 解析 CSS background-image 多图层值（逗号分隔）。
+///
+/// 支持格式如 `"url(a.png), linear-gradient(red, blue)"`。
+/// 如果只有单个值，返回长度为 1 的 Vec。
+/// 如果全部解析失败，返回 None。
+pub fn parse_background_image_layers(value: &str) -> Option<Vec<BackgroundImageValue>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    // 快速路径：如果没有逗号，使用单值解析
+    if !value.contains(',') {
+        let single = parse_background_image(value)?;
+        return Some(vec![single]);
+    }
+
+    // 多图层：按逗号分隔（注意不要拆分渐变函数内的逗号）
+    let layers = split_background_layers(value);
+    let mut result = Vec::with_capacity(layers.len());
+    for layer in &layers {
+        match parse_background_image(layer.trim()) {
+            Some(v) => result.push(v),
+            None => return None, // 任何一个图层解析失败则整体失败
+        }
+    }
+    if result.is_empty() { None } else { Some(result) }
+}
+
+/// 按顶层逗号分隔 background-image 值（跳过函数内的逗号）。
+fn split_background_layers(value: &str) -> Vec<&str> {
+    let mut layers = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                layers.push(&value[start..i]);
+                start = i + 1; // 逗号是 1 字节 ASCII
+            }
+            _ => {}
+        }
+    }
+    layers.push(&value[start..]);
+    layers
+}
+
 /// CSS background-position 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundPositionValue {
