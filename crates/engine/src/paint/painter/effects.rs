@@ -257,6 +257,29 @@ impl super::Painter {
         self.primitives.add_filter(FilterPrimitive { rect, filters });
     }
 
+    /// 应用 CSS backdrop-filter（对元素背后内容应用滤镜）。
+    ///
+    /// backdrop-filter 在元素自身内容绘制之前应用，影响该元素区域内的所有已绘制内容。
+    pub(super) fn apply_backdrop_filter(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let filters = match &style.backdrop_filter {
+            FilterComputedValue::None => return,
+            f => vec![filter_computed_to_kind(f)],
+        };
+
+        if filters.is_empty() {
+            return;
+        }
+
+        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        self.primitives.add_filter(FilterPrimitive { rect, filters });
+    }
+
     /// 应用 CSS mix-blend-mode。
     pub(super) fn apply_blend_mode(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let mode = match style.mix_blend_mode {
