@@ -91,6 +91,8 @@ pub struct LayoutBox {
     /// 滚动容器垂直滚动偏移（像素，0 表示未滚动）。
     /// 仅当 overflow_y 为 Scroll 时有意义。
     pub scroll_y: f32,
+    /// 是否为 display: flow-root 元素（建立 BFC）。
+    pub is_flow_root: bool,
 }
 
 impl LayoutBox {
@@ -156,6 +158,7 @@ impl Default for LayoutBox {
             z_index: 0,
             scroll_x: 0.0,
             scroll_y: 0.0,
+            is_flow_root: false,
         }
     }
 }

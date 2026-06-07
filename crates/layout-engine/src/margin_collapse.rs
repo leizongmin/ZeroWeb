@@ -46,9 +46,11 @@ pub fn establishes_bfc(box_node: &LayoutBox) -> bool {
         return true;
     }
 
-    // 注意：display: flow-root 和 inline-block 的判断需要从 computed style 获取
-    // 但 LayoutBox 当前不存储 display 值。
-    // 这些情况会在后续通过存储 display 来处理。
+    // display: flow-root → BFC
+    if box_node.is_flow_root {
+        return true;
+    }
+
     false
 }
 

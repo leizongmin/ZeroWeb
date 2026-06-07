@@ -136,6 +136,19 @@ impl ImageCache {
         key
     }
 
+    /// 使用指定的缓存键插入图片数据。
+    ///
+    /// 用于 reftest 场景：paint 系统通过 `simple_hash(src)` 生成 ImageKey，
+    /// 外部加载器需要用相同的 key 将解码后的图片数据注入缓存。
+    pub fn insert_with_key(&mut self, key: ImageKey, data: ImageData) {
+        let entry = CacheEntry {
+            data,
+            ref_count: 1,
+            last_access_gen: self.current_gen,
+        };
+        self.entries.insert(key, entry);
+    }
+
     /// 获取图片数据的引用，并递增引用计数
     pub fn get(&mut self, key: &ImageKey) -> Option<&ImageData> {
         let entry = self.entries.get_mut(key)?;

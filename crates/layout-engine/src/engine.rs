@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{ClearValue, FloatValue, OverflowValue, PositionValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, OverflowValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
@@ -278,6 +278,7 @@ impl LayoutEngine {
         let clear = computed.map_or(ClearValue::None, |s| s.clear.clone());
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        let is_flow_root = computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot));
         let z_index = computed.map_or(0, |s| match s.z_index {
             ZIndexValue::Auto => 0,
             ZIndexValue::Integer(z) => z,
@@ -336,6 +337,7 @@ impl LayoutEngine {
             z_index,
             scroll_x: 0.0,
             scroll_y: 0.0,
+            is_flow_root,
         }
     }
 }

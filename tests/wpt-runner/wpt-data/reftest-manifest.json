@@ -1,0 +1,586 @@
+{
+  "type": "reftest-manifest",
+  "version": 1,
+  "entries": [
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-context-height-003.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-context-height-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-after-block-in-inline-with-margin-collapse.html",
+      "ref": "css/CSS2/normal-flow/block-in-inline-after-block-in-inline-with-margin-collapse-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-append-001.xht",
+      "ref": "css/CSS2/normal-flow/block-in-inline-append-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-005.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-005-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-003.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-008.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-008-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-004.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-004-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-006.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-006-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-append-002.xht",
+      "ref": "css/CSS2/normal-flow/block-in-inline-append-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-001.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-015.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-015-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-align-last-001.html",
+      "ref": "css/CSS2/normal-flow/block-in-inline-align-last-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-align-001.html",
+      "ref": "css/CSS2/normal-flow/block-in-inline-align-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-formatting-contexts-011.xht",
+      "ref": "css/CSS2/normal-flow/block-formatting-contexts-011-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/normal-flow/block-in-inline-align-justify-001.html",
+      "ref": "css/CSS2/normal-flow/block-in-inline-align-justify-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/colors/color-applies-to-005.xht",
+      "ref": "css/CSS2/colors/color-applies-to-005-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/colors/color-applies-to-001.xht",
+      "ref": "css/CSS2/colors/color-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/colors/color-175.xht",
+      "ref": "css/CSS2/colors/color-175-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/colors/colors-007.xht",
+      "ref": "css/CSS2/colors/colors-007-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/colors/color-129.xht",
+      "ref": "css/CSS2/colors/color-129-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-placement-005.html",
+      "ref": "css/CSS2/floats/floats-placement-005-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-no-content-beside-001.html",
+      "ref": "css/CSS2/floats/float-no-content-beside-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-root.html",
+      "ref": "css/CSS2/floats/float-root-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-nowrap-4.html",
+      "ref": "css/CSS2/floats/float-nowrap-4-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-rule3-outside-left-001.xht",
+      "ref": "css/CSS2/floats/floats-rule3-outside-left-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-nowrap-hyphen-rewind-1.html",
+      "ref": "css/CSS2/floats/float-nowrap-hyphen-rewind-1-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-placement-vertical-003.xht",
+      "ref": "css/CSS2/floats/floats-placement-vertical-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-nowrap-5.html",
+      "ref": "css/CSS2/floats/float-nowrap-5-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-with-absolutely-positioned-child-with-static-inset.html",
+      "ref": "css/CSS2/floats/float-with-absolutely-positioned-child-with-static-inset-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-line-wrap-shifted-001.html",
+      "ref": "css/CSS2/floats/floats-line-wrap-shifted-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-in-table-caption-001.html",
+      "ref": "css/CSS2/floats/floats-in-table-caption-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-placement-vertical-004.xht",
+      "ref": "css/CSS2/floats/floats-placement-vertical-004-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-table-align-left-quirk.html",
+      "ref": "css/CSS2/floats/float-table-align-left-quirk-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/floats-rule3-outside-left-002.xht",
+      "ref": "css/CSS2/floats/floats-rule3-outside-left-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats/float-nowrap-3.html",
+      "ref": "css/CSS2/floats/float-nowrap-3-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-attachment-applies-to-001.xht",
+      "ref": "css/CSS2/backgrounds/background-attachment-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-026.xht",
+      "ref": "css/CSS2/backgrounds/background-026-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-087.xht",
+      "ref": "css/CSS2/backgrounds/background-087-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-090.xht",
+      "ref": "css/CSS2/backgrounds/background-090-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-bg-pos-208.xht",
+      "ref": "css/CSS2/backgrounds/background-bg-pos-208-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-attachment-009.xht",
+      "ref": "css/CSS2/backgrounds/background-attachment-009-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-326.xht",
+      "ref": "css/CSS2/backgrounds/background-326-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-328.xht",
+      "ref": "css/CSS2/backgrounds/background-328-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-030.xht",
+      "ref": "css/CSS2/backgrounds/background-030-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-043.xht",
+      "ref": "css/CSS2/backgrounds/background-043-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-003.xht",
+      "ref": "css/CSS2/backgrounds/background-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-329.xht",
+      "ref": "css/CSS2/backgrounds/background-329-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-130.xht",
+      "ref": "css/CSS2/backgrounds/background-130-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-bg-pos-204.xht",
+      "ref": "css/CSS2/backgrounds/background-bg-pos-204-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/backgrounds/background-001.xht",
+      "ref": "css/CSS2/backgrounds/background-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-clearance-calculation-004.xht",
+      "ref": "css/CSS2/floats-clear/clear-clearance-calculation-004-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/adjacent-floats-001.xht",
+      "ref": "css/CSS2/floats-clear/adjacent-floats-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-clearance-calculation-001.xht",
+      "ref": "css/CSS2/floats-clear/clear-clearance-calculation-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-clearance-calculation-005.xht",
+      "ref": "css/CSS2/floats-clear/clear-clearance-calculation-005-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-applies-to-008.xht",
+      "ref": "css/CSS2/floats-clear/clear-applies-to-008-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-003.xht",
+      "ref": "css/CSS2/floats-clear/clear-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-clearance-calculation-002.xht",
+      "ref": "css/CSS2/floats-clear/clear-clearance-calculation-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-applies-to-009.xht",
+      "ref": "css/CSS2/floats-clear/clear-applies-to-009-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-001.xht",
+      "ref": "css/CSS2/floats-clear/clear-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-002.xht",
+      "ref": "css/CSS2/floats-clear/clear-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-float-001.xht",
+      "ref": "css/CSS2/floats-clear/clear-float-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-clearance-calculation-003.xht",
+      "ref": "css/CSS2/floats-clear/clear-clearance-calculation-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-applies-to-000.xht",
+      "ref": "css/CSS2/floats-clear/clear-applies-to-000-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-float-002.xht",
+      "ref": "css/CSS2/floats-clear/clear-float-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/floats-clear/clear-applies-to-001.xht",
+      "ref": "css/CSS2/floats-clear/clear-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/box/rtl-linebreak.xht",
+      "ref": "css/CSS2/box/rtl-linebreak-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-rule-001.xht",
+      "ref": "css/CSS2/fonts/font-family-rule-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-008.xht",
+      "ref": "css/CSS2/fonts/font-family-008-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-148.xht",
+      "ref": "css/CSS2/fonts/font-148-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-invalid-characters-002.xht",
+      "ref": "css/CSS2/fonts/font-family-invalid-characters-002-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-013.xht",
+      "ref": "css/CSS2/fonts/font-family-013-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-applies-to-001.xht",
+      "ref": "css/CSS2/fonts/font-family-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-146.xht",
+      "ref": "css/CSS2/fonts/font-146-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-invalid-characters-001.xht",
+      "ref": "css/CSS2/fonts/font-family-invalid-characters-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-invalid-characters-005.xht",
+      "ref": "css/CSS2/fonts/font-family-invalid-characters-005-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-011.xht",
+      "ref": "css/CSS2/fonts/font-family-011-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-applies-to-001.xht",
+      "ref": "css/CSS2/fonts/font-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-003.xht",
+      "ref": "css/CSS2/fonts/font-003-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-invalid-characters-006.xht",
+      "ref": "css/CSS2/fonts/font-family-invalid-characters-006-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-family-009.xht",
+      "ref": "css/CSS2/fonts/font-family-009-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/fonts/font-051.xht",
+      "ref": "css/CSS2/fonts/font-051-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/abspos/abspos-containing-block-initial-007.xht",
+      "ref": "css/CSS2/abspos/abspos-containing-block-initial-007-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/abspos/abspos-containing-block-initial-001.xht",
+      "ref": "css/CSS2/abspos/abspos-containing-block-initial-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/abspos/hypothetical-inline-alone-on-second-line.html",
+      "ref": "css/CSS2/abspos/hypothetical-inline-alone-on-second-line-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/abspos/static-inside-inline-block.html",
+      "ref": "css/CSS2/abspos/static-inside-inline-block-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/abspos/hypothetical-box-dynamic.html",
+      "ref": "css/CSS2/abspos/hypothetical-box-dynamic-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-008.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-008-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/iframe-in-block-in-inline.html",
+      "ref": "css/CSS2/linebox/iframe-in-block-in-inline-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/baseline-block-with-overflow-001.html",
+      "ref": "css/CSS2/linebox/baseline-block-with-overflow-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/anonymous-inline-inherit-001.html",
+      "ref": "css/CSS2/linebox/anonymous-inline-inherit-001-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-009.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-009-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/empty-inline-002.xht",
+      "ref": "css/CSS2/linebox/empty-inline-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-003.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/empty-inline-003.xht",
+      "ref": "css/CSS2/linebox/empty-inline-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-011.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-011-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/border-padding-bleed-001.xht",
+      "ref": "css/CSS2/linebox/border-padding-bleed-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/iframe-in-wrapped-span.html",
+      "ref": "css/CSS2/linebox/iframe-in-wrapped-span-ref.html",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-001.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-box-001.xht",
+      "ref": "css/CSS2/linebox/inline-box-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-formatting-context-002.xht",
+      "ref": "css/CSS2/linebox/inline-formatting-context-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/linebox/inline-box-002.xht",
+      "ref": "css/CSS2/linebox/inline-box-002-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-applies-to-001.xht",
+      "ref": "css/CSS2/borders/border-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-001.xht",
+      "ref": "css/CSS2/borders/border-bottom-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-applies-to-001.xht",
+      "ref": "css/CSS2/borders/border-bottom-applies-to-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-016.xht",
+      "ref": "css/CSS2/borders/border-bottom-016-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-001.xht",
+      "ref": "css/CSS2/borders/border-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-018.xht",
+      "ref": "css/CSS2/borders/border-bottom-018-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-006.xht",
+      "ref": "css/CSS2/borders/border-006-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-width-003.xht",
+      "ref": "css/CSS2/borders/border-bottom-width-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-width-006.xht",
+      "ref": "css/CSS2/borders/border-bottom-width-006-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-color-129.xht",
+      "ref": "css/CSS2/borders/border-bottom-color-129-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-005.xht",
+      "ref": "css/CSS2/borders/border-005-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-style-005.xht",
+      "ref": "css/CSS2/borders/border-bottom-style-005-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-width-001.xht",
+      "ref": "css/CSS2/borders/border-bottom-width-001-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-003.xht",
+      "ref": "css/CSS2/borders/border-003-ref.xht",
+      "relation": "=="
+    },
+    {
+      "test": "css/CSS2/borders/border-bottom-005.xht",
+      "ref": "css/CSS2/borders/border-bottom-005-ref.xht",
+      "relation": "=="
+    }
+  ]
+}
