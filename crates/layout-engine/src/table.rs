@@ -374,6 +374,17 @@ fn position_cells(
     let mut row_y = 0.0f32;
 
     for row in &grid.rows {
+        // 预计算行组的 relative 偏移（需要在可变借用前解析）
+        let mut rg_rel_dx = 0.0f32;
+        let mut rg_rel_dy = 0.0f32;
+        if let Some(rg_idx) = row.row_group_index
+            && let Some(row_group) = table_box.children.get(rg_idx)
+            && row_group.is_relative
+        {
+            rg_rel_dx = resolve_length_inset(row_group, styles, true);
+            rg_rel_dy = resolve_length_inset(row_group, styles, false);
+        }
+
         // 根据行是否在 row-group 内，定位到正确的行盒
         let row_box = match row.row_group_index {
             Some(rg_idx) => {
@@ -400,14 +411,16 @@ fn position_cells(
         }
 
         // 设置行盒的位置和尺寸
-        // 对于 position: relative 的行，保留 taffy 计算的 inset 偏移
-        let (rel_dx, rel_dy) = if row_box.is_relative {
-            let dx = resolve_length_inset(row_box, styles, true);
-            let dy = resolve_length_inset(row_box, styles, false);
-            (dx, dy)
-        } else {
-            (0.0, 0.0)
-        };
+        // 合并行自身和行组的 position:relative inset 偏移
+        let mut rel_dx = rg_rel_dx;
+        let mut rel_dy = rg_rel_dy;
+
+        // 行自身的 relative 偏移
+        if row_box.is_relative {
+            rel_dx += resolve_length_inset(row_box, styles, true);
+            rel_dy += resolve_length_inset(row_box, styles, false);
+        }
+
         row_box.x = table_box.content_x + rel_dx;
         row_box.y = table_box.content_y + row_y + rel_dy;
         row_box.width = table_box.content_width;
@@ -442,5 +455,108 @@ fn position_cells(
         }
 
         row_y += row_height + spacing_y;
+    }
+
+    // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
+    // 对于 position:relative 的行组，还需应用 inset 偏移
+    update_row_group_positions(table_box, grid, styles);
+}
+
+/// 更新行组的位置，使其包含所有子行。
+///
+/// 在 position_cells 之后调用，根据行组的视觉位置更新其 LayoutBox。
+/// 这确保行组的背景色、边框等绘制在正确的位置。
+fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 收集每个行组的视觉行索引
+    let mut rg_rows: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (visual_idx, row) in grid.rows.iter().enumerate() {
+        if let Some(rg_idx) = row.row_group_index {
+            rg_rows.entry(rg_idx).or_default().push(visual_idx);
+        }
+    }
+
+    if rg_rows.is_empty() {
+        return;
+    }
+
+    // 读取 border-spacing
+    let (_, spacing_y) = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(get_border_spacing)
+        .unwrap_or((0.0, 0.0));
+
+    // 预计算所有行的 y 位置和高度（不可变借用阶段）
+    let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
+    let mut row_y = 0.0f32;
+    for row in &grid.rows {
+        let row_box = get_row_box(table_box, row);
+        let row_height = if let Some(rb) = row_box {
+            let mut h = 0.0f32;
+            for cell in &row.cells {
+                if let Some(cell_box) = rb.children.get(cell.child_index) {
+                    h = h.max(cell_box.height);
+                }
+            }
+            if h == 0.0 { 20.0 } else { h }
+        } else {
+            20.0
+        };
+        row_positions.push((row_y, row_height));
+        row_y += row_height + spacing_y;
+    }
+
+    // 计算需要更新的行组位置
+    let mut updates: Vec<(usize, f32, f32, f32, f32)> = Vec::new();
+
+    for (rg_idx, visual_indices) in &rg_rows {
+        let Some(row_group) = table_box.children.get(*rg_idx) else {
+            continue;
+        };
+
+        // 计算行组的视觉起始 y 和总高度（含 spacing）
+        let mut first_row_y = 0.0f32;
+        let mut total_h = 0.0f32;
+        let mut found_first = false;
+
+        for &visual_idx in visual_indices {
+            if let Some(&(ry, rh)) = row_positions.get(visual_idx) {
+                if !found_first {
+                    first_row_y = ry;
+                    found_first = true;
+                }
+                total_h += rh + spacing_y;
+            }
+        }
+        // 最后一行之后不需要额外的 spacing
+        if total_h > 0.0 && spacing_y > 0.0 {
+            total_h -= spacing_y;
+        }
+
+        // 行组的 relative 偏移
+        let mut rel_dx = 0.0f32;
+        let mut rel_dy = 0.0f32;
+        if row_group.is_relative {
+            rel_dx = resolve_length_inset(row_group, styles, true);
+            rel_dy = resolve_length_inset(row_group, styles, false);
+        }
+
+        updates.push((
+            *rg_idx,
+            table_box.content_x + rel_dx,
+            table_box.content_y + first_row_y + rel_dy,
+            table_box.content_width,
+            total_h,
+        ));
+    }
+
+    // 应用更新（可变借用阶段）
+    for (rg_idx, new_x, new_y, new_w, new_h) in updates {
+        if let Some(row_group) = table_box.children.get_mut(rg_idx) {
+            row_group.x = new_x;
+            row_group.y = new_y;
+            row_group.width = new_w;
+            row_group.height = new_h;
+        }
     }
 }
