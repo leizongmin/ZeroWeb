@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；491 个上游 reftest 已导入（9 个目录）；**真实通过率 66.8% (328/491)**；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-grid 85.0%；css-tables 73.2%；css-position 62.5%；CSS2 61.2%；css-flexbox 56.4%；css-multicol 47.4%；css-writing-modes 42.4%；**本轮修复**：empty-cells 在 border-collapse:collapse 时正确显示边框 ✅；row-group/row border/padding/margin 抑制 ✅；table cell explicit height+overflow:hidden 保留原始高度 ✅；空 inline 元素 line-height 贡献 ✅；sibling combinators 跳过文本节点 ✅；table min/max size constraints ✅；JS-dependent test skip ✅；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；491 个上游 reftest 已导入（9 个目录）；**真实通过率 64.8% (318/491)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 73.2%；css-position 62.5%；CSS2 57.4%；css-flexbox 56.4%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、float 布局精度、inline box model |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第二轮）
+**日期**: 2026-06-08（本轮第三轮）
 **总用例**: 491（上游真实 reftest，排除 skip list）
-**通过**: 319
-**失败**: 172
-**通过率**: 65.0%
+**通过**: 318
+**失败**: 173
+**通过率**: 64.8%
 
-**说明**：通过率从 66.8% 降至 65.0%，原因是修复了 FontLoader（从空 FontLoader 改为加载系统字体的 create_font_loader()），使文本开始正确渲染。之前部分测试因文本不可见而虚假通过（空文本匹配空参考），现在文本可见后暴露了真实的布局差异。这是正确的方向——揭示真实的渲染问题而非虚假通过。
+**说明**：通过率 64.8% (318/491)，相比上轮 65.0% (319/491) 略降 0.2%。Font-family 解析改进使 CSS font-family 正确匹配到实际字体（如 Ahem），但部分测试因字体切换导致渲染结果变化。CSS border-width zeroing 修复了 border-style:none 时 width 不为 0 的规范违反。
 
 ### 按目录
 
@@ -303,18 +303,19 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 41/56 | 73.2% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 76/129 | 58.9% | ❌ |
+| CSS2/ | 74/129 | 57.4% | ❌ |
 | css-flexbox/ | 31/55 | 56.4% | ❌ |
-| css-multicol/ | 24/57 | 42.1% | ❌ |
+| css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 24/59 | 40.7% | ❌ |
 
 ### 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| FontLoader 修复 | 全局 | render_to_framebuffer_with_base 使用 create_font_loader() 替代空 FontLoader::new()，启用文本渲染 |
-| border conflict resolution 基础设施 | css-tables | 新增 resolve_collapsed_borders() 实现 CSS 2.1 §17.6.2.1 边框冲突解决算法（暂未生效，因表格 border width 在 ComputedStyle 中读取为 0） |
-| support image 补充 | 全局 | 为缺失的 swatch-white/gray/pink/purple、black20x20、100x100-lime/red、60x60-green 生成纯色 PNG |
+| CSS font-family 解析 | 全局 | 替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace；Painter/RenderPipeline 传递 font resolver |
+| CSS border-width zeroing | 规范符合 | 当 border-style 为 none/hidden 时强制 border-width=0（CSS Backgrounds and Borders 规范要求） |
+| FontLoader 字体名提取 | 字体系统 | parse_font_family_name() 直接解析 OpenType name 表（nameID=1），替代 fontdue 不暴露的 API |
+
 
 ### 发现的关键问题
 
@@ -484,5 +485,8 @@
 62. ~~M10 — FontLoader 修复~~ ✅ (render_to_framebuffer_with_base 使用 create_font_loader()，启用文本渲染；揭示真实通过率 65.0%)
 63. ~~M10 — support image 补充~~ ✅ (为缺失的 swatch 颜色/尺寸 PNG 生成文件)
 64. ~~M10 — border conflict resolution 基础设施~~ ✅ (resolve_collapsed_borders + resolve_border + border_style_priority)
-65. M10 — 调查表格 border CSS 未生效问题（ComputedStyle border-top-width=0 但 border-collapse 正确）
-66. M10 — 实现 paint 系统 font-family 解析（替换硬编码 FontId(0) 为 CSS font-family 查找）
+65. ~~M10 — 调查表格 border CSS 未生效问题~~ ✅ (经调试验证 border-top-width=Px(5.0) 正确设置；原始报告的问题可能是特定测试场景的布局差异)
+66. ~~M10 — 实现 paint 系统 font-family 解析~~ ✅ (OpenType name 表解析 + FontLoader.build_font_resolver() + Painter.resolve_font_id() + RenderPipeline.set_font_resolver())
+67. ~~M10 — CSS border-width zeroing~~ ✅ (border-style 为 none/hidden 时强制 width=0，符合 CSS 规范)
+68. M10 — writing-mode 布局支持（影响 css-writing-modes 40.7% + css-flexbox 部分测试；需实现 vertical-rl/lr 布局方向）
+69. M10 — float 布局精度提升（CSS2/floats-clear 20/30 失败；clear 计算精度、BFC 边界隔离）
