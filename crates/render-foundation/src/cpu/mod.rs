@@ -15,10 +15,10 @@
 //! - BlendModePrimitive — 混合模式合成
 //! - GlyphPrimitive / GlyphDraw — 文字渲染
 
+mod effects;
 mod gradient;
 mod shadow;
 mod stroke;
-mod effects;
 
 use crate::color::Color;
 use crate::font::cache::{GlyphCache, GlyphKey};
@@ -26,8 +26,7 @@ use crate::font::loader::FontLoader;
 use crate::gpu::renderer::GlyphDraw;
 use crate::image_cache::ImageCache;
 use crate::primitive::{
-    ClipPrimitive, FillPrimitive, ImagePrimitive, RenderPrimitives,
-    RoundedRectPrimitive, TransformPrimitive,
+    ClipPrimitive, FillPrimitive, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
 };
 use crate::surface::FrameBuffer;
 
@@ -366,8 +365,7 @@ fn draw_glyph_primitive(
         return;
     }
 
-    if let Ok((resolved_id, bitmap)) =
-        font_loader.rasterize_glyph_with_fallback(raw_font_id, ch, physical_font_size)
+    if let Ok((resolved_id, bitmap)) = font_loader.rasterize_glyph_with_fallback(raw_font_id, ch, physical_font_size)
         && bitmap.width > 0
         && bitmap.height > 0
     {
@@ -381,13 +379,7 @@ fn draw_glyph_primitive(
 }
 
 /// 将字形位图合成到帧缓冲。
-fn blit_glyph_bitmap(
-    fb: &mut FrameBuffer,
-    bitmap: &crate::font::GlyphBitmap,
-    x: f32,
-    y: f32,
-    color: Color,
-) {
+fn blit_glyph_bitmap(fb: &mut FrameBuffer, bitmap: &crate::font::GlyphBitmap, x: f32, y: f32, color: Color) {
     let start_x = x.round() as i32;
     let start_y = y.round() as i32;
 

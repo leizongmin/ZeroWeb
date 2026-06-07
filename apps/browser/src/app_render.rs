@@ -136,6 +136,57 @@ impl BrowserApp {
         (fills, glyphs, overlay_fills, overlay_glyphs)
     }
 
+    /// 获取 WebView 的额外图元（渐变、阴影、圆角矩形、线段、路径、变换、裁剪、滤镜、混合模式）。
+    ///
+    /// 注意：fills 和 glyphs 不在此返回中（它们已通过 `append_webview_primitives` 混入 chrome 层）。
+    /// 仅返回 render_full_scene() 需要的其他 11 种图元类型。
+    fn get_webview_extra_primitives(&self) -> RenderPrimitives {
+        let tab_id = match self.shell.active_tab_id() {
+            Some(id) => id,
+            None => return RenderPrimitives::new(),
+        };
+
+        let primitives = match self
+            .webviews
+            .get(&tab_id)
+            .and_then(|wv| wv.last_render())
+            .map(|render| &render.primitives)
+        {
+            Some(p) => p,
+            None => return RenderPrimitives::new(),
+        };
+
+        let s = self.scale_factor;
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
+        let chrome_top = self.chrome_top_y_for(s);
+        let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
+        let y_offset = chrome_top - scroll_y;
+
+        let find_offset = if self.shell.find_state().is_active() {
+            layout::FIND_BAR_HEIGHT * s
+        } else {
+            0.0
+        };
+        let clip_top = content_y + find_offset;
+        let (_, fy, _, fh) = self.page_frame_rect();
+        let clip_bottom = (content_y + content_h).min(fy + fh);
+
+        let mut transformed = transform_webview_primitives(
+            primitives,
+            content_x,
+            y_offset,
+            s,
+            Some((clip_top, clip_bottom)),
+        );
+
+        // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 层，此处清空避免重复
+        transformed.fills.clear();
+        transformed.glyphs.clear();
+
+        let _ = (content_w,); // 避免未使用变量警告
+        transformed
+    }
+
     /// 渲染标签页
     fn render_tabs(
         &mut self,
@@ -1885,4 +1936,221 @@ pub fn append_webview_primitives(
     }
 
     fills.len() > fill_start || glyphs.len() > glyph_start
+}
+
+/// 将 WebView 的所有 13 种图元类型转换为浏览器坐标（应用 scale、offset、clip）。
+///
+/// 返回的 `RenderPrimitives` 中的图元坐标为物理像素，
+/// 已经应用了 `scale_factor`、`offset` 和视口裁剪。
+pub fn transform_webview_primitives(
+    primitives: &RenderPrimitives,
+    x_offset: f32,
+    y_offset: f32,
+    s: f32,
+    clip_y: Option<(f32, f32)>,
+) -> RenderPrimitives {
+    let mut out = RenderPrimitives::new();
+
+    // 1. 阴影
+    for shadow in &primitives.shadows {
+        let mut s_clone = shadow.clone();
+        s_clone.rect.origin.x = s_clone.rect.origin.x * s + x_offset;
+        s_clone.rect.origin.y = s_clone.rect.origin.y * s + y_offset;
+        s_clone.rect.size.width *= s;
+        s_clone.rect.size.height *= s;
+        s_clone.offset_x *= s;
+        s_clone.offset_y *= s;
+        s_clone.blur_radius *= s;
+        s_clone.spread_radius *= s;
+        out.shadows.push(s_clone);
+    }
+
+    // 2. 填充矩形
+    for fill in &primitives.fills {
+        let x = fill.rect.origin.x * s + x_offset;
+        let mut y = fill.rect.origin.y * s + y_offset;
+        let w = fill.rect.size.width * s;
+        let mut h = fill.rect.size.height * s;
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            let bottom = y + h;
+            if bottom <= clip_top || y >= clip_bottom {
+                continue;
+            }
+            if y < clip_top {
+                h -= clip_top - y;
+                y = clip_top;
+            }
+            let bottom = y + h;
+            if bottom > clip_bottom {
+                h -= bottom - clip_bottom;
+            }
+            if h <= 0.0 {
+                continue;
+            }
+        }
+        out.fills.push(FillPrimitive {
+            rect: Rect::new(x, y, w, h),
+            color: fill.color,
+        });
+    }
+
+    // 3. 圆角矩形
+    for rr in &primitives.rounded_rects {
+        let mut r_clone = rr.clone();
+        r_clone.rect.origin.x = r_clone.rect.origin.x * s + x_offset;
+        r_clone.rect.origin.y = r_clone.rect.origin.y * s + y_offset;
+        r_clone.rect.size.width *= s;
+        r_clone.rect.size.height *= s;
+        r_clone.top_left_radius *= s;
+        r_clone.top_right_radius *= s;
+        r_clone.bottom_right_radius *= s;
+        r_clone.bottom_left_radius *= s;
+        out.rounded_rects.push(r_clone);
+    }
+
+    // 4. 渐变
+    for gradient in &primitives.gradients {
+        let mut g_clone = gradient.clone();
+        g_clone.rect.origin.x = g_clone.rect.origin.x * s + x_offset;
+        g_clone.rect.origin.y = g_clone.rect.origin.y * s + y_offset;
+        g_clone.rect.size.width *= s;
+        g_clone.rect.size.height *= s;
+        g_clone.kind = match g_clone.kind {
+            GradientKind::Linear { x0, y0, x1, y1 } => GradientKind::Linear {
+                x0: x0 * s + x_offset,
+                y0: y0 * s + y_offset,
+                x1: x1 * s + x_offset,
+                y1: y1 * s + y_offset,
+            },
+            GradientKind::Radial { cx, cy, inner_radius, outer_radius } => GradientKind::Radial {
+                cx: cx * s + x_offset,
+                cy: cy * s + y_offset,
+                inner_radius: inner_radius * s,
+                outer_radius: outer_radius * s,
+            },
+            GradientKind::Conic { cx, cy, start_angle } => GradientKind::Conic {
+                cx: cx * s + x_offset,
+                cy: cy * s + y_offset,
+                start_angle,
+            },
+        };
+        out.gradients.push(g_clone);
+    }
+
+    // 5. 图片
+    for image in &primitives.images {
+        let mut i_clone = image.clone();
+        i_clone.rect.origin.x = i_clone.rect.origin.x * s + x_offset;
+        i_clone.rect.origin.y = i_clone.rect.origin.y * s + y_offset;
+        i_clone.rect.size.width *= s;
+        i_clone.rect.size.height *= s;
+        out.images.push(i_clone);
+    }
+
+    // 6. 线段
+    for stroke in &primitives.strokes {
+        let mut st = stroke.clone();
+        st.x1 = st.x1 * s + x_offset;
+        st.y1 = st.y1 * s + y_offset;
+        st.x2 = st.x2 * s + x_offset;
+        st.y2 = st.y2 * s + y_offset;
+        st.width *= s;
+        out.strokes.push(st);
+    }
+
+    // 7. 路径填充
+    for pf in &primitives.path_fills {
+        let mut p_clone = pf.clone();
+        for i in (0..p_clone.vertices.len()).step_by(2) {
+            p_clone.vertices[i] = p_clone.vertices[i] * s + x_offset;
+            if i + 1 < p_clone.vertices.len() {
+                p_clone.vertices[i + 1] = p_clone.vertices[i + 1] * s + y_offset;
+            }
+        }
+        out.path_fills.push(p_clone);
+    }
+
+    // 8. 路径描边
+    for ps in &primitives.path_strokes {
+        let mut p_clone = ps.clone();
+        for i in (0..p_clone.vertices.len()).step_by(2) {
+            p_clone.vertices[i] = p_clone.vertices[i] * s + x_offset;
+            if i + 1 < p_clone.vertices.len() {
+                p_clone.vertices[i + 1] = p_clone.vertices[i + 1] * s + y_offset;
+            }
+        }
+        p_clone.line_width *= s;
+        out.path_strokes.push(p_clone);
+    }
+
+    // 9. 文字
+    for glyph in &primitives.glyphs {
+        let x = glyph.x * s + x_offset;
+        let y = glyph.y * s + y_offset;
+        let font_size = glyph.font_size * s;
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            let top = y - font_size;
+            let bottom = y + font_size * 0.25;
+            if bottom <= clip_top || top >= clip_bottom {
+                continue;
+            }
+        }
+        out.glyphs.push(GlyphPrimitive {
+            x,
+            y,
+            font_size,
+            color: glyph.color,
+            glyph_id: glyph.glyph_id,
+            font_id: glyph.font_id,
+            bitmap_width: glyph.bitmap_width,
+            bitmap_height: glyph.bitmap_height,
+            rotation: glyph.rotation,
+        });
+    }
+
+    // 10. 裁剪
+    for clip in &primitives.clips {
+        let mut c_clone = clip.clone();
+        c_clone.rect.origin.x = c_clone.rect.origin.x * s + x_offset;
+        c_clone.rect.origin.y = c_clone.rect.origin.y * s + y_offset;
+        c_clone.rect.size.width *= s;
+        c_clone.rect.size.height *= s;
+        out.clips.push(c_clone);
+    }
+
+    // 11. 变换
+    for transform in &primitives.transforms {
+        let mut t_clone = transform.clone();
+        t_clone.rect.origin.x = t_clone.rect.origin.x * s + x_offset;
+        t_clone.rect.origin.y = t_clone.rect.origin.y * s + y_offset;
+        t_clone.rect.size.width *= s;
+        t_clone.rect.size.height *= s;
+        t_clone.origin_x = t_clone.origin_x * s + x_offset;
+        t_clone.origin_y = t_clone.origin_y * s + y_offset;
+        t_clone.tx *= s;
+        t_clone.ty *= s;
+        out.transforms.push(t_clone);
+    }
+
+    // 12. 滤镜
+    for filter in &primitives.filters {
+        let mut f_clone = filter.clone();
+        f_clone.rect.origin.x = f_clone.rect.origin.x * s + x_offset;
+        f_clone.rect.origin.y = f_clone.rect.origin.y * s + y_offset;
+        f_clone.rect.size.width *= s;
+        f_clone.rect.size.height *= s;
+        out.filters.push(f_clone);
+    }
+
+    // 13. 混合模式
+    for blend in &primitives.blend_modes {
+        let mut b_clone = blend.clone();
+        b_clone.rect.origin.x = b_clone.rect.origin.x * s + x_offset;
+        b_clone.rect.origin.y = b_clone.rect.origin.y * s + y_offset;
+        b_clone.rect.size.width *= s;
+        b_clone.rect.size.height *= s;
+        out.blend_modes.push(b_clone);
+    }
+
+    out
 }

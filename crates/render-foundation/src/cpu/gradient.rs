@@ -75,11 +75,7 @@ fn compute_gradient_t(fx: f32, fy: f32, gradient: &GradientPrimitive, scale: f32
                 ((dist - sir) / range).clamp(0.0, 1.0)
             }
         }
-        GradientKind::Conic {
-            cx,
-            cy,
-            start_angle,
-        } => {
+        GradientKind::Conic { cx, cy, start_angle } => {
             let scx = cx * scale;
             let scy = cy * scale;
 

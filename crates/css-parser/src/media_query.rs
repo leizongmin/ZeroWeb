@@ -257,20 +257,36 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
         let after = remaining[6..].trim_start();
         if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::Screen);
-            let and_stripped = after.char_indices().take_while(|(_, c)| c.is_ascii_alphabetic()).map(|(i, _)| i).last().map(|i| i + 1).unwrap_or(3);
+            let and_stripped = after
+                .char_indices()
+                .take_while(|(_, c)| c.is_ascii_alphabetic())
+                .map(|(i, _)| i)
+                .last()
+                .map(|i| i + 1)
+                .unwrap_or(3);
             remaining = after.get(and_stripped..).unwrap_or(after).trim_start();
         }
     } else if lower_remaining.starts_with("print") {
         let after = remaining[5..].trim_start();
         if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::Print);
-            remaining = after.strip_prefix("and").or_else(|| after.strip_prefix("And")).or_else(|| after.strip_prefix("AND")).unwrap_or(after).trim_start();
+            remaining = after
+                .strip_prefix("and")
+                .or_else(|| after.strip_prefix("And"))
+                .or_else(|| after.strip_prefix("AND"))
+                .unwrap_or(after)
+                .trim_start();
         }
     } else if lower_remaining.starts_with("all") {
         let after = remaining[3..].trim_start();
         if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::All);
-            remaining = after.strip_prefix("and").or_else(|| after.strip_prefix("And")).or_else(|| after.strip_prefix("AND")).unwrap_or(after).trim_start();
+            remaining = after
+                .strip_prefix("and")
+                .or_else(|| after.strip_prefix("And"))
+                .or_else(|| after.strip_prefix("AND"))
+                .unwrap_or(after)
+                .trim_start();
         }
     }
 

@@ -42,7 +42,13 @@ impl HttpClient {
     const DEFAULT_USER_AGENT: &str = "ZeroWeb/1.0";
 
     /// 跨域重定向时应剥离的敏感请求头。
-    const SENSITIVE_HEADERS: &[&str] = &["authorization", "cookie", "cookie2", "www-authenticate", "proxy-authorization"];
+    const SENSITIVE_HEADERS: &[&str] = &[
+        "authorization",
+        "cookie",
+        "cookie2",
+        "www-authenticate",
+        "proxy-authorization",
+    ];
 
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
@@ -146,9 +152,8 @@ impl HttpClient {
 
                 // SEC-03: 跨域重定向时剥离敏感头（Authorization、Cookie 等）
                 if !same_origin(&current_url, &request.url) {
-                    active_headers.retain(|(name, _)| {
-                        !Self::SENSITIVE_HEADERS.iter().any(|h| name.eq_ignore_ascii_case(h))
-                    });
+                    active_headers
+                        .retain(|(name, _)| !Self::SENSITIVE_HEADERS.iter().any(|h| name.eq_ignore_ascii_case(h)));
                 }
 
                 continue;

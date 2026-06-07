@@ -43,16 +43,65 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
     // 判断是否需要虚线/点线处理
     match stroke.style {
         LineStyle::Solid => {
-            render_solid_line(fb, x1, y1, x2, y2, half_w, nx, ny, left, top, right, bottom, stroke.color, stroke.cap);
+            render_solid_line(
+                fb,
+                x1,
+                y1,
+                x2,
+                y2,
+                half_w,
+                nx,
+                ny,
+                left,
+                top,
+                right,
+                bottom,
+                stroke.color,
+                stroke.cap,
+            );
         }
         LineStyle::Dashed => {
             if len > 1e-10 {
-                render_dashed_line(fb, x1, y1, x2, y2, dx / len, dy / len, half_w, nx, ny, left, top, right, bottom, stroke.color, stroke.cap, 6.0 * scale, 4.0 * scale);
+                render_dashed_line(
+                    fb,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    dx / len,
+                    dy / len,
+                    half_w,
+                    nx,
+                    ny,
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    stroke.color,
+                    stroke.cap,
+                    6.0 * scale,
+                    4.0 * scale,
+                );
             }
         }
         LineStyle::Dotted => {
             if len > 1e-10 {
-                render_dotted_line(fb, x1, y1, x2, y2, dx / len, dy / len, half_w, left, top, right, bottom, stroke.color, 2.0 * scale);
+                render_dotted_line(
+                    fb,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    dx / len,
+                    dy / len,
+                    half_w,
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    stroke.color,
+                    2.0 * scale,
+                );
             }
         }
     }
@@ -62,10 +111,19 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
 #[allow(clippy::too_many_arguments)]
 fn render_solid_line(
     fb: &mut FrameBuffer,
-    x1: f32, y1: f32, x2: f32, y2: f32,
-    half_w: f32, _nx: f32, _ny: f32,
-    left: u32, top: u32, right: u32, bottom: u32,
-    color: Color, cap: LineCap,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    half_w: f32,
+    _nx: f32,
+    _ny: f32,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
+    color: Color,
+    cap: LineCap,
 ) {
     let dx = x2 - x1;
     let dy = y2 - y1;
@@ -125,12 +183,23 @@ fn render_solid_line(
 #[allow(clippy::too_many_arguments)]
 fn render_dashed_line(
     fb: &mut FrameBuffer,
-    x1: f32, y1: f32, x2: f32, y2: f32,
-    dir_x: f32, dir_y: f32, half_w: f32,
-    nx: f32, ny: f32,
-    left: u32, top: u32, right: u32, bottom: u32,
-    color: Color, _cap: LineCap,
-    dash_len: f32, gap_len: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    dir_x: f32,
+    dir_y: f32,
+    half_w: f32,
+    nx: f32,
+    ny: f32,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
+    color: Color,
+    _cap: LineCap,
+    dash_len: f32,
+    gap_len: f32,
 ) {
     let total_len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)).sqrt();
     let pattern_len = dash_len + gap_len;
@@ -167,10 +236,19 @@ fn render_dashed_line(
 #[allow(clippy::too_many_arguments)]
 fn render_dotted_line(
     fb: &mut FrameBuffer,
-    x1: f32, y1: f32, x2: f32, y2: f32,
-    dir_x: f32, dir_y: f32, half_w: f32,
-    left: u32, top: u32, right: u32, bottom: u32,
-    color: Color, dot_spacing: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    dir_x: f32,
+    dir_y: f32,
+    half_w: f32,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
+    color: Color,
+    dot_spacing: f32,
 ) {
     let total_len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)).sqrt();
     let dot_radius = half_w;

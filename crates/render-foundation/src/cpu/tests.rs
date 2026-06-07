@@ -5,10 +5,9 @@ use crate::color::Color;
 use crate::geometry::Rect;
 use crate::gpu::renderer::GlyphDraw;
 use crate::primitive::{
-    ClipPrimitive, FillPrimitive, GradientKind, GradientPrimitive, GradientStop,
-    PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive,
-    ShadowPrimitive, StrokePrimitive, TransformPrimitive, LineStyle, LineCap,
-    FilterPrimitive, FilterKind, BlendModePrimitive, BlendMode,
+    BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, GradientKind,
+    GradientPrimitive, GradientStop, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives,
+    RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 // ─── 旧版兼容测试 ───
@@ -92,28 +91,56 @@ fn gradient_linear_red_to_blue() {
             y1: 0.0,
         },
         stops: vec![
-            GradientStop { offset: 0.0, color: Color::RED },
-            GradientStop { offset: 1.0, color: Color::BLUE },
+            GradientStop {
+                offset: 0.0,
+                color: Color::RED,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLUE,
+            },
         ],
     });
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 10, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 左端应该是红色
     let left_pixel = fb.get_pixel(1, 5);
-    assert!(left_pixel[0] > 200, "left should be red (R > 200), got {:?}", left_pixel);
+    assert!(
+        left_pixel[0] > 200,
+        "left should be red (R > 200), got {:?}",
+        left_pixel
+    );
     assert!(left_pixel[2] < 50, "left should have low blue, got {:?}", left_pixel);
 
     // 右端应该是蓝色
     let right_pixel = fb.get_pixel(98, 5);
-    assert!(right_pixel[2] > 200, "right should be blue (B > 200), got {:?}", right_pixel);
+    assert!(
+        right_pixel[2] > 200,
+        "right should be blue (B > 200), got {:?}",
+        right_pixel
+    );
     assert!(right_pixel[0] < 50, "right should have low red, got {:?}", right_pixel);
 
     // 中间应该是紫色（红色和蓝色的混合）
     let mid_pixel = fb.get_pixel(50, 5);
-    assert!(mid_pixel[0] > 50 && mid_pixel[2] > 50, "middle should be purple-ish, got {:?}", mid_pixel);
+    assert!(
+        mid_pixel[0] > 50 && mid_pixel[2] > 50,
+        "middle should be purple-ish, got {:?}",
+        mid_pixel
+    );
 }
 
 #[test]
@@ -128,8 +155,14 @@ fn gradient_radial_center_to_edge() {
             outer_radius: 10.0,
         },
         stops: vec![
-            GradientStop { offset: 0.0, color: Color::WHITE },
-            GradientStop { offset: 1.0, color: Color::BLACK },
+            GradientStop {
+                offset: 0.0,
+                color: Color::WHITE,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLACK,
+            },
         ],
     });
 
@@ -160,12 +193,26 @@ fn shadow_renders_blur_around_rect() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 阴影偏移后中心区域应该有颜色变化
     // 阴影矩形大约在 (45, 45) 到 (65, 65)
     let shadow_pixel = fb.get_pixel(55, 55);
-    assert!(shadow_pixel[0] < 250, "shadow area should be darkened, got {:?}", shadow_pixel);
+    assert!(
+        shadow_pixel[0] < 250,
+        "shadow area should be darkened, got {:?}",
+        shadow_pixel
+    );
 
     // 远离阴影的区域应该是白色
     let far_pixel = fb.get_pixel(5, 5);
@@ -188,7 +235,17 @@ fn stroke_solid_line() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 20, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 线段中心应该有黑色像素
     let center_pixel = fb.get_pixel(50, 10);
@@ -274,11 +331,25 @@ fn path_fill_triangle() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 三角形内部应该有红色
     let center_pixel = fb.get_pixel(50, 60);
-    assert!(center_pixel[0] > 200, "triangle center should be red, got {:?}", center_pixel);
+    assert!(
+        center_pixel[0] > 200,
+        "triangle center should be red, got {:?}",
+        center_pixel
+    );
 
     // 三角形外部应该保持白色
     let outside_pixel = fb.get_pixel(5, 5);
@@ -298,7 +369,17 @@ fn path_stroke_rectangle() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 边框上应该有黑色像素
     let top_edge = fb.get_pixel(50, 20);
@@ -324,7 +405,17 @@ fn clip_removes_pixels_outside() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 裁剪区域内应该有黑色
     let inside = fb.get_pixel(50, 50);
@@ -358,7 +449,17 @@ fn transform_translate_shifts_content() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 变换后内容应该偏移到新位置
     // 注意：变换是后处理，会反向采样
@@ -374,12 +475,17 @@ fn image_renders_rgba_data() {
 
     let mut image_cache = ImageCache::new(10, 1024 * 1024);
     let key = image_cache.insert(
-        ImageData::from_rgba(vec![
-            255, 0, 0, 255,  // 红色
-            0, 255, 0, 255,  // 绿色
-            0, 0, 255, 255,  // 蓝色
-            255, 255, 0, 255, // 黄色
-        ], 2, 2).unwrap()
+        ImageData::from_rgba(
+            vec![
+                255, 0, 0, 255, // 红色
+                0, 255, 0, 255, // 绿色
+                0, 0, 255, 255, // 蓝色
+                255, 255, 0, 255, // 黄色
+            ],
+            2,
+            2,
+        )
+        .unwrap(),
     );
 
     let mut primitives = RenderPrimitives::new();
@@ -391,7 +497,17 @@ fn image_renders_rgba_data() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
     let mut cache = image_cache;
-    let fb = render_full_scene(40, 40, 1.0, &primitives, &font_loader, &mut glyph_cache, Some(&mut cache), &[], &[]);
+    let fb = render_full_scene(
+        40,
+        40,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut cache),
+        &[],
+        &[],
+    );
 
     // 左上象限（对应红色像素）应该偏红
     let top_left = fb.get_pixel(15, 15);
@@ -399,7 +515,11 @@ fn image_renders_rgba_data() {
 
     // 右下象限（对应黄色像素，源图像 [1,1] 是黄色 (255,255,0)）
     let bottom_right = fb.get_pixel(25, 25);
-    assert!(bottom_right[0] > 200 && bottom_right[1] > 200, "bottom-right should be yellow-ish, got {:?}", bottom_right);
+    assert!(
+        bottom_right[0] > 200 && bottom_right[1] > 200,
+        "bottom-right should be yellow-ish, got {:?}",
+        bottom_right
+    );
 
     // 图片外应该是白色
     let outside = fb.get_pixel(5, 5);
@@ -422,7 +542,17 @@ fn filter_blur_softens_hard_edge() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 模糊边缘应该有过渡
     let edge = fb.get_pixel(38, 50);
@@ -486,23 +616,48 @@ fn full_scene_renders_multiple_primitives() {
     primitives.gradients.push(GradientPrimitive {
         rect: Rect::new(10.0, 10.0, 90.0, 30.0),
         kind: GradientKind::Linear {
-            x0: 10.0, y0: 0.0, x1: 90.0, y1: 0.0,
+            x0: 10.0,
+            y0: 0.0,
+            x1: 90.0,
+            y1: 0.0,
         },
         stops: vec![
-            GradientStop { offset: 0.0, color: Color::RED },
-            GradientStop { offset: 1.0, color: Color::BLUE },
+            GradientStop {
+                offset: 0.0,
+                color: Color::RED,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLUE,
+            },
         ],
     });
 
     // 线段
     primitives.strokes.push(StrokePrimitive {
-        x1: 10.0, y1: 50.0, x2: 90.0, y2: 50.0,
-        width: 2.0, color: Color::BLACK, style: LineStyle::Solid, cap: LineCap::Butt,
+        x1: 10.0,
+        y1: 50.0,
+        x2: 90.0,
+        y2: 50.0,
+        width: 2.0,
+        color: Color::BLACK,
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
     });
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(100, 100, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    );
 
     // 渐变区域左端应该是红色
     let gradient_left = fb.get_pixel(12, 20);

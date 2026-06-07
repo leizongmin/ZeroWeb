@@ -164,17 +164,31 @@ impl BrowserApp {
         }
 
         let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
-        let fb = render_scene_to_framebuffer(
+
+        // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
+        let webview_extras = self.get_webview_extra_primitives();
+
+        // 合并：chrome fills + webview fills (已在 fills 中) + webview 额外图元
+        let mut scene_primitives = webview_extras;
+        // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 的 fills/glyphs
+        // 所以只需把 chrome fills 放入 scene_primitives.fills 的前面
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+
+        let fb = render_full_scene(
             width,
             height,
             1.0,
-            &fills,
-            &[],
+            &scene_primitives,
             &self.font_loader,
             &mut self.glyph_cache,
-            &glyphs,
+            None,
+            // overlay_fills: chrome overlay（上下文菜单背景、圆角遮罩等）
             &overlay_fills,
-            &overlay_glyphs,
+            // overlay_glyphs: chrome overlay 文字 + 所有 GlyphDraw 文字
+            // （chrome glyphs 和 webview glyphs 都是 GlyphDraw 格式，通过 append_webview_primitives 混合）
+            // 先渲染 overlay_glyphs（chrome overlay 文字），再追加 glyphs（chrome + webview 文字）
+            // 由于 Vec 需要合并，直接拼接
+            &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }

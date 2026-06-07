@@ -70,7 +70,8 @@ impl DirtyTracker {
 
         // 单遍合并：按 left 排序后线性扫描，相邻矩形若重叠则合并。
         // 最坏情况 O(n log n)（排序），比原来的 O(n³) 大幅改善。
-        self.dirty_rects.sort_by(|a, b| a.left().partial_cmp(&b.left()).unwrap_or(std::cmp::Ordering::Equal));
+        self.dirty_rects
+            .sort_by(|a, b| a.left().partial_cmp(&b.left()).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut merged: Vec<Rect> = Vec::with_capacity(self.dirty_rects.len());
         for rect in self.dirty_rects.drain(..) {

@@ -99,11 +99,7 @@ mod tests {
         ];
         for (input, expected) in valid_cases {
             unsafe { std::env::set_var("ZEROWEB_RENDERER", input) };
-            assert_eq!(
-                RenderMode::from_env(),
-                Ok(Some(expected)),
-                "failed for input: {input}"
-            );
+            assert_eq!(RenderMode::from_env(), Ok(Some(expected)), "failed for input: {input}");
         }
 
         // Case 3: 无效值返回 Err
