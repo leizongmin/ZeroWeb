@@ -885,6 +885,9 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
 }
 
 /// 计算 background-position 的 (x, y) 像素偏移。
+///
+/// CSS 规范：单关键字时，horizontal keyword（left/right）应用于 x 轴，y 默认 center；
+/// vertical keyword（top/bottom）应用于 y 轴，x 默认 center。
 fn resolve_background_position(
     pos: &BackgroundPositionComputedValue,
     container_w: f32,
@@ -897,6 +900,12 @@ fn resolve_background_position(
             resolve_position_component(x_pos, container_w, img_w),
             resolve_position_component(y_pos, container_h, img_h),
         ),
+        // 垂直关键字：应用于 y 轴，x 默认 center
+        BackgroundPositionComputedValue::Top | BackgroundPositionComputedValue::Bottom => (
+            resolve_position_component(&BackgroundPositionComputedValue::Center, container_w, img_w),
+            resolve_position_component(pos, container_h, img_h),
+        ),
+        // 水平关键字或 center：应用于 x 轴，y 默认 center
         single => (
             resolve_position_component(single, container_w, img_w),
             resolve_position_component(&BackgroundPositionComputedValue::Center, container_h, img_h),
