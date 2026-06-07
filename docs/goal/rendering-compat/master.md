@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅(禁用调试指示器)；UA 默认样式 ✅(body margin 8px, h1-h6, p, ul/ol)；514 个上游 reftest 已导入（9 个目录）；总体通过率 72.6% (373/514)；css-text-decor 100.0% ✅；css-fonts 96.7% ✅；css-writing-modes 93.3%；css-multicol 66.7%；css-grid 81.0%；css-tables 64.4%；CSS2 64.9%；css-flexbox 50.0%；css-position 41.7%；flow-root BFC 支持 ✅；120 个 CSS-only 失败 + 21 个 JS-dependent 失败；剩余：布局精度修复、JS DOM API 支持 |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅(禁用调试指示器)；UA 默认样式 ✅(body margin 8px, h1-h6, p, ul/ol)；493 个上游 reftest 已导入（9 个目录）；总体通过率 77.3% (381/493)；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-writing-modes 94.9%；css-grid 85.0%；css-multicol 70.2%；css-tables 67.9%；CSS2 70.0%；css-flexbox 56.4%；css-position 58.8%；flow-root BFC 支持 ✅；float Y-offset 修正 ✅（非 float 元素扣除 float 垂直空间）；剩余：布局精度修复、JS DOM API 支持 |
 
 ## 当前状态概览
 
