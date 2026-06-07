@@ -480,24 +480,24 @@ impl InlineFormattingContext {
                         // 其他 inline 元素的文本内容也收集进来
                         let text = doc.text_content(child_id).unwrap_or_default();
                         let trimmed = text.trim().to_string();
+                        let style = styles.get(&child_id);
+                        let (font_size, line_height) = resolve_font_metrics(style);
+                        let vertical_align = style
+                            .map(|s| s.vertical_align.clone())
+                            .unwrap_or(VerticalAlignValue::Baseline);
+                        let letter_spacing = style
+                            .map(|s| match &s.letter_spacing {
+                                LengthValue::Px(v) => *v as f32,
+                                _ => 0.0,
+                            })
+                            .unwrap_or(0.0);
+                        let word_spacing = style
+                            .map(|s| match &s.word_spacing {
+                                LengthValue::Px(v) => *v as f32,
+                                _ => 0.0,
+                            })
+                            .unwrap_or(0.0);
                         if !trimmed.is_empty() {
-                            let style = styles.get(&child_id);
-                            let (font_size, line_height) = resolve_font_metrics(style);
-                            let vertical_align = style
-                                .map(|s| s.vertical_align.clone())
-                                .unwrap_or(VerticalAlignValue::Baseline);
-                            let letter_spacing = style
-                                .map(|s| match &s.letter_spacing {
-                                    LengthValue::Px(v) => *v as f32,
-                                    _ => 0.0,
-                                })
-                                .unwrap_or(0.0);
-                            let word_spacing = style
-                                .map(|s| match &s.word_spacing {
-                                    LengthValue::Px(v) => *v as f32,
-                                    _ => 0.0,
-                                })
-                                .unwrap_or(0.0);
                             items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
                                 node_id: child_id,
@@ -506,6 +506,18 @@ impl InlineFormattingContext {
                                 vertical_align,
                                 letter_spacing,
                                 word_spacing,
+                            }));
+                        } else {
+                            // CSS 规范：空 inline 元素仍需通过 line-height 影响行盒高度
+                            // 生成零宽度 TextRun，仅贡献 line-height
+                            items.push(InlineItem::Text(TextRun {
+                                text: String::new(),
+                                node_id: child_id,
+                                font_size,
+                                line_height,
+                                vertical_align,
+                                letter_spacing: 0.0,
+                                word_spacing: 0.0,
                             }));
                         }
                     }
@@ -552,6 +564,14 @@ impl InlineFormattingContext {
                     let visual_text = bidi_reorder(&run.text);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(&visual_text);
+
+                    // 空 inline 元素：文本为空但 line-height 仍需贡献到行盒高度
+                    if words.is_empty() && run.text.is_empty() {
+                        if run.line_height > current_line.height {
+                            current_line.height = run.line_height;
+                        }
+                        continue;
+                    }
 
                     for (word_idx, word) in words.iter().enumerate() {
                         // 基础宽度 + letter-spacing（每个字符追加）
