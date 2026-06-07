@@ -356,11 +356,11 @@ const REFTESTS: &[InlineReftestDef] = &[
         is_match: false,
     },
     InlineReftestDef {
-        id: "css-display/grid-vs-flex-mismatch",
+        id: "css-display/grid-vs-flex-match",
         category: ReftestCategory::Layout,
         test_html: "<html><body style=\"margin:0\"><div style=\"display:grid;grid-template-columns:1fr 1fr;width:200px;height:50px;\"><div style=\"background:red;\"></div><div style=\"background:blue;\"></div></div></body></html>",
         ref_html: "<html><body style=\"margin:0\"><div style=\"display:flex;width:200px;height:50px;\"><div style=\"flex:1;background:red;\"></div><div style=\"flex:1;background:blue;\"></div></div></body></html>",
-        is_match: false,
+        is_match: true,
     },
 ];
 
