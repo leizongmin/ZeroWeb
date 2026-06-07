@@ -93,6 +93,19 @@ fn is_row_group(display: &DisplayValue) -> bool {
     )
 }
 
+/// 行组的排序优先级。
+///
+/// CSS 规范要求 thead 在 tbody 之前，tbody 在 tfoot 之前，
+/// 无论 DOM 顺序如何。
+fn row_group_sort_priority(display: &DisplayValue) -> u8 {
+    match display {
+        DisplayValue::TableHeaderGroup => 0,
+        DisplayValue::TableRowGroup => 1,
+        DisplayValue::TableFooterGroup => 2,
+        _ => 3,
+    }
+}
+
 /// 从 DOM 中读取元素的 colspan 属性值。
 fn get_colspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     if let Some(node_id) = box_node.node_id {
@@ -149,19 +162,29 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
     let mut rows = Vec::new();
     let mut max_cols = 0usize;
 
+    // 收集行组，按 CSS 规范顺序排列（thead → tbody → tfoot）
+    // 先收集所有子元素及其类型，按行组排序优先级重排
+    let mut children_with_priority: Vec<(usize, &LayoutBox, Option<DisplayValue>)> = Vec::new();
     for (child_idx, child) in table_box.children.iter().enumerate() {
         let child_display = get_display(child, styles);
+        children_with_priority.push((child_idx, child, child_display));
+    }
 
+    // 按行组排序优先级稳定排序（thead=0, tbody=1, tfoot=2, 其他=3）
+    // 稳定排序保留同优先级内的 DOM 顺序
+    children_with_priority.sort_by_key(|(_, _, display)| display.as_ref().map_or(3, row_group_sort_priority));
+
+    for (child_idx, child, child_display) in &children_with_priority {
         match child_display {
-            Some(d) if is_table_row(&d) => {
+            Some(d) if is_table_row(d) => {
                 // 直接子元素是 table-row
-                let row = build_row(child_idx, child, doc);
+                let row = build_row(*child_idx, child, doc);
                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                 if !row.cells.is_empty() {
                     rows.push(row);
                 }
             }
-            Some(d) if is_row_group(&d) => {
+            Some(d) if is_row_group(d) => {
                 // 直接子元素是 table-row-group (tbody/thead/tfoot)
                 // 从 row-group 中提取行
                 for (rg_child_idx, rg_child) in child.children.iter().enumerate() {
@@ -175,18 +198,18 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                     }
                 }
             }
-            Some(d) if is_table_cell(&d) => {
+            Some(d) if is_table_cell(d) => {
                 // 直接子元素是 table-cell — 生成匿名行
                 let colspan = get_colspan(child, doc);
                 let cell = TableCell {
-                    child_index: child_idx,
+                    child_index: *child_idx,
                     colspan,
                     col_start: 0,
                     col_end: colspan,
                 };
                 max_cols = max_cols.max(colspan);
                 rows.push(TableRow {
-                    child_index: child_idx, // 匿名行直接引用 cell 的索引
+                    child_index: *child_idx, // 匿名行直接引用 cell 的索引
                     cells: vec![cell],
                 });
             }

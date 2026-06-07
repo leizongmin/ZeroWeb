@@ -44,5 +44,31 @@ html/dom/
 html/infrastructure/
 html/webappapis/
 
+# ── 具体 reftest 依赖 JS DOM API 动态修改样式/DOM（不在 CSS 渲染范围内） ──
+# 这些 reftest 需要 document.getElementById, window.scrollTo, element.style 等
+# DOM API 来动态设置测试条件，V8 sandbox 当前不提供这些 API。
+# 渲染兼容性目标仅覆盖 CSS 渲染正确性，JS/DOM API 兼容性不在范围内。
+css/CSS2/abspos/abspos-containing-block-initial-001.xht
+css/css-flexbox/aspect-ratio-intrinsic-size-012.html
+css/css-flexbox/aspect-ratio-intrinsic-size-013.html
+css/css-flexbox/auto-margins-001.html
+css/css-flexbox/dynamic-bsize-change.html
+css/css-flexbox/flex-aspect-ratio-resize-001.html
+css/css-grid/table-grid-item-dynamic-002.html
+css/css-multicol/column-rule-001.html
+css/css-multicol/increase-prev-sibling-height.html
+css/css-multicol/multicol-dynamic-add-001.html
+css/css-position/absolute-pos-box-inside-fixed-pos-box-with-changing-height.html
+css/css-position/block-axis-constraint-changes-for-out-of-flow-box.html
+css/css-position/containing-block-change-button.html
+css/css-position/containing-block-change-scrollframe.html
+css/css-position/hypothetical-dynamic-change-001.html
+css/css-position/position-fixed-dynamic-transformed-sibling.html
+css/css-position/z-index-blend-will-change-overlapping-layers.html
+css/css-tables/abspos-container-change-dynamic-001.html
+css/css-tables/insert-after-col.html
+css/css-tables/toggle-row-display-property-001.html
+css/css-writing-modes/dynamic-offset-rtl-001.html
+
 # ── 依赖外部资源（图片、字体等） ──
 # 暂不跳过，在导入时按需处理
