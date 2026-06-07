@@ -11,6 +11,7 @@ mod reftest;
 mod reftest_data;
 mod report;
 mod runner;
+mod wpt_file_loader;
 
 use runner::{TestContext, builtin_tests, filter_tests_by_category, filter_tests_by_pattern, run_all};
 
@@ -26,12 +27,14 @@ Commands:
   list              List all available test cases
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
+  reftest-upstream  Run upstream WPT reftest files from wpt-data/
 
 Options:
   --json            Output results in JSON format
   --tap             Output results in TAP format
   --junit <path>    Write JUnit XML report to file
   --manifest <path> Load external WPT MANIFEST.json
+  --wpt-data <dir>  Path to wpt-data directory (for reftest-upstream)
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
   --category <cat>  Reftest category filter (layout|text|all)
@@ -52,6 +55,8 @@ struct CliOptions {
     viewport_height: f32,
     /// 使用 GPU 渲染模式。
     use_gpu: bool,
+    /// 上游 WPT 数据目录。
+    wpt_data: Option<String>,
 }
 
 /// 输出格式。
@@ -80,6 +85,7 @@ fn main() {
         viewport_width: 800.0,
         viewport_height: 600.0,
         use_gpu: false,
+        wpt_data: None,
     };
 
     // 解析选项参数
@@ -114,6 +120,12 @@ fn main() {
                 }
             }
             "--gpu" => options.use_gpu = true,
+            "--wpt-data" => {
+                i += 1;
+                if i < args.len() {
+                    options.wpt_data = Some(args[i].clone());
+                }
+            }
             _ => {
                 if filter.is_none() {
                     filter = Some(args[i].clone());
@@ -128,6 +140,7 @@ fn main() {
         "list" => cmd_list(&options),
         "summary" => cmd_summary(&options, filter.as_deref()),
         "reftest" => cmd_reftest(&options, filter.as_deref()),
+        "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
         "--help" | "-h" => print_usage(),
         _ => {
             eprintln!("Unknown command: {command}");
@@ -343,6 +356,129 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         } else {
             eprintln!("Report saved to: {path}");
         }
+    }
+
+    if fail_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+/// `reftest-upstream` 子命令 — 运行从 wpt-data/ 加载的真实上游 WPT reftest。
+fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
+    use reftest::{ReftestResult, run_reftest, run_reftest_gpu};
+
+    let wpt_data_dir = match &options.wpt_data {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::PathBuf::from("tests/wpt-runner/wpt-data"),
+    };
+
+    if !wpt_data_dir.is_dir() {
+        eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
+        eprintln!("Run tests/wpt-runner/scripts/import-wpt-reftests.sh first.");
+        std::process::exit(1);
+    }
+
+    eprintln!("Loading upstream reftests from: {}", wpt_data_dir.display());
+    let file_cases = wpt_file_loader::load_file_reftests(&wpt_data_dir);
+
+    if file_cases.is_empty() {
+        eprintln!("No upstream reftest cases found in {}", wpt_data_dir.display());
+        std::process::exit(1);
+    }
+
+    // 过滤
+    let filtered: Vec<&wpt_file_loader::FileReftestCase> = file_cases
+        .iter()
+        .filter(|case| {
+            if let Some(f) = filter {
+                case.id.contains(f)
+                    || f.eq_ignore_ascii_case("layout") && case.category == reftest::ReftestCategory::Layout
+                    || f.eq_ignore_ascii_case("text") && case.category == reftest::ReftestCategory::Text
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    eprintln!("Running {} upstream reftest cases...", filtered.len());
+
+    let mut results: Vec<ReftestResult> = Vec::with_capacity(filtered.len());
+    let mut pass_count = 0usize;
+    let mut fail_count = 0usize;
+    let skip_count = 0usize;
+    let start = std::time::Instant::now();
+
+    for case in &filtered {
+        let reftest_case = case.to_reftest_case();
+        let config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
+
+        let result = if options.use_gpu {
+            run_reftest_gpu(&reftest_case, &config)
+        } else {
+            run_reftest(&reftest_case, &config)
+        };
+
+        let status_char = if result.passed { '✓' } else { '✗' };
+        eprintln!("  {} {} ({:.2}%)", status_char, case.id, result.diff_ratio * 100.0);
+
+        if result.passed {
+            pass_count += 1;
+        } else {
+            fail_count += 1;
+            eprintln!("    {}", result.message);
+        }
+
+        results.push(result);
+    }
+
+    let duration = start.elapsed();
+    let total = pass_count + fail_count + skip_count;
+    let pass_rate = if total > 0 {
+        pass_count as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
+
+    // 按目录分类统计
+    let mut dir_stats: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+    for (i, case) in filtered.iter().enumerate() {
+        let dir = case.id.split('/').nth(1).unwrap_or("unknown").to_string();
+        let (passed, total) = dir_stats.entry(dir).or_insert((0, 0));
+        *total += 1;
+        if results[i].passed {
+            *passed += 1;
+        }
+    }
+
+    // 输出报告
+    eprintln!("\n═══════════════════════════════════════════════");
+    eprintln!("  Upstream WPT Reftest Report");
+    eprintln!("═══════════════════════════════════════════════");
+    eprintln!("  Source:  {}", wpt_data_dir.display());
+    eprintln!("  Total:   {}", total);
+    eprintln!("  Passed:  {}", pass_count);
+    eprintln!("  Failed:  {}", fail_count);
+    eprintln!("  Skipped: {}", skip_count);
+    eprintln!("  Pass Rate: {:.1}%", pass_rate);
+    eprintln!("  Duration:  {:.2}s", duration.as_secs_f64());
+    eprintln!();
+
+    // 按目录输出
+    let mut dirs: Vec<_> = dir_stats.iter().collect();
+    dirs.sort_by_key(|(k, _)| k.as_str());
+    for (dir, (pass, total_count)) in &dirs {
+        let rate = if *total_count > 0 {
+            *pass as f64 / *total_count as f64 * 100.0
+        } else {
+            0.0
+        };
+        eprintln!("  {:30} {}/{} ({:.1}%)", format!("{}/", dir), pass, total_count, rate);
+    }
+
+    // JSON 输出
+    if matches!(options.format, OutputFormat::Json) {
+        let json = format_reftest_report_json(&results, pass_count, fail_count, pass_rate, duration);
+        println!("{json}");
     }
 
     if fail_count > 0 {
