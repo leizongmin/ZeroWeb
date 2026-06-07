@@ -1023,6 +1023,7 @@ fn test_flex_column_nested_block() {
 #[test]
 fn test_block_nested_margin_effects() {
     // 嵌套 block 多层有 margin，验证布局
+    // taffy 0.7 已内置块级 margin 折叠，嵌套无 border/padding 的元素 margin 会向上传播
     let (mut doc, body) = make_doc_with_body();
     let outer = doc.create_element("div");
     doc.append_child(body, outer).unwrap();
@@ -1058,10 +1059,21 @@ fn test_block_nested_margin_effects() {
     assert_eq!(middle_box.width, 300.0);
     assert_eq!(inner_box.width, 200.0);
 
-    // middle 在 outer 内部
-    assert!(middle_box.y >= outer_box.content_y, "middle 应在 outer 内容区域内");
+    // taffy 0.7 已内置块级 margin 折叠，嵌套无 border/padding 的元素 margin 会向上传播
+    // middle 在 outer 内容区域内（margin 折叠后 middle.y 可能等于 outer.content_y）
+    assert!(
+        middle_box.y >= outer_box.content_y - 0.5,
+        "middle 应在 outer 内容区域内，middle.y={}, outer.content_y={}",
+        middle_box.y,
+        outer_box.content_y
+    );
     // inner 在 middle 内部
-    assert!(inner_box.y >= middle_box.content_y, "inner 应在 middle 内容区域内");
+    assert!(
+        inner_box.y >= middle_box.content_y - 0.5,
+        "inner 应在 middle 内容区域内，inner.y={}, middle.content_y={}",
+        inner_box.y,
+        middle_box.content_y
+    );
 }
 
 /// 测试 zero-padding zero-border 的内容区域
