@@ -547,6 +547,17 @@ pub enum BackgroundImageComputedValue {
     Gradient(zero_css_parser::values::GradientValue),
 }
 
+/// CSS mask-mode 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskModeComputedValue {
+    /// alpha — 使用 mask 图像的 alpha 通道。
+    Alpha,
+    /// luminance — 使用 mask 图像的亮度值。
+    Luminance,
+    /// match-source — 默认值。
+    MatchSource,
+}
+
 /// CSS background-position 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundPositionComputedValue {
@@ -1376,6 +1387,10 @@ pub enum PropertyValue {
     BoxShadow(BoxShadowComputedValue),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
+    /// mask-image 值。
+    MaskImage(Vec<BackgroundImageComputedValue>),
+    /// mask-mode 值。
+    MaskMode(MaskModeComputedValue),
     /// justify-items 值。
     JustifyItems(JustifyItemsValue),
     /// justify-self 值。

@@ -941,6 +941,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.clip_path = default_style.clip_path;
             true
         }
+        "mask-image" => {
+            style.mask_image = default_style.mask_image;
+            true
+        }
+        "mask-mode" => {
+            style.mask_mode = default_style.mask_mode;
+            true
+        }
         "justify-items" => {
             style.justify_items = default_style.justify_items;
             true

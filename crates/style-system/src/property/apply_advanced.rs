@@ -965,6 +965,33 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        "mask-image" => {
+            if let Some(layers) = values::parse_mask_image_layers(value) {
+                style.mask_image = layers
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
+                        zero_css_parser::values::BackgroundImageValue::Url(url) => {
+                            BackgroundImageComputedValue::Url(url)
+                        }
+                        zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
+                            BackgroundImageComputedValue::Gradient(g)
+                        }
+                    })
+                    .collect();
+                return true;
+            }
+        }
+        "mask-mode" => {
+            if let Some(v) = values::parse_mask_mode(value) {
+                style.mask_mode = match v {
+                    zero_css_parser::values::MaskModeValue::Alpha => MaskModeComputedValue::Alpha,
+                    zero_css_parser::values::MaskModeValue::Luminance => MaskModeComputedValue::Luminance,
+                    zero_css_parser::values::MaskModeValue::MatchSource => MaskModeComputedValue::MatchSource,
+                };
+                return true;
+            }
+        }
         "background-position" => {
             if let Some(v) = values::parse_background_position(value) {
                 style.background_position = match v {

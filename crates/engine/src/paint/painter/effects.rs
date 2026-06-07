@@ -11,7 +11,8 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
-    BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, LineCap, LineStyle, ShadowPrimitive, StrokePrimitive,
+    BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive, GradientPrimitive, LineCap, LineStyle, ShadowPrimitive,
+    StrokePrimitive,
 };
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundImageComputedValue,
@@ -22,7 +23,7 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{gradient_to_primitive, simple_hash};
+use super::super::helpers::{PrimitiveCounts, gradient_to_primitive, simple_hash};
 use super::effects_indicators::clip_tile_to_origin;
 
 impl super::Painter {
@@ -764,6 +765,51 @@ impl super::Painter {
             LineClampComputedValue::Count(n) => Some(n),
         }
     }
+
+    /// 应用 CSS mask-image 蒙版效果。
+    ///
+    /// 对元素及其子元素产生的图元应用蒙版裁剪：
+    /// - 渐变蒙版：裁剪到渐变区域，并应用渐变式 alpha 衰减
+    /// - URL 蒙版：暂不支持（需要图像加载基础设施）
+    pub(super) fn apply_mask_image(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        counts_before: &PrimitiveCounts,
+    ) {
+        let mask_rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+
+        for layer in &style.mask_image {
+            match layer {
+                BackgroundImageComputedValue::Gradient(gradient) => {
+                    if let Some(gradient_prim) = super::super::helpers::gradient_to_primitive(gradient, &mask_rect) {
+                        // 渐变蒙版：将元素裁剪到渐变边界矩形
+                        super::super::helpers::clip_all_primitives_to_rect(
+                            &mut self.primitives,
+                            counts_before,
+                            &gradient_prim.rect,
+                        );
+
+                        // 对蒙版区域内的图元应用渐变式 alpha 衰减
+                        let alpha_factor = compute_gradient_mask_alpha(&gradient_prim);
+                        if alpha_factor < 1.0 {
+                            super::super::helpers::apply_opacity_to_new_primitives(
+                                &mut self.primitives,
+                                counts_before,
+                                alpha_factor as f32,
+                            );
+                        }
+                    }
+                }
+                BackgroundImageComputedValue::Url(_) => {
+                    // URL 蒙版需要图像加载基础设施，暂不实现
+                }
+                BackgroundImageComputedValue::None => {}
+            }
+        }
+    }
 }
 
 /// 将 ComputedStyle 中的 filter 值转换为渲染层 FilterKind。
@@ -970,5 +1016,94 @@ fn resolve_repeat_params(
                 tile_h,
             )
         }
+    }
+}
+
+/// 计算渐变蒙版的平均 alpha 衰减因子。
+///
+/// 简化实现：取渐变 stops 的平均 alpha 值。
+fn compute_gradient_mask_alpha(gradient: &GradientPrimitive) -> f64 {
+    if gradient.stops.is_empty() {
+        return 1.0;
+    }
+    let total_alpha: f64 = gradient.stops.iter().map(|s| s.color.a as f64 / 255.0).sum();
+    total_alpha / gradient.stops.len() as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_render_foundation::color::Color;
+    use zero_render_foundation::geometry::Rect;
+    use zero_render_foundation::primitive::{GradientKind, GradientPrimitive, GradientStop};
+
+    /// 测试 compute_gradient_mask_alpha — 空 stops 返回 1.0。
+    #[test]
+    fn test_mask_alpha_empty_stops() {
+        let gradient = GradientPrimitive {
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+            },
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            stops: vec![],
+            repeating: false,
+        };
+        assert_eq!(compute_gradient_mask_alpha(&gradient), 1.0);
+    }
+
+    /// 测试 compute_gradient_mask_alpha — 全不透明 stops 返回 1.0。
+    #[test]
+    fn test_mask_alpha_fully_opaque() {
+        let gradient = GradientPrimitive {
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+            },
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::rgba(255, 0, 0, 255),
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::rgba(0, 0, 255, 255),
+                },
+            ],
+            repeating: false,
+        };
+        assert!((compute_gradient_mask_alpha(&gradient) - 1.0).abs() < 0.001);
+    }
+
+    /// 测试 compute_gradient_mask_alpha — 半透明 stops 返回约 0.502。
+    #[test]
+    fn test_mask_alpha_half_transparent() {
+        let gradient = GradientPrimitive {
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 0.0,
+            },
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::rgba(0, 0, 0, 128),
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::rgba(0, 0, 0, 128),
+                },
+            ],
+            repeating: false,
+        };
+        let expected = 128.0 / 255.0;
+        assert!((compute_gradient_mask_alpha(&gradient) - expected).abs() < 0.01);
     }
 }
