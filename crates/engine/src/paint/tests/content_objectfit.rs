@@ -38,6 +38,7 @@ fn make_box(width: f32, height: f32) -> LayoutBox {
         is_absolute: false,
         is_fixed: false,
         is_sticky: false,
+        clear: zero_layout_engine::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,

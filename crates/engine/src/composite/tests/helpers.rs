@@ -31,6 +31,7 @@ pub fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, w: f32, h: f3
         is_fixed,
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
+        clear: zero_layout_engine::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,

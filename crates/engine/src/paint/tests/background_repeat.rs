@@ -44,6 +44,7 @@ fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) ->
         is_absolute: false,
         is_fixed: false,
         is_sticky: false,
+        clear: zero_layout_engine::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,

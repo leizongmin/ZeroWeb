@@ -61,6 +61,7 @@ fn test_adjust_fixed_zero_parent_offset() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -100,6 +101,7 @@ fn test_adjust_fixed_negative_parent_offset() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -131,6 +133,7 @@ fn test_adjust_fixed_negative_parent_offset() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -181,6 +184,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -212,6 +216,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -243,6 +248,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -293,6 +299,7 @@ fn test_adjust_fixed_with_absolute_child() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -324,6 +331,7 @@ fn test_adjust_fixed_with_absolute_child() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -355,6 +363,7 @@ fn test_adjust_fixed_with_absolute_child() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -404,6 +413,7 @@ fn test_adjust_fixed_empty_children_no_panic() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };

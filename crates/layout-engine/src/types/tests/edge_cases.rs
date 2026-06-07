@@ -37,6 +37,7 @@ fn test_layout_box_f32_min_positive_size() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -82,6 +83,7 @@ fn test_layout_box_extreme_negative_position() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -129,6 +131,7 @@ fn test_layout_box_negative_content_direct_construction() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -168,6 +171,7 @@ fn test_layout_box_five_level_nested_position() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -236,6 +240,7 @@ fn test_layout_box_single_negative_margin_outer_area() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -281,6 +286,7 @@ fn test_layout_box_fixed_and_absolute_flags() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 5,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -321,6 +327,7 @@ fn test_layout_box_extreme_z_index() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: i32::MIN,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -354,6 +361,7 @@ fn test_layout_box_extreme_z_index() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: i32::MAX,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -416,6 +424,7 @@ fn test_layout_result_large_viewport() {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
         },
@@ -457,6 +466,7 @@ fn test_layout_box_recursive_child_access() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -488,6 +498,7 @@ fn test_layout_box_recursive_child_access() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -519,6 +530,7 @@ fn test_layout_box_recursive_child_access() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -558,6 +570,7 @@ fn test_layout_box_infinity_coordinates() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
