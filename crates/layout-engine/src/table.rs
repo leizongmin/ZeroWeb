@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::DisplayValue;
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
+use zero_style_system::property::types::BorderStyleValue;
 
 use crate::types::LayoutBox;
 
@@ -177,6 +178,9 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     // CSS 2.1 规范：在 separated border model 中，
     // table-row-group / table-row 的 border、padding、margin 无视觉效果
     suppress_row_group_row_box_model(table_box, styles);
+
+    // 5. border-collapse: collapse 时解析边框冲突
+    resolve_collapsed_borders(table_box, &grid, styles);
 }
 
 /// 抑制行组（tbody/thead/tfoot）和行（tr）的 border/padding/margin。
@@ -226,6 +230,239 @@ fn zero_box_model(box_node: &mut LayoutBox) {
     box_node.margin_right = 0.0;
     box_node.margin_bottom = 0.0;
     box_node.margin_left = 0.0;
+}
+
+/// border-collapse: collapse 模式下的边框冲突解决。
+///
+/// CSS 2.1 §17.6.2.1：当多个边框重叠时，按以下优先级选择"胜出"的边框：
+/// 1. border-style：hidden > 其他；none < 其他
+/// 2. border-width：越宽越好
+/// 3. 来源优先级：cell > row > row-group > col > col-group > table
+///
+/// 当前实现处理最常见的场景：table 边框与 cell 外边框的冲突。
+fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_style_system::BorderCollapseValue;
+
+    let table_style = match table_box.node_id.and_then(|id| styles.get(&id)) {
+        Some(s) => s,
+        None => return,
+    };
+
+    let is_collapsed = matches!(table_style.border_collapse, BorderCollapseValue::Collapse);
+
+    if !is_collapsed {
+        return;
+    }
+
+    let table_bt = length_to_px(&table_style.border_top_width);
+    let table_br = length_to_px(&table_style.border_right_width);
+    let table_bb = length_to_px(&table_style.border_bottom_width);
+    let table_bl = length_to_px(&table_style.border_left_width);
+    let table_style_t = &table_style.border_top_style;
+    let table_style_r = &table_style.border_right_style;
+    let table_style_b = &table_style.border_bottom_style;
+    let table_style_l = &table_style.border_left_style;
+
+    // 遍历每个单元格，解析其外边缘与 table 边框的冲突
+    let row_count = grid.rows.len();
+    let last_row = row_count - 1;
+
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        let cell_count = row.cells.len();
+        if cell_count == 0 {
+            continue;
+        }
+
+        // 获取行 box 的可变引用
+        let row_box = match get_row_box_mut(table_box, row) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        let last_col = grid.col_count - 1;
+
+        for cell in row.cells.iter() {
+            let cell_box = match row_box.children.get_mut(cell.child_index) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            let cell_style = match cell_box.node_id.and_then(|id| styles.get(&id)) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // 判断单元格是否位于 table 的各边缘
+            let is_first_row = row_idx == 0;
+            let is_last_row = row_idx == last_row;
+            let is_first_col = cell.col_start == 0;
+            let is_last_col = cell.col_end > last_col;
+
+            // 获取 cell 的边框样式
+            let cell_bt = length_to_px(&cell_style.border_top_width);
+            let cell_br = length_to_px(&cell_style.border_right_width);
+            let cell_bb = length_to_px(&cell_style.border_bottom_width);
+            let cell_bl = length_to_px(&cell_style.border_left_width);
+
+            // 对每个外边缘：比较 table border vs cell border
+            // 但如果 table border 更宽或 style 更高，则 table 胜出
+
+            if is_first_row {
+                let winner = resolve_border(
+                    (table_bt, table_style_t, BorderSource::Table),
+                    (cell_bt, &cell_style.border_top_style, BorderSource::Cell),
+                );
+                if winner == BorderSource::Table {
+                    cell_box.border_top = table_bt;
+                }
+            }
+
+            if is_last_row {
+                let winner = resolve_border(
+                    (table_bb, table_style_b, BorderSource::Table),
+                    (cell_bb, &cell_style.border_bottom_style, BorderSource::Cell),
+                );
+                if winner == BorderSource::Table {
+                    cell_box.border_bottom = table_bb;
+                }
+            }
+
+            if is_first_col {
+                let winner = resolve_border(
+                    (table_bl, table_style_l, BorderSource::Table),
+                    (cell_bl, &cell_style.border_left_style, BorderSource::Cell),
+                );
+                if winner == BorderSource::Table {
+                    cell_box.border_left = table_bl;
+                }
+            }
+
+            if is_last_col {
+                let winner = resolve_border(
+                    (table_br, table_style_r, BorderSource::Table),
+                    (cell_br, &cell_style.border_right_style, BorderSource::Cell),
+                );
+                if winner == BorderSource::Table {
+                    cell_box.border_right = table_br;
+                }
+            }
+        }
+    }
+}
+
+/// 边框来源优先级（CSS 2.1 §17.6.2.1）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum BorderSource {
+    Table = 0, // 最低优先级
+    ColumnGroup = 1,
+    Column = 2,
+    RowGroup = 3,
+    Row = 4,
+    Cell = 5, // 最高优先级
+}
+
+/// border-style 优先级数值。
+///
+/// CSS 2.1 §17.6.2.1 中边的优先级顺序：
+/// hidden > double > solid > dashed > dotted > ridge > outset > groove > inset > none
+fn border_style_priority(style: &BorderStyleValue) -> i32 {
+    use BorderStyleValue;
+    match style {
+        BorderStyleValue::Hidden => 100, // hidden 最高（强制为空）
+        BorderStyleValue::None => -1,    // none 最低（等价于无边框）
+        BorderStyleValue::Double => 8,
+        BorderStyleValue::Solid => 7,
+        BorderStyleValue::Dashed => 6,
+        BorderStyleValue::Dotted => 5,
+        BorderStyleValue::Ridge => 4,
+        BorderStyleValue::Outset => 3,
+        BorderStyleValue::Groove => 2,
+        BorderStyleValue::Inset => 1,
+    }
+}
+
+/// 解析两条边框的冲突，返回胜出方的来源。
+///
+/// 比较规则（CSS 2.1 §17.6.2.1）：
+/// 1. hidden 样式总是胜出
+/// 2. none 样式总是输
+/// 3. 更高的 style 优先级胜出
+/// 4. 同一 style 时，更宽的边框胜出
+/// 5. 同 width 同 style 时，更高来源优先级胜出
+fn resolve_border(
+    a: (f32, &BorderStyleValue, BorderSource),
+    b: (f32, &BorderStyleValue, BorderSource),
+) -> BorderSource {
+    let (width_a, style_a, source_a) = a;
+    let (width_b, style_b, source_b) = b;
+
+    // hidden 总是胜出
+    if matches!(style_a, BorderStyleValue::Hidden) {
+        return source_a;
+    }
+    if matches!(style_b, BorderStyleValue::Hidden) {
+        return source_b;
+    }
+
+    // none 总是输
+    let a_is_none = matches!(style_a, BorderStyleValue::None);
+    let b_is_none = matches!(style_b, BorderStyleValue::None);
+    if a_is_none && !b_is_none {
+        return source_b;
+    }
+    if b_is_none && !a_is_none {
+        return source_a;
+    }
+
+    // style 优先级
+    let prio_a = border_style_priority(style_a);
+    let prio_b = border_style_priority(style_b);
+    if prio_a > prio_b {
+        return source_a;
+    }
+    if prio_b > prio_a {
+        return source_b;
+    }
+
+    // 同 style 时比 width
+    if width_a > width_b {
+        return source_a;
+    }
+    if width_b > width_a {
+        return source_b;
+    }
+
+    // 同 width 同 style 时比来源优先级
+    if source_a as i32 >= source_b as i32 {
+        source_a
+    } else {
+        source_b
+    }
+}
+
+/// 获取行 box 的可变引用。
+fn get_row_box_mut<'a>(table_box: &'a mut LayoutBox, row: &TableRow) -> Option<&'a mut LayoutBox> {
+    match row.row_group_index {
+        Some(rg_idx) => {
+            let rg = table_box.children.get_mut(rg_idx)?;
+            // 行组内的行按 DOM 顺序排列
+            // 行组的 children 中，找到与 row.child_index 对应的行
+            rg.children.get_mut(row.child_index)
+        }
+        None => table_box.children.get_mut(row.child_index),
+    }
+}
+
+/// 将 LengthValue 转换为像素值（简化版，不处理百分比和 auto）。
+fn length_to_px(value: &zero_css_parser::values::LengthValue) -> f32 {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Px(v) => *v as f32,
+        LengthValue::Em(v) => *v as f32 * 16.0,
+        LengthValue::Rem(v) => *v as f32 * 16.0,
+        _ => 0.0,
+    }
 }
 
 /// 从 table 容器的子元素中构建 grid 结构。
@@ -509,14 +746,9 @@ fn position_cells(
             let cell_height = if let Some(cell_node_id) = cell_box.node_id
                 && let Some(cell_style) = styles.get(&cell_node_id)
             {
-                let has_explicit_height = !matches!(
-                    cell_style.height,
-                    zero_css_parser::values::LengthValue::Auto
-                );
-                let is_overflow_clip = !matches!(
-                    cell_style.overflow_y,
-                    zero_css_parser::values::OverflowValue::Visible
-                );
+                let has_explicit_height = !matches!(cell_style.height, zero_css_parser::values::LengthValue::Auto);
+                let is_overflow_clip =
+                    !matches!(cell_style.overflow_y, zero_css_parser::values::OverflowValue::Visible);
                 if has_explicit_height && is_overflow_clip {
                     cell_box.height // 保持 taffy 计算的明确高度
                 } else {

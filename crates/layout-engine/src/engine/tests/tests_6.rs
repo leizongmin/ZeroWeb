@@ -1001,3 +1001,61 @@ fn test_layout_z_index_values() {
     assert_eq!(box1.z_index, 10);
     assert_eq!(box2.z_index, 20);
 }
+
+/// 测试 width:0 height:0 元素带 border: solid 1in (96px) 的布局。
+/// 期望：总尺寸 192x192（96px 边框 × 4 侧）。
+#[test]
+fn test_border_1in_zero_size() {
+    use zero_style_system::property::types::BorderStyleValue;
+
+    let (mut doc, body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.width = LengthValue::Px(0.0);
+    style.height = LengthValue::Px(0.0);
+    style.display = DisplayValue::Block;
+    style.border_top_width = LengthValue::Px(96.0);
+    style.border_right_width = LengthValue::Px(96.0);
+    style.border_bottom_width = LengthValue::Px(96.0);
+    style.border_left_width = LengthValue::Px(96.0);
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_right_style = BorderStyleValue::Solid;
+    style.border_bottom_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let body_box = &result.root;
+    assert!(!body_box.children.is_empty(), "Should have child box");
+    let child_box = &body_box.children[0];
+
+    eprintln!(
+        "Child box: width={}, height={}, border=({},{},{},{}), content={}x{}",
+        child_box.width,
+        child_box.height,
+        child_box.border_top,
+        child_box.border_right,
+        child_box.border_bottom,
+        child_box.border_left,
+        child_box.content_width,
+        child_box.content_height
+    );
+
+    // 总宽度应为 192（96 左 + 0 内容 + 96 右）
+    assert!(
+        child_box.width >= 190.0,
+        "Expected width ~192 (96+0+96), got {}",
+        child_box.width
+    );
+    assert!(
+        child_box.height >= 190.0,
+        "Expected height ~192 (96+0+96), got {}",
+        child_box.height
+    );
+}

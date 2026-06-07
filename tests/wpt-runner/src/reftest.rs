@@ -564,7 +564,7 @@ pub fn render_to_framebuffer_with_base(
     pipeline.set_image_sizes(image_sizes);
     let result = pipeline.render_html(html, css);
 
-    let font_loader = FontLoader::new();
+    let font_loader = create_font_loader();
     let mut glyph_cache = GlyphCache::new(1024);
 
     // 使用已构建的图像缓存（包含固有尺寸信息）
