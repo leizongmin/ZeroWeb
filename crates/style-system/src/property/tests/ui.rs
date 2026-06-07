@@ -1375,7 +1375,7 @@ fn test_edge_text_shadow_red_parse() {
 #[test]
 fn test_edge_background_image_default_none() {
     let style = ComputedStyle::default();
-    assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    assert!(style.background_image.is_empty());
 }
 
 /// 测试 background-image 解析 "url(hero.png)"。
@@ -1385,7 +1385,7 @@ fn test_edge_background_image_url_hero() {
     assert!(apply_property_value(&mut style, "background-image", "url(hero.png)"));
     assert_eq!(
         style.background_image,
-        BackgroundImageComputedValue::Url("hero.png".to_string())
+        vec![BackgroundImageComputedValue::Url("hero.png".to_string())]
     );
 }
 
@@ -1438,8 +1438,8 @@ fn test_edge_background_image_gradient() {
         "linear-gradient(red, blue)"
     ));
     assert!(matches!(
-        style.background_image,
-        BackgroundImageComputedValue::Gradient(..)
+        &style.background_image[..],
+        [BackgroundImageComputedValue::Gradient(..)]
     ));
 }
 
@@ -1452,7 +1452,7 @@ fn test_edge_background_image_radial_gradient() {
         "background-image",
         "radial-gradient(circle, red, blue)"
     ));
-    match &style.background_image {
+    match &style.background_image[0] {
         BackgroundImageComputedValue::Gradient(g) => {
             assert!(matches!(g, zero_css_parser::values::GradientValue::Radial(..)));
         }
@@ -1464,7 +1464,7 @@ fn test_edge_background_image_radial_gradient() {
 #[test]
 fn test_edge_background_image_default_still_none() {
     let style = ComputedStyle::default();
-    assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    assert!(style.background_image.is_empty());
 }
 
 /// 测试 background-image 初始值重置。
@@ -1477,11 +1477,11 @@ fn test_edge_background_image_initial_reset() {
         "linear-gradient(red, blue)"
     ));
     assert!(matches!(
-        style.background_image,
-        BackgroundImageComputedValue::Gradient(..)
+        &style.background_image[..],
+        [BackgroundImageComputedValue::Gradient(..)]
     ));
     assert!(apply_initial_value(&mut style, "background-image"));
-    assert_eq!(style.background_image, BackgroundImageComputedValue::None);
+    assert!(style.background_image.is_empty());
 }
 
 /// 测试 background 简写展开渐变。
@@ -1509,7 +1509,7 @@ fn test_edge_background_image_conic_gradient() {
         "background-image",
         "conic-gradient(from 45deg, red, blue)"
     ));
-    match &style.background_image {
+    match &style.background_image[0] {
         BackgroundImageComputedValue::Gradient(g) => {
             assert!(matches!(g, zero_css_parser::values::GradientValue::Conic(..)));
         }

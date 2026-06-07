@@ -241,7 +241,7 @@ fn test_paint_background_image_url() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+    style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -288,7 +288,7 @@ fn test_paint_background_image_with_color() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.background_image = BackgroundImageComputedValue::Url("bg.png".to_string());
+    style.background_image = vec![BackgroundImageComputedValue::Url("bg.png".to_string())];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -308,7 +308,7 @@ fn test_paint_background_image_url_hash_consistency() {
 
     let mut styles1 = HashMap::new();
     let mut style1 = ComputedStyle::default();
-    style1.background_image = BackgroundImageComputedValue::Url("same.png".to_string());
+    style1.background_image = vec![BackgroundImageComputedValue::Url("same.png".to_string())];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style1.color = ColorValue::CurrentColor;
     styles1.insert(elem1, style1);
@@ -323,7 +323,7 @@ fn test_paint_background_image_url_hash_consistency() {
 
     let mut styles2 = HashMap::new();
     let mut style2 = ComputedStyle::default();
-    style2.background_image = BackgroundImageComputedValue::Url("same.png".to_string());
+    style2.background_image = vec![BackgroundImageComputedValue::Url("same.png".to_string())];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style2.color = ColorValue::CurrentColor;
     styles2.insert(elem2, style2);

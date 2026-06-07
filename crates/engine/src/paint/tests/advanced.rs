@@ -171,7 +171,7 @@ fn test_paint_visibility_hidden_no_shadow_no_image() {
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
     };
-    style.background_image = BackgroundImageComputedValue::Url("test.png".to_string());
+    style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();

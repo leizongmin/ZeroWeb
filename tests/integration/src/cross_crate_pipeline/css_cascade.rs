@@ -104,8 +104,10 @@ fn test_background_image_pipeline_integration() {
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
-        div_style.background_image,
-        zero_style_system::property::BackgroundImageComputedValue::Url("bg.png".to_string()),
+        &div_style.background_image[..],
+        &[zero_style_system::property::BackgroundImageComputedValue::Url(
+            "bg.png".to_string()
+        )],
         "div 的 background-image 应为 Url(\"bg.png\")"
     );
 }

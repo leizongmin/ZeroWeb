@@ -84,7 +84,7 @@ fn test_gradient_with_background_color_pipeline() {
     // 验证 background-image 为渐变
     assert!(
         matches!(
-            &div_style.background_image,
+            &div_style.background_image[0],
             zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
         ),
         "background_image 应为 Gradient 变体"
@@ -117,7 +117,7 @@ fn test_linear_gradient_angle_direction_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => match grad {
             zero_css_parser::values::GradientValue::Linear(lin) => {
                 match &lin.direction {
@@ -160,7 +160,7 @@ fn test_radial_gradient_position_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => {
             match grad {
                 zero_css_parser::values::GradientValue::Radial(rad) => {
@@ -210,7 +210,7 @@ fn test_linear_gradient_multi_stop_pipeline() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    match &div_style.background_image {
+    match &div_style.background_image[0] {
         zero_style_system::property::BackgroundImageComputedValue::Gradient(grad) => {
             match grad {
                 zero_css_parser::values::GradientValue::Linear(lin) => {
@@ -663,7 +663,7 @@ fn test_opacity_shadow_gradient_combined_pipeline() {
     // 验证 background-image 为渐变
     assert!(
         matches!(
-            &div_style.background_image,
+            &div_style.background_image[0],
             zero_style_system::property::BackgroundImageComputedValue::Gradient(_)
         ),
         "background_image 应为 Gradient 变体"
