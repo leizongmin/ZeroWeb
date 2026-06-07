@@ -115,9 +115,15 @@ pub fn apply_filter(fb: &mut FrameBuffer, filter: &FilterPrimitive, scale: f32) 
                             x,
                             y,
                             [
-                                (p[0] as f32 + (255.0 - 2.0 * p[0] as f32) * amt).round().clamp(0.0, 255.0) as u8,
-                                (p[1] as f32 + (255.0 - 2.0 * p[1] as f32) * amt).round().clamp(0.0, 255.0) as u8,
-                                (p[2] as f32 + (255.0 - 2.0 * p[2] as f32) * amt).round().clamp(0.0, 255.0) as u8,
+                                (p[0] as f32 + (255.0 - 2.0 * p[0] as f32) * amt)
+                                    .round()
+                                    .clamp(0.0, 255.0) as u8,
+                                (p[1] as f32 + (255.0 - 2.0 * p[1] as f32) * amt)
+                                    .round()
+                                    .clamp(0.0, 255.0) as u8,
+                                (p[2] as f32 + (255.0 - 2.0 * p[2] as f32) * amt)
+                                    .round()
+                                    .clamp(0.0, 255.0) as u8,
                                 255,
                             ],
                         );
@@ -167,12 +173,9 @@ pub fn apply_filter(fb: &mut FrameBuffer, filter: &FilterPrimitive, scale: f32) 
                 for y in top..bottom {
                     for x in left..right {
                         let p = fb.get_pixel(x, y);
-                        let sr = (p[0] as f32 * 0.393 + p[1] as f32 * 0.769 + p[2] as f32 * 0.189)
-                            .min(255.0);
-                        let sg = (p[0] as f32 * 0.349 + p[1] as f32 * 0.686 + p[2] as f32 * 0.168)
-                            .min(255.0);
-                        let sb = (p[0] as f32 * 0.272 + p[1] as f32 * 0.534 + p[2] as f32 * 0.131)
-                            .min(255.0);
+                        let sr = (p[0] as f32 * 0.393 + p[1] as f32 * 0.769 + p[2] as f32 * 0.189).min(255.0);
+                        let sg = (p[0] as f32 * 0.349 + p[1] as f32 * 0.686 + p[2] as f32 * 0.168).min(255.0);
+                        let sb = (p[0] as f32 * 0.272 + p[1] as f32 * 0.534 + p[2] as f32 * 0.131).min(255.0);
                         fb.set_pixel(
                             x,
                             y,
@@ -302,11 +305,7 @@ fn hue_rotate(r: u8, g: u8, _b: u8, cos_a: f32, sin_a: f32) -> [u8; 3] {
     let mb = (1.0 - cos_a) * inv3 - sq3 * sin_a * inv3;
     let mc = (1.0 - cos_a) * inv3 + sq3 * sin_a * inv3;
 
-    let matrix: [[f32; 3]; 3] = [
-        [ma, mb, mc],
-        [mc, ma, mb],
-        [mb, mc, ma],
-    ];
+    let matrix: [[f32; 3]; 3] = [[ma, mb, mc], [mc, ma, mb], [mb, mc, ma]];
 
     let rf = r as f32;
     let gf = g as f32;

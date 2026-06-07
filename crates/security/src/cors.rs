@@ -118,13 +118,11 @@ pub fn check_cors(
     }
 
     // 检查请求头
-    let headers_wildcard =
-        policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
+    let headers_wildcard = policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
 
     if !headers_wildcard {
         let simple_headers = ["accept", "accept-language", "content-language", "content-type"];
-        let simple_content_types =
-            ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
+        let simple_content_types = ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
 
         for (name, value) in request_headers {
             let name_lower = name.to_ascii_lowercase();
@@ -263,8 +261,7 @@ pub fn generate_preflight_response(
     }
 
     // 检查请求头是否全部允许
-    let headers_wildcard =
-        policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
+    let headers_wildcard = policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
 
     let all_headers_allowed = headers_wildcard
         || request_headers

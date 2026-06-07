@@ -124,7 +124,9 @@ impl IpcChannel for SharedMemoryChannel {
             .inbox
             .lock()
             .map_err(|e| ProtocolError::Channel(format!("锁失败: {e}")))?;
-        inbox.pop_front().ok_or_else(|| ProtocolError::Channel("没有可用消息".into()))
+        inbox
+            .pop_front()
+            .ok_or_else(|| ProtocolError::Channel("没有可用消息".into()))
     }
 
     fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {

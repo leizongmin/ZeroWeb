@@ -741,9 +741,17 @@ mod tests {
         let url_origin = parse_url("http://example.com/").unwrap();
         store2.add_from_url(cookie, &url_origin);
         let url_ex = parse_url("http://example.com/page").unwrap();
-        assert_eq!(store2.get_for_url(&url_ex).len(), 1, "add_from_url 设置的 host-only cookie 应匹配精确 host");
+        assert_eq!(
+            store2.get_for_url(&url_ex).len(),
+            1,
+            "add_from_url 设置的 host-only cookie 应匹配精确 host"
+        );
         let url_other = parse_url("http://other.com/").unwrap();
-        assert_eq!(store2.get_for_url(&url_other).len(), 0, "host-only cookie 不应匹配其他 host");
+        assert_eq!(
+            store2.get_for_url(&url_other).len(),
+            0,
+            "host-only cookie 不应匹配其他 host"
+        );
         let url_sub = parse_url("http://sub.example.com/").unwrap();
         assert_eq!(store2.get_for_url(&url_sub).len(), 0, "host-only cookie 不应匹配子域名");
     }

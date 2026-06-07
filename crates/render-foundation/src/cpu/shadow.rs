@@ -44,11 +44,7 @@ pub fn render_shadow(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f32)
     // 步骤 1：生成阴影 alpha 蒙版
     let mut alpha_mask = vec![0.0f32; area_w * area_h];
 
-    let shadow_color = [
-        shadow.color.r as f32,
-        shadow.color.g as f32,
-        shadow.color.b as f32,
-    ];
+    let shadow_color = [shadow.color.r as f32, shadow.color.g as f32, shadow.color.b as f32];
     let shadow_alpha = shadow.color.a as f32 / 255.0;
 
     // 对阴影矩形区域内的像素设置初始 alpha

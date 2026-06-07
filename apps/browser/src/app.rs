@@ -8,11 +8,14 @@ use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSourc
 use zero_engine::PrefersColorSchemeValue;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::config::RenderMode;
+use zero_render_foundation::cpu::render_full_scene;
+#[cfg(test)]
 use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
+use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
-use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
+use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives};
 use zero_webview::WebViewBuilder;
 
 use crate::colors;

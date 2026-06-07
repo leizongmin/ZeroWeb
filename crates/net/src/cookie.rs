@@ -246,10 +246,16 @@ impl CookieStore {
         let value = first[eq_pos + 1..].trim().to_string();
 
         // SEC-02: 拒绝含 CRLF/NULL 的 cookie（防止 HTTP 头部注入）
-        if name.contains('\r') || name.contains('\n') || name.contains('\0')
-            || value.contains('\r') || value.contains('\n') || value.contains('\0')
+        if name.contains('\r')
+            || name.contains('\n')
+            || name.contains('\0')
+            || value.contains('\r')
+            || value.contains('\n')
+            || value.contains('\0')
         {
-            return Err(NetError::InvalidCookie("cookie contains invalid characters (CRLF/NUL)".to_string()));
+            return Err(NetError::InvalidCookie(
+                "cookie contains invalid characters (CRLF/NUL)".to_string(),
+            ));
         }
 
         if name.is_empty() {
@@ -927,7 +933,9 @@ mod tests {
     #[test]
     fn test_cookie_header_with_context_strict_same_site() {
         let mut store = CookieStore::new();
-        store.add(CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict; Secure").unwrap());
+        store.add(
+            CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict; Secure").unwrap(),
+        );
         store.add(CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None; Secure").unwrap());
 
         let url = parse_url("https://example.com/").unwrap();
@@ -963,7 +971,9 @@ mod tests {
     fn test_cookie_header_with_context_cross_site_subresource() {
         let mut store = CookieStore::new();
         store.add(CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax; Secure").unwrap());
-        store.add(CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict; Secure").unwrap());
+        store.add(
+            CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict; Secure").unwrap(),
+        );
         store.add(CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None; Secure").unwrap());
 
         let url = parse_url("https://example.com/").unwrap();

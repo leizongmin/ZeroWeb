@@ -444,32 +444,30 @@ impl GpuRenderer {
             .collect();
 
         // LAY-02: 预先收集 overlay glyph 位图数据（避免在重试循环内重复借用 glyph_cache）
-        let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> =
-            if !overlay_glyphs.is_empty() {
-                overlay_glyphs
-                    .iter()
-                    .filter_map(|gd| {
-                        let physical_font_size = gd.font_size * scale;
-                        let (resolved_id, bitmap) = font_loader
-                            .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
-                            .ok()?;
-                        let cache_key =
-                            crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
-                        let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
-                        Some((
-                            gd.ch,
-                            gd.x * scale,
-                            gd.baseline_y * scale,
-                            gd.color,
-                            resolved_id,
-                            physical_font_size,
-                            cached.clone(),
-                        ))
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
+        let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = if !overlay_glyphs.is_empty() {
+            overlay_glyphs
+                .iter()
+                .filter_map(|gd| {
+                    let physical_font_size = gd.font_size * scale;
+                    let (resolved_id, bitmap) = font_loader
+                        .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
+                        .ok()?;
+                    let cache_key = crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+                    let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
+                    Some((
+                        gd.ch,
+                        gd.x * scale,
+                        gd.baseline_y * scale,
+                        gd.color,
+                        resolved_id,
+                        physical_font_size,
+                        cached.clone(),
+                    ))
+                })
+                .collect()
+        } else {
+            vec![]
+        };
 
         // LAY-02: atlas 溢出时需要丢弃已有 glyph 顶点（旧 UV 失效）并从头重新收集。
         // fill 顶点不使用 atlas UV，保留即可。
@@ -603,7 +601,8 @@ impl GpuRenderer {
             }));
         }
         let uniform_buffer = self.uniform_buffer.as_ref().unwrap();
-        self.queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&uniform_data));
+        self.queue
+            .write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&uniform_data));
 
         // 按需创建持久绑定组
         if self.uniform_bind_group.is_none() {
