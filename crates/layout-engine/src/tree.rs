@@ -225,12 +225,24 @@ fn build_subtree(
         let node_data = doc.get(dom_id);
         let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
 
+        // 收集元素子节点及其 CSS order 值
+        // CSS flex/grid 容器中，order 属性决定子元素的视觉顺序。
+        // 对 block 容器，所有子元素 order 默认为 0，排序无副作用。
+        let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
         for &child_dom in &children_dom {
             let child_data = doc.get(child_dom);
             if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-                let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref(), false);
-                child_taffy_ids.push(child_taffy);
+                let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                children_with_order.push((child_dom, order));
             }
+        }
+
+        // 按 order 稳定排序（相同 order 保持 DOM 顺序）
+        children_with_order.sort_by_key(|(_, order)| *order);
+
+        for &(child_dom, _) in &children_with_order {
+            let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref(), false);
+            child_taffy_ids.push(child_taffy);
         }
     }
 

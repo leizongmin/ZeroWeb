@@ -406,6 +406,14 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
         // 96x96 solid color images
         ("support/blue96x96.png", [0, 0, 255, 255]),
         ("support/black96x96.png", [0, 0, 0, 255]),
+        // 60x60 images
+        ("support/60x60-green.png", [0, 128, 0, 255]),
+        ("support/60x60-red.png", [255, 0, 0, 255]),
+        ("support/60x60-blue.png", [0, 0, 255, 255]),
+        // 100x100 images
+        ("support/100x100-red.png", [255, 0, 0, 255]),
+        ("support/100x100-green.png", [0, 128, 0, 255]),
+        ("support/100x100-blue.png", [0, 0, 255, 255]),
         // Other common support images
         ("support/aqua_color.png", [0, 255, 255, 255]),
     ];
