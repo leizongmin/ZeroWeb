@@ -425,6 +425,14 @@ impl Painter {
             apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
         }
 
+        // CSS mask-image — 对元素及其子元素应用蒙版裁剪
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !style.mask_image.is_empty()
+        {
+            self.apply_mask_image(box_node, abs_x, abs_y, style, &counts_before);
+        }
+
         // CSS mix-blend-mode — 对元素及其子元素产生的图元应用混合模式
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)

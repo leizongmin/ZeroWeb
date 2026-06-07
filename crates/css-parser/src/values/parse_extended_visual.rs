@@ -564,6 +564,44 @@ fn split_background_layers(value: &str) -> Vec<&str> {
     layers
 }
 
+// ── CSS Mask 值类型 ──────────────────────────────────────────────
+
+/// CSS mask-mode 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaskModeValue {
+    /// alpha — 使用 mask 图像的 alpha 通道。
+    Alpha,
+    /// luminance — 使用 mask 图像的亮度值。
+    Luminance,
+    /// match-source — 默认值，根据 mask 图像类型自动选择。
+    MatchSource,
+}
+
+/// 解析 CSS mask-mode 属性值。
+pub fn parse_mask_mode(value: &str) -> Option<MaskModeValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "alpha" => Some(MaskModeValue::Alpha),
+        "luminance" => Some(MaskModeValue::Luminance),
+        "match-source" => Some(MaskModeValue::MatchSource),
+        _ => None,
+    }
+}
+
+/// 解析 CSS mask-image 属性值。
+///
+/// 格式与 background-image 相同：`none`、`url(...)`、`linear-gradient(...)` 等。
+/// 复用 BackgroundImageValue 类型。
+pub fn parse_mask_image(value: &str) -> Option<BackgroundImageValue> {
+    parse_background_image(value)
+}
+
+/// 解析 CSS mask-image 多图层值（逗号分隔）。
+///
+/// 与 parse_background_image_layers 相同的分隔逻辑。
+pub fn parse_mask_image_layers(value: &str) -> Option<Vec<BackgroundImageValue>> {
+    parse_background_image_layers(value)
+}
+
 /// CSS background-position 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundPositionValue {

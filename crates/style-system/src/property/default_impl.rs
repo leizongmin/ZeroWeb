@@ -313,6 +313,8 @@ impl Default for ComputedStyle {
                 inset: false,
             },
             clip_path: ClipPathComputedValue::None,
+            mask_image: vec![],
+            mask_mode: MaskModeComputedValue::MatchSource,
         }
     }
 }

@@ -470,4 +470,8 @@ pub struct ComputedStyle {
     pub box_shadow: BoxShadowComputedValue,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
+    /// mask-image 属性（支持多图层，格式与 background-image 相同）。
+    pub mask_image: Vec<BackgroundImageComputedValue>,
+    /// mask-mode 属性（alpha/luminance/match-source）。
+    pub mask_mode: MaskModeComputedValue,
 }
