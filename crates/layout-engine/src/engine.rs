@@ -279,6 +279,27 @@ impl LayoutEngine {
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
         let is_flow_root = computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot));
+        let is_block_level = computed.is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Block
+                    | DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::ListItem
+                    | DisplayValue::FlowRoot
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
+                    | DisplayValue::TableRow
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableCaption
+            ) || !matches!(s.float, FloatValue::None)
+                && matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock)
+        });
         let z_index = computed.map_or(0, |s| match s.z_index {
             ZIndexValue::Auto => 0,
             ZIndexValue::Integer(z) => z,
@@ -338,6 +359,7 @@ impl LayoutEngine {
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root,
+            is_block_level,
         }
     }
 }
@@ -551,6 +573,15 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
             // 保存 taffy 的原始 Y（调整前）
             let original_taffy_y = child.y;
+
+            // CSS 规范：clear 属性仅适用于块级元素（CSS 2.1 §13.5）
+            if !child.is_block_level {
+                // 非块级元素（如 inline）：扣除 float offset，不处理 clear
+                if float_y_offset > 0.0 {
+                    child.y -= float_y_offset;
+                }
+                continue;
+            }
 
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
