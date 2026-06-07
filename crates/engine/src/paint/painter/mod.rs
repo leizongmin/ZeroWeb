@@ -267,8 +267,17 @@ impl Painter {
 
         // 6. 递归绘制子节点（子节点偏移 = 父 padding + border）
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
-        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
-        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+        let mut child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let mut child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+
+        // 滚动容器：将子元素向上/左偏移 scroll_x/scroll_y
+        // scroll_y > 0 表示内容已向下滚动，因此子元素需要向上移动
+        if matches!(box_node.overflow_x, OverflowClip::Scroll) {
+            child_offset_x -= box_node.scroll_x;
+        }
+        if matches!(box_node.overflow_y, OverflowClip::Scroll) {
+            child_offset_y -= box_node.scroll_y;
+        }
 
         // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）
         if let Some(node_id) = box_node.node_id
