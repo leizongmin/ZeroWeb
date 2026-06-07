@@ -3,6 +3,7 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
+pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::FloatValue;
 use zero_dom::NodeId;
 
@@ -74,6 +75,8 @@ pub struct LayoutBox {
     pub is_sticky: bool,
     /// Float 方向（None 表示非浮动元素）。
     pub float: FloatValue,
+    /// Clear 方向（清除哪一侧的浮动元素）。
+    pub clear: ClearValue,
     /// 溢出处理。
     pub overflow_x: OverflowClip,
     /// 溢出处理。
@@ -141,6 +144,7 @@ impl Default for LayoutBox {
             is_fixed: false,
             is_sticky: false,
             float: FloatValue::None,
+            clear: ClearValue::None,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,

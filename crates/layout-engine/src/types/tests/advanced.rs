@@ -36,6 +36,7 @@ fn test_layout_result_zero_viewport() {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
         },
@@ -82,6 +83,7 @@ fn test_layout_box_negative_position() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -129,6 +131,7 @@ fn test_layout_box_mixed_overflow_xy() {
         is_sticky: false,
         overflow_x: OverflowClip::Scroll,
         overflow_y: OverflowClip::Hidden,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -165,6 +168,7 @@ fn test_layout_box_mixed_overflow_xy() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Clip,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -206,6 +210,7 @@ fn test_layout_box_asymmetric_margin_outer_area() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -256,6 +261,7 @@ fn test_layout_box_f32_max_dimensions() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -300,6 +306,7 @@ fn test_layout_box_border_only_outer_area() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -347,6 +354,7 @@ fn test_layout_box_clone_deep_copy_children() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -378,6 +386,7 @@ fn test_layout_box_clone_deep_copy_children() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -441,6 +450,7 @@ fn test_layout_box_nan_position() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -489,6 +499,7 @@ fn test_layout_box_default_values() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -560,6 +571,7 @@ fn test_layout_result_viewport_edge() {
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
         },
@@ -606,6 +618,7 @@ fn test_layout_box_with_children_edge() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -641,6 +654,7 @@ fn test_layout_box_with_children_edge() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -692,6 +706,7 @@ fn test_overflow_clip_visible_vs_hidden() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Hidden,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -736,6 +751,7 @@ fn test_layout_box_content_area() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -797,6 +813,7 @@ fn test_absolute_position_zero() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -838,6 +855,7 @@ fn test_absolute_position_ignores_border_padding() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -877,6 +895,7 @@ fn test_absolute_position_with_parent_basic() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -916,6 +935,7 @@ fn test_absolute_position_with_parent_negative() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -955,6 +975,7 @@ fn test_outer_area_zero_size_box() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
@@ -994,6 +1015,7 @@ fn test_absolute_position_fixed_element() {
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
     };
