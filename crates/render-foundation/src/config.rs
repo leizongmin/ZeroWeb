@@ -77,24 +77,18 @@ mod tests {
         assert!(err.contains("auto|gpu|cpu"));
     }
 
+    /// 所有 from_env 测试合并为单个测试函数，避免并行执行时环境变量竞态条件。
     #[test]
-    fn from_env_unset() {
-        // 临时设置环境变量
-        let var = std::env::var("ZEROWEB_RENDERER");
+    fn from_env_all_cases() {
+        // 保存原始环境变量
+        let original = std::env::var("ZEROWEB_RENDERER");
+
+        // Case 1: 未设置时返回 Ok(None)
         unsafe { std::env::remove_var("ZEROWEB_RENDERER") };
+        assert_eq!(RenderMode::from_env(), Ok(None));
 
-        let result = RenderMode::from_env();
-        assert_eq!(result, Ok(None));
-
-        // 恢复环境变量
-        if let Ok(val) = var {
-            unsafe { std::env::set_var("ZEROWEB_RENDERER", val) };
-        }
-    }
-
-    #[test]
-    fn from_env_valid_values() {
-        let test_cases = [
+        // Case 2: 有效值
+        let valid_cases = [
             ("auto", RenderMode::Auto),
             ("gpu", RenderMode::Gpu),
             ("cpu", RenderMode::Cpu),
@@ -103,37 +97,24 @@ mod tests {
             ("Software", RenderMode::Cpu),
             ("soft", RenderMode::Cpu),
         ];
-
-        for (input, expected) in test_cases {
-            let var = std::env::var("ZEROWEB_RENDERER");
+        for (input, expected) in valid_cases {
             unsafe { std::env::set_var("ZEROWEB_RENDERER", input) };
-
-            let result = RenderMode::from_env();
-            assert_eq!(result, Ok(Some(expected)));
-
-            // 恢复环境变量
-            if let Ok(val) = var {
-                unsafe { std::env::set_var("ZEROWEB_RENDERER", val) };
-            } else {
-                unsafe { std::env::remove_var("ZEROWEB_RENDERER") };
-            }
+            assert_eq!(
+                RenderMode::from_env(),
+                Ok(Some(expected)),
+                "failed for input: {input}"
+            );
         }
-    }
 
-    #[test]
-    fn from_env_invalid_value() {
-        let var = std::env::var("ZEROWEB_RENDERER");
+        // Case 3: 无效值返回 Err
         unsafe { std::env::set_var("ZEROWEB_RENDERER", "invalid_mode") };
-
         let result = RenderMode::from_env();
-        assert!(result.is_err());
+        assert!(result.is_err(), "expected Err for invalid_mode, got {result:?}");
         assert!(result.unwrap_err().contains("auto|gpu|cpu"));
 
-        // 恢复环境变量
-        if let Ok(val) = var {
+        // 恢复原始环境变量
+        if let Ok(val) = original {
             unsafe { std::env::set_var("ZEROWEB_RENDERER", val) };
-        } else {
-            unsafe { std::env::remove_var("ZEROWEB_RENDERER") };
         }
     }
 
