@@ -264,7 +264,7 @@ fn test_paint_background_image_none() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::None;
+    style.background_image = vec![BackgroundImageComputedValue::None];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);

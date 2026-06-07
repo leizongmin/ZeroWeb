@@ -299,20 +299,22 @@ fn test_background_repeat_gradient_unchanged() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_image = BackgroundImageComputedValue::Gradient(GradientValue::Linear(LinearGradient {
-        direction: GradientDirection::Angle(90.0),
-        stops: vec![
-            GradientColorStop {
-                color: ColorValue::Rgba(255, 0, 0, 255),
-                position: Some(LengthValue::Px(0.0)),
-            },
-            GradientColorStop {
-                color: ColorValue::Rgba(0, 0, 255, 255),
-                position: Some(LengthValue::Px(100.0)),
-            },
-        ],
-        repeating: false,
-    }));
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            direction: GradientDirection::Angle(90.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: Some(LengthValue::Px(0.0)),
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: Some(LengthValue::Px(100.0)),
+                },
+            ],
+            repeating: false,
+        },
+    ))];
     style.background_repeat = BackgroundRepeatComputedValue::Repeat;
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
