@@ -17,7 +17,7 @@
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
-| M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path inset 实际裁剪 ✅；border-image ✅(已有实现)；text-shadow ✅(已有实现)；剩余：滚动容器、非矩形 clip-path、CSS mask、backdrop-filter、scroll-snap |
+| M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅(已有实现)；text-shadow ✅(已有实现)；backdrop-filter ✅；剩余：CSS mask、scroll-snap（需滚动容器）、滚动容器（需宿主层集成） |
 
 ## 当前状态概览
 
@@ -401,6 +401,7 @@
 52. ~~M9 — 重复渐变~~ ✅ (GradientPrimitive.repeating 字段 + CPU fract() tiling + GPU WGSL shader)
 53. ~~M9 — 多图层背景~~ ✅ (background_image 改为 Vec + 逗号分隔解析 + 逆序渲染)
 54. ~~M9 — clip-path inset 裁剪~~ ✅ (clip_all_primitives_to_rect() 处理全部图元类型)
-55. M9 — 非矩形 clip-path（circle/ellipse/polygon 需像素级掩码）
-56. M9 — CSS mask / backdrop-filter / scroll-snap
-57. M10 — 上游 WPT 真实 Reftest 导入与验证
+55. ~~M9 — 非矩形 clip-path~~ ✅ (circle/ellipse/polygon 扫描线裁剪 + 点在多边形内检测)
+56. ~~M9 — backdrop-filter~~ ✅ (复用 FilterComputedValue + 在元素绘制前应用滤镜)
+57. M9 — CSS mask（需完整新管线：parse → style → paint）
+58. M9 — scroll-snap（已解析存储，需滚动容器行为实现）
