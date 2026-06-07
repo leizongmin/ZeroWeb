@@ -68,46 +68,34 @@ impl DirtyTracker {
             return;
         }
 
-        let mut merged = true;
-        while merged {
-            merged = false;
-            let n = self.dirty_rects.len();
-            for i in 0..n {
-                if i >= self.dirty_rects.len() {
-                    break;
-                }
-                for j in (i + 1)..self.dirty_rects.len() {
-                    let a = self.dirty_rects[i];
-                    let b = self.dirty_rects[j];
+        // 单遍合并：按 left 排序后线性扫描，相邻矩形若重叠则合并。
+        // 最坏情况 O(n log n)（排序），比原来的 O(n³) 大幅改善。
+        self.dirty_rects.sort_by(|a, b| a.left().partial_cmp(&b.left()).unwrap_or(std::cmp::Ordering::Equal));
 
-                    // 计算并集
-                    let union_left = a.left().min(b.left());
-                    let union_top = a.top().min(b.top());
-                    let union_right = a.right().max(b.right());
-                    let union_bottom = a.bottom().max(b.bottom());
-                    let union = Rect::new(
-                        union_left,
-                        union_top,
-                        union_right - union_left,
-                        union_bottom - union_top,
-                    );
-
-                    let individual_area = a.size.area() + b.size.area();
-                    let union_area = union.size.area();
-
-                    // 如果合并后面积不超过两者之和的 150%，则合并
-                    if union_area <= individual_area * 1.5 {
-                        self.dirty_rects[i] = union;
-                        self.dirty_rects.remove(j);
-                        merged = true;
-                        break;
-                    }
-                }
-                if merged {
-                    break;
+        let mut merged: Vec<Rect> = Vec::with_capacity(self.dirty_rects.len());
+        for rect in self.dirty_rects.drain(..) {
+            if let Some(last) = merged.last_mut() {
+                // 检查是否与上一个合并的矩形重叠
+                let union_left = last.left().min(rect.left());
+                let union_top = last.top().min(rect.top());
+                let union_right = last.right().max(rect.right());
+                let union_bottom = last.bottom().max(rect.bottom());
+                let union = Rect::new(
+                    union_left,
+                    union_top,
+                    union_right - union_left,
+                    union_bottom - union_top,
+                );
+                let individual_area = last.size.area() + rect.size.area();
+                let union_area = union.size.area();
+                if union_area <= individual_area * 1.5 {
+                    *last = union;
+                    continue;
                 }
             }
+            merged.push(rect);
         }
+        self.dirty_rects = merged;
     }
 
     /// 清除所有脏标记。

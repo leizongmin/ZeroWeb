@@ -57,6 +57,10 @@ pub struct GpuRenderer {
     atlas_texture: wgpu::Texture,
     /// Atlas 绑定组
     atlas_bind_group: wgpu::BindGroup,
+    /// 持久化 Uniform 缓冲区（避免每帧重新分配）
+    uniform_buffer: Option<wgpu::Buffer>,
+    /// 持久化 Uniform 绑定组
+    uniform_bind_group: Option<wgpu::BindGroup>,
     /// 当前表面尺寸
     surface_size: (u32, u32),
     /// 窗口表面（窗口模式）
@@ -181,6 +185,8 @@ impl GpuRenderer {
             atlas,
             atlas_texture,
             atlas_bind_group,
+            uniform_buffer: None,
+            uniform_bind_group: None,
             surface_size,
             surface,
             surface_format: format,
@@ -294,36 +300,12 @@ impl GpuRenderer {
                 Some(result.placement)
             }
             None => {
-                // Atlas 满了，清空重建
+                // Atlas 满了：清除 CPU 端 atlas 记录并递增 generation。
+                // 不在这里重试放置——返回 None 让调用者知道
+                // 之前已生成的顶点数据（引用旧 UV）已失效，
+                // 整个 glyph 收集过程应从头重新开始。
                 self.atlas.clear();
-                // 重试
-                self.atlas
-                    .place(key, width, height, x_offset, y_offset, advance)
-                    .map(|result| {
-                        if result.is_new {
-                            let padded = GlyphAtlas::create_upload_buffer(bitmap_data, width);
-                            self.queue.write_texture(
-                                wgpu::TexelCopyTextureInfo {
-                                    texture: &self.atlas_texture,
-                                    mip_level: 0,
-                                    origin: wgpu::Origin3d {
-                                        x: result.placement.x,
-                                        y: result.placement.y,
-                                        z: 0,
-                                    },
-                                    aspect: wgpu::TextureAspect::All,
-                                },
-                                &padded,
-                                GlyphAtlas::row_stride(width),
-                                wgpu::Extent3d {
-                                    width,
-                                    height,
-                                    depth_or_array_layers: 1,
-                                },
-                            );
-                        }
-                        result.placement
-                    })
+                None
             }
         }
     }
@@ -461,83 +443,44 @@ impl GpuRenderer {
             })
             .collect();
 
-        for (ch, x, baseline_y, color, font_id, font_size, bitmap) in glyph_data {
-            let atlas_key = GlyphAtlasKey::new(font_id, ch as u32, font_size);
-            let placement = match self.upload_glyph_to_atlas(
-                atlas_key,
-                &bitmap.data,
-                bitmap.width as u32,
-                bitmap.height as u32,
-                bitmap.x_offset,
-                bitmap.y_offset,
-                bitmap.advance,
-            ) {
-                Some(p) => p,
-                None => continue,
+        // LAY-02: 预先收集 overlay glyph 位图数据（避免在重试循环内重复借用 glyph_cache）
+        let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> =
+            if !overlay_glyphs.is_empty() {
+                overlay_glyphs
+                    .iter()
+                    .filter_map(|gd| {
+                        let physical_font_size = gd.font_size * scale;
+                        let (resolved_id, bitmap) = font_loader
+                            .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
+                            .ok()?;
+                        let cache_key =
+                            crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
+                        let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
+                        Some((
+                            gd.ch,
+                            gd.x * scale,
+                            gd.baseline_y * scale,
+                            gd.color,
+                            resolved_id,
+                            physical_font_size,
+                            cached.clone(),
+                        ))
+                    })
+                    .collect()
+            } else {
+                vec![]
             };
 
-            let (u0, v0, u1, v1) = placement.uv();
-            let (gx, gy) = glyph_top_left(
-                x,
-                baseline_y,
-                placement.x_offset,
-                placement.y_offset,
-                placement.height as u16,
-            );
-            // 对齐到整数像素边界，确保 GPU 路径与 CPU 路径和 OmniTerm 一致，
-            // 避免子像素定位导致的模糊
-            let gx = gx.round();
-            let gy = gy.round();
-            let gw = placement.width as f32;
-            let gh = placement.height as f32;
-            let (r, g, b) = color_to_f32(color);
+        // LAY-02: atlas 溢出时需要丢弃已有 glyph 顶点（旧 UV 失效）并从头重新收集。
+        // fill 顶点不使用 atlas UV，保留即可。
+        let fill_vertex_end = vertices.len();
+        let mut atlas_retries = 0u32;
+        'retry_glyphs: loop {
+            vertices.truncate(fill_vertex_end);
 
-            // 6 个顶点（2 个三角形）
-            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-        }
-
-        // 3. Overlay fills（圆角遮罩、边框等，绘制在 glyphs 之上）
-        for fill in overlay_fills {
-            push_fill_quad(
-                &mut vertices,
-                fill.rect.left() * scale,
-                fill.rect.top() * scale,
-                fill.rect.right() * scale,
-                fill.rect.bottom() * scale,
-                fill.color,
-            );
-        }
-
-        // 4. Overlay glyphs（最顶层控制元素，如右键菜单的文字）
-        if !overlay_glyphs.is_empty() {
-            let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = overlay_glyphs
-                .iter()
-                .filter_map(|gd| {
-                    let physical_font_size = gd.font_size * scale;
-                    let (resolved_id, bitmap) = font_loader
-                        .rasterize_glyph_with_fallback(gd.font_id, gd.ch, physical_font_size)
-                        .ok()?;
-                    let cache_key = crate::font::cache::GlyphKey::new(resolved_id, gd.ch as u32, physical_font_size);
-                    let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
-                    Some((
-                        gd.ch,
-                        gd.x * scale,
-                        gd.baseline_y * scale,
-                        gd.color,
-                        resolved_id,
-                        physical_font_size,
-                        cached.clone(),
-                    ))
-                })
-                .collect();
-
-            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in og_data {
-                let atlas_key = GlyphAtlasKey::new(font_id, ch as u32, font_size);
+            // 2. 主 glyph 文本
+            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in &glyph_data {
+                let atlas_key = GlyphAtlasKey::new(*font_id, *ch as u32, *font_size);
                 let placement = match self.upload_glyph_to_atlas(
                     atlas_key,
                     &bitmap.data,
@@ -548,12 +491,20 @@ impl GpuRenderer {
                     bitmap.advance,
                 ) {
                     Some(p) => p,
-                    None => continue,
+                    None => {
+                        // Atlas 已清除，旧 UV 全部失效——丢弃所有 glyph 顶点并重试
+                        atlas_retries += 1;
+                        if atlas_retries > 3 {
+                            break 'retry_glyphs;
+                        }
+                        continue 'retry_glyphs;
+                    }
                 };
+
                 let (u0, v0, u1, v1) = placement.uv();
                 let (gx, gy) = glyph_top_left(
-                    x,
-                    baseline_y,
+                    *x,
+                    *baseline_y,
                     placement.x_offset,
                     placement.y_offset,
                     placement.height as u16,
@@ -562,7 +513,8 @@ impl GpuRenderer {
                 let gy = gy.round();
                 let gw = placement.width as f32;
                 let gh = placement.height as f32;
-                let (r, g, b) = color_to_f32(color);
+                let (r, g, b) = color_to_f32(*color);
+
                 vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
                 vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
                 vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
@@ -570,6 +522,62 @@ impl GpuRenderer {
                 vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
                 vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
             }
+
+            // 3. Overlay fills（圆角遮罩、边框等，绘制在 glyphs 之上）
+            for fill in overlay_fills {
+                push_fill_quad(
+                    &mut vertices,
+                    fill.rect.left() * scale,
+                    fill.rect.top() * scale,
+                    fill.rect.right() * scale,
+                    fill.rect.bottom() * scale,
+                    fill.color,
+                );
+            }
+
+            // 4. Overlay glyphs（最顶层控制元素，如右键菜单的文字）
+            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in &og_data {
+                let atlas_key = GlyphAtlasKey::new(*font_id, *ch as u32, *font_size);
+                let placement = match self.upload_glyph_to_atlas(
+                    atlas_key,
+                    &bitmap.data,
+                    bitmap.width as u32,
+                    bitmap.height as u32,
+                    bitmap.x_offset,
+                    bitmap.y_offset,
+                    bitmap.advance,
+                ) {
+                    Some(p) => p,
+                    None => {
+                        atlas_retries += 1;
+                        if atlas_retries > 3 {
+                            break 'retry_glyphs;
+                        }
+                        continue 'retry_glyphs;
+                    }
+                };
+                let (u0, v0, u1, v1) = placement.uv();
+                let (gx, gy) = glyph_top_left(
+                    *x,
+                    *baseline_y,
+                    placement.x_offset,
+                    placement.y_offset,
+                    placement.height as u16,
+                );
+                let gx = gx.round();
+                let gy = gy.round();
+                let gw = placement.width as f32;
+                let gh = placement.height as f32;
+                let (r, g, b) = color_to_f32(*color);
+                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            }
+
+            break 'retry_glyphs;
         }
 
         self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
@@ -583,22 +591,32 @@ impl GpuRenderer {
 
         let (width, height) = self.surface_size;
 
-        // Uniform 缓冲区
+        // Uniform 缓冲区（复用持久缓冲区，避免每帧分配）
         let uniform_data: [f32; 4] = [width as f32, height as f32, GlyphAtlas::atlas_size() as f32, 0.0];
-        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&uniform_data),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
 
-        let uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Uniform Bind Group"),
-            layout: &self.uniform_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
+        // 按需创建持久缓冲区
+        if self.uniform_buffer.is_none() {
+            self.uniform_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&uniform_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }));
+        }
+        let uniform_buffer = self.uniform_buffer.as_ref().unwrap();
+        self.queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&uniform_data));
+
+        // 按需创建持久绑定组
+        if self.uniform_bind_group.is_none() {
+            self.uniform_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Uniform Bind Group"),
+                layout: &self.uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            }));
+        }
+        let uniform_bg = self.uniform_bind_group.as_ref().unwrap();
 
         // 顶点缓冲区
         let vertex_buffer = if !vertices.is_empty() {
@@ -634,7 +652,7 @@ impl GpuRenderer {
                 self.run_render_pass(
                     &mut encoder,
                     &view,
-                    &uniform_bg,
+                    uniform_bg,
                     vertex_buffer.as_ref(),
                     vertex_count,
                     clip_rect,
@@ -654,7 +672,7 @@ impl GpuRenderer {
                 self.run_render_pass(
                     &mut encoder,
                     &view,
-                    &uniform_bg,
+                    uniform_bg,
                     vertex_buffer.as_ref(),
                     vertex_count,
                     clip_rect,

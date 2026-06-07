@@ -41,6 +41,9 @@ impl HttpClient {
     /// HTTP 客户端默认 User-Agent
     const DEFAULT_USER_AGENT: &str = "ZeroWeb/1.0";
 
+    /// 跨域重定向时应剥离的敏感请求头。
+    const SENSITIVE_HEADERS: &[&str] = &["authorization", "cookie", "cookie2", "www-authenticate", "proxy-authorization"];
+
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
         let client = Client::builder()
@@ -53,7 +56,7 @@ impl HttpClient {
             .brotli(true)
             .deflate(true)
             .build()
-            .unwrap_or_default();
+            .expect("failed to build HTTP client");
 
         Self {
             client,
@@ -71,6 +74,7 @@ impl HttpClient {
         let mut method = request.method.clone();
         let mut body = request.body.clone();
         let mut redirect_count: usize = 0;
+        let mut active_headers: Vec<(String, String)> = request.headers.clone();
 
         loop {
             let reqwest_method = method.to_reqwest();
@@ -78,7 +82,7 @@ impl HttpClient {
 
             // 添加请求头
             let mut header_map = HeaderMap::new();
-            for (name, value) in &request.headers {
+            for (name, value) in &active_headers {
                 let header_name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
                     .map_err(|e| NetError::Http(format!("invalid header name: {e}")))?;
                 let header_value = reqwest::header::HeaderValue::from_bytes(value.as_bytes())
@@ -140,6 +144,13 @@ impl HttpClient {
                 }
                 // 307/308 保持原方法和 body
 
+                // SEC-03: 跨域重定向时剥离敏感头（Authorization、Cookie 等）
+                if !same_origin(&current_url, &request.url) {
+                    active_headers.retain(|(name, _)| {
+                        !Self::SENSITIVE_HEADERS.iter().any(|h| name.eq_ignore_ascii_case(h))
+                    });
+                }
+
                 continue;
             }
 
@@ -172,6 +183,18 @@ impl HttpClient {
     pub fn post(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse, NetError> {
         self.send(HttpRequest::post(url, body))
     }
+}
+
+/// 比较两个 URL 是否同源（scheme + host + port）。
+fn same_origin(url_a: &str, url_b: &str) -> bool {
+    let parse = |u: &str| -> Option<(String, String, u16)> {
+        let parsed = url::Url::parse(u).ok()?;
+        let scheme = parsed.scheme().to_string();
+        let host = parsed.host_str()?.to_string();
+        let port = parsed.port_or_known_default()?;
+        Some((scheme, host, port))
+    };
+    parse(url_a) == parse(url_b)
 }
 
 #[cfg(test)]

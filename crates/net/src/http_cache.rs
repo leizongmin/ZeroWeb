@@ -371,48 +371,10 @@ impl CachedResponse {
 
 /// 解析 HTTP 日期格式（RFC 7231）。
 ///
-/// 支持格式：`Sun, 06 Nov 1994 08:49:37 GMT`
+/// 复用 cookie 模块中精确的 `parse_expires_date` 函数，
+/// 支持 RFC 1123、RFC 850 和 ANSI C asctime 三种格式。
 fn parse_http_date(date_str: &str) -> Result<u64, ()> {
-    // 简化实现：只解析 IMF-fixdate 格式
-    // "Day, DD Mon YYYY HH:MM:SS GMT"
-    let comma_pos = match date_str.find(", ") {
-        Some(pos) => pos,
-        None => return Err(()),
-    };
-    let rest = &date_str[comma_pos + 2..];
-
-    let date_parts: Vec<&str> = rest.split(' ').collect();
-    if date_parts.len() != 4 && date_parts.len() != 5 {
-        return Err(());
-    }
-
-    let day: u64 = date_parts[0].parse().map_err(|_| ())?;
-    let month = month_to_number(date_parts[1])?;
-    let year: u64 = date_parts[2].parse().map_err(|_| ())?;
-
-    // 简化：不精确计算，给出大致的 Unix 时间戳
-    // 从年份开始估算
-    let days_since_epoch = (year - 1970) * 365 + (year - 1970) / 4 + month * 30 + day;
-    Ok(days_since_epoch * 86400)
-}
-
-/// 月份名转数字。
-fn month_to_number(month: &str) -> Result<u64, ()> {
-    match month {
-        "Jan" => Ok(0),
-        "Feb" => Ok(1),
-        "Mar" => Ok(2),
-        "Apr" => Ok(3),
-        "May" => Ok(4),
-        "Jun" => Ok(5),
-        "Jul" => Ok(6),
-        "Aug" => Ok(7),
-        "Sep" => Ok(8),
-        "Oct" => Ok(9),
-        "Nov" => Ok(10),
-        "Dec" => Ok(11),
-        _ => Err(()),
-    }
+    crate::cookie::parse_expires_date(date_str).ok_or(())
 }
 
 #[cfg(test)]
@@ -639,14 +601,6 @@ mod tests {
         assert!(ts > 0, "应返回有效的 Unix 时间戳");
 
         assert!(parse_http_date("invalid").is_err());
-    }
-
-    #[test]
-    fn test_month_to_number() {
-        assert_eq!(month_to_number("Jan"), Ok(0));
-        assert_eq!(month_to_number("Jun"), Ok(5));
-        assert_eq!(month_to_number("Dec"), Ok(11));
-        assert!(month_to_number("Foo").is_err());
     }
 
     #[test]

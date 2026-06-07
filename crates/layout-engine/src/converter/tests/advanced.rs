@@ -174,29 +174,29 @@ fn test_convert_length_to_lpa_percentage() {
 /// 所以通过设置 justify_content 来测试 align_content 的转换结果。
 #[test]
 fn test_convert_alignment_align_content() {
-    let cases: Vec<(AlignmentValue, Option<taffy::style::AlignContent>)> = vec![
+    let cases: Vec<(AlignContentValue, Option<taffy::style::AlignContent>)> = vec![
         (
-            AlignmentValue::SpaceBetween,
+            AlignContentValue::SpaceBetween,
             Some(taffy::style::AlignContent::SpaceBetween),
         ),
         (
-            AlignmentValue::SpaceAround,
+            AlignContentValue::SpaceAround,
             Some(taffy::style::AlignContent::SpaceAround),
         ),
         (
-            AlignmentValue::SpaceEvenly,
+            AlignContentValue::SpaceEvenly,
             Some(taffy::style::AlignContent::SpaceEvenly),
         ),
-        (AlignmentValue::Stretch, Some(taffy::style::AlignContent::Stretch)),
-        (AlignmentValue::FlexStart, Some(taffy::style::AlignContent::FlexStart)),
-        (AlignmentValue::FlexEnd, Some(taffy::style::AlignContent::FlexEnd)),
-        (AlignmentValue::Center, Some(taffy::style::AlignContent::Center)),
-        (AlignmentValue::Start, Some(taffy::style::AlignContent::Start)),
-        (AlignmentValue::End, Some(taffy::style::AlignContent::End)),
+        (AlignContentValue::Stretch, Some(taffy::style::AlignContent::Stretch)),
+        (AlignContentValue::Center, Some(taffy::style::AlignContent::Center)),
+        (AlignContentValue::Start, Some(taffy::style::AlignContent::Start)),
+        (AlignContentValue::End, Some(taffy::style::AlignContent::End)),
+        (AlignContentValue::Normal, None),
+        (AlignContentValue::Auto, None),
     ];
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();
-        style.justify_content = value;
+        style.align_content = value;
         let taffy_style = computed_style_to_taffy(&style, None);
         assert_eq!(taffy_style.align_content, expected);
     }
@@ -360,12 +360,12 @@ fn test_grid_template_areas_rectangular_valid() {
 #[test]
 fn test_grid_template_areas_with_dot() {
     let areas = parse_grid_template_areas("\"header header\" \". sidebar\" \"footer footer\"");
-    // "." 也被视为一个 token 名称，所以共有 4 个区域
-    assert_eq!(areas.len(), 4);
+    // "." 是空单元格标记，不应存储到区域映射中（LAY-06）
+    assert_eq!(areas.len(), 3);
     assert_eq!(areas.get("header"), Some(&(1, 2, 1, 3)));
     assert_eq!(areas.get("sidebar"), Some(&(2, 3, 2, 3)));
     assert_eq!(areas.get("footer"), Some(&(3, 4, 1, 3)));
-    assert!(areas.contains_key("."));
+    assert!(!areas.contains_key("."), "空单元格标记 '.' 不应存储到区域映射中");
 }
 
 /// 测试单行区域正确解析。

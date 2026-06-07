@@ -39,6 +39,9 @@ pub struct Cookie {
     pub value: String,
     /// 域名。
     pub domain: Option<String>,
+    /// 是否为 host-only cookie（无显式 Domain 属性）。
+    /// host-only cookie 仅精确匹配 host，不匹配子域名（RFC 6265 §5.3）。
+    pub host_only: bool,
     /// 路径。
     pub path: Option<String>,
     /// 过期时间戳（从 UNIX epoch 起算的秒数）。
@@ -211,6 +214,9 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
     None
 }
 
+/// Cookie 存储的最大条目数。
+const MAX_COOKIE_COUNT: usize = 4096;
+
 /// Cookie 存储。
 pub struct CookieStore {
     cookies: Vec<Cookie>,
@@ -239,6 +245,13 @@ impl CookieStore {
         let name = first[..eq_pos].trim().to_string();
         let value = first[eq_pos + 1..].trim().to_string();
 
+        // SEC-02: 拒绝含 CRLF/NULL 的 cookie（防止 HTTP 头部注入）
+        if name.contains('\r') || name.contains('\n') || name.contains('\0')
+            || value.contains('\r') || value.contains('\n') || value.contains('\0')
+        {
+            return Err(NetError::InvalidCookie("cookie contains invalid characters (CRLF/NUL)".to_string()));
+        }
+
         if name.is_empty() {
             return Err(NetError::InvalidCookie("empty cookie name".to_string()));
         }
@@ -247,11 +260,12 @@ impl CookieStore {
             name,
             value,
             domain: None,
+            host_only: true,
             path: None,
             expires: None,
             secure: false,
             http_only: false,
-            same_site: SameSite::None,
+            same_site: SameSite::Lax,
         };
 
         let mut max_age_seen: Option<i64> = None;
@@ -270,8 +284,10 @@ impl CookieStore {
                 cookie.path = Some(val.trim().to_string());
             } else if let Some(val) = part.strip_prefix("Domain=") {
                 cookie.domain = Some(val.trim().to_string());
+                cookie.host_only = false;
             } else if let Some(val) = part.strip_prefix("domain=") {
                 cookie.domain = Some(val.trim().to_string());
+                cookie.host_only = false;
             } else if let Some(val) = part.strip_prefix("Max-Age=") {
                 max_age_seen = i64::from_str(val.trim()).ok();
             } else if let Some(val) = part.strip_prefix("max-age=") {
@@ -295,6 +311,13 @@ impl CookieStore {
             }
         }
 
+        // SEC-08: SameSite=None 必须设置 Secure 属性
+        if cookie.same_site == SameSite::None && !cookie.secure {
+            return Err(NetError::InvalidCookie(
+                "SameSite=None cookie must have Secure attribute".to_string(),
+            ));
+        }
+
         // Max-Age 优先于 Expires
         if let Some(max_age) = max_age_seen {
             let now_secs = SystemTime::now()
@@ -305,7 +328,7 @@ impl CookieStore {
                 // 立即过期（设置到 epoch 起点）
                 cookie.expires = Some(0);
             } else {
-                cookie.expires = Some(now_secs + max_age as u64);
+                cookie.expires = Some(now_secs.saturating_add(max_age as u64));
             }
         } else if let Some(ref raw) = expires_raw {
             cookie.expires = parse_expires_date(raw);
@@ -318,6 +341,9 @@ impl CookieStore {
     ///
     /// 如果同名同 domain 同 path 的 cookie 已存在，替换旧值。
     /// 如果 cookie 已过期，不会添加。
+    ///
+    /// **注意**：如果 cookie 的 domain 为 None，则该 cookie 不会匹配任何 URL。
+    /// 推荐使用 [`CookieStore::add_from_url`] 来正确设置 domain。
     pub fn add(&mut self, cookie: Cookie) {
         // 不存储已过期的 cookie
         if cookie.is_expired() {
@@ -327,6 +353,26 @@ impl CookieStore {
         self.cookies
             .retain(|c| !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path));
         self.cookies.push(cookie);
+
+        // SEC-09: 超过最大条目时驱逐过期和最旧 cookie
+        if self.cookies.len() > MAX_COOKIE_COUNT {
+            self.evict_expired();
+        }
+        while self.cookies.len() > MAX_COOKIE_COUNT {
+            self.cookies.remove(0);
+        }
+    }
+
+    /// 从指定 URL 接收 cookie 并添加到存储。
+    ///
+    /// 如果 cookie 无显式 Domain 属性，使用 URL 的 host 作为 domain（host-only cookie），
+    /// 遵循 RFC 6265 §5.3。推荐使用此方法替代 [`add`](Self::add)。
+    pub fn add_from_url(&mut self, mut cookie: Cookie, url: &ParsedUrl) {
+        if cookie.host_only {
+            // 无显式 Domain 属性：使用来源 host，保持 host_only 标记
+            cookie.domain = url.host.clone();
+        }
+        self.add(cookie);
     }
 
     /// 获取匹配 URL 且未过期的所有 cookies。
@@ -412,18 +458,39 @@ fn cookie_matches_url(cookie: &Cookie, url: &ParsedUrl) -> bool {
     }
 
     // 域名匹配
-    if let Some(ref domain) = cookie.domain {
-        let host = url.host.as_deref().unwrap_or("");
-        if !domain_matches(domain, host) {
+    let host = url.host.as_deref().unwrap_or("");
+    match &cookie.domain {
+        Some(domain) => {
+            if cookie.host_only {
+                // SEC-01: host-only cookie 仅精确匹配 host，不匹配子域名（RFC 6265 §5.3）
+                if !host.eq_ignore_ascii_case(domain) {
+                    return false;
+                }
+            } else {
+                if !domain_matches(domain, host) {
+                    return false;
+                }
+            }
+        }
+        None => {
+            // domain=None 且 host_only=true：无法验证，不匹配任何 URL
             return false;
         }
     }
 
-    // 路径匹配
-    if let Some(ref cookie_path) = cookie.path
-        && !url.path.starts_with(cookie_path)
-    {
-        return false;
+    // 路径匹配（RFC 6265 §5.1.4）
+    if let Some(ref cookie_path) = cookie.path {
+        if !url.path.starts_with(cookie_path) {
+            return false;
+        }
+        // 路径前缀匹配需要 cookie_path 以 "/" 结尾，
+        // 或者请求路径的下一字符是 "/"
+        if !cookie_path.ends_with('/') && url.path.len() > cookie_path.len() {
+            let next_char = url.path.as_bytes()[cookie_path.len()];
+            if next_char != b'/' {
+                return false;
+            }
+        }
     }
 
     true
@@ -497,8 +564,14 @@ mod tests {
         let cookie2 = CookieStore::parse_set_cookie("test=1; SameSite=Lax").unwrap();
         assert_eq!(cookie2.same_site, SameSite::Lax);
 
-        let cookie3 = CookieStore::parse_set_cookie("test=1; SameSite=None").unwrap();
+        // SameSite=None without Secure should be rejected
+        let result = CookieStore::parse_set_cookie("test=1; SameSite=None");
+        assert!(result.is_err(), "SameSite=None without Secure should fail");
+
+        // SameSite=None with Secure should succeed
+        let cookie3 = CookieStore::parse_set_cookie("test=1; SameSite=None; Secure").unwrap();
         assert_eq!(cookie3.same_site, SameSite::None);
+        assert!(cookie3.secure);
     }
 
     #[test]
@@ -854,10 +927,10 @@ mod tests {
     #[test]
     fn test_cookie_header_with_context_strict_same_site() {
         let mut store = CookieStore::new();
-        store.add(CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict").unwrap());
-        store.add(CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None").unwrap());
+        store.add(CookieStore::parse_set_cookie("strict_cookie=v1; Domain=example.com; SameSite=Strict; Secure").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_cookie=v2; Domain=example.com; SameSite=None; Secure").unwrap());
 
-        let url = parse_url("http://example.com/").unwrap();
+        let url = parse_url("https://example.com/").unwrap();
 
         // Same-site: both sent
         let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);
@@ -889,11 +962,11 @@ mod tests {
     #[test]
     fn test_cookie_header_with_context_cross_site_subresource() {
         let mut store = CookieStore::new();
-        store.add(CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax").unwrap());
-        store.add(CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict").unwrap());
-        store.add(CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None").unwrap());
+        store.add(CookieStore::parse_set_cookie("lax_cookie=v1; Domain=example.com; SameSite=Lax; Secure").unwrap());
+        store.add(CookieStore::parse_set_cookie("strict_cookie=v2; Domain=example.com; SameSite=Strict; Secure").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_cookie=v3; Domain=example.com; SameSite=None; Secure").unwrap());
 
-        let url = parse_url("http://example.com/").unwrap();
+        let url = parse_url("https://example.com/").unwrap();
 
         // Cross-site subresource: only None allowed
         let header = store.cookie_header_with_context(&url, RequestContext::CrossSiteSubresource, true);
@@ -978,11 +1051,11 @@ mod tests {
     #[test]
     fn test_cookie_path_matching() {
         let mut store = CookieStore::new();
-        store.add(CookieStore::parse_set_cookie("app_sess=1; Path=/app; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("app_sess=1; Path=/app; Domain=example.com; SameSite=Lax").unwrap());
 
         let matching = parse_url("http://example.com/app/page").unwrap();
         let matching_exact = parse_url("http://example.com/app").unwrap();
-        // /application starts with "/app" per starts_with semantics, so it does match
+        // /application should NOT match Path=/app (RFC 6265 §5.1.4)
         let matching_prefix = parse_url("http://example.com/application").unwrap();
         let not_matching_parent = parse_url("http://example.com/other").unwrap();
         let not_matching_root = parse_url("http://example.com/").unwrap();
@@ -991,8 +1064,8 @@ mod tests {
         assert_eq!(store.get_for_url(&matching_exact).len(), 1, "/app 应匹配 Path=/app");
         assert_eq!(
             store.get_for_url(&matching_prefix).len(),
-            1,
-            "/application 以 /app 开头，匹配 Path=/app"
+            0,
+            "/application 不应匹配 Path=/app（RFC 6265）"
         );
         assert!(
             store.get_for_url(&not_matching_parent).is_empty(),
@@ -1125,11 +1198,11 @@ mod tests {
     #[test]
     fn test_samesite_full_matrix() {
         let mut store = CookieStore::new();
-        store.add(CookieStore::parse_set_cookie("strict_ck=s; Domain=example.com; SameSite=Strict").unwrap());
-        store.add(CookieStore::parse_set_cookie("lax_ck=l; Domain=example.com; SameSite=Lax").unwrap());
-        store.add(CookieStore::parse_set_cookie("none_ck=n; Domain=example.com; SameSite=None").unwrap());
+        store.add(CookieStore::parse_set_cookie("strict_ck=s; Domain=example.com; SameSite=Strict; Secure").unwrap());
+        store.add(CookieStore::parse_set_cookie("lax_ck=l; Domain=example.com; SameSite=Lax; Secure").unwrap());
+        store.add(CookieStore::parse_set_cookie("none_ck=n; Domain=example.com; SameSite=None; Secure").unwrap());
 
-        let url = parse_url("http://example.com/").unwrap();
+        let url = parse_url("https://example.com/").unwrap();
 
         // 同站请求（安全方法）：三种 cookie 都发送
         let header = store.cookie_header_with_context(&url, RequestContext::SameSite, true);

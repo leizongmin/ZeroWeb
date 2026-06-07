@@ -94,7 +94,7 @@ pub struct WebView {
     /// 缓存的 CSS（用于 render 重新渲染）。
     cached_css: String,
     /// 事件回调列表。
-    event_callbacks: Vec<EventCallback>,
+    event_callbacks: Vec<Option<EventCallback>>,
     /// Service Worker 注册表。
     sw_registry: ServiceWorkerRegistry,
     /// Web Worker 实例（Dedicated Worker）。
@@ -150,8 +150,15 @@ impl WebView {
     /// 回调在 load_html / load_url / fetch_url 等操作触发状态变更时调用。
     /// 返回回调的索引，可用于后续移除。
     pub fn on_event(&mut self, callback: impl FnMut(&WebViewEvent) + 'static) -> usize {
+        // CSS-07: 使用 Option 槽位，避免 remove 后索引偏移
+        let callback = Rc::new(RefCell::new(callback)) as Rc<RefCell<dyn FnMut(&WebViewEvent)>>;
+        // 尝试复用已移除的空槽位
+        if let Some(empty_slot) = self.event_callbacks.iter().position(|s| s.is_none()) {
+            self.event_callbacks[empty_slot] = Some(callback);
+            return empty_slot;
+        }
         let idx = self.event_callbacks.len();
-        self.event_callbacks.push(Rc::new(RefCell::new(callback)));
+        self.event_callbacks.push(Some(callback));
         idx
     }
 
@@ -159,8 +166,8 @@ impl WebView {
     ///
     /// 传入 `on_event` 返回的索引。返回 `true` 表示成功移除。
     pub fn remove_event_callback(&mut self, index: usize) -> bool {
-        if index < self.event_callbacks.len() {
-            self.event_callbacks.remove(index);
+        if index < self.event_callbacks.len() && self.event_callbacks[index].is_some() {
+            self.event_callbacks[index] = None;
             true
         } else {
             false
@@ -169,8 +176,8 @@ impl WebView {
 
     /// 内部：分发事件到所有已注册的回调。
     fn emit_event(&self, event: &WebViewEvent) {
-        for callback in &self.event_callbacks {
-            let mut cb = callback.borrow_mut();
+        for slot in self.event_callbacks.iter().flatten() {
+            let mut cb = slot.borrow_mut();
             cb(event);
         }
     }
@@ -605,10 +612,11 @@ impl WebView {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("WASM bridge: compile error: {e}");
-                // 注入编译错误到 JS
+                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入
+                let err_msg = escape_js_string(&format!("{e}"));
                 let err_script = format!(
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
-                     globalThis.__wasm_errors__[{instance_id}] = 'compile: {e}'"
+                     globalThis.__wasm_errors__[{instance_id}] = 'compile: {err_msg}'"
                 );
                 let _ = self.execute_script(&err_script);
                 return Ok(script_output.to_string());
@@ -622,9 +630,11 @@ impl WebView {
             Ok(i) => i,
             Err(e) => {
                 tracing::warn!("WASM bridge: instantiate error: {e}");
+                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入
+                let err_msg = escape_js_string(&format!("{e}"));
                 let err_script = format!(
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
-                     globalThis.__wasm_errors__[{instance_id}] = 'instantiate: {e}'"
+                     globalThis.__wasm_errors__[{instance_id}] = 'instantiate: {err_msg}'"
                 );
                 let _ = self.execute_script(&err_script);
                 return Ok(script_output.to_string());
@@ -1151,4 +1161,28 @@ pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     }
 
     Ok(result)
+}
+
+/// 转义字符串中的 JavaScript 特殊字符，防止注入。
+///
+/// 替换 `'`、`\`、`</script>` 等字符为安全序列。
+fn escape_js_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\'' => out.push_str("\\'"),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '<' => {
+                // 检查是否为 </script> 序列（不区分大小写）
+                out.push('\\');
+                out.push('x');
+                out.push('3');
+                out.push('c');
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
 }

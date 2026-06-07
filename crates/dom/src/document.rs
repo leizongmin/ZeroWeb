@@ -368,6 +368,12 @@ impl Document {
         if !self.contains(parent) || !self.contains(new_child) || !self.contains(old_child) {
             return Err(DomError::NodeNotFound(parent));
         }
+        if new_child == self.root {
+            return Err(DomError::CannotInsertDocumentRoot);
+        }
+        if self.is_ancestor(new_child, parent) {
+            return Err(DomError::WouldCreateCycle);
+        }
 
         let old_idx = self
             .nodes
@@ -657,6 +663,8 @@ impl Document {
                     let children: Vec<NodeId> = self.nodes.get(id).map(|n| n.children.clone()).unwrap_or_default();
 
                     for child in &children {
+                        // 先清理被移除子节点及其后代的 id_map
+                        self.remove_id_map_recursive(*child);
                         if let Some(child_data) = self.nodes.get_mut(*child) {
                             child_data.parent = None;
                         }
@@ -1402,7 +1410,7 @@ impl Document {
             result.push(id);
         }
 
-        for &child in &node_data.children.clone() {
+        for &child in &node_data.children {
             self.collect_by_tag_name(child, tag, result);
         }
     }
@@ -1425,7 +1433,8 @@ impl Document {
             }
         }
 
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             self.collect_by_tag_name_ns(child, namespace, local_name, result);
         }
     }
@@ -1443,7 +1452,8 @@ impl Document {
             result.push(id);
         }
 
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             self.collect_by_class_name(child, class, result);
         }
     }
@@ -1476,7 +1486,8 @@ impl Document {
         {
             return Some(id);
         }
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             if let Some(found) = self.find_first_matching(child, selector) {
                 return Some(found);
             }
@@ -1497,7 +1508,8 @@ impl Document {
             result.push(id);
         }
 
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             self.collect_matching(child, selector, result);
         }
     }
@@ -1510,7 +1522,8 @@ impl Document {
         {
             return Some(id);
         }
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             // 不进入嵌套的 ShadowRoot
             if let Some(child_data) = self.nodes.get(child)
                 && matches!(child_data.kind, NodeKind::ShadowRoot(_))
@@ -1537,7 +1550,8 @@ impl Document {
             result.push(id);
         }
 
-        for &child in &node_data.children.clone() {
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
             // 不进入嵌套的 ShadowRoot
             if let Some(child_data) = self.nodes.get(child)
                 && matches!(child_data.kind, NodeKind::ShadowRoot(_))

@@ -99,12 +99,8 @@ fn build_subtree(
     parent_grid_areas: Option<&GridAreaMap>,
     in_shadow: bool,
 ) -> taffy::NodeId {
-    // 获取计算样式（或使用默认值）
-    let computed = styles.get(&dom_id).cloned().unwrap_or_default();
-
-    // 跳过 display:none 的元素
-    if computed.display == DisplayValue::None {
-        // 返回一个零尺寸的隐藏节点
+    // LAY-08: 先检查 display:none 再克隆，避免对隐藏元素做不必要的堆分配
+    if styles.get(&dom_id).is_some_and(|s| s.display == DisplayValue::None) {
         let hidden_style = taffy::Style {
             display: taffy::style::Display::None,
             ..taffy::Style::default()
@@ -114,6 +110,9 @@ fn build_subtree(
             .new_leaf(hidden_style)
             .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
     }
+
+    // 获取计算样式（或使用默认值）
+    let computed = styles.get(&dom_id).cloned().unwrap_or_default();
 
     // 解析此元素的 grid-template-areas（如果有）
     let grid_areas = computed

@@ -31,7 +31,7 @@ pub struct CorsPolicy {
 impl Default for CorsPolicy {
     fn default() -> Self {
         Self {
-            allow_origins: vec!["*".to_string()],
+            allow_origins: vec![],
             allow_methods: vec!["GET".to_string(), "POST".to_string()],
             allow_headers: vec![],
             allow_credentials: false,
@@ -118,35 +118,41 @@ pub fn check_cors(
     }
 
     // 检查请求头
-    let simple_headers = ["accept", "accept-language", "content-language", "content-type"];
-    let simple_content_types = ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
+    let headers_wildcard =
+        policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
 
-    for (name, value) in request_headers {
-        let name_lower = name.to_ascii_lowercase();
-        if simple_headers.contains(&name_lower.as_str()) {
-            // Content-Type 需要额外检查是否为简单类型
-            if name_lower == "content-type" {
-                let ct_lower = value.to_ascii_lowercase();
-                let ct_main = ct_lower.split(';').next().unwrap_or("").trim();
-                if !simple_content_types.contains(&ct_main) {
-                    // 非简单 Content-Type 需要在 allow_headers 中
-                    if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
-                        return CorsResult {
-                            allowed: false,
-                            reason: format!("header {name} not allowed"),
-                        };
+    if !headers_wildcard {
+        let simple_headers = ["accept", "accept-language", "content-language", "content-type"];
+        let simple_content_types =
+            ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"];
+
+        for (name, value) in request_headers {
+            let name_lower = name.to_ascii_lowercase();
+            if simple_headers.contains(&name_lower.as_str()) {
+                // Content-Type 需要额外检查是否为简单类型
+                if name_lower == "content-type" {
+                    let ct_lower = value.to_ascii_lowercase();
+                    let ct_main = ct_lower.split(';').next().unwrap_or("").trim();
+                    if !simple_content_types.contains(&ct_main) {
+                        // 非简单 Content-Type 需要在 allow_headers 中
+                        if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
+                            return CorsResult {
+                                allowed: false,
+                                reason: format!("header {name} not allowed"),
+                            };
+                        }
                     }
                 }
+                continue;
             }
-            continue;
-        }
 
-        // 非简单头必须在 allow_headers 中
-        if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
-            return CorsResult {
-                allowed: false,
-                reason: format!("header {name} not allowed"),
-            };
+            // 非简单头必须在 allow_headers 中
+            if !policy.allow_headers.iter().any(|h| h.eq_ignore_ascii_case(name)) {
+                return CorsResult {
+                    allowed: false,
+                    reason: format!("header {name} not allowed"),
+                };
+            }
         }
     }
 
@@ -257,9 +263,13 @@ pub fn generate_preflight_response(
     }
 
     // 检查请求头是否全部允许
-    let all_headers_allowed = request_headers
-        .iter()
-        .all(|h| policy.allow_headers.iter().any(|ah| ah.eq_ignore_ascii_case(h)));
+    let headers_wildcard =
+        policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials;
+
+    let all_headers_allowed = headers_wildcard
+        || request_headers
+            .iter()
+            .all(|h| policy.allow_headers.iter().any(|ah| ah.eq_ignore_ascii_case(h)));
 
     if !all_headers_allowed {
         return PreflightResponseHeaders {
@@ -292,6 +302,8 @@ pub fn generate_preflight_response(
 
     let allow_headers = if policy.allow_headers.is_empty() {
         None
+    } else if policy.allow_headers.iter().any(|h| h == "*") && !policy.allow_credentials {
+        Some("*".to_string())
     } else {
         Some(policy.allow_headers.join(", "))
     };
@@ -318,11 +330,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cors_wildcard_allows_all() {
+    fn test_cors_default_blocks_all() {
+        // SEC-14: 默认策略不允许任何源
         let policy = CorsPolicy::default();
         let origin = Origin::parse("http://evil.com").unwrap();
         let result = check_cors(&policy, &origin, "GET", &[]);
-        assert!(result.allowed);
+        assert!(!result.allowed);
     }
 
     #[test]
@@ -408,7 +421,7 @@ mod tests {
     #[test]
     fn test_cors_policy_default_values() {
         let policy = CorsPolicy::default();
-        assert_eq!(policy.allow_origins, vec!["*"]);
+        assert!(policy.allow_origins.is_empty(), "默认策略不允许任何源（SEC-14）");
         assert!(policy.allow_methods.contains(&"GET".to_string()));
         assert!(policy.allow_headers.is_empty());
         assert!(!policy.allow_credentials);
@@ -581,14 +594,12 @@ mod tests {
     // ---- 预检响应生成测试 ----
 
     #[test]
-    fn test_preflight_wildcard_origin() {
+    fn test_preflight_default_blocks_all() {
+        // SEC-14: 默认策略不允许任何源
         let policy = CorsPolicy::default();
         let origin = Origin::parse("http://example.com").unwrap();
         let headers = generate_preflight_response(&policy, &origin, "GET", &[]);
-        assert_eq!(headers.allow_origin, Some("*".to_string()));
-        assert!(headers.allow_methods.is_some());
-        assert!(headers.max_age.is_none());
-        assert!(headers.allow_credentials.is_none());
+        assert!(headers.allow_origin.is_none());
     }
 
     #[test]

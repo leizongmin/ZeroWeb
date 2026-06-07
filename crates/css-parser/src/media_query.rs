@@ -234,35 +234,43 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
     let mut negated = false;
     let mut media_type = None;
 
-    // 处理 "not" 前缀
-    if remaining.starts_with("not ") || remaining.starts_with("NOT ") {
-        negated = true;
-        remaining = remaining[4..].trim_start();
+    // 处理 "not" 前缀（CSS 关键字不区分大小写）
+    {
+        let lower = remaining.to_ascii_lowercase();
+        if lower.starts_with("not ") {
+            negated = true;
+            remaining = remaining[4..].trim_start();
+        }
     }
 
     // 处理 "only" 前缀（兼容旧浏览器，忽略不影响行为）
-    if remaining.starts_with("only ") || remaining.starts_with("ONLY ") {
-        remaining = remaining[5..].trim_start();
+    {
+        let lower = remaining.to_ascii_lowercase();
+        if lower.starts_with("only ") {
+            remaining = remaining[5..].trim_start();
+        }
     }
 
-    // 尝试提取媒体类型
-    if remaining.starts_with("screen") {
+    // 尝试提取媒体类型（CSS 关键字不区分大小写）
+    let lower_remaining = remaining.to_ascii_lowercase();
+    if lower_remaining.starts_with("screen") {
         let after = remaining[6..].trim_start();
-        if after.is_empty() || after.starts_with("and") {
+        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::Screen);
-            remaining = after.strip_prefix("and").unwrap_or(after).trim_start();
+            let and_stripped = after.char_indices().take_while(|(_, c)| c.is_ascii_alphabetic()).map(|(i, _)| i).last().map(|i| i + 1).unwrap_or(3);
+            remaining = after.get(and_stripped..).unwrap_or(after).trim_start();
         }
-    } else if remaining.starts_with("print") {
+    } else if lower_remaining.starts_with("print") {
         let after = remaining[5..].trim_start();
-        if after.is_empty() || after.starts_with("and") {
+        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::Print);
-            remaining = after.strip_prefix("and").unwrap_or(after).trim_start();
+            remaining = after.strip_prefix("and").or_else(|| after.strip_prefix("And")).or_else(|| after.strip_prefix("AND")).unwrap_or(after).trim_start();
         }
-    } else if remaining.starts_with("all") {
+    } else if lower_remaining.starts_with("all") {
         let after = remaining[3..].trim_start();
-        if after.is_empty() || after.starts_with("and") {
+        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
             media_type = Some(MediaType::All);
-            remaining = after.strip_prefix("and").unwrap_or(after).trim_start();
+            remaining = after.strip_prefix("and").or_else(|| after.strip_prefix("And")).or_else(|| after.strip_prefix("AND")).unwrap_or(after).trim_start();
         }
     }
 
