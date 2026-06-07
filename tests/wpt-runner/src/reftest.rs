@@ -687,6 +687,38 @@ fn extract_script_content(html: &str) -> Vec<String> {
     scripts
 }
 
+/// 创建加载了系统字体和 Ahem 测试字体的 FontLoader。
+///
+/// 加载顺序：
+/// 1. 系统字体（DejaVu/Liberation 系列）
+/// 2. Ahem 测试字体（WPT 标准测试字体，每个字符渲染为实心方块）
+fn create_font_loader() -> FontLoader {
+    let mut loader = FontLoader::new();
+
+    // 系统字体路径（Linux 常见路径）
+    let system_font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ];
+
+    for path in &system_font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            let _ = loader.load_font(&data);
+        }
+    }
+
+    // 加载 Ahem 测试字体（WPT reftest 标准字体）
+    let ahem_path = "tests/wpt-runner/fonts/Ahem.ttf";
+    if let Ok(data) = std::fs::read(ahem_path) {
+        let _ = loader.load_font(&data);
+    }
+
+    loader
+}
+
 /// 比较两个帧缓冲的像素。
 ///
 /// 返回 (不同像素数, 最大单通道色差)。
