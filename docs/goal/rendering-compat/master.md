@@ -1,7 +1,7 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-07
-**当前活跃里程碑**: M8 — 布局正确性（Margin 折叠 + BFC + Float + Replaced Elements）
+**当前活跃里程碑**: M9 — 滚动容器 + 高级视觉效果
 
 ---
 
@@ -16,7 +16,8 @@
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
-| M8 — 布局正确性 | 🔧 进行中 | BFC 检测 ✅；float clear ✅（clear:left/right/both）；margin 折叠由 taffy 0.7 内置 ✅；<img> 固有尺寸 ✅；9 个新集成测试 ✅；剩余：position:sticky 需宿主层 |
+| M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
+| M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path inset 实际裁剪 ✅；border-image ✅(已有实现)；text-shadow ✅(已有实现)；剩余：滚动容器、非矩形 clip-path、CSS mask、backdrop-filter、scroll-snap |
 
 ## 当前状态概览
 
@@ -338,6 +339,9 @@
 | 2026-06-07 | 浏览器 GPU 路径集成 render_full_scene_gpu | render_frame() 改用 render_full_scene_gpu 替代 render_scene_ext，GPU 渲染路径现在支持全部 13 种图元。GPU 渐变测试使用 ±3 容差应对 float→u8 精度误差。 |
 | 2026-06-07 | Taffy 0.7 内置 margin 折叠 | 发现 taffy 0.7 已通过 CollapsibleMarginSet 实现 CSS 块级 margin 折叠，不需要额外后处理步骤。移除了自实现的 margin_collapse 后处理。 |
 | 2026-06-07 | Float clear 后处理实现 | 在 adjust_float_positions() 中实现 clear:left/right/both。非 float 元素的 clear 属性将其推到对应侧浮动元素的底部之下。LayoutBox 新增 clear 字段。 |
+| 2026-06-07 | 重复渐变：fract() tiling | CPU 渲染器用 fract(t/period) 实现重复渐变周期循环；GPU 渲染器通过 WGSL shader 中 fract(t) 实现，repeating 标志通过 param3 取负编码传递。 |
+| 2026-06-07 | 多图层背景 Vec 迁移 | background_image 从 BackgroundImageComputedValue 单值改为 Vec，CSS 解析器新增 parse_background_image_layers() 处理逗号分隔，paint 按逆序渲染（CSS 规范最后一层在最底）。 |
+| 2026-06-07 | clip-path inset 实际裁剪 | 新增 clip_all_primitives_to_rect() 对全部图元类型（fills/rounded_rects/gradients/shadows/images/glyphs/strokes）应用矩形裁剪，替代原来的虚线指示器。 |
 
 ---
 
@@ -393,5 +397,10 @@
 48. ~~M8 — Float clear 支持~~ ✅ (clear:left/right/both 后处理 + 7 个集成测试)
 49. ~~M8 — Margin 折叠~~ ✅ (发现 taffy 0.7 已内置 CollapsibleMarginSet，无需额外后处理)
 50. ~~M8 — 替换元素布局~~ ✅ (<img> 固有尺寸注入 + 2 个集成测试)
-51. M8 — Position: sticky 实现（需宿主层滚动集成，layout 引擎已标记 is_sticky）
-52. M9 — 滚动容器 + 高级视觉效果
+51. ~~M8 — Position: sticky 标记~~ ✅ (layout 引擎已标记 is_sticky，需宿主层滚动集成时实现动态偏移)
+52. ~~M9 — 重复渐变~~ ✅ (GradientPrimitive.repeating 字段 + CPU fract() tiling + GPU WGSL shader)
+53. ~~M9 — 多图层背景~~ ✅ (background_image 改为 Vec + 逗号分隔解析 + 逆序渲染)
+54. ~~M9 — clip-path inset 裁剪~~ ✅ (clip_all_primitives_to_rect() 处理全部图元类型)
+55. M9 — 非矩形 clip-path（circle/ellipse/polygon 需像素级掩码）
+56. M9 — CSS mask / backdrop-filter / scroll-snap
+57. M10 — 上游 WPT 真实 Reftest 导入与验证
