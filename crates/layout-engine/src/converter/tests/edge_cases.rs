@@ -397,11 +397,11 @@ fn test_convert_length_to_lp_min_max_content() {
 #[test]
 fn test_convert_length_to_lpa_min_max_content() {
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MinContent),
+        convert_length_to_lpa(&LengthValue::MinContent, false),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MaxContent),
+        convert_length_to_lpa(&LengthValue::MaxContent, false),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 }
@@ -590,36 +590,37 @@ fn test_convert_length_to_lp_uncovered_variants() {
 fn test_convert_length_to_lpa_uncovered_variants() {
     // Viewport units
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::Vh(50.0)),
+        convert_length_to_lpa(&LengthValue::Vh(50.0), false),
         taffy::style::LengthPercentageAuto::Length(50.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::Vw(25.0)),
+        convert_length_to_lpa(&LengthValue::Vw(25.0), false),
         taffy::style::LengthPercentageAuto::Length(25.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
-        convert_length_to_lpa(&fit_content),
+        convert_length_to_lpa(&fit_content, false),
         taffy::style::LengthPercentageAuto::Length(100.0)
     );
 
     // MinContent/MaxContent 映射为 0
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MinContent),
+        convert_length_to_lpa(&LengthValue::MinContent, false),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MaxContent),
+        convert_length_to_lpa(&LengthValue::MaxContent, false),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 
     // Calc 映射为 0
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
-            42.0
-        )))),
+        convert_length_to_lpa(
+            &LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(42.0))),
+            false
+        ),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 }

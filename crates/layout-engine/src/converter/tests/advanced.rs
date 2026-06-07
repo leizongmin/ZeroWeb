@@ -93,7 +93,7 @@ fn test_convert_length_calc_fallback() {
 
     // convert_length_to_lpa
     assert_eq!(
-        convert_length_to_lpa(&calc),
+        convert_length_to_lpa(&calc, false),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 }
@@ -157,14 +157,14 @@ fn test_convert_length_to_lp_percentage() {
 /// 测试 Auto 在 convert_length_to_lpa 中映射为 LengthPercentageAuto::Auto。
 #[test]
 fn test_convert_length_to_lpa_auto() {
-    let result = convert_length_to_lpa(&LengthValue::Auto);
+    let result = convert_length_to_lpa(&LengthValue::Auto, false);
     assert_eq!(result, taffy::style::LengthPercentageAuto::Auto);
 }
 
 /// 测试 Percentage 在 convert_length_to_lpa 中转换为 Percent。
 #[test]
 fn test_convert_length_to_lpa_percentage() {
-    let result = convert_length_to_lpa(&LengthValue::Percentage(60.0));
+    let result = convert_length_to_lpa(&LengthValue::Percentage(60.0), false);
     assert_eq!(result, taffy::style::LengthPercentageAuto::Percent(0.6));
 }
 

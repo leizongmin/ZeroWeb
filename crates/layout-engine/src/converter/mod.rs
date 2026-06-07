@@ -23,6 +23,8 @@ pub type GridAreaMap = std::collections::HashMap<String, (i16, i16, i16, i16)>;
 /// `parent_areas` 为父级 grid 容器的 grid-template-areas 区域映射，
 /// 用于将子元素的 GridLineValue::Name 解析为行号。
 pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&GridAreaMap>) -> taffy::Style {
+    // CSS 2.1 §10.3.5: 浮动非替换元素的 margin-left/right: auto 解析为 0
+    let is_float = matches!(style.float, FloatValue::Left | FloatValue::Right);
     taffy::Style {
         display: convert_display(&style.display),
         box_sizing: convert_box_sizing(&style.box_sizing),
@@ -33,10 +35,10 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         scrollbar_width: 0.0,
         position: convert_position(&style.position),
         inset: taffy::geometry::Rect {
-            left: convert_length_to_lpa(&style.left),
-            right: convert_length_to_lpa(&style.right),
-            top: convert_length_to_lpa(&style.top),
-            bottom: convert_length_to_lpa(&style.bottom),
+            left: convert_length_to_lpa(&style.left, false),
+            right: convert_length_to_lpa(&style.right, false),
+            top: convert_length_to_lpa(&style.top, false),
+            bottom: convert_length_to_lpa(&style.bottom, false),
         },
         size: taffy::geometry::Size {
             width: convert_length_to_dimension(&style.width),
@@ -52,10 +54,10 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         },
         aspect_ratio: style.aspect_ratio,
         margin: taffy::geometry::Rect {
-            left: convert_length_to_lpa(&style.margin_left),
-            right: convert_length_to_lpa(&style.margin_right),
-            top: convert_length_to_lpa(&style.margin_top),
-            bottom: convert_length_to_lpa(&style.margin_bottom),
+            left: convert_length_to_lpa(&style.margin_left, is_float),
+            right: convert_length_to_lpa(&style.margin_right, is_float),
+            top: convert_length_to_lpa(&style.margin_top, false),
+            bottom: convert_length_to_lpa(&style.margin_bottom, false),
         },
         padding: taffy::geometry::Rect {
             left: convert_length_to_lp(&style.padding_left),
@@ -268,7 +270,8 @@ fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
 /// 将 LengthValue 转换为 taffy 的 LengthPercentageAuto。
 ///
 /// 用于 margin、inset 等接受 auto 的属性。
-fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageAuto {
+/// `resolve_auto_as_zero` 为 true 时，将 Auto 解析为 0（用于浮动元素的左右 margin）。
+fn convert_length_to_lpa(value: &LengthValue, resolve_auto_as_zero: bool) -> taffy::style::LengthPercentageAuto {
     match value {
         LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
@@ -279,9 +282,15 @@ fn convert_length_to_lpa(value: &LengthValue) -> taffy::style::LengthPercentageA
         LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
-        LengthValue::Auto => taffy::style::LengthPercentageAuto::Auto,
+        LengthValue::Auto => {
+            if resolve_auto_as_zero {
+                length(0.0)
+            } else {
+                taffy::style::LengthPercentageAuto::Auto
+            }
+        }
         LengthValue::Calc(_) => length(0.0),
-        LengthValue::FitContent(inner) => convert_length_to_lpa(inner),
+        LengthValue::FitContent(inner) => convert_length_to_lpa(inner, resolve_auto_as_zero),
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
     }
 }
