@@ -24,9 +24,7 @@ use zero_style_system::{
 };
 
 use super::color::color_value_to_render;
-use super::helpers::{
-    PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, clip_fills, clip_glyphs, ellipse_to_polygon,
-};
+use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
@@ -136,8 +134,7 @@ impl Painter {
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
 
-        let fills_before = self.primitives.fills.len();
-        let glyphs_before = self.primitives.glyphs.len();
+        let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         for child in &box_node.children {
             self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
@@ -150,8 +147,7 @@ impl Painter {
                 box_node.content_width,
                 box_node.content_height,
             );
-            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
-            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
 
         let _ = is_hidden;
@@ -282,8 +278,7 @@ impl Painter {
         }
 
         // 记录子节点绘制前的图元数量，用于裁剪
-        let fills_before = self.primitives.fills.len();
-        let glyphs_before = self.primitives.glyphs.len();
+        let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         for child in &box_node.children {
             self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
@@ -297,8 +292,7 @@ impl Painter {
                 box_node.content_width,
                 box_node.content_height,
             );
-            clip_fills(&mut self.primitives.fills, fills_before, &clip_rect);
-            clip_glyphs(&mut self.primitives.glyphs, glyphs_before, &clip_rect);
+            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
 
         // clip-path: inset() — 实际裁剪（对元素及其所有子元素的图元应用矩形裁剪）
