@@ -34,6 +34,11 @@ pub struct Painter {
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
     /// CSS 计数器状态（计数器名 → 当前值）。
     pub(crate) counters: HashMap<String, i32>,
+    /// 是否跳过属性指示器（用于 reftest 精确对比）。
+    ///
+    /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
+    /// 会干扰像素级 reftest 对比。设为 true 时跳过所有指示器。
+    pub skip_indicators: bool,
 }
 
 impl Painter {
@@ -43,6 +48,7 @@ impl Painter {
             primitives: RenderPrimitives::new(),
             painted_inline_nodes: HashSet::new(),
             counters: HashMap::new(),
+            skip_indicators: false,
         }
     }
 
@@ -452,303 +458,304 @@ impl Painter {
             self.paint_resize_handle(box_node, abs_x, abs_y, style);
         }
 
-        // CSS accent-color — 绘制强调色指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.accent_color, AccentColorComputedValue::Auto)
-        {
-            self.paint_accent_color_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS caret-color — 绘制光标颜色指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.caret_color, CaretColorComputedValue::Auto)
-        {
-            self.paint_caret_color_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS scrollbar-width — 绘制滚动条指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_scrollbar_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS appearance — 绘制原生控件外观
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(
-                style.appearance,
-                AppearanceComputedValue::None | AppearanceComputedValue::Auto
-            )
-        {
-            self.paint_appearance(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS scrollbar-gutter — 预留滚动条空间
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto)
-        {
-            self.paint_scrollbar_gutter(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS background-attachment: fixed — 固定背景指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed)
-        {
-            self.paint_background_attachment_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS hyphens: auto — 连字符指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.hyphens, HyphensComputedValue::Auto)
-        {
-            self.paint_hyphens_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS quotes — 引号标记（仅限显式设置 quotes: Pairs 的元素）
-        // 注意：quotes 默认为 Auto，但只有 <q> 元素才需要引号渲染。
-        // 目前仅在 quotes 为 Pairs 时渲染，Auto 时不自动推断 <q>。
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.quotes, QuotesComputedValue::Pairs(_))
-        {
-            self.paint_quotes(box_node, abs_x, abs_y, style, 0);
-        }
-
-        // CSS cursor — 光标类型指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_cursor_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS image-rendering — 图片质量指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.image_rendering, ImageRenderingValue::Auto)
-        {
-            self.paint_image_rendering_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS isolation: isolate — 堆叠上下文指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.isolation, IsolationValue::Isolate)
-        {
-            self.paint_isolation_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS will-change — 性能提示指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.will_change, WillChangeValue::Auto)
-        {
-            self.paint_will_change_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS pointer-events: none — 点击穿透指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.pointer_events, PointerEventsValue::None)
-        {
-            self.paint_pointer_events_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS user-select: none — 文本不可选择指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && matches!(style.user_select, UserSelectValue::None)
-        {
-            self.paint_user_select_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS overscroll-behavior — 滚动边界限制指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(style.overscroll_behavior_x, OverscrollBehaviorValue::Auto)
-        {
-            self.paint_overscroll_behavior_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS touch-action — 触摸行为指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(
-                style.touch_action,
-                TouchActionValue::Auto | TouchActionValue::Manipulation
-            )
-        {
-            self.paint_touch_action_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS scroll-snap — 吸附轴和对齐点指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::property::types::ScrollSnapStrictness;
-            if !matches!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None) {
-                self.paint_scroll_snap_indicator(box_node, abs_x, abs_y, style);
-            }
-        }
-
-        // CSS perspective — 3D 透视上下文指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::property::types::LengthValue;
-            if let LengthValue::Px(v) = style.perspective
-                && v > 0.0
+        // ── 属性指示器（reftest 模式下跳过，避免干扰像素对比）──
+        if !self.skip_indicators {
+            // CSS accent-color — 绘制强调色指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.accent_color, AccentColorComputedValue::Auto)
             {
-                self.paint_perspective_indicator(box_node, abs_x, abs_y, style);
+                self.paint_accent_color_indicator(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS backface-visibility: hidden — 背面不可见指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::property::types::BackfaceVisibilityValue;
-            if matches!(style.backface_visibility, BackfaceVisibilityValue::Hidden) {
-                self.paint_backface_visibility_indicator(box_node, abs_x, abs_y, style);
+            // CSS caret-color — 绘制光标颜色指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.caret_color, CaretColorComputedValue::Auto)
+            {
+                self.paint_caret_color_indicator(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS transform-style: preserve-3d — 3D 渲染上下文指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::property::types::TransformStyleValue;
-            if matches!(style.transform_style, TransformStyleValue::Preserve3d) {
-                self.paint_transform_style_indicator(box_node, abs_x, abs_y, style);
+            // CSS scrollbar-width — 绘制滚动条指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_scrollbar_indicator(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS border-spacing — 表格单元格间距指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && (style.border_spacing.horizontal > 0.0 || style.border_spacing.vertical > 0.0)
-        {
-            self.paint_border_spacing_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS caption-side — 表格标题位置指示器（非默认值 bottom 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::property::types::CaptionSideValue;
-            if matches!(style.caption_side, CaptionSideValue::Bottom) {
-                self.paint_caption_side_indicator(box_node, abs_x, abs_y, style);
+            // CSS appearance — 绘制原生控件外观
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(
+                    style.appearance,
+                    AppearanceComputedValue::None | AppearanceComputedValue::Auto
+                )
+            {
+                self.paint_appearance(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS direction — 文本方向指示器（rtl 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_direction_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS tab-size — 制表符宽度指示器（非默认值 8 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_tab_size_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS border-collapse — 边框合并指示器（collapse 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_border_collapse_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS table-layout — 表格布局模式指示器（fixed 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_table_layout_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS font-variant-numeric — 数字变体指示器（非 normal 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_font_variant_numeric_indicator(box_node, abs_x, abs_y, style);
-        }
-
-        // CSS contain — 包含指示器（非 none 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::ContainComputedValue;
-            if !matches!(style.contain, ContainComputedValue::None) {
-                self.paint_contain_indicator(box_node, abs_x, abs_y, style);
+            // CSS scrollbar-gutter — 预留滚动条空间
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.scrollbar_gutter, ScrollbarGutterComputedValue::Auto)
+            {
+                self.paint_scrollbar_gutter(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS unicode-bidi — 双向文本覆盖指示器（非 normal 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            use zero_style_system::UnicodeBidiValue;
-            if !matches!(style.unicode_bidi, UnicodeBidiValue::Normal) {
-                self.paint_unicode_bidi_indicator(box_node, abs_x, abs_y, style);
+            // CSS background-attachment: fixed — 固定背景指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed)
+            {
+                self.paint_background_attachment_indicator(box_node, abs_x, abs_y, style);
             }
-        }
 
-        // CSS box-decoration-break — 装饰断行指示器（clone 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_box_decoration_break_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS hyphens: auto — 连字符指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.hyphens, HyphensComputedValue::Auto)
+            {
+                self.paint_hyphens_indicator(box_node, abs_x, abs_y, style);
+            }
 
-        // CSS overflow-wrap — 断词模式指示器（非 normal 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_overflow_wrap_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS quotes — 引号标记
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.quotes, QuotesComputedValue::Pairs(_))
+            {
+                self.paint_quotes(box_node, abs_x, abs_y, style, 0);
+            }
 
-        // CSS text-align-last — 末行对齐指示器（非 auto 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_text_align_last_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS cursor — 光标类型指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_cursor_indicator(box_node, abs_x, abs_y, style);
+            }
 
-        // CSS break-before/after/inside + page-break-* — 断点指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_break_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS image-rendering — 图片质量指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.image_rendering, ImageRenderingValue::Auto)
+            {
+                self.paint_image_rendering_indicator(box_node, abs_x, abs_y, style);
+            }
 
-        // CSS scroll-margin/padding — 滚动吸附区域指示器
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_scroll_area_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS isolation: isolate — 堆叠上下文指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.isolation, IsolationValue::Isolate)
+            {
+                self.paint_isolation_indicator(box_node, abs_x, abs_y, style);
+            }
 
-        // CSS scroll-snap-stop:always — 强制停止标记
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_scroll_snap_stop_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS will-change — 性能提示指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.will_change, WillChangeValue::Auto)
+            {
+                self.paint_will_change_indicator(box_node, abs_x, abs_y, style);
+            }
 
-        // CSS container-type — 容器查询上下文指示器（非 normal 时渲染）
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            self.paint_container_type_indicator(box_node, abs_x, abs_y, style);
-        }
+            // CSS pointer-events: none — 点击穿透指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.pointer_events, PointerEventsValue::None)
+            {
+                self.paint_pointer_events_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS user-select: none — 文本不可选择指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && matches!(style.user_select, UserSelectValue::None)
+            {
+                self.paint_user_select_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS overscroll-behavior — 滚动边界限制指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(style.overscroll_behavior_x, OverscrollBehaviorValue::Auto)
+            {
+                self.paint_overscroll_behavior_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS touch-action — 触摸行为指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && !matches!(
+                    style.touch_action,
+                    TouchActionValue::Auto | TouchActionValue::Manipulation
+                )
+            {
+                self.paint_touch_action_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS scroll-snap — 吸附轴和对齐点指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::property::types::ScrollSnapStrictness;
+                if !matches!(style.scroll_snap_type.strictness, ScrollSnapStrictness::None) {
+                    self.paint_scroll_snap_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS perspective — 3D 透视上下文指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::property::types::LengthValue;
+                if let LengthValue::Px(v) = style.perspective
+                    && v > 0.0
+                {
+                    self.paint_perspective_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS backface-visibility: hidden — 背面不可见指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::property::types::BackfaceVisibilityValue;
+                if matches!(style.backface_visibility, BackfaceVisibilityValue::Hidden) {
+                    self.paint_backface_visibility_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS transform-style: preserve-3d — 3D 渲染上下文指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::property::types::TransformStyleValue;
+                if matches!(style.transform_style, TransformStyleValue::Preserve3d) {
+                    self.paint_transform_style_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS border-spacing — 表格单元格间距指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && (style.border_spacing.horizontal > 0.0 || style.border_spacing.vertical > 0.0)
+            {
+                self.paint_border_spacing_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS caption-side — 表格标题位置指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::property::types::CaptionSideValue;
+                if matches!(style.caption_side, CaptionSideValue::Bottom) {
+                    self.paint_caption_side_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS direction — 文本方向指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_direction_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS tab-size — 制表符宽度指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_tab_size_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS border-collapse — 边框合并指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_border_collapse_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS table-layout — 表格布局模式指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_table_layout_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS font-variant-numeric — 数字变体指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_font_variant_numeric_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS contain — 包含指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::ContainComputedValue;
+                if !matches!(style.contain, ContainComputedValue::None) {
+                    self.paint_contain_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS unicode-bidi — 双向文本覆盖指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                use zero_style_system::UnicodeBidiValue;
+                if !matches!(style.unicode_bidi, UnicodeBidiValue::Normal) {
+                    self.paint_unicode_bidi_indicator(box_node, abs_x, abs_y, style);
+                }
+            }
+
+            // CSS box-decoration-break — 装饰断行指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_box_decoration_break_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS overflow-wrap — 断词模式指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_overflow_wrap_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS text-align-last — 末行对齐指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_text_align_last_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS break-before/after/inside + page-break-* — 断点指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_break_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS scroll-margin/padding — 滚动吸附区域指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_scroll_area_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS scroll-snap-stop:always — 强制停止标记
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_scroll_snap_stop_indicator(box_node, abs_x, abs_y, style);
+            }
+
+            // CSS container-type — 容器查询上下文指示器
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+            {
+                self.paint_container_type_indicator(box_node, abs_x, abs_y, style);
+            }
+        } // end skip_indicators guard
 
         let _ = is_hidden; // visibility 在 if let 块内处理
     }
