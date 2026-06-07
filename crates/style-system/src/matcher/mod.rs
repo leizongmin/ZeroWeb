@@ -882,6 +882,12 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         }
         "container-type" => parse_container_type(trimmed).is_some(),
         "container-name" => true, // 任何非空字符串都有效
+        // 字体属性：auto/normal/none 为合法值
+        "font-kerning" => {
+            let v = trimmed.to_ascii_lowercase();
+            v == "auto" || v == "normal" || v == "none"
+        }
+        "font-variant-numeric" | "font-feature-settings" | "font-variation-settings" => true,
         // 未知属性：默认不支持（安全保守策略）
         _ => false,
     }
