@@ -1022,6 +1022,13 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vmax" => Some(LengthValue::Vmax(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "%" => Some(LengthValue::Percentage(num)),
+        // CSS 绝对长度单位 → 转换为 px（96 DPI）
+        "in" => Some(LengthValue::Px(num * 96.0)),
+        "pt" => Some(LengthValue::Px(num * 96.0 / 72.0)),
+        "pc" => Some(LengthValue::Px(num * 96.0 / 6.0)),
+        "cm" => Some(LengthValue::Px(num * 96.0 / 2.54)),
+        "mm" => Some(LengthValue::Px(num * 96.0 / 25.4)),
+        "Q" => Some(LengthValue::Px(num * 96.0 / 101.6)), // 1Q = 1/4mm
         // Per CSS spec, a bare zero without units is a valid length (0px).
         "" if num == 0.0 => Some(LengthValue::Px(0.0)),
         _ => None,
