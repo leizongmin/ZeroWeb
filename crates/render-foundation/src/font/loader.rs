@@ -66,8 +66,8 @@ impl FontLoader {
         let id = self.next_id;
         self.next_id += 1;
 
-        // 获取字体族名称
-        if let Some(name) = get_font_family_name(&font) {
+        // 从原始字体字节中提取字体族名称（fontdue 不暴露 name 表）
+        if let Some(name) = parse_font_family_name(data) {
             self.family_map.entry(name).or_default().push(id);
         }
 
@@ -89,6 +89,70 @@ impl FontLoader {
     /// 根据字体描述查找最佳匹配字体 ID
     pub fn find(&self, desc: &FontDesc) -> Option<u32> {
         self.family_map.get(&desc.family).and_then(|ids| ids.first().copied())
+    }
+
+    /// 构建 CSS font-family 查找表。
+    ///
+    /// 返回 `family_name → font_id` 的映射，供 Painter 解析 CSS font-family 使用。
+    /// 同时注册通用字体族别名（sans-serif / serif / monospace）映射到已加载的实际字体。
+    pub fn build_font_resolver(&self) -> std::collections::HashMap<String, u32> {
+        let mut resolver = std::collections::HashMap::new();
+
+        // 已知字体族名 → ID
+        for (name, ids) in &self.family_map {
+            if let Some(&id) = ids.first() {
+                resolver.insert(name.clone(), id);
+            }
+        }
+
+        // 如果只有 0-1 个字体，通用族映射没有意义
+        if self.fonts.is_empty() {
+            return resolver;
+        }
+
+        // 默认字体 = 第一个加载的字体（ID 0）
+        let default_id = 0u32;
+
+        // 通用字体族别名映射
+        // sans-serif → 尝试匹配 DejaVu Sans / Liberation Sans / 其他 Sans 字体
+        let sans_names = ["DejaVu Sans", "Liberation Sans", "Arial", "Helvetica", "Noto Sans"];
+        let serif_names = [
+            "DejaVu Serif",
+            "Liberation Serif",
+            "Times New Roman",
+            "Georgia",
+            "Noto Serif",
+        ];
+        let mono_names = ["DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"];
+
+        // sans-serif
+        let sans_id = self.resolve_generic_family(&sans_names).unwrap_or(default_id);
+        resolver.insert("sans-serif".to_string(), sans_id);
+
+        // serif
+        let serif_id = self.resolve_generic_family(&serif_names).unwrap_or(default_id);
+        resolver.insert("serif".to_string(), serif_id);
+
+        // monospace
+        let mono_id = self.resolve_generic_family(&mono_names).unwrap_or(default_id);
+        resolver.insert("monospace".to_string(), mono_id);
+
+        // cursive / fantasy / system-ui → 暂映射到 sans-serif
+        resolver.insert("cursive".to_string(), sans_id);
+        resolver.insert("fantasy".to_string(), sans_id);
+        resolver.insert("system-ui".to_string(), sans_id);
+
+        resolver
+    }
+
+    /// 在已加载字体中查找匹配通用族名的最佳字体。
+    fn resolve_generic_family(&self, candidates: &[&str]) -> Option<u32> {
+        for name in candidates {
+            if let Some(ids) = self.family_map.get(*name) {
+                return ids.first().copied();
+            }
+        }
+        None
     }
 
     /// 渲染指定字符的 glyph
@@ -191,12 +255,133 @@ impl Default for FontLoader {
     }
 }
 
-/// 尝试获取字体的族名称
-fn get_font_family_name(font: &fontdue::Font) -> Option<String> {
-    // fontdue 0.9 不暴露 names 字段，返回 None
-    // 后续可通过 swash 或其他方式获取字体元数据
-    let _ = font;
-    None
+/// 从 OpenType/TrueType 字体字节中解析字体族名称。
+///
+/// 解析 `name` 表（nameID=1）获取 Font Family Name。
+/// 优先使用 Windows 平台（platformID=3, encodingID=1, UTF-16BE），
+/// 回退到 Macintosh 平台（platformID=1, encodingID=0, ASCII）。
+fn parse_font_family_name(data: &[u8]) -> Option<String> {
+    // OpenType 文件头：offset table
+    // 0-3: sfVersion (0x00010000 = TrueType, 'OTTO' = CFF)
+    // 4-5: numTables
+    // 6-11: searchRange, entrySelector, rangeShift
+    if data.len() < 12 {
+        return None;
+    }
+    let num_tables = u16_from_be(data, 4)? as usize;
+
+    // 表记录从偏移 12 开始，每条 16 字节
+    let records_start = 12;
+    let records_end = records_start + num_tables * 16;
+    if records_end > data.len() {
+        return None;
+    }
+
+    // 查找 'name' 表
+    let mut name_offset = None;
+    let mut name_length = None;
+    for i in 0..num_tables {
+        let rec = records_start + i * 16;
+        let tag = &data[rec..rec + 4];
+        if tag == b"name" {
+            name_offset = Some(u32_from_be(data, rec + 8)? as usize);
+            name_length = Some(u32_from_be(data, rec + 12)? as usize);
+            break;
+        }
+    }
+
+    let name_off = name_offset?;
+    let name_len = name_length?;
+    if name_off + name_len > data.len() {
+        return None;
+    }
+    let table = &data[name_off..name_off + name_len];
+    if table.len() < 6 {
+        return None;
+    }
+
+    let _format = u16_from_be_slice(table, 0)?;
+    let count = u16_from_be_slice(table, 2)? as usize;
+    let string_offset = u16_from_be_slice(table, 4)? as usize;
+
+    // 遍历 name records，寻找最佳匹配
+    // 优先级：Windows (3,1) > Mac (1,0)
+    let mut win_name: Option<String> = None;
+    let mut mac_name: Option<String> = None;
+
+    for i in 0..count {
+        let rec = 6 + i * 12;
+        if rec + 12 > table.len() {
+            break;
+        }
+        let platform_id = u16_from_be_slice(table, rec)?;
+        let encoding_id = u16_from_be_slice(table, rec + 2)?;
+        let _lang_id = u16_from_be_slice(table, rec + 4)?;
+        let name_id = u16_from_be_slice(table, rec + 6)?;
+        let str_len = u16_from_be_slice(table, rec + 8)? as usize;
+        let str_off = u16_from_be_slice(table, rec + 10)? as usize;
+
+        // nameID 1 = Font Family Name
+        if name_id != 1 {
+            continue;
+        }
+
+        let abs_str_start = string_offset + str_off;
+        let abs_str_end = abs_str_start + str_len;
+        if abs_str_end > table.len() {
+            continue;
+        }
+        let str_data = &table[abs_str_start..abs_str_end];
+
+        if platform_id == 3 && encoding_id == 1 {
+            // Windows Unicode BMP (UTF-16BE)
+            win_name = decode_utf16be(str_data);
+        } else if platform_id == 1 && encoding_id == 0 {
+            // Macintosh Roman (ASCII-like)
+            mac_name = String::from_utf8(str_data.to_vec()).ok();
+        }
+    }
+
+    // 优先 Windows，回退 Mac
+    win_name.or(mac_name)
+}
+
+/// 从大端序字节切片中读取 u16。
+fn u16_from_be_slice(data: &[u8], offset: usize) -> Option<u16> {
+    if offset + 2 > data.len() {
+        return None;
+    }
+    Some(u16::from_be_bytes([data[offset], data[offset + 1]]))
+}
+
+/// 从大端序字节切片中读取 u16（绝对偏移）。
+fn u16_from_be(data: &[u8], offset: usize) -> Option<u16> {
+    u16_from_be_slice(data, offset)
+}
+
+/// 从大端序字节切片中读取 u32。
+fn u32_from_be(data: &[u8], offset: usize) -> Option<u32> {
+    if offset + 4 > data.len() {
+        return None;
+    }
+    Some(u32::from_be_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ]))
+}
+
+/// 解码 UTF-16BE 字节为 String。
+fn decode_utf16be(data: &[u8]) -> Option<String> {
+    if !data.len().is_multiple_of(2) {
+        return None;
+    }
+    let chars: Vec<u16> = (0..data.len())
+        .step_by(2)
+        .map(|i| u16::from_be_bytes([data[i], data[i + 1]]))
+        .collect();
+    String::from_utf16(&chars).ok()
 }
 
 #[cfg(test)]

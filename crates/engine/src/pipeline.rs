@@ -44,6 +44,8 @@ pub struct RenderPipeline {
     skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     image_sizes: HashMap<u64, (f32, f32)>,
+    /// CSS font-family 查找表（字体族名 → FontId）。
+    font_resolver: HashMap<String, u32>,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -98,6 +100,7 @@ impl RenderPipeline {
             cached_doc: None,
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            font_resolver: HashMap::new(),
         }
     }
 
@@ -115,6 +118,14 @@ impl RenderPipeline {
     /// 键为图像 URL 的 hash 值，值为 (width, height) 像素尺寸。
     pub fn set_image_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
         self.image_sizes = sizes;
+    }
+
+    /// 设置 CSS font-family 查找表。
+    ///
+    /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
+    /// 用于将 CSS font-family 列表解析为具体的 FontId。
+    pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        self.font_resolver = resolver;
     }
 
     /// 设置用户颜色方案偏好。
@@ -201,6 +212,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
@@ -276,6 +288,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元
@@ -331,6 +344,7 @@ impl RenderPipeline {
         // 生成绘制命令
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
+        painter.set_font_resolver(self.font_resolver.clone());
         painter.paint(&layout_result.root, &styles, Some(doc));
         let primitives = painter.into_primitives();
 
@@ -408,6 +422,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }
