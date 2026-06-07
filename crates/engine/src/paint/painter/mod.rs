@@ -205,6 +205,9 @@ impl Painter {
                 && box_node.children.is_empty();
 
             if !hidden && !skip_empty_cell {
+                // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）
+                self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
+
                 // 0. box-shadow（位于背景之下）
                 self.paint_box_shadow(box_node, abs_x, abs_y, style);
 

@@ -246,6 +246,7 @@ impl Default for ComputedStyle {
             // Object Fit / Filter
             object_fit: ObjectFitComputedValue::Fill,
             filter: FilterComputedValue::None,
+            backdrop_filter: FilterComputedValue::None,
 
             // UI Appearance
             appearance: AppearanceComputedValue::Auto,

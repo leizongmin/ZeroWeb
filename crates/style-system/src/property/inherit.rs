@@ -829,6 +829,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.filter = default_style.filter;
             true
         }
+        "backdrop-filter" => {
+            style.backdrop_filter = default_style.backdrop_filter;
+            true
+        }
         // Column Rule Color
         "column-rule-color" => {
             style.column_rule_color = default_style.column_rule_color;

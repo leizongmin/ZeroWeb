@@ -414,6 +414,8 @@ pub struct ComputedStyle {
     pub object_fit: ObjectFitComputedValue,
     /// filter 属性。
     pub filter: FilterComputedValue,
+    /// backdrop-filter 属性（对元素背后内容应用滤镜）。
+    pub backdrop_filter: FilterComputedValue,
 
     // ── UI Appearance ──
     /// appearance 属性。
