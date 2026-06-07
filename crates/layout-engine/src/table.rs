@@ -503,7 +503,29 @@ fn position_cells(
             cell_box.x = cell_x;
             cell_box.y = 0.0;
             cell_box.width = cell_width;
-            cell_box.height = row_height;
+
+            // 单元格高度：如果单元格有明确高度且 overflow 裁剪，
+            // 保持原始高度（由 taffy 计算），否则使用行高
+            let cell_height = if let Some(cell_node_id) = cell_box.node_id
+                && let Some(cell_style) = styles.get(&cell_node_id)
+            {
+                let has_explicit_height = !matches!(
+                    cell_style.height,
+                    zero_css_parser::values::LengthValue::Auto
+                );
+                let is_overflow_clip = !matches!(
+                    cell_style.overflow_y,
+                    zero_css_parser::values::OverflowValue::Visible
+                );
+                if has_explicit_height && is_overflow_clip {
+                    cell_box.height // 保持 taffy 计算的明确高度
+                } else {
+                    row_height
+                }
+            } else {
+                row_height
+            };
+            cell_box.height = cell_height;
 
             cell_x += cell_width + spacing_x;
         }
