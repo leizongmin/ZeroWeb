@@ -430,7 +430,8 @@ fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, pare
 ///
 /// - 同侧 float 水平并排放置（CSS 2.1 §9.5.1），空间不足时换行
 /// - float 元素的 clear 属性正确生效
-/// - 非 float 块元素的 clear 使用 max(taffy_Y, float_bottom)
+/// - 非 float 块元素的 clear 使用 max(normal_flow_Y, float_bottom)
+/// - 非 float、非 clear 元素的 Y 偏移扣除 float 元素占据的垂直空间
 fn adjust_float_positions(box_node: &mut LayoutBox) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -438,55 +439,39 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 容器的内容区域宽度
     let container_width = box_node.content_width;
 
-    // 当前浮动行的状态跟踪
-    // 注意：child.x/y 是相对于父级（box_node）的内容区域的坐标（与 taffy 一致），
-    // 不是绝对坐标。paint 系统在遍历时会通过 offset_x/y 累加绝对位置。
-    let mut line_y = 0.0f32; // 当前浮动行的 Y 偏移（相对于父内容区域）
-    let mut line_max_height = 0.0f32; // 当前行上最高的浮动元素高度
-    let mut left_used_width = 0.0f32; // 当前行上左侧浮动元素已使用的宽度
-    let mut right_used_width = 0.0f32; // 当前行上右侧浮动元素已使用的宽度
-    let mut left_float_bottom = 0.0f32; // 左侧浮动元素的最大底部（相对于父内容区域）
-    let mut right_float_bottom = 0.0f32; // 右侧浮动元素的最大底部（相对于父内容区域）
+    // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
+    let mut line_y = 0.0f32;
+    let mut line_max_height = 0.0f32;
+    let mut left_used_width = 0.0f32;
+    let mut right_used_width = 0.0f32;
+    let mut left_float_bottom = 0.0f32;
+    let mut right_float_bottom = 0.0f32;
 
-    for child in &mut box_node.children {
+    // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
+    let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
+
+    for (idx, child) in box_node.children.iter_mut().enumerate() {
         // 跳过绝对定位和 fixed 元素
         if child.is_absolute || child.is_fixed {
             continue;
         }
 
-        // 处理非 float 元素的 clear 属性
+        // 处理非 float 元素的 clear 属性（延迟到第二阶段）
         if matches!(child.float, FloatValue::None) {
-            match child.clear {
-                ClearValue::Left => {
-                    if left_float_bottom > 0.0 {
-                        child.y = child.y.max(left_float_bottom);
-                    }
-                }
-                ClearValue::Right => {
-                    if right_float_bottom > 0.0 {
-                        child.y = child.y.max(right_float_bottom);
-                    }
-                }
-                ClearValue::Both => {
-                    let max_bottom = left_float_bottom.max(right_float_bottom);
-                    if max_bottom > 0.0 {
-                        child.y = child.y.max(max_bottom);
-                    }
-                }
-                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {}
-            }
             continue;
         }
 
+        // 记录 float 元素的 taffy Y 位置和高度
+        let child_outer_height = child.margin_top + child.height + child.margin_bottom;
+        float_taffy_y.push((idx, child.y, child_outer_height));
+
         // 计算浮动元素的总占用尺寸（含 margin）
         let child_outer_width = child.margin_left + child.width + child.margin_right;
-        let child_outer_height = child.margin_top + child.height + child.margin_bottom;
 
         // 处理 float 元素自身的 clear 属性
         match child.clear {
             ClearValue::Left => {
                 if left_float_bottom > line_y {
-                    // 需要清除左侧浮动 → 换到新行
                     line_y = left_float_bottom;
                     left_used_width = 0.0;
                     right_used_width = 0.0;
@@ -516,7 +501,6 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         // 检查当前行是否有足够空间放置此浮动元素
         let available_width = container_width - left_used_width - right_used_width;
         if child_outer_width > available_width && line_max_height > 0.0 {
-            // 当前行空间不足 → 换到下一行
             line_y += line_max_height;
             left_used_width = 0.0;
             right_used_width = 0.0;
@@ -525,7 +509,6 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
         match child.float {
             FloatValue::Left => {
-                // x = 已使用宽度 + margin_left（border box 在 content area 内的位置）
                 child.x = left_used_width + child.margin_left;
                 child.y = line_y + child.margin_top;
 
@@ -535,23 +518,65 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             }
             FloatValue::Right => {
                 right_used_width += child_outer_width;
-                // 右侧浮动：从右向左排列
                 child.x = container_width - right_used_width + child.margin_left;
                 child.y = line_y + child.margin_top;
 
                 let new_bottom = line_y + child_outer_height;
                 right_float_bottom = right_float_bottom.max(new_bottom);
             }
-            FloatValue::InlineStart | FloatValue::InlineEnd => {
-                // inline-start/inline-end 在 LTR 下等同于 left/right
-                // 简化处理，暂不实现
-            }
-            FloatValue::None => {
-                // 已在上面处理
-            }
+            FloatValue::InlineStart | FloatValue::InlineEnd | FloatValue::None => {}
         }
 
         line_max_height = line_max_height.max(child_outer_height);
+    }
+
+    // 第二阶段：修正非 float 子元素的 Y 位置
+    // CSS 规范中 float 元素脱离正常流，不应占据垂直空间。
+    // taffy 将 float 当作正常 block 排列，导致后续非 float 元素的 Y 偏移过大。
+    // 策略：维护一个 float_y_offset（累积 float 在 taffy 中占据的垂直空间），
+    // 对每个非 float 子元素从 Y 中扣除 offset；clear 元素消耗 offset。
+    if !float_taffy_y.is_empty() {
+        let mut float_y_offset = 0.0f32;
+
+        for child in box_node.children.iter_mut() {
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+
+            if !matches!(child.float, FloatValue::None) {
+                // float 元素：将其 taffy 高度加入 offset
+                float_y_offset += child.margin_top + child.height + child.margin_bottom;
+                continue;
+            }
+
+            // 保存 taffy 的原始 Y（调整前）
+            let original_taffy_y = child.y;
+
+            match child.clear {
+                ClearValue::Left | ClearValue::Right | ClearValue::Both => {
+                    let clear_bottom = match child.clear {
+                        ClearValue::Left => left_float_bottom,
+                        ClearValue::Right => right_float_bottom,
+                        _ => left_float_bottom.max(right_float_bottom),
+                    };
+                    if clear_bottom > 0.0 {
+                        // clear 元素：应在浮动元素下方
+                        let normal_y = original_taffy_y - float_y_offset;
+                        child.y = normal_y.max(clear_bottom);
+                    }
+                    // clear 元素消耗 offset：
+                    // float_y_offset = original_taffy_y - child.y
+                    // 使得后续元素：taffy_y - offset = child.y + child.height
+                    float_y_offset = (original_taffy_y - child.y).max(0.0);
+                }
+                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {
+                    // 非 clear 的普通元素：从 Y 中扣除 float 占据的垂直空间
+                    if float_y_offset > 0.0 {
+                        child.y -= float_y_offset;
+                    }
+                }
+            }
+        }
     }
 
     // 递归处理子容器
