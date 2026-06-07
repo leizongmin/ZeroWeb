@@ -40,6 +40,8 @@ pub struct RenderPipeline {
     transition_clock: TransitionClock,
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     cached_styles: HashMap<NodeId, ComputedStyle>,
+    /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
+    skip_indicators: bool,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -92,7 +94,16 @@ impl RenderPipeline {
             cached_styles: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
+            skip_indicators: false,
         }
+    }
+
+    /// 设置是否跳过属性指示器。
+    ///
+    /// 用于 reftest 精确像素对比——指示器是绘制在元素边角的调试标记，
+    /// 会干扰像素级对比。
+    pub fn set_skip_indicators(&mut self, skip: bool) {
+        self.skip_indicators = skip;
     }
 
     /// 设置用户颜色方案偏好。
@@ -177,6 +188,7 @@ impl RenderPipeline {
         // 7. 生成绘制命令
         let paint_start = Instant::now();
         let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
@@ -250,6 +262,7 @@ impl RenderPipeline {
         // 5. 生成绘制命令
         let paint_start = Instant::now();
         let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元
@@ -304,6 +317,7 @@ impl RenderPipeline {
 
         // 生成绘制命令
         let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
         painter.paint(&layout_result.root, &styles, Some(doc));
         let primitives = painter.into_primitives();
 
@@ -379,6 +393,7 @@ impl RenderPipeline {
 
         // 仅绘制脏区域内的节点
         let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }

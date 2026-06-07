@@ -14,12 +14,10 @@ use std::path::Path;
 
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
-use zero_render_foundation::cpu::render_scene_to_framebuffer;
+use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
-use zero_render_foundation::gpu::renderer::GlyphDraw;
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
-use zero_render_foundation::primitive::RoundedRectPrimitive;
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;
@@ -513,9 +511,9 @@ pub fn render_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> F
 
 /// 将 HTML 渲染到 CPU 帧缓冲（支持基于 base_dir 的图片加载）。
 ///
-/// 策略：始终使用 `render_scene_to_framebuffer` 渲染基础图元
-/// （fills/rounded_rects/glyphs），然后单独渲染 ImagePrimitive 叠加到帧缓冲。
-/// 这确保所有测试使用一致的基础渲染路径。
+/// 使用 `render_full_scene` 渲染全部 13 种图元类型（fills, rounded_rects,
+/// gradients, shadows, images, strokes, path_fills, path_strokes, glyphs,
+/// clips, transforms, filters, blend_modes）。
 pub fn render_to_framebuffer_with_base(
     html: &str,
     css: &str,
@@ -526,42 +524,26 @@ pub fn render_to_framebuffer_with_base(
     execute_scripts(html);
 
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
+    pipeline.set_skip_indicators(true);
     let result = pipeline.render_html(html, css);
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(1024);
 
-    let glyph_draws: Vec<GlyphDraw> = result
-        .primitives
-        .glyphs
-        .iter()
-        .map(|g| GlyphDraw {
-            ch: char::from_u32(g.glyph_id).unwrap_or('?'),
-            x: g.x,
-            baseline_y: g.y,
-            font_size: g.font_size,
-            color: g.color,
-            font_id: g.font_id.0,
-        })
-        .collect();
+    // 从 base_dir 加载图片到缓存
+    let mut image_cache = build_image_cache(html, base_dir);
 
-    let fb = render_scene_to_framebuffer(
+    render_full_scene(
         config.viewport_width,
         config.viewport_height,
         config.scale_factor,
-        &result.primitives.fills,
-        &result.primitives.rounded_rects,
+        &result.primitives,
         &font_loader,
         &mut glyph_cache,
-        &glyph_draws,
+        Some(&mut image_cache),
         &[],
         &[],
-    );
-
-    // 图片图元暂不渲染——需解决 background-repeat/position/size 问题后启用。
-    let _ = (&result.primitives.images, base_dir);
-
-    fb
+    )
 }
 
 /// 将单个 ImagePrimitive 渲染到帧缓冲。
@@ -607,11 +589,9 @@ fn render_image_into(
     }
 }
 
-/// 将 HTML 渲染到帧缓冲（GPU 无头模式 + CPU 圆角矩形叠加）。
+/// 将 HTML 渲染到帧缓冲（GPU 无头模式，回退到 CPU 全量渲染）。
 ///
-/// 使用 GpuRenderer 无头模式渲染 fills 和 glyphs，
-/// 然后在 CPU 侧叠加圆角矩形（GPU 渲染器尚不支持 RoundedRectPrimitive）。
-/// 如果 GPU 初始化失败，自动回退到纯 CPU 渲染。
+/// 使用与 CPU 路径相同的 `render_full_scene`，确保全部 13 种图元类型被渲染。
 pub fn render_to_framebuffer_gpu(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
     render_to_framebuffer_gpu_with_base(html, css, config, None)
 }
@@ -625,82 +605,6 @@ pub fn render_to_framebuffer_gpu_with_base(
 ) -> FrameBuffer {
     // GPU 渲染路径暂时回退到 CPU（GPU 路径不支持全量图元 + 图片加载）
     render_to_framebuffer_with_base(html, css, config, base_dir)
-}
-
-/// 在帧缓冲上光栅化单个圆角矩形。
-///
-/// 直接操作帧缓冲像素，跳过 GPU 不支持的 RoundedRectPrimitive。
-fn rasterize_rounded_rect_into(fb: &mut FrameBuffer, rr: &RoundedRectPrimitive, scale: f32) {
-    let left = (rr.rect.left() * scale).floor().max(0.0) as u32;
-    let top = (rr.rect.top() * scale).floor().max(0.0) as u32;
-    let right = (rr.rect.right() * scale).ceil().min(fb.width as f32) as u32;
-    let bottom = (rr.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
-
-    if left >= right || top >= bottom {
-        return;
-    }
-
-    let tl_r = rr.top_left_radius * scale;
-    let tr_r = rr.top_right_radius * scale;
-    let br_r = rr.bottom_right_radius * scale;
-    let bl_r = rr.bottom_left_radius * scale;
-
-    let x0 = rr.rect.left() * scale;
-    let y0 = rr.rect.top() * scale;
-    let x1 = rr.rect.right() * scale;
-    let y1 = rr.rect.bottom() * scale;
-
-    let color = [rr.color.r, rr.color.g, rr.color.b, 255];
-
-    for y in top..bottom {
-        let fy = y as f32 + 0.5;
-        for x in left..right {
-            let fx = x as f32 + 0.5;
-
-            if !is_inside_rounded_rect(fx, fy, x0, y0, x1, y1, tl_r, tr_r, br_r, bl_r) {
-                continue;
-            }
-
-            fb.set_pixel(x, y, color);
-        }
-    }
-}
-
-/// 判断像素 (fx, fy) 是否在圆角矩形内。
-#[allow(clippy::too_many_arguments)]
-fn is_inside_rounded_rect(
-    fx: f32,
-    fy: f32,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    tl_r: f32,
-    tr_r: f32,
-    br_r: f32,
-    bl_r: f32,
-) -> bool {
-    if fx < x0 + tl_r && fy < y0 + tl_r {
-        let dx = fx - (x0 + tl_r);
-        let dy = fy - (y0 + tl_r);
-        return dx * dx + dy * dy <= tl_r * tl_r;
-    }
-    if fx > x1 - tr_r && fy < y0 + tr_r {
-        let dx = fx - (x1 - tr_r);
-        let dy = fy - (y0 + tr_r);
-        return dx * dx + dy * dy <= tr_r * tr_r;
-    }
-    if fx > x1 - br_r && fy > y1 - br_r {
-        let dx = fx - (x1 - br_r);
-        let dy = fy - (y1 - br_r);
-        return dx * dx + dy * dy <= br_r * br_r;
-    }
-    if fx < x0 + bl_r && fy > y1 - bl_r {
-        let dx = fx - (x0 + bl_r);
-        let dy = fy - (y1 - bl_r);
-        return dx * dx + dy * dy <= bl_r * bl_r;
-    }
-    true
 }
 
 /// 从 HTML 中提取 `<script>` 标签内容并通过 V8 runtime 执行。
