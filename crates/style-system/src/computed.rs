@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
+use crate::property::types::BorderStyleValue;
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -256,6 +257,33 @@ pub fn resolve_computed_style(
         viewport_width,
         viewport_height,
     );
+
+    // CSS 规范：当 border-style 为 none 或 hidden 时，border-width 必须为 0
+    // https://drafts.csswg.org/css-backgrounds/#border-style
+    if matches!(
+        resolved.border_top_style,
+        BorderStyleValue::None | BorderStyleValue::Hidden
+    ) {
+        resolved.border_top_width = LengthValue::Px(0.0);
+    }
+    if matches!(
+        resolved.border_right_style,
+        BorderStyleValue::None | BorderStyleValue::Hidden
+    ) {
+        resolved.border_right_width = LengthValue::Px(0.0);
+    }
+    if matches!(
+        resolved.border_bottom_style,
+        BorderStyleValue::None | BorderStyleValue::Hidden
+    ) {
+        resolved.border_bottom_width = LengthValue::Px(0.0);
+    }
+    if matches!(
+        resolved.border_left_style,
+        BorderStyleValue::None | BorderStyleValue::Hidden
+    ) {
+        resolved.border_left_width = LengthValue::Px(0.0);
+    }
 
     resolve_length_field(
         &mut resolved.border_top_left_radius,
