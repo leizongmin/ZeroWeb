@@ -16,7 +16,7 @@
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
 | M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
-| M8 — 布局正确性 | 🔧 进行中 | BFC 检测 ✅；float clear ✅（clear:left/right/both）；margin 折叠由 taffy 0.7 内置 ✅；7 个新集成测试 ✅ |
+| M8 — 布局正确性 | 🔧 进行中 | BFC 检测 ✅；float clear ✅（clear:left/right/both）；margin 折叠由 taffy 0.7 内置 ✅；<img> 固有尺寸 ✅；9 个新集成测试 ✅；剩余：position:sticky 需宿主层 |
 
 ## 当前状态概览
 
@@ -392,6 +392,6 @@
 47. ~~M8 — BFC 检测~~ ✅ (establishes_bfc() 检测 overflow/float/position 建立的 BFC)
 48. ~~M8 — Float clear 支持~~ ✅ (clear:left/right/both 后处理 + 7 个集成测试)
 49. ~~M8 — Margin 折叠~~ ✅ (发现 taffy 0.7 已内置 CollapsibleMarginSet，无需额外后处理)
-50. M8 — 替换元素布局（intrinsic sizing + object-fit）
-51. M8 — Position: sticky 实现
+50. ~~M8 — 替换元素布局~~ ✅ (<img> 固有尺寸注入 + 2 个集成测试)
+51. M8 — Position: sticky 实现（需宿主层滚动集成，layout 引擎已标记 is_sticky）
 52. M9 — 滚动容器 + 高级视觉效果
