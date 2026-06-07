@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；492 个上游 reftest 已导入（9 个目录）；总体通过率 76.4% (376/492)；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-writing-modes 94.9%；css-grid 85.0%；css-multicol 70.2%；css-tables 67.9%；CSS2 66.7%；css-flexbox 56.4%；css-position 58.8%；**本轮改进**：CSS inherit 关键字完善 ✅(border/background shorthand + inherit_property 扩展)；is_block_level 修正 ✅(table 内部元素不再标记为 block-level)；参考文件过滤 ✅(移除误计入的 ref 文件)；XHTML CDATA 调查 ✅(发现 .xht 参考文件 CSS 解析问题，需配合渲染修复推进)；**后续重点**：border-collapse 冲突解决算法、writing-mode 布局支持、CDATA 清理+渲染修复联动、column breaking、flexbox baseline |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；492 个上游 reftest 已导入（9 个目录）；**真实通过率 66.1% (325/492)**；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-grid 85.0%；css-tables 67.9%；css-position 58.8%；CSS2 60.5%；css-flexbox 56.4%；css-multicol 49.1%；css-writing-modes 42.4%；**注意**：CDATA 清理后通过率从 76.4% 降至 66.1%，原因是之前 .xht 测试文件（尤其是 writing-modes/multicol）的测试和参考文件都因 CDATA 导致 CSS 未被解析，两者都以默认样式渲染，偶然匹配通过。CDATA 清理揭示了这些虚假通过的测试的实际渲染差异。已证实的真实修复：background-087/326/328 通过 ✅；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、inline box model |
 
 ## 当前状态概览
 
@@ -359,7 +359,8 @@
 | 2026-06-08 | CSS inherit 关键字完善 | border/background shorthand 正确广播 CSS-wide keywords（inherit/initial/unset）到所有子属性。inherit_property 扩展支持非继承属性（background-*, border-*, margin-*, padding-*），使 `border-bottom: inherit` 等显式继承生效。 |
 | 2026-06-08 | is_block_level 修正 | table 内部 display types（TableRowGroup, TableRow, TableCell 等）从 is_block_level 中移除。CSS 2.1 规定 clear 属性仅适用于块级元素，table 内部元素不是块级元素。 |
 | 2026-06-08 | 参考文件过滤 | reftest loader 跳过以 -ref/-reference 结尾的文件名，避免参考页面被当作测试用例运行。移除 1 个误计入的测试（float-nowrap-3-ref.html）。 |
-| 2026-06-08 | XHTML CDATA 调查 | 调查发现 html5ever 在 HTML 模式下将 XHTML CDATA 标记（`<![CDATA[...]]>`）保留在 `<style>` 文本内容中。CSS 解析器通过错误恢复机制容忍这些标记，但在部分 .xht 参考文件中导致 CSS 未被正确解析。全局 CDATA 清理会暴露大量渲染差异（writing-modes -31, multicol -12），需配合渲染修复一起推进。 |
+| 2026-06-08 | XHTML CDATA 调查 | 调查发现 html5ever 在 HTML 模式下将 XHTML CDATA 标记（`<![CDATA[...]]>`）保留在 `<style>` 文本内容中。CSS 解析器遇到 `<![CDATA[` 时错误恢复路径触发 `skip_to_rbracket()`，贪婪吞噬后续所有 token，导致整个样式表提取 0 条规则。之前通过 CDATA 损坏的 .xht 测试（test+ref 都无 CSS）实际是虚假通过。 |
+| 2026-06-08 | XHTML CDATA 清理实施 | `strip_cdata()` 在 `collect_stylesheets()` 中去除 CDATA 前后缀。揭示真实通过率 66.1%（之前 76.4% 含虚假通过）。真实修复：background-087/326/328 ✅。揭示的渲染缺口：writing-modes 42.4%（需 writing-mode 布局支持）、multicol 49.1%（需 column breaking）、floats-clear 新增 6 个差异。 |
 
 ---
 
