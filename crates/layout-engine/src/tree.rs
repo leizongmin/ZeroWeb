@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -91,6 +91,88 @@ fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
 /// 用于解析子元素的 grid-area 命名引用。
 /// `in_shadow` 为 true 时表示当前节点处于 shadow 树内部，需要将 <slot>
 /// 元素替换为已分配的 light DOM 节点。
+/// 为替换元素（img、video、canvas、iframe）注入固有尺寸。
+///
+/// CSS 规范中，替换元素有 intrinsic size（自然宽高）。
+/// 当 CSS width/height 为 auto 时，使用 HTML 属性值作为固有尺寸。
+/// 对于 `<img>` 元素，从 `width`/`height` HTML 属性读取尺寸，
+/// 并通过 taffy 的 `aspect_ratio` 和尺寸约束传递给布局引擎。
+fn apply_replaced_element_sizing(
+    taffy_style: &mut taffy::Style,
+    computed: &ComputedStyle,
+    doc: &Document,
+    dom_id: NodeId,
+) {
+    // 仅处理有 DOM 关联的元素
+    let node_data = match doc.get(dom_id) {
+        Some(n) => n,
+        None => return,
+    };
+
+    let elem = match &node_data.kind {
+        NodeKind::Element(e) => e,
+        _ => return,
+    };
+
+    let tag = elem.local_name();
+
+    // 目前仅处理 <img> 元素
+    if tag != "img" {
+        return;
+    }
+
+    // 读取 HTML width/height 属性
+    let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
+    let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
+
+    match (attr_w, attr_h) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => {
+            // 两个属性都有：设置固有尺寸（当 CSS 为 auto 时）
+            let w = w.max(1.0);
+            let h = h.max(1.0);
+
+            // 设置 aspect_ratio（如果 CSS 没有显式设置）
+            if computed.aspect_ratio.is_none() {
+                taffy_style.aspect_ratio = Some(w / h);
+            }
+
+            // 当 CSS width 为 auto 时，使用 HTML 属性作为固有宽度
+            if matches!(computed.width, LengthValue::Auto) {
+                taffy_style.size.width = taffy::style::Dimension::Length(w);
+            }
+
+            // 当 CSS height 为 auto 时，使用 HTML 属性作为固有高度
+            if matches!(computed.height, LengthValue::Auto) {
+                taffy_style.size.height = taffy::style::Dimension::Length(h);
+            }
+        }
+        (Some(w), None) if w > 0.0 => {
+            // 仅有 width：设置宽度，高度由 aspect_ratio 推导
+            if computed.aspect_ratio.is_none() {
+                // 无 aspect_ratio 也无 height，使用固定宽度
+                if matches!(computed.width, LengthValue::Auto) {
+                    taffy_style.size.width = taffy::style::Dimension::Length(w.max(1.0));
+                }
+            } else if matches!(computed.width, LengthValue::Auto) {
+                taffy_style.size.width = taffy::style::Dimension::Length(w.max(1.0));
+            }
+        }
+        (None, Some(h)) if h > 0.0 => {
+            // 仅有 height：设置高度，宽度由 aspect_ratio 推导
+            if computed.aspect_ratio.is_none() {
+                if matches!(computed.height, LengthValue::Auto) {
+                    taffy_style.size.height = taffy::style::Dimension::Length(h.max(1.0));
+                }
+            } else if matches!(computed.height, LengthValue::Auto) {
+                taffy_style.size.height = taffy::style::Dimension::Length(h.max(1.0));
+            }
+        }
+        _ => {
+            // 无 HTML 属性：不注入尺寸，依赖 CSS 或默认
+        }
+    }
+}
+
 fn build_subtree(
     ctx: &mut BuildContext,
     doc: &Document,
@@ -121,7 +203,10 @@ fn build_subtree(
         .map(|s| parse_grid_template_areas(s));
 
     // 转换为 taffy 样式（传入父级区域映射）
-    let taffy_style = computed_style_to_taffy(&computed, parent_grid_areas);
+    let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas);
+
+    // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
+    apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
 
     // 收集需要创建 taffy 节点的子元素
     // 当元素有 ShadowRoot 时，遍历 shadow 树而非 light DOM 子节点；
