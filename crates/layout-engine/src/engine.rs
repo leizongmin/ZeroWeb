@@ -300,6 +300,8 @@ impl LayoutEngine {
             ) || !matches!(s.float, FloatValue::None)
                 && matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock)
         });
+        let is_relative =
+            computed.is_some_and(|s| matches!(s.position, PositionValue::Relative | PositionValue::Sticky));
         let z_index = computed.map_or(0, |s| match s.z_index {
             ZIndexValue::Auto => 0,
             ZIndexValue::Integer(z) => z,
@@ -360,6 +362,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_block_level,
+            is_relative,
         }
     }
 }
