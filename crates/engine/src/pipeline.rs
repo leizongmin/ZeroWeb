@@ -463,12 +463,26 @@ fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
         let Some(css_text) = doc.text_content(style_id) else {
             continue;
         };
-        let css_text = css_text.trim();
+        let css_text = strip_cdata(css_text.trim());
         if !css_text.is_empty() {
-            stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css_text));
+            stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&css_text));
         }
     }
     stylesheets
+}
+
+/// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。
+///
+/// html5ever 仅支持 HTML 模式解析，会将 `<style>` 中的 CDATA 标记
+/// 作为文本内容保留。CSS 解析器遇到 `<![CDATA[` 时，错误恢复路径
+/// 会贪婪吞噬后续所有 token（`[` 触发 `skip_to_rbracket()`），
+/// 导致整个样式表提取 0 条规则。因此必须在传递给 CSS 解析器前去除。
+fn strip_cdata(css: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(stripped) = css.strip_prefix("<![CDATA[").and_then(|s| s.strip_suffix("]]>")) {
+        std::borrow::Cow::Owned(stripped.to_string())
+    } else {
+        std::borrow::Cow::Borrowed(css)
+    }
 }
 
 /// 为有 animation-name 的元素启动动画并将插值属性叠加到 ComputedStyle。
