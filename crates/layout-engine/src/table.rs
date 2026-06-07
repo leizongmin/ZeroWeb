@@ -457,9 +457,70 @@ fn position_cells(
         row_y += row_height + spacing_y;
     }
 
+    // 后处理：应用 min-height/max-height/min-width/max-width 约束
+    apply_table_size_constraints(table_box, grid, row_y, col_widths, spacing_y, styles);
+
     // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
     // 对于 position:relative 的行组，还需应用 inset 偏移
     update_row_group_positions(table_box, grid, styles);
+}
+
+/// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
+///
+/// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
+fn apply_table_size_constraints(
+    table_box: &mut LayoutBox,
+    _grid: &TableGrid,
+    total_row_height: f32,
+    col_widths: &[f32],
+    _spacing_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::LengthValue;
+
+    let Some(node_id) = table_box.node_id else {
+        return;
+    };
+    let Some(style) = styles.get(&node_id) else {
+        return;
+    };
+
+    // 计算表格内容的固有宽度（所有列宽 + spacing）
+    let spacing_x = style.border_spacing.horizontal;
+    let total_col_width: f32 = col_widths.iter().sum();
+    let spacing_total_x = if col_widths.len() > 1 {
+        (col_widths.len() - 1) as f32 * spacing_x
+    } else {
+        0.0
+    };
+    let intrinsic_width = total_col_width + spacing_total_x;
+    let intrinsic_height = total_row_height;
+
+    // 应用 min-width / max-width
+    let mut final_width = intrinsic_width;
+    if let LengthValue::Px(v) = &style.min_width {
+        final_width = final_width.max(*v as f32);
+    }
+    if let LengthValue::Px(v) = &style.max_width
+        && *v != f64::INFINITY
+    {
+        final_width = final_width.min(*v as f32);
+    }
+
+    // 应用 min-height / max-height
+    let mut final_height = intrinsic_height;
+    if let LengthValue::Px(v) = &style.min_height {
+        final_height = final_height.max(*v as f32);
+    }
+    if let LengthValue::Px(v) = &style.max_height
+        && *v != f64::INFINITY
+    {
+        final_height = final_height.min(*v as f32);
+    }
+
+    // 更新 table 容器尺寸
+    table_box.width = final_width;
+    table_box.height = final_height;
 }
 
 /// 更新行组的位置，使其包含所有子行。
