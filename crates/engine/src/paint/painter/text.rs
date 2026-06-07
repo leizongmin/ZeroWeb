@@ -11,7 +11,7 @@ use zero_layout_engine::{
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
+use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
     ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue, TextAlignValue,
@@ -228,7 +228,7 @@ impl super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = FontId(0);
+        let default_font_id = self.resolve_font_id(&style.font_family);
         let marker_size = font_size * 0.4;
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -428,7 +428,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = FontId(0);
+        let default_font_id = self.resolve_font_id(&style.font_family);
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
@@ -563,7 +563,7 @@ impl super::Painter {
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
-        let default_font_id = FontId(0);
+        let default_font_id = self.resolve_font_id(&style.font_family);
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             if self.painted_inline_nodes.contains(&node_id) || !has_direct_paintable_text(doc, node_id) {
@@ -832,7 +832,7 @@ impl super::Painter {
                             .unwrap_or(content_x + tx);
 
                         let ellipsis_width = estimate_char_width('.', font_size);
-                        let default_font_id = FontId(0);
+                        let default_font_id = self.resolve_font_id(&style.font_family);
                         for i in 0..3 {
                             self.primitives.add_glyph(GlyphPrimitive {
                                 x: last_glyph_x + ellipsis_width * (i as f32 + 1.0),

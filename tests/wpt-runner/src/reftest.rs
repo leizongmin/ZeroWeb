@@ -562,9 +562,14 @@ pub fn render_to_framebuffer_with_base(
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
     pipeline.set_image_sizes(image_sizes);
+
+    // 构建字体查找表（在 render_html 之前，以便 Painter 解析 CSS font-family）
+    let font_loader = create_font_loader();
+    let font_resolver = font_loader.build_font_resolver();
+    pipeline.set_font_resolver(font_resolver);
+
     let result = pipeline.render_html(html, css);
 
-    let font_loader = create_font_loader();
     let mut glyph_cache = GlyphCache::new(1024);
 
     // 使用已构建的图像缓存（包含固有尺寸信息）

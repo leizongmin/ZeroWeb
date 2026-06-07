@@ -44,6 +44,11 @@ pub struct Painter {
     /// 用于 background-image 的 background-size: auto 计算。
     /// 在绘制开始前由调用方从 ImageCache 填充。
     pub image_sizes: HashMap<u64, (f32, f32)>,
+    /// CSS font-family 查找表（字体族名 → FontId）。
+    ///
+    /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
+    /// 用于将 CSS font-family 列表解析为具体的 FontId。
+    font_resolver: HashMap<String, u32>,
 }
 
 impl Painter {
@@ -55,7 +60,40 @@ impl Painter {
             counters: HashMap::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            font_resolver: HashMap::new(),
         }
+    }
+
+    /// 设置 CSS font-family 查找表。
+    ///
+    /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
+    pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        self.font_resolver = resolver;
+    }
+
+    /// 根据 CSS font-family 列表解析 FontId。
+    ///
+    /// 遍历 font-family 列表，返回第一个匹配的 FontId。
+    /// 支持：
+    /// - 具体字体族名（如 "Ahem", "DejaVu Sans"）
+    /// - 通用字体族名（如 "sans-serif", "serif", "monospace"）
+    /// - 回退到 FontId(0)（第一个加载的字体）
+    pub(crate) fn resolve_font_id(&self, font_family: &[String]) -> zero_render_foundation::primitive::FontId {
+        use zero_render_foundation::primitive::FontId;
+        for family in font_family {
+            // 去除引号
+            let name = family.trim_matches('"').trim_matches('\'');
+            if let Some(&id) = self.font_resolver.get(name) {
+                return FontId(id);
+            }
+            // 大小写不敏感匹配（CSS font-family 不区分大小写）
+            for (key, &id) in &self.font_resolver {
+                if key.eq_ignore_ascii_case(name) {
+                    return FontId(id);
+                }
+            }
+        }
+        FontId(0)
     }
 
     /// 绘制整个布局树。
