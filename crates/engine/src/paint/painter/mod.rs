@@ -39,6 +39,11 @@ pub struct Painter {
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
     /// 会干扰像素级 reftest 对比。设为 true 时跳过所有指示器。
     pub skip_indicators: bool,
+    /// 图像固有尺寸缓存（image_key hash → (width, height)）。
+    ///
+    /// 用于 background-image 的 background-size: auto 计算。
+    /// 在绘制开始前由调用方从 ImageCache 填充。
+    pub image_sizes: HashMap<u64, (f32, f32)>,
 }
 
 impl Painter {
@@ -49,6 +54,7 @@ impl Painter {
             painted_inline_nodes: HashSet::new(),
             counters: HashMap::new(),
             skip_indicators: false,
+            image_sizes: HashMap::new(),
         }
     }
 
@@ -847,6 +853,14 @@ impl Painter {
     /// 获取渲染图元引用。
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
+    }
+
+    /// 查找图像固有尺寸。
+    ///
+    /// 通过 URL 的 hash 值查找图像的 (width, height)。
+    /// 如果未找到，返回 None。
+    pub(crate) fn get_image_size(&self, url_hash: u64) -> Option<(f32, f32)> {
+        self.image_sizes.get(&url_hash).copied()
     }
 }
 

@@ -506,6 +506,30 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     ImageData::from_rgba(buf, width, height)
 }
 
+/// 从 ImageCache 中提取所有图像的固有尺寸。
+///
+/// 遍历 HTML 中的所有图片 URL，查找缓存中对应的 ImageData，
+/// 返回 (url_hash → (width, height)) 映射，供 Painter 用于
+/// background-size: auto 计算。
+fn extract_image_sizes(image_cache: &mut ImageCache, html: &str) -> std::collections::HashMap<u64, (f32, f32)> {
+    let mut sizes = std::collections::HashMap::new();
+
+    let mut all_urls = extract_img_srcs(html);
+    all_urls.extend(extract_css_urls(html));
+    all_urls.sort_unstable();
+    all_urls.dedup();
+
+    for url in &all_urls {
+        let key = ImageKey::new(simple_hash(url));
+        if let Some(data) = image_cache.get(&key) {
+            let s = data.size();
+            sizes.insert(key.0, (s.width, s.height));
+        }
+    }
+
+    sizes
+}
+
 /// 将 HTML 渲染到 CPU 帧缓冲。
 ///
 /// 如果 HTML 中包含 `<script>` 标签，会先通过 V8 runtime 执行其中的 JS 代码，
@@ -531,16 +555,19 @@ pub fn render_to_framebuffer_with_base(
     // 提取并执行 <script> 标签中的 JS 代码
     execute_scripts(html);
 
+    // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
+    let mut image_cache = build_image_cache(html, base_dir);
+    let image_sizes = extract_image_sizes(&mut image_cache, html);
+
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
+    pipeline.set_image_sizes(image_sizes);
     let result = pipeline.render_html(html, css);
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(1024);
 
-    // 从 base_dir 加载图片到缓存
-    let mut image_cache = build_image_cache(html, base_dir);
-
+    // 使用已构建的图像缓存（包含固有尺寸信息）
     render_full_scene(
         config.viewport_width,
         config.viewport_height,

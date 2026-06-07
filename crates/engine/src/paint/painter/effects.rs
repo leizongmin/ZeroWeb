@@ -84,8 +84,16 @@ impl super::Painter {
             ),
         };
 
-        let img_w = origin_w;
-        let img_h = origin_h;
+        // 解析背景图像固有尺寸（从 image_sizes 缓存查找）。
+        // background-size: auto 时使用图像的原始像素尺寸，而非容器尺寸。
+        let default_intrinsic = (origin_w, origin_h);
+        let first_url_hash = style.background_image.iter().find_map(|layer| match layer {
+            BackgroundImageComputedValue::Url(url) => Some(simple_hash(url)),
+            _ => None,
+        });
+        let (img_w, img_h) = first_url_hash
+            .and_then(|h| self.get_image_size(h))
+            .unwrap_or(default_intrinsic);
 
         let (sized_w, sized_h) = resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
         let (offset_x, offset_y) =

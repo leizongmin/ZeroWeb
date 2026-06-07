@@ -556,8 +556,21 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "gap" => {
-            if let Some(v) = parse_length_fn(value) {
-                style.gap = v;
+            // gap 简写：gap: <row-gap> <column-gap> 或 gap: <both>
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.len() == 1 {
+                if let Some(v) = parse_length_fn(parts[0]) {
+                    style.gap = v.clone();
+                    style.column_gap = v.clone();
+                    style.row_gap = v;
+                    return true;
+                }
+            } else if parts.len() == 2
+                && let (Some(r), Some(c)) = (parse_length_fn(parts[0]), parse_length_fn(parts[1]))
+            {
+                style.gap = c.clone();
+                style.column_gap = c;
+                style.row_gap = r;
                 return true;
             }
         }
