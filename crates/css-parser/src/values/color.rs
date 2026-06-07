@@ -65,6 +65,8 @@ pub fn parse_color_quirks(value: &str) -> Option<ColorValue> {
 
     // Quirks: 尝试作为纯数字解析（转为 24-bit RGB）
     if let Ok(num) = value.parse::<u32>() {
+        // CSS-06: 钳制到 0xFFFFFF，高位截断不符合浏览器行为
+        let num = num.min(0xFFFFFF);
         let r = ((num >> 16) & 0xFF) as u8;
         let g = ((num >> 8) & 0xFF) as u8;
         let b = (num & 0xFF) as u8;

@@ -91,7 +91,16 @@ impl DomBuilder {
                 }
                 NodeKind::DocumentFragment => doc.create_document_fragment(),
                 NodeKind::ProcessingInstruction(pi) => doc.create_processing_instruction(&pi.target, &pi.data),
-                NodeKind::ShadowRoot(_) => doc.create_document_fragment(),
+                NodeKind::ShadowRoot(data) => {
+                    // DOM-07: 使用 attach_shadow 创建真正的 ShadowRoot 节点，
+                    // 保留 mode 等元数据。host 信息在树结构重建时通过父节点关联。
+                    let shadow_id = doc.create_document_fragment();
+                    // 将 DocumentFragment 转换为 ShadowRoot 类型
+                    if let Some(node_data) = doc.get_mut(shadow_id) {
+                        node_data.kind = NodeKind::ShadowRoot(data.clone());
+                    }
+                    shadow_id
+                }
             };
             mapping.insert(old_id, new_id);
         }

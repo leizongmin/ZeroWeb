@@ -664,15 +664,16 @@ fn test_convert_alignment_to_justify_content_uncovered_variants() {
     assert_eq!(convert_alignment_to_justify_content(&AlignmentValue::Baseline), None);
 }
 
-/// 测试 convert_alignment_to_align_content：Start, End。
+/// 测试 convert_align_content：Start, End。
 #[test]
-fn test_convert_alignment_to_align_content_uncovered_variants() {
+fn test_convert_align_content_start_end() {
+    use zero_style_system::AlignContentValue;
     assert_eq!(
-        convert_alignment_to_align_content(&AlignmentValue::Start),
+        convert_align_content(&AlignContentValue::Start),
         Some(taffy::style::AlignContent::Start)
     );
     assert_eq!(
-        convert_alignment_to_align_content(&AlignmentValue::End),
+        convert_align_content(&AlignContentValue::End),
         Some(taffy::style::AlignContent::End)
     );
 }

@@ -94,8 +94,8 @@ pub fn stdio_transport() -> Result<PipeTransport<io::Stdin, io::Stdout>, Protoco
 
 // ── 共享内存通道（测试和同进程模拟）──────────────────────────────
 
-/// 共享消息队列。
-type SharedQueue = Arc<std::sync::Mutex<Vec<IpcMessage>>>;
+/// 共享消息队列（VecDeque 实现 FIFO 语义）。
+type SharedQueue = Arc<std::sync::Mutex<std::collections::VecDeque<IpcMessage>>>;
 
 /// 基于 `Arc<Mutex<Vec>>` 的内存 IPC 通道，用于测试和同进程多线程模拟。
 pub struct SharedMemoryChannel {
@@ -115,7 +115,7 @@ impl IpcChannel for SharedMemoryChannel {
         self.peer_inbox
             .lock()
             .map_err(|e| ProtocolError::Channel(format!("锁失败: {e}")))?
-            .push(msg);
+            .push_back(msg);
         Ok(())
     }
 
@@ -124,7 +124,7 @@ impl IpcChannel for SharedMemoryChannel {
             .inbox
             .lock()
             .map_err(|e| ProtocolError::Channel(format!("锁失败: {e}")))?;
-        inbox.pop().ok_or_else(|| ProtocolError::Channel("没有可用消息".into()))
+        inbox.pop_front().ok_or_else(|| ProtocolError::Channel("没有可用消息".into()))
     }
 
     fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {
@@ -132,7 +132,7 @@ impl IpcChannel for SharedMemoryChannel {
             .inbox
             .lock()
             .map_err(|e| ProtocolError::Channel(format!("锁失败: {e}")))?;
-        Ok(inbox.pop())
+        Ok(inbox.pop_front())
     }
 
     fn close(&mut self) {
@@ -147,8 +147,8 @@ impl IpcChannel for SharedMemoryChannel {
 /// 返回 `(client, server)`，client 发送的消息 server 可接收，反之亦然。
 /// 适用于测试和同进程内的多线程通信模拟。
 pub fn shared_channel_pair() -> (SharedMemoryChannel, SharedMemoryChannel) {
-    let a_inbox: SharedQueue = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let b_inbox: SharedQueue = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let a_inbox: SharedQueue = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let b_inbox: SharedQueue = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
 
     let a = SharedMemoryChannel::new(a_inbox.clone(), b_inbox.clone());
     let b = SharedMemoryChannel::new(b_inbox, a_inbox);
@@ -314,8 +314,8 @@ mod tests {
             })
             .unwrap();
         }
-        // Vec push/pop → LIFO
-        for i in (0..5).rev() {
+        // VecDeque push_back/pop_front → FIFO
+        for i in 0..5 {
             let msg = b.recv().unwrap();
             assert_eq!(msg.id, i);
         }

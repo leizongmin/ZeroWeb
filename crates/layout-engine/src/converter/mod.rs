@@ -7,7 +7,7 @@ use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
     LengthValue, OverflowValue, PositionValue,
 };
-use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
+use zero_style_system::{AlignContentValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
 
 use taffy::prelude::*;
 
@@ -71,7 +71,7 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         },
         align_items: convert_alignment_to_align_items(&style.align_items),
         align_self: convert_alignment_to_align_self(&style.align_self),
-        align_content: convert_alignment_to_align_content(&style.justify_content),
+        align_content: convert_align_content(&style.align_content),
         justify_content: convert_alignment_to_justify_content(&style.justify_content),
         gap: taffy::geometry::Size {
             width: convert_length_to_lp(&style.gap),
@@ -360,19 +360,22 @@ fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy:
     }
 }
 
-/// 转换 AlignmentValue 到 taffy AlignContent。
-fn convert_alignment_to_align_content(value: &AlignmentValue) -> Option<taffy::style::AlignContent> {
+/// 转换 AlignContentValue 到 taffy AlignContent。
+///
+/// 与 `convert_alignment_to_align_content` 类似，但接受 `AlignContentValue`
+/// （CSS align-content 计算值类型，包含 Auto/Normal）。
+fn convert_align_content(value: &AlignContentValue) -> Option<taffy::style::AlignContent> {
     match value {
-        AlignmentValue::FlexStart => Some(taffy::style::AlignContent::FlexStart),
-        AlignmentValue::FlexEnd => Some(taffy::style::AlignContent::FlexEnd),
-        AlignmentValue::Center => Some(taffy::style::AlignContent::Center),
-        AlignmentValue::SpaceBetween => Some(taffy::style::AlignContent::SpaceBetween),
-        AlignmentValue::SpaceAround => Some(taffy::style::AlignContent::SpaceAround),
-        AlignmentValue::SpaceEvenly => Some(taffy::style::AlignContent::SpaceEvenly),
-        AlignmentValue::Stretch => Some(taffy::style::AlignContent::Stretch),
-        AlignmentValue::Start => Some(taffy::style::AlignContent::Start),
-        AlignmentValue::End => Some(taffy::style::AlignContent::End),
-        AlignmentValue::Baseline => None,
+        AlignContentValue::Auto => None,
+        AlignContentValue::Normal => None,
+        AlignContentValue::Start => Some(taffy::style::AlignContent::Start),
+        AlignContentValue::End => Some(taffy::style::AlignContent::End),
+        AlignContentValue::Center => Some(taffy::style::AlignContent::Center),
+        AlignContentValue::Stretch => Some(taffy::style::AlignContent::Stretch),
+        AlignContentValue::Baseline => None,
+        AlignContentValue::SpaceBetween => Some(taffy::style::AlignContent::SpaceBetween),
+        AlignContentValue::SpaceAround => Some(taffy::style::AlignContent::SpaceAround),
+        AlignContentValue::SpaceEvenly => Some(taffy::style::AlignContent::SpaceEvenly),
     }
 }
 
@@ -412,7 +415,7 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFun
 fn tokenize_track_list(value: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
-    let mut depth = 0;
+    let mut depth: u32 = 0;
 
     for ch in value.chars() {
         match ch {
@@ -421,7 +424,7 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
                 current.push(ch);
             }
             ')' => {
-                depth -= 1;
+                depth = depth.saturating_sub(1);
                 current.push(ch);
             }
             ' ' | '\t' if depth == 0 => {
@@ -539,11 +542,11 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::NonRepeatedTrack
 
 /// 找到字符串中第一个不在括号内的逗号位置。
 fn find_top_level_comma(s: &str) -> Option<usize> {
-    let mut depth = 0;
+    let mut depth: u32 = 0;
     for (i, ch) in s.char_indices() {
         match ch {
             '(' => depth += 1,
-            ')' => depth -= 1,
+            ')' => depth = depth.saturating_sub(1),
             ',' if depth == 0 => return Some(i),
             _ => {}
         }
@@ -780,6 +783,10 @@ pub fn parse_grid_template_areas(value: &str) -> GridAreaMap {
             rows_tokens.push(tokens.iter().map(|s| s.to_string()).collect());
 
             for (col_idx, &token) in tokens.iter().enumerate() {
+                // "." 表示空单元格，跳过（RFC 6265）
+                if token == "." {
+                    continue;
+                }
                 let col = (col_idx + 1) as i16;
 
                 if let Some(entry) = areas.get_mut(token) {
@@ -1133,12 +1140,12 @@ mod inline_tests {
     }
 
     #[test]
-    fn test_parse_grid_template_areas_dot_is_stored() {
-        // "." is treated as a regular area name by parse_grid_template_areas
+    fn test_parse_grid_template_areas_dot_is_skipped() {
+        // "." is an empty cell marker and should not be stored in the area map
         let areas = parse_grid_template_areas(r#""a ." "b b""#);
         assert!(areas.contains_key("a"));
         assert!(areas.contains_key("b"));
-        assert!(areas.contains_key(".")); // dot is stored as a key
+        assert!(!areas.contains_key("."), "空单元格标记 '.' 不应存储到区域映射中");
     }
 
     #[test]

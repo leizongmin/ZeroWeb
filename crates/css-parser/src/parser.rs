@@ -717,9 +717,15 @@ impl<'a> Parser<'a> {
 
             if let Some(decl) = self.consume_declaration() {
                 declarations.push(decl);
+                // consume_declaration 消耗到分号或 RBrace 前停止
+                // 如果当前是分号则消耗它，否则不推进（避免吞噬 RBrace）
+                if matches!(self.peek(), Token::Semicolon) {
+                    self.advance();
+                }
+            } else {
+                // 无法识别的 token，跳过它以避免无限循环
+                self.advance();
             }
-            // 消耗当前 token（分号或无法识别的 token），避免无限循环
-            self.advance();
         }
 
         declarations

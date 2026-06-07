@@ -200,6 +200,8 @@ pub enum DomResult {
 pub struct DomBridge {
     /// JS 句柄 → DOM NodeId 的映射。
     handle_map: std::collections::HashMap<u64, u64>,
+    /// DOM NodeId → JS 句柄的反向映射（O(1) 双向查找）。
+    reverse_map: std::collections::HashMap<u64, u64>,
     /// 下一个可用的 JS 句柄 ID。
     next_handle: u64,
 }
@@ -209,6 +211,7 @@ impl DomBridge {
     pub fn new() -> Self {
         Self {
             handle_map: std::collections::HashMap::new(),
+            reverse_map: std::collections::HashMap::new(),
             next_handle: 1,
         }
     }
@@ -217,15 +220,14 @@ impl DomBridge {
     ///
     /// 如果该 NodeId 已经注册过，返回已有句柄。
     pub fn register(&mut self, node_id: u64) -> u64 {
-        // 检查是否已注册
-        for (&handle, &nid) in &self.handle_map {
-            if nid == node_id {
-                return handle;
-            }
+        // O(1) 反向查找检查是否已注册
+        if let Some(&handle) = self.reverse_map.get(&node_id) {
+            return handle;
         }
         let handle = self.next_handle;
         self.next_handle += 1;
         self.handle_map.insert(handle, node_id);
+        self.reverse_map.insert(node_id, handle);
         handle
     }
 
@@ -236,7 +238,9 @@ impl DomBridge {
 
     /// 移除句柄映射。
     pub fn unregister(&mut self, handle: u64) {
-        self.handle_map.remove(&handle);
+        if let Some(node_id) = self.handle_map.remove(&handle) {
+            self.reverse_map.remove(&node_id);
+        }
     }
 
     /// 当前注册的句柄数量。
@@ -252,6 +256,7 @@ impl DomBridge {
     /// 清除所有映射。
     pub fn clear(&mut self) {
         self.handle_map.clear();
+        self.reverse_map.clear();
     }
 
     /// 解析 DOM 命令字符串，返回结构化的 DomCommand。

@@ -472,15 +472,15 @@ fn test_interleaved_messages() {
     })
     .unwrap();
 
-    // 接收端按 LIFO 顺序收到
+    // 接收端按 FIFO 顺序收到（先发送的先接收）
     let msg = b.recv().unwrap();
-    assert!(matches!(msg.kind, IpcMessageKind::ScrollEvent(_)));
+    assert!(matches!(msg.kind, IpcMessageKind::Heartbeat));
 
     let msg = b.recv().unwrap();
     assert!(matches!(msg.kind, IpcMessageKind::Navigate(_)));
 
     let msg = b.recv().unwrap();
-    assert!(matches!(msg.kind, IpcMessageKind::Heartbeat));
+    assert!(matches!(msg.kind, IpcMessageKind::ScrollEvent(_)));
 }
 
 /// 测试大载荷 IPC 传输。

@@ -650,6 +650,20 @@ pub fn parse_length_shorthand(value: &str) -> Option<[LengthValue; 4]> {
     }
 }
 
+/// 找到字符串中第一个不在嵌套括号内的逗号位置。
+fn find_top_level_comma(s: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 解析 CSS var() 函数引用。
 ///
 /// 支持格式如 `var(--name)` 和 `var(--name, fallback)`。
@@ -664,8 +678,8 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
     // 提取括号内的内容
     let inner = value.get(4..value.len() - 1)?.trim();
 
-    // 找到逗号（如果有）
-    if let Some(comma_pos) = inner.find(',') {
+    // 找到第一个不在嵌套括号内的逗号
+    if let Some(comma_pos) = find_top_level_comma(inner) {
         let name = inner[..comma_pos].trim().to_string();
         let fallback = inner[comma_pos + 1..].trim().to_string();
         Some(VarReference {

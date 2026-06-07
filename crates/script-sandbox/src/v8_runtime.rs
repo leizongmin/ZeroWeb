@@ -100,6 +100,24 @@ impl V8Sandbox {
 
         let start = std::time::Instant::now();
 
+        // SEC-13: 强制执行 timeout
+        let _timeout_guard: Option<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>)> =
+            if self.config.timeout_ms > 0 {
+                let handle = isolate.thread_safe_handle();
+                let timeout_ms = self.config.timeout_ms;
+                let (tx, rx) = std::sync::mpsc::channel::<()>();
+                let thread = std::thread::spawn(move || {
+                    // 等待超时或取消信号
+                    if rx.recv_timeout(std::time::Duration::from_millis(timeout_ms)).is_err() {
+                        // 超时：终止执行
+                        handle.terminate_execution();
+                    }
+                });
+                Some((thread, tx))
+            } else {
+                None
+            };
+
         let scope = &mut rusty_v8::HandleScope::new(isolate);
         // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
         // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
@@ -117,6 +135,12 @@ impl V8Sandbox {
 
         // 执行脚本
         let result = script.run(scope).ok_or_else(|| {
+            // 检查是否因超时被终止
+            if scope.is_execution_terminating() {
+                // 取消终止状态以恢复 isolate
+                scope.cancel_terminate_execution();
+                return ScriptError::Timeout(format!("{}ms", self.config.timeout_ms));
+            }
             let msg = Self::extract_exception(scope);
             ScriptError::RuntimeError(msg)
         })?;
@@ -128,6 +152,12 @@ impl V8Sandbox {
             .unwrap_or_default();
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        // 清理 timeout guard（通知定时器线程取消，等待其结束）
+        if let Some((thread, tx)) = _timeout_guard {
+            let _ = tx.send(()); // 取消定时器
+            let _ = thread.join();
+        }
 
         Ok(ScriptResult {
             value: result_str,

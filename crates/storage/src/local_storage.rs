@@ -26,6 +26,8 @@ pub struct WebStorage {
     origin: String,
     /// 最大容量（字节数）。
     max_size: usize,
+    /// 当前已用字节数（增量维护，避免 O(n) 遍历）。
+    used_bytes: usize,
 }
 
 impl WebStorage {
@@ -41,6 +43,7 @@ impl WebStorage {
             storage_type,
             origin: origin.to_string(),
             max_size,
+            used_bytes: 0,
         }
     }
 
@@ -57,7 +60,7 @@ impl WebStorage {
 
         let new_entry_size = key.len() + value.len();
         let old_size = self.data.get(key).map(|old| key.len() + old.len()).unwrap_or(0);
-        let used_after = self.used_size() - old_size + new_entry_size;
+        let used_after = self.used_bytes - old_size + new_entry_size;
 
         if used_after > self.max_size {
             return Err(StorageError::QuotaExceeded(format!(
@@ -66,17 +69,21 @@ impl WebStorage {
             )));
         }
 
+        self.used_bytes = used_after;
         Ok(self.data.insert(key.to_string(), value.to_string()))
     }
 
     /// 移除项（返回旧值）。
     pub fn remove(&mut self, key: &str) -> Option<String> {
-        self.data.remove(key)
+        let old = self.data.remove(key)?;
+        self.used_bytes = self.used_bytes.saturating_sub(key.len() + old.len());
+        Some(old)
     }
 
     /// 清空所有数据。
     pub fn clear(&mut self) {
         self.data.clear();
+        self.used_bytes = 0;
     }
 
     /// 键数量。
@@ -101,7 +108,7 @@ impl WebStorage {
 
     /// 估算已用字节数。
     pub fn used_size(&self) -> usize {
-        self.data.iter().map(|(k, v)| k.len() + v.len()).sum()
+        self.used_bytes
     }
 
     /// 获取存储类型。

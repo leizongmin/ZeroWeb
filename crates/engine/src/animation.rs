@@ -132,7 +132,7 @@ fn cubic_bezier(x: f64, x1: f64, _y1: f64, x2: f64, y2: f64) -> f64 {
     let mut hi = 1.0_f64;
     let mut t = x; // 初始猜测
 
-    for _ in 0..8 {
+    for _ in 0..20 {
         let t2 = t * t;
         let t3 = t2 * t;
         let sample_x = ax * t3 + bx * t2 + cx * t;

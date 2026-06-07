@@ -94,6 +94,7 @@ mod tests {
             name: "sid".to_string(),
             value: "abc".to_string(),
             domain: None,
+            host_only: true,
             path: None,
             expires: None,
             secure: false,
@@ -174,6 +175,7 @@ mod tests {
             name: "session".to_string(),
             value: "xyz789".to_string(),
             domain: Some("example.com".to_string()),
+            host_only: false,
             path: Some("/".to_string()),
             expires: None,
             secure: true,
@@ -719,28 +721,31 @@ mod tests {
 
     /// 测试无 domain 属性的 Cookie 在 get_for_url 时匹配所有 host。
     /// 当 cookie.domain 为 None 时，cookie_matches_url 不检查域名，
-    /// 因此任何 host 的 URL 都能匹配到该 cookie。
+    /// SEC-01: 无显式 Domain 属性的 cookie 不应匹配任何 URL（超级 Cookie 修复）。
+    /// 使用 add_from_url 正确设置 host-only cookie 后应仅匹配精确 host。
     #[test]
-    fn test_cookie_no_domain_matches_any_host() {
+    fn test_cookie_no_domain_does_not_match_any_host() {
+        // 无 domain cookie 不应匹配任何 URL
         let mut store = crate::CookieStore::new();
-        // 不设 Domain，cookie.domain 为 None
         store.add(crate::cookie::CookieStore::parse_set_cookie("global=yes").unwrap());
         assert_eq!(store.len(), 1);
 
-        // 各种 host 的 URL 都应匹配
         let url_a = parse_url("http://a.com/").unwrap();
         let url_b = parse_url("http://b.com/").unwrap();
-        let url_sub = parse_url("http://deep.sub.c.com/").unwrap();
-        assert_eq!(store.get_for_url(&url_a).len(), 1, "无 domain cookie 应匹配 a.com");
-        assert_eq!(store.get_for_url(&url_b).len(), 1, "无 domain cookie 应匹配 b.com");
-        assert_eq!(
-            store.get_for_url(&url_sub).len(),
-            1,
-            "无 domain cookie 应匹配 deep.sub.c.com"
-        );
+        assert_eq!(store.get_for_url(&url_a).len(), 0, "无 domain cookie 不应匹配 a.com");
+        assert_eq!(store.get_for_url(&url_b).len(), 0, "无 domain cookie 不应匹配 b.com");
 
-        // 验证 cookie 值
-        assert_eq!(store.get_for_url(&url_a)[0].value, "yes");
+        // 使用 add_from_url 正确设置 domain 后应匹配
+        let mut store2 = crate::CookieStore::new();
+        let cookie = crate::cookie::CookieStore::parse_set_cookie("session=abc").unwrap();
+        let url_origin = parse_url("http://example.com/").unwrap();
+        store2.add_from_url(cookie, &url_origin);
+        let url_ex = parse_url("http://example.com/page").unwrap();
+        assert_eq!(store2.get_for_url(&url_ex).len(), 1, "add_from_url 设置的 host-only cookie 应匹配精确 host");
+        let url_other = parse_url("http://other.com/").unwrap();
+        assert_eq!(store2.get_for_url(&url_other).len(), 0, "host-only cookie 不应匹配其他 host");
+        let url_sub = parse_url("http://sub.example.com/").unwrap();
+        assert_eq!(store2.get_for_url(&url_sub).len(), 0, "host-only cookie 不应匹配子域名");
     }
 
     // ── 第四批边界条件补充测试（5 个） ──
