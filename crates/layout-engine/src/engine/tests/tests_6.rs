@@ -686,6 +686,7 @@ fn test_layout_box_default() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_.outer_area(), 0.0);
     assert_eq!(box_.absolute_position(), (0.0, 0.0));
@@ -724,6 +725,7 @@ fn test_layout_box_outer_area_with_margins() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // outer_area = (5 + 100 + 5) * (10 + 50 + 10) = 110 * 70 = 7700
     assert_eq!(box_.outer_area(), 7700.0);
@@ -762,6 +764,7 @@ fn test_layout_box_absolute_position_with_parent() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let (abs_x, abs_y) = box_.absolute_position_with_parent(100.0, 200.0);
     assert_eq!(abs_x, 115.0);
@@ -801,6 +804,7 @@ fn test_layout_box_negative_margins() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // (-5 + 100 + (-5)) * (-10 + 50 + (-10)) = 90 * 30 = 2700
     assert_eq!(box_.outer_area(), 2700.0);

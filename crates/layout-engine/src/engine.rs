@@ -334,6 +334,8 @@ impl LayoutEngine {
             overflow_x,
             overflow_y,
             z_index,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
         }
     }
 }

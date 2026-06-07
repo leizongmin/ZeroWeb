@@ -51,6 +51,7 @@ pub(super) fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, heig
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -97,6 +98,7 @@ fn make_box_with_border(
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 // ── 新增测试：overflow 裁剪 ──────────────────────────────
@@ -141,6 +143,7 @@ fn test_overflow_hidden_clips_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -196,6 +199,7 @@ fn test_overflow_visible_no_clip() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -251,6 +255,7 @@ fn test_overflow_clip_clips_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Clip,
         overflow_y: OverflowClip::Clip,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -564,6 +569,7 @@ fn test_paint_page_multiple_elements() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -655,6 +661,7 @@ fn test_paint_page_with_overflow_hidden() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -740,6 +747,7 @@ fn test_render_primitive_order_background_before_foreground() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -936,6 +944,7 @@ fn test_paint_text_with_border_padding() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

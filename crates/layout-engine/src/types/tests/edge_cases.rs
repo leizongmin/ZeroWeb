@@ -40,6 +40,7 @@ fn test_layout_box_f32_min_positive_size() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert!(box0.width > 0.0, "f32::MIN_POSITIVE 应为正数");
     assert!(box0.height > 0.0, "f32::MIN_POSITIVE 应为正数");
@@ -86,6 +87,7 @@ fn test_layout_box_extreme_negative_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!((abs_x - (-1000000.0)).abs() < 0.01);
@@ -134,6 +136,7 @@ fn test_layout_box_negative_content_direct_construction() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // LayoutBox 是 pub 字段结构体，直接构造可以设置负值
     assert!((box0.content_width - (-5.0)).abs() < 0.001);
@@ -174,6 +177,7 @@ fn test_layout_box_five_level_nested_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     // 5 层嵌套，每层 x=10, y=10
@@ -243,6 +247,7 @@ fn test_layout_box_single_negative_margin_outer_area() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // total_width = -10 + 100 + 5 = 95
     // total_height = -10 + 50 + 5 = 45
@@ -289,6 +294,7 @@ fn test_layout_box_fixed_and_absolute_flags() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 5,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // 构造允许同时标记，验证读取正确
     assert!(box0.is_absolute);
@@ -330,6 +336,7 @@ fn test_layout_box_extreme_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: i32::MIN,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_min.z_index, i32::MIN);
 
@@ -364,6 +371,7 @@ fn test_layout_box_extreme_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: i32::MAX,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_max.z_index, i32::MAX);
 }
@@ -427,6 +435,7 @@ fn test_layout_result_large_viewport() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         },
         viewport_width: 7680.0,
         viewport_height: 4320.0,
@@ -469,6 +478,7 @@ fn test_layout_box_recursive_child_access() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let leaf2 = LayoutBox {
         node_id: None,
@@ -501,6 +511,7 @@ fn test_layout_box_recursive_child_access() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let parent = LayoutBox {
         node_id: None,
@@ -533,6 +544,7 @@ fn test_layout_box_recursive_child_access() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(parent.children.len(), 2);
     assert!((parent.children[0].x - 5.0).abs() < 0.001);
@@ -573,6 +585,7 @@ fn test_layout_box_infinity_coordinates() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert!(abs_x.is_infinite() && abs_x.is_sign_positive());

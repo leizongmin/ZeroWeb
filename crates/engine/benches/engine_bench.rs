@@ -66,6 +66,7 @@ fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero
             is_sticky: false,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         });
     }
 
@@ -97,6 +98,7 @@ fn make_flat_layout(n: usize, with_background: bool) -> (LayoutBox, HashMap<zero
         is_sticky: false,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     (root_box, styles)

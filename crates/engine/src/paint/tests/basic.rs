@@ -45,6 +45,7 @@ fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) ->
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -91,6 +92,7 @@ fn make_box_with_border(
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 #[test]
@@ -126,6 +128,7 @@ fn test_painter_empty_layout() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let mut painter = Painter::new();
     let styles = HashMap::new();
@@ -265,6 +268,7 @@ fn test_painter_nested_boxes() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -401,6 +405,7 @@ fn test_painter_multiple_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -558,6 +563,7 @@ fn test_painter_child_offset_with_padding() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -614,6 +620,7 @@ fn test_painter_visibility_hidden() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

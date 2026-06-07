@@ -51,6 +51,7 @@ fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) ->
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -97,6 +98,7 @@ fn make_box_with_border(
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 // ── 边界条件测试 ──────────────────────────────────────────
@@ -301,6 +303,7 @@ fn test_paint_in_rect_parent_outside_child_inside_skipped() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -698,6 +701,7 @@ fn test_painter_child_visible_overrides_parent_hidden() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -851,6 +855,7 @@ fn test_paint_in_rect_overflow_hidden_clips_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -954,6 +959,7 @@ fn test_paint_in_rect_siblings_independent() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1024,6 +1030,7 @@ fn test_paint_in_rect_overflow_hidden_clips_child_partially_intersecting() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1123,6 +1130,7 @@ fn test_paint_text_zero_width_no_panic() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1200,6 +1208,7 @@ fn test_multiple_overflow_hidden_nested() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
     // middle: overflow:hidden, 50x50 内容区域
     let middle_box = LayoutBox {
@@ -1233,6 +1242,7 @@ fn test_multiple_overflow_hidden_nested() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
     // outer: overflow:hidden, 80x80 内容区域
     let outer_box = LayoutBox {
@@ -1266,6 +1276,7 @@ fn test_multiple_overflow_hidden_nested() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1334,6 +1345,7 @@ fn test_paint_multiple_overlapping_backgrounds() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let outer_box = LayoutBox {
         node_id: Some(outer),
@@ -1366,6 +1378,7 @@ fn test_paint_multiple_overlapping_backgrounds() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

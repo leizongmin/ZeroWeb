@@ -73,6 +73,7 @@ fn test_adjust_fixed_to_viewport_nested() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -105,6 +106,7 @@ fn test_adjust_fixed_to_viewport_nested() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
@@ -157,6 +159,7 @@ fn test_adjust_fixed_to_viewport_at_root() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
@@ -208,6 +211,7 @@ fn test_adjust_fixed_to_viewport_non_fixed_unchanged() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
@@ -251,6 +255,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mid = LayoutBox {
         node_id: None,
@@ -283,6 +288,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -315,6 +321,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
@@ -367,6 +374,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let fixed_parent = LayoutBox {
         node_id: None,
@@ -399,6 +407,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -431,6 +440,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);

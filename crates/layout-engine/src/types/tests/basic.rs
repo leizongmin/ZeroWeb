@@ -35,6 +35,7 @@ fn test_layout_box_default() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box0.width, 0.0);
     assert_eq!(box0.height, 0.0);
@@ -77,6 +78,7 @@ fn test_layout_box_absolute_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let (abs_x, abs_y) = box0.absolute_position();
     assert_eq!(abs_x, 10.0);
@@ -117,6 +119,7 @@ fn test_layout_box_outer_area() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // 总宽度 = 10 + 100 + 10 = 120, 总高度 = 10 + 50 + 10 = 70
     let area = box0.outer_area();
@@ -157,6 +160,7 @@ fn test_layout_box_content_box() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // content = 100 - 2*2 - 2*3 = 100 - 10 = 90
     assert!((box0.content_width - 90.0).abs() < 0.001);
@@ -208,6 +212,7 @@ fn test_layout_result_viewport() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
@@ -250,6 +255,7 @@ fn test_layout_box_with_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let parent = LayoutBox {
         node_id: None,
@@ -282,6 +288,7 @@ fn test_layout_box_with_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(parent.children.len(), 1);
     assert!((parent.children[0].x - 10.0).abs() < 0.001);
@@ -321,6 +328,7 @@ fn test_layout_box_nested_absolute_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let (abs_x, abs_y) = child.absolute_position_with_parent(10.0, 20.0);
     assert!((abs_x - 30.0).abs() < 0.001);
@@ -361,6 +369,7 @@ fn test_layout_box_zero_size() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert!((box0.outer_area()).abs() < 0.001);
 }
@@ -399,6 +408,7 @@ fn test_layout_box_clone() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 10,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let cloned = box0.clone();
     assert!((cloned.x - 5.0).abs() < 0.001);
@@ -443,6 +453,7 @@ fn test_layout_box_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_default.z_index, 0);
 
@@ -478,6 +489,7 @@ fn test_layout_box_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 999,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_positive.z_index, 999);
 
@@ -513,6 +525,7 @@ fn test_layout_box_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: -1,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box_negative.z_index, -1);
 }
@@ -552,6 +565,7 @@ fn test_layout_box_z_index_sorting() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: 10,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         },
         LayoutBox {
             node_id: None,
@@ -584,6 +598,7 @@ fn test_layout_box_z_index_sorting() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: -1,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         },
         LayoutBox {
             node_id: None,
@@ -616,6 +631,7 @@ fn test_layout_box_z_index_sorting() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: 5,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         },
     ];
 
@@ -663,6 +679,7 @@ fn test_layout_box_negative_margin_outer_area() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // total_width = -20 + 10 + -20 = -30, total_height = -20 + 10 + -20 = -30
     // outer_area = -30 * -30 = 900（两个负值相乘为正）
@@ -705,6 +722,7 @@ fn test_layout_box_deeply_nested_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let level2 = LayoutBox {
         node_id: None,
@@ -737,6 +755,7 @@ fn test_layout_box_deeply_nested_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let level1 = LayoutBox {
         node_id: None,
@@ -769,6 +788,7 @@ fn test_layout_box_deeply_nested_position() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // level1 → level2: (100+20, 200+30) = (120, 230)
     let (abs_x2, abs_y2) = level1.children[0].absolute_position_with_parent(100.0, 200.0);
@@ -816,6 +836,7 @@ fn test_layout_box_sticky_flag() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert!(box0.is_sticky, "is_sticky 应为 true");
     assert!(!box0.is_absolute, "is_absolute 应为 false");
@@ -857,6 +878,7 @@ fn test_layout_box_negative_z_index() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: -1,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(box0.z_index, -1);
     assert!(box0.z_index < 0, "z_index 应为负值");
@@ -897,6 +919,7 @@ fn test_layout_box_zero_size_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let child2 = LayoutBox {
         node_id: None,
@@ -929,6 +952,7 @@ fn test_layout_box_zero_size_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let parent = LayoutBox {
         node_id: None,
@@ -961,6 +985,7 @@ fn test_layout_box_zero_size_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(parent.children.len(), 2);
     assert!((parent.children[0].width).abs() < 0.001);
@@ -1003,6 +1028,7 @@ fn test_layout_box_many_children() {
             clear: zero_css_parser::values::ClearValue::None,
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
+            ..Default::default()
         })
         .collect();
     let parent = LayoutBox {
@@ -1036,6 +1062,7 @@ fn test_layout_box_many_children() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert_eq!(parent.children.len(), 100);
     // 验证第一个和最后一个子元素
@@ -1082,6 +1109,7 @@ fn test_layout_box_position_flags_mutually_exclusive() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     assert!(box_abs.is_absolute);
     assert!(!box_abs.is_fixed);

@@ -707,6 +707,7 @@ fn test_paint_nested_opacity_interaction() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -868,6 +869,7 @@ fn test_paint_multiple_children_layout() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

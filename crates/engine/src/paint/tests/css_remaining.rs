@@ -47,6 +47,7 @@ fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, width: f32, heigh
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
