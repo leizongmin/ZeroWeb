@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制平面
 
-**最后更新**: 2026-06-07
+**最后更新**: 2026-06-08
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
 
 ---
@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅(禁用调试指示器)；UA 默认样式 ✅(body margin 8px, h1-h6, p, ul/ol)；493 个上游 reftest 已导入（9 个目录）；总体通过率 77.3% (381/493)；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-writing-modes 94.9%；css-grid 85.0%；css-multicol 70.2%；css-tables 67.9%；CSS2 70.0%；css-flexbox 56.4%；css-position 58.8%；flow-root BFC 支持 ✅；float Y-offset 修正 ✅（非 float 元素扣除 float 垂直空间）；剩余：布局精度修复、JS DOM API 支持 |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；493 个上游 reftest 已导入（9 个目录）；总体通过率 76.9% (379/493)；css-text-decor 100.0% ✅；css-fonts 98.3% ✅(≥95%)；css-writing-modes 94.9%；css-grid 85.0%；css-multicol 70.2%；css-tables 66.1%；CSS2 69.2%；css-flexbox 56.4%；css-position 58.8%；**本轮改进**：table row-group 行索引修复 ✅(get_row_box 现在正确查找 tbody/thead/tfoot 内的行)；column-gap 属性映射修复 ✅(converter 使用 column-gap 长写属性，gap 简写同时设置 column_gap+row_gap)；background-image 固有尺寸基础设施 ✅(Painter.image_sizes + RenderPipeline.set_image_sizes)；is_block_level 标志 ✅(LayoutBox 用于 float/clear 判断)；is_relative 标志 ✅(table 行保留 relative inset)；剩余：布局精度修复、border-collapse、writing-mode、column breaking |
 
 ## 当前状态概览
 
@@ -349,6 +349,10 @@
 | 2026-06-07 | render_full_scene 切换到上游 reftest | 上游 reftest 从旧版 render_scene_to_framebuffer（仅 fills+rounded_rects+glyphs）切换到 render_full_scene（全部 13 种图元）。同时启用 ImageCache 从 base_dir 加载 PNG 图片。这使 reftest 结果更准确，但也暴露了之前被不完整渲染掩盖的布局差异。 |
 | 2026-06-07 | skip_indicators 模式 | Painter 新增 skip_indicators 标志，RenderPipeline 新增 set_skip_indicators() 方法。当设为 true 时跳过全部 ~30 个 CSS 属性调试指示器（border-collapse 橙色标记、direction 箭头等），避免干扰 reftest 像素对比。 |
 | 2026-06-07 | UA 默认样式扩展 | 新增 body{margin:8px}、h1-h6{margin+font-weight}、p{margin:1em 0}、ul/ol{margin+padding-left} UA 默认样式，对齐浏览器默认行为。 |
+| 2026-06-08 | table row-group 行索引修复 | build_grid 中行组内行存储 rg_child_idx 但 get_row_box 在 table_box.children 查找，导致 tbody/thead/tfoot 内的行被静默丢弃。修复：TableRow 新增 row_group_index 字段，get_row_box/position_cells 根据此字段正确导航到行组内的行。 |
+| 2026-06-08 | column-gap 属性映射修复 | converter gap.width 原先使用 style.gap（仅 gap 简写设置），改为使用 style.column_gap（column-gap 长写属性）。同时修复 gap 简写解析：`gap: 10px` 现在同时设置 column_gap 和 row_gap。使用 fallback 策略：column_gap 非 0 时优先，否则使用 gap。 |
+| 2026-06-08 | background-image 固有尺寸基础设施 | Painter 新增 image_sizes HashMap<u64, (f32, f32)>（url hash → intrinsic dimensions）。RenderPipeline.set_image_sizes() 将缓存传递给 Painter。reftest runner 在渲染前构建 ImageCache、提取固有尺寸。修复了 background-size: auto 拉伸到容器大小的问题。 |
+| 2026-06-08 | is_block_level / is_relative 标志 | LayoutBox 新增两个布尔标志。is_block_level 用于 float/clear 后处理（CSS 规范 clear 仅适用于块级元素）。is_relative 用于 table 布局后处理保留 position:relative 的 inset 偏移。 |
 
 ---
 
