@@ -223,6 +223,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -383,6 +384,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -451,6 +453,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -493,6 +496,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
         let box2 = LayoutBox {
             node_id: None,
@@ -525,6 +529,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -596,6 +601,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -684,6 +690,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -914,6 +921,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -987,6 +995,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();
@@ -1084,6 +1093,7 @@ mod tests {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
 
         let mut tracker = DirtyTracker::new();

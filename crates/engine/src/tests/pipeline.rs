@@ -419,6 +419,7 @@ fn test_pipeline_recompute_then_multiple_incremental() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: zero_layout_engine::types::OverflowClip::Visible,
         overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        ..Default::default()
     };
     let result1 = pipeline.incremental_render(html, "", &dirty1);
     assert!(result1.timings.total_ms >= 0.0, "第一次增量渲染应正常完成");
@@ -460,6 +461,7 @@ fn test_pipeline_recompute_then_multiple_incremental() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: zero_layout_engine::types::OverflowClip::Visible,
         overflow_y: zero_layout_engine::types::OverflowClip::Visible,
+        ..Default::default()
     };
     let result2 = pipeline.incremental_render(html, "", &dirty2);
     assert!(result2.timings.total_ms >= 0.0, "第二次增量渲染应正常完成");
@@ -626,6 +628,7 @@ fn test_pipeline_viewport_dimensions_preserved() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let r3 = pipeline.incremental_render(html, "", &dirty_box);
     assert_eq!(r3.layout.viewport_width, 1024.0, "增量渲染后 viewport_width 不应变");

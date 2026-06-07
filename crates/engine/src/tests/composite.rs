@@ -44,6 +44,7 @@ fn test_composite_single_box() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -97,6 +98,7 @@ fn test_composite_z_index_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let child_high = LayoutBox {
         node_id: Some(elem_high),
@@ -129,6 +131,7 @@ fn test_composite_z_index_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -161,6 +164,7 @@ fn test_composite_z_index_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = std::collections::HashMap::new();
@@ -227,6 +231,7 @@ fn test_composite_promoted_child_z_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let child_b = LayoutBox {
         node_id: Some(elem_b),
@@ -259,6 +264,7 @@ fn test_composite_promoted_child_z_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let child_c = LayoutBox {
         node_id: Some(elem_c),
@@ -291,6 +297,7 @@ fn test_composite_promoted_child_z_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -323,6 +330,7 @@ fn test_composite_promoted_child_z_ordering() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = std::collections::HashMap::new();
@@ -385,6 +393,7 @@ fn test_composite_root_layer_always_present() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let layers = promote_compositing_layers(&empty_root, &HashMap::new());
     assert!(!layers.is_empty(), "应至少有根图层");
@@ -425,6 +434,7 @@ fn test_composite_root_layer_always_present() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -457,6 +467,7 @@ fn test_composite_root_layer_always_present() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
@@ -508,6 +519,7 @@ fn test_composite_root_layer_first_when_all_children_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let child2 = LayoutBox {
         node_id: Some(elem2),
@@ -540,6 +552,7 @@ fn test_composite_root_layer_first_when_all_children_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -572,6 +585,7 @@ fn test_composite_root_layer_first_when_all_children_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -641,6 +655,7 @@ fn test_composite_opacity_value_propagation() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -673,6 +688,7 @@ fn test_composite_opacity_value_propagation() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -742,6 +758,7 @@ fn test_composite_identical_z_index_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let child_a = make_box(elem_a);
@@ -779,6 +796,7 @@ fn test_composite_identical_z_index_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -842,6 +860,7 @@ fn test_composite_negative_z_index_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let child_neg = make_box(elem_neg);
@@ -879,6 +898,7 @@ fn test_composite_negative_z_index_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -952,6 +972,7 @@ fn test_composite_zero_opacity_element_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -984,6 +1005,7 @@ fn test_composite_zero_opacity_element_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1061,6 +1083,7 @@ fn test_composite_20_layers_sorted() {
             float: zero_css_parser::values::FloatValue::None,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         });
     }
 
@@ -1095,6 +1118,7 @@ fn test_composite_20_layers_sorted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1165,6 +1189,7 @@ fn test_composite_opacity_boundary_promotion() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let child_slight = LayoutBox {
         node_id: Some(elem_slight),
@@ -1197,6 +1222,7 @@ fn test_composite_opacity_boundary_promotion() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -1229,6 +1255,7 @@ fn test_composite_opacity_boundary_promotion() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1291,6 +1318,7 @@ fn test_composite_opacity_very_small_positive() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -1323,6 +1351,7 @@ fn test_composite_opacity_very_small_positive() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1379,6 +1408,7 @@ fn test_composite_multiple_opacity_layers_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let root_box = LayoutBox {
@@ -1412,6 +1442,7 @@ fn test_composite_multiple_opacity_layers_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

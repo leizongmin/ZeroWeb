@@ -44,6 +44,7 @@ fn test_paint_empty_document() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let styles = HashMap::new();
 
@@ -92,6 +93,7 @@ fn test_paint_border_radius_clip() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = std::collections::HashMap::new();
@@ -158,6 +160,7 @@ fn test_outline_render_no_width() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -215,6 +218,7 @@ fn test_outline_render_with_offset() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -278,6 +282,7 @@ fn test_visibility_hidden_render() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -336,6 +341,7 @@ fn test_opacity_zero_render() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -396,6 +402,7 @@ fn test_border_style_none() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -466,6 +473,7 @@ fn test_paint_with_visibility_hidden_nested() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let parent_box = LayoutBox {
         node_id: Some(parent_elem),
@@ -498,6 +506,7 @@ fn test_paint_with_visibility_hidden_nested() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -556,6 +565,7 @@ fn test_paint_border_radius_clipping_values() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -622,6 +632,7 @@ fn test_visibility_collapse_no_primitives() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -681,6 +692,7 @@ fn test_negative_outline_offset_inward() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -760,6 +772,7 @@ fn test_paint_deeply_nested_alternating_visibility() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     // 从内向外逐层包装
@@ -797,6 +810,7 @@ fn test_paint_deeply_nested_alternating_visibility() {
             float: zero_css_parser::values::FloatValue::None,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            ..Default::default()
         };
     }
 
@@ -962,6 +976,7 @@ fn test_paint_border_image_source_url_degradation() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1026,6 +1041,7 @@ fn test_paint_empty_cells_hide_no_panic() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

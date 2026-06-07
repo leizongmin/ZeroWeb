@@ -48,6 +48,7 @@ fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, height: f32) ->
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -84,6 +85,7 @@ fn make_scrollable_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, heig
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     }
 }
 

@@ -85,6 +85,12 @@ pub struct LayoutBox {
     /// 仅对 positioned 元素（absolute/relative/fixed/sticky）生效。
     /// 默认为 0，对应 z-index: auto。
     pub z_index: i32,
+    /// 滚动容器水平滚动偏移（像素，0 表示未滚动）。
+    /// 仅当 overflow_x 为 Scroll 时有意义。
+    pub scroll_x: f32,
+    /// 滚动容器垂直滚动偏移（像素，0 表示未滚动）。
+    /// 仅当 overflow_y 为 Scroll 时有意义。
+    pub scroll_y: f32,
 }
 
 impl LayoutBox {
@@ -148,6 +154,8 @@ impl Default for LayoutBox {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
         }
     }
 }

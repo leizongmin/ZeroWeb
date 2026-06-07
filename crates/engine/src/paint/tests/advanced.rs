@@ -54,6 +54,7 @@ pub(super) fn make_box(node_id: Option<NodeId>, x: f32, y: f32, width: f32, heig
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -100,6 +101,7 @@ pub(super) fn make_box_with_border(
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 // ── 新增测试：组合渲染 ──────────────────────────────────

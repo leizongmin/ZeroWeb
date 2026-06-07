@@ -64,6 +64,7 @@ fn test_adjust_fixed_zero_parent_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
     assert!((root.x - 0.0).abs() < 0.001, "零偏移 + 零坐标 = 0");
@@ -104,6 +105,7 @@ fn test_adjust_fixed_negative_parent_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -136,6 +138,7 @@ fn test_adjust_fixed_negative_parent_offset() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
@@ -187,6 +190,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let fixed2 = LayoutBox {
         node_id: None,
@@ -219,6 +223,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -251,6 +256,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
@@ -302,6 +308,7 @@ fn test_adjust_fixed_with_absolute_child() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let fixed_parent = LayoutBox {
         node_id: None,
@@ -334,6 +341,7 @@ fn test_adjust_fixed_with_absolute_child() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     let mut root = LayoutBox {
         node_id: None,
@@ -366,6 +374,7 @@ fn test_adjust_fixed_with_absolute_child() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
@@ -416,6 +425,7 @@ fn test_adjust_fixed_empty_children_no_panic() {
         clear: zero_css_parser::values::ClearValue::None,
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
+        ..Default::default()
     };
     // 不应 panic
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);

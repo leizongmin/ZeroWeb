@@ -99,6 +99,7 @@ fn test_pipeline_incremental_render_clears_dirty_area() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let result = pipeline.incremental_render(html, "", &dirty_box);
@@ -158,6 +159,7 @@ fn test_dirty_tracker_after_full_then_three_incremental() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     // 第 1 次增量渲染：小区域
@@ -307,6 +309,7 @@ fn test_dirty_mark_node_large_offset_no_overflow() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut tracker = crate::dirty::DirtyTracker::new();
@@ -388,6 +391,7 @@ fn test_dirty_mark_node_zero_height_box_no_rect() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut tracker = crate::dirty::DirtyTracker::new();
@@ -430,6 +434,7 @@ fn test_dirty_mark_node_zero_width_box_no_rect() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut tracker = crate::dirty::DirtyTracker::new();

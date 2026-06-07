@@ -43,6 +43,7 @@ fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, width: f32, heigh
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     }
 }
 
@@ -88,6 +89,7 @@ fn test_overflow_hidden_clips_deeply_nested_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let grandparent_box = LayoutBox {
         node_id: Some(grandparent),
@@ -120,6 +122,7 @@ fn test_overflow_hidden_clips_deeply_nested_children() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -194,6 +197,7 @@ fn test_overflow_hidden_double_nesting_clips() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
     let outer_box = LayoutBox {
         node_id: Some(outer),
@@ -226,6 +230,7 @@ fn test_overflow_hidden_double_nesting_clips() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Hidden,
         overflow_y: OverflowClip::Hidden,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -311,6 +316,7 @@ fn test_paint_mixed_inline_block() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -441,6 +447,7 @@ fn test_paint_inline_glyph_position_with_offset() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();

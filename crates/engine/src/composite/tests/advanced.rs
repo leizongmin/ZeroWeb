@@ -44,6 +44,7 @@ fn test_compositing_reason_opacity_only() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -102,6 +103,7 @@ fn test_compositing_reason_z_index_only() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -160,6 +162,7 @@ fn test_negative_z_index_layer_assignment() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -229,6 +232,7 @@ fn test_layer_priority_sorting_stability() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -290,6 +294,7 @@ fn test_triple_compositing_reason_single_layer() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -347,6 +352,7 @@ fn test_root_layer_bounding_box_with_unpromoted_children() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -401,6 +407,7 @@ fn test_opacity_zero_promoted() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -461,6 +468,7 @@ fn test_z_index_max_sorting() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -528,6 +536,7 @@ fn test_z_index_min_sorting() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -594,6 +603,7 @@ fn test_root_layer_size_when_all_promoted() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -663,6 +673,7 @@ fn test_promoted_parent_with_non_promoted_child() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -735,6 +746,7 @@ fn test_promoted_parent_with_promoted_child() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -817,6 +829,7 @@ fn test_composite_many_layers() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     // 12 个 z-index 值：负数、零、正数、大值、重复值
@@ -904,6 +917,7 @@ fn test_root_layer_encompasses_grandchildren() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
     let root_box = LayoutBox {
         node_id: None,
@@ -936,6 +950,7 @@ fn test_root_layer_encompasses_grandchildren() {
         z_index: 0,
         float: zero_css_parser::values::FloatValue::None,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1017,6 +1032,7 @@ fn test_compositing_layer_position_absolute_with_z_index() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
@@ -1070,6 +1086,7 @@ fn test_compositing_layer_absolute_auto_z_index_not_promoted() {
         float: zero_css_parser::values::FloatValue::None,
         overflow_x: OverflowClip::Visible,
         overflow_y: OverflowClip::Visible,
+        ..Default::default()
     };
 
     let mut styles = HashMap::new();
