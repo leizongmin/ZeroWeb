@@ -286,29 +286,42 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮提交后）
+**日期**: 2026-06-08（本轮第二轮）
 **总用例**: 491（上游真实 reftest，排除 skip list）
-**通过**: 328
-**失败**: 163
-**通过率**: 66.8%
+**通过**: 319
+**失败**: 172
+**通过率**: 65.0%
+
+**说明**：通过率从 66.8% 降至 65.0%，原因是修复了 FontLoader（从空 FontLoader 改为加载系统字体的 create_font_loader()），使文本开始正确渲染。之前部分测试因文本不可见而虚假通过（空文本匹配空参考），现在文本可见后暴露了真实的布局差异。这是正确的方向——揭示真实的渲染问题而非虚假通过。
 
 ### 按目录
 
 | 目录 | 通过/总数 | 通过率 | ≥95% 达标 |
 |------|-----------|--------|-----------|
 | css-text-decor/ | 39/39 | 100.0% | ✅ |
-| css-fonts/ | 59/60 | 98.3% | ✅ |
+| css-fonts/ | 57/60 | 95.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 41/56 | 73.2% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 79/129 | 61.2% | ❌ |
+| CSS2/ | 76/129 | 58.9% | ❌ |
 | css-flexbox/ | 31/55 | 56.4% | ❌ |
-| css-multicol/ | 27/57 | 47.4% | ❌ |
-| css-writing-modes/ | 25/59 | 42.4% | ❌ |
+| css-multicol/ | 24/57 | 42.1% | ❌ |
+| css-writing-modes/ | 24/59 | 40.7% | ❌ |
 
 ### 本轮修复内容
 
-| 修复 | 影响 | 新增通过 |
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| FontLoader 修复 | 全局 | render_to_framebuffer_with_base 使用 create_font_loader() 替代空 FontLoader::new()，启用文本渲染 |
+| border conflict resolution 基础设施 | css-tables | 新增 resolve_collapsed_borders() 实现 CSS 2.1 §17.6.2.1 边框冲突解决算法（暂未生效，因表格 border width 在 ComputedStyle 中读取为 0） |
+| support image 补充 | 全局 | 为缺失的 swatch-white/gray/pink/purple、black20x20、100x100-lime/red、60x60-green 生成纯色 PNG |
+
+### 发现的关键问题
+
+| 问题 | 影响 | 说明 |
+|------|------|------|
+| **表格 border CSS 未生效** | css-tables | CSS `border: 5px solid green` 在 `<table>` 元素上未正确应用——ComputedStyle 显示 border_top_width=Px(0.0)，但 border-collapse: Collapse 正确设置。疑为 CSS 级联中 border 简写展开或选择器匹配的问题，需进一步调查 |
+| **paint 系统 font-family 硬编码** | 全局 | paint/painter/text.rs 硬编码 FontId(0)，不解析 CSS font-family。Ahem 字体虽已加载但无法被 font-family: Ahem 匹配到 |
 |------|------|----------|
 | empty-cells 在 border-collapse:collapse 时正确显示边框 | css-tables | border-collapse-empty-cell ✅ |
 | row-group/row border/padding/margin 抑制（CSS 2.1 Section 17.5.3） | css-tables | row-group-order ✅, rowspan-cell-border-after-color ✅ |
@@ -468,3 +481,8 @@
 59. ~~M9 — 滚动容器 paint 偏移~~ ✅ (LayoutBox scroll_x/scroll_y 字段 + paint 时 overflow:Scroll 子元素坐标偏移 + 3 个单元测试)
 60. M9 — scroll-snap 行为（已解析存储，需宿主层输入路由实现吸附逻辑）
 61. M9 — 滚动输入路由（需浏览器 app 集成：嵌套滚动容器识别、逐元素 scroll 事件分发）
+62. ~~M10 — FontLoader 修复~~ ✅ (render_to_framebuffer_with_base 使用 create_font_loader()，启用文本渲染；揭示真实通过率 65.0%)
+63. ~~M10 — support image 补充~~ ✅ (为缺失的 swatch 颜色/尺寸 PNG 生成文件)
+64. ~~M10 — border conflict resolution 基础设施~~ ✅ (resolve_collapsed_borders + resolve_border + border_style_priority)
+65. M10 — 调查表格 border CSS 未生效问题（ComputedStyle border-top-width=0 但 border-collapse 正确）
+66. M10 — 实现 paint 系统 font-family 解析（替换硬编码 FontId(0) 为 CSS font-family 查找）
