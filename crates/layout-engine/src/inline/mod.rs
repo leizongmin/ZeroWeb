@@ -485,6 +485,36 @@ impl InlineFormattingContext {
                             items.push(InlineItem::Br);
                             continue;
                         }
+
+                        // `<img>` 替换元素：使用 HTML width/height 属性作为固有尺寸，
+                        // 创建 InlineBlock 条目（原子盒，不可拆分）。
+                        if elem_data.local_name() == "img" {
+                            let w = elem_data
+                                .get_attribute("width")
+                                .and_then(|v| v.parse::<f32>().ok())
+                                .unwrap_or(0.0)
+                                .max(0.0);
+                            let h = elem_data
+                                .get_attribute("height")
+                                .and_then(|v| v.parse::<f32>().ok())
+                                .unwrap_or(0.0)
+                                .max(0.0);
+                            if w > 0.0 && h > 0.0 {
+                                let vertical_align = styles
+                                    .get(&child_id)
+                                    .map(|s| s.vertical_align.clone())
+                                    .unwrap_or(VerticalAlignValue::Baseline);
+                                items.push(InlineItem::InlineBlock(InlineBlockBox {
+                                    width: w,
+                                    height: h,
+                                    node_id: child_id,
+                                    vertical_align,
+                                }));
+                                continue;
+                            }
+                            // 无有效尺寸的 img 降级为零宽度 TextRun
+                        }
+
                         // 其他 inline 元素的文本内容也收集进来
                         let text = doc.text_content(child_id).unwrap_or_default();
                         let trimmed = text.trim().to_string();

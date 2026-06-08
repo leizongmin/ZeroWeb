@@ -474,6 +474,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     let mut left_float_bottom = 0.0f32;
     let mut right_float_bottom = 0.0f32;
 
+    // 检查此容器是否有非 float 的正常流子元素
+    // CSS 2.1 §9.5.1：float 的放置位置由正常流中的位置决定。
+    // 当容器有非 float 子元素时，float 的最小 Y 应尊重前面内容的位置。
+    let has_inflow_children = box_node
+        .children
+        .iter()
+        .any(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
+
     // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
     let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
 
@@ -494,6 +502,20 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
         // 计算浮动元素的总占用尺寸（含 margin）
         let child_outer_width = child.margin_left + child.width + child.margin_right;
+
+        // CSS 2.1 §9.5.1：float 必须在正常流中其出现位置或之后放置。
+        // 当容器有非 float 子元素时，taffy 的 Y 已包含前面内容的位置。
+        // 使用 taffy 的原始 Y 作为最小行位置，确保 float 不被放到前面内容之上。
+        // 仅当确实有前面的内容时才生效（避免影响仅包含 float 的容器）。
+        if has_inflow_children {
+            let min_line_y = child.y - child.margin_top;
+            if min_line_y > line_y {
+                line_y = min_line_y;
+                left_used_width = 0.0;
+                right_used_width = 0.0;
+                line_max_height = 0.0;
+            }
+        }
 
         // 处理 float 元素自身的 clear 属性
         match child.clear {
@@ -568,6 +590,9 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 需将其水平位置偏移到浮动元素旁边。
     if !float_taffy_y.is_empty() {
         let mut float_y_offset = 0.0f32;
+        // 追踪正常流内容的位置，用于 clearance 假设位置计算
+        let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom
+        let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
 
         // 收集浮动元素的几何信息，用于 BFC 排斥计算
         let float_geometries: Vec<(FloatValue, f32, f32, f32, f32)> = box_node
@@ -605,18 +630,15 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 if float_y_offset > 0.0 {
                     child.y -= float_y_offset;
                 }
+                flow_bottom = flow_bottom.max(child.y + child.height);
                 continue;
             }
 
             // CSS 2.1 §9.5.2 Clearance 计算
-            // clearance 引入后，margin 折叠被阻止。taffy 的布局已包含 margin 折叠，
-            // 因此 clear 元素的「假设位置」（无 clear 时）需用折叠后的位置。
-            // 但 clearance 本身阻止了 clear 元素与前一兄弟的 margin 折叠，
-            // 所以 uncollapsed 位置 = 前一兄弟底部 + 当前元素 margin-top。
-            // 这里用 taffy_y - float_offset 作为含 margin 折叠的位置，
-            // 并与 clear_bottom 取最大值，确保在浮动下方。
-            // 若 clear_bottom > normal_y，则 clearance = clear_bottom - normal_y，
-            // 等效于将元素推到浮动下方并阻止了 margin 折叠。
+            // 假设位置（hypothetical position）：无 clear 时元素应在的位置，
+            // 基于正常流的 flow_bottom + margin 折叠计算，
+            // 而非简单地从 taffy_y 扣除 float_y_offset（无法正确处理
+            // float 移除后 margin 折叠方式改变的情况）。
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
                     let clear_bottom = match child.clear {
@@ -624,23 +646,18 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         ClearValue::Right => right_float_bottom,
                         _ => left_float_bottom.max(right_float_bottom),
                     };
-                    // 假设位置：无 clear 时元素应在的位置（含 margin 折叠）
-                    let normal_y = original_taffy_y - float_y_offset;
-                    // clearance = max(0, clear_bottom - normal_y)
-                    // 当 clearance > 0 时，margin 折叠被阻止，元素被推到 clear_bottom
-                    // 当 clearance == 0 时（normal_y >= clear_bottom），margin 折叠仍被阻止
-                    // 但元素位置不变（零 clearance 不等于无 clearance）
-                    if clear_bottom > 0.0 && clear_bottom > normal_y {
+                    // 假设位置：基于正常流的 flow_bottom + margin 折叠
+                    // CSS 2.1 §9.5.2：「as if 'clear' were 'none'」
+                    let collapsed_margin = last_flow_mb.max(child.margin_top);
+                    let hypothetical_y = flow_bottom + collapsed_margin;
+
+                    if clear_bottom > 0.0 && clear_bottom > hypothetical_y {
                         // 需要 clearance：将元素推到浮动下方
                         child.y = clear_bottom;
                     } else {
-                        // 零 clearance 或无浮动：保持正常位置
-                        // 但 CSS 规定即使 clearance 为 0，margin 折叠也被阻止
-                        child.y = normal_y;
+                        // 零 clearance 或无浮动：保持假设位置
+                        child.y = hypothetical_y;
                     }
-                    // clear 元素消耗 offset：
-                    // float_y_offset = original_taffy_y - child.y
-                    // 使得后续元素：taffy_y - offset = child.y + child.height
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }
                 ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {
@@ -650,6 +667,10 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     }
                 }
             }
+
+            // 更新流内容追踪
+            flow_bottom = child.y + child.height;
+            last_flow_mb = child.margin_bottom;
 
             // BFC 浮动排斥（CSS 2.1 §9.5）：
             // 建立 BFC 的块级元素不得与同容器的浮动元素重叠。
