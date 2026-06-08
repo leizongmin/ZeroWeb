@@ -46,8 +46,8 @@ fn test_apply_property_list_style_position() {
 fn test_list_style_property_registry() {
     assert!(PropertyRegistry::initial_value("list-style-type").is_some());
     assert!(PropertyRegistry::initial_value("list-style-position").is_some());
-    assert!(!PropertyRegistry::is_inherited("list-style-type"));
-    assert!(!PropertyRegistry::is_inherited("list-style-position"));
+    assert!(PropertyRegistry::is_inherited("list-style-type"));
+    assert!(PropertyRegistry::is_inherited("list-style-position"));
 }
 
 #[test]
@@ -796,17 +796,15 @@ fn test_apply_writing_mode_vertical_lr() {
 }
 
 #[test]
-/// 测试 writing-mode 默认值为 horizontal-tb
-/// TODO: writing-mode 在 CSS 规范中是继承属性，但当前垂直布局尚未完整实现，
-/// 暂时不在 is_inherited 列表中。待垂直布局完整实现后启用继承。
+/// 测试 writing-mode 默认值为 horizontal-tb 且为继承属性
 fn test_writing_mode_default_is_horizontal_tb() {
     let style = ComputedStyle::default();
     assert_eq!(style.writing_mode, WritingModeValue::HorizontalTb);
 
     // 验证注册表初始值
     assert!(PropertyRegistry::initial_value("writing-mode").is_some());
-    // TODO: 待垂直布局完整实现后改为 assert!(PropertyRegistry::is_inherited("writing-mode"))
-    assert!(!PropertyRegistry::is_inherited("writing-mode"));
+    // writing-mode 是继承属性（CSS 规范要求）
+    assert!(PropertyRegistry::is_inherited("writing-mode"));
 
     // 验证 known_properties 包含
     let props = PropertyRegistry::known_properties();
@@ -820,20 +818,17 @@ fn test_writing_mode_default_is_horizontal_tb() {
 }
 
 #[test]
-/// 测试 inherit_property 对 writing-mode 的处理状态
-/// TODO: 待垂直布局完整实现后启用 inherit_property 对 writing-mode 的支持
-fn test_writing_mode_inherit_property_pending() {
-    // inherit_property 当前不处理 writing-mode（待垂直布局完整实现后启用）
+/// 测试 inherit_property 对 writing-mode 的显式继承
+fn test_writing_mode_inherit_property() {
     let mut parent = ComputedStyle::default();
     parent.writing_mode = WritingModeValue::VerticalRl;
 
     let mut child = ComputedStyle::default();
     assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
 
-    // inherit_property 对 writing-mode 当前返回 false
-    assert!(!inherit_property(&parent, &mut child, "writing-mode"));
-    // 子元素值不变
-    assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
+    // inherit_property 对 writing-mode 返回 true 并正确继承
+    assert!(inherit_property(&parent, &mut child, "writing-mode"));
+    assert_eq!(child.writing_mode, WritingModeValue::VerticalRl);
 }
 
 // ═══════════════════════════════════════════════════════════════════

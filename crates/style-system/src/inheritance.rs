@@ -693,29 +693,36 @@ mod tests {
     }
 
     #[test]
-    /// writing-mode 显式 inherit 关键字测试
-    /// TODO: 待垂直布局完整实现后，启用隐式继承和 inherit_property 支持
-    fn test_writing_mode_explicit_inherit_pending() {
+    /// writing-mode 隐式继承和显式 inherit 关键字测试
+    fn test_writing_mode_inheritance() {
         use crate::property::PropertyRegistry;
         use crate::property::types::WritingModeValue;
 
-        // writing-mode 当前不作为隐式继承属性（待垂直布局完整实现后启用）
+        // writing-mode 是继承属性
         assert!(
-            !PropertyRegistry::is_inherited("writing-mode"),
-            "writing-mode temporarily not in implicit inheritance list"
+            PropertyRegistry::is_inherited("writing-mode"),
+            "writing-mode should be in inherited property list"
         );
 
-        // 显式 inherit 关键字当前也暂不处理 writing-mode
+        // 隐式继承：子元素从父元素继承 writing-mode
         let mut parent = ComputedStyle::default();
         parent.writing_mode = WritingModeValue::VerticalRl;
-        let mut cascaded = HashMap::new();
-        cascaded.insert("writing-mode".to_string(), "inherit".to_string());
+        let cascaded = HashMap::new();
         let style = compute_inherited_style(Some(&parent), &cascaded);
-        // inherit 关键字遇到未识别的属性时回退到 initial
         assert_eq!(
             style.writing_mode,
-            WritingModeValue::HorizontalTb,
-            "writing-mode with explicit 'inherit' should fall back to initial when inherit_property not yet enabled"
+            WritingModeValue::VerticalRl,
+            "writing-mode should implicitly inherit from parent"
+        );
+
+        // 显式 inherit 关键字
+        let mut cascaded2 = HashMap::new();
+        cascaded2.insert("writing-mode".to_string(), "inherit".to_string());
+        let style2 = compute_inherited_style(Some(&parent), &cascaded2);
+        assert_eq!(
+            style2.writing_mode,
+            WritingModeValue::VerticalRl,
+            "writing-mode with explicit 'inherit' should use parent value"
         );
     }
 }

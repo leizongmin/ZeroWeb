@@ -127,6 +127,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.list_style_image = parent.list_style_image.clone();
             true
         }
+        "list-style-type" => {
+            child.list_style_type = parent.list_style_type.clone();
+            true
+        }
+        "list-style-position" => {
+            child.list_style_position = parent.list_style_position.clone();
+            true
+        }
         "empty-cells" => {
             child.empty_cells = parent.empty_cells.clone();
             true
@@ -248,11 +256,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.padding_left = parent.padding_left.clone();
             true
         }
-        // TODO: 待垂直布局完整实现后启用 writing-mode 继承
-        // "writing-mode" => {
-        //     child.writing_mode = parent.writing_mode.clone();
-        //     true
-        // }
+        "writing-mode" => {
+            child.writing_mode = parent.writing_mode.clone();
+            true
+        }
         _ => false,
     }
 }
