@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十三轮）
+**日期**: 2026-06-09（本轮第十四轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 324
 **失败**: 166
 **通过率**: 66.1%
 
-**说明**：通过率从 65.7%（322/490）提升到 66.1%（324/490）。本轮完成了以下工作：（1）实现了 inline-block 元素在行内格式化上下文中的正确定位（adjust_inline_block_positions 后处理步骤），CSS2 通过率从 59.7% 提升到 62.8%；（2）实现了 border-collapse 冲突解决中的样式覆盖（collapsed_border_style_overrides），确保获胜边框的样式（solid vs dashed/ridge 等）被正确应用到绘制阶段；扩展了 color_value_to_u32 支持更多命名颜色。
+**说明**：通过率保持在 66.1%（324/490）。本轮完成了垂直书写模式 IFC 实现和绘制层字形渲染，但 css-writing-modes 测试主要测试块级布局方向（abs-pos-non-replaced 12 个测试全在 21.33% 失败）而非行内文本流，因此通过率未变化。垂直 IFC 基础设施已就绪，后续需解决静态位置计算和轴交换精度问题。
 
 ### 按目录
 
@@ -307,6 +307,22 @@
 | css-flexbox/ | 32/55 | 58.2% | ❌ |
 | css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
+
+### R14 本轮修复内容
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| 垂直 IFC break_items_into_columns | css-writing-modes | InlineFormattingContext 新增 break_items_into_columns 方法：字符沿 y 轴向下推进，"列"沿 x 轴排列。支持文本/inline-block/Br，支持 char-break |
+| 垂直模式接入布局引擎 | 全局 | 3 个 IFC 创建点（adjust_inline_block_positions、measure_text_content、remeasure_text_with_float_exclusions）传入 writing-mode 检测，设置 .with_vertical() |
+| 垂直字形渲染 | paint | paint_text 中垂直模式字符沿 y 轴推进（char_pos 累加 y），x 固定为列位置。字形 90° 旋转已启用 |
+
+### 关键发现（R14）
+
+| 发现 | 说明 |
+|------|------|
+| writing-modes 测试以块级布局为主 | 59 个测试中仅 ~5 个直接测试行内文本流，其余为 abs-pos/float/clearance/border-spacing 等块级布局。12 个 abs-pos-non-replaced 全在 21.33% 失败，根因是静态位置计算依赖轴交换精度 |
+| 垂直 IFC 基础设施就绪 | 行内格式化上下文已支持垂直模式，但 WPT 测试套件中未发现纯垂直行内文本流 reftest 来验证 |
+| 下一优先级：CSS2 块级布局精度 | CSS2 62.8%（81/129）是最大分母，改进 CSS2 的 float/clear/inline-box 精度可提升最多通过率 |
 
 ### R13 本轮修复内容
 
@@ -360,7 +376,7 @@
 
 ### 后续重点
 
-1. **writing-mode 垂直 inline 布局**（影响 css-writing-modes 36 测试）：需要在 InlineFormattingContext 中实现垂直模式 — 容器高度作为行宽、字符向下推进、"行"变为垂直列。轴交换已启用但 inline 布局仍为水平方向，是 12 个 abs-pos-non-replaced (21.33%) 和 3 个 direction (12.49%) 失败的根因
+1. **writing-mode 垂直块级布局精度**（影响 css-writing-modes 36 测试）：垂直 IFC 已实现，但 12 个 abs-pos-non-replaced (21.33%) 失败主因是静态位置计算中的轴交换精度。需修正 extract_layout 中 writing-mode 轴交换在 abs-pos 场景下的坐标转换
 2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容碎片化 — 将单个块级元素的内容拆分到多列。当前仅移动整个子元素到下一列
 3. **CSS2 float/clear 精度**（影响 CSS2 ~16 测试）：需要改进浮动定位和清除计算精度。clearance 计算使用简化公式，不完全匹配 CSS 2.1 规范的 C1/C2 双路径算法
 4. **CSS2 inline box model**（影响 ~7 测试）：空 inline 元素 line-height 贡献、inline 元素 margin 处理、block-in-inline 拆分
@@ -591,6 +607,7 @@
 94. ~~M10 — CSS 负值 border-width 拒绝~~ ✅(负值视为无效，回退到初始值 medium；修复 border-bottom-width-001.xht)
 95. ~~R13 — inline-block 行内定位~~ ✅(adjust_inline_block_positions 后处理 + IFC InlineBlockBox + baseline 修正；CSS2 59.7%→62.8%)
 96. ~~R13 — border-collapse 样式覆盖~~ ✅(collapsed_border_style_overrides + 更多命名颜色)
-97. R13 — writing-mode 垂直 inline 布局（影响 36 个测试：需实现 InlineFormattingContext 垂直模式）
-98. R13 — multicol column breaking（影响 32 个测试：需实现内容碎片化）
-99. R13 — CSS2 float/clear 精度提升（影响 ~16 个测试：clearance 算法改进）
+97. ~~R14 — writing-mode 垂直 inline 布局~~ ✅(break_items_into_columns + 布局引擎接入 + 绘制层垂直字形渲染；6 个单元测试)
+98. R14 — multicol column breaking（影响 32 个测试：需实现内容碎片化）
+99. R14 — CSS2 float/clear 精度提升（影响 ~16 个测试：clearance 算法改进）
+100. R14 — writing-mode abs-pos 静态位置修正（影响 12 个测试：轴交换精度）
