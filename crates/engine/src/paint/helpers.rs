@@ -617,8 +617,8 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             })
         }
         GradientValue::Radial(rg) => {
-            let cx = rect.left() + length_to_f32(&rg.position_x) / 100.0 * w;
-            let cy = rect.top() + length_to_f32(&rg.position_y) / 100.0 * h;
+            let cx = rect.left() + resolve_position(&rg.position_x, w);
+            let cy = rect.top() + resolve_position(&rg.position_y, h);
             let outer = match &rg.size {
                 RadialSize::ClosestSide => (cx - rect.left())
                     .min(rect.right() - cx)
@@ -1384,8 +1384,8 @@ mod tests {
     fn test_radial_closest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             shape: RadialShape::Ellipse,
-            position_x: LengthValue::Px(50.0),
-            position_y: LengthValue::Px(50.0),
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
             size: RadialSize::ClosestSide,
             repeating: false,
             stops: vec![GradientColorStop {
@@ -1399,6 +1399,7 @@ mod tests {
             cx, cy, outer_radius, ..
         } = prim.kind
         {
+            // 50% of 200 = 100, 50% of 100 = 50
             assert!((cx - 100.0).abs() < 0.1);
             assert!((cy - 50.0).abs() < 0.1);
             assert!((outer_radius - 50.0).abs() < 0.1);
@@ -1411,8 +1412,8 @@ mod tests {
     fn test_radial_farthest_side() {
         let grad = GradientValue::Radial(RadialGradient {
             shape: RadialShape::Ellipse,
-            position_x: LengthValue::Px(50.0),
-            position_y: LengthValue::Px(50.0),
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
             size: RadialSize::FarthestSide,
             repeating: false,
             stops: vec![GradientColorStop {
