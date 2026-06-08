@@ -588,3 +588,180 @@ fn test_word_break_break_all_preserves_all_chars() {
     let all_text: String = ctx.all_fragments().iter().map(|f| f.text.as_str()).collect();
     assert_eq!(all_text.replace(' ', ""), text, "所有字符都应被布局");
 }
+
+// ── 垂直书写模式测试 ──────────────────────────────────────────────────
+
+/// 测试垂直模式下短文本放入单列。
+#[test]
+fn test_vertical_single_column() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_vertical(true);
+    let runs = vec![TextRun {
+        text: "Hello".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        is_ahem_font: false,
+    }];
+    ctx.break_into_lines(runs);
+    // 短文本应在单列中
+    assert_eq!(ctx.lines.len(), 1, "短文本应在单列中");
+    // 字符沿 y 向下推进，fragments 的 y 应递增
+    let frags: Vec<_> = ctx.all_fragments();
+    assert!(!frags.is_empty());
+    for i in 1..frags.len() {
+        assert!(
+            frags[i].y >= frags[i - 1].y,
+            "垂直模式下片段 y 应递增: frags[{}].y={} >= frags[{}].y={}",
+            i,
+            frags[i].y,
+            i - 1,
+            frags[i - 1].y
+        );
+    }
+}
+
+/// 测试垂直模式下多列换列。
+#[test]
+fn test_vertical_column_breaking() {
+    // 使用 Ahem 字体 + break-word 模式：每个字符宽度 = font_size
+    let mut ctx = InlineFormattingContext::new(50.0)
+        .with_vertical(true)
+        .with_break_word(true);
+    // 10 个字符，每个 16px 宽 = 160px 总深度，但 max_depth=50px
+    let runs = vec![TextRun {
+        text: "AAAAAAAAAA".to_string(), // 10 chars × 16px = 160px depth
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        is_ahem_font: true,
+    }];
+    ctx.break_into_lines(runs);
+    // 应产生多列（max_depth=50px，每个字符 16px，第 4 个字符开始换列）
+    assert!(ctx.lines.len() > 1, "长文本应产生多列，实际 {} 列", ctx.lines.len());
+}
+
+/// 测试垂直模式下列沿 x 轴排列。
+#[test]
+fn test_vertical_columns_advance_along_x() {
+    let mut ctx = InlineFormattingContext::new(40.0).with_vertical(true);
+    let runs = vec![TextRun {
+        text: "AAAAAA".to_string(), // 6 chars × 16px = 96px depth
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        is_ahem_font: true,
+    }];
+    ctx.break_into_lines(runs);
+    // 列的 y 值（实际是 x 坐标）应递增
+    for i in 1..ctx.lines.len() {
+        assert!(
+            ctx.lines[i].y > ctx.lines[i - 1].y,
+            "列应沿 x 递增: lines[{}].y={} > lines[{}].y={}",
+            i,
+            ctx.lines[i].y,
+            i - 1,
+            ctx.lines[i - 1].y
+        );
+    }
+}
+
+/// 测试垂直模式下片段的 width 等于 line-height（列宽）。
+#[test]
+fn test_vertical_fragment_width_is_line_height() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_vertical(true);
+    let runs = vec![TextRun {
+        text: "Hi".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 24.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        is_ahem_font: false,
+    }];
+    ctx.break_into_lines(runs);
+    let frags: Vec<_> = ctx.all_fragments();
+    for frag in &frags {
+        assert_eq!(
+            frag.width, 24.0,
+            "垂直模式下片段 width 应等于 line-height: got {}",
+            frag.width
+        );
+    }
+}
+
+/// 测试垂直模式下 Br 强制换列。
+#[test]
+fn test_vertical_br_forces_new_column() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_vertical(true);
+    let items = vec![
+        InlineItem::Text(TextRun {
+            text: "A".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            is_ahem_font: false,
+        }),
+        InlineItem::Br,
+        InlineItem::Text(TextRun {
+            text: "B".to_string(),
+            node_id: NodeId::default(),
+            font_size: 16.0,
+            line_height: 20.0,
+            vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            is_ahem_font: false,
+        }),
+    ];
+    ctx.break_items_into_lines(items);
+    assert!(ctx.lines.len() >= 2, "Br 应强制换列");
+}
+
+/// 测试垂直模式下水平模式不受影响（回归测试）。
+#[test]
+fn test_horizontal_mode_unaffected_by_vertical_impl() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let runs = vec![TextRun {
+        text: "Hello World".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        is_ahem_font: false,
+    }];
+    ctx.break_into_lines(runs);
+    assert_eq!(ctx.lines.len(), 1, "水平模式：短文本应在单行中");
+    assert_eq!(ctx.lines[0].runs.len(), 2, "水平模式：两个单词");
+    // 水平模式下 x 递增，y 为 0（直到 vertical-align 调整）
+    let frags = ctx.all_fragments();
+    assert!(frags[0].x < frags[1].x, "水平模式下片段 x 应递增");
+}
