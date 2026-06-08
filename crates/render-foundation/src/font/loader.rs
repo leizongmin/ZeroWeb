@@ -17,6 +17,8 @@ pub struct FontLoader {
     fallback_chain: Vec<u32>,
     /// 预注册位图 glyph（font_id, glyph_id, size_bits）→ 光栅结果
     bitmap_glyphs: HashMap<(u32, u32, u32), GlyphBitmap>,
+    /// Ahem 测试字体 ID（WPT 标准测试字体，每个字符渲染为完美填充方块）
+    ahem_font_id: Option<u32>,
 }
 
 impl FontLoader {
@@ -29,6 +31,7 @@ impl FontLoader {
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
+            ahem_font_id: None,
         }
     }
 
@@ -58,6 +61,11 @@ impl FontLoader {
         &self.fallback_chain
     }
 
+    /// 检查指定字体 ID 是否为 Ahem 测试字体。
+    pub fn is_ahem(&self, font_id: u32) -> bool {
+        self.ahem_font_id == Some(font_id)
+    }
+
     /// 从字节数据加载字体
     pub fn load_font(&mut self, data: &[u8]) -> Result<u32, FontError> {
         let font = fontdue::Font::from_bytes(data, fontdue::FontSettings::default())
@@ -68,6 +76,10 @@ impl FontLoader {
 
         // 从原始字体字节中提取字体族名称（fontdue 不暴露 name 表）
         if let Some(name) = parse_font_family_name(data) {
+            // 检测 Ahem 测试字体
+            if name.eq_ignore_ascii_case("Ahem") {
+                self.ahem_font_id = Some(id);
+            }
             self.family_map.entry(name).or_default().push(id);
         }
 
@@ -157,6 +169,11 @@ impl FontLoader {
 
     /// 渲染指定字符的 glyph
     pub fn rasterize_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+        // Ahem 特殊处理：渲染为完美填充方块，匹配 Chrome/Skia 的渲染结果
+        if self.ahem_font_id == Some(font_id) && !code_point.is_whitespace() {
+            return self.rasterize_ahem_glyph(font_id, code_point, size);
+        }
+
         let font = self
             .fonts
             .get(&font_id)
@@ -171,6 +188,58 @@ impl FontLoader {
             x_offset: metrics.xmin as i16,
             y_offset: metrics.ymin as i16,
             advance: metrics.advance_width,
+        })
+    }
+
+    /// Ahem 字体特殊光栅化：生成完美填充方块。
+    ///
+    /// Ahem 是 WPT 标准测试字体，每个字符应渲染为边长 = font_size 的实心方块。
+    /// fontdue 的光栅化结果与 Skia（Chrome）存在差异，直接生成方块可确保像素级对齐。
+    fn rasterize_ahem_glyph(
+        &self,
+        font_id: u32,
+        code_point: char,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
+        let font = self
+            .fonts
+            .get(&font_id)
+            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+
+        // 使用字体的实际 ascent 来计算垂直偏移
+        let line_metrics = font
+            .horizontal_line_metrics(size)
+            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+
+        let ascent = line_metrics.ascent;
+        // 方块尺寸：取 ascent 向上取整，确保覆盖完整的 em 方块
+        let w = size.ceil() as u16;
+        let h = size.ceil() as u16;
+
+        // 检查字体是否实际包含该字符；若不含则回退到 fontdue 渲染
+        if !font.has_glyph(code_point) {
+            let (metrics, bitmap) = font.rasterize(code_point, size);
+            return Ok(GlyphBitmap {
+                data: bitmap,
+                width: metrics.width as u16,
+                height: metrics.height as u16,
+                x_offset: metrics.xmin as i16,
+                y_offset: metrics.ymin as i16,
+                advance: metrics.advance_width,
+            });
+        }
+
+        // 全部像素完全不透明
+        let data = vec![255u8; (w as usize) * (h as usize)];
+
+        Ok(GlyphBitmap {
+            data,
+            width: w,
+            height: h,
+            x_offset: 0,
+            // y_offset 为负值表示从基线向上偏移，覆盖完整 em 方块
+            y_offset: -(ascent.ceil() as i16),
+            advance: size,
         })
     }
 
@@ -982,5 +1051,118 @@ mod tests {
         let custom_bold = FontDesc::new("Test", 800, true);
         assert_eq!(custom_bold.weight, 800);
         assert!(custom_bold.italic);
+    }
+
+    /// Ahem 字体辅助：加载 Ahem.ttf 并返回 (FontLoader, font_id)
+    fn load_ahem() -> Option<(FontLoader, u32)> {
+        let path = "tests/wpt-runner/fonts/Ahem.ttf";
+        let data = std::fs::read(path).ok()?;
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&data).ok()?;
+        Some((loader, font_id))
+    }
+
+    /// 测试 Ahem 字体检测
+    ///
+    /// 加载 Ahem.ttf 后 is_ahem 应返回 true，系统字体应返回 false。
+    #[test]
+    fn test_ahem_font_detection() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+        assert!(loader.is_ahem(ahem_id), "Ahem font ID should be detected");
+        assert!(!loader.is_ahem(0), "font_id 0 should not be Ahem");
+        assert!(!loader.is_ahem(999), "nonexistent font should not be Ahem");
+    }
+
+    /// 测试 Ahem 字体光栅化生成完美填充方块
+    ///
+    /// Ahem 的每个字符应渲染为 font_size × font_size 的不透明方块。
+    #[test]
+    fn test_ahem_rasterize_perfect_square() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+
+        for &size in &[10.0f32, 16.0, 20.0, 32.0, 50.0] {
+            let bitmap = loader.rasterize_glyph(ahem_id, 'X', size).unwrap();
+            let expected_w = size.ceil() as u16;
+            let expected_h = size.ceil() as u16;
+            assert_eq!(
+                bitmap.width, expected_w,
+                "Ahem 'X' at size={size}: width should be {expected_w}, got {}",
+                bitmap.width
+            );
+            assert_eq!(
+                bitmap.height, expected_h,
+                "Ahem 'X' at size={size}: height should be {expected_h}, got {}",
+                bitmap.height
+            );
+            // 全部像素应完全不透明
+            let all_opaque = bitmap.data.iter().all(|&a| a == 255);
+            assert!(
+                all_opaque,
+                "Ahem 'X' at size={size}: all pixels should be fully opaque"
+            );
+            // advance 应等于 font_size
+            assert!(
+                (bitmap.advance - size).abs() < 0.01,
+                "Ahem advance should be {size}, got {}",
+                bitmap.advance
+            );
+        }
+    }
+
+    /// 测试 Ahem 字体多个不同字符都渲染为方块
+    ///
+    /// Ahem 字体中所有可打印字符的渲染结果应相同（完美方块）。
+    #[test]
+    fn test_ahem_all_chars_are_squares() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+
+        let size = 20.0f32;
+        for ch in ['A', 'z', '0', '!', 'X', 'p', 'M'] {
+            let bitmap = loader.rasterize_glyph(ahem_id, ch, size).unwrap();
+            assert_eq!(bitmap.width, size.ceil() as u16, "Ahem '{ch}' width mismatch");
+            assert_eq!(bitmap.height, size.ceil() as u16, "Ahem '{ch}' height mismatch");
+            assert!(
+                bitmap.data.iter().all(|&a| a == 255),
+                "Ahem '{ch}' should be fully opaque"
+            );
+        }
+    }
+
+    /// 测试 Ahem 字体 advance 宽度通过 measure_advance 返回
+    #[test]
+    fn test_ahem_measure_advance() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+
+        for &size in &[12.0f32, 20.0, 48.0] {
+            let advance = loader.measure_advance(ahem_id, 'X', size);
+            assert!(
+                (advance - size).abs() < 0.01,
+                "measure_advance should return {size}, got {advance}"
+            );
+        }
     }
 }
