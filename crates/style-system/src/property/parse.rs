@@ -420,9 +420,27 @@ pub fn parse_container_type_computed(value: &str) -> Option<ContainerType> {
 ///
 /// 简单实现：按逗号分割，去除引号和空格。
 pub fn parse_font_family(value: &str) -> Vec<String> {
-    value
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    let mut result = Vec::new();
+    for part in value.split(',') {
+        let s = part.trim();
+        if s.is_empty() {
+            continue;
+        }
+        // 带引号的名称直接使用
+        if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+            result.push(s[1..s.len() - 1].to_string());
+            continue;
+        }
+        // 未引号的名称必须仅包含 CSS 标识符字符（字母、数字、连字符、下划线、空格）
+        // 包含 !@#$% 等无效字符的名称应使整个声明无效（CSS 规范 § 3.1）
+        if s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
+        {
+            result.push(s.to_string());
+        } else {
+            // 无效字符 → 整个声明无效
+            return Vec::new();
+        }
+    }
+    result
 }
