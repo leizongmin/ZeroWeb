@@ -1017,22 +1017,15 @@ fn position_cells(
             cell_box.y = 0.0;
             cell_box.width = cell_width;
 
-            // 单元格高度：如果单元格有明确高度且 overflow 裁剪，
-            // 保持原始高度（由 taffy 计算），否则使用行高
-            let cell_height = if let Some(cell_node_id) = cell_box.node_id
-                && let Some(cell_style) = styles.get(&cell_node_id)
-            {
-                let has_explicit_height = !matches!(cell_style.height, zero_css_parser::values::LengthValue::Auto);
-                let is_overflow_clip =
-                    !matches!(cell_style.overflow_y, zero_css_parser::values::OverflowValue::Visible);
-                if has_explicit_height && is_overflow_clip {
-                    cell_box.height // 保持 taffy 计算的明确高度
-                } else {
-                    row_height
-                }
-            } else {
-                row_height
-            };
+            // 单元格高度：CSS 2.1 规范中，table cell 的 height 属性被视为最小高度。
+            // 单元格必须增长以包含其内容，不能裁剪到明确高度。
+            // 取 max(行高, 单元格内容的最大高度)。
+            let cell_content_height = cell_box
+                .children
+                .iter()
+                .map(|c| c.height + c.margin_top + c.margin_bottom)
+                .fold(0.0f32, f32::max);
+            let cell_height = row_height.max(cell_content_height);
             cell_box.height = cell_height;
 
             // 应用 vertical-align 到单元格内的子元素
