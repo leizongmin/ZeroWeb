@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；490 个上游 reftest 已导入（9 个目录，+1 JS-dependent 跳过）；**真实通过率 66.9% (328/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 70.9%；css-position 62.5%；CSS2 63.6%；css-flexbox 61.8%；css-multicol 45.6%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；flex-flow 简写展开 ✅(flex-direction || flex-wrap)；font-family 非法字符验证 ✅(含无效字符的未引用字体族名使整个声明无效)；font 简写验证 ✅(缺少 font-size 的 font 简写声明视为无效)；float Y 位置修复 ✅(float 元素在含非 float 子元素的容器中尊重 taffy Y 位置，确保不被放到前面内容之上)；clearance 计算修复 ✅(CSS 2.1 §9.5.2 使用 flow_bottom + margin 折叠计算假设位置，替代简单的 float_y_offset 扣除)；inline `<img>` 替换元素 ✅(在 inline formatting context 中识别 img 元素固有尺寸)；**后续重点**：writing-mode 布局支持（影响 writing-modes 35 个测试）、border-collapse 冲突解决、column breaking（影响 multicol 31 个测试）、float 布局精度、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 67.1% (329/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 63.6%；css-flexbox 61.8%；css-multicol 45.6%；css-writing-modes 40.7%；**本轮修复**：CSS 绝对长度单位 ✅(in/pt/pc/cm/mm/Q)；表格单元格 vertical-align ✅(top/middle/bottom)；径向渐变位置解析 ✅(resolve_position)；表格 min-height border-box ✅；表格单元格高度最小值 ✅；图像双线性插值 ✅；**后续重点**：writing-mode 布局支持（影响 35 个测试）、column breaking（影响 31 个测试）、float 布局精度、inline box model |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第六轮）
+**日期**: 2026-06-08（本轮第七轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 328
-**失败**: 162
-**通过率**: 66.9%
+**通过**: 329
+**失败**: 161
+**通过率**: 67.1%
 
-**说明**：通过率从 65.9% 提升到 66.9% (+5 passes)。本轮实现了 float Y 位置修复（float 在含 inflow 子元素的容器中尊重 taffy Y 位置）、clearance 计算修复（CSS 2.1 §9.5.2 使用 flow_bottom + margin 折叠替代简单 offset 扣除）、inline img 替换元素支持。
+**说明**：通过率从 66.9% 提升到 67.1% (+1 pass)。本轮实现了 CSS 绝对长度单位、表格单元格 vertical-align、径向渐变位置解析、表格 min-height border-box 计算、表格单元格高度作为最小值。
 
 ### 按目录
 
@@ -301,7 +301,7 @@
 | css-text-decor/ | 39/39 | 100.0% | ✅ |
 | css-fonts/ | 57/60 | 95.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
-| css-tables/ | 39/55 | 70.9% | ❌ |
+| css-tables/ | 40/55 | 72.7% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
 | CSS2/ | 82/129 | 63.6% | ❌ |
 | css-flexbox/ | 34/55 | 61.8% | ❌ |
@@ -312,15 +312,12 @@
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| CSS font-family 解析 | 全局 | 替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace；Painter/RenderPipeline 传递 font resolver |
-| CSS border-width zeroing | 规范符合 | 当 border-style 为 none/hidden 时强制 border-width=0（CSS Backgrounds and Borders 规范要求） |
-| FontLoader 字体名提取 | 字体系统 | parse_font_family_name() 直接解析 OpenType name 表（nameID=1），替代 fontdue 不暴露的 API |
-| flex-flow 简写展开 | css-flexbox | expand_one 新增 "flex-flow" 分支，解析 flex-direction \|\| flex-wrap 并展开为长属性。修复 flex-flow-002/007 和 flexbox-column-row-gap-003 |
-| font-family 非法字符验证 | CSS2/fonts | parse_font_family() 验证未引用字体族名仅含字母/数字/连字符/下划线/空格，含非法字符时整个声明无效。修复 font-family-invalid-characters-001/008 |
-| font 简写验证 | CSS2/fonts | expand_font() 检查是否找到 size 部分，缺少 font-size 的 font 简写声明视为无效（除系统字体关键字）。更新测试用例匹配 CSS 规范行为 |
-| float Y 位置修复 | CSS2/floats | adjust_float_positions 第一阶段：当容器有非 float 子元素时，float 的最小 Y 设为其 taffy Y 位置（尊重前面的正常流内容）。CSS 2.1 §9.5.1 要求 float 放在其正常流位置或之后 |
-| clearance 计算修复 | CSS2/floats-clear | adjust_float_positions 第二阶段：CSS 2.1 §9.5.2 clearance 假设位置使用 flow_bottom + margin 折叠计算，替代简单的 float_y_offset 扣除。正确处理 float 移除后 margin 折叠方式变化的情况 |
-| inline img 替换元素 | inline layout | InlineFormattingContext 中识别 `<img>` 元素，使用 HTML width/height 属性作为固有尺寸创建 InlineBlock 条目 |
+| CSS 绝对长度单位 | 全局 | parse_length() 新增 in/pt/pc/cm/mm/Q 单位支持（96 DPI）；background 简写分类器新增所有长度后缀识别 |
+| 表格单元格 vertical-align | css-tables | table.rs position_cells 中新增 vertical-align 处理（top/middle/bottom），基于单元格内容高度和分配高度计算偏移 |
+| 径向渐变位置解析修复 | 全局 | gradient_to_primitive 使用 resolve_position() 正确处理 Percentage 和 Px 值，替代旧的 length_to_f32/100 错误逻辑 |
+| 表格 min-height border-box | css-tables | apply_table_size_constraints 正确处理 min-height/max-height 为 border-box 约束，减去 padding+border 后与内容高度比较 |
+| 表格单元格高度作为最小值 | css-tables | CSS 2.1 规范中 table cell 的 height 为最小高度，cell 必须增长以包含内容。改用 max(row_height, cell_content_height) |
+| 图像渲染双线性插值 | 渲染质量 | CPU render_image 从最近邻采样改为双线性插值 |
 
 
 ### 发现的关键问题
@@ -425,6 +422,10 @@
 | 2026-06-08 | clearance 计算代码质量改善 | 澄清 CSS 2.1 §9.5.2 clearance 语义：零 clearance 仍然阻止 margin 折叠；clearance = max(0, clear_bottom - hypothetical_position)。后处理方式的局限性在于 taffy 已应用 margin 折叠。 |
 | 2026-06-08 | 空 inline 元素 line-height | 空 inline 元素（如 `<span></span>`）生成零宽度 TextRun，其 line-height 仍贡献到行盒高度。修改 collect_inline_items 不再跳过空 inline 元素。 |
 | 2026-06-08 | sibling combinators 文本节点跳过 | NextSibling (+) 和 SubsequentSibling (~) 组合器现在跳过元素间的文本节点，匹配 CSS 选择器规范行为。修改 matches_selector_recursive 和 matches_has_selector_chain。 |
+| 2026-06-08 | CSS 绝对长度单位 | parse_length() 新增 in/pt/pc/cm/mm/Q 单位（96 DPI），background 简写分类器新增所有长度后缀。修复使用 1in 高度的 floats-clear 测试。 |
+| 2026-06-08 | 径向渐变位置修复 | gradient_to_primitive 改用 resolve_position() 正确处理 Percentage（百分比）和 Px（绝对像素），替代旧的 length_to_f32/100 逻辑。修复相关测试用例。 |
+| 2026-06-08 | 表格 min-height border-box | apply_table_size_constraints 正确处理 min-height/max-height 为 border-box 约束（减去 padding+border）。修复 min-height-table。 |
+| 2026-06-08 | 表格单元格高度最小值 | CSS 2.1 规范中 cell height 为最小高度，改用 max(row_height, cell_content_height)。 |
 
 ---
 
@@ -516,3 +517,9 @@
 84. M10 — writing-mode 布局支持（影响 35 个测试：12 个 abs-pos-non-replaced 21.33% + direction 12.49% + float-orthog 3% 等；需实现垂直书写模式下轴交换）
 85. M10 — multicol column breaking（影响 31 个测试；需实现内容跨列拆分）
 86. M10 — CSS2 inline box model 改进（empty-inline-002/003 + inline-box-001/002 + inline-formatting-context-008/009/011 等 ~8 个测试）
+87. ~~M10 — CSS 绝对长度单位~~ ✅(parse_length 新增 in/pt/pc/cm/mm/Q，background 简写分类器更新)
+88. ~~M10 — 表格单元格 vertical-align~~ ✅(top/middle/bottom 支持)
+89. ~~M10 — 径向渐变位置解析~~ ✅(resolve_position 正确处理 Percentage/Px)
+90. ~~M10 — 表格 min-height border-box~~ ✅(min-height-table 通过)
+91. ~~M10 — 表格单元格高度最小值~~ ✅(cell height = max(row_height, content_height))
+92. ~~M10 — 图像双线性插值~~ ✅(CPU render_image 从最近邻改为双线性插值)
