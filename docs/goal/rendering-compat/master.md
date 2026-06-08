@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第四轮）
+**日期**: 2026-06-08（本轮第五轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 323
 **失败**: 167
-**通过率**: 65.8%
+**通过率**: 65.9%
 
-**说明**：通过率从 64.8% (318/491) 提升至 65.8% (323/490)。本轮实现 flex-flow 简写展开（+3 flexbox 测试）、font-family 非法字符验证（+2 CSS2 测试）。+1 个 JS-dependent 测试加入 skip list（collapsed-border-remove-row-group）。
+**说明**：通过率维持 65.9% (323/490)。本轮实现了 CSS 2.1 Appendix E 绘制顺序修复（float 元素在 block 子元素之后绘制）、columns 简写顺序无关解析修复、clearance 计算代码质量改善。这些是规范合规性修复，为后续通过率提升打基础。
 
 ### 按目录
 
@@ -301,11 +301,11 @@
 | css-text-decor/ | 39/39 | 100.0% | ✅ |
 | css-fonts/ | 57/60 | 95.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
-| css-tables/ | 41/56 | 73.2% | ❌ |
+| css-tables/ | 41/55 | 74.5% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 76/129 | 58.9% | ❌ |
+| CSS2/ | 75/129 | 58.1% | ❌ |
 | css-flexbox/ | 34/55 | 61.8% | ❌ |
-| css-multicol/ | 25/57 | 43.9% | ❌ |
+| css-multicol/ | 26/57 | 45.6% | ❌ |
 | css-writing-modes/ | 24/59 | 40.7% | ❌ |
 
 ### 本轮修复内容
@@ -417,6 +417,9 @@
 | 2026-06-08 | empty-cells border-collapse 修复 | `empty-cells: hide` 仅在 separated border model 中生效。在 collapsed border model 中，空单元格仍需显示边框。修改 paint_node 两处 skip_empty_cell 条件添加 `border_collapse == Separate` 检查。 |
 | 2026-06-08 | row-group/row box model 抑制 | CSS 2.1 Section 17.5.3/17.5.4：在 separated border model 中，table-row-group 和 table-row 的 border/padding/margin 无视觉效果。新增 `suppress_row_group_row_box_model()` 和 `zero_box_model()` 函数。 |
 | 2026-06-08 | table cell explicit height 保留 | 有明确 height 且 overflow:hidden/scroll/clip 的单元格保持 taffy 计算的原始高度，不被行高覆盖。修复 table-cell-overflow-explicit-height 测试。 |
+| 2026-06-08 | CSS 2.1 Appendix E 绘制顺序 | paint_node_in_rect 和 paint_node 中子元素分两轮绘制：先绘制非 float 子元素，再绘制 float 子元素。确保 float 内容视觉上在 block 背景之上（CSS 2.1 Appendix E）。 |
+| 2026-06-08 | columns 简写顺序无关解析 | expand_columns() 双值模式改为自动检测哪个是整数（column-count）哪个是长度（column-width），而非硬编码 parts[0]/[1]。修复 `columns: 100px 6` 等逆序声明。 |
+| 2026-06-08 | clearance 计算代码质量改善 | 澄清 CSS 2.1 §9.5.2 clearance 语义：零 clearance 仍然阻止 margin 折叠；clearance = max(0, clear_bottom - hypothetical_position)。后处理方式的局限性在于 taffy 已应用 margin 折叠。 |
 | 2026-06-08 | 空 inline 元素 line-height | 空 inline 元素（如 `<span></span>`）生成零宽度 TextRun，其 line-height 仍贡献到行盒高度。修改 collect_inline_items 不再跳过空 inline 元素。 |
 | 2026-06-08 | sibling combinators 文本节点跳过 | NextSibling (+) 和 SubsequentSibling (~) 组合器现在跳过元素间的文本节点，匹配 CSS 选择器规范行为。修改 matches_selector_recursive 和 matches_has_selector_chain。 |
 
@@ -497,5 +500,10 @@
 71. ~~M10 — flex-flow 简写展开~~ ✅ (shorthand/mod.rs 新增 "flex-flow" 分支，解析 flex-direction || flex-wrap；修复 3 个 flexbox 测试)
 72. ~~M10 — font-family 非法字符验证~~ ✅ (parse_font_family 验证未引用名称仅含有效字符，含非法字符时整个声明无效；修复 2 个 CSS2/fonts 测试)
 73. ~~M10 — font 简写验证~~ ✅ (expand_font 检查 size_found，缺少 font-size 的声明无效；更新测试用例匹配 CSS 规范)
-74. M10 — column breaking 实现（影响 css-multicol 43.9%；当前 multicol 仅分配整个子元素到列，不拆分溢出内容；需实现 fragmentation 基础设施）
+74. M10 — column breaking 实现（影响 css-multicol 45.6%；当前 multicol 仅分配整个子元素到列，不拆分溢出内容；需实现 fragmentation 基础设施）
 75. M10 — 浮动清除算法改进（影响 CSS2/floats-clear 20 个测试；当前 max(normal_y, clear_bottom) 未正确实现 CSS 2.1 clearance 对 margin 折叠的阻断）
+76. ~~M10 — CSS 2.1 Appendix E 绘制顺序~~ ✅ (float 子元素在非 float 子元素之后绘制，paint_node_in_rect 和 paint_node 各分两轮遍历)
+77. ~~M10 — columns 简写顺序无关解析~~ ✅ (双值模式自动检测整数/长度，修复逆序声明如 `columns: 100px 6`)
+78. ~~M10 — clearance 代码质量改善~~ ✅ (澄清零 clearance 阻止 margin 折叠；后处理方式局限：taffy 已应用 margin 折叠)
+79. M10 — 分析 CSS2 border/background 失败根因（6 个 border 测试 + 5 个 background 测试失败，需定位具体渲染差异）
+80. M10 — inline formatting context 改进（影响 CSS2/linebox 5 个测试；空 inline 元素 line-height 贡献、inline 元素 margin 处理）
