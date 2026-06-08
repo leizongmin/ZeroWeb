@@ -42,6 +42,10 @@ pub struct TextRun {
     /// word-spacing（px），空格字符后追加的额外间距。
     #[doc(hidden)]
     pub word_spacing: f32,
+    /// inline 元素的水平 margin（px）。文本节点为 0。
+    pub margin_left: f32,
+    /// inline 元素的水平 margin（px）。文本节点为 0。
+    pub margin_right: f32,
 }
 
 impl TextRun {
@@ -63,6 +67,8 @@ impl TextRun {
             vertical_align,
             letter_spacing: 0.0,
             word_spacing: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
         }
     }
 }
@@ -468,6 +474,8 @@ impl InlineFormattingContext {
                                 vertical_align,
                                 letter_spacing,
                                 word_spacing,
+                                margin_left: 0.0,
+                                margin_right: 0.0,
                             }));
                         }
                     }
@@ -497,6 +505,19 @@ impl InlineFormattingContext {
                                 _ => 0.0,
                             })
                             .unwrap_or(0.0);
+                        // 提取 inline 元素的水平 margin
+                        let margin_left = style
+                            .map(|s| match &s.margin_left {
+                                LengthValue::Px(v) => *v as f32,
+                                _ => 0.0,
+                            })
+                            .unwrap_or(0.0);
+                        let margin_right = style
+                            .map(|s| match &s.margin_right {
+                                LengthValue::Px(v) => *v as f32,
+                                _ => 0.0,
+                            })
+                            .unwrap_or(0.0);
                         if !trimmed.is_empty() {
                             items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
@@ -506,6 +527,8 @@ impl InlineFormattingContext {
                                 vertical_align,
                                 letter_spacing,
                                 word_spacing,
+                                margin_left,
+                                margin_right,
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height 影响行盒高度
@@ -518,6 +541,8 @@ impl InlineFormattingContext {
                                 vertical_align,
                                 letter_spacing: 0.0,
                                 word_spacing: 0.0,
+                                margin_left,
+                                margin_right,
                             }));
                         }
                     }
@@ -570,7 +595,16 @@ impl InlineFormattingContext {
                         if run.line_height > current_line.height {
                             current_line.height = run.line_height;
                         }
+                        // 即使空元素也要消费 margin-left（在行首添加空白）
+                        if run.margin_left > 0.0 {
+                            current_x += run.margin_left;
+                        }
                         continue;
+                    }
+
+                    // 在第一个词之前添加 margin-left
+                    if run.margin_left > 0.0 {
+                        current_x += run.margin_left;
                     }
 
                     for (word_idx, word) in words.iter().enumerate() {
@@ -679,6 +713,11 @@ impl InlineFormattingContext {
                             current_x += word_width;
                             current_line.height = current_line.height.max(fragment_height);
                         }
+                    }
+
+                    // 在最后一个词之后添加 margin-right
+                    if run.margin_right > 0.0 {
+                        current_x += run.margin_right;
                     }
                 }
                 InlineItem::InlineBlock(box_info) => {
