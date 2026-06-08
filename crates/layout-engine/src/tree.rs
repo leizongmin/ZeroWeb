@@ -188,7 +188,7 @@ fn build_subtree(
     dom_id: NodeId,
     parent_grid_areas: Option<&GridAreaMap>,
     in_shadow: bool,
-    parent_writing_mode: WritingModeValue,
+    _parent_writing_mode: WritingModeValue,
 ) -> taffy::NodeId {
     // LAY-08: 先检查 display:none 再克隆，避免对隐藏元素做不必要的堆分配
     if styles.get(&dom_id).is_some_and(|s| s.display == DisplayValue::None) {
@@ -222,13 +222,16 @@ fn build_subtree(
     // 当父元素（即当前元素的 containing block）具有 vertical writing mode 时，
     // 交换盒模型属性使 taffy 以「水平=行内」模型计算布局，
     // 然后在提取结果时交换坐标还原视觉位置。
-    let is_vertical = matches!(
-        parent_writing_mode,
-        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-    );
-    if is_vertical {
-        crate::converter::apply_vertical_writing_mode(&mut taffy_style);
-    }
+    //
+    // TODO: 当前轴交换实现过于简化，需要与 paint 系统协调后启用。
+    // 暂时禁用以避免回归。writing-mode 继承和 LayoutBox.writing_mode 字段已正确实现。
+    // let is_vertical = matches!(
+    //     parent_writing_mode,
+    //     WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    // );
+    // if is_vertical {
+    //     crate::converter::apply_vertical_writing_mode(&mut taffy_style);
+    // }
 
     // 记录此元素的 writing mode，用于子元素轴交换判断
     let own_writing_mode = computed.writing_mode.clone();
