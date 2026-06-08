@@ -344,52 +344,45 @@ impl LayoutEngine {
         });
 
         // 从 taffy 提取原始值
-        // TODO: 待垂直布局轴交换启用后恢复为 mut
-        let x = layout.location.x;
-        let y = layout.location.y;
-        let width = layout.size.width;
-        let height = layout.size.height;
-        let border_top = layout.border.top;
-        let border_right = layout.border.right;
-        let border_bottom = layout.border.bottom;
-        let border_left = layout.border.left;
-        let padding_top = layout.padding.top;
-        let padding_right = layout.padding.right;
-        let padding_bottom = layout.padding.bottom;
-        let padding_left = layout.padding.left;
-        let margin_top = layout.margin.top;
-        let margin_right = layout.margin.right;
-        let margin_bottom = layout.margin.bottom;
-        let margin_left = layout.margin.left;
+        let mut x = layout.location.x;
+        let mut y = layout.location.y;
+        let mut width = layout.size.width;
+        let mut height = layout.size.height;
+        let mut border_top = layout.border.top;
+        let mut border_right = layout.border.right;
+        let mut border_bottom = layout.border.bottom;
+        let mut border_left = layout.border.left;
+        let mut padding_top = layout.padding.top;
+        let mut padding_right = layout.padding.right;
+        let mut padding_bottom = layout.padding.bottom;
+        let mut padding_left = layout.padding.left;
+        let mut margin_top = layout.margin.top;
+        let mut margin_right = layout.margin.right;
+        let mut margin_bottom = layout.margin.bottom;
+        let mut margin_left = layout.margin.left;
 
         // 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
         // 需要交换回正确的视觉坐标。
-        // TODO: 与 tree.rs 中的轴交换同步启用，当前禁用以避免回归。
-        // 以下轴交换代码已准备就绪但暂时禁用。
-        // 启用时取消注释 `if false` 改为 `if true` 即可。
-        #[allow(clippy::overly_complex_bool_expr)]
-        let _do_swap = false
-            && matches!(
-                parent_writing_mode,
-                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-            );
-        // NOTE: 以下交换代码被临时禁用。待垂直布局完整实现后启用。
-        // if _do_swap {
-        //     // 交换位置
-        //     std::mem::swap(&mut x, &mut y);
-        //     // 交换尺寸
-        //     std::mem::swap(&mut width, &mut height);
-        //     // 交换边框
-        //     std::mem::swap(&mut border_top, &mut border_left);
-        //     std::mem::swap(&mut border_bottom, &mut border_right);
-        //     // 交换内边距
-        //     std::mem::swap(&mut padding_top, &mut padding_left);
-        //     std::mem::swap(&mut padding_bottom, &mut padding_right);
-        //     // 交换外边距
-        //     std::mem::swap(&mut margin_top, &mut margin_left);
-        //     std::mem::swap(&mut margin_bottom, &mut margin_right);
-        // }
-        let _ = _do_swap;
+        // 与 tree.rs 中的 apply_vertical_writing_mode 轴交换配合使用：
+        // 输入时将 CSS 垂直属性交换到 taffy 水平模型，输出时交换回视觉坐标。
+        if matches!(
+            parent_writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        ) {
+            // 交换位置
+            std::mem::swap(&mut x, &mut y);
+            // 交换尺寸
+            std::mem::swap(&mut width, &mut height);
+            // 交换边框
+            std::mem::swap(&mut border_top, &mut border_left);
+            std::mem::swap(&mut border_bottom, &mut border_right);
+            // 交换内边距
+            std::mem::swap(&mut padding_top, &mut padding_left);
+            std::mem::swap(&mut padding_bottom, &mut padding_right);
+            // 交换外边距
+            std::mem::swap(&mut margin_top, &mut margin_left);
+            std::mem::swap(&mut margin_bottom, &mut margin_right);
+        }
 
         // 计算内容区域
         let content_x = x + border_left + padding_left;
