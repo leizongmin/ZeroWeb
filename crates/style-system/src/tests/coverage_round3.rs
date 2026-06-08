@@ -252,6 +252,21 @@ fn apply_border_bottom_width() {
 }
 
 #[test]
+/// CSS 规范：border-width 负值无效，应被拒绝（保持初始值）
+fn apply_border_bottom_width_negative_rejected() {
+    let mut style = ComputedStyle::default();
+    // 初始值为 medium = Px(3.0)
+    let initial = style.border_bottom_width.clone();
+    assert!(!crate::property::apply::apply_property_value(
+        &mut style,
+        "border-bottom-width",
+        "-1px"
+    ));
+    // 负值被拒绝，保持初始值
+    assert_eq!(style.border_bottom_width, initial);
+}
+
+#[test]
 /// 应用 border-left-width
 fn apply_border_left_width() {
     let mut style = ComputedStyle::default();

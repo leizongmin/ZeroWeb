@@ -338,12 +338,11 @@ impl PropertyRegistry {
                 | "text-shadow"
                 | "list-style-image"
                 | "empty-cells"
-                | "border-spacing"
-                // writing-mode 的继承需要与垂直布局完整实现协调后启用。
-                // 当前 paint 系统会旋转继承的 VerticalRl 子元素的 glyph，
-                // 但布局坐标未做垂直适配，导致像素级回归。
-                // TODO: 实现完整的垂直书写模式布局后重新启用。
-                // | "writing-mode"
+                | "border-spacing" // writing-mode 的继承需要与垂直布局完整实现协调后启用。
+                                   // 当前 paint 系统会旋转继承的 VerticalRl 子元素的 glyph，
+                                   // 但布局坐标未做垂直适配，导致像素级回归。
+                                   // TODO: 实现完整的垂直书写模式布局后重新启用。
+                                   // | "writing-mode"
         )
     }
 

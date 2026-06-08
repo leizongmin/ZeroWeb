@@ -353,10 +353,11 @@ impl LayoutEngine {
         // 以下轴交换代码已准备就绪但暂时禁用。
         // 启用时取消注释 `if false` 改为 `if true` 即可。
         #[allow(clippy::overly_complex_bool_expr)]
-        let _do_swap = false && matches!(
-            parent_writing_mode,
-            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-        );
+        let _do_swap = false
+            && matches!(
+                parent_writing_mode,
+                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+            );
         // NOTE: 以下交换代码被临时禁用。待垂直布局完整实现后启用。
         // if _do_swap {
         //     // 交换位置
