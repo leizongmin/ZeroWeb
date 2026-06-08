@@ -278,7 +278,10 @@ impl LayoutEngine {
         let clear = computed.map_or(ClearValue::None, |s| s.clear.clone());
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
-        let is_flow_root = computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot));
+        // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
+        let is_flow_root = computed.is_some_and(|s| {
+            matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock)
+        });
         // CSS 2.1 §9.2.2: clear 属性仅适用于块级元素。
         // 块级元素 = display 为 block, list-item, table 的元素，
         // 以及 flex/grid 容器。table 内部元素（row-group, row, cell 等）
