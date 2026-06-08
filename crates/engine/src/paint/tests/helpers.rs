@@ -506,10 +506,9 @@ fn test_gradient_to_primitive_radial() {
         outer_radius,
     } = prim.kind
     {
-        // With position Percentage(50.0), current implementation treats it as 0,0
-        // This is because length_to_f32 only handles Px values
-        assert_eq!(cx, 0.0, "cx should be rect.left() + length_to_f32(Px(50))/100*w = 0");
-        assert_eq!(cy, 0.0, "cy should be rect.top() + length_to_f32(Px(50))/100*h = 0");
+        // Percentage(50.0) = 50% of 200 = 100，加上 rect.left()=0
+        assert!((cx - 100.0).abs() < 0.1, "cx should be 50% of 200 = 100, got {cx}");
+        assert!((cy - 100.0).abs() < 0.1, "cy should be 50% of 200 = 100, got {cy}");
         assert_eq!(inner_radius, 0.0);
         assert!(outer_radius > 0.0);
     } else {

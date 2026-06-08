@@ -1448,7 +1448,19 @@ fn classify_bg_token_owned(
     }
 
     // 如果 token 看起来像长度/百分比，归为 position
-    if token.ends_with("px") || token.ends_with('%') || token.ends_with("em") || token.ends_with("rem") {
+    if token.ends_with("px")
+        || token.ends_with('%')
+        || token.ends_with("em")
+        || token.ends_with("rem")
+        || token.ends_with("in")
+        || token.ends_with("pt")
+        || token.ends_with("pc")
+        || token.ends_with("cm")
+        || token.ends_with("mm")
+        || token.ends_with("ch")
+        || token.ends_with("vh")
+        || token.ends_with("vw")
+    {
         if bg_position.is_empty() {
             *bg_position = token.to_string();
         }
