@@ -333,6 +333,12 @@ pub struct InlineFormattingContext {
     pub float_exclusions: Vec<FloatExclusion>,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
+    /// 垂直书写模式（vertical-rl 或 vertical-lr）。
+    ///
+    /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
+    /// 列沿 x 轴向右排列。fragment 的坐标系统不变（x=水平，y=垂直），
+    /// 但"换行"的触发条件和推进方向交换。
+    pub vertical: bool,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -353,12 +359,21 @@ impl InlineFormattingContext {
             tab_size: DEFAULT_TAB_SIZE,
             float_exclusions: Vec::new(),
             lines: Vec::new(),
+            vertical: false,
         }
     }
 
     /// 设置文本对齐方式。
     pub fn with_text_align(mut self, align: TextAlign) -> Self {
         self.text_align = align;
+        self
+    }
+
+    /// 设置垂直书写模式。
+    ///
+    /// 启用后，字符沿 y 轴向下推进，"行"变为垂直列。
+    pub fn with_vertical(mut self, vertical: bool) -> Self {
+        self.vertical = vertical;
         self
     }
 
@@ -659,6 +674,11 @@ impl InlineFormattingContext {
     /// 和 `InlineItem::Br`（强制换行）。浮动排除区域会缩小每行的可用宽度。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
+
+        if self.vertical {
+            self.break_items_into_columns(items);
+            return;
+        }
 
         // 追踪当前行的 y 偏移量（用于计算浮动排除区域）
         let mut current_y = 0.0_f32;
@@ -980,6 +1000,194 @@ impl InlineFormattingContext {
                 }
             }
         }
+    }
+
+    /// 垂直书写模式的行内布局 — 字符沿 y 轴向下推进，"列"沿 x 轴排列。
+    ///
+    /// 与水平模式的对应关系：
+    /// - 水平模式的 `x` 推进 → 垂直模式的 `y` 推进（字符向下排列）
+    /// - 水平模式的换行增加 `y` → 垂直模式的换列增加 `x`（新列向右）
+    /// - 水平模式的 `container_width` 限制行宽 → 垂直模式的 `container_width` 限制列高
+    /// - 片段的 `width`（水平跨度）→ 片段的 `height`（垂直跨度）
+    /// - 片段的 `height`（line-height，行高）→ 片段的 `width`（列宽）
+    fn break_items_into_columns(&mut self, items: Vec<InlineItem>) {
+        // 垂直模式下 container_width 表示内容可向下推进的最大高度
+        let max_depth = self.container_width;
+        let _default_line_height = 20.0_f32;
+
+        // 当前列的状态
+        let mut current_column = LineBox {
+            y: 0.0,
+            height: 0.0,
+            runs: Vec::new(),
+        };
+        // 当前深度（字符沿 y 向下推进的位置）
+        let mut current_depth = self.text_indent;
+
+        for item in items {
+            match item {
+                InlineItem::Text(run) => {
+                    let visual_text = bidi_reorder(&run.text);
+                    let words = self.split_into_words(&visual_text);
+
+                    // 空 inline 元素
+                    if words.is_empty() && run.text.is_empty() {
+                        let col_width = run.line_height;
+                        if col_width > current_column.height {
+                            current_column.height = col_width;
+                        }
+                        if run.margin_left > 0.0 {
+                            current_depth += run.margin_left;
+                        }
+                        continue;
+                    }
+
+                    if run.margin_left > 0.0 {
+                        current_depth += run.margin_left;
+                    }
+
+                    for (word_idx, word) in words.iter().enumerate() {
+                        let char_count = word.chars().count();
+                        // 垂直模式下，单词的"高度" = 水平模式的宽度
+                        let mut word_height = estimate_string_width(word, run.font_size, run.is_ahem_font)
+                            + run.letter_spacing * char_count as f32;
+                        if word_idx > 0 {
+                            word_height += run.word_spacing;
+                        }
+
+                        // 检查当前列是否放得下（深度方向）
+                        if !self.no_wrap && current_depth + word_height > max_depth && !current_column.runs.is_empty() {
+                            self.lines.push(current_column);
+                            current_column = LineBox {
+                                y: 0.0,
+                                height: 0.0,
+                                runs: Vec::new(),
+                            };
+                            current_depth = 0.0;
+                        }
+
+                        // overflow-wrap / word-break: break-all
+                        let need_char_break = !self.no_wrap
+                            && (self.break_word || self.word_break == WordBreakMode::BreakAll)
+                            && current_depth + word_height > max_depth
+                            && !word.is_empty();
+
+                        if need_char_break {
+                            let char_col_width = run.line_height;
+                            let chars: Vec<char> = word.chars().collect();
+                            let mut partial_depth = current_depth;
+
+                            for (ci, ch) in chars.iter().enumerate() {
+                                let ch_height =
+                                    estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
+
+                                if partial_depth + ch_height > max_depth && ci > 0 {
+                                    self.lines.push(current_column);
+                                    current_column = LineBox {
+                                        y: 0.0,
+                                        height: 0.0,
+                                        runs: Vec::new(),
+                                    };
+                                    partial_depth = 0.0;
+                                }
+
+                                current_column.runs.push(TextFragment {
+                                    x: 0.0,
+                                    y: partial_depth,
+                                    width: char_col_width,
+                                    height: ch_height,
+                                    text: ch.to_string(),
+                                    node_id: run.node_id,
+                                    font_size: run.font_size,
+                                    vertical_align: run.vertical_align.clone(),
+                                });
+
+                                partial_depth += ch_height;
+                                current_column.height = current_column.height.max(char_col_width);
+                            }
+                            current_depth = partial_depth;
+                        } else {
+                            let col_width = run.line_height;
+                            current_column.runs.push(TextFragment {
+                                x: 0.0,
+                                y: current_depth,
+                                width: col_width,
+                                height: word_height,
+                                text: word.clone(),
+                                node_id: run.node_id,
+                                font_size: run.font_size,
+                                vertical_align: run.vertical_align.clone(),
+                            });
+
+                            current_depth += word_height;
+                            current_column.height = current_column.height.max(col_width);
+                        }
+                    }
+
+                    if run.margin_right > 0.0 {
+                        current_depth += run.margin_right;
+                    }
+                }
+                InlineItem::InlineBlock(box_info) => {
+                    // 垂直模式下 inline-block 的 height 变为向下推进量，width 变为列宽
+                    let box_depth = box_info.height;
+                    let box_col_width = box_info.width;
+
+                    if !self.no_wrap && current_depth + box_depth > max_depth && !current_column.runs.is_empty() {
+                        self.lines.push(current_column);
+                        current_column = LineBox {
+                            y: 0.0,
+                            height: 0.0,
+                            runs: Vec::new(),
+                        };
+                        current_depth = 0.0;
+                    }
+
+                    current_column.runs.push(TextFragment {
+                        x: 0.0,
+                        y: current_depth,
+                        width: box_col_width,
+                        height: box_depth,
+                        text: String::new(),
+                        node_id: box_info.node_id,
+                        font_size: 0.0,
+                        vertical_align: box_info.vertical_align.clone(),
+                    });
+
+                    current_depth += box_depth;
+                    current_column.height = current_column.height.max(box_col_width);
+                }
+                InlineItem::Br => {
+                    self.lines.push(current_column);
+                    current_column = LineBox {
+                        y: 0.0,
+                        height: 0.0,
+                        runs: Vec::new(),
+                    };
+                    current_depth = 0.0;
+                }
+            }
+        }
+
+        // 添加最后一列（非空时）
+        if !current_column.runs.is_empty() {
+            self.lines.push(current_column);
+        }
+
+        // 计算每列的 x 坐标（沿 x 轴排列）
+        // 垂直模式中 LineBox.y 表示 x 坐标，LineBox.height 表示列宽
+        let mut x = 0.0;
+        for col in &mut self.lines {
+            col.y = x;
+            x += col.height; // col.height 在垂直模式表示列宽
+
+            // 修正每个片段的 x 为列起始位置
+            for run in &mut col.runs {
+                run.x = col.y;
+            }
+        }
+
+        // 垂直模式下不应用水平文本对齐和 vertical-align
     }
 
     /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。

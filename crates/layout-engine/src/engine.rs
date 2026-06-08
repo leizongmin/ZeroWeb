@@ -509,7 +509,11 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
-    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width);
+    let is_vertical = matches!(
+        root.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    );
+    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width).with_vertical(is_vertical);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
@@ -615,7 +619,16 @@ fn measure_text_content(
         .or(available_space.width.into_option())
         .unwrap_or(f32::INFINITY)
         .max(0.0);
-    let mut inline_ctx = InlineFormattingContext::new(width);
+    let is_vertical = doc
+        .parent_node(dom_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|s| {
+            matches!(
+                s.writing_mode,
+                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+            )
+        });
+    let mut inline_ctx = InlineFormattingContext::new(width).with_vertical(is_vertical);
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -1038,7 +1051,13 @@ fn remeasure_text_with_float_exclusions(
         {
             // 重新运行 inline layout with float exclusions
             let container_width = box_node.content_width;
-            let mut inline_ctx = InlineFormattingContext::new(container_width).with_float_exclusions(exclusions);
+            let is_vertical = matches!(
+                box_node.writing_mode,
+                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+            );
+            let mut inline_ctx = InlineFormattingContext::new(container_width)
+                .with_float_exclusions(exclusions)
+                .with_vertical(is_vertical);
             inline_ctx.layout(doc, dom_id, styles);
 
             // 容器高度需要包含 float 元素占用的空间
