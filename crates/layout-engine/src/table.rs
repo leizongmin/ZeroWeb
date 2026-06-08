@@ -1035,6 +1035,32 @@ fn position_cells(
             };
             cell_box.height = cell_height;
 
+            // 应用 vertical-align 到单元格内的子元素
+            // CSS 2.1 表格单元格内的 vertical-align 控制内容垂直对齐
+            if let Some(cell_node_id) = cell_box.node_id
+                && let Some(cell_style) = styles.get(&cell_node_id)
+            {
+                let content_height: f32 = cell_box
+                    .children
+                    .iter()
+                    .map(|c| c.height + c.margin_top + c.margin_bottom)
+                    .fold(0.0f32, f32::max);
+                let available = cell_box.height - content_height;
+                if available > 0.0 {
+                    let dy = match cell_style.vertical_align {
+                        zero_css_parser::values::VerticalAlignValue::Middle => available / 2.0,
+                        zero_css_parser::values::VerticalAlignValue::Bottom
+                        | zero_css_parser::values::VerticalAlignValue::TextBottom => available,
+                        _ => 0.0, // top, baseline, etc.
+                    };
+                    if dy > 0.0 {
+                        for child in &mut cell_box.children {
+                            child.y += dy;
+                        }
+                    }
+                }
+            }
+
             cell_x += cell_width + spacing_x;
         }
 

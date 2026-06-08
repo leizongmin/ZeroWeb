@@ -518,7 +518,7 @@ fn test_paint_radial_gradient_closest_side() {
     }
 }
 
-/// 测试 radial-gradient 自定义位置。
+/// 测试 radial-gradient 自定义位置（百分比）。
 #[test]
 fn test_paint_radial_gradient_custom_position() {
     let mut doc = zero_dom::Document::new();
@@ -527,16 +527,14 @@ fn test_paint_radial_gradient_custom_position() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    // 使用 Px 作为 position：length_to_f32(Px(25)) / 100.0 * w = 25/100*200 = 50
-    // cx = rect.left() + 50 = 10 + 50 = 60
-    // length_to_f32(Px(75)) / 100.0 * h = 75/100*100 = 75
-    // cy = rect.top() + 75 = 20 + 75 = 95
+    // 使用 Percentage 作为 position：25% of 200 = 50, 75% of 100 = 75
+    // cx = rect.left() + 50 = 60, cy = rect.top() + 75 = 95
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
         RadialGradient {
             shape: RadialShape::Circle,
             size: RadialSize::FarthestCorner,
-            position_x: LengthValue::Px(25.0),
-            position_y: LengthValue::Px(75.0),
+            position_x: LengthValue::Percentage(25.0),
+            position_y: LengthValue::Percentage(75.0),
             stops: vec![
                 GradientColorStop {
                     color: ColorValue::Rgba(255, 0, 0, 255),
@@ -558,8 +556,8 @@ fn test_paint_radial_gradient_custom_position() {
 
     let grad = &painter.primitives().gradients[0];
     if let GradientKind::Radial { cx, cy, .. } = &grad.kind {
-        assert_eq!(*cx, 10.0 + 25.0 / 100.0 * 200.0, "cx 应为 rect.left + px/100 * width");
-        assert_eq!(*cy, 20.0 + 75.0 / 100.0 * 100.0, "cy 应为 rect.top + px/100 * height");
+        assert_eq!(*cx, 10.0 + 25.0 / 100.0 * 200.0, "cx 应为 rect.left + 25% * width");
+        assert_eq!(*cy, 20.0 + 75.0 / 100.0 * 100.0, "cy 应为 rect.top + 75% * height");
     }
 }
 
