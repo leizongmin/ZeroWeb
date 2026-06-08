@@ -555,13 +555,33 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         line_max_height = line_max_height.max(child_outer_height);
     }
 
-    // 第二阶段：修正非 float 子元素的 Y 位置
+    // 第二阶段：修正非 float 子元素的 Y 位置 + BFC 浮动排斥
     // CSS 规范中 float 元素脱离正常流，不应占据垂直空间。
     // taffy 将 float 当作正常 block 排列，导致后续非 float 元素的 Y 偏移过大。
     // 策略：维护一个 float_y_offset（累积 float 在 taffy 中占据的垂直空间），
     // 对每个非 float 子元素从 Y 中扣除 offset；clear 元素消耗 offset。
+    //
+    // BFC 浮动排斥（CSS 2.1 §9.5）：建立 BFC 的块级元素不得与浮动元素重叠。
+    // 当一个非 float 块级元素建立 BFC 且与浮动元素垂直重叠时，
+    // 需将其水平位置偏移到浮动元素旁边。
     if !float_taffy_y.is_empty() {
         let mut float_y_offset = 0.0f32;
+
+        // 收集浮动元素的几何信息，用于 BFC 排斥计算
+        let float_geometries: Vec<(FloatValue, f32, f32, f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|c| !matches!(c.float, FloatValue::None))
+            .map(|c| {
+                (
+                    c.float.clone(),
+                    c.x,
+                    c.y,
+                    c.width + c.margin_left + c.margin_right,
+                    c.height + c.margin_top + c.margin_bottom,
+                )
+            })
+            .collect();
 
         for child in box_node.children.iter_mut() {
             if child.is_absolute || child.is_fixed {
@@ -607,6 +627,51 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     // 非 clear 的普通元素：从 Y 中扣除 float 占据的垂直空间
                     if float_y_offset > 0.0 {
                         child.y -= float_y_offset;
+                    }
+                }
+            }
+
+            // BFC 浮动排斥（CSS 2.1 §9.5）：
+            // 建立 BFC 的块级元素不得与同容器的浮动元素重叠。
+            // 当 BFC 元素的垂直范围与浮动元素重叠时，水平偏移以避开浮动。
+            if child.is_block_level
+                && !child.is_absolute
+                && !child.is_fixed
+                && matches!(child.float, FloatValue::None)
+                && crate::margin_collapse::establishes_bfc(child)
+            {
+                let child_top = child.y;
+                let child_bottom = child.y + child.height;
+
+                for (float_dir, float_x, float_y, float_w, float_h) in &float_geometries {
+                    let float_top = *float_y;
+                    let float_bottom = *float_y + *float_h;
+
+                    // 检查垂直重叠
+                    if child_top < float_bottom && child_bottom > float_top {
+                        match float_dir {
+                            FloatValue::Left => {
+                                // 左浮动：将 BFC 元素推到浮动元素右侧
+                                let avoidance_x = float_x + *float_w;
+                                if avoidance_x > child.x {
+                                    child.x = avoidance_x;
+                                    // 缩小宽度以不超出容器
+                                    let max_width = container_width - child.x;
+                                    if child.width > max_width {
+                                        child.width = max_width.max(0.0);
+                                    }
+                                }
+                            }
+                            FloatValue::Right => {
+                                // 右浮动：缩小 BFC 元素宽度以不重叠
+                                let right_float_left = container_width - *float_w;
+                                if child.x + child.width > right_float_left {
+                                    let new_width = right_float_left - child.x;
+                                    child.width = new_width.max(0.0);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }

@@ -85,7 +85,15 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
                     col
                 }
             },
-            height: convert_length_to_lp(&style.row_gap),
+            // row-gap 长写属性优先；若未设置（0px），回退到 gap 简写
+            height: {
+                let row = convert_length_to_lp(&style.row_gap);
+                if row == taffy::style::LengthPercentage::Length(0.0) {
+                    convert_length_to_lp(&style.gap)
+                } else {
+                    row
+                }
+            },
         },
         grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
         grid_template_columns: parse_grid_tracks(&style.grid_template_columns),

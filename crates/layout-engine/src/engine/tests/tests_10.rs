@@ -385,3 +385,90 @@ fn test_img_css_overrides_html_attributes() {
         img_box.height
     );
 }
+
+/// 测试 BFC 浮动排斥：overflow:hidden 的块级元素不得与左浮动重叠。
+/// CSS 2.1 §9.5: BFC 元素的 border box 不得与同一格式化上下文中的浮动元素重叠。
+#[test]
+fn test_bfc_float_avoidance_left() {
+    let (mut doc, body) = make_doc_with_body();
+    let float_elem = doc.create_element("div");
+    doc.append_child(body, float_elem).unwrap();
+    let bfc_elem = doc.create_element("div");
+    doc.append_child(body, bfc_elem).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // 左浮动：50x50
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.width = LengthValue::Px(50.0);
+    fl.height = LengthValue::Px(50.0);
+    fl.float = FloatValue::Left;
+    styles.insert(float_elem, fl);
+
+    // overflow:hidden（建立 BFC）：100x100
+    let mut bfc = ComputedStyle::default();
+    bfc.display = DisplayValue::Block;
+    bfc.width = LengthValue::Px(100.0);
+    bfc.height = LengthValue::Px(100.0);
+    bfc.overflow_x = zero_css_parser::values::OverflowValue::Hidden;
+    bfc.overflow_y = zero_css_parser::values::OverflowValue::Hidden;
+    styles.insert(bfc_elem, bfc);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let fl_box = find_child_by_node_id(&result.root, float_elem).expect("float found");
+    let bfc_box = find_child_by_node_id(&result.root, bfc_elem).expect("bfc found");
+
+    // BFC 元素的左边缘应在浮动元素的右边缘之后或与之间距
+    assert!(
+        bfc_box.x >= fl_box.x + fl_box.width - 0.5,
+        "BFC 元素不得与左浮动重叠: bfc.x={}, float_right={}",
+        bfc_box.x,
+        fl_box.x + fl_box.width
+    );
+}
+
+/// 测试 BFC 浮动排斥：overflow:hidden 的块级元素不得与右浮动重叠。
+#[test]
+fn test_bfc_float_avoidance_right() {
+    let (mut doc, body) = make_doc_with_body();
+    let float_elem = doc.create_element("div");
+    doc.append_child(body, float_elem).unwrap();
+    let bfc_elem = doc.create_element("div");
+    doc.append_child(body, bfc_elem).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // 右浮动：50x50
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.width = LengthValue::Px(50.0);
+    fl.height = LengthValue::Px(50.0);
+    fl.float = FloatValue::Right;
+    styles.insert(float_elem, fl);
+
+    // overflow:hidden（建立 BFC）：200x100
+    let mut bfc = ComputedStyle::default();
+    bfc.display = DisplayValue::Block;
+    bfc.width = LengthValue::Px(200.0);
+    bfc.height = LengthValue::Px(100.0);
+    bfc.overflow_x = zero_css_parser::values::OverflowValue::Hidden;
+    bfc.overflow_y = zero_css_parser::values::OverflowValue::Hidden;
+    styles.insert(bfc_elem, bfc);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let fl_box = find_child_by_node_id(&result.root, float_elem).expect("float found");
+    let bfc_box = find_child_by_node_id(&result.root, bfc_elem).expect("bfc found");
+
+    // BFC 元素的右边缘不应超过右浮动的左边缘
+    assert!(
+        bfc_box.x + bfc_box.width <= fl_box.x + 0.5,
+        "BFC 元素不得与右浮动重叠: bfc_right={}, float_left={}",
+        bfc_box.x + bfc_box.width,
+        fl_box.x
+    );
+}
